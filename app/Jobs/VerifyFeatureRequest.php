@@ -6,9 +6,12 @@ use App\Actions\Workspaces\DestroyWorkspace;
 use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\VerificationStatus;
+use App\Features\AcceptanceSuite;
+use App\Models\FeatureRequest;
 use App\Models\Verification;
 use App\Models\Workspace;
 use App\Models\WorkspaceCommand;
+use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -35,8 +38,18 @@ class VerifyFeatureRequest implements ShouldQueue
      */
     protected const OUTPUT_TAIL = 4000;
 
+    public const OUTCOME_PASSED = 'passed';
+
+    public const OUTCOME_FAILED = 'failed';
+
+    public const OUTCOME_ERRORED = 'errored';
+
+    public const OUTCOME_SKIPPED = 'skipped';
+
+    public const OUTCOME_NOT_APPLICABLE = 'not_applicable';
+
     /**
-     * @var list<array{name: string, stage: string, exit_code: int, timed_out: bool, duration_ms: int, output: string}>
+     * @var list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string}>
      */
     protected array $results = [];
 
@@ -47,7 +60,11 @@ class VerifyFeatureRequest implements ShouldQueue
 
     /**
      * Copy the project into a fresh workspace, apply the change and its
-     * ancestors, run setup and checks, and record every result.
+     * ancestors, run setup and checks, then the protected acceptance suite,
+     * and record every result.
+     *
+     * The verification only passes when every check passes and the protected
+     * acceptance suite passes. Without an applicable suite it is "unverified".
      */
     public function handle(
         WorkspaceManager $workspaces,
@@ -75,6 +92,7 @@ class VerifyFeatureRequest implements ShouldQueue
                 $command = $runWorkspaceCommand->handle($workspace, ['git', 'apply', '--whitespace=nowarn', $patch], 120);
 
                 if (! $this->record("Apply change #{$request->id}", 'apply', $command)) {
+                    $this->skipRemaining(['setup', 'checks'], $featureRequest);
                     $this->finish(VerificationStatus::Errored, __('The change does not apply to the project.'));
 
                     return;
@@ -84,14 +102,21 @@ class VerifyFeatureRequest implements ShouldQueue
             $runWorkspaceCommand->handle($workspace, ['rm', '-rf', '.builder'], 30);
 
             if (! $this->runSteps($runWorkspaceCommand, $workspace, 'setup')) {
+                $this->skipRemaining(['checks'], $featureRequest);
                 $this->finish(VerificationStatus::Errored, __('A setup step failed, so the checks did not run.'));
 
                 return;
             }
 
-            $passed = $this->runSteps($runWorkspaceCommand, $workspace, 'checks', stopOnFailure: false);
+            $checksPassed = $this->runSteps($runWorkspaceCommand, $workspace, 'checks', stopOnFailure: false);
+            $acceptance = $this->runAcceptance($driver, $runWorkspaceCommand, $workspace, $featureRequest);
 
-            $this->finish($passed ? VerificationStatus::Passed : VerificationStatus::Failed);
+            $this->finish(match (true) {
+                $acceptance === self::OUTCOME_ERRORED => VerificationStatus::Errored,
+                ! $checksPassed || $acceptance === self::OUTCOME_FAILED => VerificationStatus::Failed,
+                $acceptance === self::OUTCOME_NOT_APPLICABLE => VerificationStatus::Unverified,
+                default => VerificationStatus::Passed,
+            });
         } catch (Throwable $exception) {
             report($exception);
 
@@ -120,17 +145,20 @@ class VerifyFeatureRequest implements ShouldQueue
      */
     protected function runSteps(RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, string $stage, bool $stopOnFailure = true): bool
     {
-        /** @var list<array{name: string, command: list<string>, timeout: int}> $steps */
-        $steps = config("builder.verification.{$stage}", []);
         $allSucceeded = true;
+        $steps = $this->configuredSteps($stage);
 
-        foreach ($steps as $step) {
+        foreach ($steps as $index => $step) {
             $command = $runWorkspaceCommand->handle($workspace, $step['command'], $step['timeout']);
 
             if (! $this->record($step['name'], $stage, $command)) {
                 $allSucceeded = false;
 
                 if ($stopOnFailure) {
+                    foreach (array_slice($steps, $index + 1) as $skipped) {
+                        $this->addResult($skipped['name'], $stage, self::OUTCOME_SKIPPED, output: __('Not run because an earlier step failed.'));
+                    }
+
                     return false;
                 }
             }
@@ -140,24 +168,123 @@ class VerifyFeatureRequest implements ShouldQueue
     }
 
     /**
-     * Add a command's outcome to the results and report whether it succeeded.
+     * Replace tests/Acceptance with the platform-owned suite for the change,
+     * run it with the platform's runner configuration, and return its outcome.
+     */
+    protected function runAcceptance(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): string
+    {
+        $tests = $featureRequest->acceptance ?? [];
+
+        if ($tests === []) {
+            $this->addResult(__('Protected acceptance tests'), 'acceptance', self::OUTCOME_NOT_APPLICABLE, output: __('No protected acceptance tests apply to this change.'));
+
+            return self::OUTCOME_NOT_APPLICABLE;
+        }
+
+        $suite = AcceptanceSuite::fromConfig();
+
+        try {
+            $files = $suite->files($tests);
+        } catch (Throwable $exception) {
+            $this->addResult(__('Protected acceptance tests'), 'acceptance', self::OUTCOME_ERRORED, output: $exception->getMessage());
+
+            return self::OUTCOME_ERRORED;
+        }
+
+        $runWorkspaceCommand->handle($workspace, ['rm', '-rf', AcceptanceSuite::WORKSPACE_DIRECTORY], 30);
+
+        foreach ($files as $path => $contents) {
+            $driver->writeFile((string) $workspace->driver_id, $path, $contents);
+        }
+
+        $command = $runWorkspaceCommand->handle($workspace, $suite->command(), (int) config('builder.verification.acceptance.timeout'));
+
+        $this->record(__('Protected acceptance tests'), 'acceptance', $command);
+
+        return $this->outcome($command);
+    }
+
+    /**
+     * Record every step of the given stages (and the acceptance suite) as skipped.
+     *
+     * @param  list<string>  $stages
+     */
+    protected function skipRemaining(array $stages, FeatureRequest $featureRequest): void
+    {
+        foreach ($stages as $stage) {
+            foreach ($this->configuredSteps($stage) as $step) {
+                $this->addResult($step['name'], $stage, self::OUTCOME_SKIPPED, output: __('Not run because an earlier step failed.'));
+            }
+        }
+
+        if (($featureRequest->acceptance ?? []) !== []) {
+            $this->addResult(__('Protected acceptance tests'), 'acceptance', self::OUTCOME_SKIPPED, output: __('Not run because an earlier step failed.'));
+        }
+    }
+
+    /**
+     * Get the configured setup commands or checks.
+     *
+     * @return list<array{name: string, command: list<string>, timeout: int}>
+     */
+    protected function configuredSteps(string $stage): array
+    {
+        /** @var list<array{name: string, command: list<string>, timeout: int}> $steps */
+        $steps = config("builder.verification.{$stage}", []);
+
+        return $steps;
+    }
+
+    /**
+     * Add a command's outcome to the results and report whether it passed.
      */
     protected function record(string $name, string $stage, WorkspaceCommand $command): bool
     {
-        $output = trim($this->withoutTerminalCodes($command->output."\n".$command->error_output));
+        $outcome = $this->outcome($command);
+
+        $this->addResult(
+            $name,
+            $stage,
+            $outcome,
+            exitCode: $command->exit_code,
+            timedOut: $command->timed_out,
+            durationMs: $command->duration_ms,
+            output: $this->withoutTerminalCodes($command->output."\n".$command->error_output),
+        );
+
+        return $outcome === self::OUTCOME_PASSED;
+    }
+
+    /**
+     * Classify a finished command: a timeout is an error, not a failed check.
+     */
+    protected function outcome(WorkspaceCommand $command): string
+    {
+        return match (true) {
+            $command->timed_out => self::OUTCOME_ERRORED,
+            $command->exit_code === 0 => self::OUTCOME_PASSED,
+            default => self::OUTCOME_FAILED,
+        };
+    }
+
+    /**
+     * Append a result and save progress so the owner sees it while the run continues.
+     */
+    protected function addResult(string $name, string $stage, string $outcome, ?int $exitCode = null, bool $timedOut = false, int $durationMs = 0, string $output = ''): void
+    {
+        $output = trim($output);
 
         $this->results[] = [
             'name' => $name,
             'stage' => $stage,
-            'exit_code' => $command->exit_code,
-            'timed_out' => $command->timed_out,
-            'duration_ms' => $command->duration_ms,
+            'outcome' => $outcome,
+            'exit_code' => $exitCode,
+            'timed_out' => $timedOut,
+            'duration_ms' => $durationMs,
             'output' => mb_strlen($output) > self::OUTPUT_TAIL ? '…'.Str::substr($output, -self::OUTPUT_TAIL) : $output,
         ];
 
         $this->verification->update(['results' => $this->results]);
-
-        return $command->exit_code === 0 && ! $command->timed_out;
     }
 
     /**

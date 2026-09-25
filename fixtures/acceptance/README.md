@@ -3,8 +3,11 @@
 Protected acceptance tests for features generated into customer apps. They live
 **outside** the application source, so a generated change, whether written by
 the agent or by hand, cannot edit or weaken them. Verification copies the
-listed files into the app's `tests/Acceptance` directory in a fresh copy, runs
-`php artisan test tests/Acceptance`, and throws the copy away.
+listed files, plus the platform-owned `phpunit.xml`, into the app's
+`tests/Acceptance` directory in a fresh copy. It runs
+`php vendor/bin/phpunit --configuration tests/Acceptance/phpunit.xml` and
+throws the copy away. That config forces the test environment, so editing the
+app's own `phpunit.xml` or `artisan test` cannot change what the suite checks.
 
 The manifest in `fixtures/reference-solutions/customer-app/manifest.json`
 lists which suites apply to each solution.

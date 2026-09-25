@@ -27,11 +27,12 @@ use Illuminate\Support\Carbon;
  * @property string|null $summary
  * @property string|null $patch
  * @property list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>|null $steps
+ * @property list<string>|null $acceptance Protected acceptance test files that apply to the change
  * @property string|null $error
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['project_id', 'user_id', 'parent_id', 'prompt', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'steps', 'error'])]
+#[Fillable(['project_id', 'user_id', 'parent_id', 'prompt', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'steps', 'acceptance', 'error'])]
 class FeatureRequest extends Model
 {
     /** @use HasFactory<FeatureRequestFactory> */
@@ -47,6 +48,7 @@ class FeatureRequest extends Model
         return [
             'status' => FeatureRequestStatus::class,
             'steps' => 'array',
+            'acceptance' => 'array',
         ];
     }
 

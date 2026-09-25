@@ -46,12 +46,21 @@ export type VerificationStatus =
     | 'running'
     | 'passed'
     | 'failed'
-    | 'errored';
+    | 'errored'
+    | 'unverified';
+
+export type VerificationOutcome =
+    | 'passed'
+    | 'failed'
+    | 'errored'
+    | 'skipped'
+    | 'not_applicable';
 
 export type VerificationResult = {
     name: string;
-    stage: 'apply' | 'setup' | 'checks';
-    exit_code: number;
+    stage: 'apply' | 'setup' | 'checks' | 'acceptance';
+    outcome: VerificationOutcome;
+    exit_code: number | null;
     timed_out: boolean;
     duration_ms: number;
     output: string;

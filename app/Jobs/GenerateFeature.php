@@ -41,6 +41,7 @@ class GenerateFeature implements ShouldQueue
             'summary' => $change->summary,
             'patch' => $change->patch,
             'steps' => $change->steps,
+            'acceptance' => $change->acceptance,
             'error' => null,
         ]);
     }

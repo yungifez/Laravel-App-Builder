@@ -46,13 +46,14 @@ class ReferenceGenerator implements FeatureGenerator
             summary: $solution['summary'],
             patch: File::get($patchPath),
             steps: $solution['steps'],
+            acceptance: $solution['acceptance'] ?? [],
         );
     }
 
     /**
      * Load the solutions listed in the manifest.
      *
-     * @return Collection<int, array{key: string, patch: string, match: list<string>, summary: string, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, follows?: string, step?: string}>
+     * @return Collection<int, array{key: string, patch: string, match: list<string>, summary: string, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance?: list<string>, follows?: string, step?: string}>
      */
     protected function solutions(): Collection
     {
@@ -62,7 +63,7 @@ class ReferenceGenerator implements FeatureGenerator
             throw new CannotGenerateFeature(__('The reference solutions manifest was not found.'));
         }
 
-        /** @var array{solutions: list<array{key: string, patch: string, match: list<string>, summary: string, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, follows?: string, step?: string}>} $data */
+        /** @var array{solutions: list<array{key: string, patch: string, match: list<string>, summary: string, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance?: list<string>, follows?: string, step?: string}>} $data */
         $data = File::json($manifest, JSON_THROW_ON_ERROR);
 
         return collect($data['solutions']);

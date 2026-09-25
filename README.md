@@ -78,7 +78,12 @@ people"). Until the AI agent exists, the `reference` generator
 in `BUILDER_REFERENCE_SOLUTIONS` (see `fixtures/reference-solutions`).
 On a generated change, **Run verification** copies the project into a fresh
 workspace, applies the change and every change it follows up on, runs the
-setup commands and checks from `config/builder.php`, and shows each result.
+setup commands and checks from `config/builder.php`, then runs the
+platform-owned **protected acceptance tests** (`BUILDER_ACCEPTANCE_PATH`) with
+their own runner configuration, and shows each result as passed, failed,
+errored, skipped or not applicable. A change is only **Passed** when the
+protected tests pass. With no applicable protected tests it is
+**Unverified**.
 Generation and verification run on the queue, so keep a worker running
 (`composer dev` starts one). Verification can take several minutes, so keep
 `REDIS_QUEUE_RETRY_AFTER` above the job's one-hour timeout (see
