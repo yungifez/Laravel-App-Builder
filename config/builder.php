@@ -16,6 +16,39 @@ return [
 
     'generator' => env('BUILDER_GENERATOR', 'reference'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Verification
+    |--------------------------------------------------------------------------
+    |
+    | How a generated change is verified: the project is copied into a fresh
+    | workspace, the change (and every change it follows up on) is applied,
+    | then the "setup" commands and the "checks" run in order. A failing setup
+    | command stops the run; every check runs and is reported. The defaults
+    | suit a Laravel application with Composer and npm lockfiles.
+    |
+    */
+
+    'verification' => [
+        'workspace_driver' => env('BUILDER_VERIFICATION_DRIVER', 'local'),
+
+        'setup' => [
+            ['name' => 'Create .env', 'command' => ['cp', '.env.example', '.env'], 'timeout' => 30],
+            ['name' => 'Install PHP dependencies', 'command' => ['composer', 'install', '--no-interaction', '--prefer-dist', '--no-progress'], 'timeout' => 900],
+            ['name' => 'Generate app key', 'command' => ['php', 'artisan', 'key:generate', '--no-interaction'], 'timeout' => 60],
+            ['name' => 'Install Node dependencies', 'command' => ['npm', 'ci', '--no-audit', '--no-fund'], 'timeout' => 600],
+            ['name' => 'Generate route helpers', 'command' => ['php', 'artisan', 'wayfinder:generate', '--with-form'], 'timeout' => 120],
+        ],
+
+        'checks' => [
+            ['name' => 'Tests', 'command' => ['php', 'artisan', 'test'], 'timeout' => 600],
+            ['name' => 'Static analysis', 'command' => ['vendor/bin/phpstan', 'analyse', '--no-progress'], 'timeout' => 600],
+            ['name' => 'PHP formatting', 'command' => ['vendor/bin/pint', '--test'], 'timeout' => 300],
+            ['name' => 'Frontend format and lint', 'command' => ['npx', 'vp', 'check'], 'timeout' => 300],
+            ['name' => 'TypeScript', 'command' => ['npm', 'run', 'types:check'], 'timeout' => 300],
+        ],
+    ],
+
     'generators' => [
 
         'reference' => [

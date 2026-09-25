@@ -8,9 +8,10 @@ return [
     |--------------------------------------------------------------------------
     |
     | Workspaces are disposable environments that run customer code. The
-    | "docker" driver runs them as capped local containers. It is meant for
-    | development and CI against trusted fixtures only, because containers share
-    | the host kernel. Untrusted customer code needs a microVM-backed driver
+    | "docker" driver runs them as capped local containers and the "local"
+    | driver as plain directories on this host. Both are for development and
+    | CI against trusted fixtures only: containers share the host kernel, and
+    | local workspaces have no isolation beyond a scrubbed environment. Untrusted customer code needs a microVM-backed driver
     | (see docs/research/workspace-sandboxes.md).
     |
     */
@@ -75,6 +76,19 @@ return [
     */
 
     'drivers' => [
+
+        'local' => [
+            // Keep workspaces outside this repository, so tools running in
+            // them never pick up the control plane's git or ignore files.
+            'root' => env('WORKSPACE_LOCAL_ROOT', sys_get_temp_dir().DIRECTORY_SEPARATOR.'builder-workspaces'),
+            'image' => 'host',
+            // Only these variables reach commands; everything else is scrubbed.
+            'env_passthrough' => [
+                'PATH', 'HOME', 'LANG', 'COMPOSER_HOME', 'COMPOSER_ALLOW_SUPERUSER',
+                'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'no_proxy',
+                'SSL_CERT_FILE', 'NODE_EXTRA_CA_CERTS', 'REQUESTS_CA_BUNDLE',
+            ],
+        ],
 
         'docker' => [
             'binary' => env('WORKSPACE_DOCKER_BINARY', 'docker'),

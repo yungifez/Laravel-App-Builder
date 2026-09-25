@@ -4,6 +4,7 @@ namespace App\Workspaces;
 
 use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\Drivers\DockerDriver;
+use App\Workspaces\Drivers\LocalDriver;
 use Illuminate\Support\Manager;
 
 /**
@@ -17,6 +18,17 @@ class WorkspaceManager extends Manager
     public function getDefaultDriver(): string
     {
         return (string) $this->config->get('workspaces.default');
+    }
+
+    /**
+     * Create the local directory workspace driver.
+     */
+    public function createLocalDriver(): WorkspaceDriver
+    {
+        /** @var array{root: string, env_passthrough: list<string>} $config */
+        $config = $this->config->get('workspaces.drivers.local');
+
+        return new LocalDriver(root: $config['root'], envPassthrough: $config['env_passthrough']);
     }
 
     /**

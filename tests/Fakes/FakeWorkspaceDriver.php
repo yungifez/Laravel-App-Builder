@@ -47,6 +47,14 @@ class FakeWorkspaceDriver implements WorkspaceDriver
             : new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
     }
 
+    /** @var list<array{workspace: string, source: string}> */
+    public array $copies = [];
+
+    public function copyDirectory(string $workspaceId, string $sourcePath): void
+    {
+        $this->copies[] = ['workspace' => $workspaceId, 'source' => $sourcePath];
+    }
+
     public function writeFile(string $workspaceId, string $path, string $contents): void
     {
         $this->files["{$workspaceId}:{$path}"] = $contents;

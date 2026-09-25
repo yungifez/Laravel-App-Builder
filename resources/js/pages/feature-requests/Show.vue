@@ -2,6 +2,7 @@
 import { Form, Head, Link, setLayoutProps, usePoll } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import FeatureRequestStepChangeController from '@/actions/App/Http/Controllers/FeatureRequestStepChangeController';
+import FeatureRequestVerificationController from '@/actions/App/Http/Controllers/FeatureRequestVerificationController';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
@@ -16,13 +17,19 @@ import {
 import { Label } from '@/components/ui/label';
 import { show as showFeatureRequest } from '@/routes/feature-requests';
 import { index, show as showProject } from '@/routes/projects';
-import type { FeatureRequestDetail, FeatureRequestSummary } from '@/types';
+import type {
+    FeatureRequestDetail,
+    FeatureRequestSummary,
+    Verification,
+    VerificationResult,
+} from '@/types';
 
 const props = defineProps<{
     project: { id: number; name: string };
     featureRequest: FeatureRequestDetail;
     parent: { id: number; prompt: string } | null;
     followUps: FeatureRequestSummary[];
+    verification: Verification | null;
 }>();
 
 const selectedStepKey = ref<string | null>(null);
@@ -49,15 +56,39 @@ watch(
 
 const { start, stop } = usePoll(
     1500,
-    { only: ['featureRequest', 'followUps'] },
+    { only: ['featureRequest', 'followUps', 'verification'] },
     { autoStart: false },
 );
 
+const verificationInProgress = computed(
+    () =>
+        props.verification?.status === 'queued' ||
+        props.verification?.status === 'running',
+);
+
 watch(
-    () => props.featureRequest.status,
-    (status) => (status === 'generating' ? start() : stop()),
+    () =>
+        props.featureRequest.status === 'generating' ||
+        verificationInProgress.value,
+    (busy) => (busy ? start() : stop()),
     { immediate: true },
 );
+
+const verificationLabels: Record<Verification['status'], string> = {
+    queued: 'Queued',
+    running: 'Running',
+    passed: 'Passed',
+    failed: 'Failed',
+    errored: 'Could not run',
+};
+
+function resultPassed(result: VerificationResult): boolean {
+    return result.exit_code === 0 && !result.timed_out;
+}
+
+function seconds(durationMs: number): string {
+    return `${(durationMs / 1000).toFixed(1)} s`;
+}
 
 const selectedStep = computed(
     () =>
@@ -261,6 +292,113 @@ function lineClass(line: string): string {
                 </Form>
             </section>
         </template>
+
+        <section
+            v-if="featureRequest.status === 'generated'"
+            class="space-y-4"
+            data-test="verification"
+        >
+            <div class="flex items-center gap-3">
+                <Heading
+                    variant="small"
+                    title="Verification"
+                    description="Apply the change to a fresh copy of the project and run its checks"
+                />
+                <Badge
+                    v-if="verification"
+                    :variant="
+                        verification.status === 'passed'
+                            ? 'default'
+                            : verification.status === 'queued' ||
+                                verification.status === 'running'
+                              ? 'secondary'
+                              : 'destructive'
+                    "
+                    data-test="verification-status"
+                >
+                    {{ verificationLabels[verification.status] }}
+                </Badge>
+            </div>
+
+            <Form
+                v-if="!verificationInProgress"
+                v-bind="
+                    FeatureRequestVerificationController.store.form(
+                        featureRequest.id,
+                    )
+                "
+                v-slot="{ errors, processing }"
+            >
+                <Button
+                    :variant="verification ? 'outline' : 'default'"
+                    :disabled="processing"
+                    data-test="run-verification-button"
+                >
+                    {{ verification ? 'Run again' : 'Run verification' }}
+                </Button>
+                <InputError class="mt-2" :message="errors.verification" />
+            </Form>
+
+            <p
+                v-if="verificationInProgress"
+                class="text-sm text-muted-foreground"
+            >
+                Installing dependencies and running checks. This can take a few
+                minutes…
+            </p>
+
+            <Alert v-if="verification?.error" variant="destructive">
+                <AlertTitle>Verification could not finish</AlertTitle>
+                <AlertDescription>{{ verification.error }}</AlertDescription>
+            </Alert>
+
+            <ul
+                v-if="verification && verification.results.length > 0"
+                class="divide-y rounded-lg border"
+            >
+                <li
+                    v-for="(result, position) in verification.results"
+                    :key="`${verification.id}-${position}`"
+                >
+                    <Collapsible>
+                        <CollapsibleTrigger
+                            class="flex w-full items-center justify-between gap-4 p-3 text-left hover:bg-muted/50"
+                        >
+                            <span class="flex items-center gap-2 text-sm">
+                                <span
+                                    :class="
+                                        resultPassed(result)
+                                            ? 'text-green-700 dark:text-green-400'
+                                            : 'text-red-700 dark:text-red-400'
+                                    "
+                                    >{{
+                                        resultPassed(result) ? '✓' : '✗'
+                                    }}</span
+                                >
+                                {{ result.name }}
+                                <Badge variant="outline">{{
+                                    result.stage
+                                }}</Badge>
+                            </span>
+                            <span
+                                class="font-mono text-xs text-muted-foreground"
+                            >
+                                {{
+                                    result.timed_out
+                                        ? 'timed out'
+                                        : seconds(result.duration_ms)
+                                }}
+                            </span>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                            <pre
+                                class="max-h-96 overflow-auto border-t bg-muted/30 p-3 font-mono text-xs leading-5 whitespace-pre-wrap"
+                                >{{ result.output || 'No output.' }}</pre>
+                        </CollapsibleContent>
+                    </Collapsible>
+                </li>
+            </ul>
+        </section>
 
         <section v-if="followUps.length > 0" class="max-w-2xl space-y-4">
             <Heading variant="small" title="Follow-up requests" />

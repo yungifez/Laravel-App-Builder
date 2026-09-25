@@ -81,6 +81,35 @@ class FeatureRequest extends Model
     }
 
     /**
+     * Get the verification runs for the request's change.
+     *
+     * @return HasMany<Verification, $this>
+     */
+    public function verifications(): HasMany
+    {
+        return $this->hasMany(Verification::class);
+    }
+
+    /**
+     * Get this request and the requests it follows up on, oldest first, so
+     * their patches can be applied in order.
+     *
+     * @return list<FeatureRequest>
+     */
+    public function lineage(): array
+    {
+        $lineage = [$this];
+        $current = $this;
+
+        while ($current->parent_id !== null) {
+            $current = $current->parent()->firstOrFail();
+            array_unshift($lineage, $current);
+        }
+
+        return $lineage;
+    }
+
+    /**
      * Find one of the generated change's steps by key.
      *
      * @return array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}|null

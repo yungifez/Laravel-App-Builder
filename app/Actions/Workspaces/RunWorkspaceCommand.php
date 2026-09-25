@@ -45,6 +45,14 @@ class RunWorkspaceCommand
     }
 
     /**
+     * Keep the end of long output, where results and errors usually are.
+     */
+    protected function tail(string $output, int $limit): string
+    {
+        return mb_strlen($output) > $limit ? '…'.Str::substr($output, -$limit) : $output;
+    }
+
+    /**
      * Execute the command through the workspace's driver and store the result.
      *
      * @param  list<string>  $command
@@ -63,8 +71,8 @@ class RunWorkspaceCommand
             'exit_code' => $result->exitCode,
             'timed_out' => $result->timedOut,
             'duration_ms' => $result->durationMs,
-            'output' => Str::limit($result->output, $limit),
-            'error_output' => Str::limit($result->errorOutput, $limit),
+            'output' => $this->tail($result->output, $limit),
+            'error_output' => $this->tail($result->errorOutput, $limit),
         ]);
     }
 }

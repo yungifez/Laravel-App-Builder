@@ -15,6 +15,25 @@ use Inertia\Response;
 class FeatureRequestController extends Controller
 {
     /**
+     * Get the latest verification run for the page.
+     *
+     * @return array<string, mixed>|null
+     */
+    protected function latestVerification(FeatureRequest $featureRequest): ?array
+    {
+        $verification = $featureRequest->verifications()->latest('id')->first();
+
+        return $verification === null ? null : [
+            'id' => $verification->id,
+            'status' => $verification->status->value,
+            'results' => $verification->results ?? [],
+            'error' => $verification->error,
+            'started_at' => $verification->started_at?->toIso8601String(),
+            'finished_at' => $verification->finished_at?->toIso8601String(),
+        ];
+    }
+
+    /**
      * Request a feature for the project.
      */
     public function store(FeatureRequestStoreRequest $request, Project $project, RequestFeature $requestFeature): RedirectResponse
@@ -48,6 +67,7 @@ class FeatureRequestController extends Controller
                 'files' => PatchSummary::files($featureRequest->patch),
             ],
             'parent' => $parent?->only('id', 'prompt'),
+            'verification' => $this->latestVerification($featureRequest),
             'followUps' => $featureRequest->followUps()->latest()->get()
                 ->map(fn (FeatureRequest $followUp) => [
                     'id' => $followUp->id,
