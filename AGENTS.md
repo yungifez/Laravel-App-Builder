@@ -11,6 +11,10 @@ take precedence for files below it.
   one. All AI and agent work uses the Laravel AI SDK (`laravel/ai`, configured
   in `config/ai.php`), and new agents, tools and middleware start from
   `php artisan make:agent` / `make:tool` / `make:agent-middleware`.
+- **Framework defaults come from `nunomaduro/essentials`** (strict models,
+  automatic eager loading, immutable dates, prohibited destructive commands in
+  production, password rules, stray-request prevention in tests). Toggle them in
+  `config/essentials.php`; do not re-implement them in service providers.
 - **Follow Laravel conventions.** Keep controllers thin. Put behavior in actions
   or services, and authorization in policies or form requests. Read settings
   from `config/` backed by `.env`; do not hard-code values that operators should

@@ -3,17 +3,16 @@
 namespace App\Providers;
 
 use App\Workspaces\WorkspaceManager;
-use Carbon\CarbonImmutable;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Date;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
-use Illuminate\Validation\Rules\Password;
 
 class AppServiceProvider extends ServiceProvider
 {
     /**
      * Register any application services.
+     *
+     * Framework defaults (strict models, immutable dates, prohibited
+     * destructive commands in production, password rules, ...) are configured
+     * by nunomaduro/essentials; toggle them in config/essentials.php.
      */
     public function register(): void
     {
@@ -25,30 +24,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        $this->configureDefaults();
-    }
-
-    /**
-     * Configure default behaviors for production-ready applications.
-     */
-    protected function configureDefaults(): void
-    {
-        Date::use(CarbonImmutable::class);
-
-        Model::shouldBeStrict();
-
-        DB::prohibitDestructiveCommands(
-            app()->isProduction(),
-        );
-
-        Password::defaults(fn (): ?Password => app()->isProduction()
-            ? Password::min(12)
-                ->mixedCase()
-                ->letters()
-                ->numbers()
-                ->symbols()
-                ->uncompromised()
-            : null,
-        );
+        //
     }
 }
