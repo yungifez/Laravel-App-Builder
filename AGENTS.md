@@ -10,7 +10,9 @@ take precedence for files below it.
   first-party Laravel package covers a need, use it instead of a third-party
   one. All AI and agent work uses the Laravel AI SDK (`laravel/ai`, configured
   in `config/ai.php`), and new agents, tools and middleware start from
-  `php artisan make:agent` / `make:tool` / `make:agent-middleware`.
+  `php artisan make:agent` / `make:tool` / `make:agent-middleware`. Pick models
+  by tier through `App\Enums\ModelRole` (planner, coder, reviewer), which
+  reads `config/builder.php`. Never hardcode provider or model IDs.
 - **Framework defaults come from `nunomaduro/essentials`** (strict models,
   automatic eager loading, immutable dates, prohibited destructive commands in
   production, password rules, stray-request prevention in tests). Toggle them in

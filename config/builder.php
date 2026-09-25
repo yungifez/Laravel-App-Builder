@@ -18,6 +18,35 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Model Tiers
+    |--------------------------------------------------------------------------
+    |
+    | Features are built by three model roles: a frontier "planner", an
+    | economical "coder" and an independent "reviewer". Each role names a
+    | laravel/ai provider (config/ai.php) and model. Leave a provider empty to
+    | use the AI SDK default, and a model empty to use that provider's default.
+    | Point every role at the same model to compare against a single stronger
+    | model; the split is a strategy, not a dependency.
+    |
+    */
+
+    'models' => [
+        'planner' => [
+            'provider' => env('BUILDER_PLANNER_PROVIDER'),
+            'model' => env('BUILDER_PLANNER_MODEL'),
+        ],
+        'coder' => [
+            'provider' => env('BUILDER_CODER_PROVIDER'),
+            'model' => env('BUILDER_CODER_MODEL'),
+        ],
+        'reviewer' => [
+            'provider' => env('BUILDER_REVIEWER_PROVIDER'),
+            'model' => env('BUILDER_REVIEWER_MODEL'),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Verification
     |--------------------------------------------------------------------------
     |
