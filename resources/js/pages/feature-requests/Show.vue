@@ -80,10 +80,46 @@ const verificationLabels: Record<Verification['status'], string> = {
     passed: 'Passed',
     failed: 'Failed',
     errored: 'Could not run',
+    unverified: 'Unverified',
 };
 
-function resultPassed(result: VerificationResult): boolean {
-    return result.exit_code === 0 && !result.timed_out;
+const outcomeMarks: Record<
+    VerificationResult['outcome'],
+    { mark: string; class: string; label: string }
+> = {
+    passed: {
+        mark: '✓',
+        class: 'text-green-700 dark:text-green-400',
+        label: 'Passed',
+    },
+    failed: {
+        mark: '✗',
+        class: 'text-red-700 dark:text-red-400',
+        label: 'Failed',
+    },
+    errored: {
+        mark: '!',
+        class: 'text-red-700 dark:text-red-400',
+        label: 'Could not run',
+    },
+    skipped: { mark: '–', class: 'text-muted-foreground', label: 'Skipped' },
+    not_applicable: {
+        mark: '∅',
+        class: 'text-muted-foreground',
+        label: 'Not applicable',
+    },
+};
+
+function resultTiming(result: VerificationResult): string {
+    if (result.timed_out) {
+        return 'timed out';
+    }
+
+    if (result.outcome === 'skipped' || result.outcome === 'not_applicable') {
+        return outcomeMarks[result.outcome].label.toLowerCase();
+    }
+
+    return seconds(result.duration_ms);
 }
 
 function seconds(durationMs: number): string {
@@ -310,7 +346,8 @@ function lineClass(line: string): string {
                         verification.status === 'passed'
                             ? 'default'
                             : verification.status === 'queued' ||
-                                verification.status === 'running'
+                                verification.status === 'running' ||
+                                verification.status === 'unverified'
                               ? 'secondary'
                               : 'destructive'
                     "
@@ -347,6 +384,14 @@ function lineClass(line: string): string {
                 minutes…
             </p>
 
+            <p
+                v-if="verification?.status === 'unverified'"
+                class="text-sm text-muted-foreground"
+            >
+                Every check passed, but no protected acceptance tests apply to
+                this change, so its behaviour is not independently verified.
+            </p>
+
             <Alert v-if="verification?.error" variant="destructive">
                 <AlertTitle>Verification could not finish</AlertTitle>
                 <AlertDescription>{{ verification.error }}</AlertDescription>
@@ -366,28 +411,29 @@ function lineClass(line: string): string {
                         >
                             <span class="flex items-center gap-2 text-sm">
                                 <span
-                                    :class="
-                                        resultPassed(result)
-                                            ? 'text-green-700 dark:text-green-400'
-                                            : 'text-red-700 dark:text-red-400'
-                                    "
+                                    :class="outcomeMarks[result.outcome].class"
+                                    aria-hidden="true"
                                     >{{
-                                        resultPassed(result) ? '✓' : '✗'
+                                        outcomeMarks[result.outcome].mark
                                     }}</span
                                 >
+                                <span class="sr-only">{{
+                                    outcomeMarks[result.outcome].label
+                                }}</span>
                                 {{ result.name }}
                                 <Badge variant="outline">{{
                                     result.stage
                                 }}</Badge>
+                                <Badge
+                                    v-if="result.stage === 'acceptance'"
+                                    variant="secondary"
+                                    >protected</Badge
+                                >
                             </span>
                             <span
                                 class="font-mono text-xs text-muted-foreground"
                             >
-                                {{
-                                    result.timed_out
-                                        ? 'timed out'
-                                        : seconds(result.duration_ms)
-                                }}
+                                {{ resultTiming(result) }}
                             </span>
                         </CollapsibleTrigger>
                         <CollapsibleContent>

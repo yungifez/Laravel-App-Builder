@@ -65,13 +65,14 @@ run_acceptance() {
     rm -rf tests/Acceptance
     mkdir -p tests/Acceptance
     cp -R "$acceptance/Support" tests/Acceptance/
+    cp "$acceptance/phpunit.xml" tests/Acceptance/phpunit.xml
     for file in "$@"; do
         mkdir -p "tests/Acceptance/$(dirname "$file")"
         cp "$acceptance/$file" "tests/Acceptance/$file"
     done
 
     set +e
-    php artisan test tests/Acceptance
+    php vendor/bin/phpunit --configuration tests/Acceptance/phpunit.xml
     local status=$?
     set -e
     rm -rf tests/Acceptance

@@ -61,6 +61,15 @@ return [
     'verification' => [
         'workspace_driver' => env('BUILDER_VERIFICATION_DRIVER', 'local'),
 
+        // Platform-owned acceptance suites and their runner configuration.
+        // They are copied fresh into tests/Acceptance after the checks, replacing
+        // anything the change put there, and run with this directory's
+        // phpunit.xml. Relative paths resolve from the application's base path.
+        'acceptance' => [
+            'path' => env('BUILDER_ACCEPTANCE_PATH'),
+            'timeout' => 600,
+        ],
+
         'setup' => [
             ['name' => 'Create .env', 'command' => ['cp', '.env.example', '.env'], 'timeout' => 30],
             ['name' => 'Install PHP dependencies', 'command' => ['composer', 'install', '--no-interaction', '--prefer-dist', '--no-progress'], 'timeout' => 900],

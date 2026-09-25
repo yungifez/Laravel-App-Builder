@@ -26,6 +26,7 @@ class FeatureRequestFlowTest extends TestCase
 
         $request = $project->featureRequests()->sole();
         $this->assertSame(FeatureRequestStatus::Generated, $request->status);
+        $this->assertSame(['Invitations/ContractTest.php'], $request->acceptance);
 
         $this->get(route('feature-requests.show', $request))
             ->assertOk()

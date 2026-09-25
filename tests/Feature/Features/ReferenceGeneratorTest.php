@@ -23,6 +23,7 @@ class ReferenceGeneratorTest extends TestCase
         $this->assertSame('team-invitations', $change->solutionKey);
         $this->assertStringContainsString('members:invite', $change->patch);
         $this->assertSame('permission', $change->steps[0]['key']);
+        $this->assertSame(['Invitations/ContractTest.php'], $change->acceptance);
     }
 
     public function test_a_follow_up_is_answered_by_the_solution_for_its_parent_and_step()
