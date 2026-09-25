@@ -10,6 +10,17 @@ use RuntimeException;
 abstract class TestCase extends BaseTestCase
 {
     /**
+     * Render pages without the Vite manifest, so the suite does not depend on
+     * a prior `npm run build`.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->withoutVite();
+    }
+
+    /**
      * Set up the testing traits, refusing to continue unless the default
      * connection points at the disposable PostgreSQL test database.
      *
