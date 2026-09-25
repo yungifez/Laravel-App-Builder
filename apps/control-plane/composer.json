@@ -9,7 +9,7 @@
     ],
     "license": "MIT",
     "require": {
-        "php": "^8.3",
+        "php": "^8.4",
         "inertiajs/inertia-laravel": "^3.0",
         "laravel/chisel": "^0.1.0",
         "laravel/fortify": "^1.37.2",
@@ -44,9 +44,9 @@
         "setup": [
             "composer install",
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
-            "@php artisan key:generate",
+            "@php -r \"exit(preg_match('/^APP_KEY=\\S/m', (string) file_get_contents('.env')) ? 0 : 1);\" || php artisan key:generate --ansi",
             "@php artisan migrate --force",
-            "npm install",
+            "npm ci",
             "npm run build"
         ],
         "dev": [
@@ -61,9 +61,13 @@
         ],
         "ci:check": [
             "Composer\\Config::disableProcessTimeout",
-            "npm run check",
-            "npm run types:check",
-            "@test"
+            "@check:format",
+            "@check:types",
+            "npm run check:format",
+            "npm run build",
+            "npm run check:lint",
+            "npm run check:types",
+            "@check:tests"
         ],
         "types:check": [
             "phpstan analyse"
@@ -72,6 +76,16 @@
             "@php artisan config:clear --ansi",
             "@lint:check",
             "@types:check",
+            "@php artisan test"
+        ],
+        "check:format": [
+            "@lint:check"
+        ],
+        "check:types": [
+            "@types:check"
+        ],
+        "check:tests": [
+            "@php artisan config:clear --ansi",
             "@php artisan test"
         ],
         "post-autoload-dump": [
@@ -86,7 +100,6 @@
         ],
         "post-create-project-cmd": [
             "@php artisan key:generate --ansi",
-            "@php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
             "@php artisan migrate --graceful --ansi"
         ],
         "pre-package-uninstall": [
@@ -97,8 +110,7 @@
         "laravel": {
             "dont-discover": [],
             "installer": {
-                "post-create-project": [
-                ]
+                "post-create-project": []
             }
         }
     },
