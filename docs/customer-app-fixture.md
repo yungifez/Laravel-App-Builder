@@ -87,3 +87,24 @@ inspect verification.
 | Control plane    | all seven checks                                           | passed, except `npm run build` (same font block)                   |
 
 Hosted CI has not run.
+
+### Browser smoke check
+
+Run on 2026-09-25 against a throwaway copy of the fixture with
+`01-team-invitations.patch` applied. The copy's Vite config had its font entry
+removed only so `npm run build` could run in this sandbox; the repository is
+unchanged. Data came from `migrate --seed`, served with `php artisan serve`, and
+the check was driven by Playwright/Chromium.
+
+1. Logged in as the owner (`test@example.com`): the Team page shows Acme with
+   its owner, admin and member.
+2. Changed Member User's role to Admin with the role select and clicked
+   Update. After a reload the role shows Admin, so the select submits inside
+   Inertia's `<Form>`.
+3. Invited `newbie@example.com` as Member: the pending invitation is listed.
+4. In a new session, registered `newbie@example.com`, verified the email through
+   the logged link, then opened the `Accept invitation:` link from the mail log.
+   The user lands on the Team page, is listed in Acme as Member, and does not
+   see the invite form.
+
+Result: pass.
