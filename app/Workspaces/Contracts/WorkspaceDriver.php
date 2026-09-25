@@ -20,6 +20,12 @@ interface WorkspaceDriver
     public function exec(string $workspaceId, array $command, int $timeoutSeconds): CommandResult;
 
     /**
+     * Copy a local directory into the workspace's working directory, skipping
+     * dependency folders, git metadata and environment files.
+     */
+    public function copyDirectory(string $workspaceId, string $sourcePath): void;
+
+    /**
      * Write a file inside the workspace, creating parent directories.
      */
     public function writeFile(string $workspaceId, string $path, string $contents): void;

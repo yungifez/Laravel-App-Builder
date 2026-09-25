@@ -81,6 +81,21 @@ class DockerDriver implements WorkspaceDriver
     }
 
     /**
+     * Stream the directory into the container as a tar archive.
+     */
+    public function copyDirectory(string $workspaceId, string $sourcePath): void
+    {
+        $result = Process::run([
+            'sh', '-c', 'tar -C "$1" '.CopyExclusions::tarFlags().' -cf - . | "$2" exec --interactive "$3" tar -C "$4" -xf -',
+            'sh', $sourcePath, $this->binary, $workspaceId, $this->workdir,
+        ]);
+
+        if ($result->failed()) {
+            throw new RuntimeException('Could not copy the project into the workspace: '.trim($result->errorOutput()));
+        }
+    }
+
+    /**
      * Write a file through stdin, passing the path as an argument rather than
      * interpolating it into the shell script.
      */
