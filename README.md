@@ -5,43 +5,38 @@ development foundation (work order G0.1): a Laravel + Inertia + Vue control-plan
 app with starter authentication, an internal landing screen, local PostgreSQL and
 Redis, a guarded test database, standard check commands and a CI workflow.
 
+The repository root is the Laravel application (Laravel 13, Inertia 3, Vue 3,
+created from the official Vue starter kit), laid out the standard Laravel way.
+
 ## Layout
 
+Besides the standard Laravel directories (`app/`, `config/`, `database/`,
+`resources/`, `routes/`, `tests/`, …):
+
 ```
-.
-├── apps/control-plane/      Laravel 13 + Inertia 3 + Vue 3 app (official Vue starter kit)
 ├── compose.yaml             Local PostgreSQL and Redis (trusted local services only)
 ├── docker/postgres/         Test database init script and manual re-run helper
 ├── docs/                    Handoff records (development-baseline.md)
-└── .github/workflows/ci.yml CI for the control plane
+└── .github/workflows/ci.yml CI
 ```
 
-**Where to run commands:** every `composer`, `npm` and `php artisan` command runs
-from `apps/control-plane`. Every `docker compose` command runs from the
-repository root.
+Run every command from the repository root.
 
 ## Prerequisites
 
 - PHP 8.4 with the `pdo_pgsql` and `redis` extensions
 - Composer 2
-- Node 22.22.2 (see `apps/control-plane/.nvmrc`) and npm
+- Node 22.22.2 (see `.nvmrc`) and npm
 - Docker with Compose v2
 
 ## First-time setup
 
-From the repository root, start the services and wait until both are `healthy`:
-
 ```sh
+cp -n .env.example .env
 docker compose up -d
-docker compose ps
-```
-
-From `apps/control-plane`:
-
-```sh
+docker compose ps            # wait until both services are (healthy)
 composer install
 npm ci
-cp -n .env.example .env
 grep -q '^APP_KEY=.' .env || php artisan key:generate
 php artisan migrate
 npm run build
@@ -51,8 +46,6 @@ npm run build
 `.env` or regenerates an existing `APP_KEY`.
 
 ## Running the app
-
-From `apps/control-plane`:
 
 ```sh
 composer dev
@@ -78,21 +71,22 @@ The app includes the Laravel AI SDK (`laravel/ai`) with its published default
 configuration in `config/ai.php`. Its migration creates the
 `agent_conversations` and `agent_conversation_messages` tables. To call a
 provider, set that provider's key (for example `OPENAI_API_KEY` or
-`ANTHROPIC_API_KEY`) in `apps/control-plane/.env`. Nothing in the app uses the
+`ANTHROPIC_API_KEY`) in `.env`. Nothing in the app uses the
 SDK yet, and no key is needed to run the app or the tests.
 
 ## Local services
 
-| Service    | Image           | Host port (override)                   |
-| ---------- | --------------- | -------------------------------------- |
-| `postgres` | `postgres:18.6` | `127.0.0.1:5432` (`FORWARD_DB_PORT`)   |
+| Service    | Image           | Host port (override)                    |
+| ---------- | --------------- | --------------------------------------- |
+| `postgres` | `postgres:18.6` | `127.0.0.1:5432` (`FORWARD_DB_PORT`)    |
 | `redis`    | `redis:8.10`    | `127.0.0.1:6379` (`FORWARD_REDIS_PORT`) |
 
-Ports bind to loopback only. Override them, and the database names and
-credentials (`DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `TEST_DB_DATABASE`,
-`TEST_DB_USERNAME`, `TEST_DB_PASSWORD`), in a root `.env` file (git-ignored). If
-you change a port, set `DB_PORT` / `REDIS_PORT` to match in
-`apps/control-plane/.env`.
+Ports bind to loopback only. Like Laravel Sail, Compose reads the app's `.env`,
+so one file configures both: `DB_DATABASE`, `DB_USERNAME` and `DB_PASSWORD` set
+the development database, and `FORWARD_DB_PORT`, `FORWARD_REDIS_PORT`,
+`TEST_DB_DATABASE`, `TEST_DB_USERNAME` and `TEST_DB_PASSWORD` override the
+remaining defaults. If you change a forwarded port, set `DB_PORT` / `REDIS_PORT`
+to match.
 
 Data lives in the named volumes `postgres-data` and `redis-data`.
 `docker compose stop` and `docker compose down` keep them.
@@ -105,8 +99,7 @@ The first time the `postgres-data` volume is initialized,
 development database, so the test role cannot reach it.
 
 Init scripts do not run against an existing volume. To create the test database
-on an existing volume, run this from the repository root. You can run it more
-than once safely:
+on an existing volume, run this. You can run it more than once safely:
 
 ```sh
 ./docker/postgres/create-test-database.sh
@@ -124,17 +117,17 @@ This is not part of routine setup.
 
 ## Checks
 
-Run from `apps/control-plane`. None of these modify tracked files.
+None of these modify tracked files.
 
-| Command                 | What it runs                                         |
-| ----------------------- | ---------------------------------------------------- |
-| `composer check:format` | Pint in test mode                                    |
-| `composer check:types`  | PHPStan / Larastan using `phpstan.neon`              |
-| `npm run check:format`  | Oxfmt in check mode (via Vite+)                      |
-| `npm run build`         | Production frontend build                            |
-| `npm run check:lint`    | Oxlint without `--fix` (via Vite+)                   |
-| `npm run check:types`   | `vue-tsc --noEmit`                                   |
-| `composer check:tests`  | `config:clear`, then the full suite on the test DB  |
+| Command                 | What it runs                                       |
+| ----------------------- | -------------------------------------------------- |
+| `composer check:format` | Pint in test mode                                  |
+| `composer check:types`  | PHPStan / Larastan using `phpstan.neon`            |
+| `npm run check:format`  | Oxfmt in check mode (via Vite+)                    |
+| `npm run build`         | Production frontend build                          |
+| `npm run check:lint`    | Oxlint without `--fix` (via Vite+)                 |
+| `npm run check:types`   | `vue-tsc --noEmit`                                 |
+| `composer check:tests`  | `config:clear`, then the full suite on the test DB |
 
 `npm run build` also generates the Wayfinder TypeScript route helpers
 (git-ignored) that `check:lint` and `check:types` import. On a fresh checkout,

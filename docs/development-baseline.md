@@ -5,23 +5,23 @@ Recorded 2026-09-25 on branch `g0-1-foundation`. The repository started empty
 
 ## Toolchain
 
-| Tool             | Version                                                    | Where pinned                                   |
-| ---------------- | ---------------------------------------------------------- | ---------------------------------------------- |
-| PHP              | 8.4.19 (NTS), extensions `pdo_pgsql`, `redis` (phpredis 6.3.0) | `composer.json` `"php": "^8.4"`; CI `8.4`  |
-| Composer         | 2.8.12                                                     | CI `tools: composer:2.8.12`                    |
-| Node             | 22.22.2                                                    | `apps/control-plane/.nvmrc`; CI reads it      |
-| npm              | 10.9.7 (bundled with Node 22.22.2)                         | follows Node                                   |
-| Laravel          | laravel/framework v13.33.0                                 | `composer.lock`                                |
-| Inertia (server) | inertiajs/inertia-laravel v3.4.0                           | `composer.lock`                                |
-| Inertia (client) | @inertiajs/vue3 3.7.1, @inertiajs/vite 3.7.1               | `package-lock.json`                            |
-| Vue              | 3.5.43                                                     | `package-lock.json`                            |
-| Auth             | laravel/fortify v1.40.0                                    | `composer.lock`                                |
-| AI SDK           | laravel/ai v1.0.0                                          | `composer.lock`                                |
-| Static analysis  | larastan/larastan v3.12.2, phpstan/phpstan 2.2.16           | `composer.lock`                                |
-| Formatting (PHP) | laravel/pint v1.32.1                                       | `composer.lock`                                |
-| Tests            | phpunit/phpunit 12.5.36                                    | `composer.lock`                                |
-| Frontend tooling | vite-plus 0.3.0 (Vite 8.2.2, Oxlint 1.79.0, Oxfmt 0.64.0), vue-tsc 2.2.12, TypeScript 5.9.3, Tailwind CSS 4.3.3 | `package-lock.json` |
-| Docker           | Engine 29.3.1, Compose v5.1.1                              | not pinned (host tool)                         |
+| Tool             | Version                                                                                                         | Where pinned                              |
+| ---------------- | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| PHP              | 8.4.19 (NTS), extensions `pdo_pgsql`, `redis` (phpredis 6.3.0)                                                  | `composer.json` `"php": "^8.4"`; CI `8.4` |
+| Composer         | 2.8.12                                                                                                          | CI `tools: composer:2.8.12`               |
+| Node             | 22.22.2                                                                                                         | `.nvmrc`; CI reads it                     |
+| npm              | 10.9.7 (bundled with Node 22.22.2)                                                                              | follows Node                              |
+| Laravel          | laravel/framework v13.33.0                                                                                      | `composer.lock`                           |
+| Inertia (server) | inertiajs/inertia-laravel v3.4.0                                                                                | `composer.lock`                           |
+| Inertia (client) | @inertiajs/vue3 3.7.1, @inertiajs/vite 3.7.1                                                                    | `package-lock.json`                       |
+| Vue              | 3.5.43                                                                                                          | `package-lock.json`                       |
+| Auth             | laravel/fortify v1.40.0                                                                                         | `composer.lock`                           |
+| AI SDK           | laravel/ai v1.0.0                                                                                               | `composer.lock`                           |
+| Static analysis  | larastan/larastan v3.12.2, phpstan/phpstan 2.2.16                                                               | `composer.lock`                           |
+| Formatting (PHP) | laravel/pint v1.32.1                                                                                            | `composer.lock`                           |
+| Tests            | phpunit/phpunit 12.5.36                                                                                         | `composer.lock`                           |
+| Frontend tooling | vite-plus 0.3.0 (Vite 8.2.2, Oxlint 1.79.0, Oxfmt 0.64.0), vue-tsc 2.2.12, TypeScript 5.9.3, Tailwind CSS 4.3.3 | `package-lock.json`                       |
+| Docker           | Engine 29.3.1, Compose v5.1.1                                                                                   | not pinned (host tool)                    |
 
 The CI runner resolves PHP by major.minor only (`setup-php` does not pin
 patches). The job prints the exact versions in its "Print toolchain versions"
@@ -29,7 +29,9 @@ step.
 
 **Starter kit:** `laravel/vue-starter-kit` `dev-main` at
 `d282e817c6c2fa1bd475f7c42ea785ccfc67d0ab` (2026-09-21), installed with
-`composer create-project laravel/vue-starter-kit:dev-main apps/control-plane`.
+`composer create-project laravel/vue-starter-kit:dev-main` (originally into
+`apps/control-plane`, as the work order prescribed; later moved to the
+repository root to follow Laravel convention).
 It was then configured with the starter's own `php artisan install:features`
 using its default features: registration, email verification, two-factor
 authentication, passkeys and password confirmation. The latest tagged release
@@ -42,8 +44,7 @@ describe: `composer require laravel/ai`, then
 (config, `stubs/` and migration), then `php artisan migrate`. `config/ai.php` is
 the unmodified published default. No agents, tools or provider keys exist yet.
 
-**Lockfiles:** `apps/control-plane/composer.lock`,
-`apps/control-plane/package-lock.json` (npm).
+**Lockfiles:** `composer.lock`, `package-lock.json` (npm).
 
 ### Images
 
@@ -54,22 +55,22 @@ the unmodified published default. No agents, tools or provider keys exist yet.
 
 ## Services and configuration
 
-| Service    | Container port | Host binding                            | Volume (mount path)                      | Health check     |
-| ---------- | -------------- | --------------------------------------- | ---------------------------------------- | ---------------- |
-| `postgres` | 5432           | `127.0.0.1:${FORWARD_DB_PORT:-5432}`    | `postgres-data` (`/var/lib/postgresql`)  | `pg_isready`     |
-| `redis`    | 6379           | `127.0.0.1:${FORWARD_REDIS_PORT:-6379}` | `redis-data` (`/data`)                   | `redis-cli ping` |
+| Service    | Container port | Host binding                            | Volume (mount path)                     | Health check     |
+| ---------- | -------------- | --------------------------------------- | --------------------------------------- | ---------------- |
+| `postgres` | 5432           | `127.0.0.1:${FORWARD_DB_PORT:-5432}`    | `postgres-data` (`/var/lib/postgresql`) | `pg_isready`     |
+| `redis`    | 6379           | `127.0.0.1:${FORWARD_REDIS_PORT:-6379}` | `redis-data` (`/data`)                  | `redis-cli ping` |
 
 The PostgreSQL 18 image stores data under
 `/var/lib/postgresql/18/docker`, so the volume is mounted at
 `/var/lib/postgresql`.
 
-Compose overrides (from a git-ignored root `.env`, with defaults):
+Compose overrides (read from the app's git-ignored `.env`, as Laravel Sail does, with defaults):
 `FORWARD_DB_PORT` (5432), `FORWARD_REDIS_PORT` (6379), `DB_DATABASE`
 (`control_plane`), `DB_USERNAME` (`control_plane`), `DB_PASSWORD`
 (`control_plane`), `TEST_DB_DATABASE` (`control_plane_test`), `TEST_DB_USERNAME`
 (`control_plane_test`), `TEST_DB_PASSWORD` (`control_plane_test`).
 
-App environment (`apps/control-plane/.env.example`): `DB_CONNECTION=pgsql`
+App environment (`.env.example`): `DB_CONNECTION=pgsql`
 pointing at `control_plane`, `CACHE_STORE=redis`, `QUEUE_CONNECTION=redis`,
 `REDIS_CLIENT=phpredis`, `SESSION_DRIVER=database`, `MAIL_MAILER=log`, and an
 empty `APP_KEY`. Redis client used: **phpredis**, so `predis/predis` is not
@@ -87,7 +88,7 @@ needed.
   initialized. It revokes `PUBLIC` connect on `control_plane`, so the test role
   gets `permission denied for database "control_plane"`.
 - For an existing volume, run `./docker/postgres/create-test-database.sh` from
-  the root. It is idempotent and was verified by re-running it.
+  the repository root. It is idempotent and was verified by re-running it.
 - Guard: `Tests\TestCase::setUpTraits()` calls `ensureDisposableTestDatabase()`
   before any database trait runs. It throws unless the default connection is
   `pgsql` and the database name ends in `_test`. It hooks `setUpTraits()`
@@ -100,18 +101,13 @@ needed.
 
 ## Commands
 
-Root:
+All commands run from the repository root.
 
 ```sh
 docker compose up -d        # start services
 docker compose ps           # both should be (healthy)
 docker compose stop         # stop, keeping data
 ./docker/postgres/create-test-database.sh   # (re)create test DB on an existing volume
-```
-
-`apps/control-plane`:
-
-```sh
 composer install && npm ci
 cp -n .env.example .env && (grep -q '^APP_KEY=.' .env || php artisan key:generate)
 php artisan migrate
@@ -127,15 +123,15 @@ php artisan db:seed          # optional, local only: test@example.com / password
 Latest local run on 2026-09-25, after reverting fonts to the Bunny default
 and adding `laravel/ai`:
 
-| Command                 | Result | Notes                                                        |
-| ----------------------- | ------ | ------------------------------------------------------------ |
-| `composer check:format` | passed | `pint --parallel --test`                                     |
-| `composer check:types`  | passed | Larastan **level 7** (the starter's committed config), paths `app/`, `bootstrap/app.php`, `config/`, `database/`, `routes/`; no baseline, no excludes, no `ignoreErrors` |
-| `npm run check:format`  | passed | `vp fmt --check` (Oxfmt), 69 files                          |
+| Command                 | Result           | Notes                                                                                                                                                                                                                                                   |
+| ----------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `composer check:format` | passed           | `pint --parallel --test`                                                                                                                                                                                                                                |
+| `composer check:types`  | passed           | Larastan **level 7** (the starter's committed config), paths `app/`, `bootstrap/app.php`, `config/`, `database/`, `routes/`; no baseline, no excludes, no `ignoreErrors`                                                                                |
+| `npm run check:format`  | passed           | `vp fmt --check` (Oxfmt), 69 files                                                                                                                                                                                                                      |
 | `npm run build`         | **blocked here** | Fails in this sandbox only: its egress policy returns `403` for `fonts.bunny.net`, which the starter's default `bunny()` font provider fetches during the build. It passed earlier with the same code except the font provider. Expected to pass in CI. |
-| `npm run check:lint`    | passed | `vp lint` (Oxlint, type-aware, warnings denied, no `--fix`) |
-| `npm run check:types`   | passed | `vue-tsc --noEmit`                                          |
-| `composer check:tests`  | passed | 47 tests, 163 assertions, on `control_plane_test`; no build needed (`withoutVite()`) |
+| `npm run check:lint`    | passed           | `vp lint` (Oxlint, type-aware, warnings denied, no `--fix`)                                                                                                                                                                                             |
+| `npm run check:types`   | passed           | `vue-tsc --noEmit`                                                                                                                                                                                                                                      |
+| `composer check:tests`  | passed           | 47 tests, 163 assertions, on `control_plane_test`; no build needed (`withoutVite()`)                                                                                                                                                                    |
 
 Hosted CI (`.github/workflows/ci.yml`) has **not** run. The repository has no
 remote.
@@ -174,14 +170,14 @@ throwaway script outside the repository.
 
 - Date: 2026-09-25, against `php artisan serve` at `http://127.0.0.1:8000`.
 - Steps and results:
-  1. Guest `GET /dashboard` → redirected to `/login`.
-  2. Registered a new user at `/register` → redirected to `/email/verify`.
-  3. Read the `Verify Email Address:` link from `storage/logs/laravel.log` and
-     opened it → `/dashboard`.
-  4. The landing screen shows "Internal builder prototype" and the "No projects
-     yet" empty state.
-  5. Logged out, then `GET /dashboard` → `/login`.
-  6. Logged back in → `/dashboard`.
+    1. Guest `GET /dashboard` → redirected to `/login`.
+    2. Registered a new user at `/register` → redirected to `/email/verify`.
+    3. Read the `Verify Email Address:` link from `storage/logs/laravel.log` and
+       opened it → `/dashboard`.
+    4. The landing screen shows "Internal builder prototype" and the "No projects
+       yet" empty state.
+    5. Logged out, then `GET /dashboard` → `/login`.
+    6. Logged back in → `/dashboard`.
 - Result: pass.
 
 ## Deviations from the work order
@@ -203,35 +199,35 @@ throwaway script outside the repository.
   application code use it yet.
 - **PHPStan level:** kept the starter's existing config at level 7, which is
   stricter than the level 6 floor.
-- **Workflow location:** the starter's `apps/control-plane/.github/workflows/tests.yml`
-  was moved to `.github/workflows/ci.yml` and adapted, because GitHub reads
-  workflows only from the repository root. `dependabot.yml` moved with it.
+- **Workflow location:** the starter's `.github/workflows/tests.yml` was
+  replaced by `.github/workflows/ci.yml` rather than adding a parallel
+  workflow. `dependabot.yml` is kept.
+- **Layout:** the work order put the app in `apps/control-plane`. It now lives at
+  the repository root, following Laravel convention at the project owner's
+  request. Every command runs from the root.
 
 ## Repository layout
 
 ```
-.
-├── AGENTS.md, README.md, compose.yaml, .gitignore
-├── .github/workflows/ci.yml, .github/dependabot.yml
-├── docker/postgres/init/01-create-test-database.sh
-├── docker/postgres/create-test-database.sh
-├── docs/development-baseline.md
-└── apps/control-plane/        Laravel app (starter layout, unchanged structure)
-    ├── app/                   Starter actions (Fortify), controllers, models (User only)
-    ├── config/ai.php          Laravel AI SDK config (published default)
-    ├── database/              Starter + laravel/ai migrations; seeder guarded to local
-    ├── stubs/                 laravel/ai make:agent / make:tool stubs
-    ├── resources/js/pages/Dashboard.vue   Internal landing screen
-    ├── tests/TestCase.php     Test database guard
-    └── phpunit.xml, phpstan.neon, pint.json, vite.config.ts, .nvmrc
+.                          Laravel app root (starter layout, unchanged structure)
+├── app/                   Starter actions (Fortify), controllers, models (User only)
+├── config/ai.php          Laravel AI SDK config (published default)
+├── database/              Starter + laravel/ai migrations; seeder guarded to local
+├── resources/js/pages/Dashboard.vue   Internal landing screen
+├── stubs/                 laravel/ai make:agent / make:tool stubs
+├── tests/TestCase.php     Test database guard
+├── compose.yaml           PostgreSQL and Redis
+├── docker/postgres/       Test database init script and re-run helper
+├── docs/                  This baseline
+├── .github/               ci.yml, dependabot.yml
+└── AGENTS.md, README.md, phpunit.xml, phpstan.neon, pint.json, vite.config.ts, .nvmrc
 ```
 
 ## Integration points for G0.2
 
-- **New applications:** `apps/` holds applications. The customer-application
-  fixture should be a separate app with its own `composer.json`,
-  `package.json`, lockfiles and its own database. This work order imposes no
-  folder or structure requirements on it.
+- **Customer application:** the customer-application fixture is a separate
+  Laravel app with its own `composer.json`, `package.json`, lockfiles and
+  database. The control plane must not assume where it lives.
 - **Separate identities:** the control plane's `users` table (Fortify auth) is
   platform identity only. A customer fixture must use its own database and user
   tables, never `control_plane` or `control_plane_test`.

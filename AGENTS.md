@@ -19,8 +19,9 @@ take precedence for files below it.
 - **No fixed customer-app folder requirements.** Do not add code or config that
   assumes customer applications live in a specific folder or have a specific
   structure.
-- **Where to run commands:** `composer`, `npm` and `php artisan` from
-  `apps/control-plane`; `docker compose` from the repository root.
+- **Layout:** the repository root is the Laravel application. Keep the standard
+  Laravel directory structure; do not introduce monorepo-style `apps/` folders.
+  Run every command from the repository root.
 - **Run the checks before you report.** Run all seven commands listed in
   `README.md` → Checks. Report each result truthfully, including failures and
   anything you did not run.

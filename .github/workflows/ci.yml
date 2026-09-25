@@ -13,10 +13,6 @@ jobs:
   control-plane:
     runs-on: ubuntu-24.04
 
-    defaults:
-      run:
-        working-directory: apps/control-plane
-
     # Same image tags as compose.yaml. Tests only use PostgreSQL; Redis is here
     # so the job mirrors the local service set.
     services:
@@ -68,9 +64,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version-file: apps/control-plane/.nvmrc
+          node-version-file: .nvmrc
           cache: npm
-          cache-dependency-path: apps/control-plane/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Print toolchain versions
         run: php -v && composer --version && node -v && npm -v
