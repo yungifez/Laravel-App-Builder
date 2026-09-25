@@ -1,9 +1,9 @@
 diff --git a/app/Actions/Teams/AcceptTeamInvitation.php b/app/Actions/Teams/AcceptTeamInvitation.php
 new file mode 100644
-index 0000000..10a1a3f
+index 0000000..a771a00
 --- /dev/null
 +++ b/app/Actions/Teams/AcceptTeamInvitation.php
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,40 @@
 +<?php
 +
 +namespace App\Actions\Teams;
@@ -11,6 +11,7 @@ index 0000000..10a1a3f
 +use App\Models\Team;
 +use App\Models\TeamInvitation;
 +use App\Models\User;
++use Illuminate\Database\Eloquent\ModelNotFoundException;
 +use Illuminate\Support\Facades\DB;
 +
 +class AcceptTeamInvitation
@@ -18,10 +19,17 @@ index 0000000..10a1a3f
 +    /**
 +     * Add the user to the invitation's team with the invited role, make it
 +     * their current team and consume the invitation.
++     *
++     * The invitation row is locked for the duration of the transaction, so of
++     * two simultaneous acceptances only one succeeds; the other finds the
++     * invitation gone.
++     *
++     * @throws ModelNotFoundException when the invitation was already used or cancelled.
 +     */
 +    public function handle(User $user, TeamInvitation $invitation): Team
 +    {
 +        return DB::transaction(function () use ($user, $invitation) {
++            $invitation = TeamInvitation::query()->lockForUpdate()->findOrFail($invitation->id);
 +            $team = $invitation->team;
 +
 +            if (! $user->belongsToTeam($team)) {
@@ -60,39 +68,66 @@ index 0000000..c6d8b7c
 +}
 diff --git a/app/Actions/Teams/InviteTeamMember.php b/app/Actions/Teams/InviteTeamMember.php
 new file mode 100644
-index 0000000..ae6d9b1
+index 0000000..50e60c1
 --- /dev/null
 +++ b/app/Actions/Teams/InviteTeamMember.php
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,54 @@
 +<?php
 +
 +namespace App\Actions\Teams;
 +
 +use App\Enums\TeamRole;
-+use App\Mail\TeamInvitationMail;
 +use App\Models\Team;
 +use App\Models\TeamInvitation;
-+use Illuminate\Support\Facades\Mail;
++use App\Notifications\TeamInvitationNotification;
++use Illuminate\Database\UniqueConstraintViolationException;
++use Illuminate\Support\Facades\DB;
++use Illuminate\Support\Facades\Notification;
++use Illuminate\Support\Str;
++use Illuminate\Validation\ValidationException;
 +
 +class InviteTeamMember
 +{
 +    /**
-+     * Invite someone to join the team with the given role and email them the invitation.
++     * Invite someone to join the team with the given role.
++     *
++     * The invitation is stored in a transaction and the email is queued to go
++     * out after it commits. An expired invitation for the same address is
++     * replaced. A concurrent duplicate is rejected by the database's unique
++     * index and reported as a validation error without a second email.
++     *
++     * @throws ValidationException
 +     */
 +    public function handle(Team $team, string $email, TeamRole $role): TeamInvitation
 +    {
-+        $invitation = $team->invitations()->create([
-+            'email' => $email,
-+            'role' => $role,
-+        ]);
++        $token = Str::random(64);
 +
-+        Mail::to($email)->send(new TeamInvitationMail($invitation));
++        try {
++            $invitation = DB::transaction(function () use ($team, $email, $role, $token) {
++                $team->invitations()->where('email', $email)->where('expires_at', '<=', now())->delete();
++
++                $invitation = $team->invitations()->create([
++                    'email' => $email,
++                    'role' => $role,
++                    'token_hash' => TeamInvitation::hashToken($token),
++                    'expires_at' => now()->addDays((int) config('teams.invitations.expires_after_days')),
++                ]);
++
++                Notification::route('mail', $email)->notify(new TeamInvitationNotification($invitation, $token));
++
++                return $invitation;
++            });
++        } catch (UniqueConstraintViolationException) {
++            throw ValidationException::withMessages([
++                'email' => __('This person has already been invited to the team.'),
++            ]);
++        }
 +
 +        return $invitation;
 +    }
 +}
 diff --git a/app/Http/Controllers/Settings/TeamController.php b/app/Http/Controllers/Settings/TeamController.php
-index c1d0b4d..2f62b68 100644
+index c1d0b4d..379bdf6 100644
 --- a/app/Http/Controllers/Settings/TeamController.php
 +++ b/app/Http/Controllers/Settings/TeamController.php
 @@ -8,6 +8,7 @@
@@ -103,7 +138,7 @@ index c1d0b4d..2f62b68 100644
  use Illuminate\Http\RedirectResponse;
  use Illuminate\Http\Request;
  use Illuminate\Support\Facades\Gate;
-@@ -31,6 +32,13 @@ public function edit(Request $request): Response
+@@ -31,6 +32,15 @@ public function edit(Request $request): Response
          return Inertia::render('settings/Team', [
              'team' => $team->only('id', 'name', 'personal_team'),
              'members' => TeamMemberResource::collection($team->members()->orderBy('name')->get())->resolve($request),
@@ -113,11 +148,13 @@ index c1d0b4d..2f62b68 100644
 +                    'email' => $invitation->email,
 +                    'role' => $invitation->role->value,
 +                    'role_label' => $invitation->role->label(),
++                    'expires_at' => $invitation->expires_at->toIso8601String(),
++                    'expired' => $invitation->isExpired(),
 +                ]),
              'teams' => $user->teams()->orderBy('name')->get(['teams.id', 'teams.name'])
                  ->map(fn (Team $team) => $team->only('id', 'name')),
              'assignableRoles' => collect(TeamRole::assignable())
-@@ -39,6 +47,7 @@ public function edit(Request $request): Response
+@@ -39,6 +49,7 @@ public function edit(Request $request): Response
                  'updateTeam' => $user->can('update', $team),
                  'updateMemberRoles' => $user->can('updateMemberRole', $team),
                  'removeMembers' => $user->can('removeMember', $team),
@@ -178,10 +215,10 @@ index 0000000..66d969d
 +}
 diff --git a/app/Http/Controllers/TeamInvitationAcceptanceController.php b/app/Http/Controllers/TeamInvitationAcceptanceController.php
 new file mode 100644
-index 0000000..a7f9e0d
+index 0000000..e3a7a99
 --- /dev/null
 +++ b/app/Http/Controllers/TeamInvitationAcceptanceController.php
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,58 @@
 +<?php
 +
 +namespace App\Http\Controllers;
@@ -192,14 +229,45 @@ index 0000000..a7f9e0d
 +use Illuminate\Http\Request;
 +use Illuminate\Support\Facades\Gate;
 +use Inertia\Inertia;
++use Symfony\Component\HttpFoundation\Response;
 +
 +class TeamInvitationAcceptanceController extends Controller
 +{
 +    /**
-+     * Accept an invitation to join a team.
++     * Show the invitation so the invitee can accept it, or explain why they cannot.
 +     */
-+    public function __invoke(Request $request, TeamInvitation $invitation, AcceptTeamInvitation $acceptTeamInvitation): RedirectResponse
++    public function show(Request $request, string $token): Response
 +    {
++        $invitation = TeamInvitation::findByToken($token);
++
++        [$state, $status] = match (true) {
++            $invitation === null => ['invalid', 404],
++            $invitation->isExpired() => ['expired', 410],
++            ! $request->user()->can('accept', $invitation) => ['wrong-user', 403],
++            default => ['pending', 200],
++        };
++
++        return Inertia::render('team-invitations/Show', [
++            'state' => $state,
++            'token' => $state === 'pending' ? $token : null,
++            'invitation' => $state === 'invalid' || $invitation === null ? null : [
++                'team' => $invitation->team->name,
++                'role_label' => $invitation->role->label(),
++                'email' => $state === 'wrong-user' ? null : $invitation->email,
++            ],
++        ])->toResponse($request)->setStatusCode($status);
++    }
++
++    /**
++     * Accept the invitation.
++     */
++    public function store(Request $request, string $token, AcceptTeamInvitation $acceptTeamInvitation): RedirectResponse
++    {
++        $invitation = TeamInvitation::findByToken($token);
++
++        abort_if($invitation === null, 404);
++        abort_if($invitation->isExpired(), 410, __('This invitation has expired.'));
++
 +        Gate::authorize('accept', $invitation);
 +
 +        $team = $acceptTeamInvitation->handle($request->user(), $invitation);
@@ -248,10 +316,10 @@ index 0000000..8df8c05
 +}
 diff --git a/app/Http/Requests/Settings/TeamInvitationStoreRequest.php b/app/Http/Requests/Settings/TeamInvitationStoreRequest.php
 new file mode 100644
-index 0000000..6b70a28
+index 0000000..c0c8f1a
 --- /dev/null
 +++ b/app/Http/Requests/Settings/TeamInvitationStoreRequest.php
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,81 @@
 +<?php
 +
 +namespace App\Http\Requests\Settings;
@@ -261,6 +329,7 @@ index 0000000..6b70a28
 +use Closure;
 +use Illuminate\Contracts\Validation\ValidationRule;
 +use Illuminate\Foundation\Http\FormRequest;
++use Illuminate\Support\Str;
 +use Illuminate\Validation\Rule;
 +
 +class TeamInvitationStoreRequest extends FormRequest
@@ -271,6 +340,16 @@ index 0000000..6b70a28
 +    public function authorize(): bool
 +    {
 +        return $this->user()->can('inviteMember', $this->team());
++    }
++
++    /**
++     * Normalize the email address before validation.
++     */
++    protected function prepareForValidation(): void
++    {
++        if (is_string($this->input('email'))) {
++            $this->merge(['email' => Str::lower(trim($this->input('email')))]);
++        }
 +    }
 +
 +    /**
@@ -286,7 +365,9 @@ index 0000000..6b70a28
 +                'string',
 +                'email',
 +                'max:255',
-+                Rule::unique('team_invitations')->where('team_id', $this->team()->id),
++                Rule::unique('team_invitations')
++                    ->where('team_id', $this->team()->id)
++                    ->where(fn ($query) => $query->where('expires_at', '>', now())),
 +                function (string $attribute, mixed $value, Closure $fail) {
 +                    if ($this->team()->members()->where('email', $value)->exists()) {
 +                        $fail(__('This person already belongs to the team.'));
@@ -320,59 +401,6 @@ index 0000000..6b70a28
 +        return $team;
 +    }
 +}
-diff --git a/app/Mail/TeamInvitationMail.php b/app/Mail/TeamInvitationMail.php
-new file mode 100644
-index 0000000..917cbb6
---- /dev/null
-+++ b/app/Mail/TeamInvitationMail.php
-@@ -0,0 +1,47 @@
-+<?php
-+
-+namespace App\Mail;
-+
-+use App\Models\TeamInvitation;
-+use Illuminate\Bus\Queueable;
-+use Illuminate\Mail\Mailable;
-+use Illuminate\Mail\Mailables\Content;
-+use Illuminate\Mail\Mailables\Envelope;
-+use Illuminate\Queue\SerializesModels;
-+use Illuminate\Support\Facades\URL;
-+
-+class TeamInvitationMail extends Mailable
-+{
-+    use Queueable, SerializesModels;
-+
-+    /**
-+     * Create a new message instance.
-+     */
-+    public function __construct(public TeamInvitation $invitation) {}
-+
-+    /**
-+     * Get the message envelope.
-+     */
-+    public function envelope(): Envelope
-+    {
-+        return new Envelope(
-+            subject: __('Invitation to join :team', ['team' => $this->invitation->team->name]),
-+        );
-+    }
-+
-+    /**
-+     * Get the message content definition.
-+     */
-+    public function content(): Content
-+    {
-+        return new Content(
-+            markdown: 'mail.team-invitation',
-+            with: [
-+                'teamName' => $this->invitation->team->name,
-+                'roleLabel' => $this->invitation->role->label(),
-+                'acceptUrl' => URL::signedRoute('team-invitations.accept', $this->invitation),
-+                'registerUrl' => route('register'),
-+            ],
-+        );
-+    }
-+}
 diff --git a/app/Models/Team.php b/app/Models/Team.php
 index bce3dfc..607d9a0 100644
 --- a/app/Models/Team.php
@@ -404,10 +432,10 @@ index bce3dfc..607d9a0 100644
       */
 diff --git a/app/Models/TeamInvitation.php b/app/Models/TeamInvitation.php
 new file mode 100644
-index 0000000..cdc3d32
+index 0000000..f264b51
 --- /dev/null
 +++ b/app/Models/TeamInvitation.php
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,92 @@
 +<?php
 +
 +namespace App\Models;
@@ -415,21 +443,29 @@ index 0000000..cdc3d32
 +use App\Enums\TeamRole;
 +use Database\Factories\TeamInvitationFactory;
 +use Illuminate\Database\Eloquent\Attributes\Fillable;
++use Illuminate\Database\Eloquent\Attributes\Hidden;
++use Illuminate\Database\Eloquent\Builder;
 +use Illuminate\Database\Eloquent\Factories\HasFactory;
 +use Illuminate\Database\Eloquent\Model;
 +use Illuminate\Database\Eloquent\Relations\BelongsTo;
 +use Illuminate\Support\Carbon;
 +
 +/**
++ * A pending invitation to join a team. The invitation link carries a random
++ * token; only its SHA-256 hash is stored.
++ *
 + * @property int $id
 + * @property int $team_id
 + * @property string $email
 + * @property TeamRole $role
++ * @property string $token_hash
++ * @property Carbon $expires_at
 + * @property Carbon|null $created_at
 + * @property Carbon|null $updated_at
 + * @property-read Team $team
 + */
-+#[Fillable(['email', 'role'])]
++#[Fillable(['email', 'role', 'token_hash', 'expires_at'])]
++#[Hidden(['token_hash'])]
 +class TeamInvitation extends Model
 +{
 +    /** @use HasFactory<TeamInvitationFactory> */
@@ -444,7 +480,24 @@ index 0000000..cdc3d32
 +    {
 +        return [
 +            'role' => TeamRole::class,
++            'expires_at' => 'datetime',
 +        ];
++    }
++
++    /**
++     * Hash a plain invitation token for storage and lookup.
++     */
++    public static function hashToken(string $token): string
++    {
++        return hash('sha256', $token);
++    }
++
++    /**
++     * Find the invitation a plain token belongs to.
++     */
++    public static function findByToken(string $token): ?self
++    {
++        return self::query()->where('token_hash', self::hashToken($token))->first();
 +    }
 +
 +    /**
@@ -455,6 +508,88 @@ index 0000000..cdc3d32
 +    public function team(): BelongsTo
 +    {
 +        return $this->belongsTo(Team::class);
++    }
++
++    /**
++     * Determine if the invitation can no longer be accepted.
++     */
++    public function isExpired(): bool
++    {
++        return $this->expires_at->isPast();
++    }
++
++    /**
++     * Scope the query to invitations that have not expired.
++     *
++     * @param  Builder<self>  $query
++     */
++    public function scopeActive(Builder $query): void
++    {
++        $query->where('expires_at', '>', now());
++    }
++}
+diff --git a/app/Notifications/TeamInvitationNotification.php b/app/Notifications/TeamInvitationNotification.php
+new file mode 100644
+index 0000000..45ee1e1
+--- /dev/null
++++ b/app/Notifications/TeamInvitationNotification.php
+@@ -0,0 +1,58 @@
++<?php
++
++namespace App\Notifications;
++
++use App\Models\TeamInvitation;
++use Illuminate\Bus\Queueable;
++use Illuminate\Contracts\Queue\ShouldQueue;
++use Illuminate\Notifications\Messages\MailMessage;
++use Illuminate\Notifications\Notification;
++
++/**
++ * Emails the invitation link. It is queued and only dispatched after the
++ * surrounding database transaction commits, so a rolled-back invitation never
++ * sends mail. Delivery retries follow the queue's retry settings; delivery is
++ * at least once, not exactly once.
++ */
++class TeamInvitationNotification extends Notification implements ShouldQueue
++{
++    use Queueable;
++
++    /**
++     * Create a new notification instance.
++     */
++    public function __construct(public TeamInvitation $invitation, public string $token)
++    {
++        $this->afterCommit();
++    }
++
++    /**
++     * Get the notification's delivery channels.
++     *
++     * @return array<int, string>
++     */
++    public function via(object $notifiable): array
++    {
++        return ['mail'];
++    }
++
++    /**
++     * Get the mail representation of the notification.
++     */
++    public function toMail(object $notifiable): MailMessage
++    {
++        $teamName = $this->invitation->team->name;
++
++        return (new MailMessage)
++            ->subject(__('Invitation to join :team', ['team' => $teamName]))
++            ->line(__('You have been invited to join the :team team as :role.', [
++                'team' => $teamName,
++                'role' => $this->invitation->role->label(),
++            ]))
++            ->line(__('If you do not have an account yet, register with this email address first.'))
++            ->action(__('View invitation'), route('team-invitations.show', $this->token))
++            ->line(__('This invitation can be used once and expires on :date. If you did not expect it, you can ignore this email.', [
++                'date' => $this->invitation->expires_at->toFormattedDayDateString(),
++            ]));
 +    }
 +}
 diff --git a/app/Policies/TeamInvitationPolicy.php b/app/Policies/TeamInvitationPolicy.php
@@ -505,10 +640,10 @@ index 55a4e90..4cf03bf 100644
       * Determine whether the user can remove members from the team.
       */
 diff --git a/config/teams.php b/config/teams.php
-index 4e27794..6692293 100644
+index 4e27794..0d95b15 100644
 --- a/config/teams.php
 +++ b/config/teams.php
-@@ -12,7 +12,7 @@
+@@ -12,10 +12,24 @@
      | so changing them here changes who may perform each team action.
      |
      | Available permissions: "team:update", "members:update-role",
@@ -517,7 +652,24 @@ index 4e27794..6692293 100644
      |
      */
  
-@@ -26,6 +26,7 @@
++    /*
++    |--------------------------------------------------------------------------
++    | Team Invitations
++    |--------------------------------------------------------------------------
++    |
++    | Invitation links carry a single-use token (only its hash is stored)
++    | that stops working after this many days.
++    |
++    */
++
++    'invitations' => [
++        'expires_after_days' => (int) env('TEAM_INVITATION_EXPIRY_DAYS', 7),
++    ],
++
+     'roles' => [
+         'owner' => [
+             'permissions' => ['*'],
+@@ -26,6 +40,7 @@
                  'team:update',
                  'members:update-role',
                  'members:remove',
@@ -527,10 +679,10 @@ index 4e27794..6692293 100644
  
 diff --git a/database/factories/TeamInvitationFactory.php b/database/factories/TeamInvitationFactory.php
 new file mode 100644
-index 0000000..8ece285
+index 0000000..8083e50
 --- /dev/null
 +++ b/database/factories/TeamInvitationFactory.php
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,51 @@
 +<?php
 +
 +namespace Database\Factories;
@@ -539,6 +691,7 @@ index 0000000..8ece285
 +use App\Models\Team;
 +use App\Models\TeamInvitation;
 +use Illuminate\Database\Eloquent\Factories\Factory;
++use Illuminate\Support\Str;
 +
 +/**
 + * @extends Factory<TeamInvitation>
@@ -556,15 +709,37 @@ index 0000000..8ece285
 +            'team_id' => Team::factory(),
 +            'email' => fake()->unique()->safeEmail(),
 +            'role' => TeamRole::Member,
++            'token_hash' => TeamInvitation::hashToken(Str::random(64)),
++            'expires_at' => now()->addDays(7),
 +        ];
++    }
++
++    /**
++     * Use a known plain token for the invitation.
++     */
++    public function withToken(string $token): static
++    {
++        return $this->state(fn (array $attributes) => [
++            'token_hash' => TeamInvitation::hashToken($token),
++        ]);
++    }
++
++    /**
++     * Indicate that the invitation has expired.
++     */
++    public function expired(): static
++    {
++        return $this->state(fn (array $attributes) => [
++            'expires_at' => now()->subMinute(),
++        ]);
 +    }
 +}
 diff --git a/database/migrations/2026_09_25_191418_create_team_invitations_table.php b/database/migrations/2026_09_25_191418_create_team_invitations_table.php
 new file mode 100644
-index 0000000..f62204a
+index 0000000..423df17
 --- /dev/null
 +++ b/database/migrations/2026_09_25_191418_create_team_invitations_table.php
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,34 @@
 +<?php
 +
 +use Illuminate\Database\Migrations\Migration;
@@ -583,6 +758,8 @@ index 0000000..f62204a
 +            $table->foreignId('team_id')->constrained()->cascadeOnDelete();
 +            $table->string('email');
 +            $table->string('role');
++            $table->string('token_hash', 64)->unique();
++            $table->timestamp('expires_at');
 +            $table->timestamps();
 +
 +            $table->unique(['team_id', 'email']);
@@ -598,7 +775,7 @@ index 0000000..f62204a
 +    }
 +};
 diff --git a/resources/js/pages/settings/Team.vue b/resources/js/pages/settings/Team.vue
-index 6a5f8c6..364de60 100644
+index 6a5f8c6..2b083c7 100644
 --- a/resources/js/pages/settings/Team.vue
 +++ b/resources/js/pages/settings/Team.vue
 @@ -2,6 +2,7 @@
@@ -636,7 +813,7 @@ index 6a5f8c6..364de60 100644
      };
  };
  
-@@ -171,6 +180,97 @@ defineOptions({
+@@ -171,6 +180,106 @@ defineOptions({
          </ul>
      </div>
  
@@ -710,7 +887,16 @@ index 6a5f8c6..364de60 100644
 +                        {{ invitation.email }}
 +                    </p>
 +                    <p class="text-sm text-muted-foreground">
-+                        Invited as {{ invitation.role_label }}
++                        Invited as {{ invitation.role_label }} ·
++                        <span v-if="invitation.expired">expired</span>
++                        <span v-else
++                            >expires
++                            {{
++                                new Date(
++                                    invitation.expires_at,
++                                ).toLocaleDateString()
++                            }}</span
++                        >
 +                    </p>
 +                </div>
 +
@@ -734,11 +920,99 @@ index 6a5f8c6..364de60 100644
      <div v-if="teams.length > 1" class="flex flex-col space-y-6">
          <Heading
              variant="small"
+diff --git a/resources/js/pages/team-invitations/Show.vue b/resources/js/pages/team-invitations/Show.vue
+new file mode 100644
+index 0000000..8769696
+--- /dev/null
++++ b/resources/js/pages/team-invitations/Show.vue
+@@ -0,0 +1,82 @@
++<script setup lang="ts">
++import { Form, Head, Link } from '@inertiajs/vue3';
++import TeamInvitationAcceptanceController from '@/actions/App/Http/Controllers/TeamInvitationAcceptanceController';
++import Heading from '@/components/Heading.vue';
++import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
++import { Button } from '@/components/ui/button';
++import { dashboard } from '@/routes';
++
++defineProps<{
++    state: 'pending' | 'expired' | 'invalid' | 'wrong-user';
++    token: string | null;
++    invitation: {
++        team: string;
++        role_label: string;
++        email: string | null;
++    } | null;
++}>();
++</script>
++
++<template>
++    <Head title="Team invitation" />
++
++    <div class="flex h-full flex-1 flex-col gap-6 p-4">
++        <div class="max-w-xl space-y-6">
++            <Heading
++                title="Team invitation"
++                :description="
++                    invitation
++                        ? `Invitation to join ${invitation.team} as ${invitation.role_label}`
++                        : undefined
++                "
++            />
++
++            <Form
++                v-if="state === 'pending' && token"
++                v-bind="TeamInvitationAcceptanceController.store.form(token)"
++                class="space-y-4"
++                v-slot="{ processing }"
++            >
++                <p class="text-sm text-muted-foreground">
++                    Accepting adds {{ invitation?.email }} to the team. The
++                    invitation link then stops working.
++                </p>
++                <Button
++                    :disabled="processing"
++                    data-test="accept-invitation-button"
++                >
++                    Accept invitation
++                </Button>
++            </Form>
++
++            <Alert v-else variant="destructive" role="alert">
++                <AlertTitle v-if="state === 'expired'">
++                    This invitation has expired
++                </AlertTitle>
++                <AlertTitle v-else-if="state === 'wrong-user'">
++                    This invitation is for a different account
++                </AlertTitle>
++                <AlertTitle v-else>This invitation is not valid</AlertTitle>
++                <AlertDescription>
++                    <template v-if="state === 'expired'">
++                        Ask the team owner to send you a new invitation.
++                    </template>
++                    <template v-else-if="state === 'wrong-user'">
++                        Sign in with the email address the invitation was sent
++                        to.
++                    </template>
++                    <template v-else>
++                        It may have been used already or cancelled.
++                    </template>
++                </AlertDescription>
++            </Alert>
++
++            <Link
++                :href="dashboard()"
++                class="text-sm underline underline-offset-4"
++            >
++                Go to your dashboard
++            </Link>
++        </div>
++    </div>
++</template>
 diff --git a/resources/js/types/teams.ts b/resources/js/types/teams.ts
-index e86f9e7..c34225f 100644
+index e86f9e7..d1f0118 100644
 --- a/resources/js/types/teams.ts
 +++ b/resources/js/types/teams.ts
-@@ -19,6 +19,13 @@ export type TeamMember = {
+@@ -19,6 +19,15 @@ export type TeamMember = {
      role_label: string;
  };
  
@@ -747,35 +1021,15 @@ index e86f9e7..c34225f 100644
 +    email: string;
 +    role: TeamRole;
 +    role_label: string;
++    expires_at: string;
++    expired: boolean;
 +};
 +
  export type RoleOption = {
      value: TeamRole;
      label: string;
-diff --git a/resources/views/mail/team-invitation.blade.php b/resources/views/mail/team-invitation.blade.php
-new file mode 100644
-index 0000000..e48fd6b
---- /dev/null
-+++ b/resources/views/mail/team-invitation.blade.php
-@@ -0,0 +1,16 @@
-+<x-mail::message>
-+# {{ __('You have been invited to join :team', ['team' => $teamName]) }}
-+
-+{{ __('You have been invited to join the :team team as :role.', ['team' => $teamName, 'role' => $roleLabel]) }}
-+
-+{{ __('If you do not have an account yet, create one with this email address first:') }} [{{ $registerUrl }}]({{ $registerUrl }})
-+
-+<x-mail::button :url="$acceptUrl">
-+{{ __('Accept invitation') }}
-+</x-mail::button>
-+
-+{{ __('If you did not expect this invitation, you can ignore this email.') }}
-+
-+{{ __('Thanks,') }}<br>
-+{{ config('app.name') }}
-+</x-mail::message>
 diff --git a/routes/settings.php b/routes/settings.php
-index 1d274eb..6813c0f 100644
+index 1d274eb..0a9159c 100644
 --- a/routes/settings.php
 +++ b/routes/settings.php
 @@ -4,7 +4,9 @@
@@ -788,7 +1042,7 @@ index 1d274eb..6813c0f 100644
  use Illuminate\Auth\Middleware\RequirePassword;
  use Illuminate\Support\Facades\Route;
  
-@@ -34,8 +36,15 @@
+@@ -34,8 +36,17 @@
      Route::scopeBindings()->group(function () {
          Route::put('settings/teams/{team}/members/{member}', [TeamMemberController::class, 'update'])->name('team-members.update');
          Route::delete('settings/teams/{team}/members/{member}', [TeamMemberController::class, 'destroy'])->name('team-members.destroy');
@@ -797,8 +1051,10 @@ index 1d274eb..6813c0f 100644
 +        Route::delete('settings/teams/{team}/invitations/{invitation}', [TeamInvitationController::class, 'destroy'])->name('team-invitations.destroy');
      });
  
-+    Route::get('team-invitations/{invitation}', TeamInvitationAcceptanceController::class)
-+        ->middleware('signed')
++    Route::get('team-invitations/{token}', [TeamInvitationAcceptanceController::class, 'show'])
++        ->name('team-invitations.show');
++    Route::post('team-invitations/{token}', [TeamInvitationAcceptanceController::class, 'store'])
++        ->middleware('throttle:10,1')
 +        ->name('team-invitations.accept');
 +
      Route::put('current-team/{team}', [CurrentTeamController::class, 'update'])->name('current-team.update');
@@ -806,20 +1062,23 @@ index 1d274eb..6813c0f 100644
  
 diff --git a/tests/Feature/Teams/AcceptTeamInvitationTest.php b/tests/Feature/Teams/AcceptTeamInvitationTest.php
 new file mode 100644
-index 0000000..2c6125c
+index 0000000..5182b6c
 --- /dev/null
 +++ b/tests/Feature/Teams/AcceptTeamInvitationTest.php
-@@ -0,0 +1,84 @@
+@@ -0,0 +1,157 @@
 +<?php
 +
 +namespace Tests\Feature\Teams;
 +
++use App\Actions\Teams\AcceptTeamInvitation;
 +use App\Enums\TeamRole;
-+use App\Mail\TeamInvitationMail;
 +use App\Models\TeamInvitation;
 +use App\Models\User;
++use App\Notifications\TeamInvitationNotification;
++use Illuminate\Database\Eloquent\ModelNotFoundException;
 +use Illuminate\Foundation\Testing\RefreshDatabase;
-+use Illuminate\Support\Facades\URL;
++use Illuminate\Notifications\AnonymousNotifiable;
++use Inertia\Testing\AssertableInertia as Assert;
 +use Tests\Concerns\InteractsWithTeams;
 +use Tests\TestCase;
 +
@@ -827,89 +1086,220 @@ index 0000000..2c6125c
 +{
 +    use InteractsWithTeams, RefreshDatabase;
 +
-+    public function test_the_invited_person_can_accept_the_invitation()
++    public function test_the_invited_person_can_view_and_accept_the_invitation()
 +    {
 +        $team = $this->createTeamOwnedBy(User::factory()->create());
-+        $invitation = TeamInvitation::factory()->for($team)->create(['email' => 'new@example.com', 'role' => TeamRole::Admin]);
++        TeamInvitation::factory()->for($team)->withToken('secret-token')->create(['email' => 'new@example.com', 'role' => TeamRole::Admin]);
 +        $invitee = User::factory()->withPersonalTeam()->create(['email' => 'new@example.com']);
 +
 +        $this->actingAs($invitee)
-+            ->get($this->acceptUrl($invitation))
++            ->get(route('team-invitations.show', 'secret-token'))
++            ->assertOk()
++            ->assertInertia(fn (Assert $page) => $page
++                ->component('team-invitations/Show')
++                ->where('state', 'pending')
++                ->where('invitation.team', 'Acme'));
++
++        $this->actingAs($invitee)
++            ->post(route('team-invitations.accept', 'secret-token'))
 +            ->assertRedirect(route('teams.edit'));
 +
 +        $this->assertSame(TeamRole::Admin, $invitee->teamRole($team));
 +        $this->assertSame($team->id, $invitee->fresh()->current_team_id);
-+        $this->assertModelMissing($invitation);
++        $this->assertSame(0, $team->invitations()->count());
++    }
++
++    public function test_an_invitation_can_only_be_used_once()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        TeamInvitation::factory()->for($team)->withToken('secret-token')->create(['email' => 'new@example.com']);
++        $invitee = User::factory()->withPersonalTeam()->create(['email' => 'new@example.com']);
++
++        $this->actingAs($invitee)->post(route('team-invitations.accept', 'secret-token'));
++        $this->actingAs($invitee)->post(route('team-invitations.accept', 'secret-token'))->assertNotFound();
++
++        $this->assertSame(1, $team->members()->whereKey($invitee->id)->count());
++    }
++
++    public function test_a_second_simultaneous_acceptance_finds_the_invitation_gone()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $invitation = TeamInvitation::factory()->for($team)->create(['email' => 'new@example.com']);
++        $invitee = User::factory()->withPersonalTeam()->create(['email' => 'new@example.com']);
++        $staleCopy = TeamInvitation::query()->findOrFail($invitation->id);
++
++        app(AcceptTeamInvitation::class)->handle($invitee, $invitation);
++
++        $this->expectException(ModelNotFoundException::class);
++
++        try {
++            app(AcceptTeamInvitation::class)->handle($invitee, $staleCopy);
++        } finally {
++            $this->assertSame(1, $team->members()->whereKey($invitee->id)->count());
++        }
 +    }
 +
 +    public function test_someone_else_cannot_accept_the_invitation()
 +    {
 +        $team = $this->createTeamOwnedBy(User::factory()->create());
-+        $invitation = TeamInvitation::factory()->for($team)->create(['email' => 'new@example.com']);
++        TeamInvitation::factory()->for($team)->withToken('secret-token')->create(['email' => 'new@example.com']);
 +        $stranger = User::factory()->withPersonalTeam()->create();
 +
 +        $this->actingAs($stranger)
-+            ->get($this->acceptUrl($invitation))
-+            ->assertForbidden();
++            ->get(route('team-invitations.show', 'secret-token'))
++            ->assertForbidden()
++            ->assertInertia(fn (Assert $page) => $page->where('state', 'wrong-user')->where('invitation.email', null));
++
++        $this->actingAs($stranger)->post(route('team-invitations.accept', 'secret-token'))->assertForbidden();
 +
 +        $this->assertFalse($stranger->belongsToTeam($team));
-+        $this->assertModelExists($invitation);
++        $this->assertSame(1, $team->invitations()->count());
 +    }
 +
-+    public function test_the_link_must_be_signed()
++    public function test_expired_invitations_cannot_be_accepted()
 +    {
 +        $team = $this->createTeamOwnedBy(User::factory()->create());
-+        $invitation = TeamInvitation::factory()->for($team)->create(['email' => 'new@example.com']);
++        TeamInvitation::factory()->for($team)->withToken('secret-token')->create(['email' => 'new@example.com']);
 +        $invitee = User::factory()->withPersonalTeam()->create(['email' => 'new@example.com']);
 +
++        $this->travel(8)->days();
++
 +        $this->actingAs($invitee)
-+            ->get(route('team-invitations.accept', $invitation))
-+            ->assertForbidden();
++            ->get(route('team-invitations.show', 'secret-token'))
++            ->assertStatus(410)
++            ->assertInertia(fn (Assert $page) => $page->where('state', 'expired'));
++
++        $this->actingAs($invitee)->post(route('team-invitations.accept', 'secret-token'))->assertStatus(410);
++
++        $this->assertFalse($invitee->belongsToTeam($team));
++    }
++
++    public function test_cancelled_and_unknown_tokens_are_invalid()
++    {
++        $owner = User::factory()->create();
++        $team = $this->createTeamOwnedBy($owner);
++        $invitation = TeamInvitation::factory()->for($team)->withToken('secret-token')->create(['email' => 'new@example.com']);
++        $invitee = User::factory()->withPersonalTeam()->create(['email' => 'new@example.com']);
++
++        $this->actingAs($owner)->delete(route('team-invitations.destroy', [$team, $invitation]));
++
++        $this->actingAs($invitee)
++            ->get(route('team-invitations.show', 'secret-token'))
++            ->assertNotFound()
++            ->assertInertia(fn (Assert $page) => $page->where('state', 'invalid'));
++        $this->actingAs($invitee)->post(route('team-invitations.accept', 'secret-token'))->assertNotFound();
++        $this->actingAs($invitee)->post(route('team-invitations.accept', 'made-up'))->assertNotFound();
 +
 +        $this->assertFalse($invitee->belongsToTeam($team));
 +    }
 +
 +    public function test_guests_are_asked_to_log_in_first()
 +    {
-+        $invitation = TeamInvitation::factory()->create();
++        TeamInvitation::factory()->withToken('secret-token')->create();
 +
-+        $this->get($this->acceptUrl($invitation))->assertRedirect(route('login'));
++        $this->get(route('team-invitations.show', 'secret-token'))->assertRedirect(route('login'));
++        $this->post(route('team-invitations.accept', 'secret-token'))->assertRedirect(route('login'));
 +    }
 +
-+    public function test_the_invitation_email_links_to_the_signed_acceptance_url()
++    public function test_unverified_users_must_verify_their_email_first()
++    {
++        TeamInvitation::factory()->withToken('secret-token')->create(['email' => 'new@example.com']);
++        $invitee = User::factory()->unverified()->withPersonalTeam()->create(['email' => 'new@example.com']);
++
++        $this->actingAs($invitee)
++            ->post(route('team-invitations.accept', 'secret-token'))
++            ->assertRedirect(route('verification.notice'));
++    }
++
++    public function test_the_invitation_email_links_to_the_invitation_page()
 +    {
 +        $team = $this->createTeamOwnedBy(User::factory()->create(), 'Acme');
 +        $invitation = TeamInvitation::factory()->for($team)->create(['role' => TeamRole::Member]);
 +
-+        $mail = new TeamInvitationMail($invitation);
++        $mail = (new TeamInvitationNotification($invitation, 'secret-token'))->toMail(new AnonymousNotifiable);
 +
-+        $mail->assertHasSubject('Invitation to join Acme');
-+        $mail->assertSeeInHtml('as Member', false);
-+        $mail->assertSeeInHtml(route('team-invitations.accept', $invitation), false);
-+        $mail->assertSeeInHtml('signature=', false);
-+    }
-+
-+    protected function acceptUrl(TeamInvitation $invitation): string
-+    {
-+        return URL::signedRoute('team-invitations.accept', $invitation);
++        $this->assertSame('Invitation to join Acme', $mail->subject);
++        $this->assertSame(route('team-invitations.show', 'secret-token'), $mail->actionUrl);
++        $this->assertStringContainsString('as Member', implode(' ', $mail->introLines));
 +    }
 +}
-diff --git a/tests/Feature/Teams/InviteTeamMemberTest.php b/tests/Feature/Teams/InviteTeamMemberTest.php
+diff --git a/tests/Feature/Teams/InvitationDeliveryTest.php b/tests/Feature/Teams/InvitationDeliveryTest.php
 new file mode 100644
-index 0000000..785f176
+index 0000000..4377f4d
 --- /dev/null
-+++ b/tests/Feature/Teams/InviteTeamMemberTest.php
-@@ -0,0 +1,156 @@
++++ b/tests/Feature/Teams/InvitationDeliveryTest.php
+@@ -0,0 +1,52 @@
 +<?php
 +
 +namespace Tests\Feature\Teams;
 +
++use App\Actions\Teams\InviteTeamMember;
 +use App\Enums\TeamRole;
-+use App\Mail\TeamInvitationMail;
++use App\Models\User;
++use App\Notifications\TeamInvitationNotification;
++use Illuminate\Foundation\Testing\RefreshDatabase;
++use Illuminate\Notifications\Events\NotificationSent;
++use Illuminate\Support\Facades\DB;
++use Illuminate\Support\Facades\Event;
++use RuntimeException;
++use Tests\Concerns\InteractsWithTeams;
++use Tests\TestCase;
++
++/**
++ * Runs the real queue (sync in tests) and mailer (array) instead of faking
++ * notifications, to show when the invitation email is actually delivered.
++ */
++class InvitationDeliveryTest extends TestCase
++{
++    use InteractsWithTeams, RefreshDatabase;
++
++    public function test_the_email_is_delivered_only_after_the_invitation_commits()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $delivered = [];
++        Event::listen(NotificationSent::class, function (NotificationSent $event) use (&$delivered) {
++            if ($event->notification instanceof TeamInvitationNotification) {
++                $delivered[] = $event->notifiable->routeNotificationFor('mail');
++            }
++        });
++
++        try {
++            DB::transaction(function () use ($team) {
++                app(InviteTeamMember::class)->handle($team, 'rolled-back@example.com', TeamRole::Member);
++
++                throw new RuntimeException('Something failed after the invitation was written.');
++            });
++        } catch (RuntimeException) {
++            //
++        }
++
++        $this->assertSame(0, $team->invitations()->count());
++        $this->assertSame([], $delivered);
++
++        app(InviteTeamMember::class)->handle($team, 'new@example.com', TeamRole::Member);
++
++        $this->assertSame(['new@example.com'], $delivered);
++    }
++}
+diff --git a/tests/Feature/Teams/InviteTeamMemberTest.php b/tests/Feature/Teams/InviteTeamMemberTest.php
+new file mode 100644
+index 0000000..1dd48f0
+--- /dev/null
++++ b/tests/Feature/Teams/InviteTeamMemberTest.php
+@@ -0,0 +1,229 @@
++<?php
++
++namespace Tests\Feature\Teams;
++
++use App\Actions\Teams\InviteTeamMember;
++use App\Enums\TeamRole;
 +use App\Models\TeamInvitation;
 +use App\Models\User;
++use App\Notifications\TeamInvitationNotification;
 +use Illuminate\Foundation\Testing\RefreshDatabase;
-+use Illuminate\Support\Facades\Mail;
++use Illuminate\Notifications\AnonymousNotifiable;
++use Illuminate\Support\Facades\Notification;
++use Illuminate\Validation\ValidationException;
 +use Inertia\Testing\AssertableInertia as Assert;
 +use Tests\Concerns\InteractsWithTeams;
 +use Tests\TestCase;
@@ -922,16 +1312,17 @@ index 0000000..785f176
 +    {
 +        parent::setUp();
 +
-+        Mail::fake();
++        Notification::fake();
 +    }
 +
 +    public function test_owners_can_invite_people_to_the_team()
 +    {
 +        $owner = User::factory()->create();
 +        $team = $this->createTeamOwnedBy($owner);
++        $this->freezeSecond();
 +
 +        $this->actingAs($owner)
-+            ->post(route('team-invitations.store', $team), ['email' => 'new@example.com', 'role' => 'admin'])
++            ->post(route('team-invitations.store', $team), ['email' => '  New@Example.COM ', 'role' => 'admin'])
 +            ->assertSessionHasNoErrors()
 +            ->assertRedirect(route('teams.edit'));
 +
@@ -939,9 +1330,18 @@ index 0000000..785f176
 +
 +        $this->assertSame('new@example.com', $invitation->email);
 +        $this->assertSame(TeamRole::Admin, $invitation->role);
++        $this->assertTrue($invitation->expires_at->equalTo(now()->addDays(7)));
++        $this->assertFalse($team->members()->where('email', 'new@example.com')->exists());
 +
-+        Mail::assertSent(TeamInvitationMail::class, fn (TeamInvitationMail $mail) => $mail->hasTo('new@example.com')
-+            && $mail->invitation->is($invitation));
++        Notification::assertSentOnDemand(
++            TeamInvitationNotification::class,
++            function (TeamInvitationNotification $notification, array $channels, AnonymousNotifiable $notifiable) use ($invitation) {
++                return $notifiable->routes['mail'] === 'new@example.com'
++                    && $notification->invitation->is($invitation)
++                    && TeamInvitation::hashToken($notification->token) === $invitation->token_hash
++                    && $invitation->token_hash !== $notification->token;
++            },
++        );
 +    }
 +
 +    public function test_admins_can_invite_people_to_the_team()
@@ -966,7 +1366,43 @@ index 0000000..785f176
 +            ->assertForbidden();
 +
 +        $this->assertSame(0, $team->invitations()->count());
-+        Mail::assertNothingSent();
++        Notification::assertNothingSent();
++    }
++
++    public function test_owners_of_other_teams_cannot_invite_people()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $otherOwner = User::factory()->create();
++        $this->createTeamOwnedBy($otherOwner, 'Other');
++
++        $this->actingAs($otherOwner)
++            ->post(route('team-invitations.store', $team), ['email' => 'new@example.com', 'role' => 'member'])
++            ->assertForbidden();
++
++        $this->assertSame(0, $team->invitations()->count());
++    }
++
++    public function test_guests_cannot_invite_people()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++
++        $this->post(route('team-invitations.store', $team), ['email' => 'new@example.com', 'role' => 'member'])
++            ->assertRedirect(route('login'));
++
++        $this->assertSame(0, $team->invitations()->count());
++    }
++
++    public function test_invalid_input_writes_nothing()
++    {
++        $owner = User::factory()->create();
++        $team = $this->createTeamOwnedBy($owner);
++
++        $this->actingAs($owner)
++            ->post(route('team-invitations.store', $team), ['email' => 'not-an-email', 'role' => 'owner'])
++            ->assertSessionHasErrors(['email', 'role']);
++
++        $this->assertSame(0, $team->invitations()->count());
++        Notification::assertNothingSent();
 +    }
 +
 +    public function test_existing_members_cannot_be_invited()
@@ -980,25 +1416,49 @@ index 0000000..785f176
 +            ->assertSessionHasErrors('email');
 +    }
 +
-+    public function test_people_cannot_be_invited_twice()
++    public function test_a_repeated_invitation_is_rejected_without_a_second_email()
++    {
++        $owner = User::factory()->create();
++        $team = $this->createTeamOwnedBy($owner);
++
++        $this->actingAs($owner)->post(route('team-invitations.store', $team), ['email' => 'new@example.com', 'role' => 'member']);
++        $this->actingAs($owner)
++            ->post(route('team-invitations.store', $team), ['email' => 'NEW@example.com', 'role' => 'admin'])
++            ->assertSessionHasErrors('email');
++
++        $this->assertSame(1, $team->invitations()->count());
++        Notification::assertSentOnDemandTimes(TeamInvitationNotification::class, 1);
++    }
++
++    public function test_a_concurrent_duplicate_is_stopped_by_the_database()
 +    {
 +        $owner = User::factory()->create();
 +        $team = $this->createTeamOwnedBy($owner);
 +        TeamInvitation::factory()->for($team)->create(['email' => 'new@example.com']);
 +
-+        $this->actingAs($owner)
-+            ->post(route('team-invitations.store', $team), ['email' => 'new@example.com', 'role' => 'member'])
-+            ->assertSessionHasErrors('email');
++        try {
++            app(InviteTeamMember::class)->handle($team, 'new@example.com', TeamRole::Member);
++            $this->fail('Expected a validation error.');
++        } catch (ValidationException $exception) {
++            $this->assertArrayHasKey('email', $exception->errors());
++        }
++
++        $this->assertSame(1, $team->invitations()->count());
++        Notification::assertNothingSent();
 +    }
 +
-+    public function test_the_owner_role_cannot_be_offered()
++    public function test_an_expired_invitation_can_be_replaced()
 +    {
 +        $owner = User::factory()->create();
 +        $team = $this->createTeamOwnedBy($owner);
++        $expired = TeamInvitation::factory()->for($team)->expired()->create(['email' => 'new@example.com']);
 +
 +        $this->actingAs($owner)
-+            ->post(route('team-invitations.store', $team), ['email' => 'new@example.com', 'role' => 'owner'])
-+            ->assertSessionHasErrors('role');
++            ->post(route('team-invitations.store', $team), ['email' => 'new@example.com', 'role' => 'member'])
++            ->assertSessionHasNoErrors();
++
++        $this->assertModelMissing($expired);
++        $this->assertSame(1, $team->invitations()->count());
 +    }
 +
 +    public function test_the_team_page_lists_pending_invitations_for_people_who_can_invite()
@@ -1013,7 +1473,7 @@ index 0000000..785f176
 +                ->where('can.inviteMembers', true)
 +                ->has('invitations', 1)
 +                ->where('invitations.0.email', 'new@example.com')
-+                ->where('invitations.0.role', 'member')
++                ->where('invitations.0.expired', false)
 +            );
 +    }
 +
