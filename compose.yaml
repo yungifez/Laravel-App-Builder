@@ -1,45 +1,50 @@
 # Trusted local services for the control plane (PostgreSQL and Redis only).
-# PHP and Node run on the host. This file is NOT the future isolation design
-# for customer code: it must never mount the Docker socket.
+# PHP and Node run on the host; the Laravel app is this repository's root.
+# This file is NOT the future isolation design for customer code: it must
+# never mount the Docker socket.
 name: builder-control-plane
 
 services:
-  postgres:
-    image: postgres:18.6
-    environment:
-      POSTGRES_USER: ${DB_USERNAME:-control_plane}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-control_plane}
-      POSTGRES_DB: ${DB_DATABASE:-control_plane}
-      TEST_DB_DATABASE: ${TEST_DB_DATABASE:-control_plane_test}
-      TEST_DB_USERNAME: ${TEST_DB_USERNAME:-control_plane_test}
-      TEST_DB_PASSWORD: ${TEST_DB_PASSWORD:-control_plane_test}
-    ports:
-      - '127.0.0.1:${FORWARD_DB_PORT:-5432}:5432'
-    volumes:
-      # PostgreSQL 18+ images keep PGDATA under /var/lib/postgresql/<major>/docker,
-      # so the volume is mounted at /var/lib/postgresql (not .../data).
-      - postgres-data:/var/lib/postgresql
-      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    restart: unless-stopped
+    postgres:
+        image: postgres:18.6
+        environment:
+            POSTGRES_USER: ${DB_USERNAME:-control_plane}
+            POSTGRES_PASSWORD: ${DB_PASSWORD:-control_plane}
+            POSTGRES_DB: ${DB_DATABASE:-control_plane}
+            TEST_DB_DATABASE: ${TEST_DB_DATABASE:-control_plane_test}
+            TEST_DB_USERNAME: ${TEST_DB_USERNAME:-control_plane_test}
+            TEST_DB_PASSWORD: ${TEST_DB_PASSWORD:-control_plane_test}
+        ports:
+            - '127.0.0.1:${FORWARD_DB_PORT:-5432}:5432'
+        volumes:
+            # PostgreSQL 18+ images keep PGDATA under /var/lib/postgresql/<major>/docker,
+            # so the volume is mounted at /var/lib/postgresql (not .../data).
+            - postgres-data:/var/lib/postgresql
+            - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+        healthcheck:
+            test:
+                [
+                    'CMD-SHELL',
+                    'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"',
+                ]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+        restart: unless-stopped
 
-  redis:
-    image: redis:8.10
-    ports:
-      - '127.0.0.1:${FORWARD_REDIS_PORT:-6379}:6379'
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    restart: unless-stopped
+    redis:
+        image: redis:8.10
+        ports:
+            - '127.0.0.1:${FORWARD_REDIS_PORT:-6379}:6379'
+        volumes:
+            - redis-data:/data
+        healthcheck:
+            test: ['CMD', 'redis-cli', 'ping']
+            interval: 5s
+            timeout: 5s
+            retries: 10
+        restart: unless-stopped
 
 volumes:
-  postgres-data:
-  redis-data:
+    postgres-data:
+    redis-data:
