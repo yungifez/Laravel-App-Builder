@@ -59,9 +59,10 @@ enum RunStatus: string
 
     /**
      * Determine if a worker holding the run's lease is working in this state.
+     * While verifying, the run waits on the verification job instead.
      */
     public function isWorkerOwned(): bool
     {
-        return in_array($this, [self::Queued, self::Planning, self::Implementing], true);
+        return in_array($this, [self::Queued, self::Planning, self::Implementing, self::Reviewing], true);
     }
 }

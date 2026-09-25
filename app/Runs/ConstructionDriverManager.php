@@ -4,6 +4,7 @@ namespace App\Runs;
 
 use App\Features\FeatureGeneratorManager;
 use App\Runs\Contracts\ConstructionDriver;
+use App\Runs\Drivers\AgentDriver;
 use App\Runs\Drivers\ScriptedDriver;
 use Illuminate\Support\Manager;
 
@@ -26,5 +27,13 @@ class ConstructionDriverManager extends Manager
     public function createScriptedDriver(): ConstructionDriver
     {
         return new ScriptedDriver($this->container->make(FeatureGeneratorManager::class));
+    }
+
+    /**
+     * Create the model-driven driver: planner, coder and reviewer.
+     */
+    public function createAgentDriver(): ConstructionDriver
+    {
+        return $this->container->make(AgentDriver::class);
     }
 }

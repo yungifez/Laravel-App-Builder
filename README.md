@@ -103,9 +103,21 @@ from the workspace as a diff against the baseline.
 - **Budgets.** 30 tool operations and 20 minutes by default; a run out of
   budget stops for the owner's decision.
 
-Until the AI agent exists, the `scripted` driver makes the change that the
-`reference` generator finds among the known-good solutions listed in
-`BUILDER_REFERENCE_SOLUTIONS` (see `fixtures/reference-solutions`).
+Two construction drivers are available (`BUILDER_CONSTRUCTION_DRIVER`):
+
+- `scripted` (default) makes the change that the `reference` generator finds
+  among the known-good solutions in `BUILDER_REFERENCE_SOLUTIONS` (see
+  `fixtures/reference-solutions`). It needs no model.
+- `agent` uses the three model roles (see [Model roles](#model-roles)). The
+  **planner** turns the request into a saved plan: summary, acceptance
+  criteria, assumptions, tasks and selectable steps. The **coder** carries the
+  plan out through the tools. The **reviewer** judges the verified change from
+  evidence the platform assembles (plan, diff, deleted or weakened tests,
+  verification results), never from the coder's account. A failed
+  verification or a blocking review finding sends the change back to the
+  coder with the failures, up to `BUILDER_RUN_MAX_REPAIRS` times. Which
+  protected acceptance suites apply is decided by the platform, not by a
+  model. Every model call is logged on the run with its tokens.
 
 When the change is built, the run hands it to verification. **Run
 verification** also re-runs it on demand. Verification copies the project into
@@ -116,7 +128,7 @@ their own runner configuration, and shows each result as passed, failed,
 errored, skipped or not applicable. A change is only **Passed** when the
 protected tests pass. With no applicable protected tests it is
 **Unverified**. A passing (or unverified) change completes the run after
-review; a failing one stops it for the owner's decision.
+review; a failing one is repaired or stops the run for the owner's decision.
 Runs and verification run on the queue, so keep a worker running
 (`composer dev` starts one). Verification can take several minutes, so keep
 `REDIS_QUEUE_RETRY_AFTER` above the jobs' one-hour timeout (see
@@ -126,12 +138,27 @@ fixtures only (see `config/workspaces.php`).
 
 ### AI SDK
 
-The app includes the Laravel AI SDK (`laravel/ai`) with its published default
+The app uses the Laravel AI SDK (`laravel/ai`) with its published default
 configuration in `config/ai.php`. Its migration creates the
-`agent_conversations` and `agent_conversation_messages` tables. To call a
-provider, set that provider's key (for example `OPENAI_API_KEY` or
-`ANTHROPIC_API_KEY`) in `.env`. Nothing in the app uses the
-SDK yet, and no key is needed to run the app or the tests.
+`agent_conversations` and `agent_conversation_messages` tables. No key is needed
+to run the app or the tests: the default `scripted` driver makes no model calls,
+and the tests fake the agents.
+
+### Model roles
+
+The `agent` driver uses three roles, each with its own provider and model
+(`config/builder.php`, `models`):
+
+| Role     | Agent                          | Settings                                              |
+| -------- | ------------------------------ | ----------------------------------------------------- |
+| Planner  | `App\Ai\Agents\FeaturePlanner` | `BUILDER_PLANNER_PROVIDER`, `BUILDER_PLANNER_MODEL`   |
+| Coder    | `App\Ai\Agents\FeatureCoder`   | `BUILDER_CODER_PROVIDER`, `BUILDER_CODER_MODEL`       |
+| Reviewer | `App\Ai\Agents\ChangeReviewer` | `BUILDER_REVIEWER_PROVIDER`, `BUILDER_REVIEWER_MODEL` |
+
+Providers are the names in `config/ai.php` (for example `anthropic` or
+`openai`); an empty provider uses the SDK default, and an empty model uses the
+provider's default. Keys are per provider (for example `ANTHROPIC_API_KEY`), so
+one key covers every role that uses that provider.
 
 ## Local services
 

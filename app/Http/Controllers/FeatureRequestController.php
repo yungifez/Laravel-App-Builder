@@ -49,10 +49,17 @@ class FeatureRequestController extends Controller
             'driver' => $run->driver,
             'error' => $run->error,
             'workspace_revision' => $run->workspace_revision,
+            'plan' => $run->plan === null ? null : [
+                'summary' => $run->plan['summary'],
+                'acceptance_criteria' => $run->plan['acceptance_criteria'],
+                'assumptions' => $run->plan['assumptions'],
+            ],
+            'repairs' => $run->repairs,
             'operations' => $run->operations()->count(),
             'budget' => [
                 'operations' => (int) config('builder.construction.budgets.operations'),
                 'minutes' => (int) config('builder.construction.budgets.minutes'),
+                'repairs' => (int) config('builder.construction.budgets.repairs'),
             ],
             'started_at' => $run->started_at?->toIso8601String(),
             'finished_at' => $run->finished_at?->toIso8601String(),

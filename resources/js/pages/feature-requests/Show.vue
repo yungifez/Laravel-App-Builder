@@ -125,8 +125,12 @@ function describeEvent(event: RunEvent): string {
             return `Checking whether ${String(data.tool)} took effect before the previous worker stopped`;
         case 'review':
             return data.approved
-                ? 'Review accepted the verification evidence'
-                : 'Review raised findings';
+                ? `Review approved: ${String(data.summary ?? '')}`
+                : `Review found problems: ${String(data.summary ?? '')}`;
+        case 'build_finished':
+            return `The coder finished attempt ${Number(data.attempt) + 1} (its own account, not trusted): ${String(data.account)}`;
+        case 'model_call':
+            return `${String(data.role)} model call (${String(data.provider)} ${String(data.model)}): ${String(data.input_tokens)} tokens in, ${String(data.output_tokens)} out`;
         default:
             return event.type;
     }
@@ -260,7 +264,7 @@ function lineClass(line: string): string {
                 <Heading
                     variant="small"
                     title="Build run"
-                    :description="`${run.operations} of ${run.budget.operations} tool operations used · ${run.budget.minutes} minute limit`"
+                    :description="`${run.operations} of ${run.budget.operations} tool operations used · ${run.repairs} of ${run.budget.repairs} repairs · ${run.budget.minutes} minute limit`"
                 />
                 <Badge
                     :variant="
@@ -298,6 +302,37 @@ function lineClass(line: string): string {
                     </template>
                 </AlertDescription>
             </Alert>
+
+            <div
+                v-if="run.plan"
+                class="space-y-2 rounded-lg border p-4 text-sm"
+                data-test="run-plan"
+            >
+                <p>{{ run.plan.summary }}</p>
+                <template v-if="run.plan.acceptance_criteria.length > 0">
+                    <p class="font-medium">Done when</p>
+                    <ul class="list-disc pl-5 text-muted-foreground">
+                        <li
+                            v-for="(criterion, index) in run.plan
+                                .acceptance_criteria"
+                            :key="index"
+                        >
+                            {{ criterion }}
+                        </li>
+                    </ul>
+                </template>
+                <template v-if="run.plan.assumptions.length > 0">
+                    <p class="font-medium">Assumptions</p>
+                    <ul class="list-disc pl-5 text-muted-foreground">
+                        <li
+                            v-for="(assumption, index) in run.plan.assumptions"
+                            :key="index"
+                        >
+                            {{ assumption }}
+                        </li>
+                    </ul>
+                </template>
+            </div>
 
             <Form
                 v-if="runInProgress && run.status !== 'cancelling'"

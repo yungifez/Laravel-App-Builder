@@ -23,13 +23,7 @@ class ReferenceGenerator implements FeatureGenerator
 
     public function generate(FeatureRequest $request): GeneratedChange
     {
-        $parent = $request->parent;
-
-        $solution = $this->solutions()->first(fn (array $solution) => $parent === null
-            ? ! isset($solution['follows']) && $this->matches($solution, $request->prompt)
-            : ($solution['follows'] ?? null) === $parent->solution_key
-                && ($solution['step'] ?? null) === $request->target_step
-                && $this->matches($solution, $request->prompt));
+        $solution = $this->classify($request);
 
         if ($solution === null) {
             throw new CannotGenerateFeature(__('The reference generator has no solution for this request.'));
@@ -48,6 +42,25 @@ class ReferenceGenerator implements FeatureGenerator
             steps: $solution['steps'],
             acceptance: $solution['acceptance'] ?? [],
         );
+    }
+
+    /**
+     * Find the manifest solution that answers the request: a top-level
+     * solution whose keywords the prompt mentions, or for a follow-up, the
+     * solution that follows the parent's and matches the prompt (and, when
+     * $matchStep is true, the selected step).
+     *
+     * @return array{key: string, patch: string, match: list<string>, summary: string, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance?: list<string>, follows?: string, step?: string}|null
+     */
+    public function classify(FeatureRequest $request, bool $matchStep = true): ?array
+    {
+        $parent = $request->parent;
+
+        return $this->solutions()->first(fn (array $solution) => $parent === null
+            ? ! isset($solution['follows']) && $this->matches($solution, $request->prompt)
+            : ($solution['follows'] ?? null) === $parent->solution_key
+                && (! $matchStep || ($solution['step'] ?? null) === $request->target_step)
+                && $this->matches($solution, $request->prompt));
     }
 
     /**

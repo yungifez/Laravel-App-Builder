@@ -4,9 +4,12 @@ namespace App\Runs\Drivers;
 
 use App\Features\FeatureGeneratorManager;
 use App\Models\Run;
-use App\Runs\BuiltChange;
 use App\Runs\Contracts\ConstructionDriver;
 use App\Runs\Exceptions\ConstructionFailed;
+use App\Runs\Plan;
+use App\Runs\PlanningContext;
+use App\Runs\Review;
+use App\Runs\ReviewEvidence;
 use App\Runs\ToolSession;
 
 /**
@@ -21,10 +24,24 @@ class ScriptedDriver implements ConstructionDriver
 {
     public function __construct(protected FeatureGeneratorManager $generators) {}
 
-    public function build(Run $run, ToolSession $tools): BuiltChange
+    public function plan(Run $run, PlanningContext $context): Plan
     {
-        $featureRequest = $run->featureRequest;
-        $change = $this->generators->driver($featureRequest->generator)->generate($featureRequest);
+        $change = $this->generators->driver($run->featureRequest->generator)->generate($run->featureRequest);
+
+        return new Plan(
+            summary: $change->summary,
+            acceptanceCriteria: [],
+            assumptions: [__('Replays the known-good solution ":key".', ['key' => $change->solutionKey])],
+            tasks: [__('Apply the solution\'s patch.')],
+            steps: $change->steps,
+            acceptance: $change->acceptance,
+            solutionKey: $change->solutionKey,
+        );
+    }
+
+    public function build(Run $run, Plan $plan, ToolSession $tools): string
+    {
+        $change = $this->generators->driver($run->featureRequest->generator)->generate($run->featureRequest);
 
         $listing = $tools->call('scripted:list-files', 'list_files');
 
@@ -38,11 +55,16 @@ class ScriptedDriver implements ConstructionDriver
             throw new ConstructionFailed(__('The change could not be made: :reason', ['reason' => $applied->error]));
         }
 
-        return new BuiltChange(
-            summary: $change->summary,
-            steps: $change->steps,
-            acceptance: $change->acceptance,
-            solutionKey: $change->solutionKey,
-        );
+        return __('Applied the solution\'s patch.');
+    }
+
+    public function review(Run $run, ReviewEvidence $evidence): Review
+    {
+        return new Review(true, __('The scripted driver accepts a change that passed verification.'));
+    }
+
+    public function canRepair(): bool
+    {
+        return false;
     }
 }

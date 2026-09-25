@@ -104,8 +104,14 @@ export type Run = {
     driver: string;
     error: string | null;
     workspace_revision: number;
+    plan: {
+        summary: string;
+        acceptance_criteria: string[];
+        assumptions: string[];
+    } | null;
+    repairs: number;
     operations: number;
-    budget: { operations: number; minutes: number };
+    budget: { operations: number; minutes: number; repairs: number };
     started_at: string | null;
     finished_at: string | null;
     events: RunEvent[];

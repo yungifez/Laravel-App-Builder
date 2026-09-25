@@ -59,8 +59,9 @@ return [
     |
     | A run builds a feature request's change in its own workspace, through
     | server-side tools only, then hands the change to verification. The
-    | "scripted" driver applies the generator's change through the tools; the
-    | model-driven driver replaces it without changing the tools or records.
+    | "scripted" driver applies the generator's change through the tools. The
+    | "agent" driver plans, builds and reviews with the three model roles
+    | below, through the same tools and records.
     |
     | One worker writes to a run at a time. Its lease lasts "lease_seconds"
     | and is renewed by every tool call; a lease that expires can be taken
@@ -80,6 +81,15 @@ return [
         'budgets' => [
             'operations' => (int) env('BUILDER_RUN_MAX_OPERATIONS', 30),
             'minutes' => (int) env('BUILDER_RUN_MAX_MINUTES', 20),
+            // Attempts to fix a change that failed verification or review.
+            'repairs' => (int) env('BUILDER_RUN_MAX_REPAIRS', 2),
+        ],
+
+        // What the planner sees besides the request: the file list (up to
+        // "max_files") and these files when the project has them.
+        'planning' => [
+            'max_files' => 800,
+            'context_files' => ['AGENTS.md', 'CLAUDE.md', 'composer.json', 'routes/web.php'],
         ],
 
         // Bounds on what tools accept and return.
@@ -89,6 +99,7 @@ return [
             'output_characters' => 20000,
             'list_entries' => 2000,
             'search_matches' => 200,
+            'review_diff_characters' => 150000,
         ],
 
         // Paths tools may never change. Protected acceptance tests are also
