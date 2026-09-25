@@ -102,3 +102,74 @@ jobs:
 
       - name: composer check:tests
         run: composer check:tests
+
+  customer-app:
+    runs-on: ubuntu-24.04
+
+    # The customer-app fixture is a separate Laravel app that keeps the
+    # starter's defaults (SQLite) and its own check scripts.
+    defaults:
+      run:
+        working-directory: fixtures/customer-app
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          tools: composer:2.8.12
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: fixtures/customer-app/package-lock.json
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist && npm ci
+
+      - name: Prepare environment
+        run: cp .env.example .env && php artisan key:generate --ansi
+
+      - name: npm run build
+        run: npm run build
+
+      - name: composer test
+        run: composer test
+
+      - name: npm run check
+        run: npm run check
+
+      - name: npm run types:check
+        run: npm run types:check
+
+  reference-solutions:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          tools: composer:2.8.12
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Verify reference solutions
+        run: fixtures/reference-solutions/verify.sh --with-build

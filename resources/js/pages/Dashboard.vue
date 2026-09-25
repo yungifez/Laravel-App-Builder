@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import Heading from '@/components/Heading.vue';
+import { Button } from '@/components/ui/button';
 import {
     Card,
+    CardContent,
     CardDescription,
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
 import { dashboard } from '@/routes';
+import { index as projectsIndex } from '@/routes/projects';
+
+defineProps<{ projectCount: number }>();
 
 defineOptions({
     layout: {
@@ -32,13 +37,21 @@ defineOptions({
 
         <Card>
             <CardHeader>
-                <CardTitle>No projects yet</CardTitle>
+                <CardTitle v-if="projectCount === 0">No projects yet</CardTitle>
+                <CardTitle v-else>
+                    {{ projectCount }}
+                    {{ projectCount === 1 ? 'project' : 'projects' }}
+                </CardTitle>
                 <CardDescription>
-                    Nothing has been built or run here. Projects, feature
-                    previews and verification results will appear once those
-                    capabilities are added.
+                    Add a customer application, request a feature, preview the
+                    generated change and adjust its steps.
                 </CardDescription>
             </CardHeader>
+            <CardContent>
+                <Button as-child>
+                    <Link :href="projectsIndex()">Go to projects</Link>
+                </Button>
+            </CardContent>
         </Card>
     </div>
 </template>

@@ -1,0 +1,1058 @@
+diff --git a/app/Actions/Teams/AcceptTeamInvitation.php b/app/Actions/Teams/AcceptTeamInvitation.php
+new file mode 100644
+index 0000000..10a1a3f
+--- /dev/null
++++ b/app/Actions/Teams/AcceptTeamInvitation.php
+@@ -0,0 +1,32 @@
++<?php
++
++namespace App\Actions\Teams;
++
++use App\Models\Team;
++use App\Models\TeamInvitation;
++use App\Models\User;
++use Illuminate\Support\Facades\DB;
++
++class AcceptTeamInvitation
++{
++    /**
++     * Add the user to the invitation's team with the invited role, make it
++     * their current team and consume the invitation.
++     */
++    public function handle(User $user, TeamInvitation $invitation): Team
++    {
++        return DB::transaction(function () use ($user, $invitation) {
++            $team = $invitation->team;
++
++            if (! $user->belongsToTeam($team)) {
++                $team->members()->attach($user, ['role' => $invitation->role->value]);
++            }
++
++            $user->forceFill(['current_team_id' => $team->id])->save();
++
++            $invitation->delete();
++
++            return $team;
++        });
++    }
++}
+diff --git a/app/Actions/Teams/CancelTeamInvitation.php b/app/Actions/Teams/CancelTeamInvitation.php
+new file mode 100644
+index 0000000..c6d8b7c
+--- /dev/null
++++ b/app/Actions/Teams/CancelTeamInvitation.php
+@@ -0,0 +1,16 @@
++<?php
++
++namespace App\Actions\Teams;
++
++use App\Models\TeamInvitation;
++
++class CancelTeamInvitation
++{
++    /**
++     * Cancel a pending invitation.
++     */
++    public function handle(TeamInvitation $invitation): void
++    {
++        $invitation->delete();
++    }
++}
+diff --git a/app/Actions/Teams/InviteTeamMember.php b/app/Actions/Teams/InviteTeamMember.php
+new file mode 100644
+index 0000000..ae6d9b1
+--- /dev/null
++++ b/app/Actions/Teams/InviteTeamMember.php
+@@ -0,0 +1,27 @@
++<?php
++
++namespace App\Actions\Teams;
++
++use App\Enums\TeamRole;
++use App\Mail\TeamInvitationMail;
++use App\Models\Team;
++use App\Models\TeamInvitation;
++use Illuminate\Support\Facades\Mail;
++
++class InviteTeamMember
++{
++    /**
++     * Invite someone to join the team with the given role and email them the invitation.
++     */
++    public function handle(Team $team, string $email, TeamRole $role): TeamInvitation
++    {
++        $invitation = $team->invitations()->create([
++            'email' => $email,
++            'role' => $role,
++        ]);
++
++        Mail::to($email)->send(new TeamInvitationMail($invitation));
++
++        return $invitation;
++    }
++}
+diff --git a/app/Http/Controllers/Settings/TeamController.php b/app/Http/Controllers/Settings/TeamController.php
+index c1d0b4d..2f62b68 100644
+--- a/app/Http/Controllers/Settings/TeamController.php
++++ b/app/Http/Controllers/Settings/TeamController.php
+@@ -8,6 +8,7 @@
+ use App\Http\Requests\Settings\TeamUpdateRequest;
+ use App\Http\Resources\TeamMemberResource;
+ use App\Models\Team;
++use App\Models\TeamInvitation;
+ use Illuminate\Http\RedirectResponse;
+ use Illuminate\Http\Request;
+ use Illuminate\Support\Facades\Gate;
+@@ -31,6 +32,13 @@ public function edit(Request $request): Response
+         return Inertia::render('settings/Team', [
+             'team' => $team->only('id', 'name', 'personal_team'),
+             'members' => TeamMemberResource::collection($team->members()->orderBy('name')->get())->resolve($request),
++            'invitations' => $team->invitations()->orderBy('email')->get()
++                ->map(fn (TeamInvitation $invitation) => [
++                    'id' => $invitation->id,
++                    'email' => $invitation->email,
++                    'role' => $invitation->role->value,
++                    'role_label' => $invitation->role->label(),
++                ]),
+             'teams' => $user->teams()->orderBy('name')->get(['teams.id', 'teams.name'])
+                 ->map(fn (Team $team) => $team->only('id', 'name')),
+             'assignableRoles' => collect(TeamRole::assignable())
+@@ -39,6 +47,7 @@ public function edit(Request $request): Response
+                 'updateTeam' => $user->can('update', $team),
+                 'updateMemberRoles' => $user->can('updateMemberRole', $team),
+                 'removeMembers' => $user->can('removeMember', $team),
++                'inviteMembers' => $user->can('inviteMember', $team),
+             ],
+         ]);
+     }
+diff --git a/app/Http/Controllers/Settings/TeamInvitationController.php b/app/Http/Controllers/Settings/TeamInvitationController.php
+new file mode 100644
+index 0000000..66d969d
+--- /dev/null
++++ b/app/Http/Controllers/Settings/TeamInvitationController.php
+@@ -0,0 +1,45 @@
++<?php
++
++namespace App\Http\Controllers\Settings;
++
++use App\Actions\Teams\CancelTeamInvitation;
++use App\Actions\Teams\InviteTeamMember;
++use App\Enums\TeamRole;
++use App\Http\Controllers\Controller;
++use App\Http\Requests\Settings\TeamInvitationDestroyRequest;
++use App\Http\Requests\Settings\TeamInvitationStoreRequest;
++use App\Models\Team;
++use App\Models\TeamInvitation;
++use Illuminate\Http\RedirectResponse;
++use Inertia\Inertia;
++
++class TeamInvitationController extends Controller
++{
++    /**
++     * Invite someone to the team.
++     */
++    public function store(TeamInvitationStoreRequest $request, Team $team, InviteTeamMember $inviteTeamMember): RedirectResponse
++    {
++        $inviteTeamMember->handle(
++            $team,
++            $request->validated('email'),
++            TeamRole::from($request->validated('role')),
++        );
++
++        Inertia::flash('toast', ['type' => 'success', 'message' => __('Invitation sent.')]);
++
++        return to_route('teams.edit');
++    }
++
++    /**
++     * Cancel a pending invitation.
++     */
++    public function destroy(TeamInvitationDestroyRequest $request, Team $team, TeamInvitation $invitation, CancelTeamInvitation $cancelTeamInvitation): RedirectResponse
++    {
++        $cancelTeamInvitation->handle($invitation);
++
++        Inertia::flash('toast', ['type' => 'success', 'message' => __('Invitation cancelled.')]);
++
++        return to_route('teams.edit');
++    }
++}
+diff --git a/app/Http/Controllers/TeamInvitationAcceptanceController.php b/app/Http/Controllers/TeamInvitationAcceptanceController.php
+new file mode 100644
+index 0000000..a7f9e0d
+--- /dev/null
++++ b/app/Http/Controllers/TeamInvitationAcceptanceController.php
+@@ -0,0 +1,27 @@
++<?php
++
++namespace App\Http\Controllers;
++
++use App\Actions\Teams\AcceptTeamInvitation;
++use App\Models\TeamInvitation;
++use Illuminate\Http\RedirectResponse;
++use Illuminate\Http\Request;
++use Illuminate\Support\Facades\Gate;
++use Inertia\Inertia;
++
++class TeamInvitationAcceptanceController extends Controller
++{
++    /**
++     * Accept an invitation to join a team.
++     */
++    public function __invoke(Request $request, TeamInvitation $invitation, AcceptTeamInvitation $acceptTeamInvitation): RedirectResponse
++    {
++        Gate::authorize('accept', $invitation);
++
++        $team = $acceptTeamInvitation->handle($request->user(), $invitation);
++
++        Inertia::flash('toast', ['type' => 'success', 'message' => __('You joined :team.', ['team' => $team->name])]);
++
++        return to_route('teams.edit');
++    }
++}
+diff --git a/app/Http/Requests/Settings/TeamInvitationDestroyRequest.php b/app/Http/Requests/Settings/TeamInvitationDestroyRequest.php
+new file mode 100644
+index 0000000..8df8c05
+--- /dev/null
++++ b/app/Http/Requests/Settings/TeamInvitationDestroyRequest.php
+@@ -0,0 +1,31 @@
++<?php
++
++namespace App\Http\Requests\Settings;
++
++use App\Models\Team;
++use Illuminate\Contracts\Validation\ValidationRule;
++use Illuminate\Foundation\Http\FormRequest;
++
++class TeamInvitationDestroyRequest extends FormRequest
++{
++    /**
++     * Determine if the user is authorized to make this request.
++     */
++    public function authorize(): bool
++    {
++        /** @var Team $team */
++        $team = $this->route('team');
++
++        return $this->user()->can('inviteMember', $team);
++    }
++
++    /**
++     * Get the validation rules that apply to the request.
++     *
++     * @return array<string, ValidationRule|array<mixed>|string>
++     */
++    public function rules(): array
++    {
++        return [];
++    }
++}
+diff --git a/app/Http/Requests/Settings/TeamInvitationStoreRequest.php b/app/Http/Requests/Settings/TeamInvitationStoreRequest.php
+new file mode 100644
+index 0000000..6b70a28
+--- /dev/null
++++ b/app/Http/Requests/Settings/TeamInvitationStoreRequest.php
+@@ -0,0 +1,68 @@
++<?php
++
++namespace App\Http\Requests\Settings;
++
++use App\Enums\TeamRole;
++use App\Models\Team;
++use Closure;
++use Illuminate\Contracts\Validation\ValidationRule;
++use Illuminate\Foundation\Http\FormRequest;
++use Illuminate\Validation\Rule;
++
++class TeamInvitationStoreRequest extends FormRequest
++{
++    /**
++     * Determine if the user is authorized to make this request.
++     */
++    public function authorize(): bool
++    {
++        return $this->user()->can('inviteMember', $this->team());
++    }
++
++    /**
++     * Get the validation rules that apply to the request.
++     *
++     * @return array<string, ValidationRule|array<mixed>|string>
++     */
++    public function rules(): array
++    {
++        return [
++            'email' => [
++                'required',
++                'string',
++                'email',
++                'max:255',
++                Rule::unique('team_invitations')->where('team_id', $this->team()->id),
++                function (string $attribute, mixed $value, Closure $fail) {
++                    if ($this->team()->members()->where('email', $value)->exists()) {
++                        $fail(__('This person already belongs to the team.'));
++                    }
++                },
++            ],
++            'role' => ['required', Rule::enum(TeamRole::class)->only(TeamRole::assignable())],
++        ];
++    }
++
++    /**
++     * Get custom messages for validator errors.
++     *
++     * @return array<string, string>
++     */
++    public function messages(): array
++    {
++        return [
++            'email.unique' => __('This person has already been invited to the team.'),
++        ];
++    }
++
++    /**
++     * Get the team the invitation is for.
++     */
++    public function team(): Team
++    {
++        /** @var Team $team */
++        $team = $this->route('team');
++
++        return $team;
++    }
++}
+diff --git a/app/Mail/TeamInvitationMail.php b/app/Mail/TeamInvitationMail.php
+new file mode 100644
+index 0000000..917cbb6
+--- /dev/null
++++ b/app/Mail/TeamInvitationMail.php
+@@ -0,0 +1,47 @@
++<?php
++
++namespace App\Mail;
++
++use App\Models\TeamInvitation;
++use Illuminate\Bus\Queueable;
++use Illuminate\Mail\Mailable;
++use Illuminate\Mail\Mailables\Content;
++use Illuminate\Mail\Mailables\Envelope;
++use Illuminate\Queue\SerializesModels;
++use Illuminate\Support\Facades\URL;
++
++class TeamInvitationMail extends Mailable
++{
++    use Queueable, SerializesModels;
++
++    /**
++     * Create a new message instance.
++     */
++    public function __construct(public TeamInvitation $invitation) {}
++
++    /**
++     * Get the message envelope.
++     */
++    public function envelope(): Envelope
++    {
++        return new Envelope(
++            subject: __('Invitation to join :team', ['team' => $this->invitation->team->name]),
++        );
++    }
++
++    /**
++     * Get the message content definition.
++     */
++    public function content(): Content
++    {
++        return new Content(
++            markdown: 'mail.team-invitation',
++            with: [
++                'teamName' => $this->invitation->team->name,
++                'roleLabel' => $this->invitation->role->label(),
++                'acceptUrl' => URL::signedRoute('team-invitations.accept', $this->invitation),
++                'registerUrl' => route('register'),
++            ],
++        );
++    }
++}
+diff --git a/app/Models/Team.php b/app/Models/Team.php
+index bce3dfc..607d9a0 100644
+--- a/app/Models/Team.php
++++ b/app/Models/Team.php
+@@ -8,6 +8,7 @@
+ use Illuminate\Database\Eloquent\Factories\HasFactory;
+ use Illuminate\Database\Eloquent\Model;
+ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
++use Illuminate\Database\Eloquent\Relations\HasMany;
+ use Illuminate\Support\Carbon;
+ 
+ /**
+@@ -49,6 +50,16 @@ public function members(): BelongsToMany
+             ->withTimestamps();
+     }
+ 
++    /**
++     * Get the pending invitations to join the team.
++     *
++     * @return HasMany<TeamInvitation, $this>
++     */
++    public function invitations(): HasMany
++    {
++        return $this->hasMany(TeamInvitation::class);
++    }
++
+     /**
+      * Get the user that owns the team.
+      */
+diff --git a/app/Models/TeamInvitation.php b/app/Models/TeamInvitation.php
+new file mode 100644
+index 0000000..cdc3d32
+--- /dev/null
++++ b/app/Models/TeamInvitation.php
+@@ -0,0 +1,49 @@
++<?php
++
++namespace App\Models;
++
++use App\Enums\TeamRole;
++use Database\Factories\TeamInvitationFactory;
++use Illuminate\Database\Eloquent\Attributes\Fillable;
++use Illuminate\Database\Eloquent\Factories\HasFactory;
++use Illuminate\Database\Eloquent\Model;
++use Illuminate\Database\Eloquent\Relations\BelongsTo;
++use Illuminate\Support\Carbon;
++
++/**
++ * @property int $id
++ * @property int $team_id
++ * @property string $email
++ * @property TeamRole $role
++ * @property Carbon|null $created_at
++ * @property Carbon|null $updated_at
++ * @property-read Team $team
++ */
++#[Fillable(['email', 'role'])]
++class TeamInvitation extends Model
++{
++    /** @use HasFactory<TeamInvitationFactory> */
++    use HasFactory;
++
++    /**
++     * Get the attributes that should be cast.
++     *
++     * @return array<string, string>
++     */
++    protected function casts(): array
++    {
++        return [
++            'role' => TeamRole::class,
++        ];
++    }
++
++    /**
++     * Get the team the invitation is for.
++     *
++     * @return BelongsTo<Team, $this>
++     */
++    public function team(): BelongsTo
++    {
++        return $this->belongsTo(Team::class);
++    }
++}
+diff --git a/app/Policies/TeamInvitationPolicy.php b/app/Policies/TeamInvitationPolicy.php
+new file mode 100644
+index 0000000..b74f179
+--- /dev/null
++++ b/app/Policies/TeamInvitationPolicy.php
+@@ -0,0 +1,19 @@
++<?php
++
++namespace App\Policies;
++
++use App\Models\TeamInvitation;
++use App\Models\User;
++
++class TeamInvitationPolicy
++{
++    /**
++     * Determine whether the user can accept the invitation.
++     *
++     * Only the person the invitation was sent to may accept it.
++     */
++    public function accept(User $user, TeamInvitation $invitation): bool
++    {
++        return strcasecmp($user->email, $invitation->email) === 0;
++    }
++}
+diff --git a/app/Policies/TeamPolicy.php b/app/Policies/TeamPolicy.php
+index 55a4e90..4cf03bf 100644
+--- a/app/Policies/TeamPolicy.php
++++ b/app/Policies/TeamPolicy.php
+@@ -31,6 +31,17 @@ public function updateMemberRole(User $user, Team $team): bool
+         return $user->hasTeamPermission($team, 'members:update-role');
+     }
+ 
++    /**
++     * Determine whether the user can invite people to the team and manage
++     * its pending invitations.
++     *
++     * This is the invitation feature's permission step.
++     */
++    public function inviteMember(User $user, Team $team): bool
++    {
++        return $user->hasTeamPermission($team, 'members:invite');
++    }
++
+     /**
+      * Determine whether the user can remove members from the team.
+      */
+diff --git a/config/teams.php b/config/teams.php
+index 4e27794..6692293 100644
+--- a/config/teams.php
++++ b/config/teams.php
+@@ -12,7 +12,7 @@
+     | so changing them here changes who may perform each team action.
+     |
+     | Available permissions: "team:update", "members:update-role",
+-    | "members:remove".
++    | "members:remove", "members:invite".
+     |
+     */
+ 
+@@ -26,6 +26,7 @@
+                 'team:update',
+                 'members:update-role',
+                 'members:remove',
++                'members:invite',
+             ],
+         ],
+ 
+diff --git a/database/factories/TeamInvitationFactory.php b/database/factories/TeamInvitationFactory.php
+new file mode 100644
+index 0000000..8ece285
+--- /dev/null
++++ b/database/factories/TeamInvitationFactory.php
+@@ -0,0 +1,28 @@
++<?php
++
++namespace Database\Factories;
++
++use App\Enums\TeamRole;
++use App\Models\Team;
++use App\Models\TeamInvitation;
++use Illuminate\Database\Eloquent\Factories\Factory;
++
++/**
++ * @extends Factory<TeamInvitation>
++ */
++class TeamInvitationFactory extends Factory
++{
++    /**
++     * Define the model's default state.
++     *
++     * @return array<string, mixed>
++     */
++    public function definition(): array
++    {
++        return [
++            'team_id' => Team::factory(),
++            'email' => fake()->unique()->safeEmail(),
++            'role' => TeamRole::Member,
++        ];
++    }
++}
+diff --git a/database/migrations/2026_09_25_191418_create_team_invitations_table.php b/database/migrations/2026_09_25_191418_create_team_invitations_table.php
+new file mode 100644
+index 0000000..f62204a
+--- /dev/null
++++ b/database/migrations/2026_09_25_191418_create_team_invitations_table.php
+@@ -0,0 +1,32 @@
++<?php
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Support\Facades\Schema;
++
++return new class extends Migration
++{
++    /**
++     * Run the migrations.
++     */
++    public function up(): void
++    {
++        Schema::create('team_invitations', function (Blueprint $table) {
++            $table->id();
++            $table->foreignId('team_id')->constrained()->cascadeOnDelete();
++            $table->string('email');
++            $table->string('role');
++            $table->timestamps();
++
++            $table->unique(['team_id', 'email']);
++        });
++    }
++
++    /**
++     * Reverse the migrations.
++     */
++    public function down(): void
++    {
++        Schema::dropIfExists('team_invitations');
++    }
++};
+diff --git a/resources/js/pages/settings/Team.vue b/resources/js/pages/settings/Team.vue
+index 6a5f8c6..364de60 100644
+--- a/resources/js/pages/settings/Team.vue
++++ b/resources/js/pages/settings/Team.vue
+@@ -2,6 +2,7 @@
+ import { Form, Head } from '@inertiajs/vue3';
+ import CurrentTeamController from '@/actions/App/Http/Controllers/CurrentTeamController';
+ import TeamController from '@/actions/App/Http/Controllers/Settings/TeamController';
++import TeamInvitationController from '@/actions/App/Http/Controllers/Settings/TeamInvitationController';
+ import TeamMemberController from '@/actions/App/Http/Controllers/Settings/TeamMemberController';
+ import Heading from '@/components/Heading.vue';
+ import InputError from '@/components/InputError.vue';
+@@ -17,17 +18,25 @@ import {
+     SelectValue,
+ } from '@/components/ui/select';
+ import { edit } from '@/routes/teams';
+-import type { RoleOption, Team, TeamMember, TeamSummary } from '@/types';
++import type {
++    RoleOption,
++    Team,
++    TeamInvitation,
++    TeamMember,
++    TeamSummary,
++} from '@/types';
+ 
+ type Props = {
+     team: Team;
+     members: TeamMember[];
++    invitations: TeamInvitation[];
+     teams: TeamSummary[];
+     assignableRoles: RoleOption[];
+     can: {
+         updateTeam: boolean;
+         updateMemberRoles: boolean;
+         removeMembers: boolean;
++        inviteMembers: boolean;
+     };
+ };
+ 
+@@ -171,6 +180,97 @@ defineOptions({
+         </ul>
+     </div>
+ 
++    <div v-if="can.inviteMembers" class="flex flex-col space-y-6">
++        <Heading
++            variant="small"
++            title="Invite a member"
++            description="Send an email invitation to join this team"
++        />
++
++        <Form
++            v-bind="TeamInvitationController.store.form(team)"
++            class="space-y-6"
++            reset-on-success
++            v-slot="{ errors, processing }"
++        >
++            <div class="grid gap-2">
++                <Label for="invitation-email">Email address</Label>
++                <Input
++                    id="invitation-email"
++                    type="email"
++                    class="mt-1 block w-full"
++                    name="email"
++                    required
++                    placeholder="Email address"
++                />
++                <InputError class="mt-2" :message="errors.email" />
++            </div>
++
++            <div class="grid gap-2">
++                <Label for="invitation-role">Role</Label>
++                <Select
++                    name="role"
++                    :default-value="
++                        assignableRoles[assignableRoles.length - 1]?.value
++                    "
++                >
++                    <SelectTrigger id="invitation-role" class="w-40">
++                        <SelectValue />
++                    </SelectTrigger>
++                    <SelectContent>
++                        <SelectItem
++                            v-for="role in assignableRoles"
++                            :key="role.value"
++                            :value="role.value"
++                        >
++                            {{ role.label }}
++                        </SelectItem>
++                    </SelectContent>
++                </Select>
++                <InputError class="mt-2" :message="errors.role" />
++            </div>
++
++            <Button :disabled="processing" data-test="send-invitation-button">
++                Send invitation
++            </Button>
++        </Form>
++
++        <ul
++            v-if="invitations.length > 0"
++            class="divide-y rounded-lg border"
++            data-test="team-invitations"
++        >
++            <li
++                v-for="invitation in invitations"
++                :key="invitation.id"
++                class="flex items-center justify-between gap-2 p-4"
++            >
++                <div class="min-w-0">
++                    <p class="truncate text-sm font-medium">
++                        {{ invitation.email }}
++                    </p>
++                    <p class="text-sm text-muted-foreground">
++                        Invited as {{ invitation.role_label }}
++                    </p>
++                </div>
++
++                <Form
++                    v-bind="
++                        TeamInvitationController.destroy.form({
++                            team: team.id,
++                            invitation: invitation.id,
++                        })
++                    "
++                    v-slot="{ processing }"
++                >
++                    <Button variant="outline" size="sm" :disabled="processing">
++                        Cancel
++                    </Button>
++                </Form>
++            </li>
++        </ul>
++    </div>
++
+     <div v-if="teams.length > 1" class="flex flex-col space-y-6">
+         <Heading
+             variant="small"
+diff --git a/resources/js/types/teams.ts b/resources/js/types/teams.ts
+index e86f9e7..c34225f 100644
+--- a/resources/js/types/teams.ts
++++ b/resources/js/types/teams.ts
+@@ -19,6 +19,13 @@ export type TeamMember = {
+     role_label: string;
+ };
+ 
++export type TeamInvitation = {
++    id: number;
++    email: string;
++    role: TeamRole;
++    role_label: string;
++};
++
+ export type RoleOption = {
+     value: TeamRole;
+     label: string;
+diff --git a/resources/views/mail/team-invitation.blade.php b/resources/views/mail/team-invitation.blade.php
+new file mode 100644
+index 0000000..e48fd6b
+--- /dev/null
++++ b/resources/views/mail/team-invitation.blade.php
+@@ -0,0 +1,16 @@
++<x-mail::message>
++# {{ __('You have been invited to join :team', ['team' => $teamName]) }}
++
++{{ __('You have been invited to join the :team team as :role.', ['team' => $teamName, 'role' => $roleLabel]) }}
++
++{{ __('If you do not have an account yet, create one with this email address first:') }} [{{ $registerUrl }}]({{ $registerUrl }})
++
++<x-mail::button :url="$acceptUrl">
++{{ __('Accept invitation') }}
++</x-mail::button>
++
++{{ __('If you did not expect this invitation, you can ignore this email.') }}
++
++{{ __('Thanks,') }}<br>
++{{ config('app.name') }}
++</x-mail::message>
+diff --git a/routes/settings.php b/routes/settings.php
+index 1d274eb..6813c0f 100644
+--- a/routes/settings.php
++++ b/routes/settings.php
+@@ -4,7 +4,9 @@
+ use App\Http\Controllers\Settings\ProfileController;
+ use App\Http\Controllers\Settings\SecurityController;
+ use App\Http\Controllers\Settings\TeamController;
++use App\Http\Controllers\Settings\TeamInvitationController;
+ use App\Http\Controllers\Settings\TeamMemberController;
++use App\Http\Controllers\TeamInvitationAcceptanceController;
+ use Illuminate\Auth\Middleware\RequirePassword;
+ use Illuminate\Support\Facades\Route;
+ 
+@@ -34,8 +36,15 @@
+     Route::scopeBindings()->group(function () {
+         Route::put('settings/teams/{team}/members/{member}', [TeamMemberController::class, 'update'])->name('team-members.update');
+         Route::delete('settings/teams/{team}/members/{member}', [TeamMemberController::class, 'destroy'])->name('team-members.destroy');
++
++        Route::post('settings/teams/{team}/invitations', [TeamInvitationController::class, 'store'])->name('team-invitations.store');
++        Route::delete('settings/teams/{team}/invitations/{invitation}', [TeamInvitationController::class, 'destroy'])->name('team-invitations.destroy');
+     });
+ 
++    Route::get('team-invitations/{invitation}', TeamInvitationAcceptanceController::class)
++        ->middleware('signed')
++        ->name('team-invitations.accept');
++
+     Route::put('current-team/{team}', [CurrentTeamController::class, 'update'])->name('current-team.update');
+ });
+ 
+diff --git a/tests/Feature/Teams/AcceptTeamInvitationTest.php b/tests/Feature/Teams/AcceptTeamInvitationTest.php
+new file mode 100644
+index 0000000..2c6125c
+--- /dev/null
++++ b/tests/Feature/Teams/AcceptTeamInvitationTest.php
+@@ -0,0 +1,84 @@
++<?php
++
++namespace Tests\Feature\Teams;
++
++use App\Enums\TeamRole;
++use App\Mail\TeamInvitationMail;
++use App\Models\TeamInvitation;
++use App\Models\User;
++use Illuminate\Foundation\Testing\RefreshDatabase;
++use Illuminate\Support\Facades\URL;
++use Tests\Concerns\InteractsWithTeams;
++use Tests\TestCase;
++
++class AcceptTeamInvitationTest extends TestCase
++{
++    use InteractsWithTeams, RefreshDatabase;
++
++    public function test_the_invited_person_can_accept_the_invitation()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $invitation = TeamInvitation::factory()->for($team)->create(['email' => 'new@example.com', 'role' => TeamRole::Admin]);
++        $invitee = User::factory()->withPersonalTeam()->create(['email' => 'new@example.com']);
++
++        $this->actingAs($invitee)
++            ->get($this->acceptUrl($invitation))
++            ->assertRedirect(route('teams.edit'));
++
++        $this->assertSame(TeamRole::Admin, $invitee->teamRole($team));
++        $this->assertSame($team->id, $invitee->fresh()->current_team_id);
++        $this->assertModelMissing($invitation);
++    }
++
++    public function test_someone_else_cannot_accept_the_invitation()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $invitation = TeamInvitation::factory()->for($team)->create(['email' => 'new@example.com']);
++        $stranger = User::factory()->withPersonalTeam()->create();
++
++        $this->actingAs($stranger)
++            ->get($this->acceptUrl($invitation))
++            ->assertForbidden();
++
++        $this->assertFalse($stranger->belongsToTeam($team));
++        $this->assertModelExists($invitation);
++    }
++
++    public function test_the_link_must_be_signed()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $invitation = TeamInvitation::factory()->for($team)->create(['email' => 'new@example.com']);
++        $invitee = User::factory()->withPersonalTeam()->create(['email' => 'new@example.com']);
++
++        $this->actingAs($invitee)
++            ->get(route('team-invitations.accept', $invitation))
++            ->assertForbidden();
++
++        $this->assertFalse($invitee->belongsToTeam($team));
++    }
++
++    public function test_guests_are_asked_to_log_in_first()
++    {
++        $invitation = TeamInvitation::factory()->create();
++
++        $this->get($this->acceptUrl($invitation))->assertRedirect(route('login'));
++    }
++
++    public function test_the_invitation_email_links_to_the_signed_acceptance_url()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create(), 'Acme');
++        $invitation = TeamInvitation::factory()->for($team)->create(['role' => TeamRole::Member]);
++
++        $mail = new TeamInvitationMail($invitation);
++
++        $mail->assertHasSubject('Invitation to join Acme');
++        $mail->assertSeeInHtml('as Member', false);
++        $mail->assertSeeInHtml(route('team-invitations.accept', $invitation), false);
++        $mail->assertSeeInHtml('signature=', false);
++    }
++
++    protected function acceptUrl(TeamInvitation $invitation): string
++    {
++        return URL::signedRoute('team-invitations.accept', $invitation);
++    }
++}
+diff --git a/tests/Feature/Teams/InviteTeamMemberTest.php b/tests/Feature/Teams/InviteTeamMemberTest.php
+new file mode 100644
+index 0000000..785f176
+--- /dev/null
++++ b/tests/Feature/Teams/InviteTeamMemberTest.php
+@@ -0,0 +1,156 @@
++<?php
++
++namespace Tests\Feature\Teams;
++
++use App\Enums\TeamRole;
++use App\Mail\TeamInvitationMail;
++use App\Models\TeamInvitation;
++use App\Models\User;
++use Illuminate\Foundation\Testing\RefreshDatabase;
++use Illuminate\Support\Facades\Mail;
++use Inertia\Testing\AssertableInertia as Assert;
++use Tests\Concerns\InteractsWithTeams;
++use Tests\TestCase;
++
++class InviteTeamMemberTest extends TestCase
++{
++    use InteractsWithTeams, RefreshDatabase;
++
++    protected function setUp(): void
++    {
++        parent::setUp();
++
++        Mail::fake();
++    }
++
++    public function test_owners_can_invite_people_to_the_team()
++    {
++        $owner = User::factory()->create();
++        $team = $this->createTeamOwnedBy($owner);
++
++        $this->actingAs($owner)
++            ->post(route('team-invitations.store', $team), ['email' => 'new@example.com', 'role' => 'admin'])
++            ->assertSessionHasNoErrors()
++            ->assertRedirect(route('teams.edit'));
++
++        $invitation = $team->invitations()->sole();
++
++        $this->assertSame('new@example.com', $invitation->email);
++        $this->assertSame(TeamRole::Admin, $invitation->role);
++
++        Mail::assertSent(TeamInvitationMail::class, fn (TeamInvitationMail $mail) => $mail->hasTo('new@example.com')
++            && $mail->invitation->is($invitation));
++    }
++
++    public function test_admins_can_invite_people_to_the_team()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $admin = $this->addTeamMember($team, TeamRole::Admin);
++
++        $this->actingAs($admin)
++            ->post(route('team-invitations.store', $team), ['email' => 'new@example.com', 'role' => 'member'])
++            ->assertSessionHasNoErrors();
++
++        $this->assertTrue($team->invitations()->where('email', 'new@example.com')->exists());
++    }
++
++    public function test_members_cannot_invite_people()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $member = $this->addTeamMember($team, TeamRole::Member);
++
++        $this->actingAs($member)
++            ->post(route('team-invitations.store', $team), ['email' => 'new@example.com', 'role' => 'member'])
++            ->assertForbidden();
++
++        $this->assertSame(0, $team->invitations()->count());
++        Mail::assertNothingSent();
++    }
++
++    public function test_existing_members_cannot_be_invited()
++    {
++        $owner = User::factory()->create();
++        $team = $this->createTeamOwnedBy($owner);
++        $member = $this->addTeamMember($team, TeamRole::Member);
++
++        $this->actingAs($owner)
++            ->post(route('team-invitations.store', $team), ['email' => $member->email, 'role' => 'member'])
++            ->assertSessionHasErrors('email');
++    }
++
++    public function test_people_cannot_be_invited_twice()
++    {
++        $owner = User::factory()->create();
++        $team = $this->createTeamOwnedBy($owner);
++        TeamInvitation::factory()->for($team)->create(['email' => 'new@example.com']);
++
++        $this->actingAs($owner)
++            ->post(route('team-invitations.store', $team), ['email' => 'new@example.com', 'role' => 'member'])
++            ->assertSessionHasErrors('email');
++    }
++
++    public function test_the_owner_role_cannot_be_offered()
++    {
++        $owner = User::factory()->create();
++        $team = $this->createTeamOwnedBy($owner);
++
++        $this->actingAs($owner)
++            ->post(route('team-invitations.store', $team), ['email' => 'new@example.com', 'role' => 'owner'])
++            ->assertSessionHasErrors('role');
++    }
++
++    public function test_the_team_page_lists_pending_invitations_for_people_who_can_invite()
++    {
++        $owner = User::factory()->create();
++        $team = $this->createTeamOwnedBy($owner);
++        TeamInvitation::factory()->for($team)->create(['email' => 'new@example.com']);
++
++        $this->actingAs($owner)
++            ->get(route('teams.edit'))
++            ->assertInertia(fn (Assert $page) => $page
++                ->where('can.inviteMembers', true)
++                ->has('invitations', 1)
++                ->where('invitations.0.email', 'new@example.com')
++                ->where('invitations.0.role', 'member')
++            );
++    }
++
++    public function test_owners_can_cancel_invitations()
++    {
++        $owner = User::factory()->create();
++        $team = $this->createTeamOwnedBy($owner);
++        $invitation = TeamInvitation::factory()->for($team)->create();
++
++        $this->actingAs($owner)
++            ->delete(route('team-invitations.destroy', [$team, $invitation]))
++            ->assertRedirect(route('teams.edit'));
++
++        $this->assertModelMissing($invitation);
++    }
++
++    public function test_members_cannot_cancel_invitations()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $member = $this->addTeamMember($team, TeamRole::Member);
++        $invitation = TeamInvitation::factory()->for($team)->create();
++
++        $this->actingAs($member)
++            ->delete(route('team-invitations.destroy', [$team, $invitation]))
++            ->assertForbidden();
++
++        $this->assertModelExists($invitation);
++    }
++
++    public function test_invitations_of_other_teams_cannot_be_cancelled()
++    {
++        $owner = User::factory()->create();
++        $team = $this->createTeamOwnedBy($owner);
++        $otherInvitation = TeamInvitation::factory()->create();
++
++        $this->actingAs($owner)
++            ->delete(route('team-invitations.destroy', [$team, $otherInvitation]))
++            ->assertNotFound();
++
++        $this->assertModelExists($otherInvitation);
++    }
++}

@@ -10,7 +10,13 @@ take precedence for files below it.
   first-party Laravel package covers a need, use it instead of a third-party
   one. All AI and agent work uses the Laravel AI SDK (`laravel/ai`, configured
   in `config/ai.php`), and new agents, tools and middleware start from
-  `php artisan make:agent` / `make:tool` / `make:agent-middleware`.
+  `php artisan make:agent` / `make:tool` / `make:agent-middleware`. Pick models
+  by tier through `App\Enums\ModelRole` (planner, coder, reviewer), which
+  reads `config/builder.php`. Never hardcode provider or model IDs.
+- **Framework defaults come from `nunomaduro/essentials`** (strict models,
+  automatic eager loading, immutable dates, prohibited destructive commands in
+  production, password rules, stray-request prevention in tests). Toggle them in
+  `config/essentials.php`; do not re-implement them in service providers.
 - **Follow Laravel conventions.** Keep controllers thin. Put behavior in actions
   or services, and authorization in policies or form requests. Read settings
   from `config/` backed by `.env`; do not hard-code values that operators should
@@ -22,6 +28,11 @@ take precedence for files below it.
 - **Layout:** the repository root is the Laravel application. Keep the standard
   Laravel directory structure; do not introduce monorepo-style `apps/` folders.
   Run every command from the repository root.
+- **Keep the customer app separate.** `fixtures/customer-app` is a separate
+  Laravel app standing in for customer code. Control-plane code must not refer
+  to its path, share its database or share identities with it. Change it only
+  when a task is about the fixture. Keep its Laravel defaults, and after any
+  change run `fixtures/reference-solutions/verify.sh`.
 - **Run the checks before you report.** Run all seven commands listed in
   `README.md` → Checks. Report each result truthfully, including failures and
   anything you did not run.

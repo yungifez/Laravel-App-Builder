@@ -1,0 +1,61 @@
+diff --git a/config/teams.php b/config/teams.php
+index 6692293..71abd1a 100644
+--- a/config/teams.php
++++ b/config/teams.php
+@@ -26,7 +26,6 @@
+                 'team:update',
+                 'members:update-role',
+                 'members:remove',
+-                'members:invite',
+             ],
+         ],
+ 
+diff --git a/tests/Feature/Teams/InviteTeamMemberTest.php b/tests/Feature/Teams/InviteTeamMemberTest.php
+index 785f176..c264e4f 100644
+--- a/tests/Feature/Teams/InviteTeamMemberTest.php
++++ b/tests/Feature/Teams/InviteTeamMemberTest.php
+@@ -42,16 +42,41 @@ public function test_owners_can_invite_people_to_the_team()
+             && $mail->invitation->is($invitation));
+     }
+ 
+-    public function test_admins_can_invite_people_to_the_team()
++    public function test_admins_cannot_invite_people_because_inviting_is_owner_only()
+     {
+         $team = $this->createTeamOwnedBy(User::factory()->create());
+         $admin = $this->addTeamMember($team, TeamRole::Admin);
+ 
+         $this->actingAs($admin)
+             ->post(route('team-invitations.store', $team), ['email' => 'new@example.com', 'role' => 'member'])
+-            ->assertSessionHasNoErrors();
++            ->assertForbidden();
++
++        $this->assertSame(0, $team->invitations()->count());
++        Mail::assertNothingSent();
++    }
++
++    public function test_admins_cannot_cancel_invitations_because_inviting_is_owner_only()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $admin = $this->addTeamMember($team, TeamRole::Admin);
++        $invitation = TeamInvitation::factory()->for($team)->create();
+ 
+-        $this->assertTrue($team->invitations()->where('email', 'new@example.com')->exists());
++        $this->actingAs($admin)
++            ->delete(route('team-invitations.destroy', [$team, $invitation]))
++            ->assertForbidden();
++
++        $this->assertModelExists($invitation);
++    }
++
++    public function test_admins_do_not_see_the_invitation_controls()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $admin = $this->addTeamMember($team, TeamRole::Admin);
++        $admin->forceFill(['current_team_id' => $team->id])->save();
++
++        $this->actingAs($admin)
++            ->get(route('teams.edit'))
++            ->assertInertia(fn (Assert $page) => $page->where('can.inviteMembers', false));
+     }
+ 
+     public function test_members_cannot_invite_people()

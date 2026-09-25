@@ -38,12 +38,14 @@ export default defineConfig({
                 '**/.claude/**',
                 '**/.cursor/**',
                 '**/.junie/**',
+                '**/fixtures/**',
                 '**/vendor/**',
             ],
         },
     },
     lint: {
         ignorePatterns: [
+            'fixtures/**',
             'vendor/**',
             'node_modules/**',
             'public/**',
@@ -68,6 +70,7 @@ export default defineConfig({
         htmlWhitespaceSensitivity: 'css',
         ignorePatterns: [
             '.github/**',
+            'fixtures/**',
             'composer.json',
             'resources/js/components/ui/*',
             'resources/views/mail/*',
