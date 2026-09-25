@@ -1,0 +1,7 @@
+# Local overrides for compose.yaml (ports, credentials). App ignores live in apps/*/.gitignore.
+.env
+.env.*
+!.env.example
+.DS_Store
+/.idea
+/.vscode
