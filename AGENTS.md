@@ -5,6 +5,12 @@ take precedence for files below it.
 
 - **Preserve user work.** Do not discard, overwrite or reformat changes you did
   not make. Leave unrelated uncommitted changes alone.
+- **Use Laravel defaults and first-party packages.** Keep framework and
+  starter-kit defaults unless there is a recorded reason to change them. When a
+  first-party Laravel package covers a need, use it instead of a third-party
+  one. All AI and agent work uses the Laravel AI SDK (`laravel/ai`, configured
+  in `config/ai.php`), and new agents, tools and middleware start from
+  `php artisan make:agent` / `make:tool` / `make:agent-middleware`.
 - **Follow Laravel conventions.** Keep controllers thin. Put behavior in actions
   or services, and authorization in policies or form requests. Read settings
   from `config/` backed by `.env`; do not hard-code values that operators should

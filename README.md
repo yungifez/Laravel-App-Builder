@@ -72,6 +72,15 @@ endpoint is at <http://localhost:8000/up>.
 Optionally, `php artisan db:seed` creates `test@example.com` with password
 `password`. The seeder refuses to run unless `APP_ENV=local`.
 
+### AI SDK
+
+The app includes the Laravel AI SDK (`laravel/ai`) with its published default
+configuration in `config/ai.php`. Its migration creates the
+`agent_conversations` and `agent_conversation_messages` tables. To call a
+provider, set that provider's key (for example `OPENAI_API_KEY` or
+`ANTHROPIC_API_KEY`) in `apps/control-plane/.env`. Nothing in the app uses the
+SDK yet, and no key is needed to run the app or the tests.
+
 ## Local services
 
 | Service    | Image           | Host port (override)                   |
@@ -128,9 +137,12 @@ Run from `apps/control-plane`. None of these modify tracked files.
 | `composer check:tests`  | `config:clear`, then the full suite on the test DB  |
 
 `npm run build` also generates the Wayfinder TypeScript route helpers
-(git-ignored) that `check:lint`, `check:types` and the feature tests import. On
-a fresh checkout, run it before those checks. `composer ci:check` runs all seven
-in this order.
+(git-ignored) that `check:lint` and `check:types` import. On a fresh checkout,
+run it before those checks, or run `php artisan wayfinder:generate --with-form`.
+The build downloads the Instrument Sans font from `fonts.bunny.net` (the
+starter's default), so it needs network access to that host. The PHP test suite
+does not need a build: `tests/TestCase.php` calls `withoutVite()`.
+`composer ci:check` runs all seven checks in this order.
 
 Tests always use PostgreSQL database `control_plane_test`. `tests/TestCase.php`
 stops the run if the active connection is not `pgsql` or its database name does

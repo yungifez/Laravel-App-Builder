@@ -16,6 +16,7 @@ Recorded 2026-09-25 on branch `g0-1-foundation`. The repository started empty
 | Inertia (client) | @inertiajs/vue3 3.7.1, @inertiajs/vite 3.7.1               | `package-lock.json`                            |
 | Vue              | 3.5.43                                                     | `package-lock.json`                            |
 | Auth             | laravel/fortify v1.40.0                                    | `composer.lock`                                |
+| AI SDK           | laravel/ai v1.0.0                                          | `composer.lock`                                |
 | Static analysis  | larastan/larastan v3.12.2, phpstan/phpstan 2.2.16           | `composer.lock`                                |
 | Formatting (PHP) | laravel/pint v1.32.1                                       | `composer.lock`                                |
 | Tests            | phpunit/phpunit 12.5.36                                    | `composer.lock`                                |
@@ -34,6 +35,12 @@ using its default features: registration, email verification, two-factor
 authentication, passkeys and password confirmation. The latest tagged release
 (v1.0.2, February 2025) is older than `dev-main`, and `dev-main` is what the
 Laravel installer uses.
+
+**Laravel AI SDK:** `laravel/ai` v1.0.0 (`101c7ea3`), installed as the docs
+describe: `composer require laravel/ai`, then
+`php artisan vendor:publish --provider="Laravel\Ai\AiServiceProvider"`
+(config, `stubs/` and migration), then `php artisan migrate`. `config/ai.php` is
+the unmodified published default. No agents, tools or provider keys exist yet.
 
 **Lockfiles:** `apps/control-plane/composer.lock`,
 `apps/control-plane/package-lock.json` (npm).
@@ -117,25 +124,26 @@ php artisan db:seed          # optional, local only: test@example.com / password
 
 ## Check status
 
-Local runs on 2026-09-25, in the working copy and in a fresh `git worktree`
-(see F-01):
+Latest local run on 2026-09-25, after reverting fonts to the Bunny default
+and adding `laravel/ai`:
 
 | Command                 | Result | Notes                                                        |
 | ----------------------- | ------ | ------------------------------------------------------------ |
 | `composer check:format` | passed | `pint --parallel --test`                                     |
 | `composer check:types`  | passed | Larastan **level 7** (the starter's committed config), paths `app/`, `bootstrap/app.php`, `config/`, `database/`, `routes/`; no baseline, no excludes, no `ignoreErrors` |
 | `npm run check:format`  | passed | `vp fmt --check` (Oxfmt), 69 files                          |
-| `npm run build`         | passed | `vp build`                                                  |
+| `npm run build`         | **blocked here** | Fails in this sandbox only: its egress policy returns `403` for `fonts.bunny.net`, which the starter's default `bunny()` font provider fetches during the build. It passed earlier with the same code except the font provider. Expected to pass in CI. |
 | `npm run check:lint`    | passed | `vp lint` (Oxlint, type-aware, warnings denied, no `--fix`) |
 | `npm run check:types`   | passed | `vue-tsc --noEmit`                                          |
-| `composer check:tests`  | passed | 47 tests, 163 assertions, on `control_plane_test`           |
+| `composer check:tests`  | passed | 47 tests, 163 assertions, on `control_plane_test`; no build needed (`withoutVite()`) |
 
 Hosted CI (`.github/workflows/ci.yml`) has **not** run. The repository has no
 remote.
 
 ## Acceptance evidence
 
-- **F-01 (fresh copy):** `git worktree add --detach` at the tested SHA, then
+- **F-01 (fresh copy):** for commit `7437af1` (before the font revert and
+  `laravel/ai`): `git worktree add --detach` at that SHA, then
   `composer install --no-interaction --prefer-dist`, `npm ci`,
   `cp .env.example .env`, `php artisan key:generate`, then all seven checks.
   Every step exited 0 and `git status --short` was empty afterwards. No
@@ -182,11 +190,17 @@ throwaway script outside the repository.
   Prettier and ESLint. Following "wrap existing equivalents rather than
   duplicating them", `npm run check:format` runs `vp fmt --check` and
   `npm run check:lint` runs `vp lint`. No Prettier or ESLint was added.
-- **Fonts:** the starter's `bunny()` font provider fetched fonts from
-  `fonts.bunny.net` during `npm run build`. This made the build depend on a
-  network host outside the lockfiles, and that host is blocked in this sandbox.
-  It was switched to the same plugin's `fontsource()` provider, backed by the
-  locked `@fontsource/instrument-sans` 5.3.0. This is one added npm dependency.
+- **Fonts:** kept the starter's default `bunny()` provider, at the project
+  owner's request (Laravel defaults first). A switch to self-hosted Fontsource
+  was tried and reverted. As a result, `npm run build` needs network access to
+  `fonts.bunny.net`.
+- **Tests without a build:** `tests/TestCase.php` calls Laravel's
+  `withoutVite()`, so the PHP suite does not depend on the Vite manifest. The
+  work order allows this option.
+- **Laravel AI SDK:** installed at the project owner's request, although the
+  agent system itself is outside G0.1. It adds the package's own
+  `agent_conversations` migration and `config/ai.php`. No agents or other
+  application code use it yet.
 - **PHPStan level:** kept the starter's existing config at level 7, which is
   stricter than the level 6 floor.
 - **Workflow location:** the starter's `apps/control-plane/.github/workflows/tests.yml`
@@ -204,7 +218,9 @@ throwaway script outside the repository.
 ├── docs/development-baseline.md
 └── apps/control-plane/        Laravel app (starter layout, unchanged structure)
     ├── app/                   Starter actions (Fortify), controllers, models (User only)
-    ├── database/              Starter migrations only; seeder guarded to local
+    ├── config/ai.php          Laravel AI SDK config (published default)
+    ├── database/              Starter + laravel/ai migrations; seeder guarded to local
+    ├── stubs/                 laravel/ai make:agent / make:tool stubs
     ├── resources/js/pages/Dashboard.vue   Internal landing screen
     ├── tests/TestCase.php     Test database guard
     └── phpunit.xml, phpstan.neon, pint.json, vite.config.ts, .nvmrc
@@ -228,3 +244,6 @@ throwaway script outside the repository.
   `working-directory`, reusing the same service image tags.
 - **Queue:** Redis is configured for queue and cache, but no jobs exist yet.
   Agent jobs belong to later gates.
+- **AI:** agents, tools and structured output use `laravel/ai`. Conversation
+  storage uses its `agent_conversations` tables in the control-plane database.
+  Provider keys go in `.env`.
