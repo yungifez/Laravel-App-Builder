@@ -27,13 +27,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $lease_owner
  * @property CarbonImmutable|null $lease_expires_at
  * @property int $workspace_revision
+ * @property array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null}|null $plan The saved plan the run builds against
+ * @property int $repairs Repair attempts made after failed verification or review
+ * @property array{reason: string, details: list<string>}|null $feedback What the next implementing pass must address
  * @property string|null $error
  * @property CarbonImmutable|null $started_at
  * @property CarbonImmutable|null $finished_at
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['workspace_id', 'driver', 'status', 'fencing_token', 'lease_owner', 'lease_expires_at', 'workspace_revision', 'error', 'started_at', 'finished_at'])]
+#[Fillable(['workspace_id', 'driver', 'status', 'fencing_token', 'lease_owner', 'lease_expires_at', 'workspace_revision', 'plan', 'repairs', 'feedback', 'error', 'started_at', 'finished_at'])]
 class Run extends Model
 {
     /** @use HasFactory<RunFactory> */
@@ -50,6 +53,9 @@ class Run extends Model
             'status' => RunStatus::class,
             'fencing_token' => 'integer',
             'workspace_revision' => 'integer',
+            'plan' => 'array',
+            'repairs' => 'integer',
+            'feedback' => 'array',
             'lease_expires_at' => 'datetime',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',

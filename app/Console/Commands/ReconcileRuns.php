@@ -27,7 +27,7 @@ class ReconcileRuns extends Command
         $settled = 0;
 
         Run::query()
-            ->whereIn('status', [RunStatus::Queued, RunStatus::Planning, RunStatus::Implementing, RunStatus::Cancelling])
+            ->whereIn('status', [RunStatus::Queued, RunStatus::Planning, RunStatus::Implementing, RunStatus::Reviewing, RunStatus::Cancelling])
             ->where(fn (Builder $query) => $query
                 ->where('lease_expires_at', '<', now())
                 ->orWhere(fn (Builder $query) => $query->whereNull('lease_owner')->where('updated_at', '<', $stale)))

@@ -18,12 +18,15 @@ use App\Models\Project;
 use App\Models\Run;
 use App\Models\User;
 use App\Models\Verification;
-use App\Runs\BuiltChange;
 use App\Runs\ConstructionDriverManager;
 use App\Runs\Contracts\ConstructionDriver;
 use App\Runs\Exceptions\InvalidRunTransition;
 use App\Runs\Exceptions\LeaseLost;
 use App\Runs\Exceptions\RunLeaseHeld;
+use App\Runs\Plan;
+use App\Runs\PlanningContext;
+use App\Runs\Review;
+use App\Runs\ReviewEvidence;
 use App\Runs\ToolSession;
 use Closure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -60,10 +63,11 @@ class RunLifecycleTest extends TestCase
             $run->operations()->orderBy('id')->get()->map(fn ($operation) => [$operation->operation_key, $operation->tool, $operation->status->value])->all(),
         );
         $this->assertSame(
-            ['created', 'lease_acquired', 'status', 'status', 'workspace_ready', 'operation', 'operation', 'status'],
+            ['created', 'lease_acquired', 'status', 'workspace_ready', 'status', 'operation', 'operation', 'build_finished', 'status'],
             $run->events()->pluck('type')->all(),
         );
-        $this->assertSame(range(1, 8), $run->events()->pluck('sequence')->all());
+        $this->assertSame(range(1, 9), $run->events()->pluck('sequence')->all());
+        $this->assertSame('team-invitations', $run->plan['solution_key']);
 
         $featureRequest->refresh();
         $this->assertSame(FeatureRequestStatus::Generated, $featureRequest->status);
@@ -164,7 +168,7 @@ class RunLifecycleTest extends TestCase
             app(CancelRun::class)->handle($run);
             $tools->call('change', 'write_file', ['path' => 'app/New.php', 'contents' => '<?php', 'expected_sha256' => null], $tools->revision());
 
-            return new BuiltChange('Never reached.', []);
+            return 'Never reached.';
         });
 
         $run = app(StartRun::class)->handle($featureRequest)->refresh();
@@ -206,7 +210,7 @@ class RunLifecycleTest extends TestCase
         $this->useDriver(function (Run $run, ToolSession $tools) {
             $tools->call('write', 'write_file', ['path' => 'app/Invitation.php', 'contents' => "<?php\n", 'expected_sha256' => null], $tools->revision());
 
-            return new BuiltChange('Claims to add invitations everywhere.', []);
+            return 'Claims to add invitations everywhere.';
         });
 
         app(StartRun::class)->handle($featureRequest);
@@ -219,7 +223,7 @@ class RunLifecycleTest extends TestCase
     public function test_a_run_that_changes_nothing_asks_the_owner()
     {
         $featureRequest = $this->invitationRequest();
-        $this->useDriver(fn () => new BuiltChange('Done!', []));
+        $this->useDriver(fn () => 'Done!');
 
         $run = app(StartRun::class)->handle($featureRequest)->refresh();
 
@@ -236,7 +240,7 @@ class RunLifecycleTest extends TestCase
         $run->refresh();
         $this->assertSame(RunStatus::Completed, $run->status);
         $this->assertNotNull($run->finished_at);
-        $this->assertSame(['status', 'review', 'status'], $run->events()->pluck('type')->all());
+        $this->assertSame(['status', 'lease_acquired', 'review', 'status'], $run->events()->pluck('type')->all());
         $this->assertTrue($run->events()->where('type', 'review')->sole()->data['approved']);
     }
 
@@ -268,6 +272,8 @@ class RunLifecycleTest extends TestCase
             ->get(route('feature-requests.show', $featureRequest))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('run.status', 'verifying')
+                ->where('run.plan.summary', 'Owners and admins can invite people.')
+                ->where('run.repairs', 0)
                 ->where('run.operations', 2)
                 ->where('run.budget.operations', 30)
                 ->where('run.events.0.type', 'created')
@@ -289,7 +295,7 @@ class RunLifecycleTest extends TestCase
     /**
      * Build runs with a driver made from the given callback.
      *
-     * @param  Closure(Run, ToolSession): BuiltChange  $build
+     * @param  Closure(Run, ToolSession): string  $build
      */
     protected function useDriver(Closure $build): void
     {
@@ -297,9 +303,24 @@ class RunLifecycleTest extends TestCase
         {
             public function __construct(protected Closure $build) {}
 
-            public function build(Run $run, ToolSession $tools): BuiltChange
+            public function plan(Run $run, PlanningContext $context): Plan
+            {
+                return new Plan('A test change.');
+            }
+
+            public function build(Run $run, Plan $plan, ToolSession $tools): string
             {
                 return ($this->build)($run, $tools);
+            }
+
+            public function review(Run $run, ReviewEvidence $evidence): Review
+            {
+                return new Review(true, 'Fine.');
+            }
+
+            public function canRepair(): bool
+            {
+                return false;
             }
         };
 
