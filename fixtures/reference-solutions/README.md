@@ -13,16 +13,29 @@ The fixture itself stays at the baseline: teams and roles, but no invitations.
 
 ## 01: team invitations
 
-- `team_invitations` table and `App\Models\TeamInvitation` (team, email, role).
-- Actions: `InviteTeamMember` (creates the invitation and sends
-  `App\Mail\TeamInvitationMail` with a signed acceptance link),
-  `AcceptTeamInvitation`, `CancelTeamInvitation`.
-- Routes: `team-invitations.store`, `team-invitations.destroy` (scoped to the
-  team) and `team-invitations.accept` (`signed` middleware, logged-in and
-  verified user whose email matches, via `TeamInvitationPolicy::accept`).
-- UI: invite form and pending invitations on `settings/Team.vue`.
-- Tests: `tests/Feature/Teams/InviteTeamMemberTest.php` and
-  `AcceptTeamInvitationTest.php`.
+This follows the implementation plan's section 7 contract.
+
+- **Storage:** the `team_invitations` table and `App\Models\TeamInvitation`
+  (team, normalized email, role, SHA-256 `token_hash`, `expires_at`). The
+  table has unique `(team_id, email)` and unique `token_hash` indexes.
+- **Inviting:** `InviteTeamMember` issues a 64-character random token and
+  stores only its hash. The expiry comes from `teams.invitations.expires_after_days`
+  (default 7). The invitation is written in a transaction, and
+  `TeamInvitationNotification` is queued with `afterCommit()`, so a
+  rolled-back invitation never sends mail. An expired invitation for the same
+  address is replaced. A concurrent duplicate hits the unique index and becomes
+  a validation error without a second email.
+- **Accepting:** `GET team-invitations/{token}` shows the invitation, or explains
+  why it is invalid (404), expired (410) or for another account (403).
+  `POST` to the same URL accepts it. `AcceptTeamInvitation` locks the
+  invitation row, adds the membership with the invited role and deletes the
+  invitation, so the link works once. Accepting requires a signed-in user with
+  a verified, matching email.
+- **UI:** the invite form, pending invitations with their expiry, and the
+  `team-invitations/Show` acceptance page.
+- **Tests:** `InviteTeamMemberTest`, `AcceptTeamInvitationTest` and
+  `InvitationDeliveryTest`. The delivery test runs the real sync queue and
+  mailer to show the email is delivered only after the commit.
 
 **Permission step.** Every invitation write goes through one authorization
 point: `App\Policies\TeamPolicy::inviteMember()`, called from the invitation form
@@ -44,9 +57,12 @@ fixtures/reference-solutions/verify.sh              # all checks except the prod
 fixtures/reference-solutions/verify.sh --with-build # also npm run build
 ```
 
-The script copies the fixture's tracked files into a temporary directory, runs
-the fixture's checks on the baseline, then applies each patch in order and
-re-runs the checks. It never modifies the repository.
+The script copies the fixture's tracked files into a temporary directory and
+runs the fixture's checks on the baseline. It then applies each patch in order
+and re-runs the checks. At every stage it also runs the platform-owned
+acceptance suites from `fixtures/acceptance/customer-app` (listed per solution
+in `manifest.json`). The starter must fail the first solution's suite and each
+solution must pass its own. It never modifies the repository.
 
 ## Regenerating a patch
 

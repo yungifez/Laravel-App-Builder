@@ -3,8 +3,11 @@
         {
             "key": "team-invitations",
             "patch": "01-team-invitations.patch",
-            "match": ["invite", "invitation"],
-            "summary": "Team owners and admins can invite people by email with a role. Invitees accept through a signed link.",
+            "match": [
+                "invite",
+                "invitation"
+            ],
+            "summary": "Team owners and admins can invite people by email with a role. Invitees accept through a single-use link that expires after seven days.",
             "steps": [
                 {
                     "key": "permission",
@@ -22,6 +25,10 @@
                     "symbol": "TeamInvitationPolicy::accept",
                     "detail": "Only the signed-in user whose email matches the invitation."
                 }
+            ],
+            "acceptance": [
+                "Invitations/InvitationContractTest.php",
+                "Invitations/AdminsMayInviteTest.php"
             ]
         },
         {
@@ -29,7 +36,9 @@
             "patch": "02-owner-only-invitations.patch",
             "follows": "team-invitations",
             "step": "permission",
-            "match": ["owner"],
+            "match": [
+                "owner"
+            ],
             "summary": "Only the team owner can invite people or cancel invitations.",
             "steps": [
                 {
@@ -40,6 +49,10 @@
                     "symbol": "TeamPolicy::inviteMember",
                     "detail": "Checks the members:invite permission, which config/teams.php now grants to the owner only."
                 }
+            ],
+            "acceptance": [
+                "Invitations/InvitationContractTest.php",
+                "OwnerOnlyInvitations/OwnerOnlyInvitationsTest.php"
             ]
         }
     ]

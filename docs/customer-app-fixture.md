@@ -17,6 +17,8 @@ must remain distinct." The assumptions below fill the gaps.
   are the feature the builder will be asked to generate.
 - **`fixtures/reference-solutions`:** two patches that implement the expected
   answers, plus `verify.sh`, which proves they apply and pass all checks.
+- **`fixtures/acceptance`:** platform-owned acceptance suites kept outside the
+  app (see its README). The starter fails them and the solutions pass them.
 - **CI jobs** `customer-app` and `reference-solutions` in
   `.github/workflows/ci.yml`.
 
@@ -61,10 +63,12 @@ was working in the team moves to their personal team.
 
 See `fixtures/reference-solutions/README.md`. Summary:
 
-1. `01-team-invitations.patch`: email invitations with a role, a signed
-   acceptance link, cancel, and UI. The **permission step** is
-   `TeamPolicy::inviteMember()`, backed by the `members:invite` permission (held
-   by owner and admin).
+1. `01-team-invitations.patch`: email invitations with a role, following the
+   section 7 contract. That means a hashed single-use token with a 7-day
+   expiry, a normalized email, a queued email sent only after the transaction
+   commits, a database guard against duplicates and double acceptance, and an
+   acceptance page. The **permission step** is `TeamPolicy::inviteMember()`,
+   backed by the `members:invite` permission (held by owner and admin).
 2. `02-owner-only-invitations.patch`: the owner-only restriction, which removes
    `members:invite` from `admin` in `config/teams.php`, with tests that pin the
    new behavior.
@@ -90,21 +94,24 @@ Hosted CI has not run.
 
 ### Browser smoke check
 
-Run on 2026-09-25 against a throwaway copy of the fixture with
+Run on 2026-09-25 against a throwaway copy of the fixture with the reworked
 `01-team-invitations.patch` applied. The copy's Vite config had its font entry
 removed only so `npm run build` could run in this sandbox; the repository is
-unchanged. Data came from `migrate --seed`, served with `php artisan serve`, and
-the check was driven by Playwright/Chromium.
+unchanged. Data came from `migrate --seed`, the site was served with
+`php artisan serve`, a separate `php artisan queue:work` delivered mail (the
+fixture's default database queue with the `log` mailer), and Playwright/Chromium
+drove the browser.
 
-1. Logged in as the owner (`test@example.com`): the Team page shows Acme with
-   its owner, admin and member.
-2. Changed Member User's role to Admin with the role select and clicked
-   Update. After a reload the role shows Admin, so the select submits inside
-   Inertia's `<Form>`.
-3. Invited `newbie@example.com` as Member: the pending invitation is listed.
-4. In a new session, registered `newbie@example.com`, verified the email through
-   the logged link, then opened the `Accept invitation:` link from the mail log.
-   The user lands on the Team page, is listed in Acme as Member, and does not
-   see the invite form.
+1. The owner invited ` Newbie@Example.com` (sic). The pending list shows
+   `newbie@example.com`, "Invited as Member", and the expiry date.
+2. The queue worker delivered the email. Its "View invitation" link carries a
+   64-character token.
+3. The invitee registered and verified. Opening the link showed the
+   acceptance page (200). The Accept button was reached with the Tab key and
+   pressed with Enter.
+4. The invitee landed on the team page, listed in Acme as Member.
+5. Opening the link again returned 404 with a clear "not valid" alert. A
+   different signed-in user opening someone else's link got 403 with "This
+   invitation is for a different account".
 
 Result: pass.
