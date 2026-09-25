@@ -73,20 +73,53 @@ Optionally, `php artisan db:seed` creates `test@example.com` with password
 
 Projects → request a feature → preview the generated change → select a step
 → request a change to that step (for example "Only the team owner may invite
-people"). Until the AI agent exists, the `reference` generator
-(`config/builder.php`) answers requests with the known-good solutions listed
-in `BUILDER_REFERENCE_SOLUTIONS` (see `fixtures/reference-solutions`).
-On a generated change, **Run verification** copies the project into a fresh
-workspace, applies the change and every change it follows up on, runs the
-setup commands and checks from `config/builder.php`, then runs the
+people").
+
+Each request starts a **build run** (`config/builder.php`, `construction`). The
+run moves through queued → planning → implementing → verifying → reviewing →
+completed, or stops at "needs your decision", cancelled or failed; the page
+shows its state and its numbered event log, and the owner can cancel it.
+While implementing, the run works in its own workspace: the project is copied
+in, the changes it follows up on are applied, and the result is committed as
+a baseline. The construction driver then changes the project only through
+server-side tools (`read_file`, `list_files`, `search`, `write_file`,
+`apply_patch`, `run_command` by allowlisted name), and the change is read back
+from the workspace as a diff against the baseline.
+
+- **One writer.** A worker claims the run with a lease and a fencing token.
+  An expired lease can be taken over; the new holder gets a higher token and
+  the old holder's writes are refused. A duplicate job finds the run claimed
+  and exits. `php artisan runs:reconcile` (scheduled every minute) resumes
+  runs whose worker stopped and settles verifications whose result was lost.
+- **Operation journal.** Every tool call has an operation key and is recorded
+  before it runs. Repeating a key replays the recorded result; reusing it for
+  a different call is refused. A call whose outcome was lost is checked
+  against the workspace (did the patch or write land?) before it runs again.
+- **Server-side checks.** Changes must name the workspace revision they are
+  based on, and file replacements the hash of the contents read. Patches must
+  apply exactly. Paths outside the project, symbolic links out of it, and
+  protected paths (`tests/Acceptance`, `.git`, `vendor`, `node_modules`,
+  `.env`) are refused.
+- **Budgets.** 30 tool operations and 20 minutes by default; a run out of
+  budget stops for the owner's decision.
+
+Until the AI agent exists, the `scripted` driver makes the change that the
+`reference` generator finds among the known-good solutions listed in
+`BUILDER_REFERENCE_SOLUTIONS` (see `fixtures/reference-solutions`).
+
+When the change is built, the run hands it to verification. **Run
+verification** also re-runs it on demand. Verification copies the project into
+a fresh workspace, applies the change and every change it follows up on, runs
+the setup commands and checks from `config/builder.php`, then runs the
 platform-owned **protected acceptance tests** (`BUILDER_ACCEPTANCE_PATH`) with
 their own runner configuration, and shows each result as passed, failed,
 errored, skipped or not applicable. A change is only **Passed** when the
 protected tests pass. With no applicable protected tests it is
-**Unverified**.
-Generation and verification run on the queue, so keep a worker running
+**Unverified**. A passing (or unverified) change completes the run after
+review; a failing one stops it for the owner's decision.
+Runs and verification run on the queue, so keep a worker running
 (`composer dev` starts one). Verification can take several minutes, so keep
-`REDIS_QUEUE_RETRY_AFTER` above the job's one-hour timeout (see
+`REDIS_QUEUE_RETRY_AFTER` above the jobs' one-hour timeout (see
 `.env.example`). The default `local` workspace driver runs in a temporary
 directory on this machine with a scrubbed environment. It is for trusted
 fixtures only (see `config/workspaces.php`).

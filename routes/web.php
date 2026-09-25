@@ -5,6 +5,7 @@ use App\Http\Controllers\FeatureRequestController;
 use App\Http\Controllers\FeatureRequestStepChangeController;
 use App\Http\Controllers\FeatureRequestVerificationController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\RunCancellationController;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'Welcome')->name('home');
@@ -20,6 +21,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('feature-requests/{featureRequest}', [FeatureRequestController::class, 'show'])->name('feature-requests.show');
     Route::post('feature-requests/{featureRequest}/step-changes', [FeatureRequestStepChangeController::class, 'store'])->name('feature-requests.step-changes.store');
     Route::post('feature-requests/{featureRequest}/verifications', [FeatureRequestVerificationController::class, 'store'])->name('feature-requests.verifications.store');
+    Route::post('runs/{run}/cancellation', [RunCancellationController::class, 'store'])->name('runs.cancellation.store');
 });
 
 require __DIR__.'/settings.php';

@@ -3,23 +3,29 @@
 namespace Tests\Feature\Features;
 
 use App\Enums\FeatureRequestStatus;
+use App\Enums\RunStatus;
+use App\Jobs\VerifyFeatureRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\Concerns\BuildsInLocalWorkspaces;
 use Tests\Concerns\UsesReferenceSolutions;
 use Tests\TestCase;
 
 class FeatureRequestFlowTest extends TestCase
 {
-    use RefreshDatabase, UsesReferenceSolutions;
+    use BuildsInLocalWorkspaces, RefreshDatabase, UsesReferenceSolutions;
 
     public function test_the_owner_requests_a_feature_previews_it_and_restricts_its_permission_step()
     {
-        $this->useReferenceSolutions();
+        Queue::fake([VerifyFeatureRequest::class]);
+        $this->buildInLocalWorkspaces();
+        $solutions = $this->useReferenceSolutions();
         $owner = User::factory()->create();
-        $project = Project::factory()->for($owner, 'owner')->create();
+        $project = Project::factory()->for($owner, 'owner')->create(['source_path' => "{$solutions}/source"]);
 
         $this->actingAs($owner)
             ->post(route('feature-requests.store', $project), ['prompt' => 'Let owners and admins invite people by email.']);
@@ -27,6 +33,8 @@ class FeatureRequestFlowTest extends TestCase
         $request = $project->featureRequests()->sole();
         $this->assertSame(FeatureRequestStatus::Generated, $request->status);
         $this->assertSame(['Invitations/ContractTest.php'], $request->acceptance);
+        $this->assertSame(RunStatus::Verifying, $request->latestRun->status);
+        $this->assertSame($request->latestRun->id, $request->verifications()->sole()->run_id);
 
         $this->get(route('feature-requests.show', $request))
             ->assertOk()
@@ -64,15 +72,18 @@ class FeatureRequestFlowTest extends TestCase
 
     public function test_a_request_the_generator_cannot_answer_is_marked_failed_with_a_reason()
     {
-        $this->useReferenceSolutions();
+        $this->buildInLocalWorkspaces();
+        $solutions = $this->useReferenceSolutions();
         $owner = User::factory()->create();
-        $project = Project::factory()->for($owner, 'owner')->create();
+        $project = Project::factory()->for($owner, 'owner')->create(['source_path' => "{$solutions}/source"]);
 
         $this->actingAs($owner)->post(route('feature-requests.store', $project), ['prompt' => 'Add billing']);
 
         $request = $project->featureRequests()->sole();
         $this->assertSame(FeatureRequestStatus::Failed, $request->status);
         $this->assertSame('The reference generator has no solution for this request.', $request->error);
+        $this->assertSame(RunStatus::Failed, $request->latestRun->status);
+        $this->assertSame('The reference generator has no solution for this request.', $request->latestRun->error);
     }
 
     public function test_only_steps_of_the_generated_change_can_be_changed()

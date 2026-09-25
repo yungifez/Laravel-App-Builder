@@ -3,6 +3,7 @@ import { Form, Head, Link, setLayoutProps, usePoll } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import FeatureRequestStepChangeController from '@/actions/App/Http/Controllers/FeatureRequestStepChangeController';
 import FeatureRequestVerificationController from '@/actions/App/Http/Controllers/FeatureRequestVerificationController';
+import RunCancellationController from '@/actions/App/Http/Controllers/RunCancellationController';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
@@ -20,6 +21,8 @@ import { index, show as showProject } from '@/routes/projects';
 import type {
     FeatureRequestDetail,
     FeatureRequestSummary,
+    Run,
+    RunEvent,
     Verification,
     VerificationResult,
 } from '@/types';
@@ -30,6 +33,7 @@ const props = defineProps<{
     parent: { id: number; prompt: string } | null;
     followUps: FeatureRequestSummary[];
     verification: Verification | null;
+    run: Run | null;
 }>();
 
 const selectedStepKey = ref<string | null>(null);
@@ -56,7 +60,7 @@ watch(
 
 const { start, stop } = usePoll(
     1500,
-    { only: ['featureRequest', 'followUps', 'verification'] },
+    { only: ['featureRequest', 'followUps', 'verification', 'run'] },
     { autoStart: false },
 );
 
@@ -66,13 +70,67 @@ const verificationInProgress = computed(
         props.verification?.status === 'running',
 );
 
+const runInProgress = computed(
+    () =>
+        props.run !== null &&
+        [
+            'queued',
+            'planning',
+            'implementing',
+            'verifying',
+            'reviewing',
+            'cancelling',
+        ].includes(props.run.status),
+);
+
 watch(
     () =>
+        runInProgress.value ||
         props.featureRequest.status === 'generating' ||
         verificationInProgress.value,
     (busy) => (busy ? start() : stop()),
     { immediate: true },
 );
+
+const runLabels: Record<Run['status'], string> = {
+    queued: 'Queued',
+    planning: 'Planning',
+    implementing: 'Implementing',
+    verifying: 'Verifying',
+    reviewing: 'Reviewing',
+    completed: 'Completed',
+    needs_user_decision: 'Needs your decision',
+    cancelling: 'Cancelling',
+    cancelled: 'Cancelled',
+    failed: 'Failed',
+};
+
+function describeEvent(event: RunEvent): string {
+    const data = event.data;
+
+    switch (event.type) {
+        case 'created':
+            return `Run created with the ${String(data.driver)} driver`;
+        case 'lease_acquired':
+            return data.took_over
+                ? `A worker took over after the previous one stopped (fencing token ${String(data.fencing_token)})`
+                : `A worker claimed the run (fencing token ${String(data.fencing_token)})`;
+        case 'status':
+            return `${runLabels[data.from as Run['status']]} → ${runLabels[data.to as Run['status']]}`;
+        case 'workspace_ready':
+            return 'Workspace prepared';
+        case 'operation':
+            return `${String(data.tool)} ${String(data.status)}${data.error ? `: ${String(data.error)}` : ''}`;
+        case 'operation_reconciling':
+            return `Checking whether ${String(data.tool)} took effect before the previous worker stopped`;
+        case 'review':
+            return data.approved
+                ? 'Review accepted the verification evidence'
+                : 'Review raised findings';
+        default:
+            return event.type;
+    }
+}
 
 const verificationLabels: Record<Verification['status'], string> = {
     queued: 'Queued',
@@ -196,6 +254,91 @@ function lineClass(line: string): string {
             <AlertTitle>Generation failed</AlertTitle>
             <AlertDescription>{{ featureRequest.error }}</AlertDescription>
         </Alert>
+
+        <section v-if="run" class="max-w-2xl space-y-4" data-test="run">
+            <div class="flex items-center gap-3">
+                <Heading
+                    variant="small"
+                    title="Build run"
+                    :description="`${run.operations} of ${run.budget.operations} tool operations used · ${run.budget.minutes} minute limit`"
+                />
+                <Badge
+                    :variant="
+                        run.status === 'completed'
+                            ? 'default'
+                            : run.status === 'failed' ||
+                                run.status === 'needs_user_decision'
+                              ? 'destructive'
+                              : 'secondary'
+                    "
+                    data-test="run-status"
+                >
+                    {{ runLabels[run.status] }}
+                </Badge>
+            </div>
+
+            <Alert
+                v-if="
+                    run.error &&
+                    (run.status === 'failed' ||
+                        run.status === 'needs_user_decision')
+                "
+                variant="destructive"
+            >
+                <AlertTitle>{{
+                    run.status === 'failed'
+                        ? 'The run failed'
+                        : 'The run stopped for your decision'
+                }}</AlertTitle>
+                <AlertDescription>
+                    {{ run.error }}
+                    <template v-if="run.status === 'needs_user_decision'">
+                        You can revise the request, try a stronger model or
+                        involve a person.
+                    </template>
+                </AlertDescription>
+            </Alert>
+
+            <Form
+                v-if="runInProgress && run.status !== 'cancelling'"
+                v-bind="RunCancellationController.store.form(run.id)"
+                v-slot="{ processing }"
+            >
+                <Button
+                    variant="outline"
+                    :disabled="processing"
+                    data-test="cancel-run-button"
+                >
+                    Cancel run
+                </Button>
+            </Form>
+
+            <Collapsible>
+                <CollapsibleTrigger
+                    class="text-sm underline underline-offset-4"
+                    data-test="run-log-toggle"
+                >
+                    Run log ({{ run.events.length }} events)
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                    <ol class="mt-2 divide-y rounded-lg border">
+                        <li
+                            v-for="event in run.events"
+                            :key="event.sequence"
+                            class="flex gap-3 p-2 text-sm"
+                        >
+                            <span
+                                class="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground"
+                                >{{ event.sequence }}</span
+                            >
+                            <span class="break-words">{{
+                                describeEvent(event)
+                            }}</span>
+                        </li>
+                    </ol>
+                </CollapsibleContent>
+            </Collapsible>
+        </section>
 
         <template v-if="featureRequest.status === 'generated'">
             <section class="space-y-4" data-test="change-preview">

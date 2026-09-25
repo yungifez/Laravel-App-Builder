@@ -8,8 +8,9 @@ use Illuminate\Support\Str;
 trait UsesReferenceSolutions
 {
     /**
-     * Write a small reference-solutions manifest with two patches and point
-     * the reference generator at it.
+     * Write a small reference-solutions manifest with two patches, and a
+     * project source they apply to in "{directory}/source", and point the
+     * reference generator at it.
      */
     protected function useReferenceSolutions(): string
     {
@@ -51,16 +52,22 @@ trait UsesReferenceSolutions
             'diff --git a/app/Policies/TeamPolicy.php b/app/Policies/TeamPolicy.php',
             '--- a/app/Policies/TeamPolicy.php',
             '+++ b/app/Policies/TeamPolicy.php',
-            '@@ -1,2 +1,3 @@',
+            '@@ -1,3 +1,5 @@',
             ' <?php',
             '+// invite',
             '+// members:invite',
+            ' ',
+            ' class TeamPolicy {}',
             'diff --git a/config/teams.php b/config/teams.php',
             '--- a/config/teams.php',
             '+++ b/config/teams.php',
-            '@@ -1,2 +1,2 @@',
-            '-old',
-            '+new',
+            '@@ -3,5 +3,6 @@',
+            ' return [',
+            "     'admin' => [",
+            "         'members:view',",
+            "+        'members:invite',",
+            '     ],',
+            ' ];',
             '',
         ]));
 
@@ -68,10 +75,20 @@ trait UsesReferenceSolutions
             'diff --git a/config/teams.php b/config/teams.php',
             '--- a/config/teams.php',
             '+++ b/config/teams.php',
-            '@@ -1,2 +1,1 @@',
-            "-                'members:invite',",
+            '@@ -3,6 +3,5 @@',
+            ' return [',
+            "     'admin' => [",
+            "         'members:view',",
+            "-        'members:invite',",
+            '     ],',
+            ' ];',
             '',
         ]));
+
+        File::ensureDirectoryExists("{$directory}/source/app/Policies");
+        File::ensureDirectoryExists("{$directory}/source/config");
+        File::put("{$directory}/source/app/Policies/TeamPolicy.php", "<?php\n\nclass TeamPolicy {}\n");
+        File::put("{$directory}/source/config/teams.php", "<?php\n\nreturn [\n    'admin' => [\n        'members:view',\n    ],\n];\n");
 
         config([
             'builder.generator' => 'reference',

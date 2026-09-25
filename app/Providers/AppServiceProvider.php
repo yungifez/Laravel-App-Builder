@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Features\FeatureGeneratorManager;
+use App\Runs\ConstructionDriverManager;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Support\ServiceProvider;
 
@@ -19,6 +20,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->singleton(WorkspaceManager::class);
         $this->app->singleton(FeatureGeneratorManager::class);
+        $this->app->singleton(ConstructionDriverManager::class);
     }
 
     /**

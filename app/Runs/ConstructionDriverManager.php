@@ -1,0 +1,30 @@
+<?php
+
+namespace App\Runs;
+
+use App\Features\FeatureGeneratorManager;
+use App\Runs\Contracts\ConstructionDriver;
+use App\Runs\Drivers\ScriptedDriver;
+use Illuminate\Support\Manager;
+
+/**
+ * @method ConstructionDriver driver(string|null $driver = null)
+ */
+class ConstructionDriverManager extends Manager
+{
+    /**
+     * Get the default construction driver name.
+     */
+    public function getDefaultDriver(): string
+    {
+        return (string) $this->config->get('builder.construction.driver');
+    }
+
+    /**
+     * Create the scripted driver, which applies the generator's change through the tools.
+     */
+    public function createScriptedDriver(): ConstructionDriver
+    {
+        return new ScriptedDriver($this->container->make(FeatureGeneratorManager::class));
+    }
+}

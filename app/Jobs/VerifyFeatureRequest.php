@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Workspaces\DestroyWorkspace;
 use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
@@ -138,6 +139,8 @@ class VerifyFeatureRequest implements ShouldQueue
             'error' => __('Verification stopped unexpectedly.'),
             'finished_at' => now(),
         ]);
+
+        app(CompleteRunVerification::class)->handle($this->verification);
     }
 
     /**
@@ -306,5 +309,7 @@ class VerifyFeatureRequest implements ShouldQueue
             'error' => $error,
             'finished_at' => now(),
         ]);
+
+        app(CompleteRunVerification::class)->handle($this->verification);
     }
 }

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
@@ -90,6 +91,26 @@ class FeatureRequest extends Model
     public function verifications(): HasMany
     {
         return $this->hasMany(Verification::class);
+    }
+
+    /**
+     * Get the construction runs for the request.
+     *
+     * @return HasMany<Run, $this>
+     */
+    public function runs(): HasMany
+    {
+        return $this->hasMany(Run::class);
+    }
+
+    /**
+     * Get the request's most recent construction run.
+     *
+     * @return HasOne<Run, $this>
+     */
+    public function latestRun(): HasOne
+    {
+        return $this->hasOne(Run::class)->latestOfMany();
     }
 
     /**

@@ -2,8 +2,11 @@
 
 namespace Tests\Feature\Features;
 
+use App\Actions\Features\RequestVerification;
+use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Models\FeatureRequest;
+use App\Models\Run;
 use App\Models\User;
 use App\Models\Verification;
 use App\Workspaces\CommandResult;
@@ -78,6 +81,17 @@ class VerificationTest extends TestCase
         );
         $this->assertSame(array_fill(0, 7, 'passed'), array_column($verification->results, 'outcome'));
         $this->assertSame([$workspaceId], $this->driver->destroyed);
+    }
+
+    public function test_a_finished_verification_is_carried_back_to_the_run_that_asked_for_it()
+    {
+        $request = FeatureRequest::factory()->generated()->create(['acceptance' => ['Invitations/ContractTest.php']]);
+        $run = Run::factory()->for($request)->create(['status' => RunStatus::Verifying]);
+
+        app(RequestVerification::class)->handle($request, $run);
+
+        $this->assertSame(VerificationStatus::Passed, $run->verifications()->sole()->status);
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
     }
 
     public function test_a_failing_protected_suite_fails_the_verification_even_when_every_check_passes()
