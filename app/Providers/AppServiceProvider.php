@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Features\FeatureGeneratorManager;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Support\ServiceProvider;
 
@@ -17,6 +18,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(WorkspaceManager::class);
+        $this->app->singleton(FeatureGeneratorManager::class);
     }
 
     /**

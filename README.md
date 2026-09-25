@@ -69,6 +69,16 @@ endpoint is at <http://localhost:8000/up>.
 Optionally, `php artisan db:seed` creates `test@example.com` with password
 `password`. The seeder refuses to run unless `APP_ENV=local`.
 
+### Prototype flow
+
+Projects → request a feature → preview the generated change → select a step
+→ request a change to that step (for example "Only the team owner may invite
+people"). Until the AI agent exists, the `reference` generator
+(`config/builder.php`) answers requests with the known-good solutions listed
+in `BUILDER_REFERENCE_SOLUTIONS` (see `fixtures/reference-solutions`).
+Generation runs on the queue, so keep a worker running (`composer dev` starts
+one).
+
 ### AI SDK
 
 The app includes the Laravel AI SDK (`laravel/ai`) with its published default
