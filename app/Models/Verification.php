@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  *
  * @property int $id
  * @property int $feature_request_id
+ * @property int|null $run_id
  * @property int|null $workspace_id
  * @property VerificationStatus $status
  * @property list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string}>|null $results
@@ -25,7 +26,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['workspace_id', 'status', 'results', 'error', 'started_at', 'finished_at'])]
+#[Fillable(['run_id', 'workspace_id', 'status', 'results', 'error', 'started_at', 'finished_at'])]
 class Verification extends Model
 {
     /** @use HasFactory<VerificationFactory> */
@@ -54,5 +55,15 @@ class Verification extends Model
     public function featureRequest(): BelongsTo
     {
         return $this->belongsTo(FeatureRequest::class);
+    }
+
+    /**
+     * Get the construction run that asked for the verification, if any.
+     *
+     * @return BelongsTo<Run, $this>
+     */
+    public function run(): BelongsTo
+    {
+        return $this->belongsTo(Run::class);
     }
 }

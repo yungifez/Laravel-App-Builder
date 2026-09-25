@@ -1,5 +1,12 @@
 <?php
 
+use App\Runs\Tools\ApplyPatch;
+use App\Runs\Tools\ListFiles;
+use App\Runs\Tools\ReadFile;
+use App\Runs\Tools\RunCommand;
+use App\Runs\Tools\SearchFiles;
+use App\Runs\Tools\WriteFile;
+
 return [
 
     /*
@@ -42,6 +49,72 @@ return [
         'reviewer' => [
             'provider' => env('BUILDER_REVIEWER_PROVIDER'),
             'model' => env('BUILDER_REVIEWER_MODEL'),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Construction Runs
+    |--------------------------------------------------------------------------
+    |
+    | A run builds a feature request's change in its own workspace, through
+    | server-side tools only, then hands the change to verification. The
+    | "scripted" driver applies the generator's change through the tools; the
+    | model-driven driver replaces it without changing the tools or records.
+    |
+    | One worker writes to a run at a time. Its lease lasts "lease_seconds"
+    | and is renewed by every tool call; a lease that expires can be taken
+    | over by another worker, and the old worker's writes are then refused.
+    |
+    */
+
+    'construction' => [
+        'driver' => env('BUILDER_CONSTRUCTION_DRIVER', 'scripted'),
+
+        'workspace_driver' => env('BUILDER_CONSTRUCTION_WORKSPACE_DRIVER', 'local'),
+
+        'lease_seconds' => (int) env('BUILDER_RUN_LEASE_SECONDS', 300),
+
+        // When a run is out of budget it stops and asks the owner how to
+        // continue; transport retries do not count against it.
+        'budgets' => [
+            'operations' => (int) env('BUILDER_RUN_MAX_OPERATIONS', 30),
+            'minutes' => (int) env('BUILDER_RUN_MAX_MINUTES', 20),
+        ],
+
+        // Bounds on what tools accept and return.
+        'limits' => [
+            'read_bytes' => 262144,
+            'write_bytes' => 1048576,
+            'output_characters' => 20000,
+            'list_entries' => 2000,
+            'search_matches' => 200,
+        ],
+
+        // Paths tools may never change. Protected acceptance tests are also
+        // replaced from the platform's copy before they run.
+        'protected_paths' => ['tests/Acceptance', '.git', 'vendor', 'node_modules', '.env'],
+
+        // Commands run in the workspace after the project is copied in and
+        // before the driver starts, for example installing dependencies so
+        // the tests can run. A failing command fails the run.
+        'setup' => [],
+
+        // Commands callers may run by name through the "run_command" tool.
+        'commands' => [
+            'tests' => ['command' => ['php', 'artisan', 'test'], 'timeout' => 600],
+            'format' => ['command' => ['vendor/bin/pint', '--test'], 'timeout' => 300],
+            'static_analysis' => ['command' => ['vendor/bin/phpstan', 'analyse', '--no-progress'], 'timeout' => 600],
+        ],
+
+        // The tools callers may use, by name.
+        'tools' => [
+            'read_file' => ReadFile::class,
+            'list_files' => ListFiles::class,
+            'search' => SearchFiles::class,
+            'write_file' => WriteFile::class,
+            'apply_patch' => ApplyPatch::class,
+            'run_command' => RunCommand::class,
         ],
     ],
 

@@ -2,14 +2,16 @@
 
 namespace App\Actions\Features;
 
+use App\Actions\Runs\StartRun;
 use App\Enums\FeatureRequestStatus;
-use App\Jobs\GenerateFeature;
 use App\Models\FeatureRequest;
 use App\Models\User;
 use Illuminate\Validation\ValidationException;
 
 class RequestStepChange
 {
+    public function __construct(private StartRun $startRun) {}
+
     /**
      * Ask for a change to one step of a generated feature, as a follow-up request.
      *
@@ -32,7 +34,7 @@ class RequestStepChange
             'generator' => $parent->generator,
         ]);
 
-        GenerateFeature::dispatch($followUp);
+        $this->startRun->handle($followUp);
 
         return $followUp;
     }

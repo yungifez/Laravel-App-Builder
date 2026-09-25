@@ -9,6 +9,7 @@ const labels: Record<FeatureRequestStatus, string> = {
     generating: 'Generating',
     generated: 'Generated',
     failed: 'Failed',
+    cancelled: 'Cancelled',
 };
 
 const variant = computed(() =>

@@ -1,4 +1,8 @@
-export type FeatureRequestStatus = 'generating' | 'generated' | 'failed';
+export type FeatureRequestStatus =
+    | 'generating'
+    | 'generated'
+    | 'failed'
+    | 'cancelled';
 
 export type ProjectSummary = {
     id: number;
@@ -73,4 +77,36 @@ export type Verification = {
     error: string | null;
     started_at: string | null;
     finished_at: string | null;
+};
+
+export type RunStatus =
+    | 'queued'
+    | 'planning'
+    | 'implementing'
+    | 'verifying'
+    | 'reviewing'
+    | 'completed'
+    | 'needs_user_decision'
+    | 'cancelling'
+    | 'cancelled'
+    | 'failed';
+
+export type RunEvent = {
+    sequence: number;
+    type: string;
+    data: Record<string, unknown>;
+    created_at: string | null;
+};
+
+export type Run = {
+    id: number;
+    status: RunStatus;
+    driver: string;
+    error: string | null;
+    workspace_revision: number;
+    operations: number;
+    budget: { operations: number; minutes: number };
+    started_at: string | null;
+    finished_at: string | null;
+    events: RunEvent[];
 };
