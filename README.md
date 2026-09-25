@@ -16,7 +16,7 @@ Besides the standard Laravel directories (`app/`, `config/`, `database/`,
 ```
 ├── compose.yaml             Local PostgreSQL and Redis (trusted local services only)
 ├── docker/postgres/         Test database init script and manual re-run helper
-├── docs/                    Handoff records
+├── docs/                    Handoff records and research (docs/research/)
 ├── fixtures/customer-app/   Separate Laravel app standing in for a customer's codebase
 ├── fixtures/reference-solutions/  Expected feature patches for that app, and verify.sh
 └── .github/workflows/ci.yml CI
@@ -68,6 +68,23 @@ endpoint is at <http://localhost:8000/up>.
 
 Optionally, `php artisan db:seed` creates `test@example.com` with password
 `password`. The seeder refuses to run unless `APP_ENV=local`.
+
+### Prototype flow
+
+Projects → request a feature → preview the generated change → select a step
+→ request a change to that step (for example "Only the team owner may invite
+people"). Until the AI agent exists, the `reference` generator
+(`config/builder.php`) answers requests with the known-good solutions listed
+in `BUILDER_REFERENCE_SOLUTIONS` (see `fixtures/reference-solutions`).
+On a generated change, **Run verification** copies the project into a fresh
+workspace, applies the change and every change it follows up on, runs the
+setup commands and checks from `config/builder.php`, and shows each result.
+Generation and verification run on the queue, so keep a worker running
+(`composer dev` starts one). Verification can take several minutes, so keep
+`REDIS_QUEUE_RETRY_AFTER` above the job's one-hour timeout (see
+`.env.example`). The default `local` workspace driver runs in a temporary
+directory on this machine with a scrubbed environment. It is for trusted
+fixtures only (see `config/workspaces.php`).
 
 ### AI SDK
 
