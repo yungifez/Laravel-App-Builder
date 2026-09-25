@@ -16,7 +16,7 @@ Besides the standard Laravel directories (`app/`, `config/`, `database/`,
 ```
 ├── compose.yaml             Local PostgreSQL and Redis (trusted local services only)
 ├── docker/postgres/         Test database init script and manual re-run helper
-├── docs/                    Handoff records
+├── docs/                    Handoff records and research (docs/research/)
 ├── fixtures/customer-app/   Separate Laravel app standing in for a customer's codebase
 ├── fixtures/reference-solutions/  Expected feature patches for that app, and verify.sh
 └── .github/workflows/ci.yml CI
