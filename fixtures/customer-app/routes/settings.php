@@ -1,7 +1,10 @@
 <?php
 
+use App\Http\Controllers\CurrentTeamController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
+use App\Http\Controllers\Settings\TeamController;
+use App\Http\Controllers\Settings\TeamMemberController;
 use Illuminate\Auth\Middleware\RequirePassword;
 use Illuminate\Support\Facades\Route;
 
@@ -24,6 +27,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('user-password.update');
 
     Route::inertia('settings/appearance', 'settings/Appearance')->name('appearance.edit');
+
+    Route::get('settings/team', [TeamController::class, 'edit'])->name('teams.edit');
+    Route::patch('settings/teams/{team}', [TeamController::class, 'update'])->name('teams.update');
+
+    Route::scopeBindings()->group(function () {
+        Route::put('settings/teams/{team}/members/{member}', [TeamMemberController::class, 'update'])->name('team-members.update');
+        Route::delete('settings/teams/{team}/members/{member}', [TeamMemberController::class, 'destroy'])->name('team-members.destroy');
+    });
+
+    Route::put('current-team/{team}', [CurrentTeamController::class, 'update'])->name('current-team.update');
 });
 
 Route::get('.well-known/passkey-endpoints', function () {

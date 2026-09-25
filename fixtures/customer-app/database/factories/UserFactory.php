@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\Team;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -34,6 +35,19 @@ class UserFactory extends Factory
             'two_factor_recovery_codes' => null,
             'two_factor_confirmed_at' => null,
         ];
+    }
+
+    /**
+     * Give the user a personal team that they own and are currently using.
+     */
+    public function withPersonalTeam(): static
+    {
+        return $this->afterCreating(function (User $user) {
+            Team::factory()
+                ->personal()
+                ->ownedBy($user)
+                ->create(['name' => "{$user->name}'s Team"]);
+        });
     }
 
     /**
