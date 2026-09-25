@@ -16,11 +16,15 @@ Besides the standard Laravel directories (`app/`, `config/`, `database/`,
 ```
 ├── compose.yaml             Local PostgreSQL and Redis (trusted local services only)
 ├── docker/postgres/         Test database init script and manual re-run helper
-├── docs/                    Handoff records (development-baseline.md)
+├── docs/                    Handoff records
+├── fixtures/customer-app/   Separate Laravel app standing in for a customer's codebase
+├── fixtures/reference-solutions/  Expected feature patches for that app, and verify.sh
 └── .github/workflows/ci.yml CI
 ```
 
-Run every command from the repository root.
+Run every command from the repository root. The customer-app fixture is a
+separate application with its own dependencies and checks; see
+[docs/customer-app-fixture.md](docs/customer-app-fixture.md).
 
 ## Prerequisites
 

@@ -22,6 +22,11 @@ take precedence for files below it.
 - **Layout:** the repository root is the Laravel application. Keep the standard
   Laravel directory structure; do not introduce monorepo-style `apps/` folders.
   Run every command from the repository root.
+- **Keep the customer app separate.** `fixtures/customer-app` is a separate
+  Laravel app standing in for customer code. Control-plane code must not refer
+  to its path, share its database or share identities with it. Change it only
+  when a task is about the fixture. Keep its Laravel defaults, and after any
+  change run `fixtures/reference-solutions/verify.sh`.
 - **Run the checks before you report.** Run all seven commands listed in
   `README.md` → Checks. Report each result truthfully, including failures and
   anything you did not run.
