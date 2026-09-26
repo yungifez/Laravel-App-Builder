@@ -287,3 +287,29 @@ export type VisualEditSummary = {
     device: Device;
     created_at: string | null;
 };
+
+export type NotesSection = {
+    heading: string;
+    body: string;
+};
+
+export type UnderstandingArea = {
+    key: string;
+    name: string;
+    summary: string | null;
+    behaviors: string[];
+    rules: string[];
+    connections: {
+        to: string;
+        name: string;
+        reason: string;
+        strength: 'strong' | 'possible' | 'historical';
+    }[];
+    tested: boolean;
+    file: string | null;
+};
+
+export type CheckFinding = {
+    title: string;
+    details: string[];
+};

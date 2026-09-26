@@ -229,6 +229,16 @@ return [
 
         // Context files larger than this are left out and reported.
         'max_file_bytes' => 65536,
+
+        // The quick check reports files under these paths that no area
+        // describes, except the "undescribed" patterns: framework plumbing
+        // every Laravel app has.
+        'described_paths' => json_decode((string) env('BUILDER_DESCRIBED_PATHS', '["app/", "routes/", "resources/js/pages/"]'), true) ?: [],
+        'undescribed' => [
+            'app/Http/Controllers/Controller.php',
+            'app/Providers/*',
+            'routes/console.php',
+        ],
     ],
 
     /*

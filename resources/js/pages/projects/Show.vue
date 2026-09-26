@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { show as showFeatureRequest } from '@/routes/feature-requests';
 import { index, show } from '@/routes/projects';
 import { show as showEditor } from '@/routes/projects/editor';
+import { show as showUnderstanding } from '@/routes/projects/understanding';
 import { Badge } from '@/components/ui/badge';
 import type {
     FeatureRequestSummary,
@@ -63,11 +64,24 @@ watch(
     <div class="flex h-full flex-1 flex-col gap-8 p-4">
         <div class="flex flex-wrap items-start justify-between gap-4">
             <Heading :title="project.name" />
-            <Button as-child variant="outline">
-                <Link :href="showEditor(project.id)" data-test="editor-link">
-                    Change how it looks
-                </Link>
-            </Button>
+            <div class="flex flex-wrap gap-2">
+                <Button as-child variant="outline">
+                    <Link
+                        :href="showUnderstanding(project.id)"
+                        data-test="understanding-link"
+                    >
+                        What I know about your app
+                    </Link>
+                </Button>
+                <Button as-child variant="outline">
+                    <Link
+                        :href="showEditor(project.id)"
+                        data-test="editor-link"
+                    >
+                        Change how it looks
+                    </Link>
+                </Button>
+            </div>
         </div>
 
         <section class="max-w-2xl space-y-6">
