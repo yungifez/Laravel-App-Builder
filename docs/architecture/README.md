@@ -31,6 +31,7 @@
     24. [A lightweight goal-directed control plane](direction/24-goal-directed-control-plane.md)
     25. [Pricing for Grandma](direction/25-pricing-for-grandma.md)
     26. [The smallest complete evolution loop, and a design contract](direction/26-evolution-loop-and-design-contract.md)
+    27. [Workspace boxes, with no provider hard-coded](direction/27-workspace-boxes.md)
 - **[source/](source/)**: the original planning documents.
     - [Implementation plan v1](source/implementation-plan-v1.md): gates G0–G6,
       the invitation contract and the pilot plan.

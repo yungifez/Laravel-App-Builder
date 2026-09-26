@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 25.** This document consolidates the direction in [direction/](direction/)
+**Version 26.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -61,7 +61,10 @@ the smallest complete evolution loop ([direction 26](direction/26-evolution-loop
 publishing ends in smoke checks and a plain health state, product concepts keep stable
 keys shared by tests and Change Records, soft requirements climb the same ladder from
 checks to judgment ([§12](#12-verification)), and each app gets a design contract
-([§7](#design-context)); the demo is evolution, not generation ([§27](#27-v1-plan-version-16)). When they disagree, the direction documents state intent
+([§7](#design-context)); the demo is evolution, not generation ([§27](#27-v1-plan-version-16)). Version 26 moves
+every workspace into its own disposable box from any provider behind the runtime contract
+([direction 27](direction/27-workspace-boxes.md), [§11](#adapters)): keys, git credentials
+and our instructions stay outside the box, and local development only stands in for it. When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -275,7 +278,7 @@ CONTROL PLANE        (Laravel; this repository)
           │
 EXECUTION ADAPTERS
   ├── Agent adapter    claude-agent-sdk · openai · script   (vendor types stop here)
-  └── Runtime adapter  our containers/VMs · bought sandboxes · local runner
+  └── Runtime adapter  any box provider, chosen in config · local runner
           │
 PROJECT RUNTIME      reproducible workspace: repo, PHP, Composer, Node, Postgres,
                      browser, tests, preview server, the runner, builder/introspect
@@ -1120,6 +1123,36 @@ grades its own work.
   reproducible workspace with our tools, previews and verification.
   Provider-hosted sandboxes can be added later as adapters that declare fewer
   capabilities. A local runner (the user's machine) is a runtime adapter too.
+- **One box per workspace, from any provider.** In production each workspace
+  is its own disposable box: a microVM or an equally strong boundary, never a
+  container that shares a kernel with other customers
+  ([research](../research/workspace-sandboxes.md)). A provider is a runtime
+  adapter selected in `config/workspaces.php`. No code outside that adapter
+  names a vendor, and changing provider changes configuration, not the
+  pipeline. The contract asks only for what every provider offers: create from
+  an image, run a command with a timeout that stops its whole process tree,
+  read and write files, expose a service URL, and destroy. Snapshots, suspend
+  and resume are declared capabilities, never assumptions.
+- **What a box holds:** the customer's repository, the language toolchains and
+  the agent CLI. It never holds control-plane code, our `.env`, database
+  access, provider keys, git credentials or our prompts. The customer's code
+  and tests run in the box, so the customer's code can read anything the box
+  holds.
+- **What stays outside the box:** git goes through the control plane, with a
+  credential scoped to one repository and one branch. Model calls go through
+  the model gateway ([§16](#16-model-gateway-and-credentials)). Outbound
+  traffic is denied, except to package registries and the gateway.
+- **The agent loop runs in the box,** as the SDK agents do today. The
+  alternative is a loop in the control plane that only sends tool calls to the
+  box. It would keep even the harness out, but it rebuilds what the SDKs
+  already do well. We revisit it only if the gateway boundary proves too weak.
+- **Local development stands in for boxes and never replaces them.** The
+  `local` and `docker` drivers run our own trusted fixtures only. Not built
+  yet: a separate runner container in the Sail stack, with no project mount,
+  no `.env` and no database, that plays the part of the box, so local runs
+  exercise the same boundary. Until it exists, the `local` driver runs inside
+  the control plane's container, so an agent without its own sandbox there can
+  read the control plane's files.
 - **The runner** is a TypeScript process in the runtime that hosts the agent
   engines and speaks the runtime protocol to the control plane over an outbound
   connection: tasks (`transform`, `agent`, `prepare`) in; numbered events
@@ -1380,6 +1413,12 @@ path.
 - The runtime gets a base URL and a short-lived token; the gateway injects the
   real credential, so an agent with a shell never sees it; it records usage and
   enforces budgets as hard limits.
+- The gateway also adds our instructions on its side (how to work, the
+  discretion and observability rules), so the box holds only the task: the
+  plan, its acceptance criteria and the owner's own request for their own app
+  ([§19](#19-learning-and-privacy)). Not built yet: today the SDK driver sends
+  our working rules inside the task, which is acceptable only while the agent
+  runs on our trusted fixtures.
 - **Credentials vault** per account, encrypted, masked, revocable, each checked
   by a test call before saving: `api_key`, `claude_subscription_token`,
   `codex_chatgpt_token`, and provider OAuth (for example OpenRouter) later.
@@ -1443,6 +1482,8 @@ shows it honestly; normalization improves it over time.
     - Agent prompts do not mention a platform, a builder or a control plane. The
       coder is told to write as the app's own developer. Files the runner puts in
       a workspace go inside `.git/` and have neutral names.
+    - The workspace box holds nothing of ours either: no control-plane code,
+      keys or prompts ([§11](#adapters)).
     - The project notes are never committed to the repository (§26.3).
 
 ## 20. Deliberately not built yet
@@ -1545,7 +1586,8 @@ for; none is started without that evidence.
 - Curated presets only, or also an open model picker.
 - Approval from Anthropic (and a position from OpenAI) for subscription tokens
   in a hosted product.
-- The sandbox provider for managed runtimes.
+- Which box provider to start with. The code does not depend on the answer
+  ([§11](#adapters)).
 - The product's public name and category (not "Laravel builder").
 - Whether to charge for accepted changes rather than raw usage (§25.6).
 - Recruiting 3–5 owners for the behaviour-diff study (§26.7).
