@@ -2656,8 +2656,10 @@ Only what the V1 loop already produces the data for:
 
 - **Pages follow §28.2.** The change page leads with "Here's what I'm
   changing", "I'll keep these the same", "This may also touch", "Done when"
-  and "Checks I ran"; the run log, token counts, file lists and model names
-  move under Details.
+  and "Checks I ran"; the file lists and a plain-words log of what happened
+  move under Details. Model and provider names, token counts, workers,
+  budgets and our own checks are never shown: messages that name them are
+  replaced with a vague one (§19).
 - **"What changed" is product history.** The project page lists kept changes by
   their summaries; commit hashes are details. (Direction 18, §9.)
 - **"Things that must always be true"** is the Understanding page's name for

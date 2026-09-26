@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Form } from '@inertiajs/vue3';
+import { Form, usePage } from '@inertiajs/vue3';
 import {
     AlignCenterVertical,
     AlignEndVertical,
@@ -56,6 +56,11 @@ const props = defineProps<{
 
 const asking = ref(false);
 const element = computed(() => props.state.element);
+
+// Where the part lives in the code, and its Tailwind classes, only for
+// someone who chose to see how changes are built (§28.4).
+const page = usePage();
+const showCode = computed(() => (page.props.auth.user.detail_level ?? 1) >= 3);
 
 // The choices a property offers, with an icon where one says it better.
 const icons: Partial<Record<string, Component>> = {
@@ -558,6 +563,25 @@ function describeEdit(edit: VisualEditSummary): string {
                             Ask for this change
                         </Button>
                     </Form>
+
+                    <section
+                        v-if="showCode"
+                        class="space-y-1 border-t pt-3 text-xs"
+                        data-test="element-code"
+                    >
+                        <p
+                            class="truncate font-mono text-muted-foreground"
+                            :title="`${element.file}:${element.line}`"
+                        >
+                            {{ element.file }}:{{ element.line }}
+                        </p>
+                        <p
+                            v-if="element.classes"
+                            class="font-mono break-words select-all"
+                        >
+                            {{ element.classes }}
+                        </p>
+                    </section>
                 </div>
             </template>
 
