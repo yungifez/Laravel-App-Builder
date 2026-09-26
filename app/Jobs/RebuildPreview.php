@@ -5,12 +5,14 @@ namespace App\Jobs;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\PreviewStatus;
 use App\Models\Preview;
+use App\Models\PreviewRebuild;
 use App\Projects\ProjectRepository;
 use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 
@@ -34,9 +36,18 @@ class RebuildPreview implements ShouldQueue
     public int $maxExceptions = 1;
 
     /**
+     * When the rebuild was asked for, so time spent waiting for a worker
+     * shows apart from the build.
+     */
+    public string $queuedAt;
+
+    /**
      * Create a new job instance.
      */
-    public function __construct(public Preview $preview) {}
+    public function __construct(public Preview $preview)
+    {
+        $this->queuedAt = now()->toIso8601String();
+    }
 
     /**
      * Get the middleware the job should pass through.
@@ -72,6 +83,15 @@ class RebuildPreview implements ShouldQueue
         $workspace = $preview->workspace;
         $driver = $workspaces->driver($workspace->driver);
         $changed = $repository->changedFiles($project, $preview->revision, $head);
+        $record = PreviewRebuild::query()->create([
+            'preview_id' => $preview->id,
+            'project_id' => $project->id,
+            'from_revision' => $preview->revision,
+            'to_revision' => $head,
+            'status' => 'running',
+            'queued_at' => $this->queuedAt,
+            'started_at' => now(),
+        ]);
 
         try {
             foreach ($changed as $path => $deleted) {
@@ -92,8 +112,11 @@ class RebuildPreview implements ShouldQueue
             }
 
             $preview->update(['revision' => $head, 'rebuilt_at' => now(), 'error' => null]);
+            $record->update(['status' => 'rebuilt', 'finished_at' => now()]);
         } catch (Throwable $exception) {
             report($exception);
+
+            $record->update(['status' => 'failed', 'finished_at' => now(), 'error' => Str::limit($exception->getMessage(), 2000)]);
 
             $this->restore($driver, $runWorkspaceCommand, $repository, $preview, array_keys($changed));
             $preview->update(['error' => __('The preview could not show your latest change. Start it again to see it.')]);

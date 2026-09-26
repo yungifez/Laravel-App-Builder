@@ -56,7 +56,10 @@ class ProjectTelemetryTest extends TestCase
         $this->assertSame(1, $telemetry['unpriced_calls']);
         $this->assertSame(2.0, $telemetry['cost_per_accepted_change_usd']);
         $this->assertSame(2, $telemetry['runs_verified']);
-        $this->assertSame(1, $telemetry['first_attempt_passed']);
+        // The only first attempt that got through passed with no test for
+        // the change: that is unverified, never a pass.
+        $this->assertSame(0, $telemetry['first_attempt_passed']);
+        $this->assertSame(1, $telemetry['first_attempt_unverified']);
         $this->assertSame(1.0, $telemetry['repairs_before_acceptance']);
         $this->assertSame(2, $telemetry['reviewed']);
         $this->assertSame(1, $telemetry['with_unexpected_changes']);
@@ -67,7 +70,7 @@ class ProjectTelemetryTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('telemetry.accepted', 1)->where('telemetry.cost_per_accepted_change_usd', 2));
     }
 
-    public function test_it_counts_each_time_the_owner_stepped_in_per_kept_change()
+    public function test_it_counts_each_time_the_owner_acted_per_kept_change()
     {
         $project = Project::factory()->create();
 
@@ -84,8 +87,8 @@ class ProjectTelemetryTest extends TestCase
 
         $telemetry = app(SummarizeProjectTelemetry::class)->handle($project);
 
-        $this->assertSame(['adjustments' => 1, 'stops' => 1, 'retries' => 1, 'undos' => 1], $telemetry['interventions']);
-        $this->assertSame(2.0, $telemetry['interventions_per_accepted_change']);
+        $this->assertSame(['adjustments' => 1, 'stops' => 1, 'retries' => 1, 'undos' => 1], $telemetry['owner_actions']);
+        $this->assertSame(2.0, $telemetry['owner_actions_per_accepted_change']);
     }
 
     public function test_model_calls_are_priced_from_the_configured_prices_and_unknown_models_are_left_unpriced()

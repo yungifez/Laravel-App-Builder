@@ -8,8 +8,11 @@ defineProps<{
     history: ProjectCommit[];
 }>();
 
+// A share is never shown without what it is a share of.
 function rate(part: number, whole: number): string {
-    return whole === 0 ? '–' : `${Math.round((part / whole) * 100)}%`;
+    return whole === 0
+        ? '–'
+        : `${Math.round((part / whole) * 100)}% (${part} of ${whole})`;
 }
 
 function dollars(amount: number | null): string {
@@ -56,6 +59,14 @@ function dollars(amount: number | null): string {
                             )
                         }}
                     </dd>
+                    <dd
+                        v-if="telemetry.first_attempt_unverified > 0"
+                        class="text-xs text-muted-foreground"
+                        data-test="first-attempt-unverified"
+                    >
+                        {{ telemetry.first_attempt_unverified }} more passed
+                        with nothing to test the change
+                    </dd>
                 </div>
                 <div>
                     <dt class="text-xs text-muted-foreground">
@@ -78,22 +89,22 @@ function dollars(amount: number | null): string {
                         {{ telemetry.repairs_before_acceptance ?? '–' }}
                     </dd>
                 </div>
-                <div data-test="interventions">
+                <div data-test="owner-actions">
                     <dt class="text-xs text-muted-foreground">
                         Times you stepped in, per kept change
                     </dt>
                     <dd class="font-medium tabular-nums">
-                        {{ telemetry.interventions_per_accepted_change ?? '–' }}
+                        {{ telemetry.owner_actions_per_accepted_change ?? '–' }}
                     </dd>
                 </div>
             </dl>
 
             <p class="text-xs text-muted-foreground">
                 You adjusted a plan
-                {{ telemetry.interventions.adjustments }} times, stopped
-                {{ telemetry.interventions.stops }}, asked again
-                {{ telemetry.interventions.retries }} and undid
-                {{ telemetry.interventions.undos }}.
+                {{ telemetry.owner_actions.adjustments }} times, stopped
+                {{ telemetry.owner_actions.stops }}, asked again
+                {{ telemetry.owner_actions.retries }} and undid
+                {{ telemetry.owner_actions.undos }}.
             </p>
 
             <p class="text-xs text-muted-foreground">

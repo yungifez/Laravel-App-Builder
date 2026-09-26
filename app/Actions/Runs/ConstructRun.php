@@ -83,8 +83,10 @@ class ConstructRun
             $this->stopForDecision($run, $lease, $exception->getMessage(), 'budget_exhausted');
         } catch (ProvidersUnavailable $exception) {
             $this->stopForDecision($run, $lease, $exception->getMessage(), 'providers_unavailable');
-        } catch (ConstructionFailed|CannotGenerateFeature $exception) {
-            $this->failRun->handle($run, $exception->getMessage(), $lease);
+        } catch (ConstructionFailed $exception) {
+            $this->failRun->handle($run, $exception->getMessage(), $lease, 'construction_failed');
+        } catch (CannotGenerateFeature $exception) {
+            $this->failRun->handle($run, $exception->getMessage(), $lease, 'cannot_generate');
         }
     }
 

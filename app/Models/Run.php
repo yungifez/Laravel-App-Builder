@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $feature_request_id
  * @property int|null $workspace_id
  * @property string $driver
+ * @property string|null $config_version The ExecutionConfig the run was built with
  * @property RunStatus $status
  * @property int $fencing_token
  * @property string|null $lease_owner
@@ -33,6 +34,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property array{reason: string, details: list<string>}|null $feedback What the next implementing pass must address
  * @property array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array{area: string|null, section: string, behavior: string, before: string, now: string}>, classification: array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>}, preserved?: list<array{area: string|null, statement: string, evidence: string, unchanged: bool, tests: int}>, verified?: list<array{criterion: string, test_file: string|null, test_name: string|null, evidence: string, named_in_diff: bool}>}|null $review The latest review of the run's change
  * @property string|null $error
+ * @property string|null $stop_reason Why the run failed or waits on its owner, such as "budget_exhausted"
  * @property array{text: string, why: string, options: list<string>, recommended: string|null}|null $question What the run waits for the owner to answer before it plans again
  * @property list<array{question: string, answer: string, decided_by: string}>|null $answers What the owner answered before building, oldest first
  * @property int $question_limit How many questions the run may ask before building
@@ -41,7 +43,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['workspace_id', 'driver', 'status', 'fencing_token', 'lease_owner', 'lease_expires_at', 'workspace_revision', 'plan', 'context', 'repairs', 'feedback', 'review', 'error', 'question', 'answers', 'question_limit', 'started_at', 'finished_at'])]
+#[Fillable(['workspace_id', 'driver', 'config_version', 'stop_reason', 'status', 'fencing_token', 'lease_owner', 'lease_expires_at', 'workspace_revision', 'plan', 'context', 'repairs', 'feedback', 'review', 'error', 'question', 'answers', 'question_limit', 'started_at', 'finished_at'])]
 class Run extends Model
 {
     /** @use HasFactory<RunFactory> */

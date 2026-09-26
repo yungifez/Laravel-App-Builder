@@ -46,6 +46,13 @@ class TransitionRun
             $locked->fill($attributes);
             $locked->status = $to;
 
+            // Why the run failed or waits on its owner, for grouping and
+            // filtering. It clears when the run moves on, so it never names
+            // a stop the run has since left behind.
+            $locked->stop_reason = in_array($to, [RunStatus::Failed, RunStatus::NeedsUserDecision], true)
+                ? (is_string($details['reason'] ?? null) ? $details['reason'] : 'unknown')
+                : ($to === RunStatus::Cancelled ? 'cancelled' : null);
+
             if ($from === RunStatus::Queued) {
                 $locked->started_at ??= now();
             }

@@ -420,6 +420,16 @@ class ProjectRepository
     }
 
     /**
+     * Get every commit a commit is built on, itself included.
+     *
+     * @return list<string>
+     */
+    public function history(Project $project, string $commit): array
+    {
+        return array_values(array_filter(explode("\n", trim($this->git($project, ['rev-list', $commit])->output()))));
+    }
+
+    /**
      * Run a Git command in the project's repository. The repository belongs
      * to the control plane, so it is trusted even when another system user
      * (a queue worker, for example) created it; hooks never run.

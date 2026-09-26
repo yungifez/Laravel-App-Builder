@@ -3070,7 +3070,25 @@ compiled packet, same model and code) tests it directly.
   verification, architecture drift. It stays a Markdown log until the
   categories prove useful.
 - **Metric:** human interventions per kept change, beside cost per kept change
-  (§25.3).
+  (§25.3). What the builder records are **owner actions**: follow-ups,
+  retries, stops and undos. They are observed facts, not proof that something
+  failed. An action becomes an intervention only when an operator classifies
+  why it happened (later, phase 2 of the operations screens).
+- **Definitions (built):** _completed_ (a run finished its build and review),
+  _verified_ (the latest checks passed with tests for the change;
+  _unverified_ is never counted as passed), _kept_, _pushed_ (the code
+  reached the host), _published_ (the app answered its checks after the push)
+  and _healthy_ (not measured: nothing checks a published app afterwards)
+  are separate. Every percentage is shown with its counts.
+- **Operations screens (built, phase 1):** operators named in
+  `config/operations.php` see what needs attention (silent queue workers,
+  backlog, stuck runs and expired leases, failures by stage and reason,
+  exhausted budgets, preview failures and edit-to-screen time, workspace
+  cleanup, spend with a completeness label) and each change's history, with
+  queue, machine and owner time kept apart. Facts are recorded at the source:
+  worker heartbeats, preview rebuilds, stop reasons, the execution settings
+  version, cleanup failures, where each cost came from, and which changes a
+  publish contains. No prompts or customer code appear on list screens.
 - **Evolution Benchmark (later):** a fixed sequence of 20–50 realistic
   changes to one app, measured at changes 1, 5, 10, 20, 35 and 50 for
   regressions, corrective prompts, cost and missed rules. This project is the

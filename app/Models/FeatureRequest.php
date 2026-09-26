@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
@@ -203,6 +204,16 @@ class FeatureRequest extends Model
     public function decisions(): HasMany
     {
         return $this->hasMany(Decision::class);
+    }
+
+    /**
+     * Get the publishes that contain this change.
+     *
+     * @return BelongsToMany<Deployment, $this>
+     */
+    public function deployments(): BelongsToMany
+    {
+        return $this->belongsToMany(Deployment::class);
     }
 
     /**

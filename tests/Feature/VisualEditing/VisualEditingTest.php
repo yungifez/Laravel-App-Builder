@@ -443,6 +443,7 @@ class VisualEditingTest extends TestCase
         $preview->refresh();
         $this->assertSame($head, $preview->revision);
         $this->assertNotNull($preview->rebuilt_at);
+        $this->assertDatabaseHas('preview_rebuilds', ['preview_id' => $preview->id, 'to_revision' => $head, 'status' => 'rebuilt']);
 
         $this->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->where('preview.updating', false));
@@ -476,6 +477,7 @@ class VisualEditingTest extends TestCase
         $preview->refresh();
         $this->assertSame($old, $preview->revision);
         $this->assertSame('The preview could not show your latest change. Start it again to see it.', $preview->error);
+        $this->assertDatabaseHas('preview_rebuilds', ['preview_id' => $preview->id, 'from_revision' => $old, 'status' => 'failed']);
 
         // An undo back to the old file changes nothing to copy, so the
         // failed file must not be left in the workspace.

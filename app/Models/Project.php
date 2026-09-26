@@ -26,7 +26,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $experiment_id The idea the owner is working in; null is the main app
  * @property array{purpose: string, areas: list<array{key: string, name: string, summary: string, paths: list<string>, behaviors: list<array{key: string, name: string}>, rules: list<string>}>}|null $notes_draft Notes a model drafted from an imported app, waiting for the owner
  * @property string|null $notes_draft_error
- * @property list<array{role: string, provider: string|null, model: string|null, input_tokens: int, output_tokens: int, cost_usd: float|null}>|null $setup_model_calls Model calls made to set the project up, outside any change
+ * @property list<array{role: string, provider: string|null, model: string|null, input_tokens: int, output_tokens: int, cost_usd: float|null, cost_source?: string|null, at?: string}>|null $setup_model_calls Model calls made to set the project up, outside any change
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */

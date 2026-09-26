@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\BoxCommand;
+use App\Models\WorkerHeartbeat;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -12,4 +13,4 @@ Artisan::command('inspire', function () {
 Schedule::command('workspaces:reap')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('runs:reconcile')->everyMinute()->withoutOverlapping();
 Schedule::command('previews:reap')->everyFiveMinutes()->withoutOverlapping();
-Schedule::command('model:prune', ['--model' => [BoxCommand::class]])->daily();
+Schedule::command('model:prune', ['--model' => [BoxCommand::class, WorkerHeartbeat::class]])->daily();

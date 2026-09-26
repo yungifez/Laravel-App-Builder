@@ -67,13 +67,17 @@ class DraftProjectNotes implements ShouldQueue
 
             $response = NotesDrafter::make()->prompt($prompt, provider: ModelRole::Planner->providers());
 
+            $cost = RecordModelUsage::cost((string) $response->meta->model, $response->usage->inputTokens, $response->usage->outputTokens);
+
             $this->project->update(['setup_model_calls' => [...$this->project->setup_model_calls ?? [], [
                 'role' => ModelRole::Planner->value,
                 'provider' => $response->meta->provider,
                 'model' => $response->meta->model,
                 'input_tokens' => $response->usage->inputTokens,
                 'output_tokens' => $response->usage->outputTokens,
-                'cost_usd' => RecordModelUsage::cost((string) $response->meta->model, $response->usage->inputTokens, $response->usage->outputTokens),
+                'cost_usd' => $cost,
+                'cost_source' => $cost === null ? null : 'estimated',
+                'at' => now()->toIso8601String(),
             ]]]);
 
             if (! $response instanceof StructuredAgentResponse) {

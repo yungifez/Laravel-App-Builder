@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 /**
  * One publish of a project: the full checks on one commit, a push of that
@@ -71,5 +72,15 @@ class Deployment extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the kept changes this publish contains, as recorded when it began.
+     *
+     * @return BelongsToMany<FeatureRequest, $this>
+     */
+    public function featureRequests(): BelongsToMany
+    {
+        return $this->belongsToMany(FeatureRequest::class);
     }
 }

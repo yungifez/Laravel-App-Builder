@@ -3,11 +3,14 @@
 namespace App\Providers;
 
 use App\Features\FeatureGeneratorManager;
+use App\Models\User;
+use App\Operations\WorkerPulse;
 use App\Runs\Agents\CodingAgentManager;
 use App\Runs\ConstructionDriverManager;
 use App\Workspaces\Boxes\BoxProviderManager;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Foundation\DevCommands;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -26,6 +29,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(ConstructionDriverManager::class);
         $this->app->singleton(CodingAgentManager::class);
         $this->app->singleton(BoxProviderManager::class);
+        $this->app->singleton(WorkerPulse::class);
     }
 
     /**
@@ -33,6 +37,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Operators see every owner's changes, so nobody is one by default.
+        Gate::define('viewOperations', fn (User $user) => $user->hasVerifiedEmail()
+            && in_array(strtolower($user->email), (array) config('operations.operators'), true));
+
         // Previews on their own queue need their own worker under
         // `composer dev` too, or they would never start.
         if (is_string($queue = config('builder.preview.queue')) && $queue !== '') {

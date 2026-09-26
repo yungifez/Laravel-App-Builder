@@ -41,6 +41,7 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'auth' => [
                 'user' => $request->user(),
+                'operator' => (bool) $request->user()?->can('viewOperations'),
             ],
             // What needs the owner, newest first. Pages poll this on its own.
             'notifications' => fn () => $request->user() === null ? null : [

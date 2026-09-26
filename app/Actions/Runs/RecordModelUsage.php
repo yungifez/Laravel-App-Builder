@@ -26,6 +26,8 @@ class RecordModelUsage
                 return;
             }
 
+            $cost = self::cost((string) $response->meta->model, $response->usage->inputTokens, $response->usage->outputTokens);
+
             $locked->recordEvent('model_call', [
                 'invocation_id' => $response->invocationId,
                 'role' => $role->value,
@@ -34,7 +36,9 @@ class RecordModelUsage
                 'input_tokens' => $response->usage->inputTokens,
                 'output_tokens' => $response->usage->outputTokens,
                 'tool_calls' => $response->toolCalls->count(),
-                'cost_usd' => self::cost((string) $response->meta->model, $response->usage->inputTokens, $response->usage->outputTokens),
+                'cost_usd' => $cost,
+                // Our estimate from config prices; the provider did not report it.
+                'cost_source' => $cost === null ? null : 'estimated',
             ]);
         });
     }

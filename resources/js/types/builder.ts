@@ -79,6 +79,7 @@ export type ProjectTelemetry = {
     cost_per_accepted_change_usd: number | null;
     runs_verified: number;
     first_attempt_passed: number;
+    first_attempt_unverified: number;
     repairs_before_acceptance: number | null;
     reviewed: number;
     with_unexpected_changes: number;
@@ -86,13 +87,13 @@ export type ProjectTelemetry = {
     output_tokens: number;
     visual_edits: number;
     setup_cost_usd: number;
-    interventions: {
+    owner_actions: {
         adjustments: number;
         stops: number;
         retries: number;
         undos: number;
     };
-    interventions_per_accepted_change: number | null;
+    owner_actions_per_accepted_change: number | null;
 };
 
 export type ProjectCommit = {

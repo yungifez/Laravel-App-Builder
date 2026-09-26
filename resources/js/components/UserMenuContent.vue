@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Link, router } from '@inertiajs/vue3';
-import { LogOut, Settings } from '@lucide/vue';
+import { Link, router, usePage } from '@inertiajs/vue3';
+import { Activity, LogOut, Settings } from '@lucide/vue';
 import {
     DropdownMenuGroup,
     DropdownMenuItem,
@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import UserInfo from '@/components/UserInfo.vue';
 import { logout } from '@/routes';
+import { attention } from '@/routes/operations';
 import { edit } from '@/routes/profile';
 import type { User } from '@/types';
 
@@ -21,6 +22,8 @@ const handleLogout = () => {
 };
 
 defineProps<Props>();
+
+const page = usePage();
 </script>
 
 <template>
@@ -35,6 +38,16 @@ defineProps<Props>();
             <Link class="block w-full cursor-pointer" :href="edit()" prefetch>
                 <Settings class="mr-2 h-4 w-4" />
                 Settings
+            </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem v-if="page.props.auth.operator" :as-child="true">
+            <Link
+                class="block w-full cursor-pointer"
+                :href="attention()"
+                data-test="operations-link"
+            >
+                <Activity class="mr-2 h-4 w-4" />
+                Operations
             </Link>
         </DropdownMenuItem>
     </DropdownMenuGroup>

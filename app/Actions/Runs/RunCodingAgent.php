@@ -67,6 +67,8 @@ class RunCodingAgent
             $this->recordEvent($run, $lease, 'model_call', [
                 'role' => 'coder',
                 ...$outcome->toArray(),
+                // The agent's SDK reports what the session cost.
+                'cost_source' => $outcome->costUsd === null ? null : 'reported',
             ]);
 
             if ($outcome->status !== AgentOutcomeStatus::ProviderUnavailable) {

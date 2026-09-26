@@ -17,11 +17,12 @@ class FailRun
 
     /**
      * Mark the run failed with a reason, fail a request that has no change
-     * yet, and remove the run's workspace.
+     * yet, and remove the run's workspace. The cause is a short code, such
+     * as "worker_stopped", that failures are grouped by.
      */
-    public function handle(Run $run, string $reason, ?RunLease $lease = null): void
+    public function handle(Run $run, string $reason, ?RunLease $lease = null, string $cause = 'unknown'): void
     {
-        $this->transitionRun->handle($run, RunStatus::Failed, $lease, ['error' => $reason]);
+        $this->transitionRun->handle($run, RunStatus::Failed, $lease, ['error' => $reason], ['reason' => $cause]);
 
         $featureRequest = $run->featureRequest;
 

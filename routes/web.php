@@ -15,6 +15,8 @@ use App\Http\Controllers\FeatureRequestVerificationController;
 use App\Http\Controllers\NewProjectController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\NotificationReadController;
+use App\Http\Controllers\Operations\AttentionController;
+use App\Http\Controllers\Operations\ChangeController as OperationsChangeController;
 use App\Http\Controllers\PreviewController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectEditorController;
@@ -69,6 +71,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('notifications/{notification}', [NotificationController::class, 'show'])->name('notifications.show');
     Route::post('notifications/read', NotificationReadController::class)->name('notifications.read');
     Route::post('runs/{run}/cancellation', [RunCancellationController::class, 'store'])->name('runs.cancellation.store');
+});
+
+// For operators only: every owner's changes, and what needs attention.
+Route::middleware(['auth', 'verified', 'can:viewOperations'])->prefix('operations')->name('operations.')->group(function () {
+    Route::get('/', AttentionController::class)->name('attention');
+    Route::get('changes', [OperationsChangeController::class, 'index'])->name('changes.index');
+    Route::get('changes/{featureRequest}', [OperationsChangeController::class, 'show'])->name('changes.show');
 });
 
 require __DIR__.'/settings.php';

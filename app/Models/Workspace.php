@@ -27,10 +27,12 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $last_activity_at
  * @property Carbon|null $expires_at
  * @property Carbon|null $destroyed_at
+ * @property Carbon|null $cleanup_failed_at When removing its environment last failed
+ * @property string|null $cleanup_error
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['driver', 'driver_id', 'baseline_commit', 'status', 'image', 'cpus', 'memory_mb', 'pids', 'last_activity_at', 'expires_at', 'destroyed_at'])]
+#[Fillable(['driver', 'driver_id', 'baseline_commit', 'status', 'image', 'cpus', 'memory_mb', 'pids', 'last_activity_at', 'expires_at', 'destroyed_at', 'cleanup_failed_at', 'cleanup_error'])]
 class Workspace extends Model
 {
     /** @use HasFactory<WorkspaceFactory> */
@@ -49,6 +51,7 @@ class Workspace extends Model
             'last_activity_at' => 'datetime',
             'expires_at' => 'datetime',
             'destroyed_at' => 'datetime',
+            'cleanup_failed_at' => 'datetime',
         ];
     }
 

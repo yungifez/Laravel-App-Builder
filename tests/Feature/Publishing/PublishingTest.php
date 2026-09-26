@@ -6,6 +6,7 @@ use App\Actions\Projects\CreateProject;
 use App\Enums\DeploymentStatus;
 use App\Jobs\PublishDeployment;
 use App\Models\Deployment;
+use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\User;
 use App\Projects\ProjectRepository;
@@ -129,6 +130,25 @@ class PublishingTest extends TestCase
         $this->assertSame([['composer', 'install'], ['php', 'artisan', 'test'], ['vendor/bin/phpstan']], array_column($this->driver->executed, 'command'));
         $this->assertCount(1, $this->driver->destroyed);
         $this->assertSame($head, trim(Process::run(['git', '--git-dir', $this->remote, 'rev-parse', 'refs/heads/main'])->output()));
+    }
+
+    public function test_a_publish_records_which_kept_changes_it_contains()
+    {
+        $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main']);
+        $kept = $this->repository->commitFiles($this->project, $this->repository->head($this->project), ['a.txt' => "a\n"], 'Add a', null);
+        $undone = $this->repository->commitFiles($this->project, $kept, ['b.txt' => "b\n"], 'Add b', null);
+        $revert = $this->repository->commitFiles($this->project, $undone, ['b.txt' => null], 'Remove b', null);
+        $included = FeatureRequest::factory()->generated()->create(['project_id' => $this->project->id, 'commit_sha' => $kept]);
+        $reverted = FeatureRequest::factory()->generated()->create(['project_id' => $this->project->id, 'commit_sha' => $undone, 'revert_sha' => $revert]);
+        $elsewhere = FeatureRequest::factory()->generated()->create(['project_id' => $this->project->id, 'commit_sha' => str_repeat('e', 40)]);
+
+        $this->actingAs($this->owner)
+            ->post(route('deployments.store', $this->project))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame([$included->id], Deployment::sole()->featureRequests()->pluck('feature_requests.id')->all());
+        $this->assertTrue($reverted->deployments()->doesntExist());
+        $this->assertTrue($elsewhere->deployments()->doesntExist());
     }
 
     public function test_a_publish_counts_as_online_only_once_the_app_answers_at_its_address()
