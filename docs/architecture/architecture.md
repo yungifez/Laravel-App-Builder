@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 15.** This document consolidates the direction in [direction/](direction/)
+**Version 16.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -29,7 +29,8 @@ probes generated as tests from the framework's own routes, rules, policies and
 factories. Version 15 makes visual editing concrete
 ([§26.12](#2612-visual-properties-on-a-tailwind-substrate-version-15)):
 human-readable properties, written as clean Tailwind with the app's own
-merge, no model call. When they disagree, the direction documents state intent
+merge, no model call. **Version 16 sets the V1 plan ([§27](#27-v1-plan-version-16)), which wins
+over §21 and §26 for V1.** When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -59,6 +60,7 @@ silently following either.
 - [Convention over generation: reassessment](#24-convention-over-generation-reassessment)
 - [Outcomes, measurement and falsification](#25-outcomes-measurement-and-falsification)
 - [V0: what we build now](#26-v0-what-we-build-now-version-10)
+- [V1 plan](#27-v1-plan-version-16)
 
 ## 1. Principles
 
@@ -2171,3 +2173,204 @@ the product should say so.
 flow (§26.2) and hypothesis G, it is visible, and it proves the principle with
 no model call. Its risks are specific: the rebuild delay after each commit, and
 component-instance ambiguity in shadcn-vue apps. Both are handled above.
+
+## 27. V1 plan (version 16)
+
+Direction 16 freezes the V1 direction. This section is the engineering plan
+that answers it. For V1, it wins over §21 and §26 where they differ. The
+ambition is the depth of one loop, not the breadth of features.
+
+### 27.1 What proves the differentiation
+
+The claim is "it understands the product, retrieves what matters, knows what
+else may be affected, scopes the change, verifies it and explains it". Only
+these components prove that claim, so only these are **required**:
+
+1. Project notes in `.builder/` with selective compilation (built: §26.3).
+2. Behaviours and Effects in the capability notes, and the change sorted by
+   area (built: §26.4).
+3. **The Change Brief** with _preserve_ and _verify_ clauses (new; §27.4).
+4. The coding agent running in a sandboxed runtime through an agent SDK.
+5. Independent verification: the full suite, protected acceptance tests, and
+   the brief's verify items as tests.
+6. **An honest behaviour diff:** each "preserved" line says how we know
+   (§27.4).
+7. Selection with "What this does", and the deterministic Tailwind editor
+   (§26.12).
+8. Creating a project from the template, and a constrained import that drafts
+   `.builder/` for the owner to confirm.
+9. A minimal Project Understanding page: the `.builder/` files rendered in
+   product language and editable.
+10. Git boundaries per accepted change, revert, and deploy by pushing to the
+    branch Laravel Cloud deploys from.
+11. Telemetry per change request (§25.3), including cost per accepted change.
+
+### 27.2 Postponed to V1.1
+
+| Postponed                                                     | Why it can wait                                                                                                                                                                                                                   |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Decision layer (Jev), even in shadow mode                     | The brief's model call already classifies. A decision model pays off only by skipping stages, and needs V1 traffic to show which ones. V1 routes deterministically: selections go to the inspector, everything else to the brief. |
+| Thorough and deep audits, adversarial review                  | They need real applications with history. V1 keeps the quick health check (deterministic), which protects the notes.                                                                                                              |
+| Precedent library                                             | Hand-written cards in owner sessions first (§26.6, F).                                                                                                                                                                            |
+| Compatibility mode                                            | V1 preserve clauses already cover "don't change these"; the mode is a user-chosen set of protected interfaces on top.                                                                                                             |
+| Backend flow visualisation                                    | Behaviour notes already say "what happens" in words. A diagram only restates them until behaviour is extracted automatically.                                                                                                     |
+| Small-generative-model tier                                   | No V1 job needs it: answers are written deterministically, and the coder updates the notes in its own diff.                                                                                                                       |
+| Deploy checks beyond Cloud's own (queues, schedule, env diff) | Laravel Cloud deploys and reports from the Git branch. V1 shows its status and keeps the revert.                                                                                                                                  |
+| Multi-provider routing                                        | The reviewer already runs on a different provider through laravel/ai. Anything more waits for telemetry.                                                                                                                          |
+
+### 27.3 Still architecture for architecture's sake
+
+- **Surface and Implementation Reference as stored entities.** In V1 they are
+  lines in the notes and `paths` globs, not tables.
+- **Four context levels plus "current task".** V1 has two files (project,
+  capability) with behaviour sections; the task is the request.
+- **A Behavior Index separate from the notes.** The index is a view generated
+  from the capability files' `behaviors`, not a second store to keep in step.
+- **Nine intent categories and six flags before any data.** Only flags that
+  change a path matter (permissions, persisted data, destructive); the category
+  is telemetry.
+- **Change Brief and Plan as two artifacts.** The brief is the plan: extend
+  `Plan` rather than add a second document.
+- **A framework adapter layer.** V1 keeps Laravel knowledge in its own
+  namespace and adds no generic interface until a second framework exists.
+
+### 27.4 What coding-agent SDKs already do, and what stays ours
+
+**Theirs:** the tool loop, file editing and shell, running the tests while
+working, context compaction, subagents, planning to-dos, loading `CLAUDE.md`,
+hooks, permission policies, MCP and session resume. Our server-side tools,
+operation journal and reconciliation (G2.1–G2.3) were built because the coder
+ran in the control plane. Once the agent runs inside a disposable sandbox the
+unit of safety is the **whole run**: its output is a diff, and budgets,
+cancellation and the fenced run state machine remain. Moving the coder to the
+Agent SDK therefore deletes code rather than adding it. The compiled context
+reaches the agent as the brief (and may be written as the run's `CLAUDE.md` in
+the sandbox, never committed).
+
+**Ours**, because no SDK does it:
+
+- what the product is, and choosing what matters for this change;
+- the brief's _preserve_ clauses;
+- verification the agent cannot edit;
+- sorting the change by area and explaining it in product language;
+- deterministic paths (Tailwind edits, the notes check);
+- cost per accepted change.
+
+**The honest behaviour diff.** "Preserved: billing" is a claim, so the diff
+says how it knows:
+
+- _verified_: tests that cover the area ran and passed;
+- _untouched_: no file the area claims changed;
+- _not checked_.
+
+Without that label, "preserved" is ceremony.
+
+**The brief (extending `Plan`):** understood as, current behaviour, intended
+change, **preserve** (from the rules and behaviours of the target and Effect
+areas), may also affect, relevant paths, and **verify** items. The verify
+items are the acceptance criteria; the coder turns them into tests, and the
+independent verification and the reviewer check that they exist and pass.
+Planning depth follows consequence: a selection edit gets no brief, a small
+change a short one, and a new capability a full one.
+
+### 27.5 The smallest differentiated engine
+
+```
+request ─┬─ selection with a static class edit ──► Tailwind mutation ─► build ─► commit
+         └─ otherwise
+              ─► areas (from the selection's paths, else named by the brief call)
+              ─► compiled context (§26.3)
+              ─► Change Brief (one model call; skipped for trivial edits later, §26.9)
+              ─► agent in the sandbox (SDK), notes updated in its diff
+              ─► independent verification (suite, protected tests, verify items)
+              ─► review by area, before/now, preserved with evidence
+              ─► owner accepts ─► commit (revertible) ─► optional deploy
+```
+
+Everything else is either an input to that loop (import, project creation) or
+a later layer on top of it.
+
+### 27.6 Dependency order
+
+1. **Execution in a runtime:** a sandbox provider behind the workspace driver,
+   and the Agent SDK coder replacing the in-process tool loop. The runtime is
+   hosted by a provider; we still need to choose one (§23).
+2. **Brief and honest diff:** extend `Plan` and `Review`; test coverage per area
+   from the test paths in the notes.
+3. **Selection:** the preview-only Vite source locator, element to area through
+   `paths`, and "What this does" from the notes.
+4. **Deterministic editor:** property schema, Tailwind adapter, in-place
+   `twMerge`, inline preview, commit and rebuild.
+5. **Project lifecycle:** create from the template (Pest, PHP 8.5 per the
+   blessed stack; the fixture and control plane use PHPUnit today), constrained
+   import with drafted notes, the Understanding page, the quick health check.
+6. **Deploy:** push to the Cloud-connected branch, show status, revert.
+
+Telemetry (1–6) and the owner sessions run alongside.
+
+### 27.7 Risks
+
+**Implementation risk,** highest first:
+
+- the sandboxed runtime with the Agent SDK: provider choice, credentials,
+  cost, and build time per change;
+- setup of imported applications (environment, database, `npm build`), the
+  most likely place for import to fail;
+- source mapping for components and instances in shadcn-vue apps;
+- verification time per change (suite plus asset build);
+- notes drifting from the code, since agents maintain them.
+
+**Product-validation risk,** highest first:
+
+- whether owners read and trust the behaviour diff and its "preserved" lines
+  (D);
+- whether the target owner exists and will pay, when power users may prefer a
+  coding agent directly;
+- whether deterministic visual editing matters when agents make small edits
+  quickly (G);
+- whether selective context shows any advantage at V1 project sizes (B); it may
+  only appear later.
+
+### 27.8 Milestones
+
+1. **M1: the continuation loop, in a sandbox.** On the fixture (an existing app
+   with `.builder/`): request, brief with preserve and verify, Agent SDK in the
+   runtime, verification, review by area with evidence-labelled "preserved",
+   accept and commit, and the next request using the updated notes.
+   Measured: cost per accepted change, first-attempt pass, unexpected changes.
+   Covers demo steps 5–12.
+2. **M2: point and edit.** Source locator, "What this does", the inspector
+   (width, spacing, layout, border, corners, columns, with devices), in-place
+   merge, inline preview, commit, rebuild, and fallback to the agent with the
+   selection. Covers demo steps 3–4 and 13–15. **Owner sessions (D, E, G) run
+   after M2**, before M3 is built.
+3. **M3: a real project lifecycle.** Create from the template with one
+   question; constrained import that drafts notes for confirmation; the
+   Understanding page; the quick health check; deploy through the
+   Cloud-connected branch; and revert. Covers demo steps 1–2, 16 (quick) and 18.
+
+### 27.9 V1, not a prototype, when
+
+- someone other than us creates or imports their own app and ships several
+  changes, visual edits and a deploy **without our help**;
+- every agent run happens in an isolated sandbox, with no secrets in prompts or
+  notes, per-change cost attribution, and budgets that stop runaway runs;
+- verification is independent of the agent, and it cannot edit protected
+  tests;
+- every accepted change is a commit that can be reverted, including after
+  deploy;
+- the behaviour diff never claims more than its evidence, and "preserved"
+  always says how it is known;
+- the owner can read and correct the notes, and the quick check catches notes
+  that have drifted from the code;
+- every failure (setup, verification, budget, deploy) ends in a clear next step
+  for the owner, never a dead end;
+- telemetry answers cost per accepted change, first-attempt pass, unexpected
+  change rate and edits made without a model;
+- at least 3–5 real owners have used the loop, and we know what they did and
+  did not value.
+
+Two corrections to direction 16, from §26.12: 15px padding is `p-3.75` in
+Tailwind v4 (a theme-relative utility), not `p-[15px]`; and any fraction is a
+valid width (`w-73/100`), though `w-[73%]` reads more clearly and is fine as
+the arbitrary form.
