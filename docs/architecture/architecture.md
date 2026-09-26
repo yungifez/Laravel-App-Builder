@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 13.** This document consolidates the direction in [direction/](direction/)
+**Version 14.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -24,7 +24,7 @@ before it.** Version 11 adds decisions before generation
 decision first, failing safe to the baseline. Version 12 adds audits and adversarial reviews
 ([§26.10](#2610-audits-and-adversarial-reviews-version-12)), with evidence on every
 finding; V0 builds only the deterministic quick health check. Version 13 reserves room for Laravel-native active
-testing ([§26.11](#2611-laravel-native-active-testing-version-13-later-stage)):
+testing ([§26.11](#2611-laravel-native-active-testing-versions-1314-later-stage)):
 probes generated as tests from the framework's own routes, rules, policies and
 factories. When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
@@ -1956,7 +1956,7 @@ agent-maintained notes of §26.3 from rotting. Everything else waits for owners
 to be using the product, since a review of software nobody has built yet proves
 nothing.
 
-### 26.11 Laravel-native active testing (version 13, later stage)
+### 26.11 Laravel-native active testing (versions 13–14, later stage)
 
 Direction 14: **exploit framework determinism before spending model
 intelligence**, in assurance as in building. A generic scanner crawls a running
@@ -2008,3 +2008,47 @@ who-can-do-what matrix and tenant isolation, using the same introspection
 boundaries, request integrity (CSRF, signed routes, methods, replay) and
 data-integrity probes follow only if the first slice finds real problems in
 real applications.
+
+**Static knowledge chooses the probes; only runtime results are evidence.**
+Introspection (routes, middleware, bindings, FormRequest rules, registered
+policies, roles from their enum or config, factories) decides what to probe and
+how to build the request. Whether a request is actually allowed is always
+observed by running it, because enforcement can live in controllers,
+middleware, query scopes or nowhere.
+
+**How much of the authorization matrix is automatic.** The routes, the actors
+(when roles are an enum or config, as in the fixture) and the team model (found
+from bindings and relationships, confirmed once by the owner) can be derived.
+World building works where factories do. The expectations split in half:
+isolation and guest denial need no intent and are fully automatic; the
+in-team role expectations need the notes' rules and one owner confirmation.
+
+**Rules are generators without combinatorial fuzzing.** One dimension changes
+per probe. Each field gets its equivalence classes (valid, missing, each rule's
+boundary, one out-of-domain value), so the count grows with fields × rules,
+not their product. Fields are combined only where a conditional rule links
+them. A budget and the framework's priority order cut the rest.
+
+**From hypothesis to probe, and back.** A model states a hypothesis as a probe
+spec (route, actor, mutation, expectation) that we compile into a test; free
+test code is allowed only where the spec cannot express it. Safety comes from
+the sandbox, not from trusting the model. A failing probe goes back to a model
+as a packet: the spec, the request and response, the route's handler, policy
+and FormRequest, the relevant rule from the notes and the Effects. The model
+explains the consequence and proposes a fix, and the probe becomes the
+regression test.
+
+**Framework-specific vs generic.** Laravel-specific: building worlds from
+factories, probes from routes, bindings, policies and rules, isolation from
+relationships, and failure paths through Laravel's fakes (queue, mail, HTTP,
+time). Generic: dependency advisories, configuration and debug exposure, HTTP
+headers, and the race harness itself.
+
+**Environment rule.** Probes run only in disposable sandboxes or previews with
+their own database, fakes for outgoing mail, queues and HTTP, controllable
+time, and snapshots to reset. Races need a real server (the preview host) and
+parallel requests. Testing production is out of scope unless a later policy
+explicitly allows it, and then only read-only.
+
+**Out of V0:** all of it, including the introspection this relies on, beyond
+what V0's own verification already uses.
