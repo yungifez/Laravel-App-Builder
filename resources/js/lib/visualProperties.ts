@@ -11,14 +11,37 @@ export const devices: { key: Device; label: string; width: number | null }[] = [
     { key: 'lg', label: 'Desktop', width: null },
 ];
 
+/**
+ * The steps a number snaps to. Spacing follows Tailwind's spacing scale;
+ * the others are even steps.
+ */
+export type Scale = 'spacing' | 'border' | 'degrees' | 'percent' | 'count';
+
+export type Option = {
+    value: VisualValue;
+    label: string;
+    /** A word or sign for a narrow button. */
+    short?: string;
+};
+
 export type PropertyInput =
-    | { kind: 'choice'; options: { value: VisualValue; label: string }[] }
-    | { kind: 'pixels'; allowAuto?: boolean; allowNegative?: boolean }
-    | { kind: 'count' };
+    | { kind: 'choice'; options: Option[] }
+    | {
+          kind: 'measure';
+          scale: Scale;
+          unit: string;
+          min?: number;
+          max?: number;
+          allowNegative?: boolean;
+          /** Words the value can be instead of a number. */
+          keywords?: Option[];
+      };
 
 export type PropertyDefinition = {
     key: VisualProperty;
     label: string;
+    /** A word or two, for the label next to the part while dragging. */
+    short?: string;
     group: string;
     input: PropertyInput;
     /** Shown only when the element is laid out this way. */
@@ -85,7 +108,13 @@ export const properties: PropertyDefinition[] = [
         label: 'Columns',
         group: 'Layout',
         when: 'grid',
-        input: { kind: 'count' },
+        input: {
+            kind: 'measure',
+            scale: 'count',
+            unit: 'cols',
+            min: 1,
+            max: 12,
+        },
     },
     {
         key: 'align',
@@ -123,25 +152,45 @@ export const properties: PropertyDefinition[] = [
     {
         key: 'gap',
         label: 'Space between items',
+        short: 'Gap',
         group: 'Layout',
         when: 'flex-or-grid',
-        input: { kind: 'pixels' },
+        input: { kind: 'measure', scale: 'spacing', unit: 'px' },
     },
     {
         key: 'width',
         label: 'Width',
+        short: 'Width',
         group: 'Size',
         input: {
-            kind: 'choice',
-            options: [
-                { value: 'full', label: 'Fill the space' },
-                { value: 'fit', label: 'Fit its contents' },
-                { value: 'auto', label: 'Automatic' },
+            kind: 'measure',
+            scale: 'spacing',
+            unit: 'px',
+            keywords: [
+                { value: 'auto', label: 'Automatic', short: 'Auto' },
+                { value: 'fit', label: 'Fit its contents', short: 'Fit' },
+                { value: 'full', label: 'Fill the space', short: 'Fill' },
                 { value: '75%', label: 'Three quarters' },
                 { value: '66.67%', label: 'Two thirds' },
-                { value: '50%', label: 'Half' },
-                { value: '33.33%', label: 'One third' },
-                { value: '25%', label: 'One quarter' },
+                { value: '50%', label: 'Half', short: '½' },
+                { value: '33.33%', label: 'One third', short: '⅓' },
+                { value: '25%', label: 'One quarter', short: '¼' },
+            ],
+        },
+    },
+    {
+        key: 'height',
+        label: 'Height',
+        short: 'Height',
+        group: 'Size',
+        input: {
+            kind: 'measure',
+            scale: 'spacing',
+            unit: 'px',
+            keywords: [
+                { value: 'auto', label: 'Automatic', short: 'Auto' },
+                { value: 'full', label: 'Fill the space', short: 'Fill' },
+                { value: 'screen', label: 'The whole screen', short: 'Screen' },
             ],
         },
     },
@@ -172,32 +221,47 @@ export const properties: PropertyDefinition[] = [
     {
         key: 'padding_x',
         label: 'Space inside, left and right',
+        short: 'Inside',
         group: 'Space',
-        input: { kind: 'pixels' },
+        input: { kind: 'measure', scale: 'spacing', unit: 'px' },
     },
     {
         key: 'padding_y',
         label: 'Space inside, top and bottom',
+        short: 'Inside',
         group: 'Space',
-        input: { kind: 'pixels' },
+        input: { kind: 'measure', scale: 'spacing', unit: 'px' },
     },
     {
         key: 'margin_x',
         label: 'Space outside, left and right',
+        short: 'Outside',
         group: 'Space',
-        input: { kind: 'pixels', allowAuto: true, allowNegative: true },
+        input: {
+            kind: 'measure',
+            scale: 'spacing',
+            unit: 'px',
+            allowNegative: true,
+            keywords: [{ value: 'auto', label: 'Centred', short: 'auto' }],
+        },
     },
     {
         key: 'margin_y',
         label: 'Space outside, top and bottom',
+        short: 'Outside',
         group: 'Space',
-        input: { kind: 'pixels', allowNegative: true },
+        input: {
+            kind: 'measure',
+            scale: 'spacing',
+            unit: 'px',
+            allowNegative: true,
+        },
     },
     {
         key: 'border',
         label: 'Border',
         group: 'Edges',
-        input: { kind: 'pixels' },
+        input: { kind: 'measure', scale: 'border', unit: 'px' },
     },
     {
         key: 'radius',
@@ -235,6 +299,57 @@ export const properties: PropertyDefinition[] = [
         },
     },
     {
+        key: 'rotate',
+        label: 'Turn',
+        short: 'Turn',
+        group: 'Place',
+        input: {
+            kind: 'measure',
+            scale: 'degrees',
+            unit: '°',
+            min: -360,
+            max: 360,
+            allowNegative: true,
+        },
+    },
+    {
+        key: 'translate_x',
+        label: 'Move across',
+        short: 'Across',
+        group: 'Place',
+        input: {
+            kind: 'measure',
+            scale: 'spacing',
+            unit: 'px',
+            allowNegative: true,
+        },
+    },
+    {
+        key: 'translate_y',
+        label: 'Move down',
+        short: 'Down',
+        group: 'Place',
+        input: {
+            kind: 'measure',
+            scale: 'spacing',
+            unit: 'px',
+            allowNegative: true,
+        },
+    },
+    {
+        key: 'opacity',
+        label: 'Opacity',
+        short: 'Opacity',
+        group: 'Place',
+        input: {
+            kind: 'measure',
+            scale: 'percent',
+            unit: '%',
+            min: 0,
+            max: 100,
+        },
+    },
+    {
         key: 'text_size',
         label: 'Text size',
         group: 'Text',
@@ -266,6 +381,20 @@ export const properties: PropertyDefinition[] = [
                 { value: 'medium', label: 'Medium' },
                 { value: 'semibold', label: 'Semi-bold' },
                 { value: 'bold', label: 'Bold' },
+            ],
+        },
+    },
+    {
+        key: 'text_align',
+        label: 'Line up text',
+        group: 'Text',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'left', label: 'Left' },
+                { value: 'center', label: 'Centre' },
+                { value: 'right', label: 'Right' },
+                { value: 'justify', label: 'Both edges' },
             ],
         },
     },
@@ -317,6 +446,131 @@ export const properties: PropertyDefinition[] = [
     },
 ];
 
+/** Find a property's definition. */
+export function definition(property: VisualProperty): PropertyDefinition {
+    return properties.find((item) => item.key === property)!;
+}
+
+/**
+ * Each scale's steps, then the even step it keeps to past the last one.
+ * Spacing is Tailwind's classic scale; Tailwind v4 writes any of these as
+ * a theme utility (`p-4`, `w-72`).
+ */
+export const scales: Record<Scale, { steps: number[]; every: number }> = {
+    spacing: {
+        steps: [
+            0, 1, 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44, 48,
+            56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 256,
+            288, 320, 384,
+        ],
+        every: 16,
+    },
+    border: { steps: [0, 1, 2, 4, 8], every: 4 },
+    degrees: { steps: [0], every: 15 },
+    percent: { steps: [0], every: 5 },
+    count: { steps: [0], every: 1 },
+};
+
+// The next step up from a size (zero or more) on a scale.
+function above(scale: Scale, size: number): number {
+    const { steps, every } = scales[scale];
+
+    return (
+        steps.find((step) => step > size) ??
+        (Math.floor(size / every) + 1) * every
+    );
+}
+
+// The next step down from a size above zero.
+function below(scale: Scale, size: number): number {
+    const { steps, every } = scales[scale];
+    const last = steps.at(-1) ?? 0;
+
+    if (size > last) {
+        return Math.max(last, (Math.ceil(size / every) - 1) * every);
+    }
+
+    return steps.findLast((step) => step < size) ?? 0;
+}
+
+/** The step on the scale nearest to a value. */
+export function snap(scale: Scale, value: number): number {
+    const size = Math.abs(value);
+    const up = above(scale, size);
+    const down = size === 0 ? 0 : below(scale, size);
+    const near = size - down <= up - size ? down : up;
+
+    return value < 0 ? -near : near;
+}
+
+function clamp(input: PropertyInput, value: number): number {
+    if (input.kind !== 'measure') {
+        return value;
+    }
+
+    const min = input.min ?? (input.allowNegative ? -Infinity : 0);
+
+    return Math.min(input.max ?? Infinity, Math.max(min, value));
+}
+
+/**
+ * Settle a number the owner typed or dragged to: on the scale, or when
+ * fine tuning, any value to two decimals. Words pass through.
+ */
+export function settle(
+    property: VisualProperty,
+    value: VisualValue | null,
+    fine: boolean,
+): VisualValue | null {
+    const { input } = definition(property);
+
+    if (typeof value !== 'number' || input.kind !== 'measure') {
+        return value;
+    }
+
+    const settled = fine
+        ? Math.round(value * 100) / 100
+        : snap(input.scale, value);
+
+    return clamp(input, settled);
+}
+
+/**
+ * The value one step up or down from where it is: the next step on the
+ * scale, or when fine tuning, one unit (ten with "big").
+ */
+export function stepFrom(
+    property: VisualProperty,
+    value: VisualValue | null,
+    direction: 1 | -1,
+    fine: boolean,
+    big = false,
+): number {
+    const { input } = definition(property);
+    const from = typeof value === 'number' ? value : 0;
+
+    if (input.kind !== 'measure') {
+        return from;
+    }
+
+    let next = from;
+
+    for (let count = big ? 4 : 1; count > 0; count--) {
+        if (fine) {
+            next += direction * (big ? 2.5 : 1);
+        } else if (direction > 0 === next >= 0) {
+            // Away from zero.
+            const size = above(input.scale, Math.abs(next));
+            next = next < 0 || (next === 0 && direction < 0) ? -size : size;
+        } else {
+            const size = below(input.scale, Math.abs(next));
+            next = next < 0 ? -size : size;
+        }
+    }
+
+    return clamp(input, Math.round(next * 100) / 100);
+}
+
 export const radii: Record<string, string> = {
     none: '0',
     xs: '2px',
@@ -337,6 +591,13 @@ const widths: Record<string, string> = {
     screen: '100vw',
     min: 'min-content',
     max: 'max-content',
+};
+
+const heights: Record<string, string> = {
+    ...widths,
+    screen: '100vh',
+    svh: '100svh',
+    dvh: '100dvh',
 };
 
 // Tailwind's defaults, for when the app's CSS leaves a theme variable out
@@ -404,6 +665,16 @@ const flexPositions: Record<string, string> = {
 const pixels = (value: VisualValue): string =>
     typeof value === 'number' ? `${value}px` : value;
 
+// A length: pixels, a percentage, or a word such as "full".
+const length = (value: VisualValue, words: Record<string, string>): string =>
+    typeof value === 'number' ? `${value}px` : (words[value] ?? value);
+
+const usable = (value: VisualValue | null | undefined): value is VisualValue =>
+    value !== null &&
+    value !== undefined &&
+    value !== 'mixed' &&
+    value !== 'custom';
+
 /**
  * Turn unsaved property values into inline styles, so the preview shows an
  * edit before it is saved. A removed value (null) shows nothing until the
@@ -415,12 +686,7 @@ export function inlineStyles(
     const styles: Record<string, string> = {};
 
     for (const [property, value] of Object.entries(changes)) {
-        if (
-            value === null ||
-            value === undefined ||
-            value === 'mixed' ||
-            value === 'custom'
-        ) {
+        if (!usable(value)) {
             continue;
         }
 
@@ -447,10 +713,29 @@ export function inlineStyles(
                 styles.gap = pixels(value);
                 break;
             case 'width':
-                styles.width =
-                    typeof value === 'number'
-                        ? `${value}px`
-                        : (widths[value] ?? value);
+                styles.width = length(value, widths);
+                break;
+            case 'height':
+                styles.height = length(value, heights);
+                break;
+            case 'rotate':
+                styles.rotate = `${value}deg`;
+                break;
+            // Tailwind v4 moves with the `translate` property and keeps each
+            // axis in a variable, so one axis can change on its own.
+            case 'translate_x':
+            case 'translate_y': {
+                const x = changes.translate_x;
+                const y = changes.translate_y;
+
+                styles.translate = `${usable(x) ? length(x, { full: '100%' }) : 'var(--tw-translate-x, 0)'} ${usable(y) ? length(y, { full: '100%' }) : 'var(--tw-translate-y, 0)'}`;
+                break;
+            }
+            case 'opacity':
+                styles.opacity = String(Number(value) / 100);
+                break;
+            case 'text_align':
+                styles.textAlign = String(value);
                 break;
             case 'padding_x':
                 styles.paddingLeft = styles.paddingRight = pixels(value);
@@ -511,7 +796,7 @@ export function inlineStyles(
  * Describe a value in owner words: "16 px", "Half", "not set".
  */
 export function describeValue(
-    definition: PropertyDefinition,
+    property: PropertyDefinition,
     value: VisualValue | null | undefined,
 ): string {
     if (value === null || value === undefined) {
@@ -526,16 +811,22 @@ export function describeValue(
         return 'a colour of its own';
     }
 
-    if (definition.input.kind === 'choice') {
-        return (
-            definition.input.options.find((option) => option.value === value)
-                ?.label ?? String(value)
-        );
+    const { input } = property;
+    const words = input.kind === 'choice' ? input.options : input.keywords;
+    const word = words?.find((option) => option.value === value);
+
+    if (word !== undefined || input.kind === 'choice') {
+        return word?.label ?? String(value);
     }
 
-    if (value === 'auto') {
-        return 'centred';
-    }
+    return typeof value === 'number'
+        ? withUnit(value, input.unit)
+        : String(value);
+}
 
-    return definition.input.kind === 'pixels' ? `${value} px` : String(value);
+/** A number with its unit: "16 px", "45°", "80%", "3 cols". */
+export function withUnit(value: number, unit: string): string {
+    return unit === '°' || unit === '%'
+        ? `${value}${unit}`
+        : `${value} ${unit}`;
 }

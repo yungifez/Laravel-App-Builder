@@ -10,8 +10,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * A change to how one element looks, made in the inspector and committed
- * without a model call.
+ * A change to how one element looks, or where it sits among its siblings,
+ * made in the inspector and committed without a model call.
  *
  * @property int $id
  * @property int $project_id
@@ -22,7 +22,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $column
  * @property string $tag
  * @property string $device "base", "md" or "lg"
- * @property array<string, int|float|string|null> $changes The properties set, in pixels and words
+ * @property array<string, int|float|string|array<string, string>|null> $changes The properties set, in pixels and words, or the move
  * @property string $classes_before
  * @property string $classes_after
  * @property string $base_revision
@@ -39,6 +39,12 @@ class VisualEdit extends Model
     use HasFactory;
 
     /**
+     * The key in "changes" of a move: where the element went, relative to
+     * which sibling. The element's line and column are where it is after.
+     */
+    public const MOVE = 'move';
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -51,6 +57,16 @@ class VisualEdit extends Model
             'column' => 'integer',
             'reverted_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Determine whether the edit moved the element instead of changing how
+     * it looks.
+     */
+    public function moves(): bool
+    {
+        // Inside the model, $this->changes is Eloquent's own change tracking.
+        return isset($this->getAttribute('changes')[self::MOVE]);
     }
 
     /**

@@ -26,6 +26,7 @@ use App\Http\Controllers\ProjectUnderstandingController;
 use App\Http\Controllers\RunCancellationController;
 use App\Http\Controllers\VisualEditController;
 use App\Http\Controllers\VisualEditReversionController;
+use App\Http\Controllers\VisualMoveController;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'Welcome')->name('home');
@@ -50,6 +51,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('experiments/{experiment}/merge', [ExperimentMergeController::class, 'store'])->name('experiments.merge.store');
     Route::delete('experiments/{experiment}', [ExperimentController::class, 'destroy'])->name('experiments.destroy');
     Route::post('projects/{project}/visual-edits', [VisualEditController::class, 'store'])->name('visual-edits.store');
+    Route::post('projects/{project}/visual-moves', [VisualMoveController::class, 'store'])->name('visual-moves.store');
     Route::post('visual-edits/{visualEdit}/reversion', [VisualEditReversionController::class, 'store'])->name('visual-edits.reversion.store');
     Route::delete('visual-edits/{visualEdit}/reversion', [VisualEditReversionController::class, 'destroy'])->name('visual-edits.reversion.destroy');
 

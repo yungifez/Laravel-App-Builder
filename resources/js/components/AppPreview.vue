@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Form } from '@inertiajs/vue3';
 import { useResizeObserver } from '@vueuse/core';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
@@ -37,6 +37,10 @@ const scale = computed(() =>
         ? 1
         : Math.min(1, paneSize.value.width / drawnWidth.value),
 );
+
+// The overlay in the app draws its handles bigger by as much as the app is
+// drawn smaller, so they stay easy to grab.
+watch(scale, (value) => (props.state.zoom = value), { immediate: true });
 
 function bindFrame(element: unknown): void {
     props.state.frame = element as HTMLIFrameElement | null;

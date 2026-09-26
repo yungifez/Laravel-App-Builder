@@ -1,0 +1,91 @@
+<?php
+
+namespace App\Http\Requests;
+
+use App\Models\Preview;
+use App\Models\Project;
+use App\VisualEditing\SourceLocation;
+use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
+use InvalidArgumentException;
+
+class VisualMoveStoreRequest extends FormRequest
+{
+    /**
+     * Determine if the user is authorized to make this request.
+     */
+    public function authorize(): bool
+    {
+        /** @var Project $project */
+        $project = $this->route('project');
+
+        return $this->user()->can('requestFeatures', $project);
+    }
+
+    /**
+     * Get the validation rules that apply to the request.
+     *
+     * @return array<string, ValidationRule|array<mixed>|string>
+     */
+    public function rules(): array
+    {
+        /** @var Project $project */
+        $project = $this->route('project');
+
+        return [
+            'preview' => ['required', 'integer', Rule::exists('previews', 'id')->where('project_id', $project->id)->where('editable', true)],
+            'target' => ['required', 'string', 'max:600'],
+            'instance' => ['boolean'],
+            'to' => ['required', 'string', 'max:600'],
+            'to_instance' => ['boolean'],
+            'placement' => ['required', Rule::in(['before', 'after'])],
+            'revision' => ['required', 'string', 'regex:/^[0-9a-f]{40,64}$/'],
+        ];
+    }
+
+    /**
+     * Get the "after" validation callables for the request.
+     *
+     * @return list<callable(Validator): void>
+     */
+    public function after(): array
+    {
+        return [
+            function (Validator $validator) {
+                foreach (['target', 'to'] as $field) {
+                    try {
+                        SourceLocation::parse((string) $this->input($field));
+                    } catch (InvalidArgumentException) {
+                        $validator->errors()->add($field, __('That part of the page cannot be found.'));
+                    }
+                }
+            },
+        ];
+    }
+
+    /**
+     * Get the preview the owner moved the part in.
+     */
+    public function preview(): Preview
+    {
+        return Preview::query()->whereKey($this->validated('preview'))->firstOrFail();
+    }
+
+    /**
+     * Get where the moved element was written.
+     */
+    public function location(): SourceLocation
+    {
+        return SourceLocation::parse($this->validated('target'), $this->boolean('instance'));
+    }
+
+    /**
+     * Get where the sibling it moved next to was written.
+     */
+    public function destination(): SourceLocation
+    {
+        return SourceLocation::parse($this->validated('to'), $this->boolean('to_instance'));
+    }
+}

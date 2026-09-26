@@ -21,6 +21,7 @@ import {
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
 import ProjectExperimentController from '@/actions/App/Http/Controllers/ProjectExperimentController';
+import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
 import AppPreview from '@/components/AppPreview.vue';
 import ChangeThread from '@/components/ChangeThread.vue';
 import DesignPanel from '@/components/DesignPanel.vue';
@@ -682,6 +683,23 @@ function send(event: KeyboardEvent): void {
             >
                 Putting your change in place…
             </p>
+            <Form
+                v-else-if="preview?.status === 'ready' && preview.error"
+                v-bind="ProjectPreviewController.store.form(project.id)"
+                :options="{ preserveScroll: true, preserveState: true }"
+                v-slot="{ processing }"
+                class="flex items-center justify-center gap-2 text-xs text-destructive"
+                data-test="preview-behind"
+            >
+                {{ preview.error }}
+                <Button
+                    variant="outline"
+                    size="sm"
+                    class="h-11 sm:h-7"
+                    :disabled="processing"
+                    >Start again</Button
+                >
+            </Form>
             <div class="min-h-0 flex-1">
                 <AppPreview
                     :project-id="project.id"

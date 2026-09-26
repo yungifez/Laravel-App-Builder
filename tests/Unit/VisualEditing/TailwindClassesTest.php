@@ -102,7 +102,7 @@ class TailwindClassesTest extends TestCase
     public function test_text_shadow_and_max_width_are_read_and_written_as_utilities()
     {
         $this->assertSame(
-            ['max_width' => '2xl', 'shadow' => 'sm', 'text_size' => 'lg', 'text_weight' => 'semibold'],
+            ['max_width' => '2xl', 'shadow' => 'sm', 'text_size' => 'lg', 'text_weight' => 'semibold', 'text_align' => 'left'],
             TailwindClasses::read('max-w-2xl shadow text-lg font-semibold text-left')['base'],
         );
         $this->assertSame(
@@ -111,6 +111,52 @@ class TailwindClassesTest extends TestCase
                 'max_width' => 'prose', 'shadow' => 'md', 'text_size' => 'xl', 'text_weight' => 'bold',
             ]),
         );
+    }
+
+    public function test_height_turn_move_and_see_through_are_read_in_pixels_degrees_and_percent()
+    {
+        $this->assertSame(
+            ['height' => 160, 'rotate' => -12, 'translate_x' => '-50%', 'translate_y' => 8, 'opacity' => 75],
+            TailwindClasses::read('h-40 -rotate-12 -translate-x-1/2 translate-y-2 opacity-75')['base'],
+        );
+        $this->assertSame(
+            ['height' => 'screen', 'rotate' => 7.5, 'translate_x' => -13, 'opacity' => 37.5],
+            TailwindClasses::read('md:h-screen md:rotate-[7.5deg] md:-translate-x-[13px] md:opacity-[37.5%]')['md'],
+        );
+
+        // Classes that only share a prefix are not these properties.
+        $this->assertSame([], TailwindClasses::read('rotate-x-45 gap-x-4 h-lh')['base']);
+    }
+
+    public function test_values_off_the_scale_are_written_as_arbitrary_values()
+    {
+        $this->assertSame('h-40 rotate-45 -translate-y-4 opacity-50', TailwindClasses::write('', 'base', [
+            'height' => 160, 'rotate' => 45, 'translate_y' => -16, 'opacity' => 50,
+        ]));
+        $this->assertSame('-rotate-[7.5deg] translate-x-[12.5px] opacity-[37.5%] h-[33%]', TailwindClasses::write('', 'base', [
+            'rotate' => -7.5, 'translate_x' => 12.5, 'opacity' => 37.5, 'height' => '33%',
+        ]));
+        $this->assertSame('translate-x-4 md:rotate-0', TailwindClasses::write('translate-x-4 md:rotate-3', 'md', ['rotate' => 0]));
+        $this->assertSame('-translate-x-1/2 md:rotate-0', TailwindClasses::write('translate-x-4 md:rotate-0', 'base', ['translate_x' => '-50%']));
+        $this->assertSame('text-center', TailwindClasses::write('text-left', 'base', ['text_align' => 'center']));
+    }
+
+    public function test_measures_refuse_values_they_cannot_take()
+    {
+        foreach ([
+            ['opacity' => 120],
+            ['opacity' => -5],
+            ['height' => -16],
+            ['rotate' => 'lots'],
+            ['text_align' => 'middle'],
+        ] as $changes) {
+            try {
+                TailwindClasses::write('', 'base', $changes);
+                $this->fail('The write was not refused.');
+            } catch (InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
     }
 
     public function test_colours_are_theme_tokens_and_any_other_colour_reads_as_custom()

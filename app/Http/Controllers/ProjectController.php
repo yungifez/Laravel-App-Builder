@@ -90,7 +90,8 @@ class ProjectController extends Controller
                     'id' => $edit->id,
                     'tag' => $edit->tag,
                     'device' => $edit->device,
-                    'properties' => array_keys($edit->changes),
+                    'kind' => $edit->moves() ? 'move' : 'look',
+                    'properties' => $edit->moves() ? [] : array_keys($edit->changes),
                     // What the element looks like after this edit, and the
                     // commit that made it, so the next automatic save can
                     // build on it without waiting for the rebuild.

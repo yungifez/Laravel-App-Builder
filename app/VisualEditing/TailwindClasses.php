@@ -5,15 +5,19 @@ namespace App\VisualEditing;
 use InvalidArgumentException;
 
 /**
- * Reads and writes visual properties (width, space, layout, border, corners,
- * shadow, columns, text and colours) as Tailwind utility classes, per device.
+ * Reads and writes visual properties (size, space, layout, border, corners,
+ * shadow, columns, turn, move, see-through, text and colours) as Tailwind
+ * utility classes, per device.
  *
  * Devices are Tailwind's own breakpoints: "base" (every screen, so phones),
  * "md" (tablets and up) and "lg" (desktops). A class with any other variant
  * (hover:, sm:, dark:) or one this adapter does not know is never touched.
  *
  * Spacing is written with theme-relative utilities where Tailwind v4 has one
- * (15px is `p-3.75`), and as an arbitrary value otherwise. Colours are the
+ * (15px is `p-3.75`), and as an arbitrary value otherwise (12.5px is
+ * `p-[12.5px]`, 7.5 degrees is `rotate-[7.5deg]`). Whether a value sits on
+ * the scale is the inspector's choice (it snaps unless the owner fine
+ * tunes); this class writes any value it is given. Colours are the
  * app's theme tokens only; any other colour reads as "custom", and choosing
  * a token replaces it.
  */
@@ -29,8 +33,9 @@ class TailwindClasses
      */
     public const PROPERTIES = [
         'layout', 'direction', 'wrap', 'align', 'justify', 'columns', 'gap',
-        'width', 'max_width', 'padding_x', 'padding_y', 'margin_x', 'margin_y', 'border', 'radius', 'shadow',
-        'text_size', 'text_weight', 'text_color', 'background',
+        'width', 'height', 'max_width', 'padding_x', 'padding_y', 'margin_x', 'margin_y', 'border', 'radius', 'shadow',
+        'rotate', 'translate_x', 'translate_y', 'opacity',
+        'text_size', 'text_weight', 'text_align', 'text_color', 'background',
     ];
 
     protected const KEYWORDS = [
@@ -44,6 +49,7 @@ class TailwindClasses
         'shadow' => ['shadow-none' => 'none', 'shadow-2xs' => '2xs', 'shadow-xs' => 'xs', 'shadow-sm' => 'sm', 'shadow' => 'sm', 'shadow-md' => 'md', 'shadow-lg' => 'lg', 'shadow-xl' => 'xl', 'shadow-2xl' => '2xl'],
         'text_size' => ['text-xs' => 'xs', 'text-sm' => 'sm', 'text-base' => 'base', 'text-lg' => 'lg', 'text-xl' => 'xl', 'text-2xl' => '2xl', 'text-3xl' => '3xl', 'text-4xl' => '4xl', 'text-5xl' => '5xl', 'text-6xl' => '6xl'],
         'text_weight' => ['font-light' => 'light', 'font-normal' => 'normal', 'font-medium' => 'medium', 'font-semibold' => 'semibold', 'font-bold' => 'bold'],
+        'text_align' => ['text-left' => 'left', 'text-center' => 'center', 'text-right' => 'right', 'text-justify' => 'justify', 'text-start' => 'start', 'text-end' => 'end'],
         'text_color' => ['text-foreground' => 'foreground', 'text-muted-foreground' => 'muted-foreground', 'text-primary' => 'primary', 'text-primary-foreground' => 'primary-foreground', 'text-secondary-foreground' => 'secondary-foreground', 'text-accent-foreground' => 'accent-foreground', 'text-destructive' => 'destructive'],
         'background' => ['bg-transparent' => 'transparent', 'bg-background' => 'background', 'bg-card' => 'card', 'bg-muted' => 'muted', 'bg-primary' => 'primary', 'bg-secondary' => 'secondary', 'bg-accent' => 'accent', 'bg-destructive' => 'destructive'],
     ];
@@ -54,7 +60,31 @@ class TailwindClasses
      */
     protected const CUSTOM_COLOR = '/^(text|bg)-(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}|white|black|(?:foreground|muted-foreground|primary|primary-foreground|secondary|secondary-foreground|accent|accent-foreground|destructive|background|card|muted)|\[#[0-9a-fA-F]{3,8}\])(?:\/\d+)?$/';
 
-    protected const WIDTH_KEYWORDS = ['full' => 'full', 'auto' => 'auto', 'fit' => 'fit', 'screen' => 'screen', 'min' => 'min', 'max' => 'max'];
+    /**
+     * Properties written as a prefix and an amount, such as `w-60`, `h-1/2`
+     * or `-rotate-12`. The unit says how the amount reads and writes:
+     *
+     * - spacing: pixels on Tailwind's spacing scale (`4` is 16px)
+     * - length: spacing, a fraction or percentage, or one of the keywords
+     * - degrees: an angle (`rotate-45`, `rotate-[7.5deg]`)
+     * - percent: 0 to 100 (`opacity-50`, `opacity-[37.5%]`)
+     *
+     * Negative amounts are written with a leading "-" where allowed.
+     */
+    protected const MEASURES = [
+        'gap' => ['prefix' => 'gap', 'unit' => 'spacing'],
+        'width' => ['prefix' => 'w', 'unit' => 'length', 'keywords' => ['full', 'auto', 'fit', 'screen', 'min', 'max']],
+        'height' => ['prefix' => 'h', 'unit' => 'length', 'keywords' => ['full', 'auto', 'fit', 'screen', 'min', 'max', 'svh', 'dvh']],
+        'rotate' => ['prefix' => 'rotate', 'unit' => 'degrees', 'negative' => true],
+        'translate_x' => ['prefix' => 'translate-x', 'unit' => 'length', 'keywords' => ['full'], 'negative' => true],
+        'translate_y' => ['prefix' => 'translate-y', 'unit' => 'length', 'keywords' => ['full'], 'negative' => true],
+        'opacity' => ['prefix' => 'opacity', 'unit' => 'percent'],
+    ];
+
+    /**
+     * Fractions Tailwind writes as `1/2`, from percentages.
+     */
+    protected const FRACTIONS = [[1, 2], [1, 3], [2, 3], [1, 4], [3, 4], [1, 5], [2, 5], [3, 5], [4, 5]];
 
     protected const SIDES = ['top', 'right', 'bottom', 'left'];
 
@@ -238,12 +268,11 @@ class TailwindClasses
             return [$device, 'border', isset($match[2]) ? self::numeric($match[2]) : (isset($match[1]) ? (int) $match[1] : 1)];
         }
 
-        if (preg_match('/^gap-(.+)$/', $utility, $match) === 1 && ($pixels = self::pixels($match[1])) !== null) {
-            return [$device, 'gap', $pixels];
-        }
-
-        if (preg_match('/^w-(.+)$/', $utility, $match) === 1 && ($width = self::width($match[1])) !== null) {
-            return [$device, 'width', $width];
+        foreach (self::MEASURES as $property => $measure) {
+            if (preg_match('/^(-?)'.preg_quote($measure['prefix'], '/').'-(.+)$/', $utility, $match) === 1
+                && ($value = self::readMeasure($measure, $match[2], $match[1] === '-')) !== null) {
+                return [$device, $property, $value];
+            }
         }
 
         if (preg_match('/^(-?)([pm])([xytrbl]?)-(.+)$/', $utility, $match) === 1) {
@@ -429,19 +458,96 @@ class TailwindClasses
                 is_numeric($value) && $value > 0 => 'border-['.self::number((float) $value).'px]',
                 default => throw new InvalidArgumentException("Invalid border [{$value}]."),
             },
-            'gap' => (is_int($value) || is_float($value)) && $value >= 0 ? 'gap-'.self::spacing($value) : throw new InvalidArgumentException("Invalid gap [{$value}]."),
-            'width' => 'w-'.self::widthUtility($value),
-            default => throw new InvalidArgumentException("Unknown property [{$property}]."),
+            default => isset(self::MEASURES[$property])
+                ? self::writeMeasure(self::MEASURES[$property], $value) ?? throw new InvalidArgumentException("Invalid {$property} [{$value}].")
+                : throw new InvalidArgumentException("Unknown property [{$property}]."),
         };
     }
 
     /**
-     * Read a width: a keyword, pixels, or a percentage such as "50%".
+     * Read a measure's amount, or null when the class is not one of its
+     * utilities.
+     *
+     * @param  array{prefix: string, unit: string, keywords?: list<string>, negative?: bool}  $measure
      */
-    protected static function width(string $amount): int|float|string|null
+    protected static function readMeasure(array $measure, string $amount, bool $negative): int|float|string|null
     {
-        if (isset(self::WIDTH_KEYWORDS[$amount])) {
-            return self::WIDTH_KEYWORDS[$amount];
+        if ($negative && ! ($measure['negative'] ?? false)) {
+            return null;
+        }
+
+        $value = match ($measure['unit']) {
+            'spacing' => self::pixels($amount),
+            'length' => self::length($amount, $measure['keywords'] ?? []),
+            'degrees' => preg_match('/^(?:(\d+(?:\.\d+)?)|\[(-?\d+(?:\.\d+)?)deg\])$/', $amount, $match) === 1
+                ? self::numeric($match[1] !== '' ? $match[1] : $match[2])
+                : null,
+            'percent' => preg_match('/^(?:(\d+)|\[(\d+(?:\.\d+)?)%\])$/', $amount, $match) === 1
+                ? self::numeric($match[1] !== '' ? $match[1] : $match[2])
+                : null,
+            default => null,
+        };
+
+        if (! $negative || $value === null) {
+            return $value;
+        }
+
+        return match (true) {
+            is_string($value) && str_ends_with($value, '%') => '-'.$value,
+            is_string($value) => null,
+            default => -$value,
+        };
+    }
+
+    /**
+     * Write a measure's utility, or null when the value does not fit it.
+     *
+     * @param  array{prefix: string, unit: string, keywords?: list<string>, negative?: bool}  $measure
+     */
+    protected static function writeMeasure(array $measure, int|float|string $value): ?string
+    {
+        $negative = false;
+
+        if ((is_int($value) || is_float($value)) && $value < 0) {
+            $negative = true;
+            $value = abs($value);
+        } elseif (is_string($value) && str_starts_with($value, '-')) {
+            $negative = true;
+            $value = substr($value, 1);
+        }
+
+        if ($negative && ! ($measure['negative'] ?? false)) {
+            return null;
+        }
+
+        $amount = match ($measure['unit']) {
+            'spacing' => is_int($value) || is_float($value) ? self::spacing($value) : null,
+            'length' => self::lengthUtility($value, $measure['keywords'] ?? []),
+            'degrees' => match (true) {
+                is_int($value) || (is_float($value) && floor($value) == $value) => (string) (int) $value,
+                is_float($value) => '['.self::number($value).'deg]',
+                default => null,
+            },
+            'percent' => match (true) {
+                ! is_int($value) && ! is_float($value), $value > 100 => null,
+                floor($value) == $value => (string) (int) $value,
+                default => '['.self::number($value).'%]',
+            },
+            default => null,
+        };
+
+        return $amount === null ? null : ($negative ? '-' : '').$measure['prefix'].'-'.$amount;
+    }
+
+    /**
+     * Read a length: a keyword, pixels, or a percentage such as "50%".
+     *
+     * @param  list<string>  $keywords
+     */
+    protected static function length(string $amount, array $keywords): int|float|string|null
+    {
+        if (in_array($amount, $keywords, true)) {
+            return $amount;
         }
 
         if (preg_match('/^(\d+)\/(\d+)$/', $amount, $match) === 1 && (int) $match[2] > 0) {
@@ -456,31 +562,29 @@ class TailwindClasses
     }
 
     /**
-     * Write a width's utility suffix.
+     * Write a length's utility suffix.
+     *
+     * @param  list<string>  $keywords
      */
-    protected static function widthUtility(int|float|string $value): string
+    protected static function lengthUtility(int|float|string $value, array $keywords): ?string
     {
-        if (is_string($value) && isset(self::WIDTH_KEYWORDS[$value])) {
+        if (is_string($value) && in_array($value, $keywords, true)) {
             return $value;
         }
 
         if (is_string($value) && preg_match('/^(\d+(?:\.\d+)?)%$/', $value, $match) === 1) {
             $percent = (float) $match[1];
 
-            foreach ([[1, 2], [1, 3], [2, 3], [1, 4], [3, 4], [1, 5], [2, 5], [3, 5], [4, 5]] as [$top, $bottom]) {
+            foreach (self::FRACTIONS as [$top, $bottom]) {
                 if (abs($percent - $top / $bottom * 100) < 0.01) {
                     return "{$top}/{$bottom}";
                 }
             }
 
-            return $percent == 100 ? 'full' : '['.self::number($percent).'%]';
+            return $percent == 100 && in_array('full', $keywords, true) ? 'full' : '['.self::number($percent).'%]';
         }
 
-        if ((is_int($value) || is_float($value)) && $value >= 0) {
-            return self::spacing($value);
-        }
-
-        throw new InvalidArgumentException("Invalid width [{$value}].");
+        return is_int($value) || is_float($value) ? self::spacing($value) : null;
     }
 
     /**

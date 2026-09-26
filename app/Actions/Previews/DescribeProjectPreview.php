@@ -31,7 +31,8 @@ class DescribeProjectPreview
             'error' => $preview->error,
             'origin' => rtrim($preview->url(), '/'),
             'revision' => $preview->revision,
-            'updating' => $preview->status === PreviewStatus::Ready && $this->repository->exists($project) && $preview->revision !== $this->repository->head($project),
+            // A rebuild that failed is not coming: the error says so instead.
+            'updating' => $preview->status === PreviewStatus::Ready && $preview->error === null && $this->repository->exists($project) && $preview->revision !== $this->repository->head($project),
         ];
     }
 }

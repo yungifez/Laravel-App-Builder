@@ -275,6 +275,7 @@ export type VisualProperty =
     | 'columns'
     | 'gap'
     | 'width'
+    | 'height'
     | 'max_width'
     | 'padding_x'
     | 'padding_y'
@@ -283,8 +284,13 @@ export type VisualProperty =
     | 'border'
     | 'radius'
     | 'shadow'
+    | 'rotate'
+    | 'translate_x'
+    | 'translate_y'
+    | 'opacity'
     | 'text_size'
     | 'text_weight'
+    | 'text_align'
     | 'text_color'
     | 'background';
 
@@ -307,7 +313,7 @@ export type InspectedElement = {
     instance: boolean;
     shared: { name: string; uses: number } | null;
     editable: boolean;
-    reason: 'updating' | 'not_found' | 'dynamic' | null;
+    reason: 'updating' | 'behind' | 'not_found' | 'dynamic' | null;
     classes: string;
     values: Record<
         Device,
@@ -329,12 +335,15 @@ export type SelectedElement = {
     tag: string;
     text: string;
     width: number;
+    height?: number;
 };
 
 export type VisualEditSummary = {
     id: number;
     tag: string;
     device: Device;
+    /** A change to how the part looks, or a move among its siblings. */
+    kind: 'look' | 'move';
     properties: VisualProperty[];
     /** The part's classes and the app's version after this edit (or its undo). */
     classes: string;

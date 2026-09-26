@@ -10,7 +10,15 @@ import {
 import type { Ref } from 'vue';
 import VisualEditController from '@/actions/App/Http/Controllers/VisualEditController';
 import VisualEditReversionController from '@/actions/App/Http/Controllers/VisualEditReversionController';
-import { devices, inlineStyles } from '@/lib/visualProperties';
+import VisualMoveController from '@/actions/App/Http/Controllers/VisualMoveController';
+import {
+    definition,
+    devices,
+    inlineStyles,
+    settle,
+    stepFrom,
+    withUnit,
+} from '@/lib/visualProperties';
 import { show as showPreview } from '@/routes/previews';
 import type {
     Device,
@@ -48,6 +56,17 @@ type Batch = {
 /** How long the owner can pause before their changes are saved. */
 const SAVE_AFTER_MS = 700;
 
+/** Where the owner's fine tune choice is kept in this browser. */
+const FINE_KEY = 'builder.design.fine';
+
+function remembered(key: string): boolean {
+    try {
+        return window.localStorage.getItem(key) === '1';
+    } catch {
+        return false;
+    }
+}
+
 /**
  * The owner's running app in the workspace: the frame it shows in, the
  * screen size, and the design state (the part the owner pointed at and the
@@ -58,6 +77,10 @@ const SAVE_AFTER_MS = 700;
  * save never overwrites what a model or another person changed meanwhile.
  * Saves chain: the next one builds on the commit the last one made, so
  * the owner does not wait for the app to rebuild between changes.
+ *
+ * Numbers snap to the scale (Tailwind's spacing, 15° turns, 5% steps)
+ * unless the owner turns on fine tune; holding Alt while dragging does the
+ * opposite of the setting for that drag.
  */
 export function useAppPreview(source: Source) {
     const frame = ref<HTMLIFrameElement | null>(null);
@@ -87,6 +110,20 @@ export function useAppPreview(source: Source) {
     // The last part the server said can be edited, shown while the app
     // rebuilds after a save.
     const known = ref<InspectedElement | null>(null);
+    // Whether numbers are free instead of snapped to the scale.
+    const fine = ref(typeof window !== 'undefined' && remembered(FINE_KEY));
+    // How much the app is drawn smaller than it is, so the handles in it
+    // stay the same size on screen.
+    const zoom = ref(1);
+    // Whether the owner is dragging a handle: saving waits until they let go.
+    const dragging = ref(false);
+    // Whether a part the owner dragged to a new place is being saved.
+    const moving = ref(false);
+    // Whether the selected part can change places with the part before or
+    // after it.
+    const neighbours = ref({ earlier: false, later: false });
+    // Where the owner had scrolled each page to, so a rebuild keeps it.
+    const scrolled = new Map<string, { x: number; y: number }>();
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const running = computed(() => source.preview()?.status === 'ready');
@@ -101,7 +138,7 @@ export function useAppPreview(source: Source) {
             null,
     );
     const saving = computed(
-        () => sending.value !== null || queue.value.length > 0,
+        () => sending.value !== null || queue.value.length > 0 || moving.value,
     );
 
     // The part the panel shows: the server's answer, or while the app
@@ -167,7 +204,11 @@ export function useAppPreview(source: Source) {
         timer = setTimeout(save, SAVE_AFTER_MS);
     }
 
-    function change(property: VisualProperty, value: VisualValue | null): void {
+    function change(
+        property: VisualProperty,
+        value: VisualValue | null,
+        free: boolean = fine.value,
+    ): void {
         const base = element.value;
         const newest = queue.value.at(-1);
         const where = target.value;
@@ -175,6 +216,8 @@ export function useAppPreview(source: Source) {
         if (where?.value == null || !base?.editable) {
             return;
         }
+
+        value = settle(property, value, free);
 
         if (here(newest)) {
             newest.values[property] = value;
@@ -190,7 +233,67 @@ export function useAppPreview(source: Source) {
 
         saveError.value = null;
         showUnshown();
-        schedule();
+
+        if (!dragging.value) {
+            schedule();
+        }
+    }
+
+    // Hold saving while the owner drags, and save once they let go.
+    function hold(on: boolean): void {
+        dragging.value = on;
+
+        if (!on) {
+            schedule();
+        }
+    }
+
+    // One step up or down, on the scale or by one unit when fine tuning.
+    function nudge(
+        property: VisualProperty,
+        direction: 1 | -1,
+        big = false,
+    ): void {
+        change(
+            property,
+            stepFrom(property, valueOf(property), direction, fine.value, big),
+            true,
+        );
+    }
+
+    // A drag on a handle in the app: the values it points at, raw. The
+    // label next to the part says where each one lands.
+    function adjust(
+        values: Partial<Record<VisualProperty, number>>,
+        phase: 'move' | 'end',
+        invert: boolean,
+    ): void {
+        dragging.value = phase === 'move';
+
+        for (const [property, value] of Object.entries(values)) {
+            change(property as VisualProperty, value, fine.value !== invert);
+        }
+
+        post({
+            type: 'hint',
+            text:
+                phase === 'end'
+                    ? null
+                    : Object.keys(values)
+                          .map((property) => {
+                              const { short, label, input } = definition(
+                                  property as VisualProperty,
+                              );
+                              const value = valueOf(property as VisualProperty);
+
+                              return `${short ?? label} ${typeof value === 'number' && input.kind === 'measure' ? withUnit(value, input.unit) : (value ?? '')}`;
+                          })
+                          .join(' · '),
+        });
+
+        if (phase === 'end') {
+            schedule();
+        }
     }
 
     function inspect(): void {
@@ -212,6 +315,8 @@ export function useAppPreview(source: Source) {
         save();
         selected.value = null;
         known.value = null;
+        neighbours.value = { earlier: false, later: false };
+        post({ type: 'clear' });
     }
 
     function reload(): void {
@@ -235,21 +340,111 @@ export function useAppPreview(source: Source) {
             return;
         }
 
-        if (event.data.type === 'ready') {
-            framePath.value = String(event.data.path ?? '/');
+        const data = event.data;
+
+        if (data.type === 'ready') {
+            framePath.value = String(data.path ?? '/');
             post({ type: 'mode', editing: source.designing.value });
+            post({ type: 'zoom', zoom: zoom.value });
+            post({ type: 'scroll', to: scrolled.get(framePath.value) ?? null });
+
+            // A rebuild reloads the app: pick the same part again.
+            if (target.value?.value != null && source.designing.value) {
+                post({ type: 'pick', location: location() });
+                post({ type: 'handles', enabled: editable.value });
+            }
+
             showUnshown();
         }
 
-        if (event.data.type === 'select') {
+        if (data.type === 'scrolled') {
+            scrolled.set(String(data.path ?? '/'), {
+                x: Number(data.x) || 0,
+                y: Number(data.y) || 0,
+            });
+        }
+
+        if (data.type === 'select') {
             save();
-            selected.value = event.data.element as SelectedElement;
+            selected.value = data.element as SelectedElement;
             onlyThisOne.value = true;
             saveError.value = null;
             known.value = null;
             inspect();
         }
+
+        if (data.type === 'adjust' && data.values) {
+            adjust(
+                data.values,
+                data.phase === 'end' ? 'end' : 'move',
+                Boolean(data.alt),
+            );
+        }
+
+        if (data.type === 'nudge' && editable.value) {
+            for (const [property, direction] of Object.entries(
+                (data.steps ?? {}) as Record<string, number>,
+            )) {
+                nudge(
+                    property as VisualProperty,
+                    direction > 0 ? 1 : -1,
+                    Boolean(data.big),
+                );
+            }
+        }
+
+        if (data.type === 'neighbours') {
+            neighbours.value = {
+                earlier: data.earlier === true,
+                later: data.later === true,
+            };
+        }
+
+        if (data.type === 'move' && data.to) {
+            move(
+                data.to as SelectedElement,
+                data.placement === 'before' ? 'before' : 'after',
+            );
+        }
+
+        // Keys pressed while the app has focus.
+        if (data.type === 'key') {
+            if (data.key === 'escape') {
+                deselect();
+            } else if (data.key === 'undo' || data.key === 'redo') {
+                const edit =
+                    data.key === 'redo' ? redoable.value : undoable.value;
+
+                if (edit !== undefined) {
+                    step(edit);
+                }
+            }
+        }
     }
+
+    // Where the selected part is written, as the app's markers name it.
+    function location(): { kind: string; value: string } | null {
+        return target.value?.value == null
+            ? null
+            : {
+                  kind: target.value.instance ? 'instance' : 'source',
+                  value: target.value.value,
+              };
+    }
+
+    // Move the selected part one place earlier or later on the page.
+    function shift(direction: -1 | 1): void {
+        if (!saving.value) {
+            post({ type: 'shift', direction });
+        }
+    }
+
+    // Select the part around the selected one, or the first part inside it.
+    function pickNear(direction: 'parent' | 'child'): void {
+        post({ type: 'pick', direction });
+    }
+
+    const editable = computed(() => element.value?.editable === true);
 
     onMounted(() => window.addEventListener('message', onMessage));
     onBeforeUnmount(() => window.removeEventListener('message', onMessage));
@@ -270,6 +465,19 @@ export function useAppPreview(source: Source) {
 
     watch(device, () => save());
 
+    watch(fine, (value) => {
+        try {
+            window.localStorage.setItem(FINE_KEY, value ? '1' : '0');
+        } catch {
+            // Not kept: the choice lasts until the page closes.
+        }
+    });
+
+    watch(zoom, (value) => post({ type: 'zoom', zoom: value }));
+
+    // Handles only show on a part that can be changed in place.
+    watch(editable, (enabled) => post({ type: 'handles', enabled }));
+
     // Show changes in the app straight away, before they are saved.
     function showUnshown(): void {
         if (target.value?.value == null) {
@@ -278,10 +486,7 @@ export function useAppPreview(source: Source) {
 
         post({
             type: 'style',
-            location: {
-                kind: target.value.instance ? 'instance' : 'source',
-                value: target.value.value,
-            },
+            location: location(),
             styles: inlineStyles(unshown()),
         });
     }
@@ -427,6 +632,71 @@ export function useAppPreview(source: Source) {
         );
     }
 
+    // Put the selected part just before or after another part next to it,
+    // where the owner dropped it. Changes waiting to be saved go first, so
+    // the move builds on them.
+    function move(to: SelectedElement, placement: 'before' | 'after'): void {
+        const preview = source.preview();
+        // A part moves where it is placed on the page: the one use of a
+        // shared piece, as the preview found its neighbours.
+        const from = selected.value?.instance ?? selected.value?.source;
+
+        if (preview === null || !from || moving.value) {
+            return;
+        }
+
+        if (sending.value !== null || queue.value.length > 0) {
+            save();
+            setTimeout(() => move(to, placement), 200);
+
+            return;
+        }
+
+        moving.value = true;
+        saveError.value = null;
+
+        router.post(
+            VisualMoveController.store.url(source.projectId()),
+            {
+                preview: preview.id,
+                target: from,
+                instance: Boolean(selected.value?.instance),
+                to: to.instance ?? to.source,
+                to_instance: Boolean(to.instance),
+                placement,
+                revision: head.value ?? element.value?.revision,
+            },
+            {
+                only: ['edits', 'preview'],
+                async: true,
+                preserveScroll: true,
+                preserveState: true,
+                onFlash: (flash) => {
+                    const moved = flash.moved as
+                        | { target: string; instance: boolean }
+                        | undefined;
+
+                    if (moved !== undefined && selected.value !== null) {
+                        onlyThisOne.value = true;
+                        selected.value = moved.instance
+                            ? { ...selected.value, instance: moved.target }
+                            : { ...selected.value, source: moved.target };
+                    }
+                },
+                onSuccess: () => {
+                    saved.value = [];
+                    last.value = null;
+                    head.value = null;
+                    known.value = null;
+                    inspect();
+                },
+                onError: (errors) =>
+                    (saveError.value = Object.values(errors)[0] ?? null),
+                onFinish: () => (moving.value = false),
+            },
+        );
+    }
+
     // Undo takes back the newest change still in place; redo puts back the
     // one undone just before it, like any editor.
     const undoable = computed(() =>
@@ -518,6 +788,14 @@ export function useAppPreview(source: Source) {
         saveError,
         target,
         change,
+        nudge,
+        hold,
+        fine,
+        zoom,
+        dragging,
+        pickNear,
+        neighbours,
+        shift,
         deselect,
         reload,
         current,

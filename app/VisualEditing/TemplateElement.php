@@ -35,7 +35,15 @@ class TemplateElement
     {
         $offset = self::offset($contents, $line, $column);
 
-        if ($offset === null || ($contents[$offset] ?? '') !== '<' || preg_match('/\G<([A-Za-z][\w.:-]*)/', $contents, $match, 0, $offset) !== 1) {
+        return $offset === null ? null : self::atOffset($contents, $offset);
+    }
+
+    /**
+     * Find the element whose "<" is at the offset.
+     */
+    public static function atOffset(string $contents, int $offset): ?self
+    {
+        if (($contents[$offset] ?? '') !== '<' || preg_match('/\G<([A-Za-z][\w.:-]*)/', $contents, $match, 0, $offset) !== 1) {
             return null;
         }
 
@@ -96,9 +104,17 @@ class TemplateElement
     }
 
     /**
+     * Determine whether the start tag closes itself, as in `<hr />`.
+     */
+    public function selfClosing(string $contents): bool
+    {
+        return substr($contents, $this->end - 2, 2) === '/>';
+    }
+
+    /**
      * Get the offset of a line and column (both from 1).
      */
-    protected static function offset(string $contents, int $line, int $column): ?int
+    public static function offset(string $contents, int $line, int $column): ?int
     {
         if ($line < 1 || $column < 1) {
             return null;

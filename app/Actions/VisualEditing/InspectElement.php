@@ -48,6 +48,8 @@ class InspectElement
             'shared' => $location->instance || $element === null ? null : $this->sharedComponent($preview, $head, $location->file),
             'editable' => $element?->editable() ?? false,
             'reason' => match (true) {
+                // A rebuild that failed will not bring the preview up to date.
+                $stale && $preview->error !== null => 'behind',
                 $stale => 'updating',
                 $element === null => 'not_found',
                 ! $element->editable() => 'dynamic',

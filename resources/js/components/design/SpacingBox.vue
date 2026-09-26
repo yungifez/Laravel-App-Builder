@@ -1,14 +1,8 @@
 <script setup lang="ts">
-import PixelField from '@/components/design/PixelField.vue';
-import type { VisualProperty, VisualValue } from '@/types';
+import MeasureField from '@/components/design/MeasureField.vue';
+import type { AppPreviewState } from '@/composables/useAppPreview';
 
-defineProps<{
-    valueOf: (property: VisualProperty) => VisualValue | null;
-}>();
-
-const emit = defineEmits<{
-    change: [property: VisualProperty, value: VisualValue | null];
-}>();
+defineProps<{ state: AppPreviewState }>();
 </script>
 
 <template>
@@ -22,37 +16,23 @@ const emit = defineEmits<{
         <div class="flex items-center justify-between gap-2 pb-2">
             <span class="text-[11px] text-muted-foreground">Outside</span>
             <div class="grid w-40 grid-cols-2 gap-1">
-                <PixelField
-                    label="Outside, left and right"
-                    :value="valueOf('margin_x')"
-                    allow-negative
-                    unit="↔"
-                    @change="emit('change', 'margin_x', $event)"
-                />
-                <PixelField
-                    label="Outside, top and bottom"
-                    :value="valueOf('margin_y')"
-                    allow-negative
-                    unit="↕"
-                    @change="emit('change', 'margin_y', $event)"
-                />
+                <MeasureField :state="state" property="margin_x" mark="↔" />
+                <MeasureField :state="state" property="margin_y" mark="↕" />
             </div>
         </div>
         <div class="rounded-md border bg-muted/40 p-2">
             <div class="flex items-center justify-between gap-2">
                 <span class="text-[11px] text-muted-foreground">Inside</span>
                 <div class="grid w-40 grid-cols-2 gap-1">
-                    <PixelField
-                        label="Inside, left and right"
-                        :value="valueOf('padding_x')"
-                        unit="↔"
-                        @change="emit('change', 'padding_x', $event)"
+                    <MeasureField
+                        :state="state"
+                        property="padding_x"
+                        mark="↔"
                     />
-                    <PixelField
-                        label="Inside, top and bottom"
-                        :value="valueOf('padding_y')"
-                        unit="↕"
-                        @change="emit('change', 'padding_y', $event)"
+                    <MeasureField
+                        :state="state"
+                        property="padding_y"
+                        mark="↕"
                     />
                 </div>
             </div>
@@ -60,7 +40,7 @@ const emit = defineEmits<{
         <button
             type="button"
             class="mt-1 min-h-11 text-[11px] text-muted-foreground underline-offset-2 select-none hover:text-foreground hover:underline sm:min-h-6"
-            @click="emit('change', 'margin_x', 'auto')"
+            @click="state.change('margin_x', 'auto')"
         >
             Centre it
         </button>

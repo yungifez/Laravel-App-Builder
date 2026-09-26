@@ -6,6 +6,7 @@ use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\PreviewStatus;
 use App\Models\Preview;
 use App\Projects\ProjectRepository;
+use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -70,9 +71,10 @@ class RebuildPreview implements ShouldQueue
 
         $workspace = $preview->workspace;
         $driver = $workspaces->driver($workspace->driver);
+        $changed = $repository->changedFiles($project, $preview->revision, $head);
 
         try {
-            foreach ($repository->changedFiles($project, $preview->revision, $head) as $path => $deleted) {
+            foreach ($changed as $path => $deleted) {
                 if ($deleted) {
                     $this->run($runWorkspaceCommand, $preview, ['rm', '-f', '--', $path], 30);
                 } else {
@@ -93,7 +95,33 @@ class RebuildPreview implements ShouldQueue
         } catch (Throwable $exception) {
             report($exception);
 
+            $this->restore($driver, $runWorkspaceCommand, $repository, $preview, array_keys($changed));
             $preview->update(['error' => __('The preview could not show your latest change. Start it again to see it.')]);
+        }
+    }
+
+    /**
+     * Put the files back as they are at the revision the preview shows. The
+     * next rebuild copies only what differs from that revision, so a file
+     * left from a failed build (such as a change that was then undone)
+     * would otherwise break every build after it.
+     *
+     * @param  list<string>  $paths
+     */
+    protected function restore(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, ProjectRepository $repository, Preview $preview, array $paths): void
+    {
+        foreach ($paths as $path) {
+            try {
+                $contents = $repository->show($preview->project, (string) $preview->revision, $path);
+
+                if ($contents === null) {
+                    $this->run($runWorkspaceCommand, $preview, ['rm', '-f', '--', $path], 30);
+                } else {
+                    $driver->writeFile((string) $preview->workspace?->driver_id, $path, $contents);
+                }
+            } catch (Throwable $exception) {
+                report($exception);
+            }
         }
     }
 

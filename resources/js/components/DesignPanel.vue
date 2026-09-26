@@ -10,7 +10,14 @@ import {
     AlignHorizontalSpaceAround,
     AlignHorizontalSpaceBetween,
     AlignStartVertical,
+    AlignCenter,
+    AlignJustify,
+    AlignLeft,
+    AlignRight,
     Check,
+    ChevronDown,
+    ChevronUp,
+    Crosshair,
     ArrowDown,
     ArrowRight,
     ArrowRightToLine,
@@ -31,14 +38,14 @@ import {
 import { computed, ref } from 'vue';
 import type { Component } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
-import PixelField from '@/components/design/PixelField.vue';
+import MeasureField from '@/components/design/MeasureField.vue';
 import Segmented from '@/components/design/Segmented.vue';
 import SpacingBox from '@/components/design/SpacingBox.vue';
 import Swatches from '@/components/design/Swatches.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import type { AppPreviewState } from '@/composables/useAppPreview';
-import { properties, weights } from '@/lib/visualProperties';
+import { definition, properties, weights } from '@/lib/visualProperties';
 import type {
     EditorPreview,
     InspectedElement,
@@ -83,19 +90,23 @@ const icons: Partial<Record<string, Component>> = {
     'justify:between': AlignHorizontalSpaceBetween,
     'justify:around': AlignHorizontalSpaceAround,
     'justify:evenly': AlignHorizontalDistributeCenter,
+    'text_align:left': AlignLeft,
+    'text_align:center': AlignCenter,
+    'text_align:right': AlignRight,
+    'text_align:justify': AlignJustify,
 };
 
 function options(
     property: VisualProperty,
     only?: VisualValue[],
 ): { value: VisualValue; label: string; icon?: Component }[] {
-    const definition = properties.find((item) => item.key === property);
+    const { input } = definition(property);
 
-    if (definition?.input.kind !== 'choice') {
+    if (input.kind !== 'choice') {
         return [];
     }
 
-    return definition.input.options
+    return input.options
         .filter((option) => only === undefined || only.includes(option.value))
         .map((option) => ({
             ...option,
@@ -103,14 +114,19 @@ function options(
         }));
 }
 
-const widthChoices = [
-    { value: 'auto', label: 'Auto' },
-    { value: 'fit', label: 'Fit' },
-    { value: 'full', label: 'Fill' },
-    { value: '50%', label: '½' },
-    { value: '33.33%', label: '⅓' },
-    { value: '25%', label: '¼' },
-];
+// The words a number property can be instead, for a row of narrow
+// buttons: only the ones short enough to fit.
+function words(
+    property: VisualProperty,
+): { value: VisualValue; label: string }[] {
+    const { input } = definition(property);
+
+    return input.kind === 'measure'
+        ? (input.keywords ?? [])
+              .filter((word) => word.short !== undefined)
+              .map((word) => ({ value: word.value, label: word.short! }))
+        : [];
+}
 
 const layout = computed(() =>
     String(props.state.valueOf('layout') ?? '').replace('inline-', ''),
@@ -132,12 +148,17 @@ function set(property: VisualProperty, value: VisualValue | null): void {
 
 const reasons: Record<NonNullable<InspectedElement['reason']>, string> = {
     updating: 'Your last change is still going in. Try again in a moment.',
+    behind: 'Your app is showing an older version. Start it again to change this part.',
     not_found: "I can't find this part. Ask me to change it instead.",
     dynamic: 'This part changes while the app runs. Ask me instead.',
 };
 
 // What a saved edit changed, in a few words.
 function describeEdit(edit: VisualEditSummary): string {
+    if (edit.kind === 'move') {
+        return 'Moved';
+    }
+
     return edit.properties
         .map(
             (key) =>
@@ -217,6 +238,28 @@ function describeEdit(edit: VisualEditSummary): string {
                     <span class="min-w-0 flex-1 truncate text-sm font-medium">{{
                         state.selected.text || element.area?.name || ''
                     }}</span>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        class="size-11 shrink-0 text-muted-foreground sm:size-7"
+                        aria-label="Select the part around it"
+                        title="Select the part around it"
+                        data-test="pick-parent"
+                        @click="state.pickNear('parent')"
+                    >
+                        <ChevronUp class="size-4" />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        class="size-11 shrink-0 text-muted-foreground sm:size-7"
+                        aria-label="Select the first part inside it"
+                        title="Select the first part inside it"
+                        data-test="pick-child"
+                        @click="state.pickNear('child')"
+                    >
+                        <ChevronDown class="size-4" />
+                    </Button>
                     <Button
                         variant="ghost"
                         size="icon"
@@ -316,19 +359,15 @@ function describeEdit(edit: VisualEditSummary): string {
                                     @change="set('justify', $event)"
                                 />
                                 <div class="grid grid-cols-2 gap-2">
-                                    <PixelField
-                                        label="Space between items"
-                                        :value="state.valueOf('gap')"
-                                        unit="px"
-                                        @change="set('gap', $event)"
+                                    <MeasureField
+                                        :state="state"
+                                        property="gap"
+                                        mark="↔"
                                     />
-                                    <PixelField
+                                    <MeasureField
                                         v-if="layout === 'grid'"
-                                        label="Columns"
-                                        :value="state.valueOf('columns')"
-                                        :max="12"
-                                        unit="cols"
-                                        @change="set('columns', $event)"
+                                        :state="state"
+                                        property="columns"
                                     />
                                 </div>
                             </template>
@@ -336,11 +375,31 @@ function describeEdit(edit: VisualEditSummary): string {
 
                         <section class="space-y-2">
                             <h3 class="text-xs font-medium">Size</h3>
+                            <div class="grid grid-cols-2 gap-2">
+                                <MeasureField
+                                    :state="state"
+                                    property="width"
+                                    mark="W"
+                                    :measured="state.selected.width"
+                                />
+                                <MeasureField
+                                    :state="state"
+                                    property="height"
+                                    mark="H"
+                                    :measured="state.selected.height"
+                                />
+                            </div>
                             <Segmented
                                 label="Width"
                                 :value="state.valueOf('width')"
-                                :options="widthChoices"
+                                :options="words('width')"
                                 @change="set('width', $event)"
+                            />
+                            <Segmented
+                                label="Height"
+                                :value="state.valueOf('height')"
+                                :options="words('height')"
+                                @change="set('height', $event)"
                             />
                             <label
                                 class="flex items-center justify-between gap-2"
@@ -374,10 +433,98 @@ function describeEdit(edit: VisualEditSummary): string {
 
                         <section class="space-y-2">
                             <h3 class="text-xs font-medium">Space</h3>
-                            <SpacingBox
-                                :value-of="state.valueOf"
-                                @change="set"
-                            />
+                            <SpacingBox :state="state" />
+                        </section>
+
+                        <section class="space-y-2">
+                            <h3 class="text-xs font-medium">Turn and move</h3>
+                            <div class="grid grid-cols-3 gap-2">
+                                <MeasureField
+                                    :state="state"
+                                    property="rotate"
+                                    mark="↻"
+                                />
+                                <MeasureField
+                                    :state="state"
+                                    property="translate_x"
+                                    mark="X"
+                                />
+                                <MeasureField
+                                    :state="state"
+                                    property="translate_y"
+                                    mark="Y"
+                                />
+                            </div>
+                            <div
+                                v-if="
+                                    state.neighbours.earlier ||
+                                    state.neighbours.later
+                                "
+                                class="grid grid-cols-2 gap-2"
+                            >
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    class="h-11 sm:h-7"
+                                    :disabled="
+                                        !state.neighbours.earlier ||
+                                        state.saving
+                                    "
+                                    title="Put it before the part next to it (Alt + ←)"
+                                    data-test="move-earlier"
+                                    @click="state.shift(-1)"
+                                    >Earlier</Button
+                                >
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    class="h-11 sm:h-7"
+                                    :disabled="
+                                        !state.neighbours.later || state.saving
+                                    "
+                                    title="Put it after the part next to it (Alt + →)"
+                                    data-test="move-later"
+                                    @click="state.shift(1)"
+                                    >Later</Button
+                                >
+                            </div>
+                            <label class="flex items-center gap-3">
+                                <span class="w-14 text-xs text-muted-foreground"
+                                    >Opacity</span
+                                >
+                                <input
+                                    id="property-opacity-slider"
+                                    type="range"
+                                    min="0"
+                                    max="100"
+                                    :step="state.fine ? 1 : 5"
+                                    :value="
+                                        typeof state.valueOf('opacity') ===
+                                        'number'
+                                            ? state.valueOf('opacity')
+                                            : 100
+                                    "
+                                    class="min-h-11 flex-1 accent-foreground sm:min-h-6"
+                                    @pointerdown="state.hold(true)"
+                                    @pointerup="state.hold(false)"
+                                    @input="
+                                        set(
+                                            'opacity',
+                                            Number(
+                                                (
+                                                    $event.target as HTMLInputElement
+                                                ).value,
+                                            ),
+                                        )
+                                    "
+                                />
+                                <span
+                                    class="w-10 text-right text-xs tabular-nums"
+                                    >{{
+                                        state.valueOf('opacity') ?? 100
+                                    }}%</span
+                                >
+                            </label>
                         </section>
 
                         <section class="space-y-2">
@@ -415,6 +562,12 @@ function describeEdit(edit: VisualEditSummary): string {
                                     }}</span
                                 >
                             </label>
+                            <Segmented
+                                label="Line up text"
+                                :value="state.valueOf('text_align')"
+                                :options="options('text_align')"
+                                @change="set('text_align', $event)"
+                            />
                             <div
                                 class="flex rounded-md bg-muted p-0.5"
                                 role="group"
@@ -490,12 +643,10 @@ function describeEdit(edit: VisualEditSummary): string {
                                     class="w-14 shrink-0 text-xs text-muted-foreground"
                                     >Border</span
                                 >
-                                <PixelField
+                                <MeasureField
                                     class="w-24"
-                                    label="Border"
-                                    :value="state.valueOf('border')"
-                                    unit="px"
-                                    @change="set('border', $event)"
+                                    :state="state"
+                                    property="border"
                                 />
                             </div>
                         </section>
@@ -617,6 +768,26 @@ function describeEdit(edit: VisualEditSummary): string {
             >
                 <Redo2 class="size-4" />
             </Button>
+            <button
+                type="button"
+                :aria-pressed="state.fine"
+                :title="
+                    state.fine
+                        ? 'Any value. Turn off to snap to the scale.'
+                        : 'Values snap to the scale. Turn on for exact values, or hold Alt while dragging.'
+                "
+                :class="[
+                    'flex h-11 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs select-none sm:h-8',
+                    state.fine
+                        ? 'bg-foreground text-background'
+                        : 'text-muted-foreground hover:text-foreground',
+                ]"
+                data-test="fine-tune"
+                @click="state.fine = !state.fine"
+            >
+                <Crosshair class="size-3.5" />
+                Fine tune
+            </button>
             <p
                 v-if="state.saveError"
                 class="min-w-0 flex-1 px-2 text-xs text-destructive"

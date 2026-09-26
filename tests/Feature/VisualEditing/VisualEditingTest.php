@@ -464,7 +464,7 @@ class VisualEditingTest extends TestCase
         Queue::assertNothingPushed();
     }
 
-    public function test_a_failed_rebuild_is_reported_and_keeps_the_old_revision()
+    public function test_a_failed_rebuild_is_reported_and_keeps_the_old_revision_and_files()
     {
         $preview = $this->runningPreview();
         $old = (string) $preview->revision;
@@ -476,6 +476,27 @@ class VisualEditingTest extends TestCase
         $preview->refresh();
         $this->assertSame($old, $preview->revision);
         $this->assertSame('The preview could not show your latest change. Start it again to see it.', $preview->error);
+
+        // An undo back to the old file changes nothing to copy, so the
+        // failed file must not be left in the workspace.
+        $workspace = (string) $preview->workspace->driver_id;
+        $this->assertSame($this->repository->show($this->project, $old, 'resources/js/pages/Plans.vue'), $this->driver->files["{$workspace}:resources/js/pages/Plans.vue"]);
+    }
+
+    public function test_a_preview_whose_rebuild_failed_asks_to_be_started_again()
+    {
+        $preview = $this->runningPreview();
+        Event::fakeFor(fn () => $this->repository->commitFiles($this->project, (string) $preview->revision, ['resources/js/pages/Plans.vue' => "<template>\n    <div class=\"gap-8\" />\n</template>\n"], 'Edit', null));
+        $preview->update(['error' => 'The preview could not show your latest change. Start it again to see it.']);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', ['project' => $this->project, 'target' => 'resources/js/pages/Plans.vue:2:5']))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('preview.updating', false)
+                ->where('preview.error', 'The preview could not show your latest change. Start it again to see it.')
+                ->reloadOnly('element', fn (Assert $page) => $page
+                    ->where('element.editable', false)
+                    ->where('element.reason', 'behind')));
     }
 
     public function test_the_gateway_adds_the_overlay_to_editable_pages_and_lets_only_the_builder_embed_them()
@@ -529,6 +550,73 @@ class VisualEditingTest extends TestCase
      *
      * @param  array<string, mixed>  $attributes
      */
+    public function test_the_owner_drags_a_part_after_its_sibling_and_can_undo_and_redo_it()
+    {
+        Queue::fake();
+        $preview = $this->runningPreview();
+        $file = 'resources/js/pages/Plans.vue';
+        $moved = "<template>\n    <div class=\"flex gap-4 p-4 text-sm\">\n        <p :class=\"{ 'font-bold': active }\">Pick one</p>\n        <h1 class=\"text-xl\">Plans</h1>\n    </div>\n</template>\n";
+
+        $this->actingAs($this->owner)->post(route('visual-moves.store', $this->project), [
+            'preview' => $preview->id,
+            'target' => "{$file}:3:9",
+            'to' => "{$file}:4:9",
+            'placement' => 'after',
+            'revision' => $preview->revision,
+        ])->assertSessionHasNoErrors();
+
+        $head = $this->repository->head($this->project);
+        $this->assertSame($moved, $this->repository->show($this->project, $head, $file));
+
+        $edit = $this->project->visualEdits()->sole();
+        $this->assertTrue($edit->moves());
+        $this->assertSame([4, 9], [$edit->line, $edit->column]);
+
+        $this->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->hasFlash('moved', ['target' => "{$file}:4:9", 'instance' => false])
+                ->where('edits.0.kind', 'move')
+                ->where('edits.0.properties', []));
+
+        $this->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
+        $this->assertSame(self::CARD, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+
+        $this->delete(route('visual-edits.reversion.destroy', $edit))->assertSessionHasNoErrors();
+        $this->assertSame($moved, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+        $this->assertNull($edit->fresh()->reverted_at);
+    }
+
+    public function test_moves_between_files_or_across_parents_are_refused_and_undo_keeps_later_changes()
+    {
+        Queue::fake();
+        $preview = $this->runningPreview();
+        $move = fn (array $data) => $this->actingAs($this->owner)->post(route('visual-moves.store', $this->project), $data + [
+            'preview' => $preview->id,
+            'target' => 'resources/js/pages/Plans.vue:3:9',
+            'to' => 'resources/js/pages/Plans.vue:4:9',
+            'placement' => 'before',
+            'revision' => $preview->revision,
+        ]);
+
+        $move(['to' => 'resources/js/pages/Home.vue:2:5'])->assertSessionHasErrors('edit');
+        $move(['to' => 'resources/js/pages/Plans.vue:2:5'])->assertSessionHasErrors(['edit' => 'This part cannot be moved there. Ask me to move it instead.']);
+        $move(['placement' => 'inside'])->assertSessionHasErrors('placement');
+        $this->assertSame($preview->revision, $this->repository->head($this->project));
+
+        $move(['placement' => 'after'])->assertSessionHasNoErrors();
+        $edit = $this->project->visualEdits()->sole();
+
+        // Something else changes the same page after the move.
+        $head = $this->repository->head($this->project);
+        $contents = (string) $this->repository->show($this->project, $head, 'resources/js/pages/Plans.vue');
+        $this->repository->commitFiles($this->project, $head, ['resources/js/pages/Plans.vue' => str_replace('Pick one', 'Choose one', $contents)], 'Reword', null);
+        $head = $this->repository->head($this->project);
+
+        $this->post(route('visual-edits.reversion.store', $edit))
+            ->assertSessionHasErrors(['edit' => 'This page was changed since, so going back would lose that change.']);
+        $this->assertSame($head, $this->repository->head($this->project));
+    }
+
     protected function runningPreview(array $attributes = []): Preview
     {
         return Preview::factory()->editable($this->repository->head($this->project))->ready()->create([
