@@ -2,12 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Previews\DescribeProjectPreview;
 use App\Actions\VisualEditing\InspectElement;
 use App\Enums\PreviewStatus;
 use App\Models\Preview;
 use App\Models\Project;
 use App\Models\VisualEdit;
-use App\Projects\ProjectRepository;
 use App\VisualEditing\SourceLocation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -21,7 +21,7 @@ class ProjectEditorController extends Controller
      * Show the project running, where the owner can point at a part of it
      * and change how it looks. The selected element is loaded on request.
      */
-    public function show(Request $request, Project $project, ProjectRepository $repository, InspectElement $inspectElement): Response
+    public function show(Request $request, Project $project, DescribeProjectPreview $describePreview, InspectElement $inspectElement): Response
     {
         Gate::authorize('view', $project);
 
@@ -29,14 +29,7 @@ class ProjectEditorController extends Controller
 
         return Inertia::render('projects/Editor', [
             'project' => $project->only('id', 'name'),
-            'preview' => $preview === null ? null : [
-                'id' => $preview->id,
-                'status' => $preview->status->value,
-                'error' => $preview->error,
-                'origin' => rtrim($preview->url(), '/'),
-                'revision' => $preview->revision,
-                'updating' => $preview->status === PreviewStatus::Ready && $repository->exists($project) && $preview->revision !== $repository->head($project),
-            ],
+            'preview' => $describePreview->handle($project),
             'element' => Inertia::optional(fn () => $this->inspect($request, $preview, $inspectElement)),
             'edits' => $project->visualEdits()->latest('id')->limit(10)->get()
                 ->map(fn (VisualEdit $edit) => [

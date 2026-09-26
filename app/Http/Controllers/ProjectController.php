@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Previews\DescribeProjectPreview;
 use App\Actions\Projects\CreateProject;
 use App\Actions\Projects\SummarizeChanges;
 use App\Actions\Projects\SummarizeProjectTelemetry;
@@ -59,7 +60,7 @@ class ProjectController extends Controller
      * Show a project, the feature requests made for it, its latest commits,
      * how its changes went, and where and when it was published.
      */
-    public function show(Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges): Response
+    public function show(Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview): Response
     {
         Gate::authorize('view', $project);
 
@@ -69,6 +70,7 @@ class ProjectController extends Controller
                 'published_at' => $this->publishedAt($project),
             ],
             'changes' => $summarizeChanges->handle($project),
+            'preview' => $describePreview->handle($project),
             'history' => $repository->log($project, 20),
             'telemetry' => $summarizeTelemetry->handle($project),
             'publishing' => [

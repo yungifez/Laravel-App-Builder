@@ -6,6 +6,7 @@ use App\Enums\DeploymentStatus;
 use App\Enums\FeatureRequestStatus;
 use App\Models\Deployment;
 use App\Models\FeatureRequest;
+use App\Models\Preview;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -46,6 +47,26 @@ class ProjectOverviewTest extends TestCase
                 ->where('changes.3.state', 'working')
                 ->where('changes.4.id', $stopped->id)
                 ->where('changes.4.state', 'stopped'));
+    }
+
+    public function test_the_app_page_shows_the_running_app_next_to_the_conversation()
+    {
+        $project = Project::factory()->create();
+
+        $this->actingAs($project->owner)
+            ->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page->where('preview', null));
+
+        // A copy made to try one change is not the app itself.
+        Preview::factory()->ready()->create(['project_id' => $project->id]);
+        $running = Preview::factory()->editable()->ready()->create(['project_id' => $project->id]);
+
+        $this->actingAs($project->owner)
+            ->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('preview.id', $running->id)
+                ->where('preview.status', 'ready')
+                ->where('preview.updating', false));
     }
 
     public function test_the_apps_list_says_what_waits_and_when_it_went_live()

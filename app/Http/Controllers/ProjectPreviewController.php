@@ -10,7 +10,8 @@ use Illuminate\Support\Facades\Gate;
 class ProjectPreviewController extends Controller
 {
     /**
-     * Start an editable preview of the project as it is now.
+     * Start an editable preview of the project as it is now, and return
+     * to the page it was started from.
      */
     public function store(Project $project, RequestProjectPreview $requestProjectPreview): RedirectResponse
     {
@@ -18,6 +19,6 @@ class ProjectPreviewController extends Controller
 
         $requestProjectPreview->handle($project);
 
-        return to_route('projects.editor.show', $project);
+        return back(fallback: route('projects.editor.show', $project));
     }
 }
