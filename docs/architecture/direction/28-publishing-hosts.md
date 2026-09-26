@@ -37,3 +37,7 @@ sign-in for platforms.
 **Owner:**
 
 Sure lets do it without asking Laravel for now
+
+**Owner:**
+
+FOR NOW, LETS JUST EAT THE COST

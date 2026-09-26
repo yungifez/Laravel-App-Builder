@@ -2583,9 +2583,10 @@ these components prove that claim, so only these are **required**:
     takes a commit and gives back an address and its deploy status, and
     changing host changes configuration, not the loop. Grandma's apps publish
     to **Laravel Cloud** by default, so she never picks a host. They run in our
-    Cloud organization, and her price carries each app's hosting at cost, read
-    per application from Cloud's usage API; she never sees a Cloud account or
-    token. Power users may connect their own Cloud organization with a scoped
+    Cloud organization, and for now we absorb their hosting cost: her price
+    does not change with it. We still read each app's cost from Cloud's usage
+    API so operators see it next to model spend. She never sees a Cloud
+    account or token. Power users may connect their own Cloud organization with a scoped
     API token and deploy from their own repository, and Cloud bills them
     directly; or they bring another host, or a plain branch that their own host
     deploys from. Cloud has no sign-in for platforms and deploys only from a
