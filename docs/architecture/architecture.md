@@ -1610,9 +1610,6 @@ for; none is started without that evidence.
   in a hosted product.
 - Which box provider to start with. The code does not depend on the answer
   ([§11](#adapters)).
-- Whose Laravel Cloud account hosts Grandma's apps: ours, billed inside the
-  unified price, or hers, connected once. The host contract does not depend on
-  the answer ([§27.1](#271-what-proves-the-differentiation)).
 - The product's public name and category (not "Laravel builder").
 - Whether to charge for accepted changes rather than raw usage (§25.6).
 - Recruiting 3–5 owners for the behaviour-diff study (§26.7).
@@ -2585,8 +2582,17 @@ these components prove that claim, so only these are **required**:
     through a host contract with no host hard-coded (direction 28): a host
     takes a commit and gives back an address and its deploy status, and
     changing host changes configuration, not the loop. Grandma's apps publish
-    to **Laravel Cloud** by default, so she never picks a host; power users may
-    bring another host, or a plain branch that their own host deploys from.
+    to **Laravel Cloud** by default, so she never picks a host. They run in our
+    Cloud organization, and her price carries each app's hosting at cost, read
+    per application from Cloud's usage API; she never sees a Cloud account or
+    token. Power users may connect their own Cloud organization with a scoped
+    API token and deploy from their own repository, and Cloud bills them
+    directly; or they bring another host, or a plain branch that their own host
+    deploys from. Cloud has no sign-in for platforms and deploys only from a
+    repository the organization's own Git account can read, so direct billing
+    for Grandma waits for one. Cloud apps cannot move between organizations, so
+    moving an app to the owner's own account later means creating it again and
+    moving its data.
     Smoke checks, error intake and the health state sit above the contract and
     are the same for every host. Publishing is one click to a default
     address, and it is a loop, not a push (direction 26): publish, run smoke
