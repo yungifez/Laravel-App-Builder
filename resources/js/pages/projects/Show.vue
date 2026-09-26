@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { Form, Head, Link, usePoll } from '@inertiajs/vue3';
+import { Form, Head, Link, router, usePoll } from '@inertiajs/vue3';
 import {
     ArrowLeft,
     ArrowUp,
     CircleCheck,
     CircleDot,
     CircleX,
+    Lightbulb,
     LoaderCircle,
     Undo2,
     ChevronDown,
@@ -19,9 +20,13 @@ import {
 } from '@lucide/vue';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
+import ProjectExperimentController from '@/actions/App/Http/Controllers/ProjectExperimentController';
 import AppPreview from '@/components/AppPreview.vue';
 import ChangeThread from '@/components/ChangeThread.vue';
 import DesignPanel from '@/components/DesignPanel.vue';
+import IdeaMenu from '@/components/ideas/IdeaMenu.vue';
+import StartIdeaDialog from '@/components/ideas/StartIdeaDialog.vue';
+import UseIdeaDialog from '@/components/ideas/UseIdeaDialog.vue';
 import InputError from '@/components/InputError.vue';
 import ProjectDetails from '@/components/ProjectDetails.vue';
 import NotificationBell from '@/components/NotificationBell.vue';
@@ -53,6 +58,8 @@ import type {
     ChangeState,
     Device,
     EditorPreview,
+    Idea,
+    Ideas,
     InspectedElement,
     ProjectCommit,
     ProjectSummary,
@@ -69,6 +76,7 @@ const props = defineProps<{
     design: boolean;
     element?: InspectedElement | null;
     edits: VisualEditSummary[];
+    ideas: Ideas;
     history: ProjectCommit[];
     telemetry: ProjectTelemetry;
     publishing: ProjectPublishing;
@@ -109,6 +117,14 @@ const phoneView = computed<'chat' | 'design' | 'app'>({
 
 const detailsOpen = ref(false);
 const publishOpen = ref(false);
+const startingIdea = ref(false);
+const usingIdea = ref(false);
+
+function openIdea(idea: Idea): void {
+    router.put(ProjectExperimentController.update.url(props.project.id), {
+        experiment: idea.id,
+    });
+}
 
 const screens: { key: Device; label: string; icon: typeof Monitor }[] = [
     { key: 'base', label: 'Phone', icon: Smartphone },
@@ -175,7 +191,7 @@ const states: Record<
 };
 
 // Starting points for an empty conversation. A tap puts one in the box.
-const ideas = [
+const suggestions = [
     'Add a contact form',
     'Add a page that lists my customers',
     'Let people sign up with Google',
@@ -245,6 +261,25 @@ function send(event: KeyboardEvent): void {
                     <template v-else>Not live yet</template>
                 </p>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem
+                    data-test="idea-new"
+                    @select="startingIdea = true"
+                >
+                    <Lightbulb class="size-4" />
+                    Try an idea…
+                </DropdownMenuItem>
+                <template v-if="!ideas.current">
+                    <DropdownMenuItem
+                        v-for="idea in ideas.open"
+                        :key="idea.id"
+                        :data-test="`idea-open-${idea.id}`"
+                        @select="openIdea(idea)"
+                    >
+                        <span class="size-4" aria-hidden="true" />
+                        <span class="truncate">{{ idea.name }}</span>
+                    </DropdownMenuItem>
+                </template>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem as-child>
                     <Link
                         :href="showUnderstanding(project.id)"
@@ -264,6 +299,12 @@ function send(event: KeyboardEvent): void {
                 </DropdownMenuItem>
             </DropdownMenuContent>
         </DropdownMenu>
+
+        <IdeaMenu
+            v-if="ideas.current"
+            :project-id="project.id"
+            :ideas="{ ...ideas, current: ideas.current }"
+        />
 
         <div class="ml-auto flex shrink-0 items-center gap-1">
             <template v-if="app.running && preview">
@@ -320,7 +361,18 @@ function send(event: KeyboardEvent): void {
             </template>
 
             <NotificationBell />
+            <!-- In an idea, the next step is to use it; only the app itself
+                 goes online. -->
             <Button
+                v-if="ideas.current"
+                class="ml-1 h-11 select-none sm:h-9"
+                data-test="idea-use"
+                @click="usingIdea = true"
+            >
+                Use this idea
+            </Button>
+            <Button
+                v-else
                 class="ml-1 h-11 select-none sm:h-9"
                 data-test="publish-open"
                 @click="publishOpen = true"
@@ -329,6 +381,13 @@ function send(event: KeyboardEvent): void {
             </Button>
         </div>
     </header>
+
+    <StartIdeaDialog v-model:open="startingIdea" :project-id="project.id" />
+    <UseIdeaDialog
+        v-if="ideas.current"
+        v-model:open="usingIdea"
+        :idea="ideas.current"
+    />
 
     <Dialog v-model:open="publishOpen">
         <DialogContent>
@@ -467,13 +526,13 @@ function send(event: KeyboardEvent): void {
                         </p>
                         <div class="flex flex-wrap gap-2">
                             <button
-                                v-for="idea in ideas"
-                                :key="idea"
+                                v-for="suggestion in suggestions"
+                                :key="suggestion"
                                 type="button"
                                 class="min-h-11 rounded-full border px-3 text-sm text-muted-foreground select-none hover:border-foreground/30 hover:text-foreground sm:min-h-8"
-                                @click="suggest(idea)"
+                                @click="suggest(suggestion)"
                             >
-                                {{ idea }}
+                                {{ suggestion }}
                             </button>
                         </div>
                     </div>

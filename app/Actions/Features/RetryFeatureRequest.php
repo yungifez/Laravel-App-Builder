@@ -2,6 +2,7 @@
 
 namespace App\Actions\Features;
 
+use App\Enums\ExperimentStatus;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Models\FeatureRequest;
@@ -46,7 +47,9 @@ class RetryFeatureRequest
 
         $retry = $parent !== null && $featureRequest->target_step !== null
             ? $this->requestStepChange->handle($parent, $requester, $featureRequest->target_step, $featureRequest->prompt)
-            : $this->requestFeature->handle($featureRequest->project, $requester, $featureRequest->prompt, $featureRequest->selection);
+            // Tried again where it was asked: in its idea while that is
+            // open, otherwise in the main app.
+            : $this->requestFeature->handle($featureRequest->project, $requester, $featureRequest->prompt, $featureRequest->selection, $featureRequest->experiment?->status === ExperimentStatus::Open ? $featureRequest->experiment : null);
 
         $retry->update(['retry_of_id' => $featureRequest->id]);
 

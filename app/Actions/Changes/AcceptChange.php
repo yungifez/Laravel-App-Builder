@@ -36,6 +36,12 @@ class AcceptChange
         }
 
         $project = $featureRequest->project;
+        $branch = $featureRequest->branch();
+
+        if ($branch === null) {
+            throw ValidationException::withMessages(['change' => __('This idea was thrown away, so its changes cannot be kept.')]);
+        }
+
         $this->repository->import($project);
 
         $lineage = $featureRequest->lineage();
@@ -50,6 +56,7 @@ class AcceptChange
                 array_map(fn (FeatureRequest $request) => (string) $request->patch, $pending),
                 $this->message($featureRequest, $pending),
                 ['name' => $owner->name, 'email' => $owner->email],
+                $branch,
             );
         } catch (RepositoryConflict $exception) {
             throw ValidationException::withMessages(['change' => $exception->getMessage().' '.__('Ask for it again to build it on the current project.')]);

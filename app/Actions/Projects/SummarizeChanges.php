@@ -23,7 +23,7 @@ class SummarizeChanges
      */
     public function handle(Project $project): array
     {
-        $requests = $project->featureRequests()->latest('id')->get();
+        $requests = $project->featureRequests()->inLine($project)->latest('id')->get();
 
         return array_values($requests->whereNull('parent_id')
             ->map(function (FeatureRequest $root) use ($requests) {

@@ -16,9 +16,15 @@ use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
- * The Git repository the builder keeps for a project. Its default branch
+ * The Git repository the builder keeps for a project. Its main branch
  * holds the project as imported plus every change the owner accepted, one
- * commit per change.
+ * commit per change. Each idea the owner tries lives on a branch of its
+ * own until it is merged into the main branch or deleted.
+ *
+ * Methods that take a branch default to the one the owner is working on
+ * ({@see Project::branch()}). Commands that write check the branch out
+ * inside the repository lock, so the working tree is only ever on the
+ * branch being written.
  *
  * Customer code is never run here: Git runs with hooks and signing turned
  * off, and only the builder's own commands touch the working tree, which is
@@ -78,16 +84,76 @@ class ProjectRepository
             $this->git($project, ['add', '--all']);
             $this->commit($project, 'Import '.$project->name, null);
 
-            return $this->head($project);
+            return $this->tip($project);
         });
     }
 
     /**
-     * Get the commit at the tip of the project's branch.
+     * Get the commit at the tip of a branch: by default, the one the owner
+     * is working on.
      */
-    public function head(Project $project): string
+    public function head(Project $project, ?string $branch = null): string
     {
-        return trim($this->git($project, ['rev-parse', 'HEAD'])->output());
+        $branch ??= $project->branch();
+
+        return trim($this->git($project, ['rev-parse', '--verify', '--quiet', "refs/heads/{$branch}"])->output());
+    }
+
+    /**
+     * Start a branch at a commit.
+     *
+     * @throws RuntimeException when the branch exists or the name is not allowed.
+     */
+    public function createBranch(Project $project, string $branch, string $from): void
+    {
+        $this->locked($project, function () use ($project, $branch, $from) {
+            $this->git($project, ['check-ref-format', '--branch', $branch]);
+            $this->git($project, ['branch', '--no-track', $branch, $from]);
+        });
+    }
+
+    /**
+     * Merge a branch into the main branch as one merge commit. When the
+     * main branch changed the same lines since, nothing is merged. A branch
+     * with nothing new merges as the main branch's current commit.
+     *
+     * @param  array{name: string, email: string}|null  $author
+     *
+     * @throws RepositoryConflict when the branches changed the same lines.
+     */
+    public function merge(Project $project, string $branch, string $into, string $message, ?array $author): string
+    {
+        return $this->locked($project, function () use ($project, $branch, $into, $message, $author) {
+            $this->checkout($project, $into);
+
+            if ($this->git($project, ['merge-base', '--is-ancestor', "refs/heads/{$branch}", 'HEAD'], throw: false)->successful()) {
+                return $this->tip($project);
+            }
+
+            $result = $this->git($project, ['merge', '--no-ff', '--no-commit', "refs/heads/{$branch}"], throw: false);
+
+            if ($result->failed() || $this->hasConflicts($project)) {
+                $this->git($project, ['merge', '--abort'], throw: false);
+                $this->discardChanges($project);
+
+                throw new RepositoryConflict(__('Your app changed in the same places since you started this idea.'));
+            }
+
+            $this->commit($project, $message, $author);
+
+            return $this->tip($project);
+        });
+    }
+
+    /**
+     * Delete a branch and the commits only it holds.
+     */
+    public function deleteBranch(Project $project, string $branch, string $fallback): void
+    {
+        $this->locked($project, function () use ($project, $branch, $fallback) {
+            $this->checkout($project, $fallback);
+            $this->git($project, ['branch', '--delete', '--force', $branch]);
+        });
     }
 
     /**
@@ -147,10 +213,13 @@ class ProjectRepository
      *
      * @throws RepositoryConflict when the patches do not apply.
      */
-    public function commitPatches(Project $project, string $base, array $patches, string $message, ?array $author): string
+    public function commitPatches(Project $project, string $base, array $patches, string $message, ?array $author, ?string $branch = null): string
     {
-        return $this->locked($project, function () use ($project, $base, $patches, $message, $author) {
-            $threeWay = $this->head($project) !== $base;
+        $branch ??= $project->branch();
+
+        return $this->locked($project, function () use ($project, $base, $patches, $message, $author, $branch) {
+            $this->checkout($project, $branch);
+            $threeWay = $this->tip($project) !== $base;
 
             foreach ($patches as $patch) {
                 $result = Process::path($this->path($project))->input($patch)->run([
@@ -166,7 +235,7 @@ class ProjectRepository
 
             $this->commit($project, $message, $author);
 
-            return $this->head($project);
+            return $this->tip($project);
         });
     }
 
@@ -180,10 +249,14 @@ class ProjectRepository
      *
      * @throws RepositoryConflict when the branch has moved on.
      */
-    public function commitFiles(Project $project, string $base, array $files, string $message, ?array $author): string
+    public function commitFiles(Project $project, string $base, array $files, string $message, ?array $author, ?string $branch = null): string
     {
-        return $this->locked($project, function () use ($project, $base, $files, $message, $author) {
-            if ($this->head($project) !== $base) {
+        $branch ??= $project->branch();
+
+        return $this->locked($project, function () use ($project, $base, $files, $message, $author, $branch) {
+            $this->checkout($project, $branch);
+
+            if ($this->tip($project) !== $base) {
                 throw new RepositoryConflict(__('The app changed while you were editing. Try again on the updated version.'));
             }
 
@@ -198,7 +271,7 @@ class ProjectRepository
 
             $this->commit($project, $message, $author);
 
-            return $this->head($project);
+            return $this->tip($project);
         });
     }
 
@@ -248,9 +321,12 @@ class ProjectRepository
      *
      * @throws RepositoryConflict when later commits changed the same lines.
      */
-    public function revert(Project $project, string $commit, string $message, ?array $author): string
+    public function revert(Project $project, string $commit, string $message, ?array $author, ?string $branch = null): string
     {
-        return $this->locked($project, function () use ($project, $commit, $message, $author) {
+        $branch ??= $project->branch();
+
+        return $this->locked($project, function () use ($project, $commit, $message, $author, $branch) {
+            $this->checkout($project, $branch);
             $result = $this->git($project, ['revert', '--no-commit', $commit], throw: false);
 
             if ($result->failed() || $this->hasConflicts($project)) {
@@ -261,7 +337,7 @@ class ProjectRepository
 
             $this->commit($project, $message, $author);
 
-            return $this->head($project);
+            return $this->tip($project);
         });
     }
 
@@ -301,17 +377,18 @@ class ProjectRepository
     }
 
     /**
-     * Get the project's commits, newest first.
+     * Get a branch's commits, newest first.
      *
      * @return list<array{sha: string, subject: string, author: string, committed_at: string}>
      */
-    public function log(Project $project, int $limit = 50): array
+    public function log(Project $project, int $limit = 50, ?string $branch = null): array
     {
         if (! $this->exists($project)) {
             return [];
         }
 
-        $output = $this->git($project, ['log', "--max-count={$limit}", '--format=%H%x1f%s%x1f%an%x1f%cI'])->output();
+        $branch ??= $project->branch();
+        $output = $this->git($project, ['log', "--max-count={$limit}", '--format=%H%x1f%s%x1f%an%x1f%cI', "refs/heads/{$branch}"])->output();
 
         return array_values(array_map(function (string $line) {
             [$sha, $subject, $author, $committedAt] = explode("\x1f", $line) + ['', '', '', ''];
@@ -366,7 +443,24 @@ class ProjectRepository
             'commit', '--quiet', '--allow-empty', '--no-verify', '--author', "{$author['name']} <{$author['email']}>", '-m', $message,
         ]);
 
-        ProjectCommitted::dispatch($project, $this->head($project));
+        ProjectCommitted::dispatch($project, $this->tip($project));
+    }
+
+    /**
+     * Get the commit the working tree is on.
+     */
+    protected function tip(Project $project): string
+    {
+        return trim($this->git($project, ['rev-parse', 'HEAD'])->output());
+    }
+
+    /**
+     * Put the working tree on a branch. Only called inside the lock, where
+     * the tree is clean.
+     */
+    protected function checkout(Project $project, string $branch): void
+    {
+        $this->git($project, ['checkout', '--quiet', '--force', $branch, '--']);
     }
 
     /**

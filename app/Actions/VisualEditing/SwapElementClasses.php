@@ -27,7 +27,13 @@ class SwapElementClasses
     public function handle(VisualEdit $edit, string $from, string $to, string $message, User $owner): string
     {
         $project = $edit->project;
-        $head = $this->repository->head($project);
+        $branch = $edit->branch();
+
+        if ($branch === null) {
+            throw ValidationException::withMessages(['edit' => __('This idea was thrown away, so its changes are gone.')]);
+        }
+
+        $head = $this->repository->head($project, $branch);
         $contents = $this->repository->show($project, $head, $edit->file);
         $element = $contents === null ? null : TemplateElement::at($contents, $edit->line, $edit->column);
 
@@ -44,6 +50,7 @@ class SwapElementClasses
                 [$edit->file => $element->withClasses($contents, $to)],
                 $message,
                 ['name' => $owner->name, 'email' => $owner->email],
+                $branch,
             );
         } catch (RepositoryConflict $exception) {
             throw ValidationException::withMessages(['edit' => $exception->getMessage()]);

@@ -28,6 +28,11 @@ class RevertChange
 
         $project = $featureRequest->project;
         $commit = (string) $featureRequest->commit_sha;
+        $branch = $featureRequest->branch();
+
+        if ($branch === null) {
+            throw ValidationException::withMessages(['change' => __('This idea was thrown away already.')]);
+        }
 
         try {
             $sha = $this->repository->revert(
@@ -35,6 +40,7 @@ class RevertChange
                 $commit,
                 Str::limit('Undo: '.Str::squish($featureRequest->prompt), 70)."\n\nThis reverts commit {$commit}.\n\nBuilder-Request: #{$featureRequest->id}",
                 ['name' => $owner->name, 'email' => $owner->email],
+                $branch,
             );
         } catch (RepositoryConflict $exception) {
             throw ValidationException::withMessages(['change' => $exception->getMessage()]);

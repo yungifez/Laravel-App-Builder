@@ -78,6 +78,7 @@ class ApplyVisualEdit
 
         // The new commit rebuilds the editable preview (ProjectCommitted).
         return $project->visualEdits()->create([
+            'experiment_id' => $project->experiment_id,
             'user_id' => $owner->id,
             'file' => $location->file,
             'line' => $location->line,

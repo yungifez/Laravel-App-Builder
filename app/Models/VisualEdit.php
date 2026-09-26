@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * @property int $id
  * @property int $project_id
+ * @property int|null $experiment_id The idea it was made in; null is the main app
  * @property int $user_id
  * @property string $file
  * @property int $line
@@ -31,7 +32,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['user_id', 'file', 'line', 'column', 'tag', 'device', 'changes', 'classes_before', 'classes_after', 'base_revision', 'commit_sha', 'revert_sha', 'reverted_at'])]
+#[Fillable(['experiment_id', 'user_id', 'file', 'line', 'column', 'tag', 'device', 'changes', 'classes_before', 'classes_after', 'base_revision', 'commit_sha', 'revert_sha', 'reverted_at'])]
 class VisualEdit extends Model
 {
     /** @use HasFactory<VisualEditFactory> */
@@ -50,6 +51,25 @@ class VisualEdit extends Model
             'column' => 'integer',
             'reverted_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Get the idea the edit was made in, if not the main app.
+     *
+     * @return BelongsTo<Experiment, $this>
+     */
+    public function experiment(): BelongsTo
+    {
+        return $this->belongsTo(Experiment::class);
+    }
+
+    /**
+     * Get the branch the edit lives on now, or null when its idea was
+     * thrown away.
+     */
+    public function branch(): ?string
+    {
+        return Experiment::branchOf($this->experiment);
     }
 
     /**

@@ -22,13 +22,14 @@ use Illuminate\Support\Carbon;
  * @property string|null $deploy_remote The Git remote the hosting platform deploys from, credentials included
  * @property string|null $deploy_branch
  * @property NotesDraftStatus|null $notes_draft_status
+ * @property int|null $experiment_id The idea the owner is working in; null is the main app
  * @property array{purpose: string, areas: list<array{key: string, name: string, summary: string, paths: list<string>, behaviors: list<array{key: string, name: string}>, rules: list<string>}>}|null $notes_draft Notes a model drafted from an imported app, waiting for the owner
  * @property string|null $notes_draft_error
  * @property list<array{role: string, provider: string|null, model: string|null, input_tokens: int, output_tokens: int, cost_usd: float|null}>|null $setup_model_calls Model calls made to set the project up, outside any change
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'source_path', 'deploy_remote', 'deploy_branch', 'notes_draft_status', 'notes_draft', 'notes_draft_error', 'setup_model_calls'])]
+#[Fillable(['name', 'source_path', 'experiment_id', 'deploy_remote', 'deploy_branch', 'notes_draft_status', 'notes_draft', 'notes_draft_error', 'setup_model_calls'])]
 #[Hidden(['deploy_remote'])]
 class Project extends Model
 {
@@ -66,6 +67,35 @@ class Project extends Model
     public function owner(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /**
+     * Get the idea the owner is working in, if not the main app.
+     *
+     * @return BelongsTo<Experiment, $this>
+     */
+    public function experiment(): BelongsTo
+    {
+        return $this->belongsTo(Experiment::class);
+    }
+
+    /**
+     * Get the ideas tried for the project.
+     *
+     * @return HasMany<Experiment, $this>
+     */
+    public function experiments(): HasMany
+    {
+        return $this->hasMany(Experiment::class);
+    }
+
+    /**
+     * Get the branch the owner is working on: the open idea's, or the
+     * main branch.
+     */
+    public function branch(): string
+    {
+        return Experiment::branchOf($this->experiment) ?? Experiment::mainBranch();
     }
 
     /**

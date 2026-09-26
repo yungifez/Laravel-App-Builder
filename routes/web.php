@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeploymentController;
+use App\Http\Controllers\ExperimentController;
+use App\Http\Controllers\ExperimentMergeController;
 use App\Http\Controllers\FeatureRequestAcceptanceController;
 use App\Http\Controllers\FeatureRequestAnswerController;
 use App\Http\Controllers\FeatureRequestController;
@@ -16,6 +18,7 @@ use App\Http\Controllers\NotificationReadController;
 use App\Http\Controllers\PreviewController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectEditorController;
+use App\Http\Controllers\ProjectExperimentController;
 use App\Http\Controllers\ProjectNotesDraftController;
 use App\Http\Controllers\ProjectPreviewController;
 use App\Http\Controllers\ProjectPublishingController;
@@ -42,6 +45,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/deployments', [DeploymentController::class, 'store'])->name('deployments.store');
     Route::get('projects/{project}/editor', [ProjectEditorController::class, 'show'])->name('projects.editor.show');
     Route::post('projects/{project}/previews', [ProjectPreviewController::class, 'store'])->name('projects.previews.store');
+    Route::post('projects/{project}/experiments', [ExperimentController::class, 'store'])->name('experiments.store');
+    Route::put('projects/{project}/experiment', [ProjectExperimentController::class, 'update'])->name('projects.experiment.update');
+    Route::post('experiments/{experiment}/merge', [ExperimentMergeController::class, 'store'])->name('experiments.merge.store');
+    Route::delete('experiments/{experiment}', [ExperimentController::class, 'destroy'])->name('experiments.destroy');
     Route::post('projects/{project}/visual-edits', [VisualEditController::class, 'store'])->name('visual-edits.store');
     Route::post('visual-edits/{visualEdit}/reversion', [VisualEditReversionController::class, 'store'])->name('visual-edits.reversion.store');
     Route::delete('visual-edits/{visualEdit}/reversion', [VisualEditReversionController::class, 'destroy'])->name('visual-edits.reversion.destroy');

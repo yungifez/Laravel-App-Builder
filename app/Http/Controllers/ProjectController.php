@@ -10,8 +10,10 @@ use App\Actions\Projects\SummarizeChanges;
 use App\Actions\Projects\SummarizeProjectTelemetry;
 use App\Actions\VisualEditing\InspectSelection;
 use App\Enums\DeploymentStatus;
+use App\Enums\ExperimentStatus;
 use App\Http\Requests\ProjectStoreRequest;
 use App\Models\Deployment;
+use App\Models\Experiment;
 use App\Models\Project;
 use App\Models\VisualEdit;
 use App\Projects\ProjectRepository;
@@ -83,7 +85,7 @@ class ProjectController extends Controller
             'change' => fn () => $request->filled('change')
                 ? $describeFeatureRequest->handle($project->featureRequests()->findOrFail($request->integer('change')))
                 : null,
-            'edits' => $project->visualEdits()->latest('id')->limit(10)->get()
+            'edits' => $project->visualEdits()->where('experiment_id', $project->experiment_id)->latest('id')->limit(10)->get()
                 ->map(fn (VisualEdit $edit) => [
                     'id' => $edit->id,
                     'tag' => $edit->tag,
@@ -97,6 +99,13 @@ class ProjectController extends Controller
                     'created_at' => $edit->created_at?->toIso8601String(),
                     'reverted_at' => $edit->reverted_at?->toIso8601String(),
                 ]),
+            // The idea the owner is working in (null for the main app) and
+            // the ideas still open, to move between.
+            'ideas' => [
+                'current' => $project->experiment?->only('id', 'name', 'branch'),
+                'open' => $project->experiments()->where('status', ExperimentStatus::Open)->latest('id')->get(['id', 'name', 'branch']),
+                'main' => Experiment::mainBranch(),
+            ],
             'project' => [
                 ...$project->only('id', 'name', 'source_path'),
                 'published_at' => $this->publishedAt($project),

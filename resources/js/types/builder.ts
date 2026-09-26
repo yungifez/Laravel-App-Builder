@@ -419,3 +419,18 @@ export type Notifications = {
     unread: number;
     items: OwnerNotification[];
 };
+
+/** An idea the owner tries apart from their app, on its own branch. */
+export type Idea = {
+    id: number;
+    name: string;
+    branch: string;
+};
+
+export type Ideas = {
+    /** The idea the owner is working in; null is the app itself. */
+    current: Idea | null;
+    open: Idea[];
+    /** The main branch's name, shown to power users. */
+    main: string;
+};

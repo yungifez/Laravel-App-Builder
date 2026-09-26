@@ -5,6 +5,7 @@ namespace App\Actions\Publishing;
 use App\Enums\DeploymentStatus;
 use App\Jobs\PublishDeployment;
 use App\Models\Deployment;
+use App\Models\Experiment;
 use App\Models\Project;
 use App\Models\User;
 use App\Projects\ProjectRepository;
@@ -42,7 +43,8 @@ class PublishProject
 
             $deployment = $project->deployments()->create([
                 'user_id' => $owner->id,
-                'commit_sha' => $this->repository->head($project),
+                // Only the main app is published, never an idea.
+                'commit_sha' => $this->repository->head($project, Experiment::mainBranch()),
                 'branch' => (string) $project->deploy_branch,
                 'status' => DeploymentStatus::Checking,
             ]);

@@ -4,6 +4,7 @@ namespace App\Actions\Features;
 
 use App\Actions\Runs\StartRun;
 use App\Enums\FeatureRequestStatus;
+use App\Models\Experiment;
 use App\Models\FeatureRequest;
 use App\Models\User;
 use App\Projects\ProjectRepository;
@@ -34,11 +35,12 @@ class RequestStepChange
         $followUp = $parent->followUps()->create([
             'user_id' => $requester->id,
             'project_id' => $parent->project_id,
+            'experiment_id' => $parent->experiment_id,
             'prompt' => $prompt,
             'target_step' => $stepKey,
             'status' => FeatureRequestStatus::Generating,
             'generator' => $parent->generator,
-            'base_revision' => $parent->commit_sha !== null ? $this->repository->head($parent->project) : $parent->base_revision,
+            'base_revision' => $parent->commit_sha !== null ? $this->repository->head($parent->project, $parent->branch() ?? Experiment::mainBranch()) : $parent->base_revision,
         ]);
 
         $this->startRun->handle($followUp);
