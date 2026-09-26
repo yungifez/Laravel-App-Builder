@@ -269,6 +269,12 @@ Providers are the names in `config/ai.php` (for example `anthropic` or
 provider's default. Keys are per provider (for example `ANTHROPIC_API_KEY`), so
 one key covers every role that uses that provider.
 
+When the planner's or reviewer's provider cannot serve a call (it is down,
+rate-limited or out of credit), the call moves to the next provider in
+`BUILDER_MODEL_FAILOVER` that has a key, on that provider's default model. The
+run log records a review that moved. The coder never changes provider in the
+middle of a change.
+
 ## Local services
 
 | Service    | Image           | Host port (override)                    |

@@ -104,6 +104,12 @@ return [
             'provider' => env('BUILDER_REVIEWER_PROVIDER'),
             'model' => env('BUILDER_REVIEWER_MODEL'),
         ],
+
+        // Providers the planner and reviewer move on to, in order, when
+        // their own cannot serve a call (down, rate-limited or out of
+        // credit). Only providers with a key are tried, on their default
+        // model. The coder never switches mid-change.
+        'failover' => json_decode((string) env('BUILDER_MODEL_FAILOVER', '["openai", "anthropic"]'), true) ?: [],
     ],
 
     /*

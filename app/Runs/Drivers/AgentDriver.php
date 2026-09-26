@@ -49,11 +49,7 @@ class AgentDriver implements ConstructionDriver
         $prompt = $this->planningPrompt($context);
 
         for ($attempt = 1; ; $attempt++) {
-            $response = FeaturePlanner::make()->prompt(
-                $prompt,
-                provider: ModelRole::Planner->provider(),
-                model: ModelRole::Planner->model(),
-            );
+            $response = FeaturePlanner::make()->prompt($prompt, provider: ModelRole::Planner->providers());
 
             $this->recordModelUsage->handle($run, ModelRole::Planner, $response);
 
@@ -87,7 +83,7 @@ class AgentDriver implements ConstructionDriver
 
     public function review(Run $run, ReviewEvidence $evidence): Review
     {
-        return $this->reviewWith($run, $evidence, [ModelRole::Reviewer->provider() => ModelRole::Reviewer->model()]);
+        return $this->reviewWith($run, $evidence, ModelRole::Reviewer->providers());
     }
 
     /**

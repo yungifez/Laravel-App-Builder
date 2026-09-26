@@ -39,4 +39,24 @@ enum ModelRole: string
 
         return is_string($model) && $model !== '' ? $model : null;
     }
+
+    /**
+     * Get the providers to try in order, with their models: the role's own
+     * first, then each failover provider that has a key, on its default
+     * model. The AI SDK moves to the next one on provider trouble.
+     *
+     * @return array<string, string|null>
+     */
+    public function providers(): array
+    {
+        $providers = [$this->provider() => $this->model()];
+
+        foreach ((array) config('builder.models.failover') as $provider) {
+            if (is_string($provider) && filled(config("ai.providers.{$provider}.key"))) {
+                $providers += [$provider => null];
+            }
+        }
+
+        return $providers;
+    }
 }

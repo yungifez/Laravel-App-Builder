@@ -30,4 +30,17 @@ class ModelRoleTest extends TestCase
         $this->assertSame('openai', ModelRole::Coder->provider());
         $this->assertNull(ModelRole::Coder->model());
     }
+
+    public function test_a_role_fails_over_to_the_other_providers_that_have_a_key()
+    {
+        config([
+            'builder.models.planner' => ['provider' => 'anthropic', 'model' => 'frontier-model'],
+            'builder.models.failover' => ['openai', 'anthropic', 'gemini'],
+            'ai.providers.openai.key' => 'openai-test-key',
+            'ai.providers.anthropic.key' => 'anthropic-test-key',
+            'ai.providers.gemini.key' => null,
+        ]);
+
+        $this->assertSame(['anthropic' => 'frontier-model', 'openai' => null], ModelRole::Planner->providers());
+    }
 }

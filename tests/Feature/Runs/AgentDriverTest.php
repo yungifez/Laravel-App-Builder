@@ -20,7 +20,9 @@ use App\Models\Run;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
+use Laravel\Ai\Exceptions\InsufficientCreditsException;
 use Laravel\Ai\Prompts\AgentPrompt;
+use Laravel\Ai\Providers\Provider;
 use Laravel\Ai\Responses\Data\ToolCall;
 use Tests\Concerns\PreparesRuns;
 use Tests\Concerns\UsesReferenceSolutions;
@@ -50,6 +52,23 @@ class AgentDriverTest extends TestCase
             'builder.models.coder' => ['provider' => 'anthropic', 'model' => 'coder-model'],
             'builder.models.reviewer' => ['provider' => 'openai', 'model' => 'reviewer-model'],
         ]);
+    }
+
+    public function test_the_plan_is_made_on_the_next_provider_when_the_planners_is_out_of_credit()
+    {
+        config([
+            'builder.models.failover' => ['openai'],
+            'ai.providers.openai.key' => 'openai-test-key',
+        ]);
+        FeaturePlanner::fake(fn (string $prompt, $attachments, Provider $provider) => $provider->name() === 'anthropic'
+            ? throw InsufficientCreditsException::forProvider('anthropic')
+            : $this->plan());
+        FeatureCoder::fake(['Done.']);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame('Teams get an optional description.', $run->plan['summary']);
+        $this->assertSame('openai', $run->events()->where('type', 'model_call')->where('data->role', 'planner')->sole()->data['provider']);
     }
 
     public function test_the_planner_coder_and_reviewer_build_and_accept_a_verified_change()

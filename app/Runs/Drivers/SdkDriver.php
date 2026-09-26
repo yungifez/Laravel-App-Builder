@@ -97,7 +97,7 @@ class SdkDriver extends AgentDriver
         return $this->reviewWith(
             $run,
             $evidence,
-            [$provider => is_string($model) && $model !== '' ? $model : null] + [ModelRole::Reviewer->provider() => ModelRole::Reviewer->model()],
+            [$provider => is_string($model) && $model !== '' ? $model : null] + ModelRole::Reviewer->providers(),
         );
     }
 

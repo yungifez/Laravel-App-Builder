@@ -65,7 +65,7 @@ class DraftProjectNotes implements ShouldQueue
                 }
             }
 
-            $response = NotesDrafter::make()->prompt($prompt, provider: ModelRole::Planner->provider(), model: ModelRole::Planner->model());
+            $response = NotesDrafter::make()->prompt($prompt, provider: ModelRole::Planner->providers());
 
             $this->project->update(['setup_model_calls' => [...$this->project->setup_model_calls ?? [], [
                 'role' => ModelRole::Planner->value,
