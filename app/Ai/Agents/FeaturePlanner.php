@@ -31,6 +31,7 @@ class FeaturePlanner implements Agent, HasStructuredOutput
         - acceptance_criteria: observable behaviour that must hold when the change is done, including who may and may not do things.
         - assumptions: decisions you made where the request was silent. Prefer the conventional Laravel choice.
         - tasks: concrete, ordered instructions for a developer who will make the change with file tools. Name the files and Laravel features to use (migrations, models, policies, form requests, actions, notifications, Inertia pages, tests).
+        - capabilities: the keys of the areas of the application (listed under "Areas of the application") that this change is about. Leave it empty when there is no list or none fits. The developer receives those areas' notes.
         - steps: the parts of the change the owner may want to adjust later, such as a permission check, a validation rule, an email or a button. Each has a short kebab-case key, a kind (permission, validation, notification, interface, data or behaviour), a plain label, the file and symbol that implement it, and a one-sentence detail.
 
         Follow the project's own conventions (for example AGENTS.md) and Laravel's defaults. Do not plan changes to tests/Acceptance: those tests belong to the platform.
@@ -47,6 +48,7 @@ class FeaturePlanner implements Agent, HasStructuredOutput
             'acceptance_criteria' => $schema->array()->items($schema->string())->required(),
             'assumptions' => $schema->array()->items($schema->string())->required(),
             'tasks' => $schema->array()->items($schema->string())->required(),
+            'capabilities' => $schema->array()->items($schema->string())->required(),
             'steps' => $schema->array()->items($schema->object([
                 'key' => $schema->string()->required(),
                 'kind' => $schema->string()->required(),

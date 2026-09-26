@@ -36,6 +36,13 @@ use Illuminate\Support\Carbon;
 #[Fillable(['project_id', 'user_id', 'parent_id', 'prompt', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'steps', 'acceptance', 'error'])]
 class FeatureRequest extends Model
 {
+    /**
+     * Where a workspace keeps the patches of earlier changes while applying
+     * them. It is removed before the workspace is used; `.builder/` itself
+     * belongs to the application (its project context).
+     */
+    public const LINEAGE_DIRECTORY = '.builder-lineage';
+
     /** @use HasFactory<FeatureRequestFactory> */
     use HasFactory;
 

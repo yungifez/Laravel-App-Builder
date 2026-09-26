@@ -36,6 +36,8 @@ class ChangeReviewer implements Agent, HasStructuredOutput
         Report style issues and small improvements as minor findings.
 
         Set approved to true only when there are no blocking findings. Name the file for each finding where you can.
+
+        Then describe the change for the owner, who is not technical, as changes: one entry per behaviour they would notice, with what it did before and what it does now, in plain words and without file or class names. Set area to the key of the area it belongs to from "Areas this change touched", or null when none fits. Include behaviour that changed in areas the request was not about: the owner decides whether it is wanted.
         INSTRUCTIONS;
     }
 
@@ -51,6 +53,12 @@ class ChangeReviewer implements Agent, HasStructuredOutput
                 'severity' => $schema->string()->enum(['blocking', 'minor'])->required(),
                 'summary' => $schema->string()->required(),
                 'file' => $schema->string()->nullable(),
+            ])->withoutAdditionalProperties())->required(),
+            'changes' => $schema->array()->items($schema->object([
+                'area' => $schema->string()->nullable(),
+                'behavior' => $schema->string()->required(),
+                'before' => $schema->string()->required(),
+                'now' => $schema->string()->required(),
             ])->withoutAdditionalProperties())->required(),
         ];
     }

@@ -109,12 +109,43 @@ export type Run = {
         acceptance_criteria: string[];
         assumptions: string[];
     } | null;
+    context: {
+        mode: 'none' | 'flat' | 'selective' | 'selective_without_effects';
+        targets: string[];
+        included: { file: string; tokens: number }[];
+        tokens: number;
+        problems: string[];
+    } | null;
+    review: RunReview | null;
     repairs: number;
     operations: number;
     budget: { operations: number; minutes: number; repairs: number };
     started_at: string | null;
     finished_at: string | null;
     events: RunEvent[];
+};
+
+export type ChangeSection =
+    | 'requested'
+    | 'may_also_affect'
+    | 'unexpected'
+    | 'other';
+
+export type ChangedArea = { key: string; name: string; files: string[] };
+
+export type RunReview = {
+    summary: string;
+    changes: {
+        area: string | null;
+        area_name: string | null;
+        section: ChangeSection;
+        behavior: string;
+        before: string;
+        now: string;
+    }[];
+    areas: Record<Exclude<ChangeSection, 'other'>, ChangedArea[]>;
+    unclaimed: string[];
+    context_updates: string[];
 };
 
 export type PreviewStatus = 'starting' | 'ready' | 'failed' | 'stopped';

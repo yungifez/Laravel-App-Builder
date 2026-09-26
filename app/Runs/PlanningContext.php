@@ -2,6 +2,8 @@
 
 namespace App\Runs;
 
+use App\Context\ProjectContext;
+
 /**
  * The bounded view of the project a planner works from.
  */
@@ -19,5 +21,17 @@ final readonly class PlanningContext
         public ?string $parentRequest = null,
         public ?string $parentSummary = null,
         public ?array $targetStep = null,
+        public ProjectContext $projectContext = new ProjectContext,
     ) {}
+
+    /**
+     * Get the areas the request is known to be about before planning: the
+     * areas that claim the file of the step the owner selected.
+     *
+     * @return list<string>
+     */
+    public function preselectedCapabilities(): array
+    {
+        return $this->targetStep === null ? [] : $this->projectContext->claiming($this->targetStep['file']);
+    }
 }

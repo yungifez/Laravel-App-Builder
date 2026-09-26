@@ -56,8 +56,8 @@ class PreviewTest extends TestCase
         $this->assertMatchesRegularExpression('/^p[a-z0-9]{31}$/', $preview->host);
 
         $workspaceId = $this->driver->copies[0]['workspace'];
-        $this->assertSame('PARENT PATCH', $this->driver->files["{$workspaceId}:.builder/01.patch"]);
-        $this->assertSame('CHILD PATCH', $this->driver->files["{$workspaceId}:.builder/02.patch"]);
+        $this->assertSame('PARENT PATCH', $this->driver->files["{$workspaceId}:.builder-lineage/01.patch"]);
+        $this->assertSame('CHILD PATCH', $this->driver->files["{$workspaceId}:.builder-lineage/02.patch"]);
         $this->assertContains(['composer', 'install'], array_column($this->driver->executed, 'command'));
 
         $service = $this->driver->services[0];

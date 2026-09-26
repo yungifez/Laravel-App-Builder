@@ -27,16 +27,18 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $lease_owner
  * @property CarbonImmutable|null $lease_expires_at
  * @property int $workspace_revision
- * @property array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null}|null $plan The saved plan the run builds against
+ * @property array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>}|null $plan The saved plan the run builds against
+ * @property array{mode: string, targets: list<string>, text: string, included: list<array{file: string, tokens: int}>, outline: list<array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed: string|null}>}>, problems: list<string>}|null $context The project context compiled for the run's agents
  * @property int $repairs Repair attempts made after failed verification or review
  * @property array{reason: string, details: list<string>}|null $feedback What the next implementing pass must address
+ * @property array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array{area: string|null, section: string, behavior: string, before: string, now: string}>, classification: array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>}}|null $review The latest review of the run's change
  * @property string|null $error
  * @property CarbonImmutable|null $started_at
  * @property CarbonImmutable|null $finished_at
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['workspace_id', 'driver', 'status', 'fencing_token', 'lease_owner', 'lease_expires_at', 'workspace_revision', 'plan', 'repairs', 'feedback', 'error', 'started_at', 'finished_at'])]
+#[Fillable(['workspace_id', 'driver', 'status', 'fencing_token', 'lease_owner', 'lease_expires_at', 'workspace_revision', 'plan', 'context', 'repairs', 'feedback', 'review', 'error', 'started_at', 'finished_at'])]
 class Run extends Model
 {
     /** @use HasFactory<RunFactory> */
@@ -56,6 +58,8 @@ class Run extends Model
             'plan' => 'array',
             'repairs' => 'integer',
             'feedback' => 'array',
+            'context' => 'array',
+            'review' => 'array',
             'lease_expires_at' => 'datetime',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',

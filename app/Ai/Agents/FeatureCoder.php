@@ -46,6 +46,7 @@ class FeatureCoder implements Agent, HasMiddleware, HasTools
         - Follow the project's conventions (AGENTS.md if present) and Laravel's defaults. Add or update feature tests for the behaviour you build.
         - Never change tests/Acceptance, .env, vendor or .git: the platform refuses it.
         - Run the tests with run_command when your change is complete, and fix failures.
+        - The application describes itself in .builder/: project.md and one file per area in .builder/capabilities/. When your change alters what an area does, update that file's notes in plain language, and its paths when you add code for it. When you find that the area affects another one, add an effect with source: agent and a one-line reason. Never remove what the owner wrote unless the request changes it.
         - If status is stopped, stop at once.
 
         You have a limited number of tool calls. When you are done, reply with a short summary of what you changed. Your summary is not taken as proof: the change is verified and reviewed independently.

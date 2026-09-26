@@ -87,7 +87,7 @@ class VerifyFeatureRequest implements ShouldQueue
             $driver->copyDirectory((string) $workspace->driver_id, $project->source_path);
 
             foreach ($featureRequest->lineage() as $position => $request) {
-                $patch = sprintf('.builder/%02d.patch', $position + 1);
+                $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);
                 $driver->writeFile((string) $workspace->driver_id, $patch, (string) $request->patch);
 
                 $command = $runWorkspaceCommand->handle($workspace, ['git', 'apply', '--whitespace=nowarn', $patch], 120);
@@ -100,7 +100,7 @@ class VerifyFeatureRequest implements ShouldQueue
                 }
             }
 
-            $runWorkspaceCommand->handle($workspace, ['rm', '-rf', '.builder'], 30);
+            $runWorkspaceCommand->handle($workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], 30);
 
             if (! $this->runSteps($runWorkspaceCommand, $workspace, 'setup')) {
                 $this->skipRemaining(['checks'], $featureRequest);

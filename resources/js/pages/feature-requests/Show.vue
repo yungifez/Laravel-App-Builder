@@ -21,6 +21,8 @@ import { Label } from '@/components/ui/label';
 import { show as showFeatureRequest } from '@/routes/feature-requests';
 import { index, show as showProject } from '@/routes/projects';
 import type {
+    ChangedArea,
+    ChangeSection,
     FeatureRequestDetail,
     FeatureRequestSummary,
     Preview,
@@ -124,6 +126,8 @@ function describeEvent(event: RunEvent): string {
             return `${runLabels[data.from as Run['status']]} → ${runLabels[data.to as Run['status']]}`;
         case 'workspace_ready':
             return 'Workspace prepared';
+        case 'context_compiled':
+            return `Project context compiled (${String(data.mode)}): ${(data.included as unknown[]).length} parts, about ${String(data.tokens)} tokens`;
         case 'operation':
             return `${String(data.tool)} ${String(data.status)}${data.error ? `: ${String(data.error)}` : ''}`;
         case 'operation_reconciling':
@@ -139,6 +143,53 @@ function describeEvent(event: RunEvent): string {
         default:
             return event.type;
     }
+}
+
+const changeSections: {
+    key: ChangeSection;
+    title: string;
+    description: string;
+}[] = [
+    {
+        key: 'requested',
+        title: 'What you asked for',
+        description: 'Changes in the parts of the app this request is about.',
+    },
+    {
+        key: 'may_also_affect',
+        title: 'May also have changed',
+        description:
+            'Parts of the app that are often affected by the ones you asked about.',
+    },
+    {
+        key: 'unexpected',
+        title: 'Also changed',
+        description:
+            'This request was not about these parts of the app. Check that you want these changes.',
+    },
+    {
+        key: 'other',
+        title: 'Other changes',
+        description: '',
+    },
+];
+
+const contextModeLabels: Record<NonNullable<Run['context']>['mode'], string> = {
+    none: 'no project context',
+    flat: 'all project notes',
+    selective: 'the notes for the parts this change touches',
+    selective_without_effects:
+        'the notes for the parts this change touches, without related parts',
+};
+
+function changesIn(section: ChangeSection) {
+    return (props.run?.review?.changes ?? []).filter(
+        (change) => change.section === section,
+    );
+}
+
+function areasIn(section: ChangeSection): ChangedArea[] {
+    return section === 'other' ? [] : (props.run?.review?.areas[section] ?? []);
 }
 
 const previewLabels: Record<Preview['status'], string> = {
@@ -345,6 +396,103 @@ function lineClass(line: string): string {
                     </ul>
                 </template>
             </div>
+
+            <div
+                v-if="run.review"
+                class="space-y-4 rounded-lg border p-4 text-sm"
+                data-test="run-review"
+            >
+                <p class="font-medium">What changed</p>
+                <template v-for="section in changeSections" :key="section.key">
+                    <div
+                        v-if="
+                            changesIn(section.key).length > 0 ||
+                            areasIn(section.key).length > 0
+                        "
+                        class="space-y-2"
+                        :data-test="`review-${section.key}`"
+                    >
+                        <Alert
+                            v-if="section.key === 'unexpected'"
+                            variant="destructive"
+                        >
+                            <AlertTitle>{{ section.title }}</AlertTitle>
+                            <AlertDescription>{{
+                                section.description
+                            }}</AlertDescription>
+                        </Alert>
+                        <template v-else>
+                            <p class="font-medium">{{ section.title }}</p>
+                            <p
+                                v-if="section.description"
+                                class="text-muted-foreground"
+                            >
+                                {{ section.description }}
+                            </p>
+                        </template>
+                        <ul class="space-y-2">
+                            <li
+                                v-for="(change, index) in changesIn(
+                                    section.key,
+                                )"
+                                :key="index"
+                            >
+                                <p class="font-medium">
+                                    {{ change.behavior }}
+                                    <span
+                                        v-if="change.area_name"
+                                        class="font-normal text-muted-foreground"
+                                        >· {{ change.area_name }}</span
+                                    >
+                                </p>
+                                <p class="text-muted-foreground">
+                                    Before: {{ change.before }}
+                                </p>
+                                <p>Now: {{ change.now }}</p>
+                            </li>
+                        </ul>
+                        <p
+                            v-if="areasIn(section.key).length > 0"
+                            class="text-xs text-muted-foreground"
+                        >
+                            Parts touched:
+                            {{
+                                areasIn(section.key)
+                                    .map((area) => area.name)
+                                    .join(', ')
+                            }}
+                        </p>
+                    </div>
+                </template>
+                <p
+                    v-if="run.review.context_updates.length > 0"
+                    class="text-xs text-muted-foreground"
+                    data-test="review-context-updates"
+                >
+                    Updated the app's own notes:
+                    {{ run.review.context_updates.join(', ') }}
+                </p>
+            </div>
+
+            <p
+                v-if="run.context"
+                class="text-xs text-muted-foreground"
+                data-test="run-context"
+            >
+                The builder was given
+                {{ contextModeLabels[run.context.mode] }} (about
+                {{ run.context.tokens }} tokens<template
+                    v-if="run.context.included.length > 0"
+                    >:
+                    {{
+                        run.context.included.map((part) => part.file).join(', ')
+                    }}</template
+                >).
+                <template v-if="run.context.problems.length > 0">
+                    Some notes could not be read:
+                    {{ run.context.problems.join(' ') }}
+                </template>
+            </p>
 
             <Form
                 v-if="runInProgress && run.status !== 'cancelling'"

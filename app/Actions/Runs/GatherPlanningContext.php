@@ -2,6 +2,7 @@
 
 namespace App\Actions\Runs;
 
+use App\Actions\Context\ReadProjectContext;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Models\Run;
 use App\Models\Workspace;
@@ -13,11 +14,13 @@ class GatherPlanningContext
     public function __construct(
         private WorkspaceManager $workspaces,
         private RunWorkspaceCommand $runWorkspaceCommand,
+        private ReadProjectContext $readProjectContext,
     ) {}
 
     /**
      * Build the planner's bounded view of the project: the request, what it
-     * follows up on, the file list and a few key files.
+     * follows up on, the file list, a few key files and the application's
+     * own notes in `.builder/`.
      */
     public function handle(Run $run, Workspace $workspace): PlanningContext
     {
@@ -43,6 +46,7 @@ class GatherPlanningContext
             parentRequest: $parent?->prompt,
             parentSummary: $parent?->summary,
             targetStep: $targetStep,
+            projectContext: $this->readProjectContext->handle($workspace, $files),
         );
     }
 
