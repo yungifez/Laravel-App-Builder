@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 11.** This document consolidates the direction in [direction/](direction/)
+**Version 12.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -21,7 +21,9 @@ plain-language behaviour review and verification, with every other subsystem
 deferred until a real failure asks for it. For V0, §26 wins over the sections
 before it.** Version 11 adds decisions before generation
 ([§26.9](#269-decisions-before-generation-version-11)): the cheapest reliable
-decision first, failing safe to the baseline. When they disagree, the direction documents state intent
+decision first, failing safe to the baseline. Version 12 adds audits and adversarial reviews
+([§26.10](#2610-audits-and-adversarial-reviews-version-12)), with evidence on every
+finding; V0 builds only the deterministic quick health check. When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -1860,3 +1862,93 @@ with a real payoff: _complexity_, which lets trivial changes skip the planner
 and use a cheaper coder. It keeps the layer only if shadow data shows that
 this lowers cost per accepted change once the repairs caused by wrong
 "trivial" calls are counted.
+
+### 26.10 Audits and adversarial reviews (version 12)
+
+Direction 13 adds two maintenance workflows. An **audit** asks whether the
+application is healthy and whether what we know about it is still true. An
+**adversarial review** asks how the application can fail, be abused or surprise
+its owner. Principles: **users choose assurance; the control plane chooses
+intelligence**, and **incremental work maintains understanding locally;
+periodic review reconciles it globally**.
+
+**No ceremonial reviews.** Each level has a written promise that is exactly
+the work it does, and every report states its coverage (areas inspected, checks
+run, counterexamples tried) and what it did _not_ do. Every finding carries its
+evidence: **reproduced** (a generated test fails), **observed** (a tool's
+output, such as a vulnerable package or a route any member can reach) or
+**reasoned** (a model's judgement). Reasoned findings are shown as "worth
+checking", never as fact.
+
+| Level                        | Does                                                                                                                                                                                                                                                                                    | Intelligence                                                           | When           |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | -------------- |
+| **Quick health check**       | Reconciles `.builder/` with the code: paths that match nothing, code no area claims, Effects naming unknown areas, areas changed since the last audit whose notes did not change; dependency advisories (`composer audit`, `npm audit`); the full test suite and static analysis        | deterministic; at most one small-model call to phrase the summary      | **V0**         |
+| Thorough audit               | Quick, plus one reasoning pass per area changed since the last audit (and the areas their Effects name): notes and rules against the code, behaviours without tests, proposed Effects                                                                                                   | frontier model per area, bounded by a budget shown up front            | after V0       |
+| Deep audit                   | Thorough across every area, changed areas first; tracing workflows across areas; architectural drift                                                                                                                                                                                    | frontier model; decision model to prioritise areas                     | later          |
+| Permissions challenge        | The first adversarial level: a **who-can-do-what matrix** from route and policy introspection, probed with generated requests as each role, including another team's records (tenant isolation needs no stated intent: crossing it is always a finding); compared with the notes' rules | deterministic probes; a model only turns prose rules into expectations | first after V0 |
+| Serious / adversarial review | Counterexamples for failure paths (partial failures, retries, duplicates, races, outages, destructive operations), dangerous combinations of valid behaviours, claims in the notes challenged                                                                                           | independent frontier reviewer (another provider), budgeted             | later          |
+
+**Scope from Behaviour and Effects, never limited by them.** The areas changed
+since the last audit (the diff mapped through `paths`, as in §26.4) come first,
+then the areas their Effects name. Effects are _leads_: "what if billing fails
+after the cancellation succeeds?". The adversary always also spends part of its
+budget outside the Effects and outside the notes, and an interaction it finds
+there becomes a proposed Effect.
+
+**What updates knowledge automatically, and what is proposed.** Facts derived
+from code (a path renamed, an Effect's `observed` date refreshed with
+deterministic evidence) are fixed in a maintenance commit listed in the report.
+Anything about intent (rules, decisions, behaviour notes, owner-written
+Effects) is proposed. A contradiction between intent and code ("you said only
+owners manage billing; admins can change payment methods") is a question with
+two answers, keep the code or change it, and is never resolved automatically.
+Effects are never deleted automatically; stale ones are proposed as
+`historical`.
+
+**Counterexamples become regression tests.** The adversary writes tests in a
+scratch copy and runs them. A failing test makes the finding _reproduced_ and
+travels with it: "Fix this" opens a normal change request with that test as a
+protected acceptance test, so the fix must pass it and it stays as protection.
+Tests that could not break the application are offered as extra coverage.
+
+**Proposes, never refactors.** Review runs have read-only access to the project
+(tests go to a scratch copy). Their output is findings and proposed change
+requests; remediation goes through the normal pipeline, one owner decision per
+finding. There is no "fix everything".
+
+**Independent review without exploding cost.** A second provider is used only
+at the serious and adversarial levels, and for areas the diff marks risky
+(permissions, persisted data, destructive). It gets the claims, the code and the
+tools, never the builder's transcript. The expected cost and time are shown
+before starting; when the budget runs out the review stops and reports its
+coverage.
+
+**Delta-aware.** An `audits` record keeps the level, focus, base and head
+commits, coverage, findings and cost. The next review starts from the diff
+since the last one at that level or deeper.
+
+**Triggers, never the calendar alone:** many accepted changes since the last
+review, a lockfile change, changes the diff marks as touching permissions,
+migrations or destructive operations, repeated repairs or reverts in one area,
+a new area, and before publishing. Each is suggested once, in plain words
+("Billing and staff permissions changed since the last review. A thorough
+check before publishing?"), and the owner decides.
+
+**Two depths of the same finding.** The owner sees a plain title, the
+consequence ("two people changing the same booking at once could leave
+availability wrong") and three answers: _Fix this_, _It's intended_ (records a
+confirmed note, so it is not raised again), _Not now_. A power user expands
+into files, the reproduction, the test and a suggested fix.
+
+**Telemetry:** per review, the level, focus, cost, duration and coverage; per
+finding, the evidence type and the owner's answer, with time to fix. The
+question that justifies the workflows: do areas that were reviewed see fewer
+later reverts, corrections and verification failures than they did before, or
+than areas that were not? Also the cost per reproduced finding, and the
+dismissal rate by evidence type (a high rate for reasoned findings means the
+reasoning passes are ceremony and should shrink).
+
+V0 builds only the **quick health check**: it is deterministic, and it keeps the
+agent-maintained notes of §26.3 from rotting. Everything else waits for owners
+to be using the product, since a review of software nobody has built yet proves
+nothing.
