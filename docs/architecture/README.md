@@ -17,6 +17,7 @@
     10. [Precedents and possibility discovery](direction/10-precedents-and-possibility-discovery.md)
     11. [Selective context, Effects and cheap validation](direction/11-selective-context-effects-and-cheap-validation.md)
     12. [Layered intelligence and decision models](direction/12-layered-intelligence-and-decision-models.md)
+    13. [Audits and adversarial review](direction/13-audits-and-adversarial-review.md)
 - **[source/](source/)**: the original planning documents.
     - [Implementation plan v1](source/implementation-plan-v1.md): gates G0–G6,
       the invitation contract and the pilot plan.
