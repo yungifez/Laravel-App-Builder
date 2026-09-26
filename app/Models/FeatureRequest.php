@@ -196,6 +196,16 @@ class FeatureRequest extends Model
     }
 
     /**
+     * Get the decisions made about the request before it was built.
+     *
+     * @return HasMany<Decision, $this>
+     */
+    public function decisions(): HasMany
+    {
+        return $this->hasMany(Decision::class);
+    }
+
+    /**
      * Get the request's most recent construction run.
      *
      * @return HasOne<Run, $this>

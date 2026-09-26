@@ -128,6 +128,37 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Decisions
+    |--------------------------------------------------------------------------
+    |
+    | Before a change is built, a cheap typed decision model (Jev, through the
+    | laravel/ai "typesafe" provider) answers a few questions about the
+    | request: how big it is, whether it is only a question, and whether it
+    | touches permissions, stored data or deletes things. Each answer has a
+    | confidence, and may only ever act at or above its threshold. For now
+    | nothing acts (shadow mode): answers are kept and compared with what
+    | happened, with `php artisan builder:decisions`. Without a key for any
+    | listed provider, no decisions are made.
+    |
+    */
+
+    'decisions' => [
+        'providers' => json_decode((string) env('BUILDER_DECISION_PROVIDERS', '["typesafe"]'), true) ?: [],
+        'timeout' => (int) env('BUILDER_DECISION_TIMEOUT', 10),
+
+        // Decisions that would make a change cheaper need to be very sure;
+        // decisions that would make it safer may act on a lower confidence.
+        'thresholds' => [
+            'complexity' => 0.9,
+            'question' => 0.9,
+            'permissions' => 0.6,
+            'persisted_data' => 0.6,
+            'destructive' => 0.6,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Construction Runs
     |--------------------------------------------------------------------------
     |

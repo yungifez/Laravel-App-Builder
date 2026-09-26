@@ -2,7 +2,9 @@
 
 namespace App\Actions\Runs;
 
+use App\Actions\Decisions\MakeDecisions;
 use App\Enums\RunStatus;
+use App\Jobs\DecideFeatureRequest;
 use App\Jobs\ExecuteRun;
 use App\Models\FeatureRequest;
 use App\Models\Run;
@@ -26,6 +28,12 @@ class StartRun
             ]);
 
             $run->recordEvent('created', ['driver' => $run->driver]);
+
+            // Queued before the run: once decisions act, they must be known
+            // before the run starts, and the call takes about a second.
+            if (MakeDecisions::providers() !== [] && ! $featureRequest->decisions()->exists()) {
+                DecideFeatureRequest::dispatch($featureRequest)->afterCommit();
+            }
 
             ExecuteRun::dispatch($run)->afterCommit();
 

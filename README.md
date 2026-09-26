@@ -253,6 +253,28 @@ configuration in `config/ai.php`. Its migration creates the
 to run the app or the tests: the default `scripted` driver makes no model calls,
 and the tests fake the agents.
 
+### Decisions before building
+
+With `TYPESAFE_API_KEY` set, each new change request is classified by Jev, a
+typed decision model, through the AI SDK's `typesafe` classification provider.
+The model gets only the owner's words. It answers five questions:
+
+- how big the change is (trivial, normal or substantial);
+- whether the owner is only asking a question;
+- whether the change touches permissions, stored data, or deletes something.
+
+Each answer is kept in the `decisions` table with its probabilities and
+confidence. For now nothing acts on them (shadow mode). The run never waits
+for them. To see how often the confident answers matched what happened, run:
+
+```bash
+vendor/bin/sail artisan builder:decisions
+```
+
+What happened comes from the final diff and its repairs. For example, a new
+migration means stored data changed. `BUILDER_DECISION_PROVIDERS` lists the
+classification providers to try in order.
+
 ### Model roles
 
 The `agent` driver uses three roles, each with its own provider and model

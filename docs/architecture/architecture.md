@@ -2071,6 +2071,37 @@ the diff's areas). This yields the share decided at each level, confident
 errors, missed escalations and their repair cost, and the effect on cost per
 accepted change.
 
+**As built (V1.1, shadow mode).** Jev is called through the AI SDK's
+classification API (`Laravel\Ai\Classification`, the `typesafe` provider).
+The SDK is the `Decider` contract: its provider list is the driver choice and
+the failover. One call per new change request, queued beside the run, asks
+five typed questions:
+
+- complexity (a choice);
+- whether the request is only a question (yes/no);
+- whether it touches permissions, persisted data, or is destructive (yes/no each).
+
+The question decision was added because a question already skips the build
+(§19). If Jev can spot one with confidence, the planner call can be skipped
+for it too. The state sent is the owner's words only.
+
+Each answer is a row in `decisions` (choice, probabilities, confidence,
+threshold, acted, latency), not a run event: decisions belong to the request
+and are made before its run exists. `acted` is always false for now.
+
+`php artisan builder:decisions` joins the answers with the outcome, read from
+the final diff and its repairs:
+
+- a migration means persisted data;
+- a policy, middleware or authorization call means permissions;
+- a drop or delete outside a migration's `down()` means destructive;
+- the number of changed files outside tests, plus the repairs, gives the complexity;
+- an answered request is a question.
+
+It reports, per decision, how often the answer was confident, and how often a
+confident answer was right. A decision may start acting only when that report
+shows its confident errors are rare.
+
 **The honest expectation.** A change's cost is dominated by the coder loop and
 verification, and its latency by verification, so a 100 ms decision matters
 only when it removes a stage. V0 therefore proves the layer on one decision
@@ -2415,16 +2446,16 @@ these components prove that claim, so only these are **required**:
 
 ### 27.2 Postponed to V1.1
 
-| Postponed                                                     | Why it can wait                                                                                                                                                                                                                   |
-| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Decision layer (Jev), even in shadow mode                     | The brief's model call already classifies. A decision model pays off only by skipping stages, and needs V1 traffic to show which ones. V1 routes deterministically: selections go to the inspector, everything else to the brief. |
-| Thorough and deep audits, adversarial review                  | They need real applications with history. V1 keeps the quick health check (deterministic), which protects the notes.                                                                                                              |
-| Precedent library                                             | Hand-written cards in owner sessions first (§26.6, F).                                                                                                                                                                            |
-| Compatibility mode                                            | V1 preserve clauses already cover "don't change these"; the mode is a user-chosen set of protected interfaces on top.                                                                                                             |
-| Backend flow visualisation                                    | Behaviour notes already say "what happens" in words. A diagram only restates them until behaviour is extracted automatically.                                                                                                     |
-| Small-generative-model tier                                   | No V1 job needs it: answers are written deterministically, and the coder updates the notes in its own diff.                                                                                                                       |
-| Deploy checks beyond Cloud's own (queues, schedule, env diff) | Laravel Cloud deploys and reports from the Git branch. V1 shows its status and keeps the revert.                                                                                                                                  |
-| Multi-provider routing                                        | The reviewer already runs on a different provider through laravel/ai. Anything more waits for telemetry.                                                                                                                          |
+| Postponed                                                     | Why it can wait                                                                                                                                                                                                        |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Decision layer (Jev) acting on runs                           | The brief's model call already classifies. A decision model pays off only by skipping stages, and needs traffic to show which ones. V1.1 runs it in shadow mode only (§26.9, "As built"); V1 routes deterministically. |
+| Thorough and deep audits, adversarial review                  | They need real applications with history. V1 keeps the quick health check (deterministic), which protects the notes.                                                                                                   |
+| Precedent library                                             | Hand-written cards in owner sessions first (§26.6, F).                                                                                                                                                                 |
+| Compatibility mode                                            | V1 preserve clauses already cover "don't change these"; the mode is a user-chosen set of protected interfaces on top.                                                                                                  |
+| Backend flow visualisation                                    | Behaviour notes already say "what happens" in words. A diagram only restates them until behaviour is extracted automatically.                                                                                          |
+| Small-generative-model tier                                   | No V1 job needs it: answers are written deterministically, and the coder updates the notes in its own diff.                                                                                                            |
+| Deploy checks beyond Cloud's own (queues, schedule, env diff) | Laravel Cloud deploys and reports from the Git branch. V1 shows its status and keeps the revert.                                                                                                                       |
+| Multi-provider routing                                        | The reviewer already runs on a different provider through laravel/ai. Anything more waits for telemetry.                                                                                                               |
 
 ### 27.3 Still architecture for architecture's sake
 
