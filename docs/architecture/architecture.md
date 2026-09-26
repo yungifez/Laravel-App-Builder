@@ -1,0 +1,801 @@
+# Architecture
+
+**Version 6.** This document consolidates the direction in [direction/](direction/)
+into one architecture. When they disagree, the direction documents state intent
+and this document states the current design; raise the disagreement rather than
+silently following either.
+
+- [Principles](#1-principles)
+- [Positioning: convention over generation](#2-positioning-convention-over-generation)
+- [Users and progressive disclosure](#3-users-and-progressive-disclosure)
+- [Two ontologies](#4-two-ontologies)
+- [System overview](#5-system-overview)
+- [Product Behavior Graph](#6-product-behavior-graph)
+- [Project Memory](#7-project-memory)
+- [Working context](#8-working-context)
+- [The change pipeline](#9-the-change-pipeline)
+- [Deterministic engines](#10-deterministic-engines)
+- [Execution: agents, runtimes and routing](#11-execution-agents-runtimes-and-routing)
+- [Verification](#12-verification)
+- [Packages: trust, understanding and adapters](#13-packages-trust-understanding-and-adapters)
+- [Visual editor](#14-visual-editor)
+- [Previews](#15-previews)
+- [Model gateway and credentials](#16-model-gateway-and-credentials)
+- [Safety and approvals](#17-safety-and-approvals)
+- [Imported applications](#18-imported-applications)
+- [Learning and privacy](#19-learning-and-privacy)
+- [Deliberately not built yet](#20-deliberately-not-built-yet)
+- [Status and staged plan](#21-status-and-staged-plan)
+- [Risks](#22-risks)
+- [Open decisions](#23-open-decisions)
+
+## 1. Principles
+
+1. **Convention over generation.** Use the framework, then a first-party package,
+   then a trusted package, then our own capability; generate only what is
+   specific, ambiguous or novel. The platform should generate less over time.
+2. **Generative models create new information; deterministic tooling propagates
+   known information.** Before choosing a model, ask whether a model is needed.
+3. **Our orchestration works at the product level; the agent's works at the
+   engineering level.** We decide what changes, what is already known, what
+   context and limits apply, and whether the result is acceptable. The agent
+   decides how to implement a semantic change. We never micromanage its steps.
+4. **The repository is the source of truth.** Everything we persist about an
+   application is either derived from it, versioned in it, or clearly labelled
+   as an interpretation.
+5. **Generated applications stay ordinary Laravel applications.** Everything we
+   add to a customer repository works without us: Rector sets, Pest invariants,
+   PHPStan rules, Boost guidelines, Project Memory files.
+   `git clone && composer install && npm install && php artisan migrate && npm run build`
+   always works.
+6. **No single model provider is the intelligence layer.** Providers are
+   replaceable execution engines chosen by evidence.
+7. **Every repeated piece of generative work is a candidate for infrastructure:**
+   a rule, package, adapter, verifier or template.
+8. **Say "unknown" rather than guess.** Every user-visible statement carries its
+   provenance.
+
+## 2. Positioning: convention over generation
+
+- **Public identity:** software built through opinionated, understandable,
+  proven patterns. Customers build _their application_; they never need to
+  learn that it is Laravel.
+- **Internal advantage:** Laravel is the substrate. Its conventions for routing,
+  authentication, authorization, validation, data, migrations, queues, events,
+  notifications, scheduling, files, caching, realtime, APIs, testing,
+  dependency injection, configuration and deployment let us constrain a problem
+  before any model sees it. A generic coding agent has to discover an
+  architecture; ours is already known.
+- **For developers, Laravel is a selling point, not a secret.** "You own a normal
+  Laravel application" is the portability promise, and it is how a technical
+  buyer trusts the product. Disclosure depth, not concealment, decides how much
+  Laravel a user sees.
+- **The measure of the idea:** the share of each change made without a model,
+  and the amount of generated foundation code per feature, should both move in
+  the right direction over time (see [Learning and privacy](#19-learning-and-privacy)).
+
+## 3. Users and progressive disclosure
+
+One system, one application model, two very different users. No modes.
+
+- **Target A, the non-technical owner.** Builds, inspects, understands, approves
+  and maintains an application without learning any software concept. Audits
+  behaviour by browsing, not by asking an AI.
+- **Target B, the power vibe coder.** Wants visibility and control, but still
+  wants AI to do most of the implementation. Drills from behaviour to rules,
+  data, permissions, where it happens, implementation, tests and source without
+  leaving the product.
+
+Disclosure levels, rendered from the same records:
+
+1. **What this does**: plain language.
+2. **How it behaves**: rules, who can do it, what happens next.
+3. **Data and permissions**: what it reads and changes, who has access, which
+   outside services are involved, where it happens.
+4. **Technical implementation**: route, policy, action, jobs, packages, tests.
+5. **Source**: read-only code, history, "Ask AI to change".
+
+Depth preference is remembered per user from what they expand. Provenance
+badges appear at every level: "✓ checked by a test", "from your app's code",
+"our description (may be out of date)", "unknown".
+
+Top-level navigation is framework-free and is a set of queries over the Product
+Behavior Graph: **What people can do · What happens automatically · Your data ·
+People & permissions · Connections · History**.
+
+## 4. Two ontologies
+
+The user-facing model is independent of Laravel; everything beneath it is
+aggressively Laravel-native. The seam between them is deliberately thin.
+
+| Product ontology (what users see)  | Implementation ontology (Laravel substrate)                                           |
+| ---------------------------------- | ------------------------------------------------------------------------------------- |
+| Application                        | repository, Composer and npm manifests                                                |
+| Capability (Appointments, Billing) | native features, first-party and trusted packages, our packages, custom code          |
+| Behavior (Cancel an appointment)   | a handler plus its effects: controller action, job, listener, command, scheduled task |
+| Person / Role                      | guards, policies, gates, role and permission data                                     |
+| Data (Customers, Appointments)     | Eloquent models, tables, relationships, migrations                                    |
+| Automation                         | schedule entries, queued jobs, listeners                                              |
+| Connection                         | HTTP clients, SDK packages, webhook routes, `config/services.php`                     |
+| Screen                             | Inertia pages, Vue components, Wayfinder-bound actions                                |
+
+Rules for the seam:
+
+- The Product Behavior Graph schema, the product UI and Project Memory never
+  reference Laravel types. Behavior and surface kinds are stack-neutral.
+- Laravel knowledge lives in one layer, the **Laravel stack profile**: the
+  introspector, the extractors that turn Laravel facts into graph fields, the
+  verification checks, Rector sets, templates and Boost guidelines.
+- Implementation references are typed strings owned by the stack profile
+  (`laravel.route:appointments.cancel`,
+  `laravel.policy:App\Policies\AppointmentPolicy@cancel`). Level 4 renders them
+  through the profile.
+- **Do not build a generic multi-framework system.** There is exactly one stack
+  profile. The seam exists so that the product model does not become
+  Laravel-shaped, not so that we can swap stacks soon.
+
+## 5. System overview
+
+```
+USER
+  │
+PRODUCT LAYER        views over the Product Behavior Graph, behaviour diffs,
+  │                  visual editor, previews, approvals, history
+CONTROL PLANE        (Laravel; this repository)
+  ├── Product Behavior Graph        persistent, derived, small
+  ├── Project Memory (cached)       intent, decisions, invariants (lives in the app repo)
+  ├── Change pipeline               classify → operations → execute → verify → explain
+  ├── Execution router              per stage, by evidence
+  ├── Deterministic engines         Rector, visual edits, capability config, scaffolds
+  ├── Verification policy           gates by provenance and behaviour diff
+  ├── Package registry              trust levels, adapters
+  ├── Model gateway + credentials   metering, budgets, keys
+  └── Runs, budgets, approvals      state machine, leases, telemetry
+          │
+EXECUTION ADAPTERS
+  ├── Agent adapter    claude-agent-sdk · openai · script   (vendor types stop here)
+  └── Runtime adapter  our containers/VMs · bought sandboxes · local runner
+          │
+PROJECT RUNTIME      reproducible workspace: repo, PHP, Composer, Node, Postgres,
+                     browser, tests, preview server, the runner, builder/introspect
+```
+
+## 6. Product Behavior Graph
+
+The persistent representation of what the application does. Small, derived from
+code, rebuilt incrementally, never edited by hand.
+
+### Contents
+
+```
+Capability   key, name, source (native | laravel-pkg | our-pkg | trusted-pkg | custom), membership rule
+  Behavior   key, kind (action | view | automation | inbound | outbound),
+             name, purpose, outcome, actors[], permissions, side_effects[],
+             surfaces[], impl_refs[], inputs[], provenance per field
+    Surface  kind (screen | form | ui_action | api | webhook | schedule | queue | command | integration_entry),
+             technical id, human label, audience (people | other systems | external services | automatic)
+```
+
+Added when real cases need them, in the same document (a schema version bump,
+not a new data model): `data[]`, `rules[]`, `integrations[]`, `invariants[]`.
+
+Not persisted: the chains between routes, controllers, requests, policies,
+actions, models, events, listeners and jobs. Those belong to the ephemeral
+engineering graph ([Working context](#8-working-context)).
+
+### Behaviour identity and grouping
+
+- A behaviour is one entry handler plus what it causes, keyed stably by route
+  name, job class, schedule id or command signature. Renames made by known
+  transforms carry the key; other re-matches are confirmed, so history is never
+  silently broken.
+- Deterministic grouping keeps behaviours at a human scale: a create and store
+  pair is one behaviour, resource routes group by model, read-only pages fold
+  into "View X".
+- Capabilities use membership rules (for example route prefix `appointments.*`
+  plus the `Appointment` model), so new behaviours join automatically. Package
+  capabilities come from manifests and adapters; native ones from detection
+  (Fortify → Identity, Cashier → Billing); custom ones are clustered
+  deterministically and named once by AI, and owners can rename them.
+
+### Where each field comes from
+
+| Field                     | Deterministic source                                                                                                                        | AI needed                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Surfaces                  | `route:list`, `schedule:list`, commands, webhook routes (signature middleware, package webhook controllers), Inertia pages, Wayfinder usage | A human label for unusual endpoints only; standard kinds use templates and adapters |
+| Actors, permissions       | auth and guest middleware, policy abilities, role → permission data                                                                         | Only for arbitrary authorization code                                               |
+| Side effects              | observed in test runs (mail, notifications, jobs, events, outbound HTTP hosts), plus a static scan                                          | No                                                                                  |
+| Implementation references | routes, controller actions, FormRequests, policy methods, jobs, notifications, tests calling the route                                      | No                                                                                  |
+| Data (later)              | tables written (observed), `model:show`, humanized model names                                                                              | Rarely                                                                              |
+| Rules (later)             | config parameters and enums, FormRequest validation, Pest test names, Pennant flags                                                         | For rules hidden in handler or policy code                                          |
+| Name, purpose, outcome    | —                                                                                                                                           | Yes, once, cached with an anchor                                                    |
+| Custom capability names   | clustering by route prefix and model                                                                                                        | Yes, once                                                                           |
+
+Three sources carry most of the value:
+
+1. **Tests as behaviour specifications.** A Pest test named
+   `it('prevents customers cancelling within 24 hours of the start')` is a
+   verified business rule, mapped to behaviours through the routes it calls.
+2. **Side effects observed in tests.** A dev-only listener in `builder/introspect`
+   records, per test, the tables written and the mail, notifications, jobs,
+   events and outbound hosts. Verification already runs the suite, so this is
+   free and accurate for every tested path.
+3. **Wayfinder links controls to behaviours.** A component using
+   `CancelAppointmentController.store.form()` is a deterministic link from a
+   button or form to a behaviour.
+
+Generated code is steered, through our conventions and normalization, towards
+being observable: business parameters in config or enums, role → permission
+maps as data, tests named as business statements. That turns rules hidden in
+code into deterministic facts, and makes changing them a configuration edit.
+
+### Provenance
+
+| Class                                          | Example                                                             | May become a hard protection                 |
+| ---------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------- |
+| DERIVED (static or observed in tests)          | "requires `ProjectPolicy::invite`", "queues InvitationNotification" | Yes                                          |
+| CONFIRMED (owner intent, Project Memory)       | "customers cannot cancel within 48 hours"                           | Yes                                          |
+| PACKAGE CONTRACT (trusted manifest or adapter) | "a team always has an owner"                                        | Yes                                          |
+| AI INTERPRETATION                              | "invites someone to collaborate"                                    | No; display only, revisable                  |
+| PROPOSED                                       | "tenants never see each other's bookings?"                          | No, until confirmed or matched to a contract |
+
+`unknown` and `not verified` are valid values and are shown as such.
+
+### Freshness and incremental regeneration
+
+Only annotations can go stale; derived fields are recomputed from code for every
+snapshot. Each behaviour stores a flat `inputs[]` list (files and config keys
+with hashes), which works like a build cache:
+
+```
+new commit
+ 1. discovery, always in full (seconds): route:list, schedule:list, commands,
+    policy map, Wayfinder map, config hash → behaviour keys and surfaces
+ 2. per behaviour: hash inputs[]; unchanged → reuse the previous record;
+    changed or new → re-run that behaviour's extractors
+ 3. side effects from this commit's verification test run
+    (otherwise carried forward, marked "observed at <commit>")
+ 4. annotations: attach those whose anchor matches; queue refresh for the rest
+ 5. assemble the snapshot; diff against the parent snapshot
+```
+
+Record states: `current` → `dirty` (an input changed) → `refreshed`
+(re-extracted or re-annotated) → `verified` (test observations at this commit).
+
+Annotations (names, purposes, AI-described rules) store an **anchor**: a hash of
+the normalized code they describe plus the fields they summarized. On mismatch,
+an AI annotation is marked stale and refreshed in a batch by a cheap model; an
+agent that changed a behaviour updates its annotation in the same run; an
+owner-pinned annotation is never overwritten and is flagged for review instead.
+A new extractor version triggers a full rebuild; annotations with matching
+anchors carry over.
+
+### Behaviour diffs
+
+Compare two snapshots key by key: added, removed and changed behaviours, and
+field-level changes rendered through templates:
+
+> **Invite a teammate**
+> Previously: owners and administrators could invite people.
+> Now: only owners can invite people. ✓ checked by "admins cannot invite members"
+
+The structured part of the diff needs no model. The behaviour diff is the
+primary review artifact; source diffs sit one level down. It also drives
+approval gates (new email, new charge, new outside service, data deletion).
+
+### Storage
+
+Postgres, relational tables plus `jsonb`. No graph database: queries are at most
+two hops, and diffs are key-by-key comparisons.
+
+```sql
+app_snapshots   (id, project_id, commit_sha, parent_id, extractor_version, status, created_at)
+graph_nodes     (hash pk, project_id, kind, key, schema_version, body jsonb, created_at)  -- immutable, content-addressed
+snapshot_nodes  (snapshot_id, node_hash)                                                  -- which records a snapshot contains
+annotations     (id, project_id, subject_key, field, text, source, anchor_hash, model,
+                 pinned, stale_since, created_at)                                         -- durable, they cost money
+surface_index   (snapshot_id, behavior_key, kind, technical_id, component_path,
+                 template_line, wayfinder_action, audience)                               -- derived, disposable
+```
+
+`body` is validated by versioned PHP value objects. Content addressing means a
+snapshot only stores what changed, and history and diffs come free. Old
+snapshots are pruned, keeping `main`'s history and each run's base and
+candidate.
+
+## 7. Project Memory
+
+What code cannot tell us: intent, terminology, decisions and their reasons,
+rejected alternatives, unusual business rules, discoveries, invariants that
+cannot be derived.
+
+- **Lives in the application repository**, `docs/product/`: `product.md` (goals,
+  actors, terminology), `decisions/*.md`, `rules.md` with structured
+  front-matter (for example `cancellation_cutoff: {value: 48h, behavior: appointments.cancel}`).
+  It is portable, reviewed in git, and useful to human developers. The product
+  edits it through the UI and commits; the control plane caches the parsed copy
+  per commit.
+- **Mismatch detection.** Structured rules are compared deterministically with
+  the graph's rules. Prose rules are compared by AI only when the related
+  behaviour changes, cached, and always shown as a possible mismatch with both
+  sides. Neither side is ever corrected automatically.
+- **Invariant lifecycle.** Proposals (from AI or mechanically implied) become
+  CONFIRMED or PACKAGE CONTRACT, or are dismissed. Owners are asked only about
+  high-impact invariants (money, deletion, access between customers), in plain
+  language, at natural moments. Low-impact AI proposals stay as reviewer hints.
+
+## 8. Working context
+
+Ephemeral, per task, never persisted beyond the run.
+
+- Built in the runtime by `builder/introspect --around=<behavior-key>`: a
+  budgeted traversal from the seed behaviour through middleware, FormRequest,
+  policy, action, models, events, listeners, jobs, notifications and tests.
+- The brief: seed behaviours and their current descriptions; Project Memory rules
+  and invariants that apply; capability metadata ("extend this, do not recreate
+  it"); key paths; the project's own conventions; a selection context when the
+  request came from the visual editor.
+- A stable prefix (project summary, conventions, capabilities) is cached per
+  commit for prompt caching.
+- The agent explores freely beyond it and can query more through MCP
+  (`introspect.query`, `capability.describe`, `transform.apply`,
+  `package.request`, `verify.run`) alongside Laravel Boost. The context guides;
+  it never imprisons.
+- Its value is measured, not assumed: pass rate and tokens with and without the
+  brief, in the evaluation harness.
+
+## 9. The change pipeline
+
+```
+request (chat, behaviour card, or visual selection)
+ → intent: which capability and behaviours?           small model + graph + memory
+ → classify into change classes and typed operations
+ → deterministic operations                           no model
+ → agent tasks                                        execution router → agent adapter
+ → normalization                                      curated Rector set + Pint
+ → verification                                       §12
+ → behaviour diff and explanation → preview → approvals
+ → learn: normalization hits, residuals, failures → candidate queue
+```
+
+### Change classes
+
+| Class                           | Examples                                                            | Engine                             |
+| ------------------------------- | ------------------------------------------------------------------- | ---------------------------------- |
+| 1. Known transformation         | API rename, deprecations, namespace moves, package migration        | Rector, codemods                   |
+| 2. Known shape, new names       | model, migration, policy, job, installing a capability              | `make:*`, starter kits, installers |
+| 3. Structured configuration     | role permissions, feature flags, config values, business parameters | typed edits against a known schema |
+| 4. Local semantic change        | domain logic inside known boundaries                                | coding agent                       |
+| 5. Cross-cutting or ambiguous   | new architecture, unclear requirements                              | strong planner, then agent         |
+| Overlay: production consequence | anything touching data, money, communication, DNS                   | approval gate                      |
+
+When classification is uncertain, choose semantic execution. The safe failure is
+extra model cost, not a wrong transform.
+
+### Typed operations
+
+```yaml
+operations:
+    - capability_config: teams / grant members:invite to manager, revoke from admin
+    - transform: rector set organizations-v2
+    - scaffold: make:policy InvitationPolicy --model=Invitation
+    - agent_task: objective, brief, selection context
+    - normalize: rector set builder-conventions (over the agent's diff)
+```
+
+Deterministic operations run first, agent tasks run on the result, then
+normalization, then verification. Every operation shows its engine in the run
+log. The share of work done without a model is a tracked metric.
+
+## 10. Deterministic engines
+
+### Rector
+
+A mutation engine, not the understanding layer. It runs in the runtime as a dev
+dependency of the customer application, with Larastan loaded so it can see
+through Laravel's dynamic features.
+
+- **Uses:** planned transforms; agent-invoked transforms through MCP; normalization
+  after the agent.
+- **Residuals:** every transform reports what it could not change safely
+  (facades, `__call`, dynamic properties). Residuals become a small agent task
+  with the rule as context.
+- **Detectors paired with fixers:** each PHPStan rule or Pest architecture test we
+  ship may carry a Rector fix; a failing detector with a fixer is a class 1
+  change.
+- **Ecosystem first:** community `rector-laravel` covers framework upgrades; we
+  write rules only for our conventions, our packages and recurring agent
+  patterns.
+- **Portable:** our rule sets ship as open-source Composer packages, so developers
+  can run them without the platform.
+
+### Governance for trusted rules
+
+A bad agent change affects one application; a bad trusted rule can affect
+thousands. Every rule needs: fixtures (Rector's fixture tests), an idempotence
+check, applicability checks, a dry run over a representative corpus, human
+approval, versioning, canary rollout, verification per project and a rollback
+path.
+
+### Visual edits and configuration edits
+
+Tailwind class and literal-text edits ([Visual editor](#14-visual-editor)) and
+`capability_config` edits against a declared schema are deterministic engines
+with a blast radius of one project.
+
+### Catalogue
+
+A versioned registry of typed operations (`rename_class`, `move_namespace`,
+`replace_method_call`, `change_signature`, `add_interface`, `add_trait`,
+`replace_deprecated_helper`, `capability_config`, `scaffold`,
+`package_upgrade`). The planner selects from it and agents can call it. It pays
+off mostly in maintenance (upgrades, deprecations, capability API changes,
+imports); for new features, expect mostly scaffolds and configuration at first.
+
+## 11. Execution: agents, runtimes and routing
+
+### Contracts
+
+`AgentTask` (sent by the control plane): `objective`; `context` (brief, seed
+behaviours, selection context, memory rules); `workspace` (runtime handle, base
+commit); `permissions` (protected paths, package policy, network policy);
+`tools` (our MCP servers, Boost); `budget` (tokens or cost, turns, wall clock);
+`expected_result`; `verification_requirements`; and `requires`, optional
+capabilities such as `session_resume`, `subagents`, `vision`, `long_running`,
+`structured_output`.
+
+`AgentResult` (returned by the adapter): `status` and `failure_class`; `changes`
+(the resulting commit, read back from the workspace); `tool_activity`; `usage`
+and cost (from the gateway); `notes` (stored, never trusted); `self_checks`
+(tests the agent ran, informational).
+
+Verification state is **not** part of `AgentResult`. Verification is always our
+pipeline's, in a fresh worker, attached by the control plane; a provider never
+grades its own work.
+
+### Adapters
+
+- **Agent adapters** implement the contract and declare extra capabilities in a
+  provider profile (models, capability flags, context window, cost model, rate
+  limits, auth modes). Vendor types never leave the adapter.
+    1. `claude-agent-sdk`: the Agent SDK's permission callbacks and hooks enforce
+       boundaries (protected paths, package allowlist, secrets); MCP; session
+       resume for repairs. We use the SDK, not automation of the interactive CLI.
+    2. `script`: tests and evaluations.
+    3. An OpenAI agent adapter, built early, before more is layered on top: the
+       second adapter proves the contract is not Claude-shaped.
+- **Runtime adapters** are independent of agent adapters: `provision(template)`
+  from a pinned image digest, `exec`, files, `startService`/`serviceUrl`,
+  `snapshot`/`restore`, `destroy`. Default: our own runtime (our containers or
+  VMs, or a bought sandbox provider), so every stage and provider shares one
+  reproducible workspace with our tools, previews and verification.
+  Provider-hosted sandboxes can be added later as adapters that declare fewer
+  capabilities. A local runner (the user's machine) is a runtime adapter too.
+- **The runner** is a TypeScript process in the runtime that hosts the agent
+  engines and speaks the runtime protocol to the control plane over an outbound
+  connection: tasks (`transform`, `agent`, `prepare`) in; numbered events
+  (`agent.message`, `file.changed`, `command.finished`, `heartbeat`,
+  `task.finished`) out, fenced by the run's token.
+- **Reproducible workspace:** the blessed template pins PHP 8.5, Node, Composer,
+  Postgres, Chromium and cached dependency layers; each run records an
+  environment manifest (image digest, lockfile hashes, tool versions).
+- **Hand-offs between stages and providers** happen only through structured
+  artifacts and commits (plan, brief, behaviour diff, verification results),
+  never raw transcripts.
+
+### Execution router
+
+| Stage                                            | Starts with                                                       | Escalation                                                     |
+| ------------------------------------------------ | ----------------------------------------------------------------- | -------------------------------------------------------------- |
+| Interpret request, plan                          | strong reasoning model                                            | —                                                              |
+| Classify, map to capabilities, name UI, annotate | cheap model                                                       | stronger model on low confidence                               |
+| Deterministic operations                         | no model                                                          | go semantic when unsure                                        |
+| Implement                                        | coding engine per task class                                      | after 2 failed repairs: stronger model or a different provider |
+| Independent review                               | only when triggered, on a different provider than the implementer | —                                                              |
+
+**Review triggers:** the behaviour diff touches permissions, money, deletion,
+external communication, tenant data or migrations; the covering tests are weak;
+or the implementer needed repairs. Otherwise the deterministic gates suffice.
+
+**Telemetry per stage execution:** task class (change class, capability,
+operation type, UI or backend, context size), engine and model, tokens, cost,
+duration, retries, escalations, verification outcome, and later regressions
+(reverted, or fixed by a follow-up within N days).
+
+**Maturity:** v0 is a routing table per task class in configuration, with
+telemetry from day one. v1: the evaluation harness runs the task set across
+providers and models and recommends a table for review. v2: limited experiments
+in production on low-risk task classes only, never on a non-technical owner's
+high-risk change.
+
+### Runs
+
+The existing run model stays: states queued → planning → implementing →
+verifying → reviewing → completed, plus needs_user_decision, cancelling →
+cancelled and failed; a lease with a fencing token per run; budgets (operations,
+minutes, repairs); cancellation; the reconciler. Fencing moves from individual
+tool calls to runtime tasks when agents run in the runtime; the per-tool-call
+journal remains for the scripted engine and tests.
+
+## 12. Verification
+
+Runs in a fresh worker, trusting nothing from the agent's workspace. The
+behaviour diff decides which semantic checks apply.
+
+1. **Static:** Pint, Larastan, our PHPStan rules, Pest architecture presets
+   (`arch()->preset()->laravel()`, security, our conventions), TypeScript types.
+2. **Semantic checks triggered by the behaviour diff:**
+    - new or changed mutating surface: authentication and authorization present
+      (policy, `can:`, or a non-trivial FormRequest `authorize`);
+    - model with a tenant or owner column: isolation enforced;
+    - migration: `migrate --pretend` SQL rules (drops, renames, type changes,
+      non-null without default, indexes without `CONCURRENTLY`), rollback present;
+    - new job: retry, backoff and failure behaviour;
+    - new mail or SMS: approval gate, and previews force the `log` mailer;
+    - lockfile changes: dependency policy.
+3. **Tests:** the full Pest suite; protected acceptance tests generated from the
+   plan's criteria before coding (by a model other than the coder, confirmed by
+   the owner in plain language, frozen); Pest browser tests on touched screens.
+4. **Invariants** as Pest tests, many from helpers our capability packages ship
+   (for example `assertTenantIsolated(Project::class)`).
+5. **Independent review** by a different provider, when triggered.
+
+Only DERIVED, CONFIRMED and PACKAGE CONTRACT statements feed hard gates. AI
+interpretations and proposals produce warnings and review prompts only. Purely
+visual edits get light verification: build, `vue-tsc`, a visual smoke test, and
+a behaviour diff showing that no behaviour changed.
+
+## 13. Packages: trust, understanding and adapters
+
+Dependency order: Laravel native → Laravel first-party → our first-party →
+trusted ecosystem → evaluated → unknown (review).
+
+Trust and understanding are separate axes; policy uses both.
+
+| Level          | Meaning                                                 | Unlocks                                         |
+| -------------- | ------------------------------------------------------- | ----------------------------------------------- |
+| L0 unknown     | nothing known                                           | human review                                    |
+| L1 reputable   | advisories, license, maintenance, compatibility checked | install with review                             |
+| L2 installable | adapter covers install, configuration, environment      | agent may install; guided setup                 |
+| L3 verified    | declared vs observed passes; verifiers exist            | automatic verification; appears as a capability |
+| L4 lifecycle   | upgrade sets, removal and replacement tested            | automated upgrades; replacement possible        |
+
+**Package adapters** are our knowledge about a package, kept in our registry and
+versioned by package version range; the package is unchanged. They contain the
+capability manifest (models, tables, routes, events, authorization concepts
+introduced), install recipe, configuration and environment schemas, supported
+versions, verifiers and invariants, Rector sets per upgrade step, deprecations
+and replacements, breaking changes, extension points, failure modes,
+incompatibilities, removal and migrate-away strategy, and agent guidance as a
+portable Boost-style guideline.
+
+**Declared vs observed:** installing a package in a fixture application and
+running `builder/introspect` checks the adapter against reality. Mismatches are
+adapter bugs, found automatically.
+
+**Our first-party packages** carry all of this inside the package
+(`composer.json` `extra.builder`, `rector/` sets, upgrade fixtures, Boost
+guidelines), are open source on Packagist, and make upgrades executable:
+dry-run each step's set on a branch, report residuals, estimate the blast radius
+from the graph, give residuals to an agent, verify, offer the branch. Build one
+only when evaluation data shows repeated generation that Laravel plus a trusted
+package does not cover. Freeze the manifest schema only after two real upgrades.
+
+**Package replacement** is L4 on both sides: install the new package, transform,
+let the agent fill gaps, verify, remove the old one. Not in scope yet; not
+precluded.
+
+**Policy v0:** a curated allowlist, deny by default, `composer audit` and
+`npm audit`, licenses, and a review queue. Runner hooks block other installs;
+verification re-checks the lockfile.
+
+## 14. Visual editor
+
+A primary product surface and a projection of real source code. Never a
+separate page-builder document tree.
+
+### Selection context
+
+Resolved progressively when the user clicks in the preview; any level may be
+`null`, with a reason:
+
+```
+element     DOM path, visible text, screenshot crop, current classes
+source      file:line:col in the Vue template, component name
+screen      Inertia page, route, URL
+behavior    keys (Wayfinder action bound to the element, or the page's view behaviour)
+capability, actors, permissions, side effects   (from the Product Behavior Graph)
+impl_refs   component, policy, action, tests
+```
+
+It powers the inspector card (no model call), direct edits, and change requests
+seeded with exactly what the user pointed at.
+
+### Traceability (preview builds only)
+
+A Vite plugin stamps elements with `data-source` from the single-file-component
+compiler's source locations; Vue's development metadata gives component names;
+the Wayfinder index links elements to behaviours. Conventions for generated
+code: meaningful component names, every server action through Wayfinder, no
+dynamic component resolution for interactive elements. Production output stays
+clean.
+
+### Direct edits (deterministic)
+
+- **Tailwind classes:** spacing, sizing, alignment, flex and grid, typography,
+  radius, borders, shadow, visibility, gap, position; tokens grouped by utility
+  family with variant and responsive prefixes; choices limited to the project's
+  Tailwind `@theme` scale.
+- **Literal text** in templates, or translation files for translation keys.
+- **Show or hide** by breakpoint.
+- **This instance or all instances:** editing a shared component changes it
+  everywhere, so the editor asks; "this one only" adds the class at the usage
+  site, which shadcn-vue components merge with `cn()`.
+- **Not static → agent:** dynamic `:class`, `v-if`, loops, props, database
+  content, anything tied to permissions or behaviour.
+
+Edits collect on a visual-session branch, commit on save, and get light
+verification.
+
+### Both users
+
+Target A: text, size, spacing, alignment, appearance, show/hide, "What this
+does", "Describe a change". Target B: additionally classes, component, props
+and states, behaviour, permissions, related API, tests, source, history.
+
+### Live feedback
+
+Hot reload needs WebSockets, which the current PHP preview gateway cannot relay.
+Visual sessions run the Vite dev server behind an edge proxy (for example Caddy
+or Traefik) that asks the control plane to authorize each request, keeping the
+gateway's grant, session and isolation rules.
+
+## 15. Previews
+
+Implemented (G2.4): a preview runs the application with a change applied in its
+own workspace and serves it at `http://{host}.{preview domain}`.
+
+- Separate origin per preview; a global middleware hands preview hosts to the
+  preview gateway before routing, sessions or cookies, so a preview host never
+  reaches the control plane's routes.
+- Single-use 60-second grant → HttpOnly, host-only, SameSite=Lax cookie on the
+  preview host; requests without it never reach the application.
+- Requests are relayed as the preview host (links and emails point at the
+  preview); form and multipart bodies are rebuilt; the gateway's own cookie is
+  stripped.
+- Reaped after maximum age or idle time; stopping kills the server and removes
+  the workspace.
+- Serves built assets; hot reload arrives with the edge proxy.
+
+## 16. Model gateway and credentials
+
+Every model call, from the control plane or a runtime, goes through one metered
+path.
+
+- The runtime gets a base URL and a short-lived token; the gateway injects the
+  real credential, so an agent with a shell never sees it; it records usage and
+  enforces budgets as hard limits.
+- **Credentials vault** per account, encrypted, masked, revocable, each checked
+  by a test call before saving: `api_key`, `claude_subscription_token`,
+  `codex_chatgpt_token`, and provider OAuth (for example OpenRouter) later.
+- **Seamless default:** included credits. Bring-your-own is an option chosen in
+  one onboarding question.
+- **Subscription tokens:** technically supported, but Anthropic's documentation
+  states that third-party developers may not offer claude.ai login or rate
+  limits in their products unless previously approved. They stay flagged off on
+  our cloud until the providers approve; allowed with the local runner. When
+  used, only the agent process receives them, never test or preview commands.
+- **Model choice:** presets ("Recommended", "Best quality", "Lowest cost")
+  mapping each stage to tested models; an advanced override per stage.
+
+## 17. Safety and approvals
+
+Development-time changes flow freely; high-consequence operations need explicit,
+scoped, expiring approval, explained in business language: production
+deployments, destructive migrations, secrets, payment configuration, outbound
+email or SMS, paid infrastructure, data deletion, domain and DNS changes,
+integrations with real consequences. The behaviour diff detects most of them
+deterministically (a new mail channel, a destructive migration, a new secret).
+
+## 18. Imported applications
+
+1. Read-only introspection and a conformance report: supported as-is; harmless
+   variation, recorded as the project's own conventions so agents follow them;
+   problematic structure (missing authorization, unsafe patterns, abandoned
+   packages).
+2. Baseline: run their tests; offer characterization tests for critical flows,
+   confirmed by a person, when there are none.
+3. Opt-in normalization, one rule set per branch, verified. Never a rewrite.
+4. Frontier models only for semantic refactors the owner asked for.
+
+The graph for an imported application leans on AI interpretation at first and
+shows it honestly; normalization improves it over time.
+
+## 19. Learning and privacy
+
+- **Loop:** normalization rules that fire, transform residuals, verifier failure
+  categories, repeated plan operations and escalations feed a candidate queue
+  (rule, verifier, package, adapter fix, template). People triage; AI drafts;
+  promotion follows the governance in §10.
+- **Telemetry by default, code by consent:** aggregate operational outcomes need
+  no customer source. Code-derived patterns (even fingerprints) are opt-in.
+  The corpus for rule building is our fixture and evaluation applications plus
+  projects that explicitly opt in under a written policy.
+- **Metrics:** pass rate per task class and engine, cost, repairs, share of work
+  done without a model, tokens avoided, generated foundation code per feature,
+  behaviour-diff and annotation accuracy.
+
+## 20. Deliberately not built yet
+
+A persistent engineering graph or graph database; trust scoring; a package
+marketplace; adapters beyond the packages we use; package replacement; a large
+rule catalogue; a page-builder document tree; generic multi-framework support;
+targeted test selection; multi-agent decomposition within one request;
+automated upgrades across many projects; inferred invariants as protections;
+online routing experiments on high-risk work.
+
+## 21. Status and staged plan
+
+### Built
+
+| Increment | What exists                                                                                                                                                                                 |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G0.1      | Control plane on Laravel 13, Inertia, Vue, PostgreSQL and Redis; checks; CI                                                                                                                 |
+| G0.2      | Customer-app fixture (teams, roles); invitations reference solutions; platform-owned acceptance suites                                                                                      |
+| G2.5      | Protected verification in a fresh workspace: setup, checks, protected acceptance; passed / failed / errored / skipped / not applicable; Unverified                                          |
+| G2.1–G2.3 | Runs with a state machine, fenced leases, operation journal, server-side tools, budgets, cancellation, reconciler, scripted driver                                                          |
+| G3        | Planner / coder / reviewer roles on laravel/ai with faked tests; repairs; usage logging. The coder runs inside the control plane today and moves to the runtime with the execution adapters |
+| G2.4      | Previews on their own host with single-use grants                                                                                                                                           |
+
+### Next stages
+
+| Stage                  | Build                                                                                                                                                                                                                                                                                   | Proven when                                                                                                            |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 1 Understand & observe | `builder/introspect` v0 with test-run side-effect tracing; Product Behavior Graph V0 (Capability, Behavior, Actor, Surface; purpose, permissions, outcome, side effects, implementation refs; provenance, freshness, `unknown`); behaviour cards; behaviour diff; preview source stamps | The owner-only change yields "Previously / Now" with no model call for the diff; only affected behaviours rebuild      |
+| 2 Execute              | `AgentTask`/`AgentResult`; provider profiles; runtime adapter and reproducible template; runner; `claude-agent-sdk` and `script` adapters; gateway and vault; routing table v0 and telemetry                                                                                            | An Agent SDK agent builds invitations from the clean starter and passes protected tests                                |
+| 2b Second provider     | OpenAI adapter; one change with stages on different providers                                                                                                                                                                                                                           | End to end across two providers                                                                                        |
+| 3 Deterministic first  | Typed operations; Rector with residuals and governance; `capability_config`; normalization after the agent                                                                                                                                                                              | "Only managers can invite" with zero model tokens for the change                                                       |
+| 4 Laravel semantics    | PHPStan and architecture rules; diff-triggered checks and gates; `migrate --pretend`; risk-triggered cross-provider review                                                                                                                                                              | A seeded set of bad changes is all caught                                                                              |
+| 5 Measure              | Evaluation harness across providers and models → routing table v1                                                                                                                                                                                                                       | Baseline numbers; a model swap is a config change with measured impact                                                 |
+| 6 Visual editor        | Selection context, inspector, Tailwind and text edits, semantic hand-off, edge proxy with hot reload                                                                                                                                                                                    | A non-technical user changes spacing without a model and hands a permission change to an agent from the same selection |
+| 7 Memory & context     | Project Memory in the repository; mismatch detection; invariant lifecycle; briefs seeded from behaviours and selections                                                                                                                                                                 | Brief vs no brief shows fewer tokens at equal or better pass rate                                                      |
+| 8 Learn                | Candidate queue; rule promotion; limited online routing                                                                                                                                                                                                                                 | One recurring agent pattern becomes a rule                                                                             |
+
+Then, by evidence: import conformance reports, the first first-party capability
+package with an executable upgrade path, adapters for Cashier and similar,
+deployment through Laravel Cloud, L4 lifecycle and replacement.
+
+## 22. Risks
+
+- **Sandbox economics and isolation** decide margins. Buy sandboxes; cache
+  installs in template snapshots; isolate runtimes and keep secrets out.
+- **Wrong deterministic knowledge at scale.** Governance for rules and adapters
+  (§10, §13).
+- **Rules hidden in code are the hardest and most valuable part for Target A.**
+  AI descriptions can be wrong; provenance, test-verified rules and observable
+  code conventions are the mitigations.
+- **Test-observed facts cover tested paths only.** Show "not verified".
+- **Behaviour grouping decides comprehension.** Too fine reads like a route list;
+  too coarse blurs rules. Needs its own evaluation tasks.
+- **Wrong protected tests or invariants.** Owners confirm criteria in plain
+  language; inferred invariants stay proposals.
+- **Routing data is sparse early.** Evaluation matrices, not production traffic,
+  drive routing v0 and v1.
+- **Cross-provider hand-offs lose tacit context.** If a stage keeps needing a
+  transcript, the artifact design is missing something.
+- **Visual editing gets hard at dynamic classes, shared components and
+  conditional rendering.** The instance/all choice and "not static goes to an
+  agent" keep it honest.
+- **Vendor terms** for subscription logins; approval before enabling on our
+  cloud.
+- **Corpus privacy.** Learn from customer code only with consent.
+
+## 23. Open decisions
+
+- Included credits at launch, and pricing.
+- Providers beyond Anthropic and OpenAI, and the OpenAI agent SDK choice.
+- Curated presets only, or also an open model picker.
+- Approval from Anthropic (and a position from OpenAI) for subscription tokens
+  in a hosted product.
+- The sandbox provider for managed runtimes.
+- The product's public name and category (not "Laravel builder").
