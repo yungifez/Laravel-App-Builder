@@ -1138,7 +1138,10 @@ high-risk change.
 The existing run model stays: states queued → planning → implementing →
 verifying → reviewing → completed, plus needs_user_decision, cancelling →
 cancelled and failed; a lease with a fencing token per run; budgets (operations,
-minutes, repairs); cancellation; the reconciler. Fencing moves from individual
+minutes, repairs); cancellation; the reconciler. A request that only asks about
+the app ends at planning: the planner's `answer` is shown, the run moves from
+planning to completed and the request is "answered", with no workspace change,
+verification or review. Fencing moves from individual
 tool calls to runtime tasks when agents run in the runtime; the per-tool-call
 journal remains for the scripted engine and tests.
 

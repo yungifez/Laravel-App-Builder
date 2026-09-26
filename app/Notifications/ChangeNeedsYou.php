@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Models\FeatureRequest;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -49,7 +50,7 @@ class ChangeNeedsYou extends Notification
     {
         return [
             'kind' => match ($this->status) {
-                RunStatus::Completed => 'ready',
+                RunStatus::Completed => $this->answered() ? 'answered' : 'ready',
                 RunStatus::NeedsUserDecision => 'question',
                 default => 'failed',
             },
@@ -67,10 +68,18 @@ class ChangeNeedsYou extends Notification
     protected function title(): string
     {
         return match ($this->status) {
-            RunStatus::Completed => __('Your change is ready to try'),
+            RunStatus::Completed => $this->answered() ? __('I answered your question') : __('Your change is ready to try'),
             RunStatus::NeedsUserDecision => __('I have a question about your change'),
             default => __('Your change did not work'),
         };
+    }
+
+    /**
+     * Determine if the owner only asked a question, so nothing was built.
+     */
+    protected function answered(): bool
+    {
+        return $this->featureRequest->status === FeatureRequestStatus::Answered;
     }
 
     /**

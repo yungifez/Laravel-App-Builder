@@ -2,21 +2,25 @@
 
 namespace App\Actions\Features;
 
-use App\Enums\AgentOutcomeStatus;
+use App\Context\ProjectContext;
+use App\Context\ProjectNotes;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Features\OwnerWording;
 use App\Features\PatchSummary;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\RunEvent;
 use App\Runs\Plan;
+use Illuminate\Support\Str;
 
 class DescribeFeatureRequest
 {
     /**
      * Describe a change for a page that shows it: the request, its latest
      * run with its plan and review, the checks, the trial copy and the
-     * follow-ups.
+     * follow-ups. Only what the owner may see leaves here: how changes are
+     * made is ours and stays on the server (see OwnerWording).
      *
      * @return array<string, mixed>
      */
@@ -31,12 +35,12 @@ class DescribeFeatureRequest
                 'prompt' => $featureRequest->prompt,
                 'status' => $featureRequest->status->value,
                 'summary' => $featureRequest->summary,
-                'error' => $featureRequest->error,
+                'error' => OwnerWording::message($featureRequest->error),
                 'target_step' => $parent === null || $featureRequest->target_step === null
                     ? null
                     : $parent->step($featureRequest->target_step),
                 'steps' => $featureRequest->steps ?? [],
-                'files' => PatchSummary::files($featureRequest->patch),
+                'files' => $this->files($featureRequest),
                 'commit_sha' => $featureRequest->commit_sha,
                 'accepted_at' => $featureRequest->accepted_at?->toIso8601String(),
                 'revert_sha' => $featureRequest->revert_sha,
@@ -72,8 +76,8 @@ class DescribeFeatureRequest
         return $verification === null ? null : [
             'id' => $verification->id,
             'status' => $verification->status->value,
-            'results' => $verification->results ?? [],
-            'error' => $verification->error,
+            'results' => array_map($this->checkResult(...), $verification->results ?? []),
+            'error' => OwnerWording::message($verification->error),
             'started_at' => $verification->started_at?->toIso8601String(),
             'finished_at' => $verification->finished_at?->toIso8601String(),
         ];
@@ -91,77 +95,63 @@ class DescribeFeatureRequest
         return $run === null ? null : [
             'id' => $run->id,
             'status' => $run->status->value,
-            'driver' => $run->driver,
-            'error' => $run->error,
+            'error' => OwnerWording::message($run->error),
             'question' => $run->status === RunStatus::NeedsUserDecision ? $run->question : null,
             'answers' => $run->answers ?? [],
-            'workspace_revision' => $run->workspace_revision,
             'plan' => $run->plan === null ? null : [
                 'summary' => $run->plan['summary'],
+                'answer' => $run->plan['answer'] ?? null,
                 'acceptance_criteria' => $run->plan['acceptance_criteria'],
                 'assumptions' => $run->plan['assumptions'],
                 'understood_as' => $run->plan['understood_as'] ?? null,
                 'current_behavior' => $run->plan['current_behavior'] ?? null,
                 'preserve' => array_column(Plan::fromArray($run->plan)->preserve, 'statement'),
             ],
-            'context' => $run->context === null ? null : [
-                'mode' => $run->context['mode'],
-                'targets' => $run->context['targets'],
-                'included' => $run->context['included'],
-                'tokens' => array_sum(array_column($run->context['included'], 'tokens')),
-                'problems' => $run->context['problems'],
-            ],
             'review' => $this->review($run),
-            'built_by' => $this->builtBy($run),
-            'repairs' => $run->repairs,
-            'operations' => $run->operations()->count(),
-            'budget' => [
-                'operations' => (int) config('builder.construction.budgets.operations'),
-                'minutes' => (int) config('builder.construction.budgets.minutes'),
-                'repairs' => (int) config('builder.construction.budgets.repairs'),
-            ],
             'started_at' => $run->started_at?->toIso8601String(),
             'finished_at' => $run->finished_at?->toIso8601String(),
-            'events' => $run->events()->get()->map(fn (RunEvent $event) => [
-                'sequence' => $event->sequence,
-                'type' => $event->type,
-                'data' => $event->data ?? [],
-                'created_at' => $event->created_at?->toIso8601String(),
-            ]),
+            'log' => $run->events()->get()
+                ->map(fn (RunEvent $event) => [
+                    'sequence' => $event->sequence,
+                    'text' => OwnerWording::event($event),
+                    'created_at' => $event->created_at?->toIso8601String(),
+                ])
+                ->filter(fn (array $entry) => $entry['text'] !== null)
+                ->values(),
         ];
     }
 
     /**
-     * Get the coding agent that built the run's latest change, and whether
-     * it was the backup because the first choice could not take the task.
+     * Get the files the change touched. Older changes carried the notes
+     * inside the app; those are ours and are left out.
      *
-     * @return array{adapter: string, provider: string, model: string|null, backup: bool, reason: string|null}|null
+     * @return list<array{path: string, additions: int, deletions: int, diff: string}>
      */
-    protected function builtBy(Run $run): ?array
+    protected function files(FeatureRequest $featureRequest): array
     {
-        /** @var RunEvent|null $call */
-        $call = $run->events()
-            ->where('type', 'model_call')
-            ->where('data->role', 'coder')
-            ->where('data->status', AgentOutcomeStatus::Completed->value)
-            ->latest('sequence')
-            ->first();
+        $hidden = [ProjectContext::LEGACY_DIRECTORY.'/', ProjectNotes::directory().'/'];
 
-        if ($call === null || ! is_string($call->data['adapter'] ?? null)) {
-            return null;
-        }
+        return array_values(array_filter(
+            PatchSummary::files($featureRequest->patch),
+            fn (array $file) => ! Str::startsWith($file['path'], $hidden),
+        ));
+    }
 
-        /** @var RunEvent|null $failover */
-        $failover = $run->events()->where('type', 'failover')->where('data->to', $call->data['adapter'])->latest('sequence')->first();
-        $order = (array) config('builder.agents.order');
-
-        return [
-            'adapter' => $call->data['adapter'],
-            'provider' => (string) ($call->data['provider'] ?? ''),
-            'model' => isset($call->data['model']) && is_string($call->data['model']) ? $call->data['model'] : null,
-            'backup' => $call->data['adapter'] !== ($order[0] ?? null),
-            'reason' => is_string($failover?->data['reason'] ?? null) ? $failover->data['reason'] : null,
-        ];
+    /**
+     * Show one check the way the owner's own developer would see it. Putting
+     * the change in place and our own extra tests are ours, so they show
+     * without their output.
+     *
+     * @param  array<string, mixed>  $result
+     * @return array<string, mixed>
+     */
+    protected function checkResult(array $result): array
+    {
+        return match ($result['stage'] ?? null) {
+            'apply' => [...$result, 'name' => __('Put the change in place'), 'output' => ''],
+            'acceptance' => [...$result, 'name' => __('Extra checks'), 'output' => ''],
+            default => $result,
+        };
     }
 
     /**
@@ -184,7 +174,7 @@ class DescribeFeatureRequest
         );
 
         return [
-            'summary' => $run->review['summary'],
+            'summary' => OwnerWording::message($run->review['summary'], ''),
             'changes' => array_map(fn (array $change) => [
                 ...$change,
                 'area_name' => $change['area'] === null ? null : ($names[$change['area']] ?? $change['area']),
@@ -216,7 +206,7 @@ class DescribeFeatureRequest
         return $preview === null ? null : [
             'id' => $preview->id,
             'status' => $preview->status->value,
-            'error' => $preview->error,
+            'error' => OwnerWording::message($preview->error),
             'url' => $preview->url(),
             'expires_at' => $preview->expires_at?->toIso8601String(),
         ];

@@ -31,7 +31,8 @@ enum RunStatus: string
     {
         return match ($this) {
             self::Queued => [self::Planning, self::Cancelling, self::Failed],
-            self::Planning => [self::Implementing, self::NeedsUserDecision, self::Cancelling, self::Failed],
+            // A question about the app is answered from the plan alone.
+            self::Planning => [self::Implementing, self::Completed, self::NeedsUserDecision, self::Cancelling, self::Failed],
             self::Implementing => [self::Implementing, self::Verifying, self::NeedsUserDecision, self::Cancelling, self::Failed],
             self::Verifying => [self::Reviewing, self::Implementing, self::NeedsUserDecision, self::Cancelling, self::Failed],
             self::Reviewing => [self::Completed, self::Implementing, self::NeedsUserDecision, self::Cancelling, self::Failed],

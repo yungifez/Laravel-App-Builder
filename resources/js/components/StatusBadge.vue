@@ -8,6 +8,7 @@ const props = defineProps<{ status: FeatureRequestStatus }>();
 const labels: Record<FeatureRequestStatus, string> = {
     generating: 'Working on it',
     generated: 'Ready for you',
+    answered: 'Answered',
     failed: 'Could not finish',
     cancelled: 'Stopped',
 };

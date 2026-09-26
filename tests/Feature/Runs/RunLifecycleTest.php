@@ -274,11 +274,15 @@ class RunLifecycleTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('run.status', 'verifying')
                 ->where('run.plan.summary', 'Owners and admins can invite people.')
-                ->where('run.repairs', 0)
-                ->where('run.operations', 2)
-                ->where('run.budget.operations', 30)
-                ->where('run.events.0.type', 'created')
-                ->where('run.events.7.data.tool', 'apply_patch'));
+                ->missing('run.driver')
+                ->missing('run.budget')
+                ->missing('run.events')
+                ->where('run.log', fn ($log) => collect($log)->pluck('text')->all() === [
+                    'You asked for this',
+                    'Working out what to change',
+                    'Making the change',
+                    'Checking it works',
+                ]));
     }
 
     /**

@@ -6,6 +6,7 @@ import {
     CircleAlert,
     CircleCheck,
     MessageCircleQuestion,
+    MessageSquare,
 } from '@lucide/vue';
 import { computed, onMounted, ref, watch } from 'vue';
 import NotificationController from '@/actions/App/Http/Controllers/NotificationController';
@@ -30,6 +31,7 @@ usePoll(15000, { only: ['notifications'] });
 
 const icons = {
     ready: { icon: CircleCheck, class: 'text-emerald-600' },
+    answered: { icon: MessageSquare, class: 'text-muted-foreground' },
     question: { icon: MessageCircleQuestion, class: 'text-amber-600' },
     failed: { icon: CircleAlert, class: 'text-destructive' },
 };

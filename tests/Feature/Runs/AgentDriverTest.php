@@ -12,6 +12,7 @@ use App\Enums\FeatureRequestStatus;
 use App\Enums\OperationStatus;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
+use App\Enums\WorkspaceStatus;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -107,6 +108,48 @@ class AgentDriverTest extends TestCase
         $this->assertSame(['planner', 'coder', 'reviewer'], $calls->pluck('role')->all());
         $this->assertSame(['planner-model', 'coder-model', 'reviewer-model'], $calls->pluck('model')->all());
         $this->assertSame('I added a description to teams and every test passes.', $run->events()->where('type', 'build_finished')->sole()->data['account']);
+    }
+
+    public function test_a_question_about_the_app_is_answered_without_building_anything()
+    {
+        FeaturePlanner::fake([[
+            'summary' => 'Only team owners can invite people.',
+            'answer' => "Only a team's owner can invite people. Members cannot.",
+            'understood_as' => 'Question',
+            'current_behavior' => 'Owners invite members.',
+            'commit_subject' => '',
+            'acceptance_criteria' => [],
+            'assumptions' => [],
+            'tasks' => [],
+            'steps' => [],
+            'preserve' => [],
+            'capabilities' => [],
+            'question' => null,
+        ]]);
+
+        $run = app(StartRun::class)->handle($featureRequest = $this->request())->refresh();
+
+        $this->assertSame(RunStatus::Completed, $run->status);
+        $this->assertSame("Only a team's owner can invite people. Members cannot.", $run->plan['answer']);
+        $this->assertSame(WorkspaceStatus::Destroyed, $run->workspace->status);
+        FeatureCoder::assertNeverPrompted();
+        ChangeReviewer::assertNeverPrompted();
+
+        $featureRequest->refresh();
+        $this->assertSame(FeatureRequestStatus::Answered, $featureRequest->status);
+        $this->assertNull($featureRequest->patch);
+        $this->assertSame('I answered your question', $featureRequest->user->notifications()->sole()->data['title']);
+
+        $this->actingAs($featureRequest->user)
+            ->get(route('projects.show', ['project' => $featureRequest->project_id, 'change' => $featureRequest->id]))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('changes.0.state', 'answered')
+                ->where('change.run.plan.answer', "Only a team's owner can invite people. Members cannot.")
+                ->where('change.featureRequest.can_accept', false));
+
+        $this->actingAs($featureRequest->user)
+            ->post(route('feature-requests.acceptance.store', $featureRequest))
+            ->assertSessionHasErrors('change');
     }
 
     public function test_the_platform_not_the_planner_chooses_the_protected_suites_including_for_follow_ups()
@@ -458,7 +501,7 @@ class AgentDriverTest extends TestCase
         $this->actingAs($featureRequest->project->owner)
             ->get(route('feature-requests.show', $featureRequest))
             ->assertInertia(fn (Assert $page) => $page
-                ->where('run.context.mode', 'selective')
+                ->missing('run.context')
                 ->where('run.review.areas.requested.0.name', 'Teams')
                 ->where('run.review.areas.may_also_affect.0.files', ['config/billing.php'])
                 ->where('run.review.areas.unexpected.0.name', 'Settings')

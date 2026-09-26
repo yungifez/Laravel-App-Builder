@@ -80,6 +80,10 @@ class SummarizeChanges
             return [$newest->latestRun?->question !== null ? ChangeState::Waiting : ChangeState::Working, $newest];
         }
 
+        if ($newest->status === FeatureRequestStatus::Answered) {
+            return [ChangeState::Answered, $newest];
+        }
+
         if ($newest->status === FeatureRequestStatus::Generated && $newest->commit_sha === null && $newest->reverted_at === null) {
             return [ChangeState::Waiting, $newest];
         }

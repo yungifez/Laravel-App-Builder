@@ -18,6 +18,7 @@ use App\Features\Exceptions\CannotGenerateFeature;
 use App\Features\PatchSummary;
 use App\Features\TestChanges;
 use App\Models\Run;
+use App\Models\Workspace;
 use App\Runs\ConstructionDriverManager;
 use App\Runs\Contracts\ConstructionDriver;
 use App\Runs\Exceptions\BudgetExhausted;
@@ -142,6 +143,12 @@ class ConstructRun
             return;
         }
 
+        if ($plan->answer !== null) {
+            $this->answer($run, $lease, $plan, $workspace);
+
+            return;
+        }
+
         $pack = $this->compileContext->handle($planningContext->projectContext, [...$planningContext->preselectedCapabilities(), ...$plan->capabilities]);
 
         $this->recordEvent($run, $lease, 'context_compiled', [
@@ -157,6 +164,25 @@ class ConstructRun
             'acceptance_criteria' => count($plan->acceptanceCriteria),
             'protected_suites' => count($plan->acceptance),
         ]);
+    }
+
+    /**
+     * The owner only asked about the app. Reply from the plan and stop,
+     * rather than spend minutes building, checking and reviewing nothing.
+     */
+    protected function answer(Run $run, RunLease $lease, Plan $plan, Workspace $workspace): void
+    {
+        DB::transaction(function () use ($run, $lease, $plan) {
+            $run->featureRequest->update([
+                'status' => FeatureRequestStatus::Answered,
+                'summary' => $plan->summary,
+                'error' => null,
+            ]);
+
+            $this->transitionRun->handle($run, RunStatus::Completed, $lease, ['plan' => $plan->toArray()], ['reason' => 'answered']);
+        });
+
+        rescue(fn () => $this->destroyWorkspace->handle($workspace));
     }
 
     /**

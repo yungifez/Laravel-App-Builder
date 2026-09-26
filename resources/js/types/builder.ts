@@ -1,6 +1,7 @@
 export type FeatureRequestStatus =
     | 'generating'
     | 'generated'
+    | 'answered'
     | 'failed'
     | 'cancelled';
 
@@ -20,7 +21,13 @@ export type ProjectListItem = {
     waiting: number;
 };
 
-export type ChangeState = 'waiting' | 'working' | 'kept' | 'stopped' | 'undone';
+export type ChangeState =
+    | 'waiting'
+    | 'working'
+    | 'answered'
+    | 'kept'
+    | 'stopped'
+    | 'undone';
 
 /** One ask the owner made, with its follow-ups folded in. */
 export type ChangeItem = {
@@ -153,17 +160,9 @@ export type RunStatus =
     | 'cancelled'
     | 'failed';
 
-export type RunEvent = {
-    sequence: number;
-    type: string;
-    data: Record<string, unknown>;
-    created_at: string | null;
-};
-
 export type Run = {
     id: number;
     status: RunStatus;
-    driver: string;
     error: string | null;
     question: {
         text: string;
@@ -176,36 +175,27 @@ export type Run = {
         answer: string;
         decided_by: 'owner' | 'builder';
     }[];
-    workspace_revision: number;
     plan: {
         summary: string;
+        /** The reply when the owner only asked about the app. */
+        answer: string | null;
         acceptance_criteria: string[];
         assumptions: string[];
         understood_as: string | null;
         current_behavior: string | null;
         preserve: string[];
     } | null;
-    context: {
-        mode: 'none' | 'flat' | 'selective' | 'selective_without_effects';
-        targets: string[];
-        included: { file: string; tokens: number }[];
-        tokens: number;
-        problems: string[];
-    } | null;
     review: RunReview | null;
-    built_by: {
-        adapter: string;
-        provider: string;
-        model: string | null;
-        backup: boolean;
-        reason: string | null;
-    } | null;
-    repairs: number;
-    operations: number;
-    budget: { operations: number; minutes: number; repairs: number };
     started_at: string | null;
     finished_at: string | null;
-    events: RunEvent[];
+    /** What happened, in the owner's words; how it was done stays with us. */
+    log: RunLogEntry[];
+};
+
+export type RunLogEntry = {
+    sequence: number;
+    text: string;
+    created_at: string | null;
 };
 
 export type ChangeSection =
@@ -406,7 +396,7 @@ export type NotesDraft = {
 /** Something that needs the owner, such as a change that is ready to try. */
 export type OwnerNotification = {
     id: string;
-    kind: 'ready' | 'question' | 'failed';
+    kind: 'ready' | 'answered' | 'question' | 'failed';
     title: string;
     body: string;
     project_id: number;

@@ -199,6 +199,11 @@ const states: Record<
         icon: LoaderCircle,
         tone: 'animate-spin text-amber-500',
     },
+    answered: {
+        label: 'Answered',
+        icon: MessageSquare,
+        tone: 'text-muted-foreground',
+    },
     kept: { label: 'Kept', icon: CircleCheck, tone: 'text-green-600' },
     stopped: { label: 'Stopped', icon: CircleX, tone: 'text-red-600' },
     undone: { label: 'Undone', icon: Undo2, tone: '' },

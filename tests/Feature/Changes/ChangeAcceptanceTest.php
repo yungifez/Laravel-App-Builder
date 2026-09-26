@@ -222,7 +222,7 @@ class ChangeAcceptanceTest extends TestCase
         $this->assertSame(['capabilities/plans.md' => "Mine.\n", 'project.md' => "Old.\n"], $notes->files($this->project));
     }
 
-    public function test_the_page_offers_the_decision_and_says_when_the_backup_provider_built_the_change()
+    public function test_the_page_offers_the_decision_without_saying_how_the_change_was_built()
     {
         $request = $this->completedChange(self::ADD_COMMENT);
         $run = $request->latestRun;
@@ -235,9 +235,9 @@ class ChangeAcceptanceTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('featureRequest.can_accept', true)
                 ->where('featureRequest.commit_sha', null)
-                ->where('run.built_by.adapter', 'codex')
-                ->where('run.built_by.backup', true)
-                ->where('run.built_by.reason', 'overloaded'));
+                ->missing('run.built_by')
+                ->missing('run.events')
+                ->where('run.log', fn ($log) => ! str_contains(json_encode($log), 'codex') && ! str_contains(json_encode($log), 'overloaded')));
 
         $this->post(route('feature-requests.acceptance.store', $request));
 
@@ -252,6 +252,20 @@ class ChangeAcceptanceTest extends TestCase
                 ->where('changes.0.id', $request->id)
                 ->where('history.0.sha', $request->commit_sha)
                 ->where('changes.0.state', 'kept'));
+    }
+
+    public function test_the_page_keeps_how_changes_are_made_to_itself()
+    {
+        $notes = "diff --git a/.builder/capabilities/teams.md b/.builder/capabilities/teams.md\n--- a/.builder/capabilities/teams.md\n+++ b/.builder/capabilities/teams.md\n@@ -1 +1 @@\n-# Teams\n+# Teams and members\n";
+        $request = $this->completedChange(self::ADD_COMMENT.$notes, ['error' => 'The planner returned an invalid plan: tasks is required.']);
+        $request->latestRun->update(['error' => 'The run finished without changing the project.']);
+
+        $this->actingAs($this->owner)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('featureRequest.files', fn ($files) => collect($files)->pluck('path')->all() === ['app/A.php'])
+                ->where('featureRequest.error', 'Something went wrong on our side while I worked on this.')
+                ->where('run.error', 'The run finished without changing the project.'));
     }
 
     public function test_other_users_cannot_accept_or_undo_changes()

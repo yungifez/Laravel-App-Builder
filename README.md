@@ -136,6 +136,9 @@ Each request starts a **build run** (`config/builder.php`, `construction`). The
 run moves through queued → planning → implementing → verifying → reviewing →
 completed, or stops at "needs your decision", cancelled or failed; the page
 shows its state and its numbered event log, and the owner can cancel it.
+When the owner only asks about the app ("Who can invite people?"), the
+planner answers and the run completes from planning, as "Answered", with
+nothing built, checked or reviewed.
 While implementing, the run works in its own workspace: the project is copied
 in, the changes it follows up on are applied, and the result is committed as
 a baseline. The construction driver then changes the project only through

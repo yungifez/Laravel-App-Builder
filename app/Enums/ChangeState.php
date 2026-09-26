@@ -10,6 +10,7 @@ enum ChangeState: string
 {
     case Waiting = 'waiting';
     case Working = 'working';
+    case Answered = 'answered';
     case Kept = 'kept';
     case Stopped = 'stopped';
     case Undone = 'undone';

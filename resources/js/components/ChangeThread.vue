@@ -278,7 +278,14 @@ const checks = computed(() => {
                     <Sparkles class="size-3.5" />
                 </span>
                 <div class="min-w-0 flex-1 space-y-3 pt-0.5 text-sm">
-                    <p v-if="run?.plan" class="leading-relaxed">
+                    <p
+                        v-if="run?.plan?.answer"
+                        class="leading-relaxed whitespace-pre-line"
+                        data-test="thread-answer"
+                    >
+                        {{ run.plan.answer }}
+                    </p>
+                    <p v-else-if="run?.plan" class="leading-relaxed">
                         {{ run.plan.summary }}
                     </p>
 
@@ -709,12 +716,7 @@ const checks = computed(() => {
                         class="space-y-1.5"
                         data-test="detail-how"
                     >
-                        <h3 class="text-xs text-muted-foreground">
-                            Files
-                            <span v-if="run?.built_by">
-                                · built by {{ run.built_by.adapter }}</span
-                            >
-                        </h3>
+                        <h3 class="text-xs text-muted-foreground">Files</h3>
                         <details
                             v-for="file in request.files"
                             :key="file.path"

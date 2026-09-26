@@ -27,6 +27,7 @@ final readonly class Plan
      * @param  list<array{area: string|null, statement: string}>  $preserve  What must stay as it is, by area
      * @param  array{text: string, why: string, options: list<string>, recommended: string|null}|null  $question  The one product question to ask the owner before building, if any
      * @param  string|null  $commitSubject  How the app's own developer would name the commit; the owner's words never reach the repository
+     * @param  string|null  $answer  The reply when the owner only asked about the app, so nothing is built
      */
     public function __construct(
         public string $summary,
@@ -42,6 +43,7 @@ final readonly class Plan
         public array $preserve = [],
         public ?array $question = null,
         public ?string $commitSubject = null,
+        public ?string $answer = null,
     ) {}
 
     /**
@@ -55,15 +57,20 @@ final readonly class Plan
      */
     public static function fromModelOutput(array $data, array $acceptance, ?string $solutionKey = null): self
     {
+        // A reply to a question builds nothing, so it needs no tasks,
+        // criteria or steps.
+        $build = blank($data['answer'] ?? null) ? ['required', 'array', 'min:1'] : ['present', 'array'];
+
         $validator = Validator::make($data, [
             'summary' => ['required', 'string', 'max:2000'],
-            'acceptance_criteria' => ['required', 'array', 'min:1', 'max:30'],
+            'answer' => ['sometimes', 'nullable', 'string', 'max:4000'],
+            'acceptance_criteria' => [...$build, 'max:30'],
             'acceptance_criteria.*' => ['required', 'string', 'max:1000'],
             'assumptions' => ['present', 'array', 'max:30'],
             'assumptions.*' => ['string', 'max:1000'],
-            'tasks' => ['required', 'array', 'min:1', 'max:30'],
+            'tasks' => [...$build, 'max:30'],
             'tasks.*' => ['required', 'string', 'max:2000'],
-            'steps' => ['required', 'array', 'min:1', 'max:20'],
+            'steps' => [...$build, 'max:20'],
             'steps.*.key' => ['required', 'string', 'regex:/^[a-z0-9-]+$/', 'max:60', 'distinct'],
             'steps.*.kind' => ['required', 'string', 'max:40'],
             'steps.*.label' => ['required', 'string', 'max:200'],
@@ -90,7 +97,7 @@ final readonly class Plan
             throw new ConstructionFailed(__('The planner returned an invalid plan: :errors', ['errors' => implode(' ', $validator->errors()->all())]));
         }
 
-        /** @var array{summary: string, acceptance_criteria: array<int, string>, assumptions: array<int, string>, tasks: array<int, string>, steps: array<int, array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, capabilities?: array<int, string>, understood_as?: string|null, current_behavior?: string|null, preserve?: array<int, array{area?: string|null, statement: string}>, question?: array{text: string, why?: string|null, options: array<int, string>, recommended?: string|null}|null, commit_subject?: string|null} $valid */
+        /** @var array{summary: string, acceptance_criteria: array<int, string>, assumptions: array<int, string>, tasks: array<int, string>, steps: array<int, array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, capabilities?: array<int, string>, understood_as?: string|null, current_behavior?: string|null, preserve?: array<int, array{area?: string|null, statement: string}>, question?: array{text: string, why?: string|null, options: array<int, string>, recommended?: string|null}|null, commit_subject?: string|null, answer?: string|null} $valid */
         $valid = $validator->validated();
 
         return new self(
@@ -114,6 +121,7 @@ final readonly class Plan
             preserve: array_values(array_map(self::preserveItem(...), $valid['preserve'] ?? [])),
             question: isset($valid['question']) ? self::question($valid['question']) : null,
             commitSubject: self::commitSubject($valid['commit_subject'] ?? null),
+            answer: filled($valid['answer'] ?? null) ? trim($valid['answer']) : null,
         );
     }
 
@@ -171,7 +179,7 @@ final readonly class Plan
     /**
      * Restore a plan saved on a run.
      *
-     * @param  array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>, understood_as?: string|null, current_behavior?: string|null, preserve?: list<array{area: string|null, statement: string}>, commit_subject?: string|null}  $data
+     * @param  array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>, understood_as?: string|null, current_behavior?: string|null, preserve?: list<array{area: string|null, statement: string}>, commit_subject?: string|null, answer?: string|null}  $data
      */
     public static function fromArray(array $data): self
     {
@@ -188,13 +196,14 @@ final readonly class Plan
             currentBehavior: $data['current_behavior'] ?? null,
             preserve: array_map(self::preserveItem(...), $data['preserve'] ?? []),
             commitSubject: $data['commit_subject'] ?? null,
+            answer: $data['answer'] ?? null,
         );
     }
 
     /**
      * Get the plan as stored on the run.
      *
-     * @return array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities: list<string>, understood_as: string|null, current_behavior: string|null, preserve: list<array{area: string|null, statement: string}>, commit_subject: string|null}
+     * @return array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities: list<string>, understood_as: string|null, current_behavior: string|null, preserve: list<array{area: string|null, statement: string}>, commit_subject: string|null, answer: string|null}
      */
     public function toArray(): array
     {
@@ -211,6 +220,7 @@ final readonly class Plan
             'current_behavior' => $this->currentBehavior,
             'preserve' => $this->preserve,
             'commit_subject' => $this->commitSubject,
+            'answer' => $this->answer,
         ];
     }
 }

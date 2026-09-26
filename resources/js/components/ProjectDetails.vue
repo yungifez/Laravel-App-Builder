@@ -97,15 +97,9 @@ function dollars(amount: number | null): string {
             </p>
 
             <p class="text-xs text-muted-foreground">
-                {{ dollars(telemetry.cost_usd) }} in total over
-                {{ telemetry.input_tokens + telemetry.output_tokens }}
-                tokens.
-                <template v-if="telemetry.unpriced_calls > 0">
-                    {{ telemetry.unpriced_calls }} model calls have no price and
-                    are not in the cost.
-                </template>
+                About {{ dollars(telemetry.cost_usd) }} in total.
                 {{ telemetry.visual_edits }} changes to how it looks were made
-                without a model.
+                straight away.
                 <template v-if="telemetry.setup_cost_usd > 0">
                     Reading your app to describe it cost
                     {{ dollars(telemetry.setup_cost_usd) }}.
