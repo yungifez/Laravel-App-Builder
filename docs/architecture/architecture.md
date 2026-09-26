@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 20.** This document consolidates the direction in [direction/](direction/)
+**Version 21.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -40,7 +40,11 @@ product a software stewardship platform ([§30](#30-software-stewardship-version
 three primitives (notes, Change Records, evidence) and no new entities. Version 20 adds
 that complexity moves upward ([§31](#31-complexity-moves-upward-version-20)): knowledge
 is not enforcement, constraints graduate into checks, and human interventions are
-measured. When they disagree, the direction documents state intent
+measured. Version 21 makes tests the bridge between product meaning and code
+([direction 22](direction/22-tests-as-the-semantic-bridge.md)): Effects gain
+evidence from test execution ([§6](#effects), [§26.4](#264-effects)), verification is
+scoped by risk and never by diff size, and publishing always runs the full checks
+([§12](#12-verification)). When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -396,6 +400,21 @@ Advisory relationships between behaviours and capabilities ("inviting a member
 may also affect billing"), with a strength, a reason and a source. They are
 relevance hints for context, review and verification, never a dependency graph.
 V0 keeps them in capability files; see [§26.4](#264-effects).
+
+Each Effect says why we believe it, from one of four kinds of evidence:
+
+- **Observed:** test execution. A behaviour owns tests; test impact analysis
+  (Pest TIA) records what each test executes; code changed for one behaviour
+  selects tests that belong to another. This is the strongest kind, because it
+  comes from running the application, not from a model.
+- **Static:** framework structure (route → controller, policy → model,
+  event → listener, action → job, component → imported component).
+- **Historical:** accepted changes that repeatedly touched both areas.
+- **Product semantic:** the owner, an expert or a model says the two may
+  interact. Useful, but the weakest.
+
+Observed evidence only covers what tests exercise. A missing test hides a
+relationship, so the absence of evidence never means "no effect" (§12).
 
 ### Storage
 
@@ -826,6 +845,8 @@ Behavior Graph, capability metadata.
 **Algorithm (V0):**
 
 1. Scopes = the target behaviours + their capabilities + the application.
+   Neighbouring behaviours named by the targets' Effects add only their rules,
+   strongest evidence first (§6); never their whole capability.
 2. Resolve effective Project Context for those scopes (§7). Always include every
    confirmed rule, constraint and decision in scope, whatever their size: these
    are what prevent failed trajectories. Include design context only for UI
@@ -1048,7 +1069,7 @@ behaviour diff decides which semantic checks apply.
     - new job: retry, backoff and failure behaviour;
     - new mail or SMS: approval gate, and previews force the `log` mailer;
     - lockfile changes: dependency policy.
-3. **Tests:** the full Pest suite; protected acceptance tests generated from the
+3. **Tests:** the full suite (Pest, or PHPUnit in imported apps); protected acceptance tests generated from the
    plan's criteria before coding (by a model other than the coder, confirmed by
    the owner in plain language, frozen); Pest browser tests on touched screens.
 4. **Invariants** as Pest tests, many from helpers our capability packages ship
@@ -1059,6 +1080,28 @@ Only DERIVED, CONFIRMED and PACKAGE CONTRACT statements feed hard gates. AI
 interpretations and proposals produce warnings and review prompts only. Purely
 visual edits get light verification: build, `vue-tsc`, a visual smoke test, and
 a behaviour diff showing that no behaviour changed.
+
+**Scope by risk, never by diff size.** "Small" is a property of meaning: a
+three-line authorization change is riskier than a 200-line isolated component.
+
+| Change                                                                                                                  | Verification                                                                           |
+| ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| While the agent works                                                                                                   | Tests selected by test impact analysis, and cheap static checks: fast feedback.        |
+| Local and low-risk (only classes or only notes; no rule, schema, permission, billing or cross-area Effect)              | May commit on targeted checks.                                                         |
+| Any other kept change                                                                                                   | Targeted checks plus the full suite, before "Keep this change".                        |
+| Authentication, authorization, tenancy, billing, migrations, middleware, configuration, dependencies, or unknown impact | The full suite, whatever the size.                                                     |
+| Publishing (the integration boundary)                                                                                   | **The full checks on the exact commit, always**, however many small commits led to it. |
+
+Lack of evidence broadens verification: strong observed impact allows narrow
+checks, partial evidence widens them, and unknown impact runs everything. Test
+impact analysis is the fast path, never the trust boundary.
+
+**A checkpoint is not an accepted change.** Agents commit freely inside their
+disposable workspace; only an accepted change reaches the project, after its
+verification. The Change Record, not the commit, is the unit of acceptance.
+
+Depend on the idea of observed test dependencies, not on Pest's cache format:
+use affected-test output or a supported extension point.
 
 ## 13. Packages: trust, understanding and adapters
 
@@ -1329,6 +1372,9 @@ for; none is started without that evidence.
 - Recruiting 3–5 owners for the behaviour-diff study (§26.7).
 - Who writes and reviews precedent files (us, or domain experts per vertical),
   and whether owners' option choices may be aggregated anonymously.
+- Test impact analysis needs Pest. The template uses Pest (§27.6), but the
+  fixture and imported apps may use PHPUnit: convert the fixture, or keep a
+  PHPUnit path with no observed Effects.
 
 ## 24. Convention over generation: reassessment
 
@@ -1722,8 +1768,9 @@ other area change, not proof of causality. The wording to users is "May also
 affect: Billing".
 
 - **Strength** is `strong`, `possible` or `historical`; never a percentage.
-  Each Effect has a reason, a source (agent, package, analysis, owner) and when
-  it was last observed; an Effect whose reason no longer holds is removed or
+  Each Effect has a reason, a source (agent, package, analysis, owner; later
+  `tests` from test impact analysis and `history` from accepted changes, §6)
+  and when it was last observed; an Effect whose reason no longer holds is removed or
   downgraded, by the agent or the owner.
 - **Context:** Effects are listed as hints; the agent decides whether they
   matter. "Change the Invite button text" does not look at billing; "invited
@@ -1733,7 +1780,8 @@ affect: Billing".
   _may also affect_ (a capability named by a target's Effects) or _unexpected_
   (anything else, including code no capability claims).
 - **Verification:** V0 runs the full suite anyway; Effects only order what the
-  review asks the owner to look at.
+  review asks the owner to look at. Later, Effects with observed evidence
+  select targeted tests for the fast path; the full suite stays the gate (§12).
 - **Never:** load a whole related subsystem because an Effect exists, run
   extra work automatically, or block until every Effect is handled.
 
@@ -2361,7 +2409,8 @@ Telemetry (1–6) and the owner sessions run alongside.
 3. **M3: a real project lifecycle.** Create from the template with one
    question; constrained import that drafts notes for confirmation; the
    Understanding page; the quick health check; deploy through the
-   Cloud-connected branch; and revert. Covers demo steps 1–2, 16 (quick) and 18.
+   Cloud-connected branch, after the full checks pass on that exact commit
+   (§12); and revert. Covers demo steps 1–2, 16 (quick) and 18.
 
 ### 27.9 V1, not a prototype, when
 
@@ -2694,3 +2743,8 @@ compiled packet, same model and code) tests it directly.
 - **Learned relationships (later):** when Change Records show two areas
   changing together repeatedly, propose the Effect to the owner ("Remember
   this relationship?").
+- **Test-impact prototype (next experiment):** tag some tests with the
+  behaviour they prove (a `behavior:<key>` group; Pest groups and PHPUnit's
+  `#[Group]` both work). For real changes, map behaviour → tests → affected
+  tests → behaviours, and log useful, noisy and missed Effects, and important
+  behaviours with no tests. Build an Effect graph only if this pays off.

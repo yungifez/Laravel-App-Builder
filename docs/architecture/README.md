@@ -26,6 +26,7 @@
     19. [Human judgment where it has leverage](direction/19-human-judgment-with-leverage.md)
     20. [Software stewardship](direction/20-software-stewardship.md)
     21. [Complexity moves upward](direction/21-complexity-moves-upward.md)
+    22. [Tests as the semantic bridge (Pest TIA)](direction/22-tests-as-the-semantic-bridge.md)
 - **[source/](source/)**: the original planning documents.
     - [Implementation plan v1](source/implementation-plan-v1.md): gates G0–G6,
       the invitation contract and the pilot plan.
