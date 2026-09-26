@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { when } from '@/lib/when';
 import type { ProjectPublishing } from '@/types';
 
 const props = defineProps<{
@@ -35,18 +36,14 @@ const { start, stop } = usePoll(
 );
 
 watch(active, (value) => (value ? start() : stop()), { immediate: true });
-
-function when(iso: string | null): string {
-    return iso === null ? '' : new Date(iso).toLocaleString();
-}
 </script>
 
 <template>
-    <section class="max-w-2xl space-y-4" data-test="publishing">
+    <section class="space-y-4" data-test="publishing">
         <Heading
             variant="small"
-            title="Publish"
-            description="Put your latest version online"
+            title="Put it online"
+            description="Your latest kept version, for everyone to use"
         />
 
         <template v-if="publishing.connected && !changing">
@@ -60,8 +57,8 @@ function when(iso: string | null): string {
                     >Publishing…</template
                 >
                 <template v-else-if="latest.status === 'published'"
-                    >Published {{ when(latest.finished_at) }}. Your hosting now
-                    puts this version online.</template
+                    >Put online {{ when(latest.finished_at) }}. Your hosting
+                    serves this version now.</template
                 >
                 <template v-else>{{ latest.error }}</template>
             </p>
@@ -72,11 +69,12 @@ function when(iso: string | null): string {
                 v-slot="{ errors, processing }"
             >
                 <Button
+                    variant="outline"
                     :disabled="processing || active"
                     class="h-11 select-none sm:h-9"
                     data-test="publish-button"
                 >
-                    Publish
+                    Put it online
                 </Button>
                 <InputError class="mt-2" :message="errors.publish" />
             </Form>
@@ -85,7 +83,7 @@ function when(iso: string | null): string {
                 <CollapsibleTrigger
                     class="min-h-11 text-xs text-muted-foreground underline-offset-4 select-none hover:underline sm:min-h-0"
                 >
-                    Details
+                    Where it goes
                 </CollapsibleTrigger>
                 <CollapsibleContent class="mt-2 space-y-3 text-xs">
                     <p class="break-all text-muted-foreground">

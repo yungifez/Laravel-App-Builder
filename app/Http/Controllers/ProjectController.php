@@ -3,10 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Projects\CreateProject;
+use App\Actions\Projects\SummarizeChanges;
 use App\Actions\Projects\SummarizeProjectTelemetry;
+use App\Enums\DeploymentStatus;
 use App\Http\Requests\ProjectStoreRequest;
 use App\Models\Deployment;
-use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Projects\ProjectRepository;
 use Illuminate\Http\RedirectResponse;
@@ -18,13 +19,21 @@ use Inertia\Response;
 class ProjectController extends Controller
 {
     /**
-     * List the user's projects.
+     * List the owner's apps with what they want to know at a glance: is it
+     * live, when did it last change, and is anything waiting for them.
      */
-    public function index(Request $request): Response
+    public function index(Request $request, SummarizeChanges $summarizeChanges): Response
     {
         return Inertia::render('projects/Index', [
             'projects' => $request->user()->projects()->latest()->get()
-                ->map(fn (Project $project) => $project->only('id', 'name', 'source_path')),
+                ->map(fn (Project $project) => [
+                    'id' => $project->id,
+                    'name' => $project->name,
+                    'published_at' => $this->publishedAt($project),
+                    'changed_at' => $project->featureRequests()->whereNotNull('commit_sha')->whereNull('reverted_at')
+                        ->latest('accepted_at')->first()?->accepted_at?->toIso8601String(),
+                    'waiting' => $summarizeChanges->waiting($project),
+                ]),
             'canStartNew' => filled(config('builder.projects.template')),
         ]);
     }
@@ -50,27 +59,16 @@ class ProjectController extends Controller
      * Show a project, the feature requests made for it, its latest commits,
      * how its changes went, and where and when it was published.
      */
-    public function show(Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry): Response
+    public function show(Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges): Response
     {
         Gate::authorize('view', $project);
 
         return Inertia::render('projects/Show', [
-            'project' => $project->only('id', 'name', 'source_path'),
-            'featureRequests' => $project->featureRequests()->whereNull('parent_id')->latest()->get()
-                ->map(fn (FeatureRequest $featureRequest) => [
-                    'id' => $featureRequest->id,
-                    'prompt' => $featureRequest->prompt,
-                    'status' => $featureRequest->status->value,
-                    'accepted' => $featureRequest->isAccepted(),
-                    'created_at' => $featureRequest->created_at?->toIso8601String(),
-                ]),
-            'changes' => $project->featureRequests()->whereNotNull('accepted_at')->latest('accepted_at')->limit(20)->get()
-                ->map(fn (FeatureRequest $featureRequest) => [
-                    'id' => $featureRequest->id,
-                    'summary' => $featureRequest->summary ?? $featureRequest->prompt,
-                    'accepted_at' => $featureRequest->accepted_at?->toIso8601String(),
-                    'reverted_at' => $featureRequest->reverted_at?->toIso8601String(),
-                ]),
+            'project' => [
+                ...$project->only('id', 'name', 'source_path'),
+                'published_at' => $this->publishedAt($project),
+            ],
+            'changes' => $summarizeChanges->handle($project),
             'history' => $repository->log($project, 20),
             'telemetry' => $summarizeTelemetry->handle($project),
             'publishing' => [
@@ -89,5 +87,17 @@ class ProjectController extends Controller
                     ]),
             ],
         ]);
+    }
+
+    /**
+     * When the app last went live, or null when it never has.
+     */
+    protected function publishedAt(Project $project): ?string
+    {
+        return $project->deployments()
+            ->where('status', DeploymentStatus::Published)
+            ->latest('id')
+            ->first()
+            ?->finished_at?->toIso8601String();
     }
 }

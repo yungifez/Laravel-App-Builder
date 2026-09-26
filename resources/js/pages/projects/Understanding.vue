@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, Link, router, setLayoutProps } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
+import AppTabs from '@/components/AppTabs.vue';
 import Heading from '@/components/Heading.vue';
 import NotesDraftPanel from '@/components/NotesDraftPanel.vue';
 import NotesPart from '@/components/NotesPart.vue';
@@ -68,10 +69,10 @@ watch(
     (project) =>
         setLayoutProps({
             breadcrumbs: [
-                { title: 'Projects', href: index() },
+                { title: 'Your apps', href: index() },
                 { title: project.name, href: show(project.id) },
                 {
-                    title: 'Your app',
+                    title: 'What I know',
                     href: showUnderstanding(project.id),
                 },
             ],
@@ -81,13 +82,22 @@ watch(
 </script>
 
 <template>
-    <Head :title="`${project.name}: your app`" />
+    <Head :title="`${project.name}: what I know`" />
 
     <div class="flex h-full flex-1 flex-col gap-10 p-4">
-        <Heading
-            :title="project.name"
-            description="What I know about your app. Change anything that is wrong; I use it for every change."
-        />
+        <div class="space-y-6">
+            <header class="space-y-1">
+                <h1 class="text-xl font-semibold tracking-tight break-words">
+                    {{ project.name }}
+                </h1>
+                <p class="text-sm text-muted-foreground">
+                    What I know about your app. Change anything that is wrong; I
+                    use it for every change.
+                </p>
+            </header>
+
+            <AppTabs :project-id="project.id" current="knows" />
+        </div>
 
         <NotesDraftPanel
             v-if="draft !== null"

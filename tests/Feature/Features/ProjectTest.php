@@ -82,14 +82,4 @@ class ProjectTest extends TestCase
             ->get(route('projects.show', Project::factory()->create()))
             ->assertForbidden();
     }
-
-    public function test_the_dashboard_counts_the_users_projects()
-    {
-        $user = User::factory()->create();
-        Project::factory()->for($user, 'owner')->count(2)->create();
-
-        $this->actingAs($user)
-            ->get(route('dashboard'))
-            ->assertInertia(fn (Assert $page) => $page->where('projectCount', 2));
-    }
 }

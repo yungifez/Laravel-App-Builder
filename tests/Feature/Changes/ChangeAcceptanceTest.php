@@ -211,7 +211,7 @@ class ChangeAcceptanceTest extends TestCase
                 ->has('history', 2)
                 ->where('changes.0.id', $request->id)
                 ->where('history.0.sha', $request->commit_sha)
-                ->where('featureRequests.0.accepted', true));
+                ->where('changes.0.state', 'kept'));
     }
 
     public function test_other_users_cannot_accept_or_undo_changes()

@@ -8,13 +8,27 @@ export type ProjectSummary = {
     id: number;
     name: string;
     source_path: string;
+    published_at: string | null;
 };
 
-export type KeptChange = {
+/** One app on the owner's apps list. */
+export type ProjectListItem = {
     id: number;
-    summary: string;
-    accepted_at: string | null;
-    reverted_at: string | null;
+    name: string;
+    published_at: string | null;
+    changed_at: string | null;
+    waiting: number;
+};
+
+export type ChangeState = 'waiting' | 'working' | 'kept' | 'stopped' | 'undone';
+
+/** One ask the owner made, with its follow-ups folded in. */
+export type ChangeItem = {
+    id: number;
+    prompt: string;
+    summary: string | null;
+    state: ChangeState;
+    updated_at: string | null;
 };
 
 export type FeatureRequestSummary = {

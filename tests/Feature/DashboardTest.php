@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class DashboardTest extends TestCase
@@ -17,14 +16,13 @@ class DashboardTest extends TestCase
         $response->assertRedirect(route('login'));
     }
 
-    public function test_authenticated_users_can_visit_the_dashboard()
+    public function test_the_dashboard_takes_owners_to_their_apps()
     {
         $user = User::factory()->create();
         $this->actingAs($user);
 
         $response = $this->get(route('dashboard'));
-        $response->assertOk();
-        $response->assertInertia(fn (Assert $page) => $page->component('Dashboard'));
+        $response->assertRedirect(route('projects.index'));
     }
 
     public function test_unverified_users_are_redirected_to_the_email_verification_prompt()

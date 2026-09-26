@@ -56,7 +56,7 @@ watch(
         selectedStepKey.value = null;
         setLayoutProps({
             breadcrumbs: [
-                { title: 'Projects', href: index() },
+                { title: 'Your apps', href: index() },
                 {
                     title: props.project.name,
                     href: showProject(props.project.id),
@@ -220,6 +220,87 @@ function verifyLabel(item: RunReview['verified'][number]): string {
     }
 }
 
+// The state in one plain line. Colour separates the states; it never
+// borrows the accent, which is kept for the action to take.
+const stateLabel = computed(() => {
+    if (props.featureRequest.reverted_at) {
+        return 'Undone';
+    }
+
+    if (props.featureRequest.commit_sha) {
+        return 'Kept';
+    }
+
+    if (props.run) {
+        return runLabels[props.run.status];
+    }
+
+    return {
+        generating: 'Working on it',
+        generated: 'Ready for you',
+        failed: 'Could not finish',
+        cancelled: 'Stopped',
+    }[props.featureRequest.status];
+});
+
+const stateDot = computed(() => {
+    if (props.featureRequest.commit_sha && !props.featureRequest.reverted_at) {
+        return 'bg-green-600';
+    }
+
+    const status = props.run?.status ?? props.featureRequest.status;
+
+    if (['failed', 'needs_user_decision'].includes(status)) {
+        return 'bg-red-600';
+    }
+
+    if (['completed', 'generated'].includes(status)) {
+        return 'bg-green-600';
+    }
+
+    return runInProgress.value || status === 'generating'
+        ? 'bg-amber-500'
+        : 'bg-muted-foreground';
+});
+
+// What stays the same: once the change is reviewed, with how each was
+// checked; before that, the promise from the plan.
+const keptSame = computed(() => {
+    const review = props.run?.review;
+
+    if (review && review.preserved.length > 0) {
+        return review.preserved.map((item) => ({
+            statement: item.statement,
+            checked: item.evidence !== 'not_checked',
+            label: evidenceLabel(item),
+        }));
+    }
+
+    return (props.run?.plan?.preserve ?? []).map((statement) => ({
+        statement,
+        checked: false,
+        label: null,
+    }));
+});
+
+const doneWhen = computed(() => {
+    const review = props.run?.review;
+
+    if (review && review.verified.length > 0) {
+        return review.verified.map((item) => ({
+            criterion: item.criterion,
+            checked: item.evidence === 'tested',
+            label: verifyLabel(item),
+        }));
+    }
+
+    return (props.run?.plan?.acceptance_criteria ?? []).map((criterion) => ({
+        criterion,
+        checked: false,
+        label: null,
+    }));
+});
+
 function evidenceMark(checked: boolean): string {
     return checked
         ? 'text-green-700 dark:text-green-400'
@@ -332,27 +413,21 @@ function lineClass(line: string): string {
 <template>
     <Head :title="featureRequest.prompt" />
 
-    <div class="flex h-full flex-1 flex-col gap-8 p-4">
-        <div class="space-y-2">
-            <div class="flex items-center gap-3">
-                <Heading :title="featureRequest.prompt" class="mb-0!" />
-                <Badge
-                    v-if="run"
-                    :variant="
-                        run.status === 'completed'
-                            ? 'default'
-                            : run.status === 'failed' ||
-                                run.status === 'needs_user_decision'
-                              ? 'destructive'
-                              : 'secondary'
-                    "
-                    data-test="run-status"
-                >
-                    {{ runLabels[run.status] }}
-                </Badge>
-                <StatusBadge v-else :status="featureRequest.status" />
-            </div>
-
+    <div class="flex h-full flex-1 flex-col gap-6 p-4">
+        <header class="max-w-3xl space-y-1">
+            <h1 class="text-xl font-semibold tracking-tight break-words">
+                {{ featureRequest.prompt }}
+            </h1>
+            <p
+                class="flex items-center gap-2 text-sm text-muted-foreground"
+                data-test="run-status"
+            >
+                <span
+                    :class="['size-2 shrink-0 rounded-full', stateDot]"
+                    aria-hidden="true"
+                />
+                {{ stateLabel }}
+            </p>
             <p v-if="parent" class="text-sm text-muted-foreground">
                 Follow-up to
                 <Link
@@ -365,7 +440,7 @@ function lineClass(line: string): string {
                     — changes “{{ featureRequest.target_step.label }}”
                 </template>
             </p>
-        </div>
+        </header>
 
         <p
             v-if="featureRequest.status === 'generating' && !run"
@@ -451,65 +526,405 @@ function lineClass(line: string): string {
             </Button>
         </div>
 
-        <section v-if="run" class="max-w-2xl space-y-4" data-test="run">
-            <p
-                v-if="runInProgress && !run.plan"
-                class="text-sm text-muted-foreground"
-            >
-                {{ runLabels[run.status] }}…
-            </p>
+        <!-- The story of the change on the left; what to do about it on the
+             right, where it stays in view. On a phone the decision comes
+             straight after what changed, before the finer detail. -->
+        <div
+            class="grid gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_20rem] [&>*]:min-w-0"
+        >
+            <div class="max-w-2xl space-y-8">
+                <p
+                    v-if="run && runInProgress && !run.plan"
+                    class="text-sm text-muted-foreground"
+                >
+                    {{ runLabels[run.status] }}…
+                </p>
 
-            <div
-                v-if="run.plan"
-                class="space-y-2 rounded-lg border p-4 text-sm"
-                data-test="run-plan"
-            >
-                <p class="font-medium">Here's what I'm changing</p>
-                <p>{{ run.plan.summary }}</p>
-                <template
-                    v-if="
-                        run.plan.current_behavior &&
-                        run.plan.current_behavior !== 'New'
-                    "
+                <section
+                    v-if="run?.plan"
+                    class="space-y-2"
+                    data-test="run-plan"
                 >
-                    <p class="font-medium">How it works now</p>
-                    <p class="text-muted-foreground">
-                        {{ run.plan.current_behavior }}
-                    </p>
-                </template>
-                <template v-if="run.plan.preserve.length > 0">
-                    <p class="font-medium">I'll keep these the same</p>
-                    <ul
-                        class="list-disc pl-5 text-muted-foreground"
-                        data-test="brief-preserve"
+                    <h2 class="text-sm font-medium">
+                        Here's what I'm changing
+                    </h2>
+                    <p class="text-base">{{ run.plan.summary }}</p>
+                    <template
+                        v-if="
+                            !run.review &&
+                            run.plan.current_behavior &&
+                            run.plan.current_behavior !== 'New'
+                        "
                     >
-                        <li
-                            v-for="(statement, index) in run.plan.preserve"
-                            :key="index"
-                        >
-                            {{ statement }}
-                        </li>
-                    </ul>
-                </template>
-                <template
-                    v-if="
-                        !run.review && run.plan.acceptance_criteria.length > 0
-                    "
+                        <h3 class="pt-2 text-sm font-medium">
+                            How it works now
+                        </h3>
+                        <p class="text-sm text-muted-foreground">
+                            {{ run.plan.current_behavior }}
+                        </p>
+                    </template>
+                    <p
+                        v-if="runInProgress"
+                        class="text-sm text-muted-foreground"
+                    >
+                        {{ runLabels[run.status] }}…
+                    </p>
+                </section>
+
+                <section
+                    v-if="run?.review"
+                    class="space-y-6 text-sm"
+                    data-test="run-review"
                 >
-                    <p class="font-medium">Done when</p>
-                    <ul class="list-disc pl-5 text-muted-foreground">
-                        <li
-                            v-for="(criterion, index) in run.plan
-                                .acceptance_criteria"
-                            :key="index"
+                    <template
+                        v-for="section in changeSections"
+                        :key="section.key"
+                    >
+                        <div
+                            v-if="
+                                changesIn(section.key).length > 0 ||
+                                areasIn(section.key).length > 0
+                            "
+                            class="space-y-2"
+                            :data-test="`review-${section.key}`"
                         >
-                            {{ criterion }}
-                        </li>
-                    </ul>
-                </template>
-                <template v-if="run.plan.assumptions.length > 0">
-                    <p class="font-medium">Decisions I made for you</p>
-                    <ul class="list-disc pl-5 text-muted-foreground">
+                            <Alert
+                                v-if="section.key === 'unexpected'"
+                                variant="destructive"
+                            >
+                                <AlertTitle>{{ section.title }}</AlertTitle>
+                                <AlertDescription>{{
+                                    section.description
+                                }}</AlertDescription>
+                            </Alert>
+                            <template v-else>
+                                <h2 class="font-medium">{{ section.title }}</h2>
+                                <p
+                                    v-if="section.description"
+                                    class="text-muted-foreground"
+                                >
+                                    {{ section.description }}
+                                </p>
+                            </template>
+                            <ul class="divide-y border-y">
+                                <li
+                                    v-for="(change, index) in changesIn(
+                                        section.key,
+                                    )"
+                                    :key="index"
+                                    class="space-y-1 py-3"
+                                >
+                                    <p class="font-medium">
+                                        {{ change.behavior }}
+                                        <span
+                                            v-if="change.area_name"
+                                            class="font-normal text-muted-foreground"
+                                            >· {{ change.area_name }}</span
+                                        >
+                                    </p>
+                                    <dl
+                                        class="grid grid-cols-[4rem_minmax(0,1fr)] gap-x-2 gap-y-1"
+                                    >
+                                        <dt class="text-muted-foreground">
+                                            Before
+                                        </dt>
+                                        <dd class="text-muted-foreground">
+                                            {{ change.before }}
+                                        </dd>
+                                        <dt class="text-muted-foreground">
+                                            Now
+                                        </dt>
+                                        <dd>{{ change.now }}</dd>
+                                    </dl>
+                                </li>
+                            </ul>
+                            <p
+                                v-if="areasIn(section.key).length > 0"
+                                class="text-xs text-muted-foreground"
+                            >
+                                Parts of your app:
+                                {{
+                                    areasIn(section.key)
+                                        .map((area) => area.name)
+                                        .join(', ')
+                                }}
+                            </p>
+                        </div>
+                    </template>
+                </section>
+            </div>
+
+            <aside class="lg:col-start-2 lg:row-span-2 lg:row-start-1">
+                <div class="space-y-8 lg:sticky lg:top-4">
+                    <div
+                        v-if="
+                            featureRequest.can_accept ||
+                            featureRequest.commit_sha
+                        "
+                        class="space-y-3 text-sm"
+                        data-test="change-decision"
+                    >
+                        <template v-if="featureRequest.reverted_at">
+                            <h2 class="text-base font-medium">Undone</h2>
+                            <p class="text-muted-foreground">
+                                You kept this change, then undid it. Your app
+                                works as it did before.
+                            </p>
+                        </template>
+                        <template v-else-if="featureRequest.commit_sha">
+                            <h2 class="text-base font-medium">Kept</h2>
+                            <p class="text-muted-foreground">
+                                This change is part of your app. You can undo
+                                it.
+                            </p>
+                            <Form
+                                v-bind="
+                                    FeatureRequestReversionController.store.form(
+                                        featureRequest.id,
+                                    )
+                                "
+                                v-slot="{ processing, errors }"
+                                class="space-y-2"
+                            >
+                                <Button
+                                    variant="outline"
+                                    :disabled="processing"
+                                    class="h-11 w-full select-none sm:h-9"
+                                    data-test="revert-change-button"
+                                >
+                                    Undo this change
+                                </Button>
+                                <InputError :message="errors.change" />
+                            </Form>
+                        </template>
+                        <template v-else>
+                            <h2 class="text-base font-medium">
+                                Keep this change?
+                            </h2>
+                            <p class="text-muted-foreground">
+                                Your next change starts from here. You can undo
+                                it later.
+                            </p>
+                            <Form
+                                v-bind="
+                                    FeatureRequestAcceptanceController.store.form(
+                                        featureRequest.id,
+                                    )
+                                "
+                                v-slot="{ processing, errors }"
+                                class="space-y-2"
+                            >
+                                <Button
+                                    :disabled="processing"
+                                    class="h-11 w-full select-none"
+                                    data-test="accept-change-button"
+                                >
+                                    Keep this change
+                                </Button>
+                                <InputError :message="errors.change" />
+                            </Form>
+                        </template>
+                    </div>
+
+                    <Form
+                        v-if="
+                            run && runInProgress && run.status !== 'cancelling'
+                        "
+                        v-bind="RunCancellationController.store.form(run.id)"
+                        v-slot="{ processing }"
+                    >
+                        <Button
+                            variant="outline"
+                            :disabled="processing"
+                            class="h-11 w-full select-none sm:h-9"
+                            data-test="cancel-run-button"
+                        >
+                            Stop working on this
+                        </Button>
+                    </Form>
+
+                    <section
+                        v-if="featureRequest.status === 'generated'"
+                        class="space-y-3 text-sm"
+                        data-test="preview"
+                    >
+                        <div>
+                            <h2 class="font-medium">Try it</h2>
+                            <p class="text-muted-foreground">
+                                Open your app with this change, without changing
+                                the real one.
+                            </p>
+                        </div>
+                        <p
+                            v-if="preview"
+                            class="text-muted-foreground"
+                            data-test="preview-status"
+                        >
+                            {{ previewLabels[preview.status] }}
+                        </p>
+                        <p
+                            v-if="preview?.status === 'starting'"
+                            class="text-sm text-muted-foreground"
+                        >
+                            Getting your app ready. This can take a few minutes…
+                        </p>
+
+                        <Alert v-if="preview?.error" variant="destructive">
+                            <AlertTitle>Your app could not start</AlertTitle>
+                            <AlertDescription class="whitespace-pre-wrap">{{
+                                preview.error
+                            }}</AlertDescription>
+                        </Alert>
+
+                        <div class="flex flex-wrap items-center gap-2">
+                            <Button v-if="preview?.status === 'ready'" as-child>
+                                <a
+                                    :href="
+                                        PreviewController.show.url(preview.id)
+                                    "
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    data-test="open-preview-link"
+                                    >Open</a
+                                >
+                            </Button>
+
+                            <Form
+                                v-if="preview?.status !== 'starting'"
+                                v-bind="
+                                    FeatureRequestPreviewController.store.form(
+                                        featureRequest.id,
+                                    )
+                                "
+                                v-slot="{ errors, processing }"
+                            >
+                                <Button
+                                    variant="outline"
+                                    :disabled="processing"
+                                    data-test="start-preview-button"
+                                >
+                                    {{
+                                        preview?.status === 'ready'
+                                            ? 'Restart'
+                                            : 'Try it'
+                                    }}
+                                </Button>
+                                <InputError
+                                    class="mt-2"
+                                    :message="errors.preview"
+                                />
+                            </Form>
+
+                            <Form
+                                v-if="
+                                    preview &&
+                                    (preview.status === 'ready' ||
+                                        preview.status === 'starting')
+                                "
+                                v-bind="
+                                    PreviewController.destroy.form(preview.id)
+                                "
+                                v-slot="{ processing }"
+                            >
+                                <Button
+                                    variant="ghost"
+                                    :disabled="processing"
+                                    data-test="stop-preview-button"
+                                >
+                                    Stop
+                                </Button>
+                            </Form>
+                        </div>
+                    </section>
+
+                    <section
+                        v-if="featureRequest.status === 'generated'"
+                        class="space-y-3 text-sm"
+                        data-test="verification"
+                    >
+                        <div>
+                            <h2 class="font-medium">Checks I ran</h2>
+                            <p class="text-muted-foreground">
+                                I try the change on a fresh copy of your app and
+                                run its checks.
+                            </p>
+                        </div>
+                        <p
+                            v-if="verification"
+                            :class="[
+                                'flex items-center gap-2',
+                                verification.status === 'failed' ||
+                                verification.status === 'errored'
+                                    ? 'text-destructive'
+                                    : 'text-foreground',
+                            ]"
+                            data-test="verification-status"
+                        >
+                            {{ verificationLabels[verification.status] }}
+                        </p>
+                        <p
+                            v-if="verificationInProgress"
+                            class="text-sm text-muted-foreground"
+                        >
+                            Running the checks. This can take a few minutes…
+                        </p>
+
+                        <p
+                            v-if="verification?.status === 'unverified'"
+                            class="text-sm text-muted-foreground"
+                        >
+                            Every check passed, but none of them is about this
+                            change in particular.
+                        </p>
+
+                        <Alert v-if="verification?.error" variant="destructive">
+                            <AlertTitle>The checks could not finish</AlertTitle>
+                            <AlertDescription>{{
+                                verification.error
+                            }}</AlertDescription>
+                        </Alert>
+
+                        <Form
+                            v-if="!verificationInProgress"
+                            v-bind="
+                                FeatureRequestVerificationController.store.form(
+                                    featureRequest.id,
+                                )
+                            "
+                            v-slot="{ errors, processing }"
+                        >
+                            <Button
+                                :variant="verification ? 'outline' : 'default'"
+                                :disabled="processing"
+                                data-test="run-verification-button"
+                            >
+                                {{
+                                    verification
+                                        ? 'Run the checks again'
+                                        : 'Run the checks'
+                                }}
+                            </Button>
+                            <InputError
+                                class="mt-2"
+                                :message="errors.verification"
+                            />
+                        </Form>
+                    </section>
+                </div>
+            </aside>
+
+            <div class="max-w-2xl space-y-8">
+                <section
+                    v-if="run?.plan && run.plan.assumptions.length > 0"
+                    class="space-y-2 text-sm"
+                    data-test="decisions"
+                >
+                    <h2 class="font-medium">Decisions I made for you</h2>
+                    <p class="text-muted-foreground">
+                        If one of these is wrong, adjust that part below or ask
+                        in other words.
+                    </p>
+                    <ul class="list-disc space-y-1 pl-5">
                         <li
                             v-for="(assumption, index) in run.plan.assumptions"
                             :key="index"
@@ -517,698 +932,438 @@ function lineClass(line: string): string {
                             {{ assumption }}
                         </li>
                     </ul>
-                </template>
-                <p v-if="runInProgress" class="text-xs text-muted-foreground">
-                    {{ runLabels[run.status] }}…
-                </p>
-            </div>
+                </section>
 
-            <div
-                v-if="run.review"
-                class="space-y-4 rounded-lg border p-4 text-sm"
-                data-test="run-review"
-            >
-                <p class="font-medium">What changed</p>
-                <template v-for="section in changeSections" :key="section.key">
-                    <div
-                        v-if="
-                            changesIn(section.key).length > 0 ||
-                            areasIn(section.key).length > 0
-                        "
-                        class="space-y-2"
-                        :data-test="`review-${section.key}`"
-                    >
-                        <Alert
-                            v-if="section.key === 'unexpected'"
-                            variant="destructive"
-                        >
-                            <AlertTitle>{{ section.title }}</AlertTitle>
-                            <AlertDescription>{{
-                                section.description
-                            }}</AlertDescription>
-                        </Alert>
-                        <template v-else>
-                            <p class="font-medium">{{ section.title }}</p>
-                            <p
-                                v-if="section.description"
-                                class="text-muted-foreground"
-                            >
-                                {{ section.description }}
-                            </p>
-                        </template>
-                        <ul class="space-y-2">
-                            <li
-                                v-for="(change, index) in changesIn(
-                                    section.key,
-                                )"
-                                :key="index"
-                            >
-                                <p class="font-medium">
-                                    {{ change.behavior }}
-                                    <span
-                                        v-if="change.area_name"
-                                        class="font-normal text-muted-foreground"
-                                        >· {{ change.area_name }}</span
-                                    >
-                                </p>
-                                <p class="text-muted-foreground">
-                                    Before: {{ change.before }}
-                                </p>
-                                <p>Now: {{ change.now }}</p>
-                            </li>
-                        </ul>
-                        <p
-                            v-if="areasIn(section.key).length > 0"
-                            class="text-xs text-muted-foreground"
-                        >
-                            Parts of your app:
-                            {{
-                                areasIn(section.key)
-                                    .map((area) => area.name)
-                                    .join(', ')
-                            }}
-                        </p>
-                    </div>
-                </template>
-                <div
-                    v-if="run.review.verified.length > 0"
-                    class="space-y-2"
-                    data-test="review-verified"
-                >
-                    <p class="font-medium">Done when</p>
-                    <ul class="space-y-1">
-                        <li
-                            v-for="(item, index) in run.review.verified"
-                            :key="index"
-                        >
-                            <span
-                                :class="
-                                    evidenceMark(item.evidence === 'tested')
-                                "
-                                >{{
-                                    item.evidence === 'tested' ? '✓' : '–'
-                                }}</span
-                            >
-                            {{ item.criterion }}
-                            <span class="text-xs text-muted-foreground">
-                                · {{ verifyLabel(item) }}</span
-                            >
-                        </li>
-                    </ul>
-                </div>
-                <div
-                    v-if="run.review.preserved.length > 0"
-                    class="space-y-2"
+                <section
+                    v-if="keptSame.length > 0"
+                    class="space-y-2 text-sm"
                     data-test="review-preserved"
                 >
-                    <p class="font-medium">Kept the same</p>
-                    <ul class="space-y-1">
+                    <h2 class="font-medium">I'll keep these the same</h2>
+                    <ul class="space-y-1" data-test="brief-preserve">
                         <li
-                            v-for="(item, index) in run.review.preserved"
+                            v-for="(item, index) in keptSame"
                             :key="index"
+                            class="grid grid-cols-[1rem_minmax(0,1fr)] gap-x-1"
                         >
-                            <span
-                                :class="
-                                    evidenceMark(
-                                        item.evidence !== 'not_checked',
-                                    )
-                                "
-                                >{{
-                                    item.evidence === 'not_checked' ? '–' : '✓'
-                                }}</span
-                            >
-                            {{ item.statement }}
-                            <span class="text-xs text-muted-foreground">
-                                · {{ evidenceLabel(item) }}</span
-                            >
+                            <span :class="evidenceMark(item.checked)">{{
+                                item.checked ? '✓' : '–'
+                            }}</span>
+                            <span>
+                                {{ item.statement }}
+                                <span
+                                    v-if="item.label"
+                                    class="text-xs text-muted-foreground"
+                                    >· {{ item.label }}</span
+                                >
+                            </span>
                         </li>
                     </ul>
-                </div>
+                </section>
+
+                <Collapsible
+                    v-if="doneWhen.length > 0"
+                    data-test="review-verified"
+                >
+                    <CollapsibleTrigger
+                        class="min-h-11 text-sm font-medium underline-offset-4 select-none hover:underline sm:min-h-0"
+                    >
+                        How I'll know it works ({{ doneWhen.length }})
+                    </CollapsibleTrigger>
+                    <CollapsibleContent class="mt-2">
+                        <ul class="space-y-1 text-sm">
+                            <li
+                                v-for="(item, index) in doneWhen"
+                                :key="index"
+                                class="grid grid-cols-[1rem_minmax(0,1fr)] gap-x-1"
+                            >
+                                <span :class="evidenceMark(item.checked)">{{
+                                    item.checked ? '✓' : '–'
+                                }}</span>
+                                <span>
+                                    {{ item.criterion }}
+                                    <span
+                                        v-if="item.label"
+                                        class="text-xs text-muted-foreground"
+                                        >· {{ item.label }}</span
+                                    >
+                                </span>
+                            </li>
+                        </ul>
+                    </CollapsibleContent>
+                </Collapsible>
+
                 <p
-                    v-if="run.review.context_updates.length > 0"
+                    v-if="run?.review && run.review.context_updates.length > 0"
                     class="text-xs text-muted-foreground"
                     data-test="review-context-updates"
                 >
                     I also updated what I know about your business.
                 </p>
-            </div>
-
-            <div
-                v-if="featureRequest.can_accept || featureRequest.commit_sha"
-                class="space-y-3 rounded-lg border p-4 text-sm"
-                data-test="change-decision"
-            >
-                <template v-if="featureRequest.reverted_at">
-                    <p class="font-medium">Undone</p>
-                    <p class="text-muted-foreground">
-                        You kept this change, then undid it. Your app works as
-                        it did before.
-                    </p>
-                </template>
-                <template v-else-if="featureRequest.commit_sha">
-                    <p class="font-medium">Kept</p>
-                    <p class="text-muted-foreground">
-                        This change is part of your app. You can undo it.
-                    </p>
-                    <Form
-                        v-bind="
-                            FeatureRequestReversionController.store.form(
-                                featureRequest.id,
-                            )
-                        "
-                        v-slot="{ processing, errors }"
-                        class="space-y-2"
-                    >
-                        <Button
-                            variant="outline"
-                            :disabled="processing"
-                            data-test="revert-change-button"
-                        >
-                            Undo this change
-                        </Button>
-                        <InputError :message="errors.change" />
-                    </Form>
-                </template>
-                <template v-else>
-                    <p class="font-medium">Keep this change?</p>
-                    <p class="text-muted-foreground">
-                        Your next change starts from here. You can undo it
-                        later.
-                    </p>
-                    <Form
-                        v-bind="
-                            FeatureRequestAcceptanceController.store.form(
-                                featureRequest.id,
-                            )
-                        "
-                        v-slot="{ processing, errors }"
-                        class="space-y-2"
-                    >
-                        <Button
-                            :disabled="processing"
-                            data-test="accept-change-button"
-                        >
-                            Keep this change
-                        </Button>
-                        <InputError :message="errors.change" />
-                    </Form>
-                </template>
-            </div>
-
-            <Form
-                v-if="runInProgress && run.status !== 'cancelling'"
-                v-bind="RunCancellationController.store.form(run.id)"
-                v-slot="{ processing }"
-            >
-                <Button
-                    variant="outline"
-                    :disabled="processing"
-                    data-test="cancel-run-button"
-                >
-                    Stop working on this
-                </Button>
-            </Form>
-        </section>
-
-        <section
-            v-if="featureRequest.status === 'generated'"
-            class="max-w-2xl space-y-4"
-            data-test="preview"
-        >
-            <div class="flex items-center gap-3">
-                <Heading
-                    variant="small"
-                    title="Try it"
-                    description="Open your app with this change, without changing the real one"
-                />
-                <Badge
-                    v-if="preview"
-                    :variant="
-                        preview.status === 'ready'
-                            ? 'default'
-                            : preview.status === 'failed'
-                              ? 'destructive'
-                              : 'secondary'
-                    "
-                    data-test="preview-status"
-                >
-                    {{ previewLabels[preview.status] }}
-                </Badge>
-            </div>
-
-            <p
-                v-if="preview?.status === 'starting'"
-                class="text-sm text-muted-foreground"
-            >
-                Getting your app ready. This can take a few minutes…
-            </p>
-
-            <Alert v-if="preview?.error" variant="destructive">
-                <AlertTitle>Your app could not start</AlertTitle>
-                <AlertDescription class="whitespace-pre-wrap">{{
-                    preview.error
-                }}</AlertDescription>
-            </Alert>
-
-            <div class="flex flex-wrap items-center gap-2">
-                <Button v-if="preview?.status === 'ready'" as-child>
-                    <a
-                        :href="PreviewController.show.url(preview.id)"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        data-test="open-preview-link"
-                        >Open</a
-                    >
-                </Button>
-
-                <Form
-                    v-if="preview?.status !== 'starting'"
-                    v-bind="
-                        FeatureRequestPreviewController.store.form(
-                            featureRequest.id,
-                        )
-                    "
-                    v-slot="{ errors, processing }"
-                >
-                    <Button
-                        :variant="preview ? 'outline' : 'default'"
-                        :disabled="processing"
-                        data-test="start-preview-button"
-                    >
-                        {{ preview?.status === 'ready' ? 'Restart' : 'Try it' }}
-                    </Button>
-                    <InputError class="mt-2" :message="errors.preview" />
-                </Form>
-
-                <Form
+                <section
                     v-if="
-                        preview &&
-                        (preview.status === 'ready' ||
-                            preview.status === 'starting')
+                        featureRequest.status === 'generated' &&
+                        featureRequest.steps.length > 0 &&
+                        !featureRequest.reverted_at
                     "
-                    v-bind="PreviewController.destroy.form(preview.id)"
-                    v-slot="{ processing }"
+                    class="max-w-2xl space-y-4"
+                    data-test="steps"
                 >
-                    <Button
-                        variant="ghost"
-                        :disabled="processing"
-                        data-test="stop-preview-button"
-                    >
-                        Stop
-                    </Button>
-                </Form>
-            </div>
-        </section>
-
-        <section
-            v-if="featureRequest.status === 'generated'"
-            class="max-w-2xl space-y-4"
-            data-test="verification"
-        >
-            <div class="flex items-center gap-3">
-                <Heading
-                    variant="small"
-                    title="Checks I ran"
-                    description="I try the change on a fresh copy of your app and run its checks"
-                />
-                <Badge
-                    v-if="verification"
-                    :variant="
-                        verification.status === 'passed'
-                            ? 'default'
-                            : verification.status === 'queued' ||
-                                verification.status === 'running' ||
-                                verification.status === 'unverified'
-                              ? 'secondary'
-                              : 'destructive'
-                    "
-                    data-test="verification-status"
-                >
-                    {{ verificationLabels[verification.status] }}
-                </Badge>
-            </div>
-
-            <p
-                v-if="verificationInProgress"
-                class="text-sm text-muted-foreground"
-            >
-                Running the checks. This can take a few minutes…
-            </p>
-
-            <p
-                v-if="verification?.status === 'unverified'"
-                class="text-sm text-muted-foreground"
-            >
-                Every check passed, but none of them is about this change in
-                particular.
-            </p>
-
-            <Alert v-if="verification?.error" variant="destructive">
-                <AlertTitle>The checks could not finish</AlertTitle>
-                <AlertDescription>{{ verification.error }}</AlertDescription>
-            </Alert>
-
-            <Form
-                v-if="!verificationInProgress"
-                v-bind="
-                    FeatureRequestVerificationController.store.form(
-                        featureRequest.id,
-                    )
-                "
-                v-slot="{ errors, processing }"
-            >
-                <Button
-                    :variant="verification ? 'outline' : 'default'"
-                    :disabled="processing"
-                    data-test="run-verification-button"
-                >
-                    {{
-                        verification ? 'Run the checks again' : 'Run the checks'
-                    }}
-                </Button>
-                <InputError class="mt-2" :message="errors.verification" />
-            </Form>
-        </section>
-
-        <section
-            v-if="
-                featureRequest.status === 'generated' &&
-                featureRequest.steps.length > 0 &&
-                !featureRequest.reverted_at
-            "
-            class="max-w-2xl space-y-4"
-            data-test="steps"
-        >
-            <Heading
-                variant="small"
-                title="Adjust part of it"
-                description="Pick a part to ask for a change to it"
-            />
-
-            <ul class="space-y-2">
-                <li v-for="step in featureRequest.steps" :key="step.key">
-                    <button
-                        type="button"
-                        :class="[
-                            'w-full rounded-lg border p-4 text-left transition-colors hover:bg-muted/50',
-                            selectedStepKey === step.key &&
-                                'border-primary ring-1 ring-primary',
-                        ]"
-                        :aria-pressed="selectedStepKey === step.key"
-                        :data-test="`step-${step.key}`"
-                        @click="selectedStepKey = step.key"
-                    >
-                        <span class="text-sm font-medium">{{
-                            step.label
-                        }}</span>
-                        <p class="mt-1 text-sm text-muted-foreground">
-                            {{ step.detail }}
-                        </p>
-                    </button>
-                </li>
-            </ul>
-
-            <Form
-                v-if="selectedStep"
-                v-bind="
-                    FeatureRequestStepChangeController.store.form(
-                        featureRequest.id,
-                    )
-                "
-                class="space-y-4 rounded-lg border p-4"
-                v-slot="{ errors, processing }"
-            >
-                <input type="hidden" name="step" :value="selectedStep.key" />
-
-                <div class="grid gap-2">
-                    <Label for="step-prompt">
-                        Change “{{ selectedStep.label }}”
-                    </Label>
-                    <textarea
-                        id="step-prompt"
-                        name="prompt"
-                        rows="2"
-                        required
-                        class="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
-                        placeholder="Only the team owner may do this."
+                    <Heading
+                        variant="small"
+                        title="Adjust part of it"
+                        description="Pick a part to ask for a change to it"
                     />
-                    <InputError :message="errors.prompt ?? errors.step" />
-                </div>
 
-                <Button
-                    :disabled="processing"
-                    data-test="request-step-change-button"
-                >
-                    Ask for this change
-                </Button>
-            </Form>
-        </section>
-
-        <section v-if="followUps.length > 0" class="max-w-2xl space-y-4">
-            <Heading variant="small" title="Follow-up changes" />
-
-            <ul class="divide-y rounded-lg border">
-                <li v-for="followUp in followUps" :key="followUp.id">
-                    <Link
-                        :href="showFeatureRequest(followUp.id)"
-                        class="flex items-center justify-between gap-4 p-4 hover:bg-muted/50"
-                    >
-                        <span class="text-sm">{{ followUp.prompt }}</span>
-                        <StatusBadge :status="followUp.status" />
-                    </Link>
-                </li>
-            </ul>
-        </section>
-
-        <Collapsible
-            v-if="run || featureRequest.files.length > 0 || verification"
-            class="max-w-4xl"
-            data-test="details"
-        >
-            <CollapsibleTrigger
-                class="text-sm text-muted-foreground underline underline-offset-4"
-                data-test="details-toggle"
-            >
-                Details
-            </CollapsibleTrigger>
-            <CollapsibleContent class="mt-4 space-y-6 text-sm">
-                <div v-if="run" class="space-y-1 text-muted-foreground">
-                    <p>
-                        {{ run.operations }} of {{ run.budget.operations }} tool
-                        operations used · {{ run.repairs }} of
-                        {{ run.budget.repairs }} repairs ·
-                        {{ run.budget.minutes }} minute limit
-                        <template v-if="run.plan?.understood_as">
-                            · Understood as: {{ run.plan.understood_as }}
-                        </template>
-                    </p>
-                    <p v-if="run.built_by" data-test="run-built-by">
-                        <template v-if="run.built_by.backup">
-                            Built with the backup provider ({{
-                                run.built_by.provider
-                            }}<template v-if="run.built_by.reason">
-                                took over after
-                                {{
-                                    run.built_by.reason.replaceAll('_', ' ')
-                                }}</template
-                            >).
-                        </template>
-                        <template v-else>
-                            Built by {{ run.built_by.adapter }} ({{
-                                run.built_by.provider
-                            }}).
-                        </template>
-                    </p>
-                    <p v-if="run.context" data-test="run-context">
-                        The builder was given
-                        {{ contextModeLabels[run.context.mode] }} (about
-                        {{ run.context.tokens }} tokens<template
-                            v-if="run.context.included.length > 0"
-                            >:
-                            {{
-                                run.context.included
-                                    .map((part) => part.file)
-                                    .join(', ')
-                            }}</template
-                        >).
-                        <template v-if="run.context.problems.length > 0">
-                            Some notes could not be read:
-                            {{ run.context.problems.join(' ') }}
-                        </template>
-                    </p>
-                    <p
-                        v-if="
-                            run.review && run.review.context_updates.length > 0
-                        "
-                    >
-                        Updated notes:
-                        {{ run.review.context_updates.join(', ') }}
-                    </p>
-                    <p v-if="featureRequest.commit_sha">
-                        Commit
-                        <span class="font-mono">{{
-                            featureRequest.commit_sha.slice(0, 7)
-                        }}</span
-                        ><template v-if="featureRequest.revert_sha">
-                            , undone in
-                            <span class="font-mono">{{
-                                featureRequest.revert_sha.slice(0, 7)
-                            }}</span></template
-                        >.
-                    </p>
-                </div>
-
-                <div v-if="featureRequest.steps.length > 0" class="space-y-1">
-                    <p class="font-medium">Where each part lives</p>
-                    <ul class="space-y-1">
+                    <ul class="divide-y border-y">
                         <li
                             v-for="step in featureRequest.steps"
                             :key="step.key"
-                            class="text-muted-foreground"
                         >
-                            {{ step.label }}
-                            <Badge variant="outline">{{ step.kind }}</Badge>
-                            <span class="font-mono text-xs">
-                                {{ step.symbol }} · {{ step.file }}</span
+                            <button
+                                type="button"
+                                :class="[
+                                    '-mx-2 w-[calc(100%+1rem)] rounded-md px-2 py-3 text-left select-none hover:bg-muted/50',
+                                    selectedStepKey === step.key && 'bg-muted',
+                                ]"
+                                :aria-pressed="selectedStepKey === step.key"
+                                :data-test="`step-${step.key}`"
+                                @click="selectedStepKey = step.key"
                             >
+                                <span class="text-sm font-medium">{{
+                                    step.label
+                                }}</span>
+                                <p class="mt-1 text-sm text-muted-foreground">
+                                    {{ step.detail }}
+                                </p>
+                            </button>
                         </li>
                     </ul>
-                </div>
 
-                <div
-                    v-if="featureRequest.files.length > 0"
-                    class="space-y-2"
-                    data-test="change-preview"
+                    <Form
+                        v-if="selectedStep"
+                        v-bind="
+                            FeatureRequestStepChangeController.store.form(
+                                featureRequest.id,
+                            )
+                        "
+                        class="space-y-4 rounded-lg border p-4"
+                        v-slot="{ errors, processing }"
+                    >
+                        <input
+                            type="hidden"
+                            name="step"
+                            :value="selectedStep.key"
+                        />
+
+                        <div class="grid gap-2">
+                            <Label for="step-prompt">
+                                Change “{{ selectedStep.label }}”
+                            </Label>
+                            <textarea
+                                id="step-prompt"
+                                name="prompt"
+                                rows="2"
+                                required
+                                class="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                                placeholder="Only the team owner may do this."
+                            />
+                            <InputError
+                                :message="errors.prompt ?? errors.step"
+                            />
+                        </div>
+
+                        <Button
+                            :disabled="processing"
+                            data-test="request-step-change-button"
+                        >
+                            Ask for this change
+                        </Button>
+                    </Form>
+                </section>
+
+                <section
+                    v-if="followUps.length > 0"
+                    class="max-w-2xl space-y-4"
                 >
-                    <p class="font-medium">
-                        The code: {{ featureRequest.files.length }} files
-                        changed,
-                        <span class="text-green-700 dark:text-green-400"
-                            >+{{ totals.additions }}</span
-                        >
-                        <span class="text-red-700 dark:text-red-400">
-                            −{{ totals.deletions }}</span
-                        >
-                    </p>
+                    <Heading variant="small" title="Follow-up changes" />
 
-                    <ul class="divide-y rounded-lg border">
-                        <li
-                            v-for="file in featureRequest.files"
-                            :key="file.path"
-                        >
-                            <Collapsible>
-                                <CollapsibleTrigger
-                                    class="flex w-full items-center justify-between gap-4 p-3 text-left hover:bg-muted/50"
+                    <ul class="divide-y border-y">
+                        <li v-for="followUp in followUps" :key="followUp.id">
+                            <Link
+                                :href="showFeatureRequest(followUp.id)"
+                                class="flex min-h-11 items-center justify-between gap-4 py-3 select-none hover:bg-muted/50"
+                            >
+                                <span class="text-sm">{{
+                                    followUp.prompt
+                                }}</span>
+                                <StatusBadge :status="followUp.status" />
+                            </Link>
+                        </li>
+                    </ul>
+                </section>
+
+                <Collapsible
+                    v-if="
+                        run || featureRequest.files.length > 0 || verification
+                    "
+                    class="max-w-4xl"
+                    data-test="details"
+                >
+                    <CollapsibleTrigger
+                        class="text-sm text-muted-foreground underline underline-offset-4"
+                        data-test="details-toggle"
+                    >
+                        Details
+                    </CollapsibleTrigger>
+                    <CollapsibleContent class="mt-4 space-y-6 text-sm">
+                        <div v-if="run" class="space-y-1 text-muted-foreground">
+                            <p>
+                                {{ run.operations }} of
+                                {{ run.budget.operations }} tool operations used
+                                · {{ run.repairs }} of
+                                {{ run.budget.repairs }} repairs ·
+                                {{ run.budget.minutes }} minute limit
+                                <template v-if="run.plan?.understood_as">
+                                    · Understood as:
+                                    {{ run.plan.understood_as }}
+                                </template>
+                            </p>
+                            <p v-if="run.built_by" data-test="run-built-by">
+                                <template v-if="run.built_by.backup">
+                                    Built with the backup provider ({{
+                                        run.built_by.provider
+                                    }}<template v-if="run.built_by.reason">
+                                        took over after
+                                        {{
+                                            run.built_by.reason.replaceAll(
+                                                '_',
+                                                ' ',
+                                            )
+                                        }}</template
+                                    >).
+                                </template>
+                                <template v-else>
+                                    Built by {{ run.built_by.adapter }} ({{
+                                        run.built_by.provider
+                                    }}).
+                                </template>
+                            </p>
+                            <p v-if="run.context" data-test="run-context">
+                                The builder was given
+                                {{ contextModeLabels[run.context.mode] }} (about
+                                {{ run.context.tokens }} tokens<template
+                                    v-if="run.context.included.length > 0"
+                                    >:
+                                    {{
+                                        run.context.included
+                                            .map((part) => part.file)
+                                            .join(', ')
+                                    }}</template
+                                >).
+                                <template
+                                    v-if="run.context.problems.length > 0"
                                 >
-                                    <span class="truncate font-mono text-sm">{{
-                                        file.path
+                                    Some notes could not be read:
+                                    {{ run.context.problems.join(' ') }}
+                                </template>
+                            </p>
+                            <p
+                                v-if="
+                                    run.review &&
+                                    run.review.context_updates.length > 0
+                                "
+                            >
+                                Updated notes:
+                                {{ run.review.context_updates.join(', ') }}
+                            </p>
+                            <p v-if="featureRequest.commit_sha">
+                                Commit
+                                <span class="font-mono">{{
+                                    featureRequest.commit_sha.slice(0, 7)
+                                }}</span
+                                ><template v-if="featureRequest.revert_sha">
+                                    , undone in
+                                    <span class="font-mono">{{
+                                        featureRequest.revert_sha.slice(0, 7)
+                                    }}</span></template
+                                >.
+                            </p>
+                        </div>
+
+                        <div
+                            v-if="featureRequest.steps.length > 0"
+                            class="space-y-1"
+                        >
+                            <p class="font-medium">Where each part lives</p>
+                            <ul class="space-y-1">
+                                <li
+                                    v-for="step in featureRequest.steps"
+                                    :key="step.key"
+                                    class="text-muted-foreground"
+                                >
+                                    {{ step.label }}
+                                    <Badge variant="outline">{{
+                                        step.kind
+                                    }}</Badge>
+                                    <span class="font-mono text-xs">
+                                        {{ step.symbol }} ·
+                                        {{ step.file }}</span
+                                    >
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div
+                            v-if="featureRequest.files.length > 0"
+                            class="space-y-2"
+                            data-test="change-preview"
+                        >
+                            <p class="font-medium">
+                                The code:
+                                {{ featureRequest.files.length }} files changed,
+                                <span class="text-green-700 dark:text-green-400"
+                                    >+{{ totals.additions }}</span
+                                >
+                                <span class="text-red-700 dark:text-red-400">
+                                    −{{ totals.deletions }}</span
+                                >
+                            </p>
+
+                            <ul class="divide-y rounded-lg border">
+                                <li
+                                    v-for="file in featureRequest.files"
+                                    :key="file.path"
+                                >
+                                    <Collapsible>
+                                        <CollapsibleTrigger
+                                            class="flex w-full items-center justify-between gap-4 p-3 text-left hover:bg-muted/50"
+                                        >
+                                            <span
+                                                class="truncate font-mono text-sm"
+                                                >{{ file.path }}</span
+                                            >
+                                            <span
+                                                class="shrink-0 font-mono text-xs"
+                                            >
+                                                <span
+                                                    class="text-green-700 dark:text-green-400"
+                                                    >+{{ file.additions }}</span
+                                                >
+                                                <span
+                                                    class="text-red-700 dark:text-red-400"
+                                                >
+                                                    −{{ file.deletions }}</span
+                                                >
+                                            </span>
+                                        </CollapsibleTrigger>
+                                        <CollapsibleContent>
+                                            <pre
+                                                class="overflow-x-auto border-t bg-muted/30 py-2 font-mono text-xs leading-5"
+                                            ><div
+                                                v-for="(line, index) in file.diff.split('\n')"
+                                                :key="index"
+                                                :class="['px-3', lineClass(line)]"
+                                            >{{ line || ' ' }}</div></pre>
+                                        </CollapsibleContent>
+                                    </Collapsible>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div
+                            v-if="
+                                verification && verification.results.length > 0
+                            "
+                            class="space-y-2"
+                        >
+                            <p class="font-medium">Each check</p>
+                            <ul class="divide-y rounded-lg border">
+                                <li
+                                    v-for="(
+                                        result, position
+                                    ) in verification.results"
+                                    :key="`${verification.id}-${position}`"
+                                >
+                                    <Collapsible>
+                                        <CollapsibleTrigger
+                                            class="flex w-full items-center justify-between gap-4 p-3 text-left hover:bg-muted/50"
+                                        >
+                                            <span
+                                                class="flex items-center gap-2 text-sm"
+                                            >
+                                                <span
+                                                    :class="
+                                                        outcomeMarks[
+                                                            result.outcome
+                                                        ].class
+                                                    "
+                                                    aria-hidden="true"
+                                                    >{{
+                                                        outcomeMarks[
+                                                            result.outcome
+                                                        ].mark
+                                                    }}</span
+                                                >
+                                                <span class="sr-only">{{
+                                                    outcomeMarks[result.outcome]
+                                                        .label
+                                                }}</span>
+                                                {{ result.name }}
+                                                <Badge variant="outline">{{
+                                                    result.stage
+                                                }}</Badge>
+                                                <Badge
+                                                    v-if="
+                                                        result.stage ===
+                                                        'acceptance'
+                                                    "
+                                                    variant="secondary"
+                                                    >protected</Badge
+                                                >
+                                            </span>
+                                            <span
+                                                class="font-mono text-xs text-muted-foreground"
+                                            >
+                                                {{ resultTiming(result) }}
+                                            </span>
+                                        </CollapsibleTrigger>
+                                        <CollapsibleContent>
+                                            <pre
+                                                class="max-h-96 overflow-auto border-t bg-muted/30 p-3 font-mono text-xs leading-5 whitespace-pre-wrap"
+                                                >{{
+                                                    result.output ||
+                                                    'No output.'
+                                                }}</pre>
+                                        </CollapsibleContent>
+                                    </Collapsible>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div v-if="run" class="space-y-2">
+                            <p class="font-medium" data-test="run-log-toggle">
+                                Run log ({{ run.events.length }} events)
+                            </p>
+                            <ol class="divide-y rounded-lg border">
+                                <li
+                                    v-for="event in run.events"
+                                    :key="event.sequence"
+                                    class="flex gap-3 p-2"
+                                >
+                                    <span
+                                        class="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground"
+                                        >{{ event.sequence }}</span
+                                    >
+                                    <span class="break-words">{{
+                                        describeEvent(event)
                                     }}</span>
-                                    <span class="shrink-0 font-mono text-xs">
-                                        <span
-                                            class="text-green-700 dark:text-green-400"
-                                            >+{{ file.additions }}</span
-                                        >
-                                        <span
-                                            class="text-red-700 dark:text-red-400"
-                                        >
-                                            −{{ file.deletions }}</span
-                                        >
-                                    </span>
-                                </CollapsibleTrigger>
-                                <CollapsibleContent>
-                                    <pre
-                                        class="overflow-x-auto border-t bg-muted/30 py-2 font-mono text-xs leading-5"
-                                    ><div
-                                        v-for="(line, index) in file.diff.split('\n')"
-                                        :key="index"
-                                        :class="['px-3', lineClass(line)]"
-                                    >{{ line || ' ' }}</div></pre>
-                                </CollapsibleContent>
-                            </Collapsible>
-                        </li>
-                    </ul>
-                </div>
-
-                <div
-                    v-if="verification && verification.results.length > 0"
-                    class="space-y-2"
-                >
-                    <p class="font-medium">Each check</p>
-                    <ul class="divide-y rounded-lg border">
-                        <li
-                            v-for="(result, position) in verification.results"
-                            :key="`${verification.id}-${position}`"
-                        >
-                            <Collapsible>
-                                <CollapsibleTrigger
-                                    class="flex w-full items-center justify-between gap-4 p-3 text-left hover:bg-muted/50"
-                                >
-                                    <span
-                                        class="flex items-center gap-2 text-sm"
-                                    >
-                                        <span
-                                            :class="
-                                                outcomeMarks[result.outcome]
-                                                    .class
-                                            "
-                                            aria-hidden="true"
-                                            >{{
-                                                outcomeMarks[result.outcome]
-                                                    .mark
-                                            }}</span
-                                        >
-                                        <span class="sr-only">{{
-                                            outcomeMarks[result.outcome].label
-                                        }}</span>
-                                        {{ result.name }}
-                                        <Badge variant="outline">{{
-                                            result.stage
-                                        }}</Badge>
-                                        <Badge
-                                            v-if="result.stage === 'acceptance'"
-                                            variant="secondary"
-                                            >protected</Badge
-                                        >
-                                    </span>
-                                    <span
-                                        class="font-mono text-xs text-muted-foreground"
-                                    >
-                                        {{ resultTiming(result) }}
-                                    </span>
-                                </CollapsibleTrigger>
-                                <CollapsibleContent>
-                                    <pre
-                                        class="max-h-96 overflow-auto border-t bg-muted/30 p-3 font-mono text-xs leading-5 whitespace-pre-wrap"
-                                        >{{
-                                            result.output || 'No output.'
-                                        }}</pre>
-                                </CollapsibleContent>
-                            </Collapsible>
-                        </li>
-                    </ul>
-                </div>
-
-                <div v-if="run" class="space-y-2">
-                    <p class="font-medium" data-test="run-log-toggle">
-                        Run log ({{ run.events.length }} events)
-                    </p>
-                    <ol class="divide-y rounded-lg border">
-                        <li
-                            v-for="event in run.events"
-                            :key="event.sequence"
-                            class="flex gap-3 p-2"
-                        >
-                            <span
-                                class="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground"
-                                >{{ event.sequence }}</span
-                            >
-                            <span class="break-words">{{
-                                describeEvent(event)
-                            }}</span>
-                        </li>
-                    </ol>
-                </div>
-            </CollapsibleContent>
-        </Collapsible>
+                                </li>
+                            </ol>
+                        </div>
+                    </CollapsibleContent>
+                </Collapsible>
+            </div>
+        </div>
     </div>
 </template>

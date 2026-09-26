@@ -20,7 +20,7 @@ import PreviewController from '@/actions/App/Http/Controllers/PreviewController'
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
 import VisualEditController from '@/actions/App/Http/Controllers/VisualEditController';
 import VisualEditReversionController from '@/actions/App/Http/Controllers/VisualEditReversionController';
-import Heading from '@/components/Heading.vue';
+import AppTabs from '@/components/AppTabs.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -62,9 +62,9 @@ watch(
     (project) =>
         setLayoutProps({
             breadcrumbs: [
-                { title: 'Projects', href: index() },
+                { title: 'Your apps', href: index() },
                 { title: project.name, href: show(project.id) },
-                { title: 'Change how it looks', href: showEditor(project.id) },
+                { title: 'How it looks', href: showEditor(project.id) },
             ],
         }),
     { immediate: true },
@@ -333,13 +333,22 @@ const groups = computed(() =>
 </script>
 
 <template>
-    <Head title="Change how it looks" />
+    <Head :title="`${project.name}: how it looks`" />
 
     <div class="flex h-full flex-1 flex-col gap-4 p-4">
-        <Heading
-            title="Change how it looks"
-            description="Point at a part of your app, then change its size, space and shape"
-        />
+        <div class="space-y-6">
+            <header class="space-y-1">
+                <h1 class="text-xl font-semibold tracking-tight break-words">
+                    {{ project.name }}
+                </h1>
+                <p class="text-sm text-muted-foreground">
+                    Point at a part of your app, then change its size, space and
+                    shape.
+                </p>
+            </header>
+
+            <AppTabs :project-id="project.id" current="looks" />
+        </div>
 
         <section
             v-if="
