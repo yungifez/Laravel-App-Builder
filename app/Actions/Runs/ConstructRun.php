@@ -59,6 +59,7 @@ class ConstructRun
         private ClassifyChange $classifyChange,
         private AssessPreservation $assessPreservation,
         private AssessVerifyItems $assessVerifyItems,
+        private FormatChange $formatChange,
     ) {}
 
     /**
@@ -196,6 +197,12 @@ class ConstructRun
         $account = $driver->build($run, $plan, new ToolSession($this->toolExecutor, $run, $lease));
 
         $this->recordEvent($run, $lease, 'build_finished', ['attempt' => $run->repairs, 'account' => Str::limit($account, 2000)]);
+
+        $formatted = $this->formatChange->handle($workspace);
+
+        if ($formatted !== []) {
+            $this->recordEvent($run, $lease, 'formatted', ['formatters' => $formatted]);
+        }
 
         $patch = $this->extractCandidateChange->handle($workspace);
         $noteChanges = $this->extractCandidateChange->notes($workspace);

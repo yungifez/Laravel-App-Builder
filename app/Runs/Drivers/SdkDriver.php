@@ -143,7 +143,7 @@ class SdkDriver extends AgentDriver
         return <<<RULES
         ## How to work
 
-        You are working in the application's repository. Follow its AGENTS.md and Laravel's conventions. Add or update feature tests for the behaviour you build, run them with `php artisan test`, and fix failures. Never change tests/Acceptance, .env, vendor or .git: those changes are thrown away. Keep the notes in {$notes}/ up to date as described in AGENTS.md or, if it says nothing, by updating the notes of the areas you change.
+        You are working in the application's repository. Follow its AGENTS.md and Laravel's conventions. Add or update feature tests for the behaviour you build, run those tests (for example `php artisan test --filter=TeamSettingsTest`), and fix failures. The whole test suite, static analysis and type checks run on their own after you finish, and formatting is fixed for you, so do not spend time running them. Never change tests/Acceptance, .env, vendor or .git: those changes are thrown away. Keep the notes in {$notes}/ up to date as described in AGENTS.md or, if it says nothing, by updating the notes of the areas you change.
 
         When you are done, reply with a short summary of what you changed. Your summary is not taken as proof: the change is verified and reviewed independently.
         RULES;

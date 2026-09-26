@@ -591,7 +591,7 @@ const checks = computed(() => {
 
                     <!-- Deeper answers, for whoever wants them -->
                     <div
-                        v-if="run?.plan"
+                        v-if="run?.plan && !run.plan.answer"
                         class="flex rounded-md bg-muted p-0.5"
                         role="group"
                         aria-label="How much detail"
@@ -616,7 +616,7 @@ const checks = computed(() => {
                     </div>
 
                     <div
-                        v-if="depth >= 2 && run?.plan"
+                        v-if="depth >= 2 && run?.plan && !run.plan.answer"
                         class="space-y-4"
                         data-test="detail-why"
                     >

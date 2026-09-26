@@ -141,7 +141,10 @@ planner answers and the run completes from planning, as "Answered", with
 nothing built, checked or reviewed. While the change is being made, the
 agent runner writes `progress.json` next to its task file, and the thread
 says which areas of the app it is reading or changing, or that it is trying
-the change out.
+the change out. When the coder is done, the project's formatters
+(`BUILDER_CONSTRUCTION_FORMATTERS`, by default Pint and `vp fmt`) run on the
+files the change touched, so formatting never costs a repair. The coder runs
+only the tests for what it changed; the full checks run afterwards.
 While implementing, the run works in its own workspace: the project is copied
 in, the changes it follows up on are applied, and the result is committed as
 a baseline. The construction driver then changes the project only through

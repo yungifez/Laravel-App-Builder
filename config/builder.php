@@ -188,6 +188,17 @@ return [
         // timeout} to configure it per deployment.
         'setup' => json_decode((string) env('BUILDER_CONSTRUCTION_SETUP', '[]'), true) ?: [],
 
+        // Formatters run on the files a change touched, after the coder is
+        // done and before the checks. Formatting is mechanical, so a change
+        // is never sent back to a model for it. Each formatter gets the
+        // changed files with its extensions appended; one that fails or is
+        // missing is skipped. Set BUILDER_CONSTRUCTION_FORMATTERS to a JSON
+        // list of {name, command, extensions, timeout} to configure it.
+        'formatters' => json_decode((string) env('BUILDER_CONSTRUCTION_FORMATTERS', ''), true) ?: [
+            ['name' => 'PHP', 'command' => ['vendor/bin/pint'], 'extensions' => ['php'], 'timeout' => 120],
+            ['name' => 'Frontend', 'command' => ['npx', '--no-install', 'vp', 'fmt'], 'extensions' => ['ts', 'vue', 'js', 'mjs', 'css', 'json', 'md'], 'timeout' => 120],
+        ],
+
         // Commands callers may run by name through the "run_command" tool.
         'commands' => [
             'tests' => ['command' => ['php', 'artisan', 'test'], 'timeout' => 600],
