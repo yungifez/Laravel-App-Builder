@@ -63,10 +63,10 @@ class RunLifecycleTest extends TestCase
             $run->operations()->orderBy('id')->get()->map(fn ($operation) => [$operation->operation_key, $operation->tool, $operation->status->value])->all(),
         );
         $this->assertSame(
-            ['created', 'lease_acquired', 'status', 'workspace_ready', 'status', 'operation', 'operation', 'build_finished', 'status'],
+            ['created', 'lease_acquired', 'status', 'workspace_ready', 'context_compiled', 'status', 'operation', 'operation', 'build_finished', 'status'],
             $run->events()->pluck('type')->all(),
         );
-        $this->assertSame(range(1, 9), $run->events()->pluck('sequence')->all());
+        $this->assertSame(range(1, 10), $run->events()->pluck('sequence')->all());
         $this->assertSame('team-invitations', $run->plan['solution_key']);
 
         $featureRequest->refresh();
@@ -277,7 +277,7 @@ class RunLifecycleTest extends TestCase
                 ->where('run.operations', 2)
                 ->where('run.budget.operations', 30)
                 ->where('run.events.0.type', 'created')
-                ->where('run.events.6.data.tool', 'apply_patch'));
+                ->where('run.events.7.data.tool', 'apply_patch'));
     }
 
     /**

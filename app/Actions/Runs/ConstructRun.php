@@ -2,8 +2,13 @@
 
 namespace App\Actions\Runs;
 
+use App\Actions\Context\ClassifyChange;
+use App\Actions\Context\CompileContext;
 use App\Actions\Features\RequestVerification;
 use App\Actions\Workspaces\DestroyWorkspace;
+use App\Context\ChangeClassification;
+use App\Context\ContextPack;
+use App\Context\ProjectContext;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Features\Exceptions\CannotGenerateFeature;
@@ -16,6 +21,7 @@ use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\LeaseLost;
 use App\Runs\Exceptions\RunCancelled;
 use App\Runs\Plan;
+use App\Runs\Review;
 use App\Runs\ReviewEvidence;
 use App\Runs\RunLease;
 use App\Runs\ToolExecutor;
@@ -43,6 +49,8 @@ class ConstructRun
         private CancelRun $cancelRun,
         private FailRun $failRun,
         private DestroyWorkspace $destroyWorkspace,
+        private CompileContext $compileContext,
+        private ClassifyChange $classifyChange,
     ) {}
 
     /**
@@ -105,14 +113,25 @@ class ConstructRun
     }
 
     /**
-     * Prepare the workspace, have the driver plan the change, and save the plan.
+     * Prepare the workspace, have the driver plan the change, compile the
+     * project context for the areas the change is about, and save both.
      */
     protected function plan(Run $run, RunLease $lease, ConstructionDriver $driver): void
     {
         $workspace = $this->prepareRunWorkspace->handle($run, $lease);
-        $plan = $driver->plan($run, $this->gatherPlanningContext->handle($run, $workspace));
+        $planningContext = $this->gatherPlanningContext->handle($run, $workspace);
+        $plan = $driver->plan($run, $planningContext);
+        $pack = $this->compileContext->handle($planningContext->projectContext, [...$planningContext->preselectedCapabilities(), ...$plan->capabilities]);
 
-        $this->transitionRun->handle($run, RunStatus::Implementing, $lease, ['plan' => $plan->toArray()], [
+        $this->recordEvent($run, $lease, 'context_compiled', [
+            'mode' => $pack->mode->value,
+            'targets' => $pack->targets,
+            'included' => $pack->included,
+            'tokens' => $pack->tokens(),
+            'problems' => $pack->problems,
+        ]);
+
+        $this->transitionRun->handle($run, RunStatus::Implementing, $lease, ['plan' => $plan->toArray(), 'context' => $pack->toArray()], [
             'summary' => $plan->summary,
             'acceptance_criteria' => count($plan->acceptanceCriteria),
             'protected_suites' => count($plan->acceptance),
@@ -168,6 +187,9 @@ class ConstructRun
         $featureRequest = $run->featureRequest;
         $verification = $run->verifications()->latest('id')->firstOrFail();
         $plan = $this->planFor($run);
+        $pack = $run->context !== null ? ContextPack::fromArray($run->context) : null;
+        $projectContext = $pack?->projectContext() ?? new ProjectContext;
+        $classification = $this->classifyChange->handle($projectContext, $pack->targets ?? [], $featureRequest->patch);
 
         $review = $driver->review($run, new ReviewEvidence(
             request: $featureRequest->prompt,
@@ -176,6 +198,9 @@ class ConstructRun
             weakenedTests: TestChanges::weakened($featureRequest->patch),
             verificationStatus: $verification->status->value,
             verificationResults: $verification->results ?? [],
+            projectContext: $pack->text ?? '',
+            classification: $classification,
+            areaNames: array_map(fn ($capability) => $capability->name, $projectContext->capabilities),
         ));
 
         $this->recordEvent($run, $lease, 'review', [
@@ -183,10 +208,18 @@ class ConstructRun
             'summary' => $review->summary,
             'findings' => $review->findings,
             'verification_id' => $verification->id,
+            'areas' => [
+                'requested' => array_keys($classification->requested),
+                'may_also_affect' => array_keys($classification->mayAlsoAffect),
+                'unexpected' => array_keys($classification->unexpected),
+                'unclaimed_files' => count($classification->unclaimed),
+            ],
         ]);
 
+        $stored = ['review' => $this->storedReview($review, $classification)];
+
         if ($review->approved) {
-            $this->transitionRun->handle($run, RunStatus::Completed, $lease);
+            $this->transitionRun->handle($run, RunStatus::Completed, $lease, $stored);
 
             if ($run->workspace !== null) {
                 rescue(fn () => $this->destroyWorkspace->handle($run->workspace));
@@ -201,12 +234,30 @@ class ConstructRun
             $this->transitionRun->handle($run, RunStatus::Implementing, $lease, [
                 'repairs' => $run->repairs + 1,
                 'feedback' => ['reason' => 'review_findings', 'details' => $details ?: [$review->summary]],
+                ...$stored,
             ], ['reason' => 'review_findings']);
 
             return;
         }
 
-        $this->stopForDecision($run, $lease, __('The review found problems this run cannot fix: :summary', ['summary' => $review->summary]), 'review_findings');
+        $this->stopForDecision($run, $lease, __('The review found problems this run cannot fix: :summary', ['summary' => $review->summary]), 'review_findings', $stored);
+    }
+
+    /**
+     * Get a review as stored on the run, with each behaviour change placed in
+     * its section by the area it belongs to.
+     *
+     * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array{area: string|null, section: string, behavior: string, before: string, now: string}>, classification: array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>}}
+     */
+    protected function storedReview(Review $review, ChangeClassification $classification): array
+    {
+        return [
+            'approved' => $review->approved,
+            'summary' => $review->summary,
+            'findings' => $review->findings,
+            'changes' => array_map(fn (array $change) => [...$change, 'section' => $classification->sectionFor($change['area'])], $review->changes),
+            'classification' => $classification->toArray(),
+        ];
     }
 
     /**
@@ -230,10 +281,12 @@ class ConstructRun
 
     /**
      * Stop the run and ask the owner how to continue.
+     *
+     * @param  array<string, mixed>  $attributes  Other columns to save with the stop
      */
-    protected function stopForDecision(Run $run, RunLease $lease, string $reason, string $cause): void
+    protected function stopForDecision(Run $run, RunLease $lease, string $reason, string $cause, array $attributes = []): void
     {
-        $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['error' => $reason], [
+        $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['error' => $reason, ...$attributes], [
             'reason' => $cause,
             'choices' => self::DECISION_CHOICES,
         ]);

@@ -131,6 +131,27 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Project Context
+    |--------------------------------------------------------------------------
+    |
+    | The application describes itself in `.builder/`: project.md, plus one
+    | Markdown file per area in capabilities/ with its code paths,
+    | behaviours and Effects. A run's agents get the project notes and the
+    | files of the areas the change is about ("selective"). The other modes
+    | are the comparison conditions for the context experiments: "none",
+    | "flat" (every file) and "selective_without_effects".
+    |
+    */
+
+    'context' => [
+        'mode' => env('BUILDER_CONTEXT_MODE', 'selective'),
+
+        // Context files larger than this are left out and reported.
+        'max_file_bytes' => 65536,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Verification
     |--------------------------------------------------------------------------
     |

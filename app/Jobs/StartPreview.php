@@ -7,6 +7,7 @@ use App\Actions\Previews\StopPreview;
 use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\PreviewStatus;
+use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\Workspace;
 use App\Workspaces\WorkspaceManager;
@@ -63,13 +64,13 @@ class StartPreview implements ShouldQueue
             $driver->copyDirectory((string) $workspace->driver_id, $project->source_path);
 
             foreach ($featureRequest->lineage() as $position => $request) {
-                $patch = sprintf('.builder/%02d.patch', $position + 1);
+                $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);
                 $driver->writeFile((string) $workspace->driver_id, $patch, (string) $request->patch);
 
                 $this->run($runWorkspaceCommand, $workspace, ['git', 'apply', '--whitespace=nowarn', $patch], 120, __('Change #:id does not apply to the project.', ['id' => $request->id]));
             }
 
-            $this->run($runWorkspaceCommand, $workspace, ['rm', '-rf', '.builder'], 30, __('The workspace could not be prepared.'));
+            $this->run($runWorkspaceCommand, $workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], 30, __('The workspace could not be prepared.'));
 
             /** @var list<array{name: string, command: list<string>, timeout: int}> $setup */
             $setup = config('builder.preview.setup', []);

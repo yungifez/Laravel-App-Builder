@@ -6,17 +6,20 @@ use App\Runs\Exceptions\ConstructionFailed;
 use Illuminate\Support\Facades\Validator;
 
 /**
- * A reviewer's verdict on a verified change, with findings tied to evidence.
+ * A reviewer's verdict on a verified change, with findings tied to evidence,
+ * and the change described as behaviour the owner would notice.
  */
 final readonly class Review
 {
     /**
      * @param  list<array{severity: string, summary: string, file: string|null}>  $findings
+     * @param  list<array{area: string|null, behavior: string, before: string, now: string}>  $changes
      */
     public function __construct(
         public bool $approved,
         public string $summary,
         public array $findings = [],
+        public array $changes = [],
     ) {}
 
     /**
@@ -36,13 +39,18 @@ final readonly class Review
             'findings.*.severity' => ['required', 'string', 'in:blocking,minor'],
             'findings.*.summary' => ['required', 'string', 'max:2000'],
             'findings.*.file' => ['nullable', 'string', 'max:500'],
+            'changes' => ['sometimes', 'array', 'max:30'],
+            'changes.*.area' => ['nullable', 'string', 'max:60'],
+            'changes.*.behavior' => ['required', 'string', 'max:200'],
+            'changes.*.before' => ['required', 'string', 'max:1000'],
+            'changes.*.now' => ['required', 'string', 'max:1000'],
         ]);
 
         if ($validator->fails()) {
             throw new ConstructionFailed(__('The reviewer returned an invalid review: :errors', ['errors' => implode(' ', $validator->errors()->all())]));
         }
 
-        /** @var array{approved: bool, summary: string, findings: array<int, array{severity: string, summary: string, file?: string|null}>} $valid */
+        /** @var array{approved: bool, summary: string, findings: array<int, array{severity: string, summary: string, file?: string|null}>, changes?: array<int, array{area?: string|null, behavior: string, before: string, now: string}>} $valid */
         $valid = $validator->validated();
 
         $findings = array_values(array_map(fn (array $finding) => [
@@ -53,7 +61,14 @@ final readonly class Review
 
         $blocking = array_filter($findings, fn (array $finding) => $finding['severity'] === 'blocking');
 
-        return new self((bool) $valid['approved'] && $blocking === [], $valid['summary'], $findings);
+        $changes = array_values(array_map(fn (array $change) => [
+            'area' => $change['area'] ?? null,
+            'behavior' => $change['behavior'],
+            'before' => $change['before'],
+            'now' => $change['now'],
+        ], $valid['changes'] ?? []));
+
+        return new self((bool) $valid['approved'] && $blocking === [], $valid['summary'], $findings, $changes);
     }
 
     /**

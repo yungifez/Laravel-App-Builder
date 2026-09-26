@@ -6,6 +6,7 @@ use App\Actions\Workspaces\DestroyWorkspace;
 use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\WorkspaceStatus;
+use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\Workspace;
 use App\Runs\Exceptions\ConstructionFailed;
@@ -54,13 +55,13 @@ class PrepareRunWorkspace
             $driver->copyDirectory((string) $workspace->driver_id, $project->source_path);
 
             foreach (array_slice($featureRequest->lineage(), 0, -1) as $position => $ancestor) {
-                $patch = sprintf('.builder/%02d.patch', $position + 1);
+                $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);
                 $driver->writeFile((string) $workspace->driver_id, $patch, (string) $ancestor->patch);
 
                 $this->run($workspace, ['git', 'apply', '--whitespace=nowarn', $patch], __('Change #:id no longer applies to the project.', ['id' => $ancestor->id]));
             }
 
-            $this->run($workspace, ['rm', '-rf', '.builder'], __('The workspace could not be prepared.'));
+            $this->run($workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], __('The workspace could not be prepared.'));
             $this->run($workspace, ['git', 'init', '--quiet'], __('The workspace could not be prepared.'));
             $this->run($workspace, ['git', 'add', '--all'], __('The workspace could not be prepared.'));
             $this->run($workspace, ['git', ...self::GIT_IDENTITY, 'commit', '--quiet', '--allow-empty', '--no-verify', '-m', 'Baseline'], __('The workspace could not be prepared.'));

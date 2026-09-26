@@ -111,6 +111,17 @@ class AgentDriver implements ConstructionDriver
             $sections[] = "## The owner selected this step to change\n\n".$this->json($context->targetStep);
         }
 
+        if (filled($context->projectContext->project)) {
+            $sections[] = "## Project notes\n\n{$context->projectContext->project}";
+        }
+
+        if ($context->projectContext->capabilities !== []) {
+            $sections[] = "## Areas of the application\n\n".implode("\n", array_map(
+                fn ($capability) => "- {$capability->key}: {$capability->name}".($capability->summary !== null ? ". {$capability->summary}" : ''),
+                $context->projectContext->capabilities,
+            ));
+        }
+
         $sections[] = "## Project files\n\n".implode("\n", $context->files);
 
         foreach ($context->contents as $path => $contents) {
@@ -125,12 +136,18 @@ class AgentDriver implements ConstructionDriver
      */
     protected function buildPrompt(Run $run, Plan $plan, ToolSession $tools): string
     {
-        $sections = [
-            "## Owner's request\n\n{$run->featureRequest->prompt}",
+        $sections = ["## Owner's request\n\n{$run->featureRequest->prompt}"];
+
+        if (filled($run->context['text'] ?? null)) {
+            $sections[] = "## Project context\n\nWhat is known about the product for the areas this change touches.\n\n{$run->context['text']}";
+        }
+
+        array_push(
+            $sections,
             "## Plan\n\n{$plan->summary}",
             "## Tasks\n\n".$this->list($plan->tasks),
             "## Acceptance criteria\n\n".$this->list($plan->acceptanceCriteria),
-        ];
+        );
 
         if ($plan->assumptions !== []) {
             $sections[] = "## Assumptions\n\n".$this->list($plan->assumptions);
@@ -155,14 +172,44 @@ class AgentDriver implements ConstructionDriver
             $evidence->verificationResults,
         );
 
-        return implode("\n\n", [
+        return implode("\n\n", array_filter([
             "## Owner's request\n\n{$evidence->request}",
+            $evidence->projectContext !== '' ? "## Project context\n\n{$evidence->projectContext}" : null,
+            $this->areasTouched($evidence),
             "## Plan\n\n{$evidence->plan->summary}",
             "## Acceptance criteria\n\n".$this->list($evidence->plan->acceptanceCriteria),
             "## Verification: {$evidence->verificationStatus}\n\n".implode("\n", $results),
             "## Tests deleted or weakened by the diff\n\n".($evidence->weakenedTests === [] ? 'None.' : $this->json($evidence->weakenedTests)),
             "## Diff\n\n```diff\n".$this->bounded($evidence->patch)."\n```",
-        ]);
+        ]));
+    }
+
+    /**
+     * Describe where the change landed by area, for the reviewer's
+     * behaviour changes.
+     */
+    protected function areasTouched(ReviewEvidence $evidence): ?string
+    {
+        $classification = $evidence->classification;
+        $lines = [];
+
+        foreach (['requested' => 'requested', 'mayAlsoAffect' => 'may also affect', 'unexpected' => 'not expected'] as $property => $label) {
+            foreach ($classification->{$property} as $area => $files) {
+                $lines[] = "- {$area} ({$label}): ".($evidence->areaNames[$area] ?? $area).'; '.implode(', ', $files);
+            }
+        }
+
+        foreach ($classification->targets as $area) {
+            if (! isset($classification->requested[$area])) {
+                $lines[] = "- {$area} (requested): ".($evidence->areaNames[$area] ?? $area).'; no files it claims changed';
+            }
+        }
+
+        if ($classification->unclaimed !== []) {
+            $lines[] = '- Files no area claims: '.implode(', ', $classification->unclaimed);
+        }
+
+        return $lines === [] ? null : "## Areas this change touched\n\nUse these area keys for your behaviour changes.\n\n".implode("\n", $lines);
     }
 
     /**

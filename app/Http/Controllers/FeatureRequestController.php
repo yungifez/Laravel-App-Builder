@@ -7,6 +7,7 @@ use App\Features\PatchSummary;
 use App\Http\Requests\FeatureRequestStoreRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
+use App\Models\Run;
 use App\Models\RunEvent;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
@@ -54,6 +55,14 @@ class FeatureRequestController extends Controller
                 'acceptance_criteria' => $run->plan['acceptance_criteria'],
                 'assumptions' => $run->plan['assumptions'],
             ],
+            'context' => $run->context === null ? null : [
+                'mode' => $run->context['mode'],
+                'targets' => $run->context['targets'],
+                'included' => $run->context['included'],
+                'tokens' => array_sum(array_column($run->context['included'], 'tokens')),
+                'problems' => $run->context['problems'],
+            ],
+            'review' => $this->review($run),
             'repairs' => $run->repairs,
             'operations' => $run->operations()->count(),
             'budget' => [
@@ -69,6 +78,41 @@ class FeatureRequestController extends Controller
                 'data' => $event->data ?? [],
                 'created_at' => $event->created_at?->toIso8601String(),
             ]),
+        ];
+    }
+
+    /**
+     * Get the run's review for the owner: the behaviour changes and where the
+     * change landed by area, with the areas' names.
+     *
+     * @return array<string, mixed>|null
+     */
+    protected function review(Run $run): ?array
+    {
+        if ($run->review === null) {
+            return null;
+        }
+
+        $names = array_column($run->context['outline'] ?? [], 'name', 'key');
+        $classification = $run->review['classification'];
+        $areas = fn (array $files) => array_map(
+            fn (string $key) => ['key' => $key, 'name' => $names[$key] ?? $key, 'files' => $files[$key]],
+            array_keys($files),
+        );
+
+        return [
+            'summary' => $run->review['summary'],
+            'changes' => array_map(fn (array $change) => [
+                ...$change,
+                'area_name' => $change['area'] === null ? null : ($names[$change['area']] ?? $change['area']),
+            ], $run->review['changes']),
+            'areas' => [
+                'requested' => $areas($classification['requested']),
+                'may_also_affect' => $areas($classification['may_also_affect']),
+                'unexpected' => $areas($classification['unexpected']),
+            ],
+            'unclaimed' => $classification['unclaimed'],
+            'context_updates' => $classification['context_updates'],
         ];
     }
 

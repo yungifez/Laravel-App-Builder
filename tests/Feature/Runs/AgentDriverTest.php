@@ -18,6 +18,7 @@ use App\Models\Project;
 use App\Models\Run;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Ai\Prompts\AgentPrompt;
 use Laravel\Ai\Responses\Data\ToolCall;
 use Tests\Concerns\PreparesRuns;
@@ -279,6 +280,95 @@ class AgentDriverTest extends TestCase
         ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, '"path": "tests/Feature/TeamTest.php"')
             && str_contains($prompt->prompt, '"deleted": true'));
         $this->assertSame(RunStatus::NeedsUserDecision, $run->refresh()->status);
+    }
+
+    public function test_the_agents_get_the_selected_project_context_and_the_review_sorts_changes_by_area()
+    {
+        $config = "<?php\n\nreturn [\n    'owner' => ['members:invite'],\n];\n";
+        FeaturePlanner::fake([[...$this->plan(), 'capabilities' => ['teams', 'unknown']]]);
+        FeatureCoder::fake([
+            new ToolCall('call-1', 'write_file', ['path' => 'app/Models/Team.php', 'contents' => self::TEAM_WITH_DESCRIPTION, 'expected_sha256' => hash('sha256', self::TEAM), 'expected_revision' => 0]),
+            new ToolCall('call-2', 'write_file', ['path' => 'config/billing.php', 'contents' => "<?php\n\nreturn [];\n", 'expected_sha256' => null, 'expected_revision' => 1]),
+            new ToolCall('call-3', 'write_file', ['path' => 'config/teams.php', 'contents' => str_replace('members:invite', 'members:remove', $config), 'expected_sha256' => hash('sha256', $config), 'expected_revision' => 2]),
+            new ToolCall('call-4', 'write_file', ['path' => 'app/Other.php', 'contents' => "<?php\n", 'expected_sha256' => null, 'expected_revision' => 3]),
+            'Done.',
+        ]);
+        ChangeReviewer::fake([[
+            'approved' => true,
+            'summary' => 'Adds the description.',
+            'findings' => [],
+            'changes' => [
+                ['area' => 'teams', 'behavior' => 'Team details', 'before' => 'Teams had a name.', 'now' => 'Teams can also have a description.'],
+                ['area' => 'settings', 'behavior' => 'Removing members', 'before' => 'Owners could invite.', 'now' => 'Owners can remove members instead.'],
+                ['area' => 'made-up', 'behavior' => 'Something else', 'before' => 'Before.', 'now' => 'Now.'],
+            ],
+        ]]);
+
+        $run = app(StartRun::class)->handle($featureRequest = $this->request([
+            '.builder/project.md' => "# Sparkle Cleaning\n\nWe call customers clients.\n",
+            '.builder/capabilities/teams.md' => "---\ncapability: teams\nsummary: Clients belong to teams.\npaths: [app/Models/Team.php]\neffects:\n    - to: billing\n      strength: possible\n      reason: Each team is billed separately.\n      source: owner\n---\n# Teams\n\nA team always has a name.\n",
+            '.builder/capabilities/billing.md' => "---\ncapability: billing\nsummary: Invoices for teams.\npaths: [config/billing.php]\n---\n# Billing\n\nOnly owners see invoices.\n",
+            '.builder/capabilities/settings.md' => "---\ncapability: settings\npaths: [config/teams.php]\n---\n# Settings\n",
+        ]))->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame('selective', $run->context['mode']);
+        $this->assertSame(['teams'], $run->context['targets']);
+        $this->assertSame(['.builder/project.md', '.builder/capabilities/teams.md', 'index'], array_column($run->context['included'], 'file'));
+        $this->assertGreaterThan(0, $run->events()->where('type', 'context_compiled')->sole()->data['tokens']);
+
+        FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'We call customers clients.')
+            && str_contains($prompt->prompt, '- teams: Teams. Clients belong to teams.')
+            && ! str_contains($prompt->prompt, 'A team always has a name.'));
+        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'A team always has a name.')
+            && str_contains($prompt->prompt, '- Billing (possible): Each team is billed separately.')
+            && str_contains($prompt->prompt, '(.builder/capabilities/billing.md)')
+            && ! str_contains($prompt->prompt, 'Only owners see invoices.'));
+
+        $this->passVerification($run);
+
+        $run->refresh();
+        $this->assertSame(RunStatus::Completed, $run->status);
+        $this->assertSame([
+            'requested' => ['teams' => ['app/Models/Team.php']],
+            'may_also_affect' => ['billing' => ['config/billing.php']],
+            'unexpected' => ['settings' => ['config/teams.php']],
+            'unclaimed' => ['app/Other.php'],
+            'context_updates' => [],
+            'targets' => ['teams'],
+        ], $run->review['classification']);
+        $this->assertSame(['requested', 'unexpected', 'other'], array_column($run->review['changes'], 'section'));
+        ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, '## Areas this change touched')
+            && str_contains($prompt->prompt, '- settings (not expected): Settings; config/teams.php')
+            && str_contains($prompt->prompt, 'Files no area claims: app/Other.php'));
+
+        $this->actingAs($featureRequest->project->owner)
+            ->get(route('feature-requests.show', $featureRequest))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('run.context.mode', 'selective')
+                ->where('run.review.areas.requested.0.name', 'Teams')
+                ->where('run.review.areas.may_also_affect.0.files', ['config/billing.php'])
+                ->where('run.review.areas.unexpected.0.name', 'Settings')
+                ->where('run.review.changes.1.area_name', 'Settings')
+                ->where('run.review.changes.1.section', 'unexpected')
+                ->where('run.review.unclaimed', ['app/Other.php']));
+    }
+
+    public function test_a_context_file_that_cannot_be_read_is_reported_and_does_not_stop_the_run()
+    {
+        FeaturePlanner::fake([[...$this->plan(), 'capabilities' => ['teams']]]);
+        FeatureCoder::fake(['Nothing to do.']);
+
+        $run = app(StartRun::class)->handle($this->request([
+            '.builder/capabilities/teams.md' => "---\ncapability: teams\npaths: [app/Models/Team.php]\n---\n# Teams\n",
+            '.builder/capabilities/broken.md' => "---\ncapability: [not, a, key]\n---\n",
+            '.builder/capabilities/copy.md' => "---\ncapability: teams\n---\n",
+        ]))->refresh();
+
+        $this->assertSame(['teams'], $run->context['targets']);
+        $this->assertCount(2, $run->context['problems']);
+        $this->assertStringStartsWith('.builder/capabilities/broken.md:', $run->context['problems'][0]);
+        $this->assertSame('.builder/capabilities/copy.md: another file already describes "teams".', $run->context['problems'][1]);
     }
 
     /**

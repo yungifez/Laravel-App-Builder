@@ -20,6 +20,7 @@ final readonly class Plan
      * @param  list<string>  $tasks
      * @param  list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>  $steps
      * @param  list<string>  $acceptance  Protected acceptance test files that apply to the change
+     * @param  list<string>  $capabilities  The areas of the product (`.builder/capabilities`) the change is about
      */
     public function __construct(
         public string $summary,
@@ -29,6 +30,7 @@ final readonly class Plan
         public array $steps = [],
         public array $acceptance = [],
         public ?string $solutionKey = null,
+        public array $capabilities = [],
     ) {}
 
     /**
@@ -57,13 +59,15 @@ final readonly class Plan
             'steps.*.file' => ['required', 'string', 'max:500'],
             'steps.*.symbol' => ['required', 'string', 'max:300'],
             'steps.*.detail' => ['required', 'string', 'max:1000'],
+            'capabilities' => ['sometimes', 'array', 'max:10'],
+            'capabilities.*' => ['string', 'max:60'],
         ]);
 
         if ($validator->fails()) {
             throw new ConstructionFailed(__('The planner returned an invalid plan: :errors', ['errors' => implode(' ', $validator->errors()->all())]));
         }
 
-        /** @var array{summary: string, acceptance_criteria: array<int, string>, assumptions: array<int, string>, tasks: array<int, string>, steps: array<int, array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>} $valid */
+        /** @var array{summary: string, acceptance_criteria: array<int, string>, assumptions: array<int, string>, tasks: array<int, string>, steps: array<int, array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, capabilities?: array<int, string>} $valid */
         $valid = $validator->validated();
 
         return new self(
@@ -81,13 +85,14 @@ final readonly class Plan
             ], $valid['steps'])),
             acceptance: $acceptance,
             solutionKey: $solutionKey,
+            capabilities: array_values(array_unique($valid['capabilities'] ?? [])),
         );
     }
 
     /**
      * Restore a plan saved on a run.
      *
-     * @param  array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null}  $data
+     * @param  array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>}  $data
      */
     public static function fromArray(array $data): self
     {
@@ -99,13 +104,14 @@ final readonly class Plan
             steps: $data['steps'],
             acceptance: $data['acceptance'],
             solutionKey: $data['solution_key'],
+            capabilities: $data['capabilities'] ?? [],
         );
     }
 
     /**
      * Get the plan as stored on the run.
      *
-     * @return array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null}
+     * @return array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities: list<string>}
      */
     public function toArray(): array
     {
@@ -117,6 +123,7 @@ final readonly class Plan
             'steps' => $this->steps,
             'acceptance' => $this->acceptance,
             'solution_key' => $this->solutionKey,
+            'capabilities' => $this->capabilities,
         ];
     }
 }

@@ -64,8 +64,8 @@ class VerificationTest extends TestCase
 
         $workspaceId = $this->driver->copies[0]['workspace'];
         $this->assertSame($parent->project->source_path, $this->driver->copies[0]['source']);
-        $this->assertSame('PARENT PATCH', $this->driver->files["{$workspaceId}:.builder/01.patch"]);
-        $this->assertSame('FOLLOW-UP PATCH', $this->driver->files["{$workspaceId}:.builder/02.patch"]);
+        $this->assertSame('PARENT PATCH', $this->driver->files["{$workspaceId}:.builder-lineage/01.patch"]);
+        $this->assertSame('FOLLOW-UP PATCH', $this->driver->files["{$workspaceId}:.builder-lineage/02.patch"]);
 
         $this->assertSame('<phpunit>platform runner</phpunit>', $this->driver->files["{$workspaceId}:tests/Acceptance/phpunit.xml"]);
         $this->assertSame('<?php // platform helper', $this->driver->files["{$workspaceId}:tests/Acceptance/Support/Helper.php"]);

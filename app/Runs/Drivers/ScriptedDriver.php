@@ -3,6 +3,7 @@
 namespace App\Runs\Drivers;
 
 use App\Features\FeatureGeneratorManager;
+use App\Features\PatchSummary;
 use App\Models\Run;
 use App\Runs\Contracts\ConstructionDriver;
 use App\Runs\Exceptions\ConstructionFailed;
@@ -19,6 +20,8 @@ use App\Runs\ToolSession;
  * It exercises the whole construction pipeline (lease, journal, tools,
  * verification) without model calls. Operation keys are fixed, so a
  * duplicate or resumed delivery replays the journal instead of acting twice.
+ * A replayed solution is by definition what was asked for, so its plan names
+ * every area its patch touches.
  */
 class ScriptedDriver implements ConstructionDriver
 {
@@ -27,6 +30,7 @@ class ScriptedDriver implements ConstructionDriver
     public function plan(Run $run, PlanningContext $context): Plan
     {
         $change = $this->generators->driver($run->featureRequest->generator)->generate($run->featureRequest);
+        $touched = array_merge([], ...array_map(fn (array $file) => $context->projectContext->claiming($file['path']), PatchSummary::files($change->patch)));
 
         return new Plan(
             summary: $change->summary,
@@ -36,6 +40,7 @@ class ScriptedDriver implements ConstructionDriver
             steps: $change->steps,
             acceptance: $change->acceptance,
             solutionKey: $change->solutionKey,
+            capabilities: array_values(array_unique($touched)),
         );
     }
 
