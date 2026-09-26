@@ -7,6 +7,7 @@ use App\Actions\Runs\RunCodingAgent;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Context\ProjectNotes;
 use App\Enums\AgentOutcomeStatus;
+use App\Enums\ModelRole;
 use App\Features\AcceptanceSelector;
 use App\Models\Run;
 use App\Models\RunEvent;
@@ -91,7 +92,13 @@ class SdkDriver extends AgentDriver
 
         $model = $reviewer['model'] ?? null;
 
-        return $this->reviewWith($run, $evidence, $provider, is_string($model) && $model !== '' ? $model : null);
+        // A review on the default reviewer beats no review when the other
+        // provider cannot serve it; the switch is logged.
+        return $this->reviewWith(
+            $run,
+            $evidence,
+            [$provider => is_string($model) && $model !== '' ? $model : null] + [ModelRole::Reviewer->provider() => ModelRole::Reviewer->model()],
+        );
     }
 
     /**

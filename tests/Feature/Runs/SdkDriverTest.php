@@ -23,7 +23,9 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
+use Laravel\Ai\Exceptions\InsufficientCreditsException;
 use Laravel\Ai\Prompts\AgentPrompt;
+use Laravel\Ai\Providers\Provider;
 use Tests\Concerns\PreparesRuns;
 use Tests\Fakes\FakeCodingAgent;
 use Tests\TestCase;
@@ -121,6 +123,23 @@ class SdkDriverTest extends TestCase
 
         ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => $prompt->provider->name() === 'anthropic' && $prompt->model === 'default-reviewer');
         $this->assertSame(['built_by' => 'anthropic', 'wanted' => 'openai', 'reason' => 'no_credentials'], $run->events()->where('type', 'reviewer_not_independent')->sole()->data);
+    }
+
+    public function test_when_the_other_provider_is_out_of_credit_the_default_reviewer_reviews_and_it_is_logged()
+    {
+        config(['builder.models.reviewer' => ['provider' => 'anthropic', 'model' => 'default-reviewer']]);
+        ChangeReviewer::fake(fn (string $prompt, $attachments, Provider $provider) => $provider->name() === 'openai'
+            ? throw InsufficientCreditsException::forProvider('openai')
+            : ['approved' => true, 'summary' => 'Looks right.', 'findings' => [], 'changes' => [], 'verify' => [
+                ['criterion' => 1, 'test_file' => 'tests/Feature/TeamTest.php', 'test_name' => 'teams have a description'],
+            ]]);
+        $this->agent('claude', 'anthropic', $this->writes('claude', 'anthropic', 'app/Claude.php', "<?php\n"));
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run);
+
+        ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => $prompt->provider->name() === 'anthropic' && $prompt->model === 'default-reviewer');
+        $this->assertSame(['wanted' => 'openai', 'used' => 'anthropic'], $run->events()->where('type', 'reviewer_failed_over')->sole()->data);
     }
 
     public function test_a_failed_change_is_not_failed_over()

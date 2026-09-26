@@ -32,9 +32,12 @@ const CLAUDE_PROVIDER_ERRORS = new Set([
     'cloud_credential_error',
 ]);
 
-/** Codex reports failures as text only, so provider trouble is recognised by these patterns. */
-const CODEX_PROVIDER_ERROR =
-    /\b(401|403|429|500|502|503|504)\b|rate.?limit|quota|unauthori[sz]ed|invalid api key|incorrect api key|overloaded|server error|service unavailable|timed? ?out|ECONNRESET|ENOTFOUND|ECONNREFUSED/i;
+/**
+ * Provider trouble reported as text only: Codex failures, and errors either
+ * SDK throws (the Claude SDK throws when the account is out of credit).
+ */
+const PROVIDER_ERROR =
+    /\b(401|403|429|500|502|503|504)\b|rate.?limit|quota|credit balance|billing|unauthori[sz]ed|invalid api key|incorrect api key|overloaded|server error|service unavailable|timed? ?out|ECONNRESET|ENOTFOUND|ECONNREFUSED/i;
 
 /** What the agent has done so far, written after each step. */
 const progress = { doing: 'reading', last: null, read: [], changed: [] };
@@ -148,18 +151,20 @@ async function runClaude(task) {
 
     if (final.subtype !== 'success' || final.is_error) {
         const status = final.api_error_status ?? null;
+        const error =
+            (final.errors ?? []).join(' ') || final.result || final.subtype;
         const unavailable =
-            status !== null &&
-            (status === 401 ||
-                status === 403 ||
-                status === 429 ||
-                status >= 500);
+            (status !== null &&
+                (status === 401 ||
+                    status === 403 ||
+                    status === 429 ||
+                    status >= 500)) ||
+            PROVIDER_ERROR.test(error);
 
         return {
             status: unavailable ? 'provider_unavailable' : 'failed',
             error_kind: final.subtype,
-            error:
-                (final.errors ?? []).join(' ') || final.result || final.subtype,
+            error,
             ...usage,
         };
     }
@@ -225,7 +230,7 @@ async function runCodex(task) {
 
     if (failure !== null) {
         return {
-            status: CODEX_PROVIDER_ERROR.test(failure)
+            status: PROVIDER_ERROR.test(failure)
                 ? 'provider_unavailable'
                 : 'failed',
             error_kind: 'turn_failed',
@@ -253,10 +258,9 @@ try {
 
     print({
         adapter: task.adapter,
-        status:
-            task.adapter === 'codex' && CODEX_PROVIDER_ERROR.test(message)
-                ? 'provider_unavailable'
-                : 'failed',
+        status: PROVIDER_ERROR.test(message)
+            ? 'provider_unavailable'
+            : 'failed',
         error_kind: 'exception',
         error: message,
         turns: 0,

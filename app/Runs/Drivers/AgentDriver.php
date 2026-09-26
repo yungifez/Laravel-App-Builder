@@ -87,21 +87,27 @@ class AgentDriver implements ConstructionDriver
 
     public function review(Run $run, ReviewEvidence $evidence): Review
     {
-        return $this->reviewWith($run, $evidence, ModelRole::Reviewer->provider(), ModelRole::Reviewer->model());
+        return $this->reviewWith($run, $evidence, [ModelRole::Reviewer->provider() => ModelRole::Reviewer->model()]);
     }
 
     /**
-     * Have the reviewer judge the change on the given provider and model.
+     * Have the reviewer judge the change on the first of the given providers
+     * that can serve it (the AI SDK fails over on provider trouble, such as
+     * an account out of credit). A review on a later provider is logged.
+     *
+     * @param  array<string, string|null>  $providers  Provider names and their models, in order
      */
-    protected function reviewWith(Run $run, ReviewEvidence $evidence, string $provider, ?string $model): Review
+    protected function reviewWith(Run $run, ReviewEvidence $evidence, array $providers): Review
     {
-        $response = ChangeReviewer::make()->prompt(
-            $this->reviewPrompt($evidence),
-            provider: $provider,
-            model: $model,
-        );
+        $response = ChangeReviewer::make()->prompt($this->reviewPrompt($evidence), provider: $providers);
 
         $this->recordModelUsage->handle($run, ModelRole::Reviewer, $response);
+
+        $wanted = array_key_first($providers);
+
+        if ($response->meta->provider !== null && $response->meta->provider !== $wanted) {
+            $run->recordEvent('reviewer_failed_over', ['wanted' => $wanted, 'used' => $response->meta->provider]);
+        }
 
         return Review::fromModelOutput($this->structured($response, 'reviewer'));
     }
