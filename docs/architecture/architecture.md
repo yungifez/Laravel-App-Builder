@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 22.** This document consolidates the direction in [direction/](direction/)
+**Version 23.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -48,7 +48,13 @@ scoped by risk and never by diff size, and publishing always runs the full check
 one question outside ([direction 23](direction/23-assumptions.md),
 [§7](#when-to-ask-the-decision-check)): existing assumptions are questioned before new
 ones, evidence resolves what it can, and the owner sees the one question where
-being wrong matters most. When they disagree, the direction documents state intent
+being wrong matters most. Version 23 makes the engine a lightweight goal-directed
+control plane over a real Laravel application
+([direction 24](direction/24-goal-directed-control-plane.md)): Laravel is most of
+the formal system ([§1](#1-principles), [§4](#4-two-ontologies)), every change runs
+a closed loop that compares the result with the goal ([§9](#9-the-change-pipeline)),
+and symbolic planners and duplicated models of the app are ruled out
+([§20](#20-deliberately-not-built-yet)). When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -96,6 +102,10 @@ silently following either.
    costs more than the interruption.
 3. **Generative models create new information; deterministic tooling propagates
    known information.** Before choosing a model, ask whether a model is needed.
+   Use a model to resolve ambiguity once; use deterministic systems to enforce
+   and verify what was resolved. When software can answer a question (which
+   routes exist, which policy protects an action, which tests run this code,
+   what changed), never ask a model to infer it.
 4. **Our orchestration works at the product level; the agent's works at the
    engineering level.** We decide what changes, what is already known, what
    context and limits apply, and whether the result is acceptable. The agent
@@ -114,6 +124,13 @@ silently following either.
    a rule, package, adapter, verifier or template.
 9. **Say "unknown" rather than guess.** Every user-visible statement carries its
    provenance.
+10. **Laravel is most of the formal system.** Routes, middleware, policies and
+    gates, form requests, models and relationships, migrations, events, jobs,
+    commands, container bindings, configuration and tests are the source of
+    implementation truth. Real software structure outranks our interpretation
+    of it. The product layer holds only what Laravel cannot know: the goal, why
+    something exists, what is assumed, what the owner decided, what must stay
+    true, which behaviours matter to the owner, and what changed in meaning.
 
 ## 2. Positioning: convention over generation
 
@@ -220,6 +237,13 @@ Rules for the seam:
   (`laravel.route:appointments.cancel`,
   `laravel.policy:App\Policies\AppointmentPolicy@cancel`). Level 4 renders them
   through the profile.
+- **Do not formalize what Laravel already formalizes.** A product rule
+  ("Managers cannot refund over $500") points at the policy or gate that
+  enforces it and the tests that prove it; there is no second authorization
+  model. The same holds for validation (form requests), data (migrations,
+  schema introspection, relationships), background work (events, listeners,
+  jobs, configuration) and impact (test impact analysis, imports, the Vite
+  module graph, listeners, bindings). A copy is kept only to present it.
 - **Do not build a generic multi-framework system.** There is exactly one stack
   profile. The seam exists so that the product model does not become
   Laravel-shaped, not so that we can swap stacks soon.
@@ -930,6 +954,18 @@ by `builder/introspect --around=<behavior-key>` and discarded after the run.
 
 ## 9. The change pipeline
 
+The pipeline is a closed loop, not a plan executed once. For each substantial
+change the engine knows the **goal** (the outcome wanted), the **current
+behaviour**, the **assumptions** it is making, what to **preserve**, and the
+**effects** worth checking. The agent **acts** inside those limits; the engine
+**observes** with deterministic evidence (introspection, tests, test impact,
+static analysis, the build), **verifies** that the goal is now true and the
+preserved behaviour still holds, and repairs or replans when it is not. The
+accepted result is **recorded** as a Change Record, which is the execution
+trace from intent to verified result (§30.1). Comparing the state with the
+goal after every step is the useful part of goal-directed agents; a formal
+planning language is not needed (§20).
+
 ```
 request (chat, behaviour card, or visual selection)
  → intent: which capability and behaviours?           small model + graph + context
@@ -939,7 +975,7 @@ request (chat, behaviour card, or visual selection)
  → deterministic operations                           no model
  → agent tasks                                        execution router → agent adapter
  → normalization                                      curated Rector set + Pint
- → verification                                       §12
+ → verification                                       §12; fail → repair or replan
  → behaviour diff, assumptions to confirm → preview → approvals
  → learn: normalization hits, residuals, failures → candidate queue
 ```
@@ -1360,6 +1396,13 @@ rule catalogue; a page-builder document tree; generic multi-framework support;
 targeted test selection; multi-agent decomposition within one request;
 automated upgrades across many projects; inferred invariants as protections;
 online routing experiments on high-risk work.
+
+Not built at all (version 23): a formal planning language (PDDL) or symbolic
+planner, a theorem prover, a symbolic world model of the application, a formal
+behaviour or specification language, a copy of the app's schema or
+authorization model, a dependency ontology built by a model, and confidence
+scores for assumptions. Rules start as plain language and become checks
+progressively (§31.2); effects carry provenance, not percentages.
 
 ## 21. Status and staged plan
 
@@ -2762,7 +2805,11 @@ This refines §30.1 by splitting the notes by what they do. It adds no store.
 | Relationships | Things this is connected to     | `effects` in each area's frontmatter                                     |
 | Changes       | What changed                    | Kept feature requests (brief, evidence, commit) and visual edits (§30.1) |
 
-Code and runtime stay the source of implementation reality.
+Code and runtime stay the source of implementation reality (§1, principle 10).
+A behaviour stays light: a key, a plain name, and, when known, who does it,
+its key rules and the tests that prove it. Knowledge items keep their kind
+(decision, assumption, invariant, guidance; §7 Provenance) and little else.
+The database is not normalized further until real use asks for it.
 
 ### 31.2 Knowledge is not enforcement
 
