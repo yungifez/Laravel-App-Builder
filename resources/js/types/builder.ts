@@ -28,6 +28,8 @@ export type ChangeItem = {
     prompt: string;
     summary: string | null;
     state: ChangeState;
+    /** Waiting on the owner's answer to a question. */
+    asks: boolean;
     updated_at: string | null;
 };
 

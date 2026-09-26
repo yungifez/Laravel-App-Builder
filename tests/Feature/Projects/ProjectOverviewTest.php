@@ -4,10 +4,12 @@ namespace Tests\Feature\Projects;
 
 use App\Enums\DeploymentStatus;
 use App\Enums\FeatureRequestStatus;
+use App\Enums\RunStatus;
 use App\Models\Deployment;
 use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\Project;
+use App\Models\Run;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -43,10 +45,27 @@ class ProjectOverviewTest extends TestCase
                 ->where('changes.1.state', 'undone')
                 ->where('changes.2.id', $waiting->id)
                 ->where('changes.2.state', 'waiting')
+                ->where('changes.2.asks', false)
                 ->where('changes.3.id', $working->id)
                 ->where('changes.3.state', 'working')
                 ->where('changes.4.id', $stopped->id)
                 ->where('changes.4.state', 'stopped'));
+    }
+
+    public function test_a_change_waiting_on_a_question_asks_for_an_answer()
+    {
+        $project = Project::factory()->create();
+        $asking = FeatureRequest::factory()->for($project)->create();
+        Run::factory()->for($asking)->create([
+            'status' => RunStatus::NeedsUserDecision,
+            'question' => ['text' => 'Who can invite?', 'why' => '', 'options' => ['Owners', 'Everyone'], 'recommended' => null],
+        ]);
+
+        $this->actingAs($project->owner)
+            ->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('changes.0.state', 'waiting')
+                ->where('changes.0.asks', true));
     }
 
     public function test_the_app_page_shows_the_running_app_next_to_the_conversation()

@@ -117,7 +117,18 @@ const screens: { key: Device; label: string; icon: typeof Monitor }[] = [
 ];
 
 // A conversation reads oldest first, with the newest ask next to the box.
-const thread = computed(() => [...props.changes].reverse());
+// Oldest first, like a chat, with the changes still open (working or
+// waiting for the owner) together just above the box, where the owner acts.
+const thread = computed(() => {
+    const oldestFirst = [...props.changes].reverse();
+    const open = (item: ChangeItem) =>
+        item.state === 'waiting' || item.state === 'working';
+
+    return [
+        ...oldestFirst.filter((item) => !open(item)),
+        ...oldestFirst.filter(open),
+    ];
+});
 const threadEnd = ref<HTMLElement | null>(null);
 
 const waiting = computed(
@@ -510,7 +521,7 @@ function send(event: KeyboardEvent): void {
                                 <span
                                     v-if="item.state === 'waiting'"
                                     class="mt-0.5 shrink-0 text-xs font-medium text-amber-600 dark:text-amber-400"
-                                    >Review</span
+                                    >{{ item.asks ? 'Answer' : 'Review' }}</span
                                 >
                                 <span
                                     v-else-if="item.updated_at"
@@ -543,7 +554,11 @@ function send(event: KeyboardEvent): void {
                             rows="3"
                             required
                             class="block w-full resize-none bg-transparent px-3 pt-3 text-base outline-none placeholder:text-muted-foreground md:text-sm"
-                            placeholder="Ask for a change…"
+                            :placeholder="
+                                change
+                                    ? 'Ask for a new change…'
+                                    : 'Ask for a change…'
+                            "
                             @keydown.enter.meta.prevent="send"
                             @keydown.enter.ctrl.prevent="send"
                         />

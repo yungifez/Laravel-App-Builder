@@ -19,7 +19,7 @@ class SummarizeChanges
      * owner. Otherwise a kept request wins, so a kept follow-up does not
      * leave its parent "waiting" for ever.
      *
-     * @return list<array{id: int, prompt: string, summary: string|null, state: string, updated_at: string|null}>
+     * @return list<array{id: int, prompt: string, summary: string|null, state: string, asks: bool, updated_at: string|null}>
      */
     public function handle(Project $project): array
     {
@@ -35,6 +35,8 @@ class SummarizeChanges
                     'prompt' => $root->prompt,
                     'summary' => $shown->summary,
                     'state' => $state->value,
+                    // Waiting on an answer rather than on a look at the result.
+                    'asks' => $state === ChangeState::Waiting && $shown->status === FeatureRequestStatus::Generating,
                     'updated_at' => ($shown->reverted_at ?? $shown->accepted_at ?? $shown->updated_at)?->toIso8601String(),
                 ];
             })
