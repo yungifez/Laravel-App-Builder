@@ -11,7 +11,7 @@ process.stdout.write(
         type: 'result',
         adapter: task.adapter,
         status: 'completed',
-        summary: `model=${task.model ?? 'default'} turns=${task.max_turns} key=${process.env.ANTHROPIC_API_KEY ? 'present' : 'missing'}`,
+        summary: `model=${task.model ?? 'default'} turns=${task.max_turns} key=${process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY ? 'present' : 'missing'} sandbox=${task.sandbox ?? 'none'}`,
         turns: 3,
         input_tokens: 1200,
         output_tokens: 300,

@@ -249,7 +249,15 @@ return [
 
         'adapters' => [
             'claude' => ['provider' => 'anthropic', 'model' => env('BUILDER_CLAUDE_AGENT_MODEL')],
-            'codex' => ['provider' => 'openai', 'model' => env('BUILDER_CODEX_AGENT_MODEL')],
+            // Codex's own sandbox needs Linux user namespaces, which most
+            // containers do not allow. Where the workspace is already the
+            // boundary (a container), set BUILDER_CODEX_SANDBOX to
+            // "danger-full-access", as the Claude agent runs.
+            'codex' => [
+                'provider' => 'openai',
+                'model' => env('BUILDER_CODEX_AGENT_MODEL'),
+                'sandbox' => env('BUILDER_CODEX_SANDBOX', 'workspace-write'),
+            ],
         ],
 
         'max_turns' => (int) env('BUILDER_AGENT_MAX_TURNS', 80),

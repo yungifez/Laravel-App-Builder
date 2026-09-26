@@ -65,6 +65,7 @@ class CodingAgentManager extends Manager
     protected function runner(string $adapter, array $credentials): CodingAgent
     {
         $model = $this->config->get("builder.agents.adapters.{$adapter}.model");
+        $sandbox = $this->config->get("builder.agents.adapters.{$adapter}.sandbox");
 
         return new RunnerAgent(
             $adapter,
@@ -73,6 +74,7 @@ class CodingAgentManager extends Manager
             $credentials,
             $this->container->make(WorkspaceManager::class),
             $this->container->make(RunWorkspaceCommand::class),
+            is_string($sandbox) && $sandbox !== '' ? $sandbox : null,
         );
     }
 }

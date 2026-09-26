@@ -181,7 +181,7 @@ async function runCodex(task) {
     const thread = codex.startThread({
         workingDirectory: process.cwd(),
         model: task.model ?? undefined,
-        sandboxMode: 'workspace-write',
+        sandboxMode: task.sandbox ?? 'workspace-write',
         approvalPolicy: 'never',
         networkAccessEnabled: false,
         webSearchMode: 'disabled',

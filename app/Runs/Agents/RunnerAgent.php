@@ -23,6 +23,7 @@ class RunnerAgent implements CodingAgent
 
     /**
      * @param  array<string, string>  $credentials  Environment variables for the runner
+     * @param  string|null  $sandbox  The agent's own sandbox mode, when it has one
      */
     public function __construct(
         protected string $adapter,
@@ -31,6 +32,7 @@ class RunnerAgent implements CodingAgent
         protected array $credentials,
         protected WorkspaceManager $workspaces,
         protected RunWorkspaceCommand $runWorkspaceCommand,
+        protected ?string $sandbox = null,
     ) {}
 
     public function provider(): string
@@ -48,6 +50,7 @@ class RunnerAgent implements CodingAgent
             'model' => $this->model,
             'max_turns' => $task->maxTurns,
             'max_budget_usd' => $task->maxBudgetUsd,
+            'sandbox' => $this->sandbox,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
 
         try {
