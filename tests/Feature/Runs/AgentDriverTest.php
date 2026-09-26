@@ -285,7 +285,12 @@ class AgentDriverTest extends TestCase
     public function test_the_agents_get_the_selected_project_context_and_the_review_sorts_changes_by_area()
     {
         $config = "<?php\n\nreturn [\n    'owner' => ['members:invite'],\n];\n";
-        FeaturePlanner::fake([[...$this->plan(), 'capabilities' => ['teams', 'unknown']]]);
+        FeaturePlanner::fake([[...$this->plan(), 'capabilities' => ['teams', 'unknown'], 'understood_as' => 'Data change', 'current_behavior' => 'Teams have only a name.', 'preserve' => [
+            ['area' => 'teams', 'statement' => 'A team always has a name.'],
+            ['area' => 'account', 'statement' => 'People can still sign up.'],
+            ['area' => 'settings', 'statement' => 'Owners can still invite.'],
+            ['area' => null, 'statement' => 'Nothing else changes.'],
+        ]]]);
         FeatureCoder::fake([
             new ToolCall('call-1', 'write_file', ['path' => 'app/Models/Team.php', 'contents' => self::TEAM_WITH_DESCRIPTION, 'expected_sha256' => hash('sha256', self::TEAM), 'expected_revision' => 0]),
             new ToolCall('call-2', 'write_file', ['path' => 'config/billing.php', 'contents' => "<?php\n\nreturn [];\n", 'expected_sha256' => null, 'expected_revision' => 1]),
@@ -306,9 +311,12 @@ class AgentDriverTest extends TestCase
 
         $run = app(StartRun::class)->handle($featureRequest = $this->request([
             '.builder/project.md' => "# Sparkle Cleaning\n\nWe call customers clients.\n",
-            '.builder/capabilities/teams.md' => "---\ncapability: teams\nsummary: Clients belong to teams.\npaths: [app/Models/Team.php]\neffects:\n    - to: billing\n      strength: possible\n      reason: Each team is billed separately.\n      source: owner\n---\n# Teams\n\nA team always has a name.\n",
+            '.builder/capabilities/teams.md' => "---\ncapability: teams\nsummary: Clients belong to teams.\npaths: [app/Models/Team.php, tests/Feature/TeamTest.php]\neffects:\n    - to: billing\n      strength: possible\n      reason: Each team is billed separately.\n      source: owner\n---\n# Teams\n\nA team always has a name.\n",
             '.builder/capabilities/billing.md' => "---\ncapability: billing\nsummary: Invoices for teams.\npaths: [config/billing.php]\n---\n# Billing\n\nOnly owners see invoices.\n",
             '.builder/capabilities/settings.md' => "---\ncapability: settings\npaths: [config/teams.php]\n---\n# Settings\n",
+            '.builder/capabilities/account.md' => "---\ncapability: account\npaths: [app/Account.php]\n---\n# Account\n",
+            'app/Account.php' => "<?php\n",
+            'tests/Feature/TeamTest.php' => "<?php\n",
         ]))->refresh();
 
         $this->assertSame(RunStatus::Verifying, $run->status);
@@ -320,7 +328,10 @@ class AgentDriverTest extends TestCase
         FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'We call customers clients.')
             && str_contains($prompt->prompt, '- teams: Teams. Clients belong to teams.')
             && ! str_contains($prompt->prompt, 'A team always has a name.'));
-        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'A team always has a name.')
+        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, "## What it does now\n\nTeams have only a name.")
+            && str_contains($prompt->prompt, "## Keep as it is\n\nDo not change these.")
+            && str_contains($prompt->prompt, '- People can still sign up.')
+            && str_contains($prompt->prompt, 'A team always has a name.')
             && str_contains($prompt->prompt, '- Billing (possible): Each team is billed separately.')
             && str_contains($prompt->prompt, '(.builder/capabilities/billing.md)')
             && ! str_contains($prompt->prompt, 'Only owners see invoices.'));
@@ -338,9 +349,16 @@ class AgentDriverTest extends TestCase
             'targets' => ['teams'],
         ], $run->review['classification']);
         $this->assertSame(['requested', 'unexpected', 'other'], array_column($run->review['changes'], 'section'));
+        $this->assertSame([
+            ['area' => 'teams', 'statement' => 'A team always has a name.', 'evidence' => 'verified', 'unchanged' => false, 'tests' => 1],
+            ['area' => 'account', 'statement' => 'People can still sign up.', 'evidence' => 'untouched', 'unchanged' => true, 'tests' => 0],
+            ['area' => 'settings', 'statement' => 'Owners can still invite.', 'evidence' => 'not_checked', 'unchanged' => false, 'tests' => 0],
+            ['area' => null, 'statement' => 'Nothing else changes.', 'evidence' => 'not_checked', 'unchanged' => false, 'tests' => 0],
+        ], $run->review['preserved']);
         ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, '## Areas this change touched')
             && str_contains($prompt->prompt, '- settings (not expected): Settings; config/teams.php')
-            && str_contains($prompt->prompt, 'Files no area claims: app/Other.php'));
+            && str_contains($prompt->prompt, 'Files no area claims: app/Other.php')
+            && str_contains($prompt->prompt, "## Must stay as it is\n\n- A team always has a name."));
 
         $this->actingAs($featureRequest->project->owner)
             ->get(route('feature-requests.show', $featureRequest))
@@ -351,7 +369,11 @@ class AgentDriverTest extends TestCase
                 ->where('run.review.areas.unexpected.0.name', 'Settings')
                 ->where('run.review.changes.1.area_name', 'Settings')
                 ->where('run.review.changes.1.section', 'unexpected')
-                ->where('run.review.unclaimed', ['app/Other.php']));
+                ->where('run.review.unclaimed', ['app/Other.php'])
+                ->where('run.plan.understood_as', 'Data change')
+                ->where('run.plan.preserve.1', 'People can still sign up.')
+                ->where('run.review.preserved.0.area_name', 'Teams')
+                ->where('run.review.preserved.1.evidence', 'untouched'));
     }
 
     public function test_a_context_file_that_cannot_be_read_is_reported_and_does_not_stop_the_run()

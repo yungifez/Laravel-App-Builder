@@ -14,7 +14,7 @@ final readonly class ContextPack
     /**
      * @param  list<string>  $targets  The areas the change is about
      * @param  list<array{file: string, tokens: int}>  $included
-     * @param  list<array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed: string|null}>}>  $outline
+     * @param  list<array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed: string|null}>, test_files?: list<string>}>  $outline
      * @param  list<string>  $problems
      */
     public function __construct(
@@ -29,7 +29,7 @@ final readonly class ContextPack
     /**
      * Restore a pack saved on a run.
      *
-     * @param  array{mode: string, targets: list<string>, text: string, included: list<array{file: string, tokens: int}>, outline: list<array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed: string|null}>}>, problems: list<string>}  $data
+     * @param  array{mode: string, targets: list<string>, text: string, included: list<array{file: string, tokens: int}>, outline: list<array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed: string|null}>, test_files?: list<string>}>, problems: list<string>}  $data
      */
     public static function fromArray(array $data): self
     {
@@ -39,7 +39,7 @@ final readonly class ContextPack
     /**
      * Get the pack as stored on the run.
      *
-     * @return array{mode: string, targets: list<string>, text: string, included: list<array{file: string, tokens: int}>, outline: list<array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed: string|null}>}>, problems: list<string>}
+     * @return array{mode: string, targets: list<string>, text: string, included: list<array{file: string, tokens: int}>, outline: list<array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed: string|null}>, test_files?: list<string>}>, problems: list<string>}
      */
     public function toArray(): array
     {

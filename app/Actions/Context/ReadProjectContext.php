@@ -58,7 +58,7 @@ class ReadProjectContext
             }
 
             try {
-                $capability = Capability::fromMarkdown($path, $text);
+                $capability = Capability::fromMarkdown($path, $text)->withTestFilesFrom($files);
             } catch (InvalidContextFile $exception) {
                 $problems[] = $exception->getMessage();
 

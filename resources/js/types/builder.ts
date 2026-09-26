@@ -108,6 +108,9 @@ export type Run = {
         summary: string;
         acceptance_criteria: string[];
         assumptions: string[];
+        understood_as: string | null;
+        current_behavior: string | null;
+        preserve: string[];
     } | null;
     context: {
         mode: 'none' | 'flat' | 'selective' | 'selective_without_effects';
@@ -144,6 +147,14 @@ export type RunReview = {
         now: string;
     }[];
     areas: Record<Exclude<ChangeSection, 'other'>, ChangedArea[]>;
+    preserved: {
+        area: string | null;
+        area_name: string | null;
+        statement: string;
+        evidence: 'verified' | 'untouched' | 'not_checked';
+        unchanged: boolean;
+        tests: number;
+    }[];
     unclaimed: string[];
     context_updates: string[];
 };

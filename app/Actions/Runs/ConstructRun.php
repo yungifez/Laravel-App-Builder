@@ -2,6 +2,7 @@
 
 namespace App\Actions\Runs;
 
+use App\Actions\Context\AssessPreservation;
 use App\Actions\Context\ClassifyChange;
 use App\Actions\Context\CompileContext;
 use App\Actions\Features\RequestVerification;
@@ -51,6 +52,7 @@ class ConstructRun
         private DestroyWorkspace $destroyWorkspace,
         private CompileContext $compileContext,
         private ClassifyChange $classifyChange,
+        private AssessPreservation $assessPreservation,
     ) {}
 
     /**
@@ -216,7 +218,10 @@ class ConstructRun
             ],
         ]);
 
-        $stored = ['review' => $this->storedReview($review, $classification)];
+        $stored = ['review' => [
+            ...$this->storedReview($review, $classification),
+            'preserved' => $this->assessPreservation->handle($plan, $classification, $projectContext, $verification->results ?? []),
+        ]];
 
         if ($review->approved) {
             $this->transitionRun->handle($run, RunStatus::Completed, $lease, $stored);

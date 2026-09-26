@@ -32,7 +32,8 @@ class ChangeReviewer implements Agent, HasStructuredOutput
         - an acceptance criterion the diff does not satisfy, or satisfies only partly;
         - a security or authorization gap (missing policy checks, mass assignment, unvalidated input, secrets);
         - deleted or weakened tests without a clear reason in the plan;
-        - a failing or errored verification result.
+        - a failing or errored verification result;
+        - a change to anything listed under "Must stay as it is".
         Report style issues and small improvements as minor findings.
 
         Set approved to true only when there are no blocking findings. Name the file for each finding where you can.

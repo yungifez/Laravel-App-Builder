@@ -54,6 +54,9 @@ class FeatureRequestController extends Controller
                 'summary' => $run->plan['summary'],
                 'acceptance_criteria' => $run->plan['acceptance_criteria'],
                 'assumptions' => $run->plan['assumptions'],
+                'understood_as' => $run->plan['understood_as'] ?? null,
+                'current_behavior' => $run->plan['current_behavior'] ?? null,
+                'preserve' => array_column($run->plan['preserve'] ?? [], 'statement'),
             ],
             'context' => $run->context === null ? null : [
                 'mode' => $run->context['mode'],
@@ -111,6 +114,10 @@ class FeatureRequestController extends Controller
                 'may_also_affect' => $areas($classification['may_also_affect']),
                 'unexpected' => $areas($classification['unexpected']),
             ],
+            'preserved' => array_map(fn (array $item) => [
+                ...$item,
+                'area_name' => $item['area'] === null ? null : ($names[$item['area']] ?? $item['area']),
+            ], $run->review['preserved'] ?? []),
             'unclaimed' => $classification['unclaimed'],
             'context_updates' => $classification['context_updates'],
         ];
