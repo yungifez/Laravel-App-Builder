@@ -38,6 +38,8 @@ class ChangeReviewer implements Agent, HasStructuredOutput
 
         Set approved to true only when there are no blocking findings. Name the file for each finding where you can.
 
+        The acceptance criteria are numbered. For each one, add an entry to verify with its number and the test in the diff that checks it: the test file's path and the test method's name. Use null for both when no test in the diff checks it; that is a blocking finding. The platform checks that the file you name is part of the diff.
+
         Then describe the change for the owner, who is not technical, as changes: one entry per behaviour they would notice, with what it did before and what it does now, in plain words and without file or class names. Set area to the key of the area it belongs to from "Areas this change touched", or null when none fits. Include behaviour that changed in areas the request was not about: the owner decides whether it is wanted.
         INSTRUCTIONS;
     }
@@ -54,6 +56,11 @@ class ChangeReviewer implements Agent, HasStructuredOutput
                 'severity' => $schema->string()->enum(['blocking', 'minor'])->required(),
                 'summary' => $schema->string()->required(),
                 'file' => $schema->string()->nullable(),
+            ])->withoutAdditionalProperties())->required(),
+            'verify' => $schema->array()->items($schema->object([
+                'criterion' => $schema->integer()->required(),
+                'test_file' => $schema->string()->nullable(),
+                'test_name' => $schema->string()->nullable(),
             ])->withoutAdditionalProperties())->required(),
             'changes' => $schema->array()->items($schema->object([
                 'area' => $schema->string()->nullable(),

@@ -206,6 +206,17 @@ function evidenceLabel(item: RunReview['preserved'][number]): string {
     }
 }
 
+function verifyLabel(item: RunReview['verified'][number]): string {
+    switch (item.evidence) {
+        case 'tested':
+            return `checked by a test in this change that passed (${item.test_file})`;
+        case 'not_run':
+            return `a test in this change covers it, but the tests did not pass (${item.test_file})`;
+        default:
+            return 'no test in this change checks it';
+    }
+}
+
 function changesIn(section: ChangeSection) {
     return (props.run?.review?.changes ?? []).filter(
         (change) => change.section === section,
@@ -518,6 +529,24 @@ function lineClass(line: string): string {
                         </p>
                     </div>
                 </template>
+                <div
+                    v-if="run.review.verified.length > 0"
+                    class="space-y-2"
+                    data-test="review-verified"
+                >
+                    <p class="font-medium">Done when</p>
+                    <ul class="space-y-1">
+                        <li
+                            v-for="(item, index) in run.review.verified"
+                            :key="index"
+                        >
+                            {{ item.criterion }}
+                            <span class="text-xs text-muted-foreground">
+                                · {{ verifyLabel(item) }}</span
+                            >
+                        </li>
+                    </ul>
+                </div>
                 <div
                     v-if="run.review.preserved.length > 0"
                     class="space-y-2"

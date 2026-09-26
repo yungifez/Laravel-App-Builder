@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Projects\CreateProject;
+use App\Actions\Projects\SummarizeProjectTelemetry;
 use App\Http\Requests\ProjectStoreRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -41,9 +42,10 @@ class ProjectController extends Controller
     }
 
     /**
-     * Show a project, the feature requests made for it and its latest commits.
+     * Show a project, the feature requests made for it, its latest commits
+     * and how its changes went.
      */
-    public function show(Project $project, ProjectRepository $repository): Response
+    public function show(Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry): Response
     {
         Gate::authorize('view', $project);
 
@@ -58,6 +60,7 @@ class ProjectController extends Controller
                     'created_at' => $featureRequest->created_at?->toIso8601String(),
                 ]),
             'history' => $repository->log($project, 20),
+            'telemetry' => $summarizeTelemetry->handle($project),
         ]);
     }
 }

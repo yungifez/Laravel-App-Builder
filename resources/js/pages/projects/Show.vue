@@ -14,13 +14,23 @@ import type {
     FeatureRequestSummary,
     ProjectCommit,
     ProjectSummary,
+    ProjectTelemetry,
 } from '@/types';
 
 const props = defineProps<{
     project: ProjectSummary;
     featureRequests: FeatureRequestSummary[];
     history: ProjectCommit[];
+    telemetry: ProjectTelemetry;
 }>();
+
+function rate(part: number, whole: number): string {
+    return whole === 0 ? '–' : `${Math.round((part / whole) * 100)}%`;
+}
+
+function dollars(amount: number | null): string {
+    return amount === null ? '–' : `$${amount.toFixed(2)}`;
+}
 
 watch(
     () => props.project,
@@ -104,6 +114,72 @@ watch(
                     </Link>
                 </li>
             </ul>
+        </section>
+
+        <section
+            v-if="telemetry.requests > 0"
+            class="max-w-2xl space-y-4"
+            data-test="project-telemetry"
+        >
+            <Heading
+                variant="small"
+                title="How changes went"
+                :description="`${telemetry.requests} requests, ${telemetry.accepted} accepted, ${telemetry.reverted} undone`"
+            />
+
+            <dl class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div class="rounded-lg border p-3">
+                    <dt class="text-xs text-muted-foreground">
+                        Cost per accepted change
+                    </dt>
+                    <dd class="text-lg font-medium">
+                        {{ dollars(telemetry.cost_per_accepted_change_usd) }}
+                    </dd>
+                </div>
+                <div class="rounded-lg border p-3">
+                    <dt class="text-xs text-muted-foreground">
+                        Passed on the first attempt
+                    </dt>
+                    <dd class="text-lg font-medium">
+                        {{
+                            rate(
+                                telemetry.first_attempt_passed,
+                                telemetry.runs_verified,
+                            )
+                        }}
+                    </dd>
+                </div>
+                <div class="rounded-lg border p-3">
+                    <dt class="text-xs text-muted-foreground">
+                        Changed parts not asked about
+                    </dt>
+                    <dd class="text-lg font-medium">
+                        {{
+                            rate(
+                                telemetry.with_unexpected_changes,
+                                telemetry.reviewed,
+                            )
+                        }}
+                    </dd>
+                </div>
+                <div class="rounded-lg border p-3">
+                    <dt class="text-xs text-muted-foreground">
+                        Repairs before acceptance
+                    </dt>
+                    <dd class="text-lg font-medium">
+                        {{ telemetry.repairs_before_acceptance ?? '–' }}
+                    </dd>
+                </div>
+            </dl>
+
+            <p class="text-xs text-muted-foreground">
+                {{ dollars(telemetry.cost_usd) }} in total over
+                {{ telemetry.input_tokens + telemetry.output_tokens }} tokens.
+                <template v-if="telemetry.unpriced_calls > 0">
+                    {{ telemetry.unpriced_calls }} model calls have no price and
+                    are not in the cost.
+                </template>
+            </p>
         </section>
 
         <section

@@ -3,6 +3,7 @@
 namespace App\Actions\Runs;
 
 use App\Actions\Context\AssessPreservation;
+use App\Actions\Context\AssessVerifyItems;
 use App\Actions\Context\ClassifyChange;
 use App\Actions\Context\CompileContext;
 use App\Actions\Features\RequestVerification;
@@ -54,6 +55,7 @@ class ConstructRun
         private CompileContext $compileContext,
         private ClassifyChange $classifyChange,
         private AssessPreservation $assessPreservation,
+        private AssessVerifyItems $assessVerifyItems,
     ) {}
 
     /**
@@ -185,7 +187,8 @@ class ConstructRun
 
     /**
      * Have the driver review the verified change from the platform's evidence,
-     * then complete the run, send it back for a repair, or stop for a decision.
+     * check that a test in the change covers each verify item, then complete
+     * the run, send it back for a repair, or stop for a decision.
      */
     protected function review(Run $run, RunLease $lease, ConstructionDriver $driver): void
     {
@@ -208,11 +211,21 @@ class ConstructRun
             areaNames: array_map(fn ($capability) => $capability->name, $projectContext->capabilities),
         ));
 
+        $verified = $this->assessVerifyItems->handle($plan, $review, (string) $featureRequest->patch, $verification->results ?? []);
+
+        if ($driver->canRepair() && config('builder.verification.require_verify_tests')) {
+            $review = $review->withBlockingFindings(array_values(array_map(
+                fn (array $item) => __('No test in the change checks: :criterion', ['criterion' => $item['criterion']]),
+                array_filter($verified, fn (array $item) => $item['evidence'] === 'no_test'),
+            )));
+        }
+
         $this->recordEvent($run, $lease, 'review', [
             'approved' => $review->approved,
             'summary' => $review->summary,
             'findings' => $review->findings,
             'verification_id' => $verification->id,
+            'verify' => array_count_values(array_column($verified, 'evidence')),
             'areas' => [
                 'requested' => array_keys($classification->requested),
                 'may_also_affect' => array_keys($classification->mayAlsoAffect),
@@ -224,6 +237,7 @@ class ConstructRun
         $stored = ['review' => [
             ...$this->storedReview($review, $classification),
             'preserved' => $this->assessPreservation->handle($plan, $classification, $projectContext, $verification->results ?? []),
+            'verified' => $verified,
         ]];
 
         if ($review->approved) {

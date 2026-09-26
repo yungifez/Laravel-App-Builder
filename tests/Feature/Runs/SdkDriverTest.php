@@ -55,12 +55,20 @@ class SdkDriverTest extends TestCase
         ]);
 
         FeaturePlanner::fake([$this->plan()]);
-        ChangeReviewer::fake([['approved' => true, 'summary' => 'Looks right.', 'findings' => [], 'changes' => []]]);
+        ChangeReviewer::fake([['approved' => true, 'summary' => 'Looks right.', 'findings' => [], 'changes' => [], 'verify' => [
+            ['criterion' => 1, 'test_file' => 'tests/Feature/TeamTest.php', 'test_name' => 'teams have a description'],
+        ]]]);
     }
 
     public function test_the_primary_agent_builds_the_change_and_the_other_provider_reviews_it()
     {
-        $this->agent('claude', 'anthropic', $this->writes('claude', 'anthropic', 'app/Models/Team.php', "<?php\n\nclass Team\n{\n    public ?string \$description = null;\n}\n"));
+        $this->agent('claude', 'anthropic', function (Workspace $workspace) {
+            File::put($this->path($workspace, 'app/Models/Team.php'), "<?php\n\nclass Team\n{\n    public ?string \$description = null;\n}\n");
+            File::ensureDirectoryExists($this->path($workspace, 'tests/Feature'));
+            File::put($this->path($workspace, 'tests/Feature/TeamTest.php'), "<?php\n\ntest('teams have a description', fn () => expect(true)->toBeTrue());\n");
+
+            return $this->outcome('claude', 'anthropic', AgentOutcomeStatus::Completed, summary: 'Done.');
+        });
         $this->agent('codex', 'openai', fn () => $this->fail('The failover agent must not run.'));
 
         $run = app(StartRun::class)->handle($featureRequest = $this->request())->refresh();

@@ -19,6 +19,22 @@ export type FeatureRequestSummary = {
     accepted?: boolean;
 };
 
+export type ProjectTelemetry = {
+    requests: number;
+    accepted: number;
+    reverted: number;
+    cost_usd: number;
+    unpriced_calls: number;
+    cost_per_accepted_change_usd: number | null;
+    runs_verified: number;
+    first_attempt_passed: number;
+    repairs_before_acceptance: number | null;
+    reviewed: number;
+    with_unexpected_changes: number;
+    input_tokens: number;
+    output_tokens: number;
+};
+
 export type ProjectCommit = {
     sha: string;
     subject: string;
@@ -158,6 +174,13 @@ export type ChangedArea = { key: string; name: string; files: string[] };
 
 export type RunReview = {
     summary: string;
+    verified: {
+        criterion: string;
+        test_file: string | null;
+        test_name: string | null;
+        evidence: 'tested' | 'not_run' | 'no_test';
+        named_in_diff: boolean;
+    }[];
     changes: {
         area: string | null;
         area_name: string | null;

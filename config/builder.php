@@ -76,6 +76,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Model Prices
+    |--------------------------------------------------------------------------
+    |
+    | Prices in US dollars per million tokens, keyed by model ID, used to put
+    | a cost on planner and reviewer calls: {"model": {"input": 3, "output":
+    | 15}}. Coding agents report their own cost. A call to a model without a
+    | price has no cost, and telemetry counts it as unpriced.
+    |
+    */
+
+    'prices' => json_decode((string) env('BUILDER_MODEL_PRICES', '{}'), true) ?: [],
+
+    /*
+    |--------------------------------------------------------------------------
     | Construction Runs
     |--------------------------------------------------------------------------
     |
@@ -253,6 +267,11 @@ return [
         // The check that runs the project's whole test suite. When it passes,
         // an area with its own tests counts as verified in the review.
         'suite_check' => 'Tests',
+
+        // Whether a change built by a model must have a test for each of the
+        // brief's verify items (its acceptance criteria). A missing test is a
+        // blocking finding, so the coder is sent back to add it.
+        'require_verify_tests' => (bool) env('BUILDER_REQUIRE_VERIFY_TESTS', true),
 
         'checks' => [
             ['name' => 'Tests', 'command' => ['php', 'artisan', 'test'], 'timeout' => 600],

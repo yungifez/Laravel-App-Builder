@@ -31,6 +31,8 @@ class AgentDriverTest extends TestCase
 
     protected const TEAM = "<?php\n\nclass Team\n{\n    public string \$name = 'Team';\n}\n";
 
+    protected const DESCRIPTION_TEST = "<?php\n\ntest('teams have a nullable description', fn () => expect(true)->toBeTrue());\n";
+
     protected const TEAM_WITH_DESCRIPTION = "<?php\n\nclass Team\n{\n    public string \$name = 'Team';\n\n    public ?string \$description = null;\n}\n";
 
     protected function setUp(): void
@@ -55,9 +57,12 @@ class AgentDriverTest extends TestCase
         FeatureCoder::fake([
             new ToolCall('call-1', 'read_file', ['path' => 'app/Models/Team.php']),
             new ToolCall('call-2', 'write_file', ['path' => 'app/Models/Team.php', 'contents' => self::TEAM_WITH_DESCRIPTION, 'expected_sha256' => hash('sha256', self::TEAM), 'expected_revision' => 0]),
+            new ToolCall('call-3', 'write_file', ['path' => 'tests/Feature/TeamDescriptionTest.php', 'contents' => self::DESCRIPTION_TEST, 'expected_sha256' => null, 'expected_revision' => 1]),
             'I added a description to teams and every test passes.',
         ]);
-        ChangeReviewer::fake([['approved' => true, 'summary' => 'The diff adds the field the plan asks for.', 'findings' => []]]);
+        ChangeReviewer::fake([['approved' => true, 'summary' => 'The diff adds the field the plan asks for.', 'findings' => [], 'verify' => [
+            ['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description'],
+        ]]]);
 
         $run = app(StartRun::class)->handle($featureRequest = $this->request())->refresh();
 
@@ -65,8 +70,8 @@ class AgentDriverTest extends TestCase
         $this->assertSame('Teams get an optional description.', $run->plan['summary']);
         $this->assertSame(['Teams have a nullable description.'], $run->plan['acceptance_criteria']);
         $this->assertSame([], $run->plan['acceptance']);
-        $this->assertSame(1, $run->workspace_revision);
-        $this->assertSame(['coder:0:call-1', 'coder:0:call-2'], $run->operations()->orderBy('id')->pluck('operation_key')->all());
+        $this->assertSame(2, $run->workspace_revision);
+        $this->assertSame(['coder:0:call-1', 'coder:0:call-2', 'coder:0:call-3'], $run->operations()->orderBy('id')->pluck('operation_key')->all());
 
         $featureRequest->refresh();
         $this->assertSame(FeatureRequestStatus::Generated, $featureRequest->status);
@@ -83,8 +88,15 @@ class AgentDriverTest extends TestCase
 
         $run->refresh();
         $this->assertSame(RunStatus::Completed, $run->status);
+        $this->assertSame([[
+            'criterion' => 'Teams have a nullable description.',
+            'test_file' => 'tests/Feature/TeamDescriptionTest.php',
+            'test_name' => 'teams have a nullable description',
+            'evidence' => 'tested',
+            'named_in_diff' => true,
+        ]], $run->review['verified']);
         ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'diff --git a/app/Models/Team.php')
-            && str_contains($prompt->prompt, 'Teams have a nullable description.')
+            && str_contains($prompt->prompt, '1. Teams have a nullable description.')
             && ! str_contains($prompt->prompt, 'every test passes')
             && $prompt->provider->name() === 'openai'
             && $prompt->model === 'reviewer-model');
@@ -261,6 +273,37 @@ class AgentDriverTest extends TestCase
         $this->assertSame('The review found problems this run cannot fix: Still missing authorization.', $run->error);
     }
 
+    public function test_a_verify_item_without_a_test_in_the_change_sends_the_change_back_even_when_the_reviewer_approves()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        FeatureCoder::fake([
+            new ToolCall('call-1', 'write_file', ['path' => 'app/Models/Team.php', 'contents' => self::TEAM_WITH_DESCRIPTION, 'expected_sha256' => hash('sha256', self::TEAM), 'expected_revision' => 0]),
+            'Done.',
+            new ToolCall('call-2', 'write_file', ['path' => 'tests/Feature/TeamDescriptionTest.php', 'contents' => self::DESCRIPTION_TEST, 'expected_sha256' => null, 'expected_revision' => 1]),
+            'Added the test.',
+        ]);
+        ChangeReviewer::fake([
+            ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamTest.php', 'test_name' => 'it has a description']]],
+            ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]],
+        ]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run);
+
+        $run->refresh();
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(1, $run->repairs);
+        $this->assertSame('no_test', $run->review['verified'][0]['evidence']);
+        $this->assertFalse($run->review['approved']);
+        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'No test in the change checks: Teams have a nullable description.'));
+
+        $this->passVerification($run);
+
+        $run->refresh();
+        $this->assertSame(RunStatus::Completed, $run->status);
+        $this->assertSame('tested', $run->review['verified'][0]['evidence']);
+    }
+
     public function test_the_reviewer_sees_tests_the_change_deletes()
     {
         FeaturePlanner::fake([$this->plan()]);
@@ -296,12 +339,14 @@ class AgentDriverTest extends TestCase
             new ToolCall('call-2', 'write_file', ['path' => 'config/billing.php', 'contents' => "<?php\n\nreturn [];\n", 'expected_sha256' => null, 'expected_revision' => 1]),
             new ToolCall('call-3', 'write_file', ['path' => 'config/teams.php', 'contents' => str_replace('members:invite', 'members:remove', $config), 'expected_sha256' => hash('sha256', $config), 'expected_revision' => 2]),
             new ToolCall('call-4', 'write_file', ['path' => 'app/Other.php', 'contents' => "<?php\n", 'expected_sha256' => null, 'expected_revision' => 3]),
+            new ToolCall('call-5', 'write_file', ['path' => 'tests/Feature/TeamTest.php', 'contents' => self::DESCRIPTION_TEST, 'expected_sha256' => hash('sha256', "<?php\n"), 'expected_revision' => 4]),
             'Done.',
         ]);
         ChangeReviewer::fake([[
             'approved' => true,
             'summary' => 'Adds the description.',
             'findings' => [],
+            'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamTest.php', 'test_name' => 'teams have a nullable description']],
             'changes' => [
                 ['area' => 'teams', 'behavior' => 'Team details', 'before' => 'Teams had a name.', 'now' => 'Teams can also have a description.'],
                 ['area' => 'settings', 'behavior' => 'Removing members', 'before' => 'Owners could invite.', 'now' => 'Owners can remove members instead.'],
@@ -341,7 +386,7 @@ class AgentDriverTest extends TestCase
         $run->refresh();
         $this->assertSame(RunStatus::Completed, $run->status);
         $this->assertSame([
-            'requested' => ['teams' => ['app/Models/Team.php']],
+            'requested' => ['teams' => ['app/Models/Team.php', 'tests/Feature/TeamTest.php']],
             'may_also_affect' => ['billing' => ['config/billing.php']],
             'unexpected' => ['settings' => ['config/teams.php']],
             'unclaimed' => ['app/Other.php'],

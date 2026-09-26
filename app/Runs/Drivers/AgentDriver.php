@@ -158,7 +158,7 @@ class AgentDriver implements ConstructionDriver
             $sections,
             "## Plan\n\n{$plan->summary}",
             "## Tasks\n\n".$this->list($plan->tasks),
-            "## Acceptance criteria\n\n".$this->list($plan->acceptanceCriteria),
+            "## Acceptance criteria\n\nAdd or update a test for each one: the change is only accepted when every criterion is checked by a test in the change.\n\n".$this->list($plan->acceptanceCriteria),
         );
 
         if ($plan->preserve !== []) {
@@ -191,7 +191,7 @@ class AgentDriver implements ConstructionDriver
             $evidence->projectContext !== '' ? "## Project context\n\n{$evidence->projectContext}" : null,
             $this->areasTouched($evidence),
             "## Plan\n\n{$evidence->plan->summary}",
-            "## Acceptance criteria\n\n".$this->list($evidence->plan->acceptanceCriteria),
+            "## Acceptance criteria\n\n".$this->numbered($evidence->plan->acceptanceCriteria),
             $evidence->plan->preserve !== [] ? "## Must stay as it is\n\n".$this->list(array_column($evidence->plan->preserve, 'statement')) : null,
             "## Verification: {$evidence->verificationStatus}\n\n".implode("\n", $results),
             "## Tests deleted or weakened by the diff\n\n".($evidence->weakenedTests === [] ? 'None.' : $this->json($evidence->weakenedTests)),
@@ -247,6 +247,16 @@ class AgentDriver implements ConstructionDriver
     protected function list(array $items): string
     {
         return $items === [] ? '(none)' : '- '.implode("\n- ", $items);
+    }
+
+    /**
+     * Format items as a numbered Markdown list, starting at 1.
+     *
+     * @param  list<string>  $items
+     */
+    protected function numbered(array $items): string
+    {
+        return $items === [] ? '(none)' : implode("\n", array_map(fn (int $index, string $item) => ($index + 1).". {$item}", array_keys($items), $items));
     }
 
     /**

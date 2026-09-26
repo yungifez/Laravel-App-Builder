@@ -155,6 +155,7 @@ class FeatureRequestController extends Controller
                 ...$item,
                 'area_name' => $item['area'] === null ? null : ($names[$item['area']] ?? $item['area']),
             ], $run->review['preserved'] ?? []),
+            'verified' => $run->review['verified'] ?? [],
             'unclaimed' => $classification['unclaimed'],
             'context_updates' => $classification['context_updates'],
         ];

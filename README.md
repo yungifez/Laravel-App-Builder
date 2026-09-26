@@ -149,6 +149,19 @@ from the workspace as a diff against the baseline.
 - **Budgets.** 30 tool operations and 20 minutes by default; a run out of
   budget stops for the owner's decision.
 
+**Verify items.** The brief's "Done when" items are its verify items. The
+coder must add or update a test for each one. The reviewer names the test that
+checks each item, and the platform checks that the named file is part of the
+change and that the suite passed. The change page labels each item "checked
+by a test that passed", "not run" or "no test". A missing test is a blocking
+finding, so the coder is sent back to add it (`BUILDER_REQUIRE_VERIFY_TESTS`).
+
+**Telemetry.** The project page shows cost per accepted change, the share of
+runs that passed verification on the first attempt, the share of changes that
+touched parts the request was not about, and repairs before acceptance. Coding
+agents report their own cost. Planner and reviewer calls are priced from
+`BUILDER_MODEL_PRICES`; calls without a price are counted, not guessed.
+
 Two construction drivers are available (`BUILDER_CONSTRUCTION_DRIVER`):
 
 - `scripted` (default) makes the change that the `reference` generator finds
