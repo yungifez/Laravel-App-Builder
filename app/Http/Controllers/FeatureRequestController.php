@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Features\RequestFeature;
+use App\Actions\Features\RetryFeatureRequest;
 use App\Enums\AgentOutcomeStatus;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
@@ -218,6 +219,7 @@ class FeatureRequestController extends Controller
                 'can_accept' => $featureRequest->status === FeatureRequestStatus::Generated
                     && $featureRequest->commit_sha === null
                     && $featureRequest->latestRun?->status === RunStatus::Completed,
+                'can_retry' => RetryFeatureRequest::retryable($featureRequest),
             ],
             'parent' => $parent?->only('id', 'prompt'),
             'verification' => $this->latestVerification($featureRequest),

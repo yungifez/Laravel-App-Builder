@@ -3,6 +3,7 @@ import { Form, Head, Link, setLayoutProps, usePoll } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import FeatureRequestAcceptanceController from '@/actions/App/Http/Controllers/FeatureRequestAcceptanceController';
 import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
+import FeatureRequestRetryController from '@/actions/App/Http/Controllers/FeatureRequestRetryController';
 import FeatureRequestReversionController from '@/actions/App/Http/Controllers/FeatureRequestReversionController';
 import FeatureRequestStepChangeController from '@/actions/App/Http/Controllers/FeatureRequestStepChangeController';
 import FeatureRequestVerificationController from '@/actions/App/Http/Controllers/FeatureRequestVerificationController';
@@ -377,36 +378,62 @@ function lineClass(line: string): string {
         <Alert
             v-if="featureRequest.status === 'failed' && !run"
             variant="destructive"
+            class="max-w-2xl"
         >
             <AlertTitle>This change could not be made</AlertTitle>
             <AlertDescription>{{ featureRequest.error }}</AlertDescription>
         </Alert>
 
-        <section v-if="run" class="max-w-2xl space-y-4" data-test="run">
-            <Alert
-                v-if="
-                    run.error &&
-                    (run.status === 'failed' ||
-                        run.status === 'needs_user_decision')
-                "
-                variant="destructive"
-            >
-                <AlertTitle>{{
-                    run.status === 'failed'
-                        ? 'This change could not be finished'
-                        : 'I need your decision'
-                }}</AlertTitle>
-                <AlertDescription>
-                    {{ run.error }}
-                    <template v-if="run.status === 'needs_user_decision'">
-                        You can reword the request, or ask a person to help.
-                    </template>
-                    <template v-else>
-                        Nothing in your app has changed. You can ask again.
-                    </template>
-                </AlertDescription>
-            </Alert>
+        <Alert
+            v-if="
+                run?.error &&
+                (run.status === 'failed' ||
+                    run.status === 'needs_user_decision')
+            "
+            variant="destructive"
+            class="max-w-2xl"
+        >
+            <AlertTitle>{{
+                run.status === 'failed'
+                    ? 'This change could not be finished'
+                    : 'I stopped before finishing'
+            }}</AlertTitle>
+            <AlertDescription>
+                {{ run.error }}
+                Nothing in your app has changed. Try again, or ask in other
+                words.
+            </AlertDescription>
+        </Alert>
 
+        <div
+            v-if="featureRequest.can_retry"
+            class="flex max-w-2xl flex-wrap items-center gap-3"
+            data-test="retry"
+        >
+            <Form
+                v-bind="
+                    FeatureRequestRetryController.store.form(featureRequest.id)
+                "
+                v-slot="{ errors, processing }"
+            >
+                <Button
+                    :disabled="processing"
+                    class="h-11 select-none sm:h-9"
+                    data-test="retry-button"
+                >
+                    Try again
+                </Button>
+                <InputError
+                    class="mt-2"
+                    :message="errors.retry ?? errors.step"
+                />
+            </Form>
+            <Button variant="ghost" class="h-11 sm:h-9" as-child>
+                <Link :href="showProject(project.id)">Ask in other words</Link>
+            </Button>
+        </div>
+
+        <section v-if="run" class="max-w-2xl space-y-4" data-test="run">
             <p
                 v-if="runInProgress && !run.plan"
                 class="text-sm text-muted-foreground"

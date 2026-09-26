@@ -5,6 +5,7 @@ use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\FeatureRequestAcceptanceController;
 use App\Http\Controllers\FeatureRequestController;
 use App\Http\Controllers\FeatureRequestPreviewController;
+use App\Http\Controllers\FeatureRequestRetryController;
 use App\Http\Controllers\FeatureRequestReversionController;
 use App\Http\Controllers\FeatureRequestStepChangeController;
 use App\Http\Controllers\FeatureRequestVerificationController;
@@ -46,6 +47,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('feature-requests/{featureRequest}/step-changes', [FeatureRequestStepChangeController::class, 'store'])->name('feature-requests.step-changes.store');
     Route::post('feature-requests/{featureRequest}/verifications', [FeatureRequestVerificationController::class, 'store'])->name('feature-requests.verifications.store');
     Route::post('feature-requests/{featureRequest}/acceptance', [FeatureRequestAcceptanceController::class, 'store'])->name('feature-requests.acceptance.store');
+    Route::post('feature-requests/{featureRequest}/retries', [FeatureRequestRetryController::class, 'store'])->name('feature-requests.retries.store');
     Route::post('feature-requests/{featureRequest}/reversion', [FeatureRequestReversionController::class, 'store'])->name('feature-requests.reversion.store');
     Route::post('feature-requests/{featureRequest}/previews', [FeatureRequestPreviewController::class, 'store'])->name('feature-requests.previews.store');
     Route::get('previews/{preview}', [PreviewController::class, 'show'])->name('previews.show');

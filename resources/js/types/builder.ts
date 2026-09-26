@@ -41,6 +41,7 @@ export type ProjectTelemetry = {
     input_tokens: number;
     output_tokens: number;
     visual_edits: number;
+    setup_cost_usd: number;
 };
 
 export type ProjectCommit = {
@@ -80,6 +81,7 @@ export type FeatureRequestDetail = {
     revert_sha: string | null;
     reverted_at: string | null;
     can_accept: boolean;
+    can_retry: boolean;
 };
 
 export type VerificationStatus =
