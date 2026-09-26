@@ -16,9 +16,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { when } from '@/lib/when';
 import { index, show } from '@/routes/projects';
-import type { ProjectListItem } from '@/types';
+import type { DesignOption, ProjectListItem } from '@/types';
 
-defineProps<{ projects: ProjectListItem[]; canStartNew: boolean }>();
+defineProps<{
+    projects: ProjectListItem[];
+    canStartNew: boolean;
+    designs: DesignOption[];
+}>();
 
 defineOptions({
     layout: {
@@ -145,6 +149,84 @@ const textarea =
                                 />
                                 <InputError :message="errors.purpose" />
                             </div>
+
+                            <fieldset
+                                v-if="designs.length > 0"
+                                class="grid gap-2"
+                                data-test="looks"
+                            >
+                                <legend class="mb-2 text-sm font-medium">
+                                    Pick a look
+                                </legend>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <label
+                                        v-for="(design, i) in designs"
+                                        :key="design.key"
+                                        class="group cursor-pointer rounded-lg border border-border p-2 has-checked:border-primary has-checked:ring-2 has-checked:ring-ring/50 has-focus-visible:ring-2 has-focus-visible:ring-ring/50"
+                                        :data-test="`look-${design.key}`"
+                                    >
+                                        <input
+                                            type="radio"
+                                            name="design"
+                                            :value="design.key"
+                                            :checked="i === 0"
+                                            class="sr-only"
+                                        />
+                                        <span
+                                            aria-hidden="true"
+                                            class="flex h-16 flex-col justify-between border p-2"
+                                            :style="{
+                                                background:
+                                                    design.colors.background,
+                                                borderColor:
+                                                    design.colors.border,
+                                                borderRadius: design.radius,
+                                                fontFamily: `'${design.font}', sans-serif`,
+                                            }"
+                                        >
+                                            <span
+                                                class="text-xs font-semibold"
+                                                :style="{
+                                                    color: design.colors
+                                                        .foreground,
+                                                }"
+                                                >Aa</span
+                                            >
+                                            <span
+                                                class="flex items-center gap-1"
+                                            >
+                                                <span
+                                                    class="h-3 w-8"
+                                                    :style="{
+                                                        background:
+                                                            design.colors
+                                                                .primary,
+                                                        borderRadius: `calc(${design.radius} - 2px)`,
+                                                    }"
+                                                />
+                                                <span
+                                                    class="h-3 w-5"
+                                                    :style="{
+                                                        background:
+                                                            design.colors
+                                                                .accent,
+                                                        borderRadius: `calc(${design.radius} - 2px)`,
+                                                    }"
+                                                />
+                                            </span>
+                                        </span>
+                                        <span
+                                            class="mt-2 block text-sm font-medium"
+                                            >{{ design.name }}</span
+                                        >
+                                        <span
+                                            class="block text-xs text-muted-foreground"
+                                            >{{ design.description }}</span
+                                        >
+                                    </label>
+                                </div>
+                                <InputError :message="errors.design" />
+                            </fieldset>
 
                             <Button
                                 :disabled="processing"

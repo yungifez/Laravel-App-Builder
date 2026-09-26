@@ -4,8 +4,10 @@ namespace Tests\Feature\Features;
 
 use App\Context\ProjectNotes;
 use App\Models\User;
+use App\Projects\DesignDirection;
 use App\Projects\ProjectRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\PreparesRuns;
@@ -89,5 +91,65 @@ class NewProjectTest extends TestCase
         config(['builder.projects.template' => $this->makeProjectSource($this->laravelApp())]);
         $this->get(route('projects.index'))
             ->assertInertia(fn (Assert $page) => $page->where('canStartNew', true));
+    }
+
+    public function test_the_look_the_owner_picks_sets_the_theme_and_the_design_contract()
+    {
+        config(['builder.projects.template' => $this->makeProjectSource([
+            'resources/css/app.css' => ":root {\n    --primary: hsl(0 0% 9%);\n    --radius: 0.5rem;\n}\n\n.dark {\n    --primary: hsl(0 0% 98%);\n}\n\n@theme inline {\n    --font-sans: Instrument Sans, ui-sans-serif, sans-serif;\n}\n",
+            'vite.config.ts' => "fonts: [bunny('Instrument Sans', { weights: [400, 500, 600] })],\n",
+        ] + $this->laravelApp())]);
+        $owner = User::factory()->create(['name' => 'Ada Owner']);
+
+        $this->actingAs($owner)
+            ->get(route('projects.index'))
+            ->assertInertia(fn (Assert $page) => $page->where('designs.0.key', 'calm')->has('designs.0.colors.primary'));
+
+        $this->post(route('projects.new.store'), ['name' => 'Acme', 'purpose' => 'Plan the week.', 'design' => 'calm'])
+            ->assertSessionHasNoErrors();
+
+        $repository = app(ProjectRepository::class);
+        $project = $owner->projects()->sole();
+        $log = $repository->log($project);
+        $this->assertSame(['Use the Calm look', 'Import Acme'], array_column($log, 'subject'));
+        $this->assertSame('Ada Owner', $log[0]['author']);
+
+        $css = (string) $repository->show($project, $repository->head($project), 'resources/css/app.css');
+        $this->assertStringContainsString('--primary: hsl(174 62% 24%);', $css);
+        $this->assertStringContainsString('--primary: hsl(172 50% 52%);', $css);
+        $this->assertStringContainsString('--radius: 0.75rem;', $css);
+        $this->assertStringContainsString("--font-sans: 'Instrument Sans', ui-sans-serif", $css);
+
+        $contract = app(ProjectNotes::class)->files($project)['design.md'];
+        $this->assertStringContainsString('This is how Acme looks and behaves.', $contract);
+        $this->assertStringContainsString('| `primary` | `hsl(174 62% 24%)` | `hsl(172 50% 52%)` |', $contract);
+        $this->assertStringNotContainsString('{{', $contract);
+        $this->assertDoesNotMatchRegularExpression('/builder|control plane|agent/i', $contract);
+        $this->assertStringContainsString('Plan the week.', app(ProjectNotes::class)->files($project)['project.md']);
+    }
+
+    public function test_every_look_offered_is_complete()
+    {
+        $looks = File::glob(resource_path('designs').'/*.json');
+
+        $this->assertNotEmpty($looks);
+
+        foreach ($looks as $path) {
+            $look = DesignDirection::load($path);
+            $this->assertNotNull($look, basename($path));
+            $this->assertSame([], array_diff(array_keys($look->light), array_keys($look->dark)), basename($path));
+            $this->assertArrayHasKey('primary', $look->light, basename($path));
+        }
+    }
+
+    public function test_a_look_that_is_not_offered_is_refused()
+    {
+        config(['builder.projects.template' => $this->makeProjectSource($this->laravelApp())]);
+        $owner = User::factory()->create();
+
+        $this->actingAs($owner)
+            ->post(route('projects.new.store'), ['name' => 'Acme', 'purpose' => 'Plan the week.', 'design' => '../secrets'])
+            ->assertSessionHasErrors('design');
+        $this->assertSame(0, $owner->projects()->count());
     }
 }

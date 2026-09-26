@@ -21,6 +21,27 @@ export type ProjectListItem = {
     waiting: number;
 };
 
+/** A look an owner can start a new app with, drawn from its own colours. */
+export type DesignOption = {
+    key: string;
+    name: string;
+    description: string;
+    font: string;
+    radius: string;
+    colors: Partial<
+        Record<
+            | 'background'
+            | 'foreground'
+            | 'primary'
+            | 'primary-foreground'
+            | 'accent'
+            | 'muted-foreground'
+            | 'border',
+            string
+        >
+    >;
+};
+
 export type ChangeState =
     | 'waiting'
     | 'working'

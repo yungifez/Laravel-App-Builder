@@ -2,8 +2,10 @@
 
 namespace App\Http\Requests;
 
+use App\Projects\DesignDirection;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StartProjectRequest extends FormRequest
 {
@@ -17,7 +19,18 @@ class StartProjectRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:255'],
             'purpose' => ['required', 'string', 'max:2000'],
+            'design' => ['nullable', 'string', Rule::in(array_map(fn (DesignDirection $design) => $design->key, DesignDirection::all()))],
         ];
+    }
+
+    /**
+     * Get the look the owner picked, if any.
+     */
+    public function design(): ?DesignDirection
+    {
+        $key = $this->validated('design');
+
+        return is_string($key) ? DesignDirection::find($key) : null;
     }
 
     /**
@@ -29,6 +42,7 @@ class StartProjectRequest extends FormRequest
     {
         return [
             'purpose.required' => __('Tell me in a sentence or two what your app is for.'),
+            'design.in' => __('Pick one of the looks shown.'),
         ];
     }
 }

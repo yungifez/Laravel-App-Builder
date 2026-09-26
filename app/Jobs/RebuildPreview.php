@@ -82,7 +82,7 @@ class RebuildPreview implements ShouldQueue
                 }
             }
 
-            $this->run($runWorkspaceCommand, $preview, StartPreview::locatorCommand(), 300);
+            $this->run($runWorkspaceCommand, $preview, StartPreview::locatorCommand($preview->workspace), 300);
 
             /** @var list<array{name: string, command: list<string>, timeout: int}> $rebuild */
             $rebuild = config('builder.preview.rebuild', []);

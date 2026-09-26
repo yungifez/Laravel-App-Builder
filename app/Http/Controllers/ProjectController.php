@@ -16,6 +16,7 @@ use App\Models\Deployment;
 use App\Models\Experiment;
 use App\Models\Project;
 use App\Models\VisualEdit;
+use App\Projects\DesignDirection;
 use App\Projects\ProjectRepository;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -43,6 +44,7 @@ class ProjectController extends Controller
                     'waiting' => $summarizeChanges->waiting($project),
                 ]),
             'canStartNew' => StartProjectFromTemplate::template() !== null,
+            'designs' => array_map(fn (DesignDirection $design) => $design->preview(), DesignDirection::all()),
         ]);
     }
 

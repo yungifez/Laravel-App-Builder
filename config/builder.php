@@ -48,6 +48,10 @@ return [
         // The current starter kit lives on its main branch; its tagged
         // releases are older Laravel versions.
         'template_package' => env('BUILDER_TEMPLATE_PACKAGE', 'laravel/vue-starter-kit:dev-main'),
+        // The looks an owner picks from when starting a new app: one JSON
+        // file each (colours, font, corner radius and feel), plus
+        // contract.md, the design contract every new app starts with.
+        'designs' => env('BUILDER_DESIGNS_PATH', resource_path('designs')),
         'committer' => [
             'name' => env('BUILDER_COMMITTER_NAME'),
             'email' => env('BUILDER_COMMITTER_EMAIL'),

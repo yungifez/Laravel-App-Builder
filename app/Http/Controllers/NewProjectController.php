@@ -17,6 +17,7 @@ class NewProjectController extends Controller
             $request->user(),
             $request->validated('name'),
             $request->validated('purpose'),
+            $request->design(),
         );
 
         return to_route('projects.show', $project);

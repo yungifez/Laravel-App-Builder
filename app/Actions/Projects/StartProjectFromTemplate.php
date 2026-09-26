@@ -6,6 +6,7 @@ use App\Actions\Context\UpdateProjectNotes;
 use App\Context\ProjectNotes;
 use App\Models\Project;
 use App\Models\User;
+use App\Projects\DesignDirection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -15,6 +16,7 @@ class StartProjectFromTemplate
         private CreateProject $createProject,
         private UpdateProjectNotes $updateProjectNotes,
         private ProjectNotes $notes,
+        private ApplyDesignDirection $applyDesignDirection,
     ) {}
 
     /**
@@ -29,12 +31,13 @@ class StartProjectFromTemplate
 
     /**
      * Start a new app from the configured template and write the owner's
-     * one answer, what the app is for, into its notes.
+     * one answer, what the app is for, into its notes. The look the owner
+     * picked, if any, sets the app's theme and design contract.
      *
      * @throws ValidationException when no template is configured or it
      *                             cannot be imported.
      */
-    public function handle(User $owner, string $name, string $purpose): Project
+    public function handle(User $owner, string $name, string $purpose, ?DesignDirection $design = null): Project
     {
         $template = self::template();
 
@@ -42,8 +45,12 @@ class StartProjectFromTemplate
             throw ValidationException::withMessages(['name' => __('Starting a new app is not set up here.')]);
         }
 
-        return DB::transaction(function () use ($owner, $name, $purpose, $template) {
+        return DB::transaction(function () use ($owner, $name, $purpose, $template, $design) {
             $project = $this->createProject->handle($owner, $name, $template, draftNotes: false);
+
+            if ($design !== null) {
+                $this->applyDesignDirection->handle($project, $design);
+            }
 
             $this->updateProjectNotes->handle($project, 'introduction', $purpose, $this->notes->version($project));
 
