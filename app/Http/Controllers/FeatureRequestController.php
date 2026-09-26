@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Features\RequestFeature;
+use App\Enums\AgentOutcomeStatus;
+use App\Enums\FeatureRequestStatus;
+use App\Enums\RunStatus;
 use App\Features\PatchSummary;
 use App\Http\Requests\FeatureRequestStoreRequest;
 use App\Models\FeatureRequest;
@@ -66,6 +69,7 @@ class FeatureRequestController extends Controller
                 'problems' => $run->context['problems'],
             ],
             'review' => $this->review($run),
+            'built_by' => $this->builtBy($run),
             'repairs' => $run->repairs,
             'operations' => $run->operations()->count(),
             'budget' => [
@@ -81,6 +85,39 @@ class FeatureRequestController extends Controller
                 'data' => $event->data ?? [],
                 'created_at' => $event->created_at?->toIso8601String(),
             ]),
+        ];
+    }
+
+    /**
+     * Get the coding agent that built the run's latest change, and whether
+     * it was the backup because the first choice could not take the task.
+     *
+     * @return array{adapter: string, provider: string, model: string|null, backup: bool, reason: string|null}|null
+     */
+    protected function builtBy(Run $run): ?array
+    {
+        /** @var RunEvent|null $call */
+        $call = $run->events()
+            ->where('type', 'model_call')
+            ->where('data->role', 'coder')
+            ->where('data->status', AgentOutcomeStatus::Completed->value)
+            ->latest('sequence')
+            ->first();
+
+        if ($call === null || ! is_string($call->data['adapter'] ?? null)) {
+            return null;
+        }
+
+        /** @var RunEvent|null $failover */
+        $failover = $run->events()->where('type', 'failover')->where('data->to', $call->data['adapter'])->latest('sequence')->first();
+        $order = (array) config('builder.agents.order');
+
+        return [
+            'adapter' => $call->data['adapter'],
+            'provider' => (string) ($call->data['provider'] ?? ''),
+            'model' => isset($call->data['model']) && is_string($call->data['model']) ? $call->data['model'] : null,
+            'backup' => $call->data['adapter'] !== ($order[0] ?? null),
+            'reason' => is_string($failover?->data['reason'] ?? null) ? $failover->data['reason'] : null,
         ];
     }
 
@@ -173,6 +210,13 @@ class FeatureRequestController extends Controller
                     : $parent->step($featureRequest->target_step),
                 'steps' => $featureRequest->steps ?? [],
                 'files' => PatchSummary::files($featureRequest->patch),
+                'commit_sha' => $featureRequest->commit_sha,
+                'accepted_at' => $featureRequest->accepted_at?->toIso8601String(),
+                'revert_sha' => $featureRequest->revert_sha,
+                'reverted_at' => $featureRequest->reverted_at?->toIso8601String(),
+                'can_accept' => $featureRequest->status === FeatureRequestStatus::Generated
+                    && $featureRequest->commit_sha === null
+                    && $featureRequest->latestRun?->status === RunStatus::Completed,
             ],
             'parent' => $parent?->only('id', 'prompt'),
             'verification' => $this->latestVerification($featureRequest),

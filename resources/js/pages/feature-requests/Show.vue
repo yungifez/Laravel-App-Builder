@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { Form, Head, Link, setLayoutProps, usePoll } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
+import FeatureRequestAcceptanceController from '@/actions/App/Http/Controllers/FeatureRequestAcceptanceController';
 import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
+import FeatureRequestReversionController from '@/actions/App/Http/Controllers/FeatureRequestReversionController';
 import FeatureRequestStepChangeController from '@/actions/App/Http/Controllers/FeatureRequestStepChangeController';
 import FeatureRequestVerificationController from '@/actions/App/Http/Controllers/FeatureRequestVerificationController';
 import PreviewController from '@/actions/App/Http/Controllers/PreviewController';
@@ -145,6 +147,10 @@ function describeEvent(event: RunEvent): string {
                 : `${String(data.role)} model call (${String(data.provider)} ${String(data.model)}): ${String(data.input_tokens)} tokens in, ${String(data.output_tokens)} out`;
         case 'failover':
             return `The ${String(data.from)} provider could not take the task (${String(data.reason)}); the workspace was reset and ${String(data.to)} took over`;
+        case 'change_accepted':
+            return `Accepted into the project as commit ${String(data.commit).slice(0, 7)}`;
+        case 'change_reverted':
+            return `Undone in commit ${String(data.revert).slice(0, 7)}`;
         case 'reviewer_not_independent':
             return `Reviewed by the same provider that built the change (${String(data.wanted)} has no credentials)`;
         default:
@@ -538,6 +544,95 @@ function lineClass(line: string): string {
                     Updated the app's own notes:
                     {{ run.review.context_updates.join(', ') }}
                 </p>
+            </div>
+
+            <p
+                v-if="run.built_by"
+                class="text-xs text-muted-foreground"
+                data-test="run-built-by"
+            >
+                <template v-if="run.built_by.backup">
+                    Built with the backup provider ({{ run.built_by.provider
+                    }}<template v-if="run.built_by.reason">
+                        took over after
+                        {{ run.built_by.reason.replaceAll('_', ' ') }}</template
+                    >).
+                </template>
+                <template v-else>
+                    Built by {{ run.built_by.adapter }} ({{
+                        run.built_by.provider
+                    }}).
+                </template>
+            </p>
+
+            <div
+                v-if="featureRequest.can_accept || featureRequest.commit_sha"
+                class="space-y-3 rounded-lg border p-4 text-sm"
+                data-test="change-decision"
+            >
+                <template v-if="featureRequest.reverted_at">
+                    <p class="font-medium">Undone</p>
+                    <p class="text-muted-foreground">
+                        This change was accepted, then undone in commit
+                        <span class="font-mono">{{
+                            featureRequest.revert_sha?.slice(0, 7)
+                        }}</span
+                        >.
+                    </p>
+                </template>
+                <template v-else-if="featureRequest.commit_sha">
+                    <p class="font-medium">Accepted</p>
+                    <p class="text-muted-foreground">
+                        This change is in your project as commit
+                        <span class="font-mono">{{
+                            featureRequest.commit_sha.slice(0, 7)
+                        }}</span
+                        >. Undoing it adds a commit that takes it out again.
+                    </p>
+                    <Form
+                        v-bind="
+                            FeatureRequestReversionController.store.form(
+                                featureRequest.id,
+                            )
+                        "
+                        v-slot="{ processing, errors }"
+                        class="space-y-2"
+                    >
+                        <Button
+                            variant="outline"
+                            :disabled="processing"
+                            data-test="revert-change-button"
+                        >
+                            Undo this change
+                        </Button>
+                        <InputError :message="errors.change" />
+                    </Form>
+                </template>
+                <template v-else>
+                    <p class="font-medium">Your decision</p>
+                    <p class="text-muted-foreground">
+                        Accepting adds this change to your project as one
+                        commit. The next request starts from it. You can undo it
+                        later.
+                    </p>
+                    <Form
+                        v-bind="
+                            FeatureRequestAcceptanceController.store.form(
+                                featureRequest.id,
+                            )
+                        "
+                        v-slot="{ processing, errors }"
+                        class="space-y-2"
+                    >
+                        <Button
+                            :disabled="processing"
+                            data-test="accept-change-button"
+                        >
+                            Accept change
+                        </Button>
+                        <InputError :message="errors.change" />
+                    </Form>
+                </template>
             </div>
 
             <p

@@ -22,4 +22,13 @@ class ProjectPolicy
     {
         return $project->user_id === $user->id;
     }
+
+    /**
+     * Determine whether the user can change the project itself: accept and
+     * undo changes, edit its notes and deploy it.
+     */
+    public function update(User $user, Project $project): bool
+    {
+        return $project->user_id === $user->id;
+    }
 }

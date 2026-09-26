@@ -10,6 +10,7 @@ use App\Enums\PreviewStatus;
 use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\Workspace;
+use App\Projects\ProjectRepository;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -48,6 +49,7 @@ class StartPreview implements ShouldQueue
         RunWorkspaceCommand $runWorkspaceCommand,
         AllocatePreviewPort $allocatePreviewPort,
         StopPreview $stopPreview,
+        ProjectRepository $repository,
     ): void {
         if ($this->preview->fresh()?->status !== PreviewStatus::Starting) {
             return;
@@ -61,7 +63,7 @@ class StartPreview implements ShouldQueue
             $this->preview->update(['workspace_id' => $workspace->id]);
 
             $driver = $workspaces->driver($workspace->driver);
-            $driver->copyDirectory((string) $workspace->driver_id, $project->source_path);
+            $repository->withCheckout($project, $featureRequest->base_revision, fn (string $source) => $driver->copyDirectory((string) $workspace->driver_id, $source));
 
             foreach ($featureRequest->lineage() as $position => $request) {
                 $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);

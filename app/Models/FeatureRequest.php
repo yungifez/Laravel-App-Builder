@@ -24,16 +24,21 @@ use Illuminate\Support\Carbon;
  * @property string|null $target_step
  * @property FeatureRequestStatus $status
  * @property string $generator
+ * @property string|null $base_revision The project commit the change is built on; null builds on the project's source directory
  * @property string|null $solution_key
  * @property string|null $summary
  * @property string|null $patch
  * @property list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>|null $steps
  * @property list<string>|null $acceptance Protected acceptance test files that apply to the change
  * @property string|null $error
+ * @property string|null $commit_sha The project commit that holds the change once the owner accepted it
+ * @property Carbon|null $accepted_at
+ * @property string|null $revert_sha The project commit that undid the change
+ * @property Carbon|null $reverted_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['project_id', 'user_id', 'parent_id', 'prompt', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'steps', 'acceptance', 'error'])]
+#[Fillable(['project_id', 'user_id', 'parent_id', 'prompt', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'steps', 'acceptance', 'error', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at'])]
 class FeatureRequest extends Model
 {
     /**
@@ -57,6 +62,8 @@ class FeatureRequest extends Model
             'status' => FeatureRequestStatus::class,
             'steps' => 'array',
             'acceptance' => 'array',
+            'accepted_at' => 'datetime',
+            'reverted_at' => 'datetime',
         ];
     }
 
@@ -131,8 +138,10 @@ class FeatureRequest extends Model
     }
 
     /**
-     * Get this request and the requests it follows up on, oldest first, so
-     * their patches can be applied in order.
+     * Get this request and the requests it follows up on that are not part of
+     * its base revision, oldest first, so their patches can be applied in
+     * order on top of it. A request made after its parent was accepted is
+     * based on the commit that holds the parent, so the lineage stops there.
      *
      * @return list<FeatureRequest>
      */
@@ -143,10 +152,24 @@ class FeatureRequest extends Model
 
         while ($current->parent_id !== null) {
             $current = $current->parent()->firstOrFail();
+
+            if ($current->base_revision !== $this->base_revision) {
+                break;
+            }
+
             array_unshift($lineage, $current);
         }
 
         return $lineage;
+    }
+
+    /**
+     * Determine whether the owner accepted the change into the project and
+     * has not undone it.
+     */
+    public function isAccepted(): bool
+    {
+        return $this->commit_sha !== null && $this->reverted_at === null;
     }
 
     /**

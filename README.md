@@ -106,7 +106,20 @@ Optionally, `php artisan db:seed` creates `test@example.com` with password
 
 Projects → request a feature → preview the generated change → select a step
 → request a change to that step (for example "Only the team owner may invite
-people").
+people") → accept the change → the next request starts from it.
+
+**Project repositories.** The builder keeps a Git repository for each project
+under `BUILDER_PROJECT_REPOSITORIES` (default `storage/app/private/projects`).
+Registering a project imports its source as the first commit, without
+`vendor`, `node_modules`, `.env` and the source's own `.git`. Each request
+records the commit it is based on, and runs, verifications and previews start
+from that commit. When a run completes, the owner can **accept** the change.
+It becomes one commit, authored by the owner. A follow-up is committed
+together with the unaccepted changes it builds on. When the project moved on
+in the meantime, Git's three-way merge applies the change; if it no longer
+fits, nothing is committed and the owner asks again. An accepted change can be
+**undone** with a revert commit, unless later commits build on it. Git runs
+there with hooks and signing off; customer code never runs in the repository.
 
 Each request starts a **build run** (`config/builder.php`, `construction`). The
 run moves through queued → planning → implementing → verifying → reviewing →

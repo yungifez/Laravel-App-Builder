@@ -16,6 +16,14 @@ export type FeatureRequestSummary = {
     status: FeatureRequestStatus;
     created_at?: string | null;
     target_step?: string | null;
+    accepted?: boolean;
+};
+
+export type ProjectCommit = {
+    sha: string;
+    subject: string;
+    author: string;
+    committed_at: string;
 };
 
 export type ChangeStep = {
@@ -43,6 +51,11 @@ export type FeatureRequestDetail = {
     target_step: ChangeStep | null;
     steps: ChangeStep[];
     files: ChangedFile[];
+    commit_sha: string | null;
+    accepted_at: string | null;
+    revert_sha: string | null;
+    reverted_at: string | null;
+    can_accept: boolean;
 };
 
 export type VerificationStatus =
@@ -120,6 +133,13 @@ export type Run = {
         problems: string[];
     } | null;
     review: RunReview | null;
+    built_by: {
+        adapter: string;
+        provider: string;
+        model: string | null;
+        backup: boolean;
+        reason: string | null;
+    } | null;
     repairs: number;
     operations: number;
     budget: { operations: number; minutes: number; repairs: number };

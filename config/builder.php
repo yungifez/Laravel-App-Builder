@@ -25,6 +25,28 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Project Repositories
+    |--------------------------------------------------------------------------
+    |
+    | The builder keeps a Git repository for every project under "root". A
+    | registered project is imported into it as the first commit. Each change
+    | the owner accepts becomes one commit, which can be reverted. Runs,
+    | verifications and previews start from the commit a request was based
+    | on. The owner is the author of each commit; "committer" commits it.
+    |
+    */
+
+    'projects' => [
+        'root' => env('BUILDER_PROJECT_REPOSITORIES', storage_path('app/private/projects')),
+        'branch' => env('BUILDER_PROJECT_BRANCH', 'main'),
+        'committer' => [
+            'name' => env('BUILDER_COMMITTER_NAME', 'Builder'),
+            'email' => env('BUILDER_COMMITTER_EMAIL', 'builder@localhost'),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Model Tiers
     |--------------------------------------------------------------------------
     |

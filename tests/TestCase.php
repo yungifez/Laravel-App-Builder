@@ -4,6 +4,8 @@ namespace Tests;
 
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 use Laravel\Fortify\Features;
 use RuntimeException;
 
@@ -11,13 +13,18 @@ abstract class TestCase extends BaseTestCase
 {
     /**
      * Render pages without the Vite manifest, so the suite does not depend on
-     * a prior `npm run build`.
+     * a prior `npm run build`, and keep project repositories in a temporary
+     * directory that is removed after the test.
      */
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->withoutVite();
+
+        $repositories = sys_get_temp_dir().DIRECTORY_SEPARATOR.'builder-test-projects-'.Str::random(12);
+        config(['builder.projects.root' => $repositories]);
+        $this->beforeApplicationDestroyed(fn () => File::deleteDirectory($repositories));
     }
 
     /**

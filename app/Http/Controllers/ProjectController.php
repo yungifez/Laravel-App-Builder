@@ -6,6 +6,7 @@ use App\Actions\Projects\CreateProject;
 use App\Http\Requests\ProjectStoreRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
+use App\Projects\ProjectRepository;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -40,9 +41,9 @@ class ProjectController extends Controller
     }
 
     /**
-     * Show a project and the feature requests made for it.
+     * Show a project, the feature requests made for it and its latest commits.
      */
-    public function show(Project $project): Response
+    public function show(Project $project, ProjectRepository $repository): Response
     {
         Gate::authorize('view', $project);
 
@@ -53,8 +54,10 @@ class ProjectController extends Controller
                     'id' => $featureRequest->id,
                     'prompt' => $featureRequest->prompt,
                     'status' => $featureRequest->status->value,
+                    'accepted' => $featureRequest->isAccepted(),
                     'created_at' => $featureRequest->created_at?->toIso8601String(),
                 ]),
+            'history' => $repository->log($project, 20),
         ]);
     }
 }

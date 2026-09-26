@@ -9,6 +9,7 @@ use App\Enums\WorkspaceStatus;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\Workspace;
+use App\Projects\ProjectRepository;
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\RunLease;
 use App\Workspaces\WorkspaceManager;
@@ -29,11 +30,12 @@ class PrepareRunWorkspace
         private ProvisionWorkspace $provisionWorkspace,
         private RunWorkspaceCommand $runWorkspaceCommand,
         private DestroyWorkspace $destroyWorkspace,
+        private ProjectRepository $repository,
     ) {}
 
     /**
      * Get the run's workspace, preparing one if it has none: copy the project
-     * in, apply the changes the request follows up on, commit that as the
+     * in as of the request's base revision, apply the changes the request follows up on, commit that as the
      * baseline the run's change is measured against, then run the setup.
      *
      * @throws ConstructionFailed when the project cannot be prepared.
@@ -52,7 +54,7 @@ class PrepareRunWorkspace
 
         try {
             $driver = $this->workspaces->driver($workspace->driver);
-            $driver->copyDirectory((string) $workspace->driver_id, $project->source_path);
+            $this->repository->withCheckout($project, $featureRequest->base_revision, fn (string $source) => $driver->copyDirectory((string) $workspace->driver_id, $source));
 
             foreach (array_slice($featureRequest->lineage(), 0, -1) as $position => $ancestor) {
                 $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);

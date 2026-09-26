@@ -12,6 +12,7 @@ use App\Models\FeatureRequest;
 use App\Models\Verification;
 use App\Models\Workspace;
 use App\Models\WorkspaceCommand;
+use App\Projects\ProjectRepository;
 use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -72,6 +73,7 @@ class VerifyFeatureRequest implements ShouldQueue
         ProvisionWorkspace $provisionWorkspace,
         RunWorkspaceCommand $runWorkspaceCommand,
         DestroyWorkspace $destroyWorkspace,
+        ProjectRepository $repository,
     ): void {
         $featureRequest = $this->verification->featureRequest;
         $project = $featureRequest->project;
@@ -84,7 +86,7 @@ class VerifyFeatureRequest implements ShouldQueue
             $this->verification->update(['workspace_id' => $workspace->id]);
 
             $driver = $workspaces->driver($workspace->driver);
-            $driver->copyDirectory((string) $workspace->driver_id, $project->source_path);
+            $repository->withCheckout($project, $featureRequest->base_revision, fn (string $source) => $driver->copyDirectory((string) $workspace->driver_id, $source));
 
             foreach ($featureRequest->lineage() as $position => $request) {
                 $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);

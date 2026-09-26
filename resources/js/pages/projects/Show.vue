@@ -9,11 +9,17 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { show as showFeatureRequest } from '@/routes/feature-requests';
 import { index, show } from '@/routes/projects';
-import type { FeatureRequestSummary, ProjectSummary } from '@/types';
+import { Badge } from '@/components/ui/badge';
+import type {
+    FeatureRequestSummary,
+    ProjectCommit,
+    ProjectSummary,
+} from '@/types';
 
 const props = defineProps<{
     project: ProjectSummary;
     featureRequests: FeatureRequestSummary[];
+    history: ProjectCommit[];
 }>();
 
 watch(
@@ -89,10 +95,44 @@ watch(
                         class="flex items-center justify-between gap-4 p-4 hover:bg-muted/50"
                     >
                         <span class="text-sm">{{ request.prompt }}</span>
-                        <StatusBadge :status="request.status" />
+                        <span class="flex shrink-0 items-center gap-2">
+                            <Badge v-if="request.accepted" variant="outline"
+                                >Accepted</Badge
+                            >
+                            <StatusBadge :status="request.status" />
+                        </span>
                     </Link>
                 </li>
             </ul>
+        </section>
+
+        <section
+            v-if="history.length > 0"
+            class="max-w-2xl space-y-4"
+            data-test="project-history"
+        >
+            <Heading
+                variant="small"
+                title="History"
+                description="Each accepted change is one commit"
+            />
+
+            <ol class="divide-y rounded-lg border">
+                <li
+                    v-for="commit in history"
+                    :key="commit.sha"
+                    class="flex items-baseline justify-between gap-4 p-3 text-sm"
+                >
+                    <span class="min-w-0 truncate">{{ commit.subject }}</span>
+                    <span
+                        class="shrink-0 font-mono text-xs text-muted-foreground"
+                        >{{ commit.sha.slice(0, 7) }} ·
+                        {{
+                            new Date(commit.committed_at).toLocaleString()
+                        }}</span
+                    >
+                </li>
+            </ol>
         </section>
     </div>
 </template>
