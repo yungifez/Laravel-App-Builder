@@ -95,6 +95,13 @@ const pane = ref<'panel' | 'app'>(props.design ? 'app' : 'panel');
 // On a wide screen the owner drags the panel's edge to read a change in full.
 const panelWidth = usePanelWidth();
 
+// Or reads a change's code on the whole screen. Designing needs the app in
+// view, so it brings the app back.
+const codeFull = ref(false);
+const panelFull = computed(
+    () => codeFull.value && props.change !== null && !designing.value,
+);
+
 const app = useAppPreview({
     projectId: () => props.project.id,
     preview: () => props.preview,
@@ -223,6 +230,17 @@ const suggestions = [
 ];
 
 const composer = ref<HTMLTextAreaElement | null>(null);
+
+// The message box stays one line until the owner writes in it, so a change
+// open above it gets the room.
+const composerOpen = ref(false);
+
+function settleComposer(): void {
+    composerOpen.value =
+        composer.value !== null &&
+        (document.activeElement === composer.value ||
+            composer.value.value.trim() !== '');
+}
 
 function suggest(idea: string): void {
     if (composer.value !== null) {
@@ -479,7 +497,10 @@ function send(event: KeyboardEvent): void {
 
     <div
         :class="[
-            'grid min-h-0 flex-1 lg:grid-cols-[var(--panel-width)_minmax(0,1fr)] [&>*]:min-w-0',
+            'grid min-h-0 flex-1 [&>*]:min-w-0',
+            panelFull
+                ? 'lg:grid-cols-1'
+                : 'lg:grid-cols-[var(--panel-width)_minmax(0,1fr)]',
             // The app is a frame that would swallow the drag.
             panelWidth.resizing.value
                 ? 'cursor-col-resize select-none [&_iframe]:pointer-events-none'
@@ -551,7 +572,11 @@ function send(event: KeyboardEvent): void {
                 class="flex min-h-0 flex-1 flex-col"
                 data-test="conversation"
             >
-                <ChangeThread v-if="change" :change="change" />
+                <ChangeThread
+                    v-if="change"
+                    :change="change"
+                    @full="codeFull = $event"
+                />
 
                 <div v-else class="min-h-0 flex-1 overflow-y-auto p-4">
                     <div
@@ -637,6 +662,7 @@ function send(event: KeyboardEvent): void {
                     class="p-3"
                     reset-on-success
                     v-slot="{ errors, processing }"
+                    @success="settleComposer"
                 >
                     <div
                         class="rounded-xl border bg-background shadow-xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50"
@@ -648,9 +674,12 @@ function send(event: KeyboardEvent): void {
                             id="prompt"
                             ref="composer"
                             name="prompt"
-                            rows="3"
+                            :rows="composerOpen ? 3 : 1"
                             required
-                            class="block w-full resize-none bg-transparent px-3 pt-3 text-base outline-none placeholder:text-muted-foreground md:text-sm"
+                            :class="[
+                                'block w-full resize-none bg-transparent px-3 text-base outline-none placeholder:text-muted-foreground md:text-sm',
+                                composerOpen ? 'pt-3' : 'py-2.5',
+                            ]"
                             :placeholder="
                                 change
                                     ? 'Ask for a new change…'
@@ -658,8 +687,13 @@ function send(event: KeyboardEvent): void {
                             "
                             @keydown.enter.meta.prevent="send"
                             @keydown.enter.ctrl.prevent="send"
+                            @focus="composerOpen = true"
+                            @blur="settleComposer"
                         />
-                        <div class="flex items-center justify-between p-2">
+                        <div
+                            v-show="composerOpen || errors.prompt"
+                            class="flex items-center justify-between p-2"
+                        >
                             <span
                                 class="hidden pl-1 text-xs text-muted-foreground sm:inline"
                                 >Ctrl + Enter</span
@@ -686,8 +720,11 @@ function send(event: KeyboardEvent): void {
                 :aria-valuemin="panelWidth.min"
                 tabindex="0"
                 title="Drag to resize. Double-click to reset."
-                class="absolute inset-y-0 -right-1.5 z-10 hidden w-3 cursor-col-resize touch-none after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-transparent after:transition-colors hover:after:bg-primary focus-visible:outline-none focus-visible:after:bg-primary lg:block"
-                :class="panelWidth.resizing.value ? 'after:bg-primary' : ''"
+                class="absolute inset-y-0 -right-1.5 z-10 hidden w-3 cursor-col-resize touch-none after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-transparent after:transition-colors hover:after:bg-primary focus-visible:outline-none focus-visible:after:bg-primary"
+                :class="[
+                    panelWidth.resizing.value ? 'after:bg-primary' : '',
+                    panelFull ? '' : 'lg:block',
+                ]"
                 data-test="panel-resize"
                 @pointerdown="panelWidth.start"
                 @keydown="panelWidth.nudge"
@@ -697,8 +734,10 @@ function send(event: KeyboardEvent): void {
 
         <main
             :class="[
-                'min-h-0 flex-col gap-2 p-2 lg:flex lg:p-3',
+                'min-h-0 flex-col gap-2 p-2 lg:p-3',
                 pane === 'app' ? 'flex' : 'hidden',
+                // Hidden, not removed, so the app does not reload.
+                panelFull ? 'lg:hidden' : 'lg:flex',
             ]"
             data-test="app-pane"
         >

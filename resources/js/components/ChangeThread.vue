@@ -10,10 +10,12 @@ import {
     ExternalLink,
     FileCode2,
     LoaderCircle,
+    Maximize2,
+    Minimize2,
     Sparkles,
     Undo2,
 } from '@lucide/vue';
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import FeatureRequestAcceptanceController from '@/actions/App/Http/Controllers/FeatureRequestAcceptanceController';
 import FeatureRequestAnswerController from '@/actions/App/Http/Controllers/FeatureRequestAnswerController';
 import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
@@ -23,6 +25,7 @@ import FeatureRequestVerificationController from '@/actions/App/Http/Controllers
 import PreviewController from '@/actions/App/Http/Controllers/PreviewController';
 import RunCancellationController from '@/actions/App/Http/Controllers/RunCancellationController';
 import DetailLevelController from '@/actions/App/Http/Controllers/Settings/DetailLevelController';
+import ChangeCode from '@/components/ChangeCode.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -35,6 +38,11 @@ import { show as showProject } from '@/routes/projects';
 import type { ChangeDetail, Run } from '@/types';
 
 const props = defineProps<{ change: ChangeDetail }>();
+
+const emit = defineEmits<{
+    // Whether the change's code wants the whole screen.
+    full: [on: boolean];
+}>();
 
 const request = computed(() => props.change.featureRequest);
 const run = computed(() => props.change.run);
@@ -50,6 +58,42 @@ const depths = [
     { level: 4, label: 'Code' },
 ] as const;
 const depth = ref<number>(page.props.auth.user.detail_level ?? 1);
+
+// Reading code wants room: the owner can give the Code view the whole
+// screen, and it opens that way next time. Remembered in this browser only.
+const FULL_KEY = 'builder.code-full';
+
+function wantedFull(): boolean {
+    try {
+        return window.localStorage.getItem(FULL_KEY) === '1';
+    } catch {
+        return false;
+    }
+}
+
+const wantsFull = ref(typeof window !== 'undefined' && wantedFull());
+
+function toggleFull(): void {
+    wantsFull.value = !wantsFull.value;
+
+    try {
+        window.localStorage.setItem(FULL_KEY, wantsFull.value ? '1' : '0');
+    } catch {
+        // Without storage the choice lasts until the page reloads.
+    }
+}
+
+const full = computed(
+    () =>
+        wantsFull.value &&
+        depth.value === 4 &&
+        !!run.value?.plan &&
+        !run.value.plan.answer &&
+        request.value.files.length > 0,
+);
+
+watch(full, (on) => emit('full', on), { immediate: true });
+onBeforeUnmount(() => emit('full', false));
 
 function setDepth(level: number): void {
     depth.value = level;
@@ -259,559 +303,617 @@ const checks = computed(() => {
             </Button>
         </div>
 
-        <div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-            <!-- What you asked -->
-            <div class="flex justify-end">
-                <p
-                    class="max-w-[85%] rounded-2xl rounded-br-md bg-muted px-3.5 py-2.5 text-sm break-words whitespace-pre-line"
-                >
-                    {{ request.prompt }}
-                </p>
-            </div>
-
-            <!-- What the builder said and did -->
-            <div class="flex gap-2.5">
-                <span
-                    class="grid size-7 shrink-0 place-items-center rounded-full bg-muted"
-                    aria-hidden="true"
-                >
-                    <Sparkles class="size-3.5" />
-                </span>
-                <div class="min-w-0 flex-1 space-y-3 pt-0.5 text-sm">
+        <div
+            :class="[
+                'flex min-h-0 flex-1 flex-col',
+                full && 'lg:grid lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]',
+            ]"
+        >
+            <div
+                :class="[
+                    'min-h-0 flex-1 space-y-4 overflow-y-auto p-4',
+                    full && 'lg:border-r',
+                ]"
+            >
+                <!-- What you asked -->
+                <div class="flex justify-end">
                     <p
-                        v-if="run?.plan?.answer"
-                        class="leading-relaxed whitespace-pre-line"
-                        data-test="thread-answer"
+                        class="max-w-[85%] rounded-2xl rounded-br-md bg-muted px-3.5 py-2.5 text-sm break-words whitespace-pre-line"
                     >
-                        {{ run.plan.answer }}
+                        {{ request.prompt }}
                     </p>
-                    <p v-else-if="run?.plan" class="leading-relaxed">
-                        {{ run.plan.summary }}
-                    </p>
+                </div>
 
-                    <div
-                        v-if="working"
-                        class="flex items-center gap-2 text-muted-foreground"
-                        data-test="thread-working"
+                <!-- What the builder said and did -->
+                <div class="flex gap-2.5">
+                    <span
+                        class="grid size-7 shrink-0 place-items-center rounded-full bg-muted"
+                        aria-hidden="true"
                     >
-                        <LoaderCircle class="size-4 animate-spin" />
-                        <span data-test="thread-progress"
-                            >{{
-                                run?.progress?.text ??
-                                steps[run?.status ?? 'queued']
-                            }}…</span
+                        <Sparkles class="size-3.5" />
+                    </span>
+                    <div class="min-w-0 flex-1 space-y-3 pt-0.5 text-sm">
+                        <p
+                            v-if="run?.plan?.answer"
+                            class="leading-relaxed whitespace-pre-line"
+                            data-test="thread-answer"
                         >
-                        <Form
-                            v-if="run && run.status !== 'cancelling'"
-                            v-bind="
-                                RunCancellationController.store.form(run.id)
-                            "
-                            :options="{ preserveScroll: true }"
-                            class="ml-auto"
-                            v-slot="{ processing }"
-                        >
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                :disabled="processing"
-                                class="h-11 select-none sm:h-7"
-                                data-test="cancel-run-button"
-                            >
-                                Stop
-                            </Button>
-                        </Form>
-                    </div>
+                            {{ run.plan.answer }}
+                        </p>
+                        <p v-else-if="run?.plan" class="leading-relaxed">
+                            {{ run.plan.summary }}
+                        </p>
 
-                    <!-- A question to answer before going on -->
-                    <div
-                        v-if="run?.question"
-                        class="space-y-3 rounded-xl border p-3"
-                        data-test="question"
-                    >
-                        <div>
-                            <p class="font-medium">{{ run.question.text }}</p>
-                            <p
-                                v-if="run.question.why"
-                                class="mt-0.5 text-xs text-muted-foreground"
+                        <div
+                            v-if="working"
+                            class="flex items-center gap-2 text-muted-foreground"
+                            data-test="thread-working"
+                        >
+                            <LoaderCircle class="size-4 animate-spin" />
+                            <span data-test="thread-progress"
+                                >{{
+                                    run?.progress?.text ??
+                                    steps[run?.status ?? 'queued']
+                                }}…</span
                             >
-                                {{ run.question.why }}
-                            </p>
-                        </div>
-                        <div class="grid gap-1.5">
                             <Form
-                                v-for="option in run.question.options"
-                                :key="option"
+                                v-if="run && run.status !== 'cancelling'"
                                 v-bind="
-                                    FeatureRequestAnswerController.store.form(
+                                    RunCancellationController.store.form(run.id)
+                                "
+                                :options="{ preserveScroll: true }"
+                                class="ml-auto"
+                                v-slot="{ processing }"
+                            >
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    :disabled="processing"
+                                    class="h-11 select-none sm:h-7"
+                                    data-test="cancel-run-button"
+                                >
+                                    Stop
+                                </Button>
+                            </Form>
+                        </div>
+
+                        <!-- A question to answer before going on -->
+                        <div
+                            v-if="run?.question"
+                            class="space-y-3 rounded-xl border p-3"
+                            data-test="question"
+                        >
+                            <div>
+                                <p class="font-medium">
+                                    {{ run.question.text }}
+                                </p>
+                                <p
+                                    v-if="run.question.why"
+                                    class="mt-0.5 text-xs text-muted-foreground"
+                                >
+                                    {{ run.question.why }}
+                                </p>
+                            </div>
+                            <div class="grid gap-1.5">
+                                <Form
+                                    v-for="option in run.question.options"
+                                    :key="option"
+                                    v-bind="
+                                        FeatureRequestAnswerController.store.form(
+                                            request.id,
+                                        )
+                                    "
+                                    :options="{ preserveScroll: true }"
+                                    v-slot="{ processing }"
+                                >
+                                    <input
+                                        type="hidden"
+                                        name="answer"
+                                        :value="option"
+                                    />
+                                    <input
+                                        type="hidden"
+                                        name="more_questions"
+                                        :value="moreQuestions ? 1 : 0"
+                                    />
+                                    <button
+                                        :disabled="processing"
+                                        :class="[
+                                            'flex min-h-11 w-full items-center gap-2 rounded-lg border px-3 text-left select-none hover:bg-muted sm:min-h-9',
+                                            option ===
+                                                run.question.recommended &&
+                                                'border-foreground/40',
+                                        ]"
+                                        :data-test="`answer-${option}`"
+                                    >
+                                        <span class="min-w-0 flex-1">{{
+                                            option
+                                        }}</span>
+                                        <span
+                                            v-if="
+                                                option ===
+                                                run.question.recommended
+                                            "
+                                            class="text-xs text-muted-foreground"
+                                            >Suggested</span
+                                        >
+                                    </button>
+                                </Form>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <Form
+                                    v-bind="
+                                        FeatureRequestAnswerController.store.form(
+                                            request.id,
+                                        )
+                                    "
+                                    :options="{ preserveScroll: true }"
+                                    v-slot="{ processing, errors }"
+                                >
+                                    <input
+                                        type="hidden"
+                                        name="more_questions"
+                                        :value="moreQuestions ? 1 : 0"
+                                    />
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        :disabled="processing"
+                                        class="-ml-2 h-11 select-none sm:h-7"
+                                        data-test="answer-you-decide"
+                                    >
+                                        You decide
+                                    </Button>
+                                    <InputError :message="errors.answer" />
+                                </Form>
+                                <label
+                                    class="ml-auto flex min-h-11 items-center gap-1.5 text-xs text-muted-foreground select-none sm:min-h-7"
+                                >
+                                    <input
+                                        v-model="moreQuestions"
+                                        type="checkbox"
+                                        class="accent-foreground"
+                                        data-test="ask-more-questions"
+                                    />
+                                    Ask me more
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Could not finish -->
+                        <div
+                            v-if="failed"
+                            class="space-y-2 rounded-xl border border-red-500/30 bg-red-500/5 p-3"
+                            data-test="thread-failed"
+                        >
+                            <p class="flex items-center gap-2 font-medium">
+                                <CircleAlert class="size-4 text-red-600" />
+                                I couldn't finish this
+                            </p>
+                            <p class="text-xs text-muted-foreground">
+                                Nothing in your app changed.
+                            </p>
+                            <Form
+                                v-if="request.can_retry"
+                                v-bind="
+                                    FeatureRequestRetryController.store.form(
+                                        request.id,
+                                    )
+                                "
+                                v-slot="{ errors, processing }"
+                            >
+                                <Button
+                                    size="sm"
+                                    :disabled="processing"
+                                    class="h-11 select-none sm:h-8"
+                                    data-test="retry-button"
+                                >
+                                    Try again
+                                </Button>
+                                <InputError
+                                    :message="errors.retry ?? errors.step"
+                                />
+                            </Form>
+                        </div>
+
+                        <p
+                            v-if="run?.status === 'cancelled'"
+                            class="text-muted-foreground"
+                        >
+                            You stopped this. Nothing in your app changed.
+                        </p>
+
+                        <!-- What changed, before and now -->
+                        <ul
+                            v-if="asked.length > 0"
+                            class="space-y-2.5"
+                            data-test="run-review"
+                        >
+                            <li
+                                v-for="(item, index) in asked"
+                                :key="index"
+                                class="space-y-0.5"
+                            >
+                                <p class="flex items-start gap-2 font-medium">
+                                    <Check
+                                        class="mt-0.5 size-4 shrink-0 text-green-600"
+                                    />
+                                    {{ item.behavior }}
+                                </p>
+                                <p
+                                    class="line-clamp-2 pl-6 text-xs text-muted-foreground"
+                                    :title="`Before: ${item.before}`"
+                                >
+                                    {{ item.now }}
+                                </p>
+                            </li>
+                        </ul>
+
+                        <div
+                            v-if="unexpected.length > 0"
+                            class="space-y-2 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3"
+                            data-test="review-unexpected"
+                        >
+                            <p class="flex items-center gap-2 font-medium">
+                                <CircleAlert class="size-4 text-amber-500" />
+                                I also changed something you didn't ask for
+                            </p>
+                            <ul class="space-y-1 pl-6 text-xs">
+                                <li
+                                    v-for="(item, index) in unexpected"
+                                    :key="index"
+                                >
+                                    {{ item.behavior }}
+                                </li>
+                            </ul>
+                        </div>
+
+                        <Collapsible
+                            v-if="run?.plan && run.plan.assumptions.length > 0"
+                            data-test="decisions"
+                        >
+                            <CollapsibleTrigger
+                                class="group flex min-h-11 items-center gap-1 text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-6"
+                            >
+                                <ChevronRight
+                                    class="size-3.5 transition-transform group-data-[state=open]:rotate-90"
+                                />
+                                I decided {{ run.plan.assumptions.length }}
+                                {{
+                                    run.plan.assumptions.length === 1
+                                        ? 'thing'
+                                        : 'things'
+                                }}
+                                for you
+                            </CollapsibleTrigger>
+                            <CollapsibleContent>
+                                <ul
+                                    class="mt-1 list-disc space-y-1 pl-9 text-xs text-muted-foreground"
+                                >
+                                    <li
+                                        v-for="(assumption, index) in run.plan
+                                            .assumptions"
+                                        :key="index"
+                                    >
+                                        {{ assumption }}
+                                    </li>
+                                </ul>
+                            </CollapsibleContent>
+                        </Collapsible>
+
+                        <div
+                            v-if="request.status === 'generated'"
+                            class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
+                        >
+                            <span
+                                v-if="checking"
+                                class="flex items-center gap-1.5"
+                                data-test="verification-status"
+                            >
+                                <LoaderCircle class="size-3.5 animate-spin" />
+                                Running the checks…
+                            </span>
+                            <span
+                                v-else-if="checks"
+                                class="flex items-center gap-1.5"
+                                data-test="verification-status"
+                            >
+                                <component
+                                    :is="checks.icon"
+                                    :class="['size-3.5', checks.tone]"
+                                />
+                                {{ checks.label }}
+                            </span>
+                            <Form
+                                v-if="!checking && !request.commit_sha"
+                                v-bind="
+                                    FeatureRequestVerificationController.store.form(
                                         request.id,
                                     )
                                 "
                                 :options="{ preserveScroll: true }"
                                 v-slot="{ processing }"
                             >
-                                <input
-                                    type="hidden"
-                                    name="answer"
-                                    :value="option"
-                                />
-                                <input
-                                    type="hidden"
-                                    name="more_questions"
-                                    :value="moreQuestions ? 1 : 0"
-                                />
                                 <button
                                     :disabled="processing"
-                                    :class="[
-                                        'flex min-h-11 w-full items-center gap-2 rounded-lg border px-3 text-left select-none hover:bg-muted sm:min-h-9',
-                                        option === run.question.recommended &&
-                                            'border-foreground/40',
-                                    ]"
-                                    :data-test="`answer-${option}`"
+                                    class="min-h-11 underline-offset-2 select-none hover:text-foreground hover:underline sm:min-h-6"
+                                    data-test="run-verification-button"
                                 >
-                                    <span class="min-w-0 flex-1">{{
-                                        option
-                                    }}</span>
-                                    <span
-                                        v-if="
-                                            option === run.question.recommended
-                                        "
-                                        class="text-xs text-muted-foreground"
-                                        >Suggested</span
-                                    >
+                                    {{
+                                        change.verification
+                                            ? 'Check again'
+                                            : 'Run the checks'
+                                    }}
                                 </button>
                             </Form>
                         </div>
-                        <div class="flex items-center gap-1">
-                            <Form
-                                v-bind="
-                                    FeatureRequestAnswerController.store.form(
-                                        request.id,
-                                    )
-                                "
-                                :options="{ preserveScroll: true }"
-                                v-slot="{ processing, errors }"
-                            >
-                                <input
-                                    type="hidden"
-                                    name="more_questions"
-                                    :value="moreQuestions ? 1 : 0"
-                                />
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    :disabled="processing"
-                                    class="-ml-2 h-11 select-none sm:h-7"
-                                    data-test="answer-you-decide"
-                                >
-                                    You decide
-                                </Button>
-                                <InputError :message="errors.answer" />
-                            </Form>
-                            <label
-                                class="ml-auto flex min-h-11 items-center gap-1.5 text-xs text-muted-foreground select-none sm:min-h-7"
-                            >
-                                <input
-                                    v-model="moreQuestions"
-                                    type="checkbox"
-                                    class="accent-foreground"
-                                    data-test="ask-more-questions"
-                                />
-                                Ask me more
-                            </label>
-                        </div>
-                    </div>
 
-                    <!-- Could not finish -->
-                    <div
-                        v-if="failed"
-                        class="space-y-2 rounded-xl border border-red-500/30 bg-red-500/5 p-3"
-                        data-test="thread-failed"
-                    >
-                        <p class="flex items-center gap-2 font-medium">
-                            <CircleAlert class="size-4 text-red-600" />
-                            I couldn't finish this
-                        </p>
-                        <p class="text-xs text-muted-foreground">
-                            Nothing in your app changed.
-                        </p>
-                        <Form
-                            v-if="request.can_retry"
-                            v-bind="
-                                FeatureRequestRetryController.store.form(
-                                    request.id,
-                                )
-                            "
-                            v-slot="{ errors, processing }"
+                        <!-- Deeper answers, for whoever wants them -->
+                        <div
+                            v-if="run?.plan && !run.plan.answer"
+                            class="flex items-center gap-1"
                         >
+                            <div
+                                class="flex flex-1 rounded-md bg-muted p-0.5"
+                                role="group"
+                                aria-label="How much detail"
+                                data-test="detail-level"
+                            >
+                                <button
+                                    v-for="option in depths"
+                                    :key="option.level"
+                                    type="button"
+                                    :aria-pressed="depth === option.level"
+                                    :class="[
+                                        'min-h-11 flex-1 rounded text-xs select-none sm:min-h-7',
+                                        depth === option.level
+                                            ? 'bg-background font-medium shadow-sm'
+                                            : 'text-muted-foreground hover:text-foreground',
+                                    ]"
+                                    :data-test="`detail-${option.level}`"
+                                    @click="setDepth(option.level)"
+                                >
+                                    {{ option.label }}
+                                </button>
+                            </div>
                             <Button
-                                size="sm"
-                                :disabled="processing"
-                                class="h-11 select-none sm:h-8"
-                                data-test="retry-button"
+                                v-if="depth === 4 && request.files.length > 0"
+                                variant="ghost"
+                                size="icon"
+                                class="hidden size-8 shrink-0 text-muted-foreground lg:inline-flex"
+                                :aria-pressed="wantsFull"
+                                :aria-label="
+                                    wantsFull
+                                        ? 'Leave full screen'
+                                        : 'Full screen'
+                                "
+                                :title="
+                                    wantsFull
+                                        ? 'Leave full screen'
+                                        : 'Full screen'
+                                "
+                                data-test="code-full"
+                                @click="toggleFull"
                             >
-                                Try again
+                                <component
+                                    :is="wantsFull ? Minimize2 : Maximize2"
+                                    class="size-4"
+                                />
                             </Button>
-                            <InputError
-                                :message="errors.retry ?? errors.step"
-                            />
-                        </Form>
-                    </div>
+                        </div>
 
-                    <p
-                        v-if="run?.status === 'cancelled'"
-                        class="text-muted-foreground"
-                    >
-                        You stopped this. Nothing in your app changed.
-                    </p>
-
-                    <!-- What changed, before and now -->
-                    <ul
-                        v-if="asked.length > 0"
-                        class="space-y-2.5"
-                        data-test="run-review"
-                    >
-                        <li
-                            v-for="(item, index) in asked"
-                            :key="index"
-                            class="space-y-0.5"
+                        <div
+                            v-if="depth >= 2 && run?.plan && !run.plan.answer"
+                            class="space-y-4"
+                            data-test="detail-why"
                         >
-                            <p class="flex items-start gap-2 font-medium">
-                                <Check
-                                    class="mt-0.5 size-4 shrink-0 text-green-600"
-                                />
-                                {{ item.behavior }}
-                            </p>
-                            <p
-                                class="line-clamp-2 pl-6 text-xs text-muted-foreground"
-                                :title="`Before: ${item.before}`"
+                            <section
+                                v-if="keptSame.length > 0"
+                                class="space-y-1.5"
                             >
-                                {{ item.now }}
-                            </p>
-                        </li>
-                    </ul>
-
-                    <div
-                        v-if="unexpected.length > 0"
-                        class="space-y-2 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3"
-                        data-test="review-unexpected"
-                    >
-                        <p class="flex items-center gap-2 font-medium">
-                            <CircleAlert class="size-4 text-amber-500" />
-                            I also changed something you didn't ask for
-                        </p>
-                        <ul class="space-y-1 pl-6 text-xs">
-                            <li
-                                v-for="(item, index) in unexpected"
-                                :key="index"
-                            >
-                                {{ item.behavior }}
-                            </li>
-                        </ul>
-                    </div>
-
-                    <Collapsible
-                        v-if="run?.plan && run.plan.assumptions.length > 0"
-                        data-test="decisions"
-                    >
-                        <CollapsibleTrigger
-                            class="group flex min-h-11 items-center gap-1 text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-6"
-                        >
-                            <ChevronRight
-                                class="size-3.5 transition-transform group-data-[state=open]:rotate-90"
-                            />
-                            I decided {{ run.plan.assumptions.length }}
-                            {{
-                                run.plan.assumptions.length === 1
-                                    ? 'thing'
-                                    : 'things'
-                            }}
-                            for you
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                            <ul
-                                class="mt-1 list-disc space-y-1 pl-9 text-xs text-muted-foreground"
-                            >
-                                <li
-                                    v-for="(assumption, index) in run.plan
-                                        .assumptions"
+                                <h3 class="text-xs text-muted-foreground">
+                                    I'll keep these the same
+                                </h3>
+                                <p
+                                    v-for="(item, index) in keptSame"
                                     :key="index"
+                                    class="flex items-start gap-2"
+                                    :title="item.label"
                                 >
-                                    {{ assumption }}
-                                </li>
-                            </ul>
-                        </CollapsibleContent>
-                    </Collapsible>
-
-                    <div
-                        v-if="request.status === 'generated'"
-                        class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
-                    >
-                        <span
-                            v-if="checking"
-                            class="flex items-center gap-1.5"
-                            data-test="verification-status"
-                        >
-                            <LoaderCircle class="size-3.5 animate-spin" />
-                            Running the checks…
-                        </span>
-                        <span
-                            v-else-if="checks"
-                            class="flex items-center gap-1.5"
-                            data-test="verification-status"
-                        >
-                            <component
-                                :is="checks.icon"
-                                :class="['size-3.5', checks.tone]"
-                            />
-                            {{ checks.label }}
-                        </span>
-                        <Form
-                            v-if="!checking && !request.commit_sha"
-                            v-bind="
-                                FeatureRequestVerificationController.store.form(
-                                    request.id,
-                                )
-                            "
-                            :options="{ preserveScroll: true }"
-                            v-slot="{ processing }"
-                        >
-                            <button
-                                :disabled="processing"
-                                class="min-h-11 underline-offset-2 select-none hover:text-foreground hover:underline sm:min-h-6"
-                                data-test="run-verification-button"
+                                    <component
+                                        :is="item.icon"
+                                        :class="[
+                                            'mt-0.5 size-4 shrink-0',
+                                            item.tone,
+                                        ]"
+                                        :aria-label="item.label"
+                                    />
+                                    <span class="min-w-0">{{ item.text }}</span>
+                                </p>
+                            </section>
+                            <section
+                                v-if="doneWhen.length > 0"
+                                class="space-y-1.5"
                             >
-                                {{
-                                    change.verification
-                                        ? 'Check again'
-                                        : 'Run the checks'
-                                }}
-                            </button>
-                        </Form>
-                    </div>
-
-                    <!-- Deeper answers, for whoever wants them -->
-                    <div
-                        v-if="run?.plan && !run.plan.answer"
-                        class="flex rounded-md bg-muted p-0.5"
-                        role="group"
-                        aria-label="How much detail"
-                        data-test="detail-level"
-                    >
-                        <button
-                            v-for="option in depths"
-                            :key="option.level"
-                            type="button"
-                            :aria-pressed="depth === option.level"
-                            :class="[
-                                'min-h-11 flex-1 rounded text-xs select-none sm:min-h-7',
-                                depth === option.level
-                                    ? 'bg-background font-medium shadow-sm'
-                                    : 'text-muted-foreground hover:text-foreground',
-                            ]"
-                            :data-test="`detail-${option.level}`"
-                            @click="setDepth(option.level)"
-                        >
-                            {{ option.label }}
-                        </button>
-                    </div>
-
-                    <div
-                        v-if="depth >= 2 && run?.plan && !run.plan.answer"
-                        class="space-y-4"
-                        data-test="detail-why"
-                    >
-                        <section v-if="keptSame.length > 0" class="space-y-1.5">
-                            <h3 class="text-xs text-muted-foreground">
-                                I'll keep these the same
-                            </h3>
-                            <p
-                                v-for="(item, index) in keptSame"
-                                :key="index"
-                                class="flex items-start gap-2"
-                                :title="item.label"
-                            >
-                                <component
-                                    :is="item.icon"
-                                    :class="[
-                                        'mt-0.5 size-4 shrink-0',
-                                        item.tone,
-                                    ]"
-                                    :aria-label="item.label"
-                                />
-                                <span class="min-w-0">{{ item.text }}</span>
-                            </p>
-                        </section>
-                        <section v-if="doneWhen.length > 0" class="space-y-1.5">
-                            <h3 class="text-xs text-muted-foreground">
-                                Done when
-                            </h3>
-                            <p
-                                v-for="(item, index) in doneWhen"
-                                :key="index"
-                                class="flex items-start gap-2"
-                                :title="item.label"
-                            >
-                                <component
-                                    :is="item.icon"
-                                    :class="[
-                                        'mt-0.5 size-4 shrink-0',
-                                        item.tone,
-                                    ]"
-                                    :aria-label="item.label"
-                                />
-                                <span class="min-w-0">{{ item.text }}</span>
-                            </p>
-                        </section>
-                        <section
-                            v-if="alsoTouches.length > 0"
-                            class="space-y-1.5"
-                        >
-                            <h3 class="text-xs text-muted-foreground">
-                                This may also touch
-                            </h3>
-                            <p class="flex flex-wrap gap-1.5">
-                                <span
-                                    v-for="name in alsoTouches"
-                                    :key="name"
-                                    class="rounded-full bg-muted px-2 py-0.5 text-xs"
-                                    >{{ name }}</span
+                                <h3 class="text-xs text-muted-foreground">
+                                    Done when
+                                </h3>
+                                <p
+                                    v-for="(item, index) in doneWhen"
+                                    :key="index"
+                                    class="flex items-start gap-2"
+                                    :title="item.label"
                                 >
-                            </p>
-                        </section>
-                        <section
-                            v-if="
-                                change.verification &&
-                                change.verification.results.length > 0
-                            "
-                            class="space-y-1"
-                        >
-                            <h3 class="text-xs text-muted-foreground">
-                                Checks I ran
-                            </h3>
-                            <p
-                                v-for="(result, index) in change.verification
-                                    .results"
-                                :key="index"
-                                class="flex items-center gap-2"
+                                    <component
+                                        :is="item.icon"
+                                        :class="[
+                                            'mt-0.5 size-4 shrink-0',
+                                            item.tone,
+                                        ]"
+                                        :aria-label="item.label"
+                                    />
+                                    <span class="min-w-0">{{ item.text }}</span>
+                                </p>
+                            </section>
+                            <section
+                                v-if="alsoTouches.length > 0"
+                                class="space-y-1.5"
                             >
-                                <component
-                                    :is="outcomes[result.outcome].icon"
-                                    :class="[
-                                        'size-4 shrink-0',
-                                        outcomes[result.outcome].tone,
-                                    ]"
-                                    :aria-label="result.outcome"
-                                />
-                                <span class="min-w-0 flex-1 truncate">{{
-                                    result.name
-                                }}</span>
-                                <span
-                                    class="shrink-0 text-xs text-muted-foreground tabular-nums"
-                                    >{{
-                                        (result.duration_ms / 1000).toFixed(1)
-                                    }}
-                                    s</span
-                                >
-                            </p>
-                        </section>
-                    </div>
-
-                    <div
-                        v-if="depth >= 3 && request.files.length > 0"
-                        class="space-y-1.5"
-                        data-test="detail-how"
-                    >
-                        <h3 class="text-xs text-muted-foreground">Files</h3>
-                        <details
-                            v-for="file in request.files"
-                            :key="file.path"
-                            :open="depth >= 4"
-                            class="group"
-                        >
-                            <summary
-                                class="flex min-h-11 cursor-pointer list-none items-center gap-2 select-none sm:min-h-7"
+                                <h3 class="text-xs text-muted-foreground">
+                                    This may also touch
+                                </h3>
+                                <p class="flex flex-wrap gap-1.5">
+                                    <span
+                                        v-for="name in alsoTouches"
+                                        :key="name"
+                                        class="rounded-full bg-muted px-2 py-0.5 text-xs"
+                                        >{{ name }}</span
+                                    >
+                                </p>
+                            </section>
+                            <section
+                                v-if="
+                                    change.verification &&
+                                    change.verification.results.length > 0
+                                "
+                                class="space-y-1"
                             >
-                                <ChevronRight
-                                    class="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
-                                />
-                                <span
-                                    class="flex min-w-0 flex-1 items-baseline gap-1.5 text-xs"
-                                    :title="file.path"
+                                <h3 class="text-xs text-muted-foreground">
+                                    Checks I ran
+                                </h3>
+                                <p
+                                    v-for="(result, index) in change
+                                        .verification.results"
+                                    :key="index"
+                                    class="flex items-center gap-2"
                                 >
-                                    <span class="shrink-0 font-mono">{{
-                                        file.path.split('/').pop()
+                                    <component
+                                        :is="outcomes[result.outcome].icon"
+                                        :class="[
+                                            'size-4 shrink-0',
+                                            outcomes[result.outcome].tone,
+                                        ]"
+                                        :aria-label="result.outcome"
+                                    />
+                                    <span class="min-w-0 flex-1 truncate">{{
+                                        result.name
                                     }}</span>
                                     <span
-                                        class="min-w-0 truncate text-muted-foreground"
+                                        class="shrink-0 text-xs text-muted-foreground tabular-nums"
                                         >{{
-                                            file.path
-                                                .split('/')
-                                                .slice(0, -1)
-                                                .join('/')
-                                        }}</span
+                                            (result.duration_ms / 1000).toFixed(
+                                                1,
+                                            )
+                                        }}
+                                        s</span
                                     >
-                                </span>
-                                <span
-                                    class="shrink-0 font-mono text-xs tabular-nums"
+                                </p>
+                            </section>
+                        </div>
+
+                        <div
+                            v-if="depth >= 3 && request.files.length > 0"
+                            :class="['space-y-1.5', full && 'lg:hidden']"
+                            data-test="detail-how"
+                        >
+                            <h3 class="text-xs text-muted-foreground">Files</h3>
+                            <details
+                                v-for="file in request.files"
+                                :key="file.path"
+                                :open="depth >= 4"
+                                class="group"
+                            >
+                                <summary
+                                    class="flex min-h-11 cursor-pointer list-none items-center gap-2 select-none sm:min-h-7"
                                 >
-                                    <span class="text-green-600"
-                                        >+{{ file.additions }}</span
+                                    <ChevronRight
+                                        class="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
+                                    />
+                                    <span
+                                        class="flex min-w-0 flex-1 items-baseline gap-1.5 text-xs"
+                                        :title="file.path"
                                     >
-                                    <span class="text-red-600">
-                                        −{{ file.deletions }}</span
+                                        <span class="shrink-0 font-mono">{{
+                                            file.path.split('/').pop()
+                                        }}</span>
+                                        <span
+                                            class="min-w-0 truncate text-muted-foreground"
+                                            >{{
+                                                file.path
+                                                    .split('/')
+                                                    .slice(0, -1)
+                                                    .join('/')
+                                            }}</span
+                                        >
+                                    </span>
+                                    <span
+                                        class="shrink-0 font-mono text-xs tabular-nums"
                                     >
-                                </span>
-                            </summary>
-                            <pre
-                                class="mt-1 max-h-[60vh] overflow-auto rounded-md bg-muted/40 py-2 font-mono text-xs leading-5"
-                            ><div
+                                        <span class="text-green-600"
+                                            >+{{ file.additions }}</span
+                                        >
+                                        <span class="text-red-600">
+                                            −{{ file.deletions }}</span
+                                        >
+                                    </span>
+                                </summary>
+                                <pre
+                                    class="mt-1 max-h-[60vh] overflow-auto rounded-md bg-muted/40 py-2 font-mono text-xs leading-5"
+                                ><div
                                 v-for="(line, index) in file.diff.split('\n')"
                                 :key="index"
                                 :class="['px-2', lineClass(line)]"
                             >{{ line || ' ' }}</div></pre>
-                        </details>
-                    </div>
+                            </details>
+                        </div>
 
-                    <!-- Kept or undone -->
-                    <div
-                        v-if="request.commit_sha"
-                        class="flex items-center gap-2"
-                        data-test="change-decision"
-                    >
-                        <template v-if="request.reverted_at">
-                            <Undo2 class="size-4 text-muted-foreground" />
-                            <span class="text-muted-foreground"
-                                >You undid this change.</span
-                            >
-                        </template>
-                        <template v-else>
-                            <CircleCheck class="size-4 text-green-600" />
-                            <span>Kept. It's part of your app.</span>
-                            <Form
-                                v-bind="
-                                    FeatureRequestReversionController.store.form(
-                                        request.id,
-                                    )
-                                "
-                                :options="{ preserveScroll: true }"
-                                class="ml-auto"
-                                v-slot="{ processing, errors }"
-                            >
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    :disabled="processing"
-                                    class="h-11 gap-1 select-none sm:h-7"
-                                    data-test="revert-change-button"
+                        <!-- Kept or undone -->
+                        <div
+                            v-if="request.commit_sha"
+                            class="flex items-center gap-2"
+                            data-test="change-decision"
+                        >
+                            <template v-if="request.reverted_at">
+                                <Undo2 class="size-4 text-muted-foreground" />
+                                <span class="text-muted-foreground"
+                                    >You undid this change.</span
                                 >
-                                    <Undo2 class="size-3.5" /> Undo
-                                </Button>
-                                <InputError :message="errors.change" />
-                            </Form>
-                        </template>
+                            </template>
+                            <template v-else>
+                                <CircleCheck class="size-4 text-green-600" />
+                                <span>Kept. It's part of your app.</span>
+                                <Form
+                                    v-bind="
+                                        FeatureRequestReversionController.store.form(
+                                            request.id,
+                                        )
+                                    "
+                                    :options="{ preserveScroll: true }"
+                                    class="ml-auto"
+                                    v-slot="{ processing, errors }"
+                                >
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        :disabled="processing"
+                                        class="h-11 gap-1 select-none sm:h-7"
+                                        data-test="revert-change-button"
+                                    >
+                                        <Undo2 class="size-3.5" /> Undo
+                                    </Button>
+                                    <InputError :message="errors.change" />
+                                </Form>
+                            </template>
+                        </div>
                     </div>
                 </div>
             </div>
+
+            <ChangeCode
+                v-if="full"
+                class="hidden lg:grid"
+                :files="request.files"
+            />
         </div>
 
         <!-- The decision stays in reach at the bottom -->
