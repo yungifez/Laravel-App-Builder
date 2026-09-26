@@ -24,6 +24,7 @@
     17. [Grandma first](direction/17-grandma-first.md)
     18. [Differentiators from maintained product understanding](direction/18-differentiators-from-product-understanding.md)
     19. [Human judgment where it has leverage](direction/19-human-judgment-with-leverage.md)
+    20. [Software stewardship](direction/20-software-stewardship.md)
 - **[source/](source/)**: the original planning documents.
     - [Implementation plan v1](source/implementation-plan-v1.md): gates G0–G6,
       the invitation contract and the pilot plan.

@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 18.** This document consolidates the direction in [direction/](direction/)
+**Version 19.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -35,7 +35,9 @@ translation layer ([§28](#28-grandma-first-the-translation-layer-version-17)): 
 internal noun in the default UI, and the differentiators that follow from
 maintained product understanding, ranked for after V1. Version 18 frames people
 in the loop as leverage, not fallback ([§29](#29-human-judgment-where-it-has-leverage-version-18)):
-developer guidance lives in the notes and reaches every later change. When they disagree, the direction documents state intent
+developer guidance lives in the notes and reaches every later change. Version 19 names the
+product a software stewardship platform ([§30](#30-software-stewardship-version-19)):
+three primitives (notes, Change Records, evidence) and no new entities. When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -68,6 +70,7 @@ silently following either.
 - [V1 plan](#27-v1-plan-version-16)
 - [Grandma first: the translation layer](#28-grandma-first-the-translation-layer-version-17)
 - [Human judgment where it has leverage](#29-human-judgment-where-it-has-leverage-version-18)
+- [Software stewardship](#30-software-stewardship-version-19)
 
 ## 1. Principles
 
@@ -2570,3 +2573,57 @@ In order, each built on the notes rather than beside them:
 
 The developer access model (accounts, permissions, payment) is not designed
 yet, and V1 has no invitations or roles (see AGENTS.md: later gates).
+
+## 30. Software stewardship (version 19)
+
+Source: [direction 20](direction/20-software-stewardship.md). The product is a
+software stewardship platform: build, understand, operate, change, bring in
+judgment, keep that judgment, and keep evolving safely. The test is no longer
+"can Grandma build a booking MVP" but "can Grandma still own the product after
+years of changes". This section answers the direction's closing question: what
+is the smallest durable structure that gives most of the leverage?
+
+### 30.1 Three primitives, no new ones
+
+| Primitive               | What it holds                                                                                                                       | Where it lives now                                                                           |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| **Notes** (`.builder/`) | Owner intent (rules, invariants), developer guidance, the areas of the app                                                          | The project repository, so it travels with the code                                          |
+| **Change Record**       | What the owner wanted, how it was understood, before and after, what was kept the same, what it may touch, the commit, the evidence | The accepted feature request and its brief, verify items, preserved items, checks and commit |
+| **Evidence**            | Which checks ran, which tests cover which promise, and what was not checked                                                         | Runs and verification, linked from the Change Record                                         |
+
+The feature request already is the Change Record: the change page shows it in
+owner language (§28). V1 adds no new entity for it. Visual edits (M2) are
+Change Records without a model: file, element, before and after, commit.
+
+Expert guidance is not a fourth store. It is the "Engineering direction"
+section of the notes (§29.3), so it reaches every later change through the
+Context Compiler.
+
+### 30.2 What V1 does
+
+- Keeps every change as a Change Record with evidence, and lists them on the
+  project page as "What changed".
+- Keeps owner rules and developer guidance in the notes, visible on the
+  Understanding page (M3).
+- Marks evidence honestly: "not checked" is never shown as "verified" (§27).
+
+### 30.3 Later, in order
+
+1. **Change Records in the repository.** Write a short Markdown record of each
+   kept change under `.builder/changes/`, so the handover package (direction 20
+   §17) is the repository itself, not an export.
+2. **Guidance that ages.** Record the commit each guidance item was last
+   reviewed against, and show "This guidance was written before … It may need
+   another review" when its area changed a lot since. The count comes from
+   Change Records per area, so no new data is needed.
+3. **Review freshness.** "Billing was reviewed 8 months ago; 6 billing changes
+   since." Same count.
+4. **Intent against reality.** Compare owner rules with what policies, routes
+   and tests allow ("You said managers cannot see payroll; the app lets them").
+   This builds on the active testing in direction 14.
+5. **Selective context for humans.** The review packet (§29.4) includes only
+   the areas, rules, Change Records and evidence that the question touches.
+6. **Scoped expert access** (read-only snapshot, isolated preview, no
+   credentials or customer data) and **explainable escalation** (the reason
+   is always shown; bring-your-own developer always works). These need the
+   access model that later gates design.
