@@ -117,6 +117,24 @@ runner. It never sees this repository, `.env` or the database.
   `vendor/bin/sail up -d --no-deps --force-recreate runner`. Without
   `--no-deps`, compose restarts the app container and its workers too.
 
+To give each workspace a container of its own, as a real box provider does,
+use the `docker` box provider:
+
+1. Build the box image: `docker compose --profile boxes-image build box`.
+2. Set `WORKSPACE_BOXES_TOKEN` to a long random value and
+   `WORKSPACE_BOX_PROVIDER=docker` in `.env`.
+3. Start the box service:
+   `docker compose --profile boxes up -d --no-deps boxes`.
+
+The box service (`docker/boxes/server.mjs`) holds the Docker socket. It only
+creates, lists and removes containers from the `builder-box` image, on the
+app's network, with the workspace size limits. The control plane never gets the
+socket. Each box runs its own runner with a token that opens only its own
+commands. Previews in a box are reached at `http://box-{name}:{port}`.
+Rebuild the image after changing `resources/box-runner`,
+`resources/agent-runner` or `resources/preview-tools`. Containers share this
+machine's kernel, so this is for local development only.
+
 The `local` driver still works: it runs workspaces as folders inside the app
 container. A coding agent there can read the control plane's files, so
 agents refuse to run in it unless `WORKSPACE_LOCAL_AGENTS=true`. Set that only

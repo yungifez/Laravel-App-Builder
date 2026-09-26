@@ -2,8 +2,9 @@
 # (`vendor/bin/sail up -d`). `laravel.test` runs PHP and Node; PostgreSQL and
 # Redis are trusted local services. Running only `postgres` and `redis` (and
 # PHP on the host) also works.
-# This file is NOT the future isolation design for customer code: it must
-# never mount the Docker socket. `runner` stands in for a workspace box: it
+# This file is NOT the future isolation design for customer code. Only the
+# opt-in `boxes` service may mount the Docker socket, never a container that
+# runs our app or customer code. `runner` stands in for a workspace box: it
 # gets only the runner and preview-tool folders and its own volume, never the project,
 # .env or the database (WORKSPACE_DRIVER=runner). `reverb` rings its doorbell.
 name: builder-control-plane
@@ -63,6 +64,34 @@ services:
         depends_on:
             - laravel.test
         restart: unless-stopped
+
+    # Opt in with `--profile boxes`. Only this service holds the Docker
+    # socket; it creates and removes box containers and nothing else
+    # (docker/boxes/server.mjs). SELinux hosts need the label disabled for
+    # it to reach the socket.
+    boxes:
+        image: sail-8.4/app
+        profiles: ['boxes']
+        entrypoint: ['node', '/opt/boxes/server.mjs']
+        environment:
+            BOXES_TOKEN: '${WORKSPACE_BOXES_TOKEN:-}'
+            BOX_IMAGE: 'builder-box'
+            BOX_NETWORK: 'builder-control-plane_default'
+        volumes:
+            - './docker/boxes:/opt/boxes:ro'
+            - '/var/run/docker.sock:/var/run/docker.sock'
+        security_opt:
+            - 'label:disable'
+        restart: unless-stopped
+
+    # The image each box starts from. Build it with
+    # `vendor/bin/sail --profile boxes build box`; it never runs here.
+    box:
+        build:
+            context: ./resources
+            dockerfile: ../docker/box/Dockerfile
+        image: builder-box
+        profiles: ['boxes-image']
 
     postgres:
         image: postgres:18.6

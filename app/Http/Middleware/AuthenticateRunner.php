@@ -8,7 +8,7 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Let in only a box runner with a token from the box provider, and remember
+ * Let in only a box runner with a token from a box provider, and remember
  * which runner it is. A runner's token opens its own commands and nothing
  * else in the control plane.
  */
@@ -24,7 +24,7 @@ class AuthenticateRunner
     public function handle(Request $request, Closure $next): Response
     {
         $token = (string) $request->bearerToken();
-        $runner = $token === '' ? null : $this->providers->driver()->authenticate($token);
+        $runner = $token === '' ? null : $this->providers->authenticate($token);
 
         abort_if($runner === null, 401);
 

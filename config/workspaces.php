@@ -133,9 +133,10 @@ return [
     |
     | Where the runner driver gets its boxes. "static" is one runner that is
     | already running, such as the runner container in local development; it
-    | holds every workspace, so it is for trusted apps only. A provider for a
-    | hosting service is added as another entry here and in
-    | App\Workspaces\Boxes\BoxProviderManager.
+    | holds every workspace, so it is for trusted apps only. "docker" makes a
+    | container per workspace on this machine, to try the lifecycle of real
+    | boxes locally. A provider for a hosting service is added as another
+    | entry here and in App\Workspaces\Boxes\BoxProviderManager.
     |
     */
 
@@ -144,6 +145,16 @@ return [
             'runner' => env('WORKSPACE_RUNNER_NAME', 'local'),
             'token' => env('WORKSPACE_RUNNER_TOKEN', ''),
             'service_host' => env('WORKSPACE_RUNNER_SERVICE_HOST', 'runner'),
+        ],
+
+        // One container per workspace, through the box service in
+        // docker/boxes, which holds the Docker socket. Local development
+        // only: containers share the host's kernel.
+        'docker' => [
+            'url' => env('WORKSPACE_BOXES_URL', 'http://boxes:8090'),
+            'token' => env('WORKSPACE_BOXES_TOKEN', ''),
+            // Where a box's runner reaches the control plane.
+            'control_plane_url' => env('WORKSPACE_RUNNER_CONTROL_PLANE_URL', 'http://laravel.test'),
         ],
     ],
 

@@ -3,6 +3,7 @@
 namespace App\Workspaces\Boxes;
 
 use App\Workspaces\Boxes\Contracts\BoxProvider;
+use App\Workspaces\Boxes\Providers\DockerProvider;
 use App\Workspaces\Boxes\Providers\StaticProvider;
 use Illuminate\Support\Manager;
 
@@ -23,6 +24,23 @@ class BoxProviderManager extends Manager
     }
 
     /**
+     * Get the runner a token belongs to, asking every configured provider,
+     * so boxes made before a switch of provider can still finish their work.
+     */
+    public function authenticate(string $token): ?string
+    {
+        foreach (array_keys((array) $this->config->get('workspaces.boxes', [])) as $provider) {
+            $runner = $this->driver((string) $provider)->authenticate($token);
+
+            if ($runner !== null) {
+                return $runner;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Create the provider for one runner that is already running.
      */
     public function createStaticDriver(): BoxProvider
@@ -31,6 +49,19 @@ class BoxProviderManager extends Manager
             runner: (string) $this->config->get('workspaces.boxes.static.runner'),
             token: (string) $this->config->get('workspaces.boxes.static.token'),
             serviceHost: (string) $this->config->get('workspaces.boxes.static.service_host'),
+        );
+    }
+
+    /**
+     * Create the provider that makes one Docker container per workspace.
+     */
+    public function createDockerDriver(): BoxProvider
+    {
+        return new DockerProvider(
+            url: rtrim((string) $this->config->get('workspaces.boxes.docker.url'), '/'),
+            token: (string) $this->config->get('workspaces.boxes.docker.token'),
+            controlPlaneUrl: (string) $this->config->get('workspaces.boxes.docker.control_plane_url'),
+            key: (string) $this->config->get('app.key'),
         );
     }
 }

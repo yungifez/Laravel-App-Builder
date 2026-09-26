@@ -1166,6 +1166,12 @@ grades its own work.
   one user, so it is for our trusted fixtures only. The `local` driver still
   runs workspaces inside the control plane's container. Agents refuse to run
   there unless `WORKSPACE_LOCAL_AGENTS` allows it for trusted apps.
+- **The `docker` provider tries the box lifecycle locally.** It makes one
+  container per workspace through a small box service that alone holds the
+  Docker socket and can only create, list and remove labelled box containers.
+  Each box gets a runner token derived from its name, so it opens only its own
+  commands. Containers share the host kernel, so this never replaces a
+  microVM provider.
 - **The runner** is a TypeScript process in the runtime that hosts the agent
   engines and speaks the runtime protocol to the control plane over an outbound
   connection: tasks (`transform`, `agent`, `prepare`) in; numbered events
