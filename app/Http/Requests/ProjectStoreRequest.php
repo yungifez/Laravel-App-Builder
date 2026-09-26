@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Rules\SupportedApplication;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -16,7 +17,7 @@ class ProjectStoreRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'source_path' => ['required', 'string', 'max:1024'],
+            'source_path' => ['required', 'string', 'max:1024', new SupportedApplication],
         ];
     }
 }

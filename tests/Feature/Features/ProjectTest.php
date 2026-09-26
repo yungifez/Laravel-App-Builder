@@ -38,7 +38,7 @@ class ProjectTest extends TestCase
     public function test_users_can_add_a_project_which_is_imported_into_its_repository()
     {
         $user = User::factory()->create();
-        $source = $this->makeProjectSource(['.env' => "APP_KEY=secret\n", 'vendor/autoload.php' => "<?php\n"]);
+        $source = $this->makeProjectSource(['.env' => "APP_KEY=secret\n", 'vendor/autoload.php' => "<?php\n", '.builder/project.md' => "# Project\n"] + $this->laravelApp());
 
         $response = $this->actingAs($user)->post(route('projects.store'), [
             'name' => 'Acme',

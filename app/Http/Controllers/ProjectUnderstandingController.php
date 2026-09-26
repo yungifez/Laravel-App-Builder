@@ -65,6 +65,18 @@ class ProjectUnderstandingController extends Controller
                     'at' => $featureRequest->accepted_at?->toIso8601String(),
                 ]),
             'looks' => $project->visualEdits()->count(),
+            'draft' => $project->notes_draft_status === null ? null : [
+                'status' => $project->notes_draft_status->value,
+                'purpose' => $project->notes_draft['purpose'] ?? null,
+                'areas' => array_map(fn (array $area) => [
+                    'key' => $area['key'],
+                    'name' => $area['name'],
+                    'summary' => $area['summary'],
+                    'behaviors' => array_column($area['behaviors'], 'name'),
+                    'rules' => $area['rules'],
+                ], $project->notes_draft['areas'] ?? []),
+                'error' => $project->notes_draft_error,
+            ],
             'check' => Inertia::optional(fn () => $revision === null ? [] : $checkProjectNotes->handle($project, $revision)),
         ]);
     }

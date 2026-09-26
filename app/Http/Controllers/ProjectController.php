@@ -29,7 +29,8 @@ class ProjectController extends Controller
     }
 
     /**
-     * Register a new project.
+     * Register a new project. When I am drafting notes for it, the owner
+     * goes to the page where they confirm them.
      */
     public function store(ProjectStoreRequest $request, CreateProject $createProject): RedirectResponse
     {
@@ -39,7 +40,9 @@ class ProjectController extends Controller
             $request->validated('source_path'),
         );
 
-        return to_route('projects.show', $project);
+        return $project->notes_draft_status === null
+            ? to_route('projects.show', $project)
+            : to_route('projects.understanding.show', $project);
     }
 
     /**

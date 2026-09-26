@@ -332,3 +332,16 @@ export type ProjectPublishing = {
     branch: string | null;
     deployments: DeploymentSummary[];
 };
+
+export type NotesDraft = {
+    status: 'drafting' | 'ready' | 'failed';
+    purpose: string | null;
+    areas: {
+        key: string;
+        name: string;
+        summary: string;
+        behaviors: string[];
+        rules: string[];
+    }[];
+    error: string | null;
+};

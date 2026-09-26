@@ -2,6 +2,7 @@
 import { Head, Link, router, setLayoutProps } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import Heading from '@/components/Heading.vue';
+import NotesDraftPanel from '@/components/NotesDraftPanel.vue';
 import NotesPart from '@/components/NotesPart.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,6 +15,7 @@ import { index, show } from '@/routes/projects';
 import { show as showUnderstanding } from '@/routes/projects/understanding';
 import type {
     CheckFinding,
+    NotesDraft,
     NotesSection,
     ProjectSummary,
     UnderstandingArea,
@@ -28,6 +30,7 @@ const props = defineProps<{
     problems: string[];
     changes: { id: number; summary: string; at: string | null }[];
     looks: number;
+    draft: NotesDraft | null;
     check?: CheckFinding[];
 }>();
 
@@ -84,6 +87,12 @@ watch(
         <Heading
             :title="project.name"
             description="What I know about your app. Change anything that is wrong; I use it for every change."
+        />
+
+        <NotesDraftPanel
+            v-if="draft !== null"
+            :project-id="project.id"
+            :draft="draft"
         />
 
         <p

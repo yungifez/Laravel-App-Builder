@@ -11,6 +11,7 @@ use App\Http\Controllers\FeatureRequestVerificationController;
 use App\Http\Controllers\PreviewController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectEditorController;
+use App\Http\Controllers\ProjectNotesDraftController;
 use App\Http\Controllers\ProjectPreviewController;
 use App\Http\Controllers\ProjectPublishingController;
 use App\Http\Controllers\ProjectUnderstandingController;
@@ -29,6 +30,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('projects/{project}', [ProjectController::class, 'show'])->name('projects.show');
     Route::get('projects/{project}/understanding', [ProjectUnderstandingController::class, 'show'])->name('projects.understanding.show');
     Route::put('projects/{project}/understanding', [ProjectUnderstandingController::class, 'update'])->name('projects.understanding.update');
+    Route::post('projects/{project}/notes-draft', [ProjectNotesDraftController::class, 'store'])->name('projects.notes-draft.store');
+    Route::delete('projects/{project}/notes-draft', [ProjectNotesDraftController::class, 'destroy'])->name('projects.notes-draft.destroy');
     Route::put('projects/{project}/publishing', [ProjectPublishingController::class, 'update'])->name('projects.publishing.update');
     Route::post('projects/{project}/deployments', [DeploymentController::class, 'store'])->name('deployments.store');
     Route::get('projects/{project}/editor', [ProjectEditorController::class, 'show'])->name('projects.editor.show');

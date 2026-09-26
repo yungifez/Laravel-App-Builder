@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\NotesDraftStatus;
 use Database\Factories\ProjectFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -20,10 +21,13 @@ use Illuminate\Support\Carbon;
  * @property string $source_path
  * @property string|null $deploy_remote The Git remote the hosting platform deploys from, credentials included
  * @property string|null $deploy_branch
+ * @property NotesDraftStatus|null $notes_draft_status
+ * @property array{purpose: string, areas: list<array{key: string, name: string, summary: string, paths: list<string>, behaviors: list<array{key: string, name: string}>, rules: list<string>}>}|null $notes_draft Notes a model drafted from an imported app, waiting for the owner
+ * @property string|null $notes_draft_error
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'source_path', 'deploy_remote', 'deploy_branch'])]
+#[Fillable(['name', 'source_path', 'deploy_remote', 'deploy_branch', 'notes_draft_status', 'notes_draft', 'notes_draft_error'])]
 #[Hidden(['deploy_remote'])]
 class Project extends Model
 {
@@ -39,6 +43,8 @@ class Project extends Model
     {
         return [
             'deploy_remote' => 'encrypted',
+            'notes_draft_status' => NotesDraftStatus::class,
+            'notes_draft' => 'array',
         ];
     }
 
