@@ -6,10 +6,10 @@ import type { FeatureRequestStatus } from '@/types';
 const props = defineProps<{ status: FeatureRequestStatus }>();
 
 const labels: Record<FeatureRequestStatus, string> = {
-    generating: 'Generating',
-    generated: 'Generated',
-    failed: 'Failed',
-    cancelled: 'Cancelled',
+    generating: 'Working on it',
+    generated: 'Ready for you',
+    failed: 'Could not finish',
+    cancelled: 'Stopped',
 };
 
 const variant = computed(() =>

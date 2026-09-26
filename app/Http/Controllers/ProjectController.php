@@ -59,6 +59,13 @@ class ProjectController extends Controller
                     'accepted' => $featureRequest->isAccepted(),
                     'created_at' => $featureRequest->created_at?->toIso8601String(),
                 ]),
+            'changes' => $project->featureRequests()->whereNotNull('accepted_at')->latest('accepted_at')->limit(20)->get()
+                ->map(fn (FeatureRequest $featureRequest) => [
+                    'id' => $featureRequest->id,
+                    'summary' => $featureRequest->summary ?? $featureRequest->prompt,
+                    'accepted_at' => $featureRequest->accepted_at?->toIso8601String(),
+                    'reverted_at' => $featureRequest->reverted_at?->toIso8601String(),
+                ]),
             'history' => $repository->log($project, 20),
             'telemetry' => $summarizeTelemetry->handle($project),
         ]);

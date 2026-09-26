@@ -30,7 +30,7 @@ defineOptions({
     <div class="flex h-full flex-1 flex-col gap-8 p-4">
         <Heading
             title="Projects"
-            description="Customer applications the builder generates features for"
+            description="The apps I build and change for you"
         />
 
         <ul v-if="projects.length > 0" class="grid gap-4 md:grid-cols-2">
@@ -62,7 +62,7 @@ defineOptions({
             <Heading
                 variant="small"
                 title="Add a project"
-                description="Point the builder at a customer application"
+                description="Bring in an app that already exists"
             />
 
             <Form

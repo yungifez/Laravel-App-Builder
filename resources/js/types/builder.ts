@@ -10,6 +10,13 @@ export type ProjectSummary = {
     source_path: string;
 };
 
+export type KeptChange = {
+    id: number;
+    summary: string;
+    accepted_at: string | null;
+    reverted_at: string | null;
+};
+
 export type FeatureRequestSummary = {
     id: number;
     prompt: string;

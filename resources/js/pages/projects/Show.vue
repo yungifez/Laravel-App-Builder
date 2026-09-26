@@ -6,12 +6,18 @@ import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { Button } from '@/components/ui/button';
+import {
+    Collapsible,
+    CollapsibleContent,
+    CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { Label } from '@/components/ui/label';
 import { show as showFeatureRequest } from '@/routes/feature-requests';
 import { index, show } from '@/routes/projects';
 import { Badge } from '@/components/ui/badge';
 import type {
     FeatureRequestSummary,
+    KeptChange,
     ProjectCommit,
     ProjectSummary,
     ProjectTelemetry,
@@ -20,12 +26,17 @@ import type {
 const props = defineProps<{
     project: ProjectSummary;
     featureRequests: FeatureRequestSummary[];
+    changes: KeptChange[];
     history: ProjectCommit[];
     telemetry: ProjectTelemetry;
 }>();
 
 function rate(part: number, whole: number): string {
     return whole === 0 ? '–' : `${Math.round((part / whole) * 100)}%`;
+}
+
+function day(iso: string | null): string {
+    return iso === null ? '' : new Date(iso).toLocaleDateString();
 }
 
 function dollars(amount: number | null): string {
@@ -49,16 +60,13 @@ watch(
     <Head :title="props.project.name" />
 
     <div class="flex h-full flex-1 flex-col gap-8 p-4">
-        <Heading
-            :title="project.name"
-            :description="`Source: ${project.source_path}`"
-        />
+        <Heading :title="project.name" />
 
         <section class="max-w-2xl space-y-6">
             <Heading
                 variant="small"
-                title="Request a feature"
-                description="Describe what the application should do"
+                title="What would you like to change?"
+                description="Describe it the way you would to a colleague"
             />
 
             <Form
@@ -67,7 +75,7 @@ watch(
                 v-slot="{ errors, processing }"
             >
                 <div class="grid gap-2">
-                    <Label for="prompt">Request</Label>
+                    <Label for="prompt" class="sr-only">Your change</Label>
                     <textarea
                         id="prompt"
                         name="prompt"
@@ -83,19 +91,57 @@ watch(
                     :disabled="processing"
                     data-test="request-feature-button"
                 >
-                    Request feature
+                    Ask for this change
                 </Button>
             </Form>
         </section>
 
+        <section
+            v-if="changes.length > 0"
+            class="max-w-2xl space-y-4"
+            data-test="project-changes"
+        >
+            <Heading
+                variant="small"
+                title="What changed"
+                description="The changes you kept, newest first"
+            />
+
+            <ol class="divide-y rounded-lg border">
+                <li v-for="change in changes" :key="change.id">
+                    <Link
+                        :href="showFeatureRequest(change.id)"
+                        class="flex items-baseline justify-between gap-4 p-3 text-sm hover:bg-muted/50"
+                    >
+                        <span
+                            :class="[
+                                'min-w-0',
+                                change.reverted_at &&
+                                    'text-muted-foreground line-through',
+                            ]"
+                            >{{ change.summary }}</span
+                        >
+                        <span class="shrink-0 text-xs text-muted-foreground">
+                            <template v-if="change.reverted_at"
+                                >Undone {{ day(change.reverted_at) }}</template
+                            >
+                            <template v-else>{{
+                                day(change.accepted_at)
+                            }}</template>
+                        </span>
+                    </Link>
+                </li>
+            </ol>
+        </section>
+
         <section class="max-w-2xl space-y-4">
-            <Heading variant="small" title="Requests" />
+            <Heading variant="small" title="Your requests" />
 
             <p
                 v-if="featureRequests.length === 0"
                 class="text-sm text-muted-foreground"
             >
-                No features have been requested yet.
+                You have not asked for any changes yet.
             </p>
 
             <ul v-else class="divide-y rounded-lg border">
@@ -107,108 +153,131 @@ watch(
                         <span class="text-sm">{{ request.prompt }}</span>
                         <span class="flex shrink-0 items-center gap-2">
                             <Badge v-if="request.accepted" variant="outline"
-                                >Accepted</Badge
+                                >Kept</Badge
                             >
-                            <StatusBadge :status="request.status" />
+                            <StatusBadge v-else :status="request.status" />
                         </span>
                     </Link>
                 </li>
             </ul>
         </section>
 
-        <section
-            v-if="telemetry.requests > 0"
-            class="max-w-2xl space-y-4"
-            data-test="project-telemetry"
-        >
-            <Heading
-                variant="small"
-                title="How changes went"
-                :description="`${telemetry.requests} requests, ${telemetry.accepted} accepted, ${telemetry.reverted} undone`"
-            />
+        <Collapsible class="max-w-2xl" data-test="project-details">
+            <CollapsibleTrigger
+                class="text-sm text-muted-foreground underline underline-offset-4"
+            >
+                Details
+            </CollapsibleTrigger>
+            <CollapsibleContent class="mt-4 space-y-6 text-sm">
+                <p class="text-muted-foreground">
+                    Imported from
+                    <span class="font-mono">{{ project.source_path }}</span>
+                </p>
 
-            <dl class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <div class="rounded-lg border p-3">
-                    <dt class="text-xs text-muted-foreground">
-                        Cost per accepted change
-                    </dt>
-                    <dd class="text-lg font-medium">
-                        {{ dollars(telemetry.cost_per_accepted_change_usd) }}
-                    </dd>
-                </div>
-                <div class="rounded-lg border p-3">
-                    <dt class="text-xs text-muted-foreground">
-                        Passed on the first attempt
-                    </dt>
-                    <dd class="text-lg font-medium">
-                        {{
-                            rate(
-                                telemetry.first_attempt_passed,
-                                telemetry.runs_verified,
-                            )
-                        }}
-                    </dd>
-                </div>
-                <div class="rounded-lg border p-3">
-                    <dt class="text-xs text-muted-foreground">
-                        Changed parts not asked about
-                    </dt>
-                    <dd class="text-lg font-medium">
-                        {{
-                            rate(
-                                telemetry.with_unexpected_changes,
-                                telemetry.reviewed,
-                            )
-                        }}
-                    </dd>
-                </div>
-                <div class="rounded-lg border p-3">
-                    <dt class="text-xs text-muted-foreground">
-                        Repairs before acceptance
-                    </dt>
-                    <dd class="text-lg font-medium">
-                        {{ telemetry.repairs_before_acceptance ?? '–' }}
-                    </dd>
-                </div>
-            </dl>
-
-            <p class="text-xs text-muted-foreground">
-                {{ dollars(telemetry.cost_usd) }} in total over
-                {{ telemetry.input_tokens + telemetry.output_tokens }} tokens.
-                <template v-if="telemetry.unpriced_calls > 0">
-                    {{ telemetry.unpriced_calls }} model calls have no price and
-                    are not in the cost.
-                </template>
-            </p>
-        </section>
-
-        <section
-            v-if="history.length > 0"
-            class="max-w-2xl space-y-4"
-            data-test="project-history"
-        >
-            <Heading
-                variant="small"
-                title="History"
-                description="Each accepted change is one commit"
-            />
-
-            <ol class="divide-y rounded-lg border">
-                <li
-                    v-for="commit in history"
-                    :key="commit.sha"
-                    class="flex items-baseline justify-between gap-4 p-3 text-sm"
+                <section
+                    v-if="telemetry.requests > 0"
+                    class="space-y-4"
+                    data-test="project-telemetry"
                 >
-                    <span class="min-w-0 truncate">{{ commit.subject }}</span>
-                    <span
-                        class="shrink-0 font-mono text-xs text-muted-foreground"
-                        >{{ commit.sha.slice(0, 7) }} ·
-                        {{
-                            new Date(commit.committed_at).toLocaleString()
-                        }}</span
-                    >
-                </li>
-            </ol>
-        </section>
+                    <Heading
+                        variant="small"
+                        title="How changes went"
+                        :description="`${telemetry.requests} requests, ${telemetry.accepted} kept, ${telemetry.reverted} undone`"
+                    />
+
+                    <dl class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        <div class="rounded-lg border p-3">
+                            <dt class="text-xs text-muted-foreground">
+                                Cost per kept change
+                            </dt>
+                            <dd class="text-lg font-medium">
+                                {{
+                                    dollars(
+                                        telemetry.cost_per_accepted_change_usd,
+                                    )
+                                }}
+                            </dd>
+                        </div>
+                        <div class="rounded-lg border p-3">
+                            <dt class="text-xs text-muted-foreground">
+                                Passed on the first attempt
+                            </dt>
+                            <dd class="text-lg font-medium">
+                                {{
+                                    rate(
+                                        telemetry.first_attempt_passed,
+                                        telemetry.runs_verified,
+                                    )
+                                }}
+                            </dd>
+                        </div>
+                        <div class="rounded-lg border p-3">
+                            <dt class="text-xs text-muted-foreground">
+                                Changed parts not asked about
+                            </dt>
+                            <dd class="text-lg font-medium">
+                                {{
+                                    rate(
+                                        telemetry.with_unexpected_changes,
+                                        telemetry.reviewed,
+                                    )
+                                }}
+                            </dd>
+                        </div>
+                        <div class="rounded-lg border p-3">
+                            <dt class="text-xs text-muted-foreground">
+                                Repairs before keeping
+                            </dt>
+                            <dd class="text-lg font-medium">
+                                {{ telemetry.repairs_before_acceptance ?? '–' }}
+                            </dd>
+                        </div>
+                    </dl>
+
+                    <p class="text-xs text-muted-foreground">
+                        {{ dollars(telemetry.cost_usd) }} in total over
+                        {{ telemetry.input_tokens + telemetry.output_tokens }}
+                        tokens.
+                        <template v-if="telemetry.unpriced_calls > 0">
+                            {{ telemetry.unpriced_calls }} model calls have no
+                            price and are not in the cost.
+                        </template>
+                    </p>
+                </section>
+
+                <section
+                    v-if="history.length > 0"
+                    class="space-y-4"
+                    data-test="project-history"
+                >
+                    <Heading
+                        variant="small"
+                        title="Commits"
+                        description="Each kept change is one commit in the project's repository"
+                    />
+
+                    <ol class="divide-y rounded-lg border">
+                        <li
+                            v-for="commit in history"
+                            :key="commit.sha"
+                            class="flex items-baseline justify-between gap-4 p-3"
+                        >
+                            <span class="min-w-0 truncate">{{
+                                commit.subject
+                            }}</span>
+                            <span
+                                class="shrink-0 font-mono text-xs text-muted-foreground"
+                                >{{ commit.sha.slice(0, 7) }} ·
+                                {{
+                                    new Date(
+                                        commit.committed_at,
+                                    ).toLocaleString()
+                                }}</span
+                            >
+                        </li>
+                    </ol>
+                </section>
+            </CollapsibleContent>
+        </Collapsible>
     </div>
 </template>

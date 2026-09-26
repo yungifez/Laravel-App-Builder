@@ -2406,29 +2406,29 @@ projection first. Technical detail stays one click away, under "Details" (or
 The default UI uses the right-hand column. Code, notes and logs keep the
 left-hand one.
 
-| Internal                                  | Default UI                                               |
-| ----------------------------------------- | -------------------------------------------------------- |
-| Feature request, run                      | Change                                                   |
-| Change Brief, plan                        | Here's what I'm changing                                 |
-| Acceptance criteria, verify items         | Done when                                                |
-| Preserve clauses                          | I'll keep these the same                                 |
-| Effects, "may also affect"                | This may also touch                                      |
-| Capability                                | The area's own name (Teams, Billing), or "part of the app" |
-| Behaviour                                 | What people can do                                       |
-| Actor                                     | Who can do it                                            |
-| Rules in the notes                        | Things that must always be true                          |
-| Project Context, `.builder/`              | What I know about your business                          |
-| Verification                              | Checks I ran                                             |
-| Behaviour diff, review by area            | What changed                                             |
-| Evidence: verified / untouched / not checked | Checked by a test / Not touched / Not checked yet     |
-| Unexpected change                         | Something I didn't expect to change                      |
-| Accept (commit)                           | Keep this change                                         |
-| Revert                                    | Undo this change                                         |
-| Commit history                            | What changed, in the owner's words (the change summaries) |
-| Preview                                   | Try it                                                   |
-| Quick health check                        | Quick check: look for obvious problems                   |
-| Deploy (push to the Cloud branch)         | Publish                                                  |
-| Tailwind classes                          | Direction, wrap, alignment, space, columns per device    |
+| Internal                                     | Default UI                                                 |
+| -------------------------------------------- | ---------------------------------------------------------- |
+| Feature request, run                         | Change                                                     |
+| Change Brief, plan                           | Here's what I'm changing                                   |
+| Acceptance criteria, verify items            | Done when                                                  |
+| Preserve clauses                             | I'll keep these the same                                   |
+| Effects, "may also affect"                   | This may also touch                                        |
+| Capability                                   | The area's own name (Teams, Billing), or "part of the app" |
+| Behaviour                                    | What people can do                                         |
+| Actor                                        | Who can do it                                              |
+| Rules in the notes                           | Things that must always be true                            |
+| Project Context, `.builder/`                 | What I know about your business                            |
+| Verification                                 | Checks I ran                                               |
+| Behaviour diff, review by area               | What changed                                               |
+| Evidence: verified / untouched / not checked | Checked by a test / Not touched / Not checked yet          |
+| Unexpected change                            | Something I didn't expect to change                        |
+| Accept (commit)                              | Keep this change                                           |
+| Revert                                       | Undo this change                                           |
+| Commit history                               | What changed, in the owner's words (the change summaries)  |
+| Preview                                      | Try it                                                     |
+| Quick health check                           | Quick check: look for obvious problems                     |
+| Deploy (push to the Cloud branch)            | Publish                                                    |
+| Tailwind classes                             | Direction, wrap, alignment, space, columns per device      |
 
 Assumptions stay visible, as "Decisions I made for you": they are the product
 decisions the owner is most likely to want to correct.

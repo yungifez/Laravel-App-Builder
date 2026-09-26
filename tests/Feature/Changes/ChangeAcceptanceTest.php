@@ -209,6 +209,7 @@ class ChangeAcceptanceTest extends TestCase
         $this->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page
                 ->has('history', 2)
+                ->where('changes.0.id', $request->id)
                 ->where('history.0.sha', $request->commit_sha)
                 ->where('featureRequests.0.accepted', true));
     }
