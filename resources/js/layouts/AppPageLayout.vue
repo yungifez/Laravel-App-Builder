@@ -20,7 +20,9 @@ const here = computed(() => breadcrumbs.at(-1) ?? null);
 </script>
 
 <template>
-    <div class="flex h-svh flex-col overflow-hidden bg-background">
+    <!-- Clip, not hidden: a hidden box still scrolls when focus lands near
+         the bottom, which pushed the header off screen. -->
+    <div class="flex h-svh flex-col overflow-clip bg-background">
         <header
             class="flex h-14 shrink-0 items-center gap-1 border-b px-2 sm:px-3"
         >

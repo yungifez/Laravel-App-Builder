@@ -5,7 +5,7 @@ import { Toaster } from '@/components/ui/sonner';
 <template>
     <!-- Like other app builders, an app opens as one full-screen workspace:
          no sidebar and no page header, so the app itself gets the room. -->
-    <div class="flex h-svh flex-col overflow-hidden bg-background">
+    <div class="flex h-svh flex-col overflow-clip bg-background">
         <slot />
         <Toaster />
     </div>
