@@ -67,18 +67,30 @@ class SdkDriver extends AgentDriver
         return (string) $outcome->summary;
     }
 
+    /**
+     * Review with the other provider from the one that built the change.
+     * When that provider has no credentials, the default reviewer is used
+     * and the run log says the review was not independent.
+     */
     public function review(Run $run, ReviewEvidence $evidence): Review
     {
         $builtBy = $this->builtBy($run);
         $reviewer = config("builder.agents.reviewers.{$builtBy}");
+        $provider = is_array($reviewer) && is_string($reviewer['provider'] ?? null) ? $reviewer['provider'] : null;
 
-        if (! is_array($reviewer) || ! is_string($reviewer['provider'] ?? null)) {
+        if ($provider === null || blank(config("ai.providers.{$provider}.key"))) {
+            $run->recordEvent('reviewer_not_independent', [
+                'built_by' => $builtBy,
+                'wanted' => $provider,
+                'reason' => $provider === null ? 'no_reviewer_configured' : 'no_credentials',
+            ]);
+
             return parent::review($run, $evidence);
         }
 
         $model = $reviewer['model'] ?? null;
 
-        return $this->reviewWith($run, $evidence, $reviewer['provider'], is_string($model) && $model !== '' ? $model : null);
+        return $this->reviewWith($run, $evidence, $provider, is_string($model) && $model !== '' ? $model : null);
     }
 
     /**

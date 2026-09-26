@@ -140,7 +140,13 @@ function describeEvent(event: RunEvent): string {
         case 'build_finished':
             return `The coder finished attempt ${Number(data.attempt) + 1} (its own account, not trusted): ${String(data.account)}`;
         case 'model_call':
-            return `${String(data.role)} model call (${String(data.provider)} ${String(data.model)}): ${String(data.input_tokens)} tokens in, ${String(data.output_tokens)} out`;
+            return data.adapter
+                ? `Coding agent ${String(data.adapter)} (${String(data.provider)}${data.model ? ` ${String(data.model)}` : ''}) ${String(data.status).replace('_', ' ')}${data.error ? `: ${String(data.error)}` : ''} · ${String(data.turns)} turns, ${String(data.input_tokens)} tokens in, ${String(data.output_tokens)} out${data.cost_usd !== null ? `, $${Number(data.cost_usd).toFixed(2)}` : ''}`
+                : `${String(data.role)} model call (${String(data.provider)} ${String(data.model)}): ${String(data.input_tokens)} tokens in, ${String(data.output_tokens)} out`;
+        case 'failover':
+            return `The ${String(data.from)} provider could not take the task (${String(data.reason)}); the workspace was reset and ${String(data.to)} took over`;
+        case 'reviewer_not_independent':
+            return `Reviewed by the same provider that built the change (${String(data.wanted)} has no credentials)`;
         default:
             return event.type;
     }

@@ -46,6 +46,8 @@ class SdkDriverTest extends TestCase
             'builder.construction.driver' => 'sdk',
             'builder.generators.reference.path' => null,
             'builder.models.planner' => ['provider' => 'anthropic', 'model' => 'planner-model'],
+            'ai.providers.openai.key' => 'openai-test-key',
+            'ai.providers.anthropic.key' => 'anthropic-test-key',
             'builder.agents.reviewers' => [
                 'anthropic' => ['provider' => 'openai', 'model' => 'openai-reviewer'],
                 'openai' => ['provider' => 'anthropic', 'model' => 'anthropic-reviewer'],
@@ -99,6 +101,18 @@ class SdkDriverTest extends TestCase
         $this->passVerification($run);
 
         ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => $prompt->provider->name() === 'anthropic' && $prompt->model === 'anthropic-reviewer');
+    }
+
+    public function test_without_credentials_for_the_other_provider_the_default_reviewer_is_used_and_logged()
+    {
+        config(['ai.providers.openai.key' => null, 'builder.models.reviewer' => ['provider' => 'anthropic', 'model' => 'default-reviewer']]);
+        $this->agent('claude', 'anthropic', $this->writes('claude', 'anthropic', 'app/Claude.php', "<?php\n"));
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run);
+
+        ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => $prompt->provider->name() === 'anthropic' && $prompt->model === 'default-reviewer');
+        $this->assertSame(['built_by' => 'anthropic', 'wanted' => 'openai', 'reason' => 'no_credentials'], $run->events()->where('type', 'reviewer_not_independent')->sole()->data);
     }
 
     public function test_a_failed_change_is_not_failed_over()
