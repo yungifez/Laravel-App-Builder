@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { Form, Link, usePoll } from '@inertiajs/vue3';
+import { Form, Link, router, usePage, usePoll } from '@inertiajs/vue3';
 import {
     ArrowLeft,
     Check,
     ChevronRight,
     CircleAlert,
     CircleCheck,
+    CircleMinus,
     ExternalLink,
     FileCode2,
     LoaderCircle,
@@ -21,6 +22,7 @@ import FeatureRequestReversionController from '@/actions/App/Http/Controllers/Fe
 import FeatureRequestVerificationController from '@/actions/App/Http/Controllers/FeatureRequestVerificationController';
 import PreviewController from '@/actions/App/Http/Controllers/PreviewController';
 import RunCancellationController from '@/actions/App/Http/Controllers/RunCancellationController';
+import DetailLevelController from '@/actions/App/Http/Controllers/Settings/DetailLevelController';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -37,6 +39,104 @@ const props = defineProps<{ change: ChangeDetail }>();
 const request = computed(() => props.change.featureRequest);
 const run = computed(() => props.change.run);
 const moreQuestions = ref(false);
+
+// The same change at four depths (§28.3). The depth is remembered for the
+// person, so a power user keeps seeing the detail they asked for.
+const page = usePage();
+const depths = [
+    { level: 1, label: 'What' },
+    { level: 2, label: 'Why' },
+    { level: 3, label: 'How' },
+    { level: 4, label: 'Code' },
+] as const;
+const depth = ref<number>(page.props.auth.user.detail_level ?? 1);
+
+function setDepth(level: number): void {
+    depth.value = level;
+    router.patch(
+        DetailLevelController.url(),
+        { detail_level: level },
+        { preserveState: true, preserveScroll: true, only: ['auth'] },
+    );
+}
+
+const evidence = {
+    checked: {
+        icon: CircleCheck,
+        tone: 'text-green-600',
+        label: 'Checked by a test',
+    },
+    untouched: {
+        icon: CircleMinus,
+        tone: 'text-muted-foreground',
+        label: 'Not touched',
+    },
+    open: {
+        icon: CircleMinus,
+        tone: 'text-muted-foreground',
+        label: 'Not checked yet',
+    },
+};
+
+const keptSame = computed(() => {
+    const review = run.value?.review;
+
+    if (review && review.preserved.length > 0) {
+        return review.preserved.map((item) => ({
+            text: item.statement,
+            ...(item.evidence === 'verified'
+                ? evidence.checked
+                : item.evidence === 'untouched'
+                  ? evidence.untouched
+                  : evidence.open),
+        }));
+    }
+
+    return (run.value?.plan?.preserve ?? []).map((text) => ({
+        text,
+        ...evidence.open,
+    }));
+});
+
+const doneWhen = computed(() => {
+    const review = run.value?.review;
+
+    if (review && review.verified.length > 0) {
+        return review.verified.map((item) => ({
+            text: item.criterion,
+            ...(item.evidence === 'tested' ? evidence.checked : evidence.open),
+        }));
+    }
+
+    return (run.value?.plan?.acceptance_criteria ?? []).map((text) => ({
+        text,
+        ...evidence.open,
+    }));
+});
+
+const alsoTouches = computed(() =>
+    (run.value?.review?.areas.may_also_affect ?? []).map((area) => area.name),
+);
+
+const outcomes: Record<string, { icon: typeof CircleCheck; tone: string }> = {
+    passed: { icon: CircleCheck, tone: 'text-green-600' },
+    failed: { icon: CircleAlert, tone: 'text-red-600' },
+    errored: { icon: CircleAlert, tone: 'text-red-600' },
+    skipped: { icon: CircleMinus, tone: 'text-muted-foreground' },
+    not_applicable: { icon: CircleMinus, tone: 'text-muted-foreground' },
+};
+
+function lineClass(line: string): string {
+    if (line.startsWith('+') && !line.startsWith('+++')) {
+        return 'bg-green-500/10 text-green-700 dark:text-green-400';
+    }
+
+    if (line.startsWith('-') && !line.startsWith('---')) {
+        return 'bg-red-500/10 text-red-700 dark:text-red-400';
+    }
+
+    return line.startsWith('@@') ? 'text-muted-foreground' : '';
+}
 
 const working = computed(
     () =>
@@ -475,6 +575,194 @@ const checks = computed(() => {
                                 }}
                             </button>
                         </Form>
+                    </div>
+
+                    <!-- Deeper answers, for whoever wants them -->
+                    <div
+                        v-if="run?.plan"
+                        class="flex rounded-md bg-muted p-0.5"
+                        role="group"
+                        aria-label="How much detail"
+                        data-test="detail-level"
+                    >
+                        <button
+                            v-for="option in depths"
+                            :key="option.level"
+                            type="button"
+                            :aria-pressed="depth === option.level"
+                            :class="[
+                                'min-h-11 flex-1 rounded text-xs select-none sm:min-h-7',
+                                depth === option.level
+                                    ? 'bg-background font-medium shadow-sm'
+                                    : 'text-muted-foreground hover:text-foreground',
+                            ]"
+                            :data-test="`detail-${option.level}`"
+                            @click="setDepth(option.level)"
+                        >
+                            {{ option.label }}
+                        </button>
+                    </div>
+
+                    <div
+                        v-if="depth >= 2 && run?.plan"
+                        class="space-y-4"
+                        data-test="detail-why"
+                    >
+                        <section v-if="keptSame.length > 0" class="space-y-1.5">
+                            <h3 class="text-xs text-muted-foreground">
+                                I'll keep these the same
+                            </h3>
+                            <p
+                                v-for="(item, index) in keptSame"
+                                :key="index"
+                                class="flex items-start gap-2"
+                                :title="item.label"
+                            >
+                                <component
+                                    :is="item.icon"
+                                    :class="[
+                                        'mt-0.5 size-4 shrink-0',
+                                        item.tone,
+                                    ]"
+                                    :aria-label="item.label"
+                                />
+                                <span class="min-w-0">{{ item.text }}</span>
+                            </p>
+                        </section>
+                        <section v-if="doneWhen.length > 0" class="space-y-1.5">
+                            <h3 class="text-xs text-muted-foreground">
+                                Done when
+                            </h3>
+                            <p
+                                v-for="(item, index) in doneWhen"
+                                :key="index"
+                                class="flex items-start gap-2"
+                                :title="item.label"
+                            >
+                                <component
+                                    :is="item.icon"
+                                    :class="[
+                                        'mt-0.5 size-4 shrink-0',
+                                        item.tone,
+                                    ]"
+                                    :aria-label="item.label"
+                                />
+                                <span class="min-w-0">{{ item.text }}</span>
+                            </p>
+                        </section>
+                        <section
+                            v-if="alsoTouches.length > 0"
+                            class="space-y-1.5"
+                        >
+                            <h3 class="text-xs text-muted-foreground">
+                                This may also touch
+                            </h3>
+                            <p class="flex flex-wrap gap-1.5">
+                                <span
+                                    v-for="name in alsoTouches"
+                                    :key="name"
+                                    class="rounded-full bg-muted px-2 py-0.5 text-xs"
+                                    >{{ name }}</span
+                                >
+                            </p>
+                        </section>
+                        <section
+                            v-if="
+                                change.verification &&
+                                change.verification.results.length > 0
+                            "
+                            class="space-y-1"
+                        >
+                            <h3 class="text-xs text-muted-foreground">
+                                Checks I ran
+                            </h3>
+                            <p
+                                v-for="(result, index) in change.verification
+                                    .results"
+                                :key="index"
+                                class="flex items-center gap-2"
+                            >
+                                <component
+                                    :is="outcomes[result.outcome].icon"
+                                    :class="[
+                                        'size-4 shrink-0',
+                                        outcomes[result.outcome].tone,
+                                    ]"
+                                    :aria-label="result.outcome"
+                                />
+                                <span class="min-w-0 flex-1 truncate">{{
+                                    result.name
+                                }}</span>
+                                <span
+                                    class="shrink-0 text-xs text-muted-foreground tabular-nums"
+                                    >{{
+                                        (result.duration_ms / 1000).toFixed(1)
+                                    }}
+                                    s</span
+                                >
+                            </p>
+                        </section>
+                    </div>
+
+                    <div
+                        v-if="depth >= 3 && request.files.length > 0"
+                        class="space-y-1.5"
+                        data-test="detail-how"
+                    >
+                        <h3 class="text-xs text-muted-foreground">
+                            Files
+                            <span v-if="run?.built_by">
+                                · built by {{ run.built_by.adapter }}</span
+                            >
+                        </h3>
+                        <details
+                            v-for="file in request.files"
+                            :key="file.path"
+                            :open="depth >= 4"
+                            class="group"
+                        >
+                            <summary
+                                class="flex min-h-11 cursor-pointer list-none items-center gap-2 select-none sm:min-h-7"
+                            >
+                                <ChevronRight
+                                    class="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
+                                />
+                                <span
+                                    class="flex min-w-0 flex-1 items-baseline gap-1.5 text-xs"
+                                    :title="file.path"
+                                >
+                                    <span class="shrink-0 font-mono">{{
+                                        file.path.split('/').pop()
+                                    }}</span>
+                                    <span
+                                        class="min-w-0 truncate text-muted-foreground"
+                                        >{{
+                                            file.path
+                                                .split('/')
+                                                .slice(0, -1)
+                                                .join('/')
+                                        }}</span
+                                    >
+                                </span>
+                                <span
+                                    class="shrink-0 font-mono text-xs tabular-nums"
+                                >
+                                    <span class="text-green-600"
+                                        >+{{ file.additions }}</span
+                                    >
+                                    <span class="text-red-600">
+                                        −{{ file.deletions }}</span
+                                    >
+                                </span>
+                            </summary>
+                            <pre
+                                class="mt-1 max-h-80 overflow-auto rounded-md bg-muted/40 py-2 font-mono text-[11px] leading-5"
+                            ><div
+                                v-for="(line, index) in file.diff.split('\n')"
+                                :key="index"
+                                :class="['px-2', lineClass(line)]"
+                            >{{ line || ' ' }}</div></pre>
+                        </details>
                     </div>
 
                     <!-- Kept or undone -->

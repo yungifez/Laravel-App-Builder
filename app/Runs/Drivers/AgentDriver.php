@@ -175,6 +175,21 @@ class AgentDriver implements ConstructionDriver
     }
 
     /**
+     * How to build so the owner can see what the app does without reading
+     * code (§5): the facts live where tools can read them, and the notes say
+     * them in the owner's words.
+     */
+    protected const OBSERVABILITY = <<<'TEXT'
+    ## Make it easy to see what the app does
+
+    The owner does not read code. They find out what the app does from the notes in .builder/ and from facts the platform reads out of the code. Build so both stay true:
+    - Put business settings (amounts, limits, time periods, who may do what) in config or enums, not inline in the code.
+    - Name each test as a plain business statement, for example "a manager can cancel a booking".
+    - In the notes for each area you change, say in plain words: who can do the new thing, what it changes, whether it sends an email or message, charges money or calls another service, and what happens automatically. Use the owner's words for things (bookings, customers), never class, table or route names.
+    - When something fails for a person using the app, tell them what happened and what to do next, in plain words.
+    TEXT;
+
+    /**
      * Describe the plan, and any feedback to address, for the coder.
      */
     protected function buildPrompt(Run $run, Plan $plan): string
@@ -195,6 +210,8 @@ class AgentDriver implements ConstructionDriver
             "## Tasks\n\n".$this->list($plan->tasks),
             "## Acceptance criteria\n\nAdd or update a test for each one: the change is only accepted when every criterion is checked by a test in the change. Only tests under ".implode(', ', (array) config('builder.verification.suite_paths'))." are run by the checks, so put them there.\n\n".$this->list($plan->acceptanceCriteria),
         );
+
+        $sections[] = self::OBSERVABILITY;
 
         if ($plan->preserve !== []) {
             $sections[] = "## Keep as it is\n\nDo not change these. If the request cannot be done without changing one, stop and say so.\n\n".$this->list(array_column($plan->preserve, 'statement'));

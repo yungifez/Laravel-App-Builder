@@ -8,12 +8,14 @@ use App\Actions\Context\ClassifyChange;
 use App\Actions\Context\CompileContext;
 use App\Actions\Features\RequestVerification;
 use App\Actions\Workspaces\DestroyWorkspace;
+use App\Context\Capability;
 use App\Context\ChangeClassification;
 use App\Context\ContextPack;
 use App\Context\ProjectContext;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Features\Exceptions\CannotGenerateFeature;
+use App\Features\PatchSummary;
 use App\Features\TestChanges;
 use App\Models\Run;
 use App\Runs\ConstructionDriverManager;
@@ -106,8 +108,7 @@ class ConstructRun
 
                 case RunStatus::Implementing:
                     $this->implement($run, $lease, $driver);
-
-                    return;
+                    break;
 
                 case RunStatus::Reviewing:
                     $this->review($run, $lease, $driver);
@@ -174,6 +175,25 @@ class ConstructRun
 
         if (trim($patch) === '') {
             $this->stopForDecision($run, $lease, __('The run finished without changing the project.'), 'no_changes');
+
+            return;
+        }
+
+        // Tests the checks never run cannot count as evidence, and the review
+        // would send the change back for them anyway. Saying so now saves a
+        // verification and a review.
+        $skipped = $this->testsTheChecksSkip($patch);
+
+        if ($skipped !== [] && $driver->canRepair() && $run->repairs < (int) config('builder.construction.budgets.repairs')) {
+            $paths = implode(', ', (array) config('builder.verification.suite_paths'));
+
+            $this->transitionRun->handle($run, RunStatus::Implementing, $lease, [
+                'repairs' => $run->repairs + 1,
+                'feedback' => ['reason' => 'tests_not_run', 'details' => array_map(
+                    fn (string $file) => __('The checks do not run :file, so it proves nothing. Check the same behaviour in a test under :paths.', ['file' => $file, 'paths' => $paths]),
+                    $skipped,
+                )],
+            ], ['reason' => 'tests_not_run', 'files' => $skipped]);
 
             return;
         }
@@ -340,6 +360,28 @@ class ConstructRun
             'reason' => $cause,
             'choices' => self::DECISION_CHOICES,
         ]);
+    }
+
+    /**
+     * Get the test files the change adds to or changes that the checks do not
+     * run, such as a Vitest file when only tests/ is run, when the change has
+     * no test that the checks do run.
+     *
+     * @return list<string>
+     */
+    protected function testsTheChecksSkip(string $patch): array
+    {
+        if (! config('builder.verification.require_verify_tests')) {
+            return [];
+        }
+
+        $tests = array_values(array_filter(
+            array_column(array_filter(PatchSummary::files($patch), fn (array $file) => $file['additions'] > 0), 'path'),
+            fn (string $path) => preg_match('#(\.(test|spec)\.[cm]?[jt]sx?$)|(Test\.php$)|((^|/)(tests?|__tests__)/)#', $path) === 1,
+        ));
+        $skipped = array_values(array_filter($tests, fn (string $path) => ! Capability::runBySuite($path)));
+
+        return count($skipped) === count($tests) ? $skipped : [];
     }
 
     /**

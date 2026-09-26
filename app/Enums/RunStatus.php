@@ -32,7 +32,7 @@ enum RunStatus: string
         return match ($this) {
             self::Queued => [self::Planning, self::Cancelling, self::Failed],
             self::Planning => [self::Implementing, self::NeedsUserDecision, self::Cancelling, self::Failed],
-            self::Implementing => [self::Verifying, self::NeedsUserDecision, self::Cancelling, self::Failed],
+            self::Implementing => [self::Implementing, self::Verifying, self::NeedsUserDecision, self::Cancelling, self::Failed],
             self::Verifying => [self::Reviewing, self::Implementing, self::NeedsUserDecision, self::Cancelling, self::Failed],
             self::Reviewing => [self::Completed, self::Implementing, self::NeedsUserDecision, self::Cancelling, self::Failed],
             self::NeedsUserDecision => [self::Planning, self::Implementing, self::Cancelling],

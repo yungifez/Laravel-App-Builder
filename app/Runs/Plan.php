@@ -147,7 +147,7 @@ final readonly class Plan
 
         if (preg_match('/^(.*?)[\'"]\s*,\s*[\'"]area[\'"]\s*:\s*[\'"]?([a-z0-9][a-z0-9_-]*)[\'"]?\s*$/s', $statement, $matches) === 1) {
             $statement = trim($matches[1]);
-            $area ??= $matches[2];
+            $area ??= $matches[2] === 'null' ? null : $matches[2];
         }
 
         return ['area' => $area, 'statement' => $statement];
@@ -171,7 +171,7 @@ final readonly class Plan
             capabilities: $data['capabilities'] ?? [],
             understoodAs: $data['understood_as'] ?? null,
             currentBehavior: $data['current_behavior'] ?? null,
-            preserve: $data['preserve'] ?? [],
+            preserve: array_map(self::preserveItem(...), $data['preserve'] ?? []),
         );
     }
 

@@ -319,6 +319,39 @@ class AgentDriverTest extends TestCase
         $this->assertSame('tested', $run->review['verified'][0]['evidence']);
     }
 
+    public function test_a_test_the_checks_do_not_run_is_sent_back_before_verification_and_review()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        FeatureCoder::fake([
+            new ToolCall('call-1', 'write_file', ['path' => 'app/Models/Team.php', 'contents' => self::TEAM_WITH_DESCRIPTION, 'expected_sha256' => hash('sha256', self::TEAM), 'expected_revision' => 0]),
+            new ToolCall('call-2', 'write_file', ['path' => 'resources/js/pages/Team.test.ts', 'contents' => "it('has a description', () => {});\n", 'expected_sha256' => null, 'expected_revision' => 1]),
+            'Done.',
+            new ToolCall('call-1', 'write_file', ['path' => 'tests/Feature/TeamDescriptionTest.php', 'contents' => self::DESCRIPTION_TEST, 'expected_sha256' => null, 'expected_revision' => 2]),
+            'Moved the test.',
+        ]);
+        ChangeReviewer::fake([]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(1, $run->repairs);
+        $this->assertSame(1, $run->verifications()->count(), 'Only the repaired change is verified.');
+        $this->assertSame(['resources/js/pages/Team.test.ts'], $run->events()->where('type', 'status')->where('data->reason', 'tests_not_run')->sole()->data['files']);
+        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'The checks do not run resources/js/pages/Team.test.ts'));
+        ChangeReviewer::assertNeverPrompted();
+    }
+
+    public function test_the_coder_is_asked_to_keep_what_the_app_does_easy_to_see()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        FeatureCoder::fake(['Nothing to do.']);
+
+        app(StartRun::class)->handle($this->request());
+
+        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'Make it easy to see what the app does')
+            && str_contains($prompt->prompt, 'never class, table or route names'));
+    }
+
     public function test_the_reviewer_sees_tests_the_change_deletes()
     {
         FeaturePlanner::fake([$this->plan()]);

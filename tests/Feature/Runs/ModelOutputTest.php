@@ -38,6 +38,7 @@ class ModelOutputTest extends TestCase
                 ['area' => null, 'statement' => "Only owners and admins can change team settings.','area':'membership"],
                 ['area' => 'teams', 'statement' => 'Renaming still works.", "area": "account'],
                 ['area' => null, 'statement' => "The team's name stays required."],
+                ['area' => null, 'statement' => "Switching teams works as before.','area':null"],
             ],
         ], []);
 
@@ -45,7 +46,14 @@ class ModelOutputTest extends TestCase
             ['area' => 'membership', 'statement' => 'Only owners and admins can change team settings.'],
             ['area' => 'teams', 'statement' => 'Renaming still works.'],
             ['area' => null, 'statement' => "The team's name stays required."],
+            ['area' => null, 'statement' => 'Switching teams works as before.'],
         ], $plan->preserve);
+        $this->assertSame($plan->preserve, Plan::fromArray([...$plan->toArray(), 'preserve' => [
+            ['area' => null, 'statement' => "Only owners and admins can change team settings.','area':'membership"],
+            ['area' => 'teams', 'statement' => 'Renaming still works.'],
+            ['area' => null, 'statement' => "The team's name stays required."],
+            ['area' => null, 'statement' => "Switching teams works as before.','area':null"],
+        ]])->preserve, 'A plan saved before the fix reads back clean.');
     }
 
     public function test_a_plan_with_unsafe_step_keys_or_missing_tasks_is_refused()

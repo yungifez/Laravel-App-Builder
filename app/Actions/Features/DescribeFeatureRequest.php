@@ -9,6 +9,7 @@ use App\Features\PatchSummary;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\RunEvent;
+use App\Runs\Plan;
 
 class DescribeFeatureRequest
 {
@@ -101,7 +102,7 @@ class DescribeFeatureRequest
                 'assumptions' => $run->plan['assumptions'],
                 'understood_as' => $run->plan['understood_as'] ?? null,
                 'current_behavior' => $run->plan['current_behavior'] ?? null,
-                'preserve' => array_column($run->plan['preserve'] ?? [], 'statement'),
+                'preserve' => array_column(Plan::fromArray($run->plan)->preserve, 'statement'),
             ],
             'context' => $run->context === null ? null : [
                 'mode' => $run->context['mode'],
