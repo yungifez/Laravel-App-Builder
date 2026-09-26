@@ -99,8 +99,29 @@ final readonly class Plan
             capabilities: array_values(array_unique($valid['capabilities'] ?? [])),
             understoodAs: $valid['understood_as'] ?? null,
             currentBehavior: $valid['current_behavior'] ?? null,
-            preserve: array_values(array_map(fn (array $item) => ['area' => $item['area'] ?? null, 'statement' => $item['statement']], $valid['preserve'] ?? [])),
+            preserve: array_values(array_map(self::preserveItem(...), $valid['preserve'] ?? [])),
         );
+    }
+
+    /**
+     * Read one "keep the same" item. Models sometimes write the area into
+     * the statement ("…','area':'teams") instead of its own field; that
+     * tail is moved back to where it belongs, so the owner never sees it.
+     *
+     * @param  array{area?: string|null, statement: string}  $item
+     * @return array{area: string|null, statement: string}
+     */
+    protected static function preserveItem(array $item): array
+    {
+        $area = $item['area'] ?? null;
+        $statement = $item['statement'];
+
+        if (preg_match('/^(.*?)[\'"]\s*,\s*[\'"]area[\'"]\s*:\s*[\'"]?([a-z0-9][a-z0-9_-]*)[\'"]?\s*$/s', $statement, $matches) === 1) {
+            $statement = trim($matches[1]);
+            $area ??= $matches[2];
+        }
+
+        return ['area' => $area, 'statement' => $statement];
     }
 
     /**

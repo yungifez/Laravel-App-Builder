@@ -54,8 +54,8 @@ class FeaturePlanner implements Agent, HasStructuredOutput
             'understood_as' => $schema->string()->required(),
             'current_behavior' => $schema->string()->required(),
             'preserve' => $schema->array()->items($schema->object([
-                'area' => $schema->string()->nullable(),
                 'statement' => $schema->string()->required(),
+                'area' => $schema->string()->nullable()->required(),
             ])->withoutAdditionalProperties())->required(),
             'capabilities' => $schema->array()->items($schema->string())->required(),
             'steps' => $schema->array()->items($schema->object([

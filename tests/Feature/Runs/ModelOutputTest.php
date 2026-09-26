@@ -26,6 +26,28 @@ class ModelOutputTest extends TestCase
         $this->assertEquals($plan, Plan::fromArray($plan->toArray()));
     }
 
+    public function test_an_area_written_into_a_statement_is_moved_back_to_its_field()
+    {
+        $plan = Plan::fromModelOutput([
+            'summary' => 'Describe teams.',
+            'acceptance_criteria' => ['Owners can describe a team.'],
+            'assumptions' => [],
+            'tasks' => ['Add a description.'],
+            'steps' => [['key' => 'field', 'kind' => 'data', 'label' => 'Description', 'file' => 'app/Models/Team.php', 'symbol' => 'Team', 'detail' => 'A new field.']],
+            'preserve' => [
+                ['area' => null, 'statement' => "Only owners and admins can change team settings.','area':'membership"],
+                ['area' => 'teams', 'statement' => 'Renaming still works.", "area": "account'],
+                ['area' => null, 'statement' => "The team's name stays required."],
+            ],
+        ], []);
+
+        $this->assertSame([
+            ['area' => 'membership', 'statement' => 'Only owners and admins can change team settings.'],
+            ['area' => 'teams', 'statement' => 'Renaming still works.'],
+            ['area' => null, 'statement' => "The team's name stays required."],
+        ], $plan->preserve);
+    }
+
     public function test_a_plan_with_unsafe_step_keys_or_missing_tasks_is_refused()
     {
         $this->expectException(ConstructionFailed::class);
