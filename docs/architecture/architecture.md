@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 12.** This document consolidates the direction in [direction/](direction/)
+**Version 13.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -23,7 +23,10 @@ before it.** Version 11 adds decisions before generation
 ([§26.9](#269-decisions-before-generation-version-11)): the cheapest reliable
 decision first, failing safe to the baseline. Version 12 adds audits and adversarial reviews
 ([§26.10](#2610-audits-and-adversarial-reviews-version-12)), with evidence on every
-finding; V0 builds only the deterministic quick health check. When they disagree, the direction documents state intent
+finding; V0 builds only the deterministic quick health check. Version 13 reserves room for Laravel-native active
+testing ([§26.11](#2611-laravel-native-active-testing-version-13-later-stage)):
+probes generated as tests from the framework's own routes, rules, policies and
+factories. When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -1952,3 +1955,56 @@ V0 builds only the **quick health check**: it is deterministic, and it keeps the
 agent-maintained notes of §26.3 from rotting. Everything else waits for owners
 to be using the product, since a review of software nobody has built yet proves
 nothing.
+
+### 26.11 Laravel-native active testing (version 13, later stage)
+
+Direction 14: **exploit framework determinism before spending model
+intelligence**, in assurance as in building. A generic scanner crawls a running
+application and guesses its routes, inputs and boundaries. We can read them
+from the framework: routes with middleware and model bindings, FormRequest
+rules, policies and gates, enums and casts, factories, and the existing tests.
+Not built in V0; this section fixes the shape so nothing built now blocks it.
+
+**Probes are generated tests, not HTTP scans.** Each probe runs inside the
+application's own test harness in a scratch copy: factories build a controlled
+world (team A with an owner, an admin and a member; team B likewise), and the
+probe sends one request as one actor. This needs no running server or network,
+it is reproducible, and a probe that fails is already the regression test §26.10
+attaches to a reproduced finding. A probe is: route, actor, one mutation of a
+known-valid request, the expectation, and the observed result.
+
+**Known-valid first, then mutate one dimension.** Baselines come from existing
+tests, factories and the FormRequest rules. Mutations come from the declared
+contracts: boundary and out-of-domain values from validation rules (`min`,
+`max`, `Rule::enum`, `in`), missing and unexpected fields, a bound model from
+another team or a deleted one, another actor.
+
+**Where expectations come from:**
+
+1. **Invariants that need no stated intent:** another team's records are
+   refused; routes behind `auth` refuse guests; out-of-domain input is rejected
+   with a validation error, never a server error; any 500 is a finding.
+2. **The notes' rules** ("only owners and admins can remove members"), turned
+   into an expected allow/deny matrix. This is the only step that needs a
+   model, and the matrix is shown for confirmation before it is trusted.
+3. **Adversarial hypotheses** (§26.10), each turned into a probe and either
+   reproduced or not. Traffic runs both ways: a probe that finds something
+   unexpected hands it to a model to explain the product consequence and
+   propose a fix.
+
+**Priority comes from the framework:** mutating and privileged routes, routes
+binding team-owned models, payments, file uploads, signed URLs and webhooks
+first; public read-only pages last.
+
+**Known limits,** reported as coverage rather than hidden: closures, custom
+rules and conditional rules (`sometimes`, `required_if`) are probed only for
+presence; missing or broken factories leave a route unprobed; a policy that
+exists is not proof that it is enforced, so probes always exercise the route
+itself.
+
+**The first slice** is the permissions challenge in §26.10: the
+who-can-do-what matrix and tenant isolation, using the same introspection
+(`builder/introspect`, §6) and the generated-test runner. Validation
+boundaries, request integrity (CSRF, signed routes, methods, replay) and
+data-integrity probes follow only if the first slice finds real problems in
+real applications.
