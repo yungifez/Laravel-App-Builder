@@ -15,7 +15,10 @@ use InvalidArgumentException;
 
 class ApplyVisualEdit
 {
-    public function __construct(private ProjectRepository $repository) {}
+    public function __construct(
+        private ProjectRepository $repository,
+        private FollowLocation $followLocation,
+    ) {}
 
     /**
      * Change how one element looks on one device and commit the file to the
@@ -39,6 +42,14 @@ class ApplyVisualEdit
 
         if (! $preview->editable) {
             throw ValidationException::withMessages(['edit' => __('This preview cannot be edited.')]);
+        }
+
+        // The location is where the running preview says the element is;
+        // the owner may be editing a newer version while it rebuilds.
+        $location = $preview->revision === null ? $location : $this->followLocation->handle($project, $preview->revision, $revision, $location);
+
+        if ($location === null) {
+            throw ValidationException::withMessages(['edit' => __('Your last change is still going in. Try again in a moment.')]);
         }
 
         $contents = $this->repository->show($project, $revision, $location->file);

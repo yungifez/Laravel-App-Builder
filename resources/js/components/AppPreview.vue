@@ -41,10 +41,6 @@ const scale = computed(() =>
 // The overlay in the app draws its handles bigger by as much as the app is
 // drawn smaller, so they stay easy to grab.
 watch(scale, (value) => (props.state.zoom = value), { immediate: true });
-
-function bindFrame(element: unknown): void {
-    props.state.frame = element as HTMLIFrameElement | null;
-}
 </script>
 
 <template>
@@ -53,20 +49,37 @@ function bindFrame(element: unknown): void {
         class="relative h-full overflow-hidden rounded-lg border bg-muted/40"
         data-test="app-preview"
     >
-        <iframe
-            v-if="state.running && state.frameSource !== null"
-            :ref="bindFrame"
-            :key="state.frameKey"
-            :src="state.frameSource"
-            title="Your app"
-            class="absolute top-0 left-1/2 origin-top bg-background"
-            :style="{
-                width: `${drawnWidth}px`,
-                height: `${paneSize.height / scale}px`,
-                transform: `translateX(-50%) scale(${scale})`,
-            }"
-            data-test="preview-frame"
-        />
+        <!-- The app on show, and after a rebuild the new app loading
+             behind it until it takes its place. It stays drawn there
+             rather than hidden, because a browser stops drawing a hidden
+             page. -->
+        <template v-if="state.running && state.frames.length > 0">
+            <iframe
+                v-for="(appFrame, index) in state.frames"
+                :key="appFrame.key"
+                :ref="
+                    (element) =>
+                        state.bind(
+                            appFrame.key,
+                            element as HTMLIFrameElement | null,
+                        )
+                "
+                :src="appFrame.src"
+                title="Your app"
+                :aria-hidden="index > 0"
+                :tabindex="index > 0 ? -1 : undefined"
+                :class="[
+                    'absolute top-0 left-1/2 origin-top bg-background',
+                    index > 0 ? 'pointer-events-none z-0' : 'z-10',
+                ]"
+                :style="{
+                    width: `${drawnWidth}px`,
+                    height: `${paneSize.height / scale}px`,
+                    transform: `translateX(-50%) scale(${scale})`,
+                }"
+                :data-test="index === 0 ? 'preview-frame' : 'preview-next'"
+            />
+        </template>
 
         <div
             v-else

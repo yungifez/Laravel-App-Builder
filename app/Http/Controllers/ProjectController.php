@@ -18,6 +18,7 @@ use App\Models\Project;
 use App\Models\VisualEdit;
 use App\Projects\DesignDirection;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\TailwindClasses;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
@@ -99,6 +100,14 @@ class ProjectController extends Controller
                     // build on it without waiting for the rebuild.
                     'classes' => $edit->reverted_at === null ? $edit->classes_after : $edit->classes_before,
                     'revision' => $edit->reverted_at === null ? $edit->commit_sha : $edit->revert_sha,
+                    // Where the part is and how it looks on each side of
+                    // the edit, so undo and redo show in the running app
+                    // straight away.
+                    'target' => "{$edit->file}:{$edit->line}:{$edit->column}",
+                    'sides' => $edit->moves() ? null : [
+                        'before' => ['classes' => $edit->classes_before, 'values' => array_map(fn (array $value) => $value['value'], TailwindClasses::effective($edit->classes_before)[$edit->device] ?? [])],
+                        'after' => ['classes' => $edit->classes_after, 'values' => array_map(fn (array $value) => $value['value'], TailwindClasses::effective($edit->classes_after)[$edit->device] ?? [])],
+                    ],
                     'created_at' => $edit->created_at?->toIso8601String(),
                     'reverted_at' => $edit->reverted_at?->toIso8601String(),
                 ]),

@@ -619,6 +619,93 @@ class VisualEditingTest extends TestCase
         $this->assertSame($head, $this->repository->head($this->project));
     }
 
+    public function test_other_parts_stay_editable_while_the_preview_rebuilds_after_a_save()
+    {
+        Queue::fake();
+        $preview = $this->runningPreview();
+        $file = 'resources/js/pages/Plans.vue';
+
+        $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
+            'preview' => $preview->id,
+            'target' => "{$file}:2:5",
+            'revision' => $preview->revision,
+            'expected' => 'flex gap-4 p-4 text-sm',
+            'device' => 'base',
+            'changes' => ['gap' => 24],
+        ])->assertSessionHasNoErrors();
+
+        $this->get(route('projects.show', [$this->project, 'design' => 1, 'target' => "{$file}:3:9"]))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('preview.updating', true)
+                ->where('edits.0.target', "{$file}:2:5")
+                ->where('edits.0.sides.before.classes', 'flex gap-4 p-4 text-sm')
+                ->where('edits.0.sides.before.values.gap', 16)
+                ->where('edits.0.sides.after.values.gap', 24)
+                ->reloadOnly('element', fn (Assert $page) => $page
+                    ->where('element.reason', null)
+                    ->where('element.editable', true)
+                    ->where('element.classes', 'text-xl')));
+
+        $this->post(route('visual-edits.store', $this->project), [
+            'preview' => $preview->id,
+            'target' => "{$file}:3:9",
+            'revision' => $this->repository->head($this->project),
+            'expected' => 'text-xl',
+            'device' => 'base',
+            'changes' => ['gap' => 8],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertStringContainsString('<h1 class="text-xl gap-2">Plans</h1>', (string) $this->repository->show($this->project, $this->repository->head($this->project), $file));
+    }
+
+    public function test_an_edit_follows_a_part_whose_lines_moved_since_the_preview_was_built()
+    {
+        Queue::fake();
+        $preview = $this->runningPreview();
+        $file = 'resources/js/pages/Plans.vue';
+        // A new line above the heading: the running preview still says it
+        // is on line 3.
+        Event::fakeFor(fn () => $this->repository->commitFiles($this->project, (string) $preview->revision, [
+            $file => str_replace('        <h1', "        <span>New</span>\n        <h1", self::CARD),
+        ], 'Add a line', null));
+
+        $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
+            'preview' => $preview->id,
+            'target' => "{$file}:3:9",
+            'revision' => $this->repository->head($this->project),
+            'expected' => 'text-xl',
+            'device' => 'base',
+            'changes' => ['gap' => 8],
+        ])->assertSessionHasNoErrors();
+
+        $contents = (string) $this->repository->show($this->project, $this->repository->head($this->project), $file);
+        $this->assertStringContainsString("<span>New</span>\n        <h1 class=\"text-xl gap-2\">Plans</h1>", $contents);
+        $this->assertSame(4, $this->project->visualEdits()->sole()->line);
+    }
+
+    public function test_a_part_whose_own_lines_were_rewritten_waits_for_the_rebuild()
+    {
+        Queue::fake();
+        $preview = $this->runningPreview();
+        $file = 'resources/js/pages/Plans.vue';
+        Event::fakeFor(fn () => $this->repository->commitFiles($this->project, (string) $preview->revision, [
+            $file => str_replace('<h1 class="text-xl">Plans</h1>', "<h1 class=\"text-xl\">\n            Plans\n        </h1>", self::CARD),
+        ], 'Reflow', null));
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', [$this->project, 'design' => 1, 'target' => "{$file}:3:9"]))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('element', fn (Assert $page) => $page->where('element.reason', 'updating')));
+
+        $this->post(route('visual-edits.store', $this->project), [
+            'preview' => $preview->id,
+            'target' => "{$file}:3:9",
+            'revision' => $this->repository->head($this->project),
+            'expected' => 'text-xl',
+            'device' => 'base',
+            'changes' => ['gap' => 8],
+        ])->assertSessionHasErrors(['edit' => 'Your last change is still going in. Try again in a moment.']);
+    }
+
     protected function runningPreview(array $attributes = []): Preview
     {
         return Preview::factory()->editable($this->repository->head($this->project))->ready()->create([

@@ -210,7 +210,12 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
     // Draw the selected element's frame, turned as the element is, with its
     // space inside (green) and outside (orange).
     const placeFrame = () => {
-        if (!selected || !selected.isConnected) {
+        // A hidden part has nowhere to draw the frame.
+        if (
+            !selected ||
+            !selected.isConnected ||
+            selected.getClientRects().length === 0
+        ) {
             frame.style.display =
                 outside.style.display =
                 chip.style.display =
@@ -300,10 +305,16 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         }
 
         const value = CSS.escape(location.value);
+        // A saved edit knows where the part is written but not whether that
+        // is a part or one use of a shared piece; no place is both.
+        const kinds =
+            location.kind === 'any' ? ['source', 'instance'] : [location.kind];
 
         return [
             ...document.querySelectorAll(
-                `[data-builder-${location.kind}="${value}"]`,
+                kinds
+                    .map((kind) => `[data-builder-${kind}="${value}"]`)
+                    .join(','),
             ),
         ];
     };
@@ -491,17 +502,40 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             : around.find((other) => order.indexOf(other) > index);
     };
 
+    // Put the selected part before or after another one straight away,
+    // and ask the builder to save it. The rebuilt app replaces the page,
+    // so moving the element here only shows the result sooner.
+    const moveTo = (target, placement) => {
+        send({ type: 'move', to: describe(target), placement });
+
+        if (placement === 'before') {
+            target.before(selected);
+        } else {
+            target.after(selected);
+        }
+
+        choose(selected, false);
+    };
+
     // Move the selected part one place earlier or later.
     const shift = (direction) => {
         const target = selected && neighbour(selected, direction);
 
         if (target) {
-            send({
-                type: 'move',
-                to: describe(target),
-                placement: direction < 0 ? 'before' : 'after',
-            });
+            moveTo(target, direction < 0 ? 'before' : 'after');
         }
+    };
+
+    // The part after (1) or before (-1) the selected one on the page.
+    const following = (direction) => {
+        const parts = [
+            ...document.querySelectorAll(
+                '[data-builder-source],[data-builder-instance]',
+            ),
+        ].filter((part) => part.getClientRects().length > 0);
+        const index = parts.indexOf(selected);
+
+        return parts[index + direction] ?? null;
     };
 
     // Which way the parent lays out its children: across or down.
@@ -593,6 +627,10 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
     };
 
     const endReorder = () => {
+        if (reorder) {
+            send({ type: 'holding', on: false });
+        }
+
         reorder = null;
         pressed = null;
         drop.style.display = ghost.style.display = 'none';
@@ -638,6 +676,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                 }
 
                 const rect = selected.getBoundingClientRect();
+                send({ type: 'holding', on: true });
                 reorder = {
                     candidates,
                     axis: axisOf(selected.parentElement),
@@ -680,12 +719,8 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
     document.addEventListener(
         'pointerup',
         () => {
-            if (reorder?.target) {
-                send({
-                    type: 'move',
-                    to: describe(reorder.target.element),
-                    placement: reorder.target.placement,
-                });
+            if (reorder?.target && selected) {
+                moveTo(reorder.target.element, reorder.target.placement);
             }
 
             swallowClick = reorder !== null;
@@ -693,6 +728,31 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
 
             if (reorder) {
                 endReorder();
+            }
+        },
+        true,
+    );
+
+    // While designing, the app's own fields and buttons do not take focus
+    // or submit: a click picks a part, and keys go to the designer.
+    document.addEventListener(
+        'mousedown',
+        (event) => {
+            if (editing && !event.target.closest?.('[data-builder-overlay]')) {
+                event.preventDefault();
+                // Keys still come here, to the page, not to a field.
+                window.focus();
+            }
+        },
+        true,
+    );
+
+    document.addEventListener(
+        'submit',
+        (event) => {
+            if (editing) {
+                event.preventDefault();
+                event.stopPropagation();
             }
         },
         true,
@@ -739,12 +799,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
     document.addEventListener(
         'keydown',
         (event) => {
-            if (
-                !editing ||
-                event.target.closest?.(
-                    'input, textarea, select, [contenteditable]',
-                )
-            ) {
+            if (!editing) {
                 return;
             }
 
@@ -764,6 +819,33 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             } else if ((event.metaKey || event.ctrlKey) && key === 'z') {
                 event.preventDefault();
                 send({ type: 'key', key: event.shiftKey ? 'redo' : 'undo' });
+            } else if ((event.metaKey || event.ctrlKey) && key === 'y') {
+                event.preventDefault();
+                send({ type: 'key', key: 'redo' });
+            } else if (
+                (key === 'delete' || key === 'backspace') &&
+                selected &&
+                handlesOn
+            ) {
+                event.preventDefault();
+                send({ type: 'key', key: 'hide' });
+            } else if (key === 'enter' && selected) {
+                // Enter goes into the part, Shift+Enter out to the one
+                // around it, and Tab to the next part, as in design tools.
+                event.preventDefault();
+                const element = near(event.shiftKey ? 'parent' : 'child');
+
+                if (element) {
+                    choose(element, true);
+                }
+            } else if (key === 'tab' && selected) {
+                event.preventDefault();
+                const element = following(event.shiftKey ? -1 : 1);
+
+                if (element) {
+                    choose(element, true);
+                    element.scrollIntoView({ block: 'nearest' });
+                }
             } else if (arrows[key] && event.altKey && selected && handlesOn) {
                 // Alt and an arrow move the part before or after the one
                 // next to it.
@@ -900,6 +982,11 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             editing = Boolean(message.editing);
             document.documentElement.style.cursor = editing ? 'crosshair' : '';
 
+            // A field the owner was typing in keeps no focus while designing.
+            if (editing) {
+                document.activeElement?.blur?.();
+            }
+
             if (!editing) {
                 hoverBox.style.display = 'none';
                 choose(null, false);
@@ -956,24 +1043,41 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                     'style',
                     element.getAttribute('data-builder-style') || '',
                 );
+                element.setAttribute(
+                    'class',
+                    element.getAttribute('data-builder-class') || '',
+                );
             }
 
             styled.clear();
 
-            for (const element of matching(message.location)) {
-                if (!element.hasAttribute('data-builder-style')) {
-                    element.setAttribute(
-                        'data-builder-style',
-                        element.getAttribute('style') || '',
-                    );
-                }
+            for (const part of message.parts || []) {
+                for (const element of matching(part.location)) {
+                    if (!element.hasAttribute('data-builder-style')) {
+                        element.setAttribute(
+                            'data-builder-style',
+                            element.getAttribute('style') || '',
+                        );
+                        element.setAttribute(
+                            'data-builder-class',
+                            element.getAttribute('class') || '',
+                        );
+                    }
 
-                element.setAttribute(
-                    'style',
-                    element.getAttribute('data-builder-style'),
-                );
-                Object.assign(element.style, message.styles || {});
-                styled.add(element);
+                    element.setAttribute(
+                        'style',
+                        element.getAttribute('data-builder-style'),
+                    );
+                    // Classes the part has after an undo or redo, so what
+                    // they remove goes too.
+                    element.setAttribute(
+                        'class',
+                        part.classes ??
+                            element.getAttribute('data-builder-class'),
+                    );
+                    Object.assign(element.style, part.styles || {});
+                    styled.add(element);
+                }
             }
 
             requestAnimationFrame(placeFrame);
@@ -985,4 +1089,41 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
     });
 
     send({ type: 'ready', path: location.pathname });
+
+    // Say when the page has drawn its parts, so the builder can show this
+    // page in place of the old one without a blank moment.
+    // A browser can hold back animation frames in a page it is not
+    // showing, so a short timer says it too.
+    let told = false;
+    const tell = () => {
+        if (!told) {
+            told = true;
+            send({ type: 'drawn' });
+        }
+    };
+    const drawn = () => {
+        requestAnimationFrame(() => requestAnimationFrame(tell));
+        setTimeout(tell, 100);
+    };
+    const parts = '[data-builder-source],[data-builder-instance]';
+
+    if (document.querySelector(parts)) {
+        drawn();
+    } else {
+        const watcher = new MutationObserver(() => {
+            if (document.querySelector(parts)) {
+                watcher.disconnect();
+                drawn();
+            }
+        });
+
+        watcher.observe(document.documentElement, {
+            childList: true,
+            subtree: true,
+        });
+        setTimeout(() => {
+            watcher.disconnect();
+            drawn();
+        }, 5000);
+    }
 })();

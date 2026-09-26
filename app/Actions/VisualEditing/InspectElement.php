@@ -15,6 +15,7 @@ class InspectElement
     public function __construct(
         private ProjectRepository $repository,
         private ReadProjectContext $readProjectContext,
+        private FollowLocation $followLocation,
     ) {}
 
     /**
@@ -23,8 +24,10 @@ class InspectElement
      * on each device, and whether its look can be changed in place.
      *
      * The element is read from the project's latest commit. When the file
-     * changed since the preview was built, the preview's locations are out
-     * of date, so nothing can be edited until it is rebuilt.
+     * changed since the preview was built, the element is followed through
+     * the changed lines, so the owner can keep editing while the preview
+     * rebuilds. Only an element whose own lines were rewritten waits for
+     * the rebuild.
      *
      * @return array<string, mixed>
      */
@@ -33,10 +36,9 @@ class InspectElement
         $project = $preview->project;
         $head = $this->repository->head($project);
         $contents = $this->repository->show($project, $head, $location->file);
-        $stale = $preview->revision !== null
-            && $preview->revision !== $head
-            && $this->repository->show($project, $preview->revision, $location->file) !== $contents;
-        $element = $contents === null || $stale ? null : TemplateElement::at($contents, $location->line, $location->column);
+        $followed = $preview->revision === null ? $location : $this->followLocation->handle($project, $preview->revision, $head, $location);
+        $stale = $contents !== null && $followed === null;
+        $element = $contents === null || $followed === null ? null : TemplateElement::at($contents, $followed->line, $followed->column);
         $classes = $element?->classes['value'] ?? '';
 
         return [

@@ -30,6 +30,7 @@ import {
     MousePointerClick,
     Redo2,
     Rows3,
+    Sparkles,
     StretchVertical,
     TextWrap,
     Undo2,
@@ -38,6 +39,7 @@ import {
 import { computed, ref } from 'vue';
 import type { Component } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
+import PageConsistencyController from '@/actions/App/Http/Controllers/PageConsistencyController';
 import MeasureField from '@/components/design/MeasureField.vue';
 import Segmented from '@/components/design/Segmented.vue';
 import SpacingBox from '@/components/design/SpacingBox.vue';
@@ -62,6 +64,8 @@ const props = defineProps<{
 }>();
 
 const asking = ref(false);
+// Whether the owner is reading what making the page consistent does.
+const tidying = ref(false);
 const element = computed(() => props.state.element);
 
 // Where the part lives in the code, and its Tailwind classes, only for
@@ -188,6 +192,55 @@ function describeEdit(edit: VisualEditSummary): string {
                     <MousePointerClick class="size-5 lg:size-8" />
                     Click any part of your app
                 </div>
+
+                <!-- A change I decide on, so the owner reads what it may do
+                     before asking. -->
+                <section class="px-4 pb-4" data-test="make-consistent">
+                    <button
+                        v-if="!tidying"
+                        type="button"
+                        class="flex min-h-11 w-full items-center gap-2 rounded-md border border-dashed px-3 text-sm text-muted-foreground select-none hover:text-foreground sm:min-h-9"
+                        data-test="make-consistent-open"
+                        @click="tidying = true"
+                    >
+                        <Sparkles class="size-4" /> Make this page consistent
+                    </button>
+                    <Form
+                        v-else
+                        v-bind="PageConsistencyController.store.form(projectId)"
+                        v-slot="{ errors, processing }"
+                        class="space-y-2 rounded-md border p-3"
+                        @success="tidying = false"
+                    >
+                        <input type="hidden" name="path" :value="state.path" />
+                        <p class="text-sm">
+                            I'll make the parts of this page match.
+                        </p>
+                        <p class="text-sm text-muted-foreground">
+                            I decide what to change, so it can turn out
+                            differently each time and change parts you did not
+                            pick. You can undo it.
+                        </p>
+                        <InputError :message="errors.path" />
+                        <div class="flex gap-2">
+                            <Button
+                                :disabled="processing"
+                                class="h-11 flex-1 select-none sm:h-8"
+                                data-test="make-consistent-confirm"
+                            >
+                                Go ahead
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                class="h-11 select-none sm:h-8"
+                                @click="tidying = false"
+                            >
+                                Cancel
+                            </Button>
+                        </div>
+                    </Form>
+                </section>
 
                 <section
                     v-if="edits.length > 0"
@@ -748,11 +801,11 @@ function describeEdit(edit: VisualEditSummary): string {
                 variant="ghost"
                 size="icon"
                 class="size-11 shrink-0 sm:size-8"
-                :disabled="!state.undoable || state.saving"
+                :disabled="!state.canUndo"
                 aria-label="Undo"
                 title="Undo (Ctrl+Z)"
                 data-test="undo"
-                @click="state.undoable && state.step(state.undoable)"
+                @click="state.press('undo')"
             >
                 <Undo2 class="size-4" />
             </Button>
@@ -760,11 +813,11 @@ function describeEdit(edit: VisualEditSummary): string {
                 variant="ghost"
                 size="icon"
                 class="size-11 shrink-0 sm:size-8"
-                :disabled="!state.redoable || state.saving"
+                :disabled="!state.canRedo"
                 aria-label="Redo"
                 title="Redo (Ctrl+Shift+Z)"
                 data-test="redo"
-                @click="state.redoable && state.step(state.redoable)"
+                @click="state.press('redo')"
             >
                 <Redo2 class="size-4" />
             </Button>

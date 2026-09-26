@@ -46,12 +46,17 @@ type Values = Partial<Record<VisualProperty, VisualValue | null>>;
  * the owner started changing it.
  */
 type Batch = {
-    target: { value: string; instance: boolean };
+    /** Where the part is written; "instance" is null when not known. */
+    target: { value: string; instance: boolean | null };
     device: Device;
     values: Values;
     classes: string;
     revision: string;
+    /** The classes the part has after an undo or redo. */
+    shows?: string;
 };
+
+type Step = 'undo' | 'redo';
 
 /** How long the owner can pause before their changes are saved. */
 const SAVE_AFTER_MS = 700;
@@ -84,8 +89,17 @@ function remembered(key: string): boolean {
  */
 export function useAppPreview(source: Source) {
     const frame = ref<HTMLIFrameElement | null>(null);
-    const frameSource = ref<string | null>(null);
-    const frameKey = ref(0);
+    // The app's frames. The first is on show. After a rebuild, the new app
+    // loads hidden behind it and takes its place once drawn, so the app
+    // never goes blank and nothing the owner is doing is cut off. "shows"
+    // counts the saved changes the new app includes.
+    const frames = ref<{ key: number; src: string; shows: number }[]>([]);
+    const elements = new Map<number, HTMLIFrameElement>();
+    let frameKeys = 0;
+    // Whether the next frame has drawn, and whether the owner is dragging
+    // a part to a new place in the app.
+    const nextDrawn = ref(false);
+    const holding = ref(false);
     const framePath = ref('/');
     // Start at the owner's own screen size: a phone edits the phone layout.
     const device = ref<Device>(
@@ -122,6 +136,20 @@ export function useAppPreview(source: Source) {
     // Whether the selected part can change places with the part before or
     // after it.
     const neighbours = ref({ earlier: false, later: false });
+    // Undo and redo the server has not done yet, oldest first. The edit is
+    // null while the change it takes back is still being saved.
+    const steps = ref<{ key: Step; edit: VisualEditSummary | null }[]>([]);
+    // Edits undone or redone in the app ahead of the server, by id, with
+    // how the app shows them meanwhile.
+    const claims = ref(
+        new Map<number, { undone: boolean; shown: Batch | null }>(),
+    );
+    const stepping = ref(false);
+    // Changes taken back before they were saved, for redo.
+    const undone = ref<Batch[]>([]);
+    // Where a part the owner moved is written now. The running app still
+    // names its old place until it is rebuilt.
+    const movedTo = ref<SelectedElement | null>(null);
     // Where the owner had scrolled each page to, so a rebuild keeps it.
     const scrolled = new Map<string, { x: number; y: number }>();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -138,7 +166,11 @@ export function useAppPreview(source: Source) {
             null,
     );
     const saving = computed(
-        () => sending.value !== null || queue.value.length > 0 || moving.value,
+        () =>
+            sending.value !== null ||
+            queue.value.length > 0 ||
+            moving.value ||
+            stepping.value,
     );
 
     // The part the panel shows: the server's answer, or while the app
@@ -169,14 +201,14 @@ export function useAppPreview(source: Source) {
             : { value: selected.value.source, instance: false };
     });
 
-    function post(message: Record<string, unknown>): void {
+    function post(
+        message: Record<string, unknown>,
+        to: Window | null | undefined = frame.value?.contentWindow,
+    ): void {
         const preview = source.preview();
 
         if (preview !== null) {
-            frame.value?.contentWindow?.postMessage(
-                { builder: true, ...message },
-                preview.origin,
-            );
+            to?.postMessage({ builder: true, ...message }, preview.origin);
         }
     }
 
@@ -232,6 +264,7 @@ export function useAppPreview(source: Source) {
         }
 
         saveError.value = null;
+        undone.value = [];
         showUnshown();
 
         if (!dragging.value) {
@@ -319,14 +352,111 @@ export function useAppPreview(source: Source) {
         post({ type: 'clear' });
     }
 
+    function bind(key: number, element: HTMLIFrameElement | null): void {
+        if (element === null) {
+            elements.delete(key);
+        } else {
+            elements.set(key, element);
+        }
+
+        frame.value = elements.get(frames.value[0]?.key ?? -1) ?? null;
+    }
+
+    function windowOf(key: number | undefined): Window | null {
+        return key === undefined
+            ? null
+            : (elements.get(key)?.contentWindow ?? null);
+    }
+
+    // Load the app again behind the one on show.
     function reload(): void {
         const preview = source.preview();
 
-        if (preview !== null) {
-            frameSource.value = preview.origin + framePath.value;
-            frameKey.value++;
+        if (preview === null) {
+            return;
         }
+
+        const next = {
+            key: ++frameKeys,
+            src: preview.origin + framePath.value,
+            shows: preview.updating ? 0 : saved.value.length,
+        };
+
+        frames.value =
+            frames.value.length === 0 ? [next] : [frames.value[0], next];
+        nextDrawn.value = false;
+
+        // A page that never says it has drawn still takes over in the end.
+        setTimeout(() => {
+            if (frames.value[1]?.key === next.key) {
+                nextDrawn.value = true;
+                swap();
+            }
+        }, 15000);
     }
+
+    // Tell a frame's app how to show: designing or not, the scroll, the
+    // picked part and the changes it does not show yet.
+    function setUp(to: Window | null): void {
+        post({ type: 'mode', editing: source.designing.value }, to);
+        post({ type: 'zoom', zoom: zoom.value }, to);
+        post({ type: 'scroll', to: scrolled.get(framePath.value) ?? null }, to);
+
+        if (target.value?.value != null && source.designing.value) {
+            post({ type: 'pick', location: location() }, to);
+            post({ type: 'handles', enabled: editable.value }, to);
+        }
+
+        showUnshown(to);
+    }
+
+    // Show the next frame in place of the current one, once it has drawn
+    // and the owner is not dragging.
+    function swap(): void {
+        const next = frames.value[1];
+        const to = windowOf(next?.key);
+
+        if (
+            !next ||
+            !to ||
+            !nextDrawn.value ||
+            dragging.value ||
+            holding.value
+        ) {
+            return;
+        }
+
+        // The new app shows these saved changes itself, and names a moved
+        // part by its new place.
+        saved.value = saved.value.slice(next.shows);
+
+        if (next.shows > 0 && movedTo.value !== null) {
+            selected.value = movedTo.value;
+            movedTo.value = null;
+        }
+
+        setUp(to);
+
+        // Give the app a moment to apply them before it shows.
+        setTimeout(() => {
+            if (frames.value[1]?.key === next.key) {
+                // Keys the owner was pressing in the old app go on to the
+                // new one.
+                const focused =
+                    document.activeElement !== null &&
+                    document.activeElement === frame.value;
+
+                frames.value = [next];
+                inspect();
+
+                if (focused) {
+                    elements.get(next.key)?.focus();
+                }
+            }
+        }, 50);
+    }
+
+    watch([dragging, holding], swap);
 
     function onMessage(event: MessageEvent): void {
         const preview = source.preview();
@@ -334,7 +464,6 @@ export function useAppPreview(source: Source) {
         if (
             preview === null ||
             event.origin !== preview.origin ||
-            event.source !== frame.value?.contentWindow ||
             event.data?.builder !== true
         ) {
             return;
@@ -342,19 +471,36 @@ export function useAppPreview(source: Source) {
 
         const data = event.data;
 
-        if (data.type === 'ready') {
-            framePath.value = String(data.path ?? '/');
-            post({ type: 'mode', editing: source.designing.value });
-            post({ type: 'zoom', zoom: zoom.value });
-            post({ type: 'scroll', to: scrolled.get(framePath.value) ?? null });
-
-            // A rebuild reloads the app: pick the same part again.
-            if (target.value?.value != null && source.designing.value) {
-                post({ type: 'pick', location: location() });
-                post({ type: 'handles', enabled: editable.value });
+        // The next frame only says when it has drawn.
+        if (
+            event.source !== null &&
+            event.source === windowOf(frames.value[1]?.key)
+        ) {
+            if (data.type === 'drawn') {
+                nextDrawn.value = true;
+                swap();
             }
 
-            showUnshown();
+            return;
+        }
+
+        if (event.source !== frame.value?.contentWindow) {
+            return;
+        }
+
+        if (data.type === 'ready') {
+            framePath.value = String(data.path ?? '/');
+            holding.value = false;
+            setUp(frame.value?.contentWindow);
+        }
+
+        // The page may draw its parts after it is ready.
+        if (data.type === 'drawn') {
+            setUp(frame.value?.contentWindow);
+        }
+
+        if (data.type === 'holding') {
+            holding.value = data.on === true;
         }
 
         if (data.type === 'scrolled') {
@@ -412,12 +558,9 @@ export function useAppPreview(source: Source) {
             if (data.key === 'escape') {
                 deselect();
             } else if (data.key === 'undo' || data.key === 'redo') {
-                const edit =
-                    data.key === 'redo' ? redoable.value : undoable.value;
-
-                if (edit !== undefined) {
-                    step(edit);
-                }
+                press(data.key);
+            } else if (data.key === 'hide') {
+                hide();
             }
         }
     }
@@ -478,17 +621,58 @@ export function useAppPreview(source: Source) {
     // Handles only show on a part that can be changed in place.
     watch(editable, (enabled) => post({ type: 'handles', enabled }));
 
-    // Show changes in the app straight away, before they are saved.
-    function showUnshown(): void {
-        if (target.value?.value == null) {
-            return;
+    // Show changes in the app straight away, before they are saved, on
+    // every part changed since the app was last rebuilt.
+    function showUnshown(
+        to: Window | null | undefined = frame.value?.contentWindow,
+    ): void {
+        const parts = new Map<
+            string,
+            {
+                location: { kind: string; value: string };
+                values: Values;
+                classes?: string;
+            }
+        >();
+
+        for (const batch of [...saved.value, sending.value, ...queue.value]) {
+            if (batch == null || batch.device !== device.value) {
+                continue;
+            }
+
+            const kind =
+                batch.target.instance === null
+                    ? 'any'
+                    : batch.target.instance
+                      ? 'instance'
+                      : 'source';
+            const part = parts.get(batch.target.value) ?? {
+                location: { kind, value: batch.target.value },
+                values: {},
+            };
+
+            // An undo or redo sets the part's classes; later changes build
+            // on them.
+            if (batch.shows !== undefined) {
+                part.values = {};
+                part.classes = batch.shows;
+            }
+
+            Object.assign(part.values, batch.values);
+            parts.set(batch.target.value, part);
         }
 
-        post({
-            type: 'style',
-            location: location(),
-            styles: inlineStyles(unshown()),
-        });
+        post(
+            {
+                type: 'style',
+                parts: [...parts.values()].map((part) => ({
+                    location: part.location,
+                    classes: part.classes,
+                    styles: inlineStyles(part.values),
+                })),
+            },
+            to,
+        );
     }
 
     // Remember the part while it can be edited. Once the rebuilt app shows
@@ -504,7 +688,6 @@ export function useAppPreview(source: Source) {
 
             if (head.value === null || current.revision === head.value) {
                 head.value = current.revision;
-                saved.value = [];
                 last.value = null;
             }
         },
@@ -517,16 +700,21 @@ export function useAppPreview(source: Source) {
             const preview = source.preview();
 
             if (status !== 'ready' || preview === null) {
-                frameSource.value = null;
+                frames.value = [];
 
                 return;
             }
 
-            if (frameSource.value === null) {
-                frameSource.value = showPreview(preview.id).url;
+            if (frames.value.length === 0) {
+                frames.value = [
+                    {
+                        key: ++frameKeys,
+                        src: showPreview(preview.id).url,
+                        shows: 0,
+                    },
+                ];
             } else if (previous?.[1] !== preview.revision) {
                 reload();
-                inspect();
             }
         },
         { immediate: true },
@@ -678,46 +866,175 @@ export function useAppPreview(source: Source) {
 
                     if (moved !== undefined && selected.value !== null) {
                         onlyThisOne.value = true;
-                        selected.value = moved.instance
+                        movedTo.value = moved.instance
                             ? { ...selected.value, instance: moved.target }
                             : { ...selected.value, source: moved.target };
                     }
                 },
                 onSuccess: () => {
-                    saved.value = [];
                     last.value = null;
                     head.value = null;
                     known.value = null;
                     inspect();
                 },
-                onError: (errors) =>
-                    (saveError.value = Object.values(errors)[0] ?? null),
+                onError: (errors) => {
+                    saveError.value = Object.values(errors)[0] ?? null;
+                    // The app moved the part already: put it back.
+                    reload();
+                },
                 onFinish: () => (moving.value = false),
             },
         );
     }
 
-    // Undo takes back the newest change still in place; redo puts back the
-    // one undone just before it, like any editor.
+    // Whether an edit is undone, counting undo and redo the server has not
+    // done yet.
+    function isUndone(edit: VisualEditSummary): boolean {
+        return claims.value.get(edit.id)?.undone ?? edit.reverted_at !== null;
+    }
+
+    // Undo takes back the newest change still in place. Redo puts back the
+    // change undone last, like any editor: a change made after an undo
+    // ends what can be redone from before it.
     const undoable = computed(() =>
-        source.edits().find((edit) => edit.reverted_at === null),
+        source.edits().find((edit) => !isUndone(edit)),
     );
     const redoable = computed(() => {
-        const edits = source.edits();
-        const index = edits.findIndex((edit) => edit.reverted_at === null);
-        const edit = index === -1 ? edits.at(-1) : edits[index - 1];
+        let newest = 0;
+        let edit: VisualEditSummary | undefined;
 
-        return edit?.reverted_at ? edit : undefined;
+        for (const candidate of source.edits()) {
+            // Undone in the app, not yet on the server: undone just now.
+            const undoneAt = claims.value.get(candidate.id)?.undone
+                ? Infinity
+                : Date.parse(candidate.reverted_at ?? '');
+
+            if (!isUndone(candidate) || !(undoneAt >= newest)) {
+                break;
+            }
+
+            edit = candidate;
+            newest = Math.max(newest, Date.parse(candidate.created_at ?? ''));
+        }
+
+        return edit;
     });
 
-    // Undo or redo one saved change. The server refuses when the part was
-    // changed since, so nothing anyone else did is lost.
+    // Take an edit back, or put it back, in the running app straight away.
+    // The server follows, one step at a time.
+    function claim(edit: VisualEditSummary, key: Step): void {
+        const side = edit.sides?.[key === 'undo' ? 'before' : 'after'];
+        const shown: Batch | null =
+            side === undefined
+                ? null
+                : {
+                      target: { value: edit.target, instance: null },
+                      device: edit.device,
+                      values: side.values,
+                      classes: side.classes,
+                      revision: edit.revision,
+                      shows: side.classes,
+                  };
+
+        claims.value.set(edit.id, { undone: key === 'undo', shown });
+
+        if (shown !== null) {
+            saved.value.push(shown);
+            showUnshown();
+        }
+    }
+
+    // Undo or redo one saved change from the list of recent changes.
     function step(edit: VisualEditSummary): void {
-        if (saving.value) {
+        const key = isUndone(edit) ? 'redo' : 'undo';
+
+        saveError.value = null;
+        claim(edit, key);
+        steps.value.push({ key, edit });
+        nextStep();
+    }
+
+    // Undo or redo, as in any editor, however fast the owner presses. A
+    // change not saved yet is simply taken back. A saved one shows undone
+    // at once and is undone on the server in order. A press made while a
+    // change is being saved waits for that change.
+    function press(key: Step): void {
+        saveError.value = null;
+
+        if (
+            key === 'undo' &&
+            queue.value.length > 0 &&
+            steps.value.length === 0
+        ) {
+            undone.value.push(queue.value.pop() as Batch);
+
+            if (queue.value.length === 0) {
+                clearTimeout(timer);
+            }
+
+            showUnshown();
+
             return;
         }
 
-        saveError.value = null;
+        if (
+            key === 'redo' &&
+            undone.value.length > 0 &&
+            steps.value.length === 0
+        ) {
+            queue.value.push(undone.value.pop() as Batch);
+            showUnshown();
+            schedule();
+
+            return;
+        }
+
+        if (sending.value !== null || moving.value) {
+            steps.value.push({ key, edit: null });
+
+            return;
+        }
+
+        const edit = key === 'redo' ? redoable.value : undoable.value;
+
+        if (edit !== undefined) {
+            claim(edit, key);
+            steps.value.push({ key, edit });
+            nextStep();
+        }
+    }
+
+    // Send the oldest waiting undo or redo, once no change is being saved.
+    function nextStep(): void {
+        const next = steps.value[0];
+
+        if (
+            next === undefined ||
+            sending.value !== null ||
+            queue.value.length > 0 ||
+            moving.value ||
+            stepping.value
+        ) {
+            return;
+        }
+
+        steps.value.shift();
+
+        const edit =
+            next.edit ??
+            (next.key === 'redo' ? redoable.value : undoable.value);
+
+        if (edit === undefined) {
+            steps.value = [];
+
+            return;
+        }
+
+        if (next.edit === null) {
+            claim(edit, next.key);
+        }
+
+        stepping.value = true;
 
         const options = {
             only: ['edits', 'preview'],
@@ -725,17 +1042,34 @@ export function useAppPreview(source: Source) {
             preserveScroll: true,
             preserveState: true,
             onSuccess: () => {
-                saved.value = [];
+                claims.value.delete(edit.id);
                 last.value = null;
                 head.value = null;
                 known.value = null;
                 inspect();
             },
-            onError: (errors: Record<string, string>) =>
-                (saveError.value = Object.values(errors)[0] ?? null),
+            onError: (errors: Record<string, string>) => {
+                // Stop, and show the app as the server has it.
+                saveError.value = Object.values(errors)[0] ?? null;
+                steps.value = [];
+
+                const shown = [...claims.value.values()].map(
+                    (claimed) => claimed.shown,
+                );
+
+                saved.value = saved.value.filter(
+                    (batch) => !shown.includes(batch),
+                );
+                claims.value.clear();
+                showUnshown();
+            },
+            onFinish: () => {
+                stepping.value = false;
+                nextStep();
+            },
         };
 
-        if (edit.reverted_at === null) {
+        if (next.key === 'undo') {
             router.post(
                 VisualEditReversionController.store.url(edit.id),
                 {},
@@ -749,25 +1083,52 @@ export function useAppPreview(source: Source) {
         }
     }
 
-    function onKey(event: KeyboardEvent): void {
-        const field = (event.target as HTMLElement | null)?.closest(
-            'input, textarea, select, [contenteditable]',
-        );
+    // Presses wait while changes save.
+    watch(saving, (busy) => busy || nextStep());
 
-        if (
-            !source.designing.value ||
-            field ||
-            !(event.metaKey || event.ctrlKey) ||
-            event.key.toLowerCase() !== 'z'
-        ) {
+    const canUndo = computed(
+        () => queue.value.length > 0 || undoable.value !== undefined,
+    );
+    const canRedo = computed(
+        () => undone.value.length > 0 || redoable.value !== undefined,
+    );
+
+    // Hide the selected part on this screen size. Undo shows it again.
+    function hide(): void {
+        if (editable.value) {
+            change('layout', 'hidden');
+        }
+    }
+
+    // Keys pressed in the builder, outside the app. Typing in a field keeps
+    // the field's own keys.
+    function onKey(event: KeyboardEvent): void {
+        const into = event.target as HTMLElement | null;
+        const typing = into?.closest(
+            'input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=button]), textarea, select, [contenteditable]',
+        );
+        const inside = into?.closest(
+            '[role=dialog], [role=menu], [role=listbox]',
+        );
+        const key = event.key.toLowerCase();
+        const mod = event.metaKey || event.ctrlKey;
+
+        if (!source.designing.value || typing || event.defaultPrevented) {
             return;
         }
 
-        const edit = event.shiftKey ? redoable.value : undoable.value;
-
-        if (edit !== undefined) {
+        if (mod && (key === 'z' || key === 'y')) {
             event.preventDefault();
-            step(edit);
+            press(key === 'y' || event.shiftKey ? 'redo' : 'undo');
+        } else if (key === 'escape' && selected.value !== null && !inside) {
+            deselect();
+        } else if (
+            (key === 'delete' || key === 'backspace') &&
+            selected.value !== null &&
+            !inside
+        ) {
+            event.preventDefault();
+            hide();
         }
     }
 
@@ -776,9 +1137,11 @@ export function useAppPreview(source: Source) {
 
     return reactive({
         frame,
-        frameSource,
-        frameKey,
+        frames,
+        bind,
         frameWidth,
+        // The address of the app page on show, as in "/login".
+        path: framePath,
         device,
         running,
         selected,
@@ -802,8 +1165,12 @@ export function useAppPreview(source: Source) {
         valueOf,
         save,
         step,
+        press,
+        hide,
         undoable,
         redoable,
+        canUndo,
+        canRedo,
     });
 }
 

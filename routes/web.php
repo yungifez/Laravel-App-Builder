@@ -17,6 +17,7 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\NotificationReadController;
 use App\Http\Controllers\Operations\AttentionController;
 use App\Http\Controllers\Operations\ChangeController as OperationsChangeController;
+use App\Http\Controllers\PageConsistencyController;
 use App\Http\Controllers\PreviewController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectEditorController;
@@ -54,6 +55,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('experiments/{experiment}', [ExperimentController::class, 'destroy'])->name('experiments.destroy');
     Route::post('projects/{project}/visual-edits', [VisualEditController::class, 'store'])->name('visual-edits.store');
     Route::post('projects/{project}/visual-moves', [VisualMoveController::class, 'store'])->name('visual-moves.store');
+    Route::post('projects/{project}/page-consistency', [PageConsistencyController::class, 'store'])->name('page-consistency.store');
     Route::post('visual-edits/{visualEdit}/reversion', [VisualEditReversionController::class, 'store'])->name('visual-edits.reversion.store');
     Route::delete('visual-edits/{visualEdit}/reversion', [VisualEditReversionController::class, 'destroy'])->name('visual-edits.reversion.destroy');
 

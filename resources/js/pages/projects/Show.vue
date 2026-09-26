@@ -702,8 +702,9 @@ function send(event: KeyboardEvent): void {
             ]"
             data-test="app-pane"
         >
+            <!-- The designer shows each change as it is made. -->
             <p
-                v-if="preview?.updating"
+                v-if="preview?.updating && !designing"
                 class="text-center text-xs text-muted-foreground"
                 data-test="preview-updating"
             >

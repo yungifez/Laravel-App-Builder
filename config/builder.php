@@ -65,6 +65,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Design
+    |--------------------------------------------------------------------------
+    |
+    | What the designer asks for when the owner wants the page they are
+    | looking at made consistent. ":page" is the page's address. The owner
+    | sees this in the conversation as their own request.
+    |
+    */
+
+    'design' => [
+        'consistency' => 'Make the :page page consistent. Parts that do the same job should share the same spacing, sizes, colours, corners and text styles, following the design notes. Keep what the page says and does.',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Publishing
     |--------------------------------------------------------------------------
     |

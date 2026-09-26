@@ -370,6 +370,16 @@ export type VisualEditSummary = {
     /** The part's classes and the app's version after this edit (or its undo). */
     classes: string;
     revision: string;
+    /** Where the part is written. */
+    target: string;
+    /** How the part looks before and after a change to its look. */
+    sides: Record<
+        'before' | 'after',
+        {
+            classes: string;
+            values: Partial<Record<VisualProperty, VisualValue>>;
+        }
+    > | null;
     created_at: string | null;
     reverted_at: string | null;
 };

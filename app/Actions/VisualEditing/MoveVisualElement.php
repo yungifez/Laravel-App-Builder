@@ -15,7 +15,10 @@ use InvalidArgumentException;
 
 class MoveVisualElement
 {
-    public function __construct(private ProjectRepository $repository) {}
+    public function __construct(
+        private ProjectRepository $repository,
+        private FollowLocation $followLocation,
+    ) {}
 
     /**
      * Move one element to just before or after a sibling (the owner dragged
@@ -40,6 +43,17 @@ class MoveVisualElement
 
         if ($location->file !== $target->file) {
             throw ValidationException::withMessages(['edit' => __('These parts are built in different places, so I can\'t move one here. Ask me to move it instead.')]);
+        }
+
+        // Both places are where the running preview says they are; the owner
+        // may be editing a newer version while it rebuilds.
+        if ($preview->revision !== null) {
+            $location = $this->followLocation->handle($project, $preview->revision, $revision, $location);
+            $target = $this->followLocation->handle($project, $preview->revision, $revision, $target);
+
+            if ($location === null || $target === null) {
+                throw ValidationException::withMessages(['edit' => __('Your last change is still going in. Try again in a moment.')]);
+            }
         }
 
         $contents = $this->repository->show($project, $revision, $location->file);
