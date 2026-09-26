@@ -1,11 +1,20 @@
 # Architecture
 
-**Version 7.** This document consolidates the direction in [direction/](direction/)
+**Version 9.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
 replaces Project Memory with hierarchical Project Context and discovery
-([§7](#7-project-context-and-discovery)). When they disagree, the direction documents state intent
+([§7](#7-project-context-and-discovery)). Version 8 re-justifies the design
+against observed user complaints: it adds outcome measurement and falsification
+([§25](#25-outcomes-measurement-and-falsification)), makes the Context Compiler
+a named subsystem ([§8](#8-context-compiler)), splits behaviour diffs into
+requested and unexpected changes, and postpones what exists mainly for
+elegance. Version 9 adds precedents to discovery
+([§7](#precedents-showing-what-is-possible)): questions offer the common ways
+products solve a problem, with a recommendation grounded in the user's own
+context and "Something different" always available; references to other
+products are stored by the aspect the user meant. When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -16,7 +25,7 @@ silently following either.
 - [System overview](#5-system-overview)
 - [Product Behavior Graph](#6-product-behavior-graph)
 - [Project Context and discovery](#7-project-context-and-discovery)
-- [Working context](#8-working-context)
+- [Context Compiler](#8-context-compiler)
 - [The change pipeline](#9-the-change-pipeline)
 - [Deterministic engines](#10-deterministic-engines)
 - [Execution: agents, runtimes and routing](#11-execution-agents-runtimes-and-routing)
@@ -33,6 +42,7 @@ silently following either.
 - [Risks](#22-risks)
 - [Open decisions](#23-open-decisions)
 - [Convention over generation: reassessment](#24-convention-over-generation-reassessment)
+- [Outcomes, measurement and falsification](#25-outcomes-measurement-and-falsification)
 
 ## 1. Principles
 
@@ -87,6 +97,12 @@ silently following either.
 - **A strong default path with an unrestricted code escape hatch, not a template
   catalogue.** Capabilities and conventions are the default; an agent can always
   write ordinary code when a requirement does not fit (see §24.7).
+- **Two ladders, not one.** Product precedents (§7) decide _what the product
+  should do_; the reuse ladder decides _how to build it_. A precedent is not an
+  implementation rung between our capabilities and generation: a chosen
+  precedent points into the reuse ladder (`realised_by`) when we have a
+  capability for it, and is otherwise built by convention. Keeping them apart
+  stops precedents from turning into templates.
 - **Stronger models should reduce our orchestration, not increase it.** Our
   durable work is what models do not own: product intent, observability,
   package trust and lifecycle, capability reuse, deterministic transformations,
@@ -222,7 +238,7 @@ paths or class names outside `impl_refs`.
 
 Not persisted: the chains between routes, controllers, requests, policies,
 actions, models, events, listeners and jobs. Those belong to the ephemeral
-engineering graph ([Working context](#8-working-context)).
+engineering graph, built on demand ([Context Compiler](#8-context-compiler)).
 
 ### Behaviour identity and grouping
 
@@ -325,6 +341,23 @@ The structured part of the diff needs no model. The behaviour diff is the
 primary review artifact; source diffs sit one level down. It also drives
 approval gates (new email, new charge, new outside service, data deletion).
 
+**Requested vs. unexpected changes.** The interpret stage declares which
+behaviours a request targets. Every behaviour change outside that set is shown
+separately, deterministically:
+
+> **Requested:** managers can now invite contractors.
+> **Other observed changes:** none detected.
+
+or
+
+> ⚠ **Another behaviour also changed:** customer cancellation cut-off, 48 hours →
+> 24 hours. This does not appear related to your request. [Keep] [Undo]
+
+This makes agent mistakes visible in product language instead of promising they
+will not happen. Its limit is stated honestly: it catches changes the graph can
+see (who may do what, rules from config and tests, side effects, surfaces), not
+subtle logic bugs, which only tests catch.
+
 ### Storage
 
 Postgres, relational tables plus `jsonb`. No graph database: queries are at most
@@ -366,6 +399,7 @@ context_entries (
   scope_key,      -- null for application; otherwise a Product Behavior Graph key
   category,       -- goal | user | real_world | workflow | terminology | design | rule
                   -- | constraint | decision | rejected | future_direction | open_question
+                  -- | reference
   key,            -- a stable slug, e.g. cleaner_assignment, density, org_term
   value jsonb,    -- {text, structured?} e.g. {"text": "…", "structured": {"hours": 48}}
   source,         -- confirmed | derived | package_contract | ai_interpretation | proposed
@@ -439,6 +473,168 @@ is mostly mechanical; the model only proposes the decision list and defaults.
   medium-consequence decisions.
 - Tracked metric: questions per request, which should fall as the project
   matures.
+
+### Precedents: showing what is possible
+
+Owners often do not know what is possible, so a good question offers the common
+answers instead of asking the owner to invent one ("There are a few common ways
+this works. Which is closest?"). A small **precedent library** supplies them:
+product patterns, not copied applications and not implementations. Discovery
+reasons over three sources: what the user told us (Project Context), what the
+application does (Product Behavior Graph), and what products like it commonly
+do (precedents). The user's own context always outweighs the precedent.
+
+**Why curate at all.** Frontier models already know that booking can be
+request-and-confirm or self-service, and will list the options when asked. The
+library earns its place only where it adds what general model knowledge does
+not:
+
+1. options ordered by complexity, so the simplest sufficient one is recommended;
+2. which decisions are **hard to reverse** (who owns a subscription shapes the
+   data model; a reminder's lead time does not), which is what makes a question
+   worth asking now;
+3. what each option usually requires, as a checklist for the build and review
+   (self-booking needs double-booking protection);
+4. links to what we can already build and verify (a first-party capability, a
+   package, protected tests);
+5. curated, reviewed wording, so a question reads the same way to every owner
+   and can be evaluated.
+
+V0 tests whether this beats the model producing options itself (§25.4, P1). If
+it does not, we keep the question format and drop the library.
+
+#### Entry format (V0)
+
+Platform-wide content, never per project and never mined from customer code.
+The unit is a **decision** with its options; each option is a pattern. Stored
+as versioned YAML files in the control-plane repository and reviewed like code:
+
+```yaml
+decision: booking.how_times_are_chosen
+applies_to: { capability: booking } # or application_type, behavior, design surface
+question: How should booking work?
+reversibility: medium # hard | medium | easy
+affects: [major_workflow, data_model] # the decision check's consequence categories
+options:
+    - key: request_and_confirm
+      complexity: 1 # ordering only; never shown as a level
+      label: Customers request a time and you confirm it.
+      useful_when: You want to check every job before accepting it.
+      usually_requires: [a request inbox, confirmation messages]
+      tradeoffs: { pros: [simple to run], cons: [more office work] }
+    - key: pick_available_times
+      complexity: 2
+      label: Customers only see times when someone is free, and book instantly.
+      useful_when: You want less back-and-forth and staff calendars are reliable.
+      usually_requires:
+          [
+              an availability source,
+              double-booking protection,
+              cancellation and rescheduling rules,
+          ]
+      common_extensions: [buffers, staff choice, recurring bookings, waitlist]
+      realised_by: null # a capability or package key when we have one
+    - key: resource_scheduling
+      complexity: 3
+      label: Availability also considers skills, location, travel time and buffers.
+common_next_steps: [reminders, online rescheduling, cancellation policy]
+sources: [internal curation]
+status: curated # draft | curated | retired
+```
+
+Application-level decisions (a marketplace: who receives payment, whether the
+platform holds funds) use the same format with `applies_to: {application_type}`
+and are not asked up front: they wait until a request touches them.
+
+#### How discovery uses it
+
+1. **Retrieve by key.** In the interpret stage the planner lists the decisions
+   the task depends on (the decision check). The library adds the decisions
+   attached to the target capability keys and the application type,
+   deterministically: the scope hierarchy is the retrieval strategy, as in §8.
+   This is where unknown unknowns come from: "add subscriptions" brings in "who
+   owns the subscription?" although nobody mentioned it.
+2. **Drop what is known.** Remove decisions that Project Context answers, and
+   those the graph shows are already settled in code.
+3. **Gate.** The existing gate decides ask now or build with the default. A
+   precedent's `affects` and `reversibility` feed it: hard to reverse and
+   touching data, money or permissions means ask; otherwise build with the
+   default and confirm in the review. The clarification budget (§25.5) still
+   holds: precedents make questions better, not more numerous.
+4. **Render.** Two to four options in plain language, the recommended one
+   first, plus **"Something different"** (free text, always) and "You decide".
+   "Show more" expands to every option, tradeoffs, requirements and related
+   patterns for Target B. There is no beginner or expert mode.
+5. **Recommend with a reason from the user's own context.** "Recommended:
+   assign available staff automatically. Why: you said the main goal is less
+   office scheduling." With no supporting entry, recommend the simplest
+   sufficient option and say it can change later. The phrasing is "a common
+   approach is…"; never "most companies do this" and never "this is how booking
+   software works".
+6. **Record.** The answer is written deterministically as a confirmed `decision`
+   entry with `{precedent, option, library_version}` in `structured`.
+   "Something different" stores the user's own words, with no precedent link.
+7. **Brief.** The build brief gets the chosen option's `usually_requires` as a
+   checklist. It does not get the alternatives: the coding agent needs the
+   decision, not the menu.
+
+#### Common next steps
+
+After an accepted change, the review may show up to three **common next steps**
+from the decision's `common_next_steps`, minus what the graph already has and
+anything with a `rejected` context entry. They are optional, never built
+automatically, and never a checklist of everything products like this have.
+"Not now" records nothing; "Don't suggest this" writes a `rejected` entry. This
+is the hidden-agile loop: build a useful slice, offer a few sensible next
+options, let the owner choose.
+
+#### References to other products
+
+"Like Linear's issue creation" is high-information context, but not an
+instruction to copy. It is stored as a Project Context entry with category
+`reference`, recording what the user meant:
+
+```json
+{
+    "text": "Like Linear's issue creation",
+    "structured": {
+        "product": "Linear",
+        "about": "issue creation",
+        "dimensions": ["workflow"],
+        "wanted": ["fast inline creation"],
+        "not_wanted": ["visual styling"]
+    }
+}
+```
+
+Dimensions: visual style, interaction, workflow, information architecture,
+navigation, behaviour, terminology, density, animation, onboarding. When the
+dimension is ambiguous and it matters, ask once ("the look, the workflow, or
+both?"); otherwise infer it and store it as `proposed` for confirmation in the
+review. The compiler includes a reference only when its dimensions match the
+work, and agents receive the wanted aspects in words, never "copy Product X".
+We never reproduce another product's branding or assets. V0 does not fetch or
+screenshot referenced products.
+
+#### Guardrails
+
+- **Evidence, not requirements.** Nothing is enforced from a precedent, and
+  "Something different" is always available: a fast path, never the only path.
+- **Quality.** Every decision file has sources and a curation status; only
+  `curated` files are shown to owners, `draft` files are used only in
+  evaluation. A file whose options are often replaced by "Something different"
+  or reversed later is flagged for review.
+- **No bloat.** Two to four options, at most three next steps, and only for the
+  capability being touched.
+- **Privacy.** No mining of customer code. Aggregate, anonymous signals (which
+  options owners choose) only under §19's consent rules, and not in V0.
+
+#### V0
+
+About 10–15 hand-curated decision files for the pilot's domains only: booking
+and scheduling, subscriptions and billing, team membership and invitations. No
+database table, no editing interface, no retrieval beyond keys, no sources
+pipeline.
 
 ### Provenance
 
@@ -521,6 +717,33 @@ history, can edit them directly, and can open exactly what an agent was given
 for any run. Questions themselves disclose progressively: "Who will use this?"
 can expand into roles, permissions, data ownership and API access.
 
+### Selective, cheap memory creation
+
+Memory is written rarely and cheaply; it is never a rewrite of a summary.
+
+1. **Answers to our own questions** are the main source. The question already
+   defines scope, category and key, so the answer is written deterministically,
+   with no model call.
+2. **Visual edits and direct manipulations never create memory.** "Make that
+   button bigger" is a code change, not product knowledge.
+3. **Free-text statements** are classified once per change request, not per
+   message, by a small model in one batched call: is this durable product
+   knowledge; which category and scope? A statement the user made explicitly
+   ("we call these Clinics") is stored as confirmed, with the quoted words as
+   evidence; an inference is stored as proposed.
+4. **Consolidation** (merging duplicates, marking superseded entries) runs as an
+   occasional batch job with a small model.
+
+Budget: at most one small-model call per change request for memory. Strong
+models are never used for memory upkeep.
+
+### V0 simplifications
+
+The schema keeps all four scopes because the column costs nothing, but the V0
+resolver only needs application + capability + behaviour, and overrides are only
+supported for design and terminology keys. Structured-rule contradiction checks
+ship first; prose comparison by AI waits.
+
 ### Smallest proof (V0)
 
 1. The `context_entries` table, the resolver with inheritance and overrides, and
@@ -534,45 +757,60 @@ can expand into roles, permissions, data ownership and API access.
 Proven by a scripted session, first with faked models in tests, then live:
 
 - "I need booking software for my cleaning business" → a few opening questions,
-  including "Do customers choose a cleaner?" (no, assign whoever is available)
-  → first slice built.
+  including "How should booking work?" offered as three precedent options plus
+  "Something different", and "Do customers choose a cleaner?" (no, assign
+  whoever is available) → first slice built → up to three common next steps
+  offered in the review.
 - "Add recurring bookings" → exactly one new question ("keep the same cleaner,
   or assign whoever is available each time?"); none of the earlier questions
   repeated; the brief contains the earlier answers.
 - A later request inherits both answers, and a new screen uses the stored
   terminology and design context.
 
-## 8. Working context
+## 8. Context Compiler
 
-Ephemeral, per task, never persisted beyond the run.
+A named subsystem with one job: turn accumulated knowledge into the **minimum
+sufficient** context pack for one task. It compiles; it never dumps chat
+history, the whole context store, every behaviour, or the repository. It is
+deterministic code, not a model call.
 
-- Built in the runtime by `builder/introspect --around=<behavior-key>`: a
-  budgeted traversal from the seed behaviour through middleware, FormRequest,
-  policy, action, models, events, listeners, jobs, notifications and tests.
-- The brief is compiled from, in priority order and within a token budget
-  (a few thousand tokens):
-    1. the user's request and any selection context;
-    2. the **effective Project Context** for the task's scopes (§7): decisions
-       already made (marked "decided, do not ask again"), rules, constraints,
-       terminology used in the touched area, and design context only when the task
-       touches UI;
-    3. current behaviour of the seed behaviours, from the Product Behavior Graph;
-    4. capability metadata ("extend this, do not recreate it");
-    5. implementation references and key paths;
-    6. the project's own conventions.
+**Inputs:** the request (and any selection context), the target scopes from the
+interpret stage (behaviour and capability keys), Project Context, the Product
+Behavior Graph, capability metadata.
 
-    Application-level essentials form a stable prefix, cached per commit and
-    context version for prompt caching. Nothing else from the context store is
-    sent; the agent can query more through MCP (`context.query`).
+**Algorithm (V0):**
 
-- A stable prefix (project summary, conventions, capabilities) is cached per
-  commit for prompt caching.
-- The agent explores freely beyond it and can query more through MCP
-  (`introspect.query`, `capability.describe`, `transform.apply`,
-  `package.request`, `verify.run`) alongside Laravel Boost. The context guides;
-  it never imprisons.
-- Its value is measured, not assumed: pass rate and tokens with and without the
-  brief, in the evaluation harness.
+1. Scopes = the target behaviours + their capabilities + the application.
+2. Resolve effective Project Context for those scopes (§7). Always include every
+   confirmed rule, constraint and decision in scope, whatever their size: these
+   are what prevent failed trajectories. Include design context only for UI
+   work, and terminology only for terms used in the touched area.
+3. Current behaviour of the target behaviours, from the graph; the names only of
+   sibling behaviours in the same capability.
+4. Capability metadata for package-backed capabilities: compressed knowledge the
+   agent would otherwise rediscover by reading code.
+5. Implementation references and paths, not code: the agent reads code itself.
+6. Render fixed sections (PRODUCT, USERS, TERMINOLOGY, the capability's
+   context, DECIDED (do not ask again), CURRENT BEHAVIOUR, REQUEST, RELEVANT
+   IMPLEMENTATION) with per-section caps. Only low-priority sections are ever
+   truncated.
+7. **Log exactly what was included:** entry ids and tokens per section, for the
+   experiments in §25.
+
+Precedents (§7) are compiled only for the interpret stage, as the decisions
+attached to the target scopes, capped. The build stage gets only the chosen
+option's requirements. `reference` entries are included only when their
+dimensions match the work.
+
+Application essentials form a stable prefix, cached per commit and context
+version. No embeddings or retrieval system in V0: the scope hierarchy is the
+retrieval strategy until an experiment shows it is not enough. The agent can
+still query more through MCP (`context.query`, `introspect.query`,
+`capability.describe`, `transform.apply`, `package.request`, `verify.run`) and
+explore the repository freely; the pack guides, it never imprisons.
+
+The deeper engineering graph for a task is still built on demand in the runtime
+by `builder/introspect --around=<behavior-key>` and discarded after the run.
 
 ## 9. The change pipeline
 
@@ -959,6 +1197,23 @@ shows it honestly; normalization improves it over time.
 
 ## 20. Deliberately not built yet
 
+Postponed in version 8 because they exist mainly for elegance, not to answer an
+observed user problem (each returns when a measurement asks for it):
+content-addressed snapshot storage (V0 stores plain per-snapshot rows); the
+second provider adapter and learned routing (the contract and telemetry stay);
+package trust levels and adapters beyond an allowlist; custom Rector rules and
+the rule-promotion pipeline; the typed-operation catalogue beyond
+`capability_config` and `agent_task`; mapping design context onto theme tokens;
+AI comparison of prose intent; the edge proxy and hot reload; imported
+applications; the invariant lifecycle interface; showing all five provenance
+classes to users (three badges suffice). Postponed in version 9: a precedent
+sources pipeline (public examples, domain research, aggregate insights), an
+editing interface for precedents, semantic retrieval over the library,
+application-type and design-flow precedents beyond the pilot's domains, and
+fetching or screenshotting referenced products.
+
+Also not built:
+
 Sprints, estimates, boards, backlog grooming and any project-management
 vocabulary in the product; a requirements database beyond one context table;
 onboarding questionnaires; a persistent engineering graph or graph database; trust scoring; a package
@@ -981,24 +1236,25 @@ online routing experiments on high-risk work.
 | G3        | Planner / coder / reviewer roles on laravel/ai with faked tests; repairs; usage logging. The coder runs inside the control plane today and moves to the runtime with the execution adapters |
 | G2.4      | Previews on their own host with single-use grants                                                                                                                                           |
 
-### Next stages
+### Next stages (version 8: measurement first)
 
-| Stage                   | Build                                                                                                                                                                                                                                                                                   | Proven when                                                                                                                |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| 1a Understand & observe | `builder/introspect` v0 with test-run side-effect tracing; Product Behavior Graph V0 (Capability, Behavior, Actor, Surface; purpose, permissions, outcome, side effects, implementation refs; provenance, freshness, `unknown`); behaviour cards; behaviour diff; preview source stamps | The owner-only change yields "Previously / Now" with no model call for the diff; only affected behaviours rebuild          |
-| 1b Context & discovery  | One `context_entries` table with scopes, inheritance and overrides; the decision check in the interpret stage; assumptions confirmed in the review; the effective context in the agent brief; the "What I know about your product" page                                                 | The cleaning-business script (§7) asks only new questions as the product grows, and later requests inherit earlier answers |
-| 2 Execute               | `AgentTask`/`AgentResult`; provider profiles; runtime adapter and reproducible template; runner; `claude-agent-sdk` and `script` adapters; gateway and vault; routing table v0 and telemetry                                                                                            | An Agent SDK agent builds invitations from the clean starter and passes protected tests                                    |
-| 2b Second provider      | OpenAI adapter; one change with stages on different providers                                                                                                                                                                                                                           | End to end across two providers                                                                                            |
-| 3 Deterministic first   | Typed operations; Rector with residuals and governance; `capability_config`; normalization after the agent                                                                                                                                                                              | "Only managers can invite" with zero model tokens for the change                                                           |
-| 4 Laravel semantics     | PHPStan and architecture rules; diff-triggered checks and gates; `migrate --pretend`; risk-triggered cross-provider review                                                                                                                                                              | A seeded set of bad changes is all caught                                                                                  |
-| 5 Measure               | Evaluation harness across providers and models → routing table v1                                                                                                                                                                                                                       | Baseline numbers; a model swap is a config change with measured impact                                                     |
-| 6 Visual editor         | Selection context, inspector, Tailwind and text edits, semantic hand-off, edge proxy with hot reload                                                                                                                                                                                    | A non-technical user changes spacing without a model and hands a permission change to an agent from the same selection     |
-| 7 Intent vs behaviour   | Structured-rule mismatch detection; invariant lifecycle; contradiction questions; design context mapped to theme tokens; briefs seeded from behaviours and selections                                                                                                                   | Brief vs no brief shows fewer tokens at equal or better pass rate                                                          |
-| 8 Learn                 | Candidate queue; rule promotion; limited online routing                                                                                                                                                                                                                                 | One recurring agent pattern becomes a rule                                                                                 |
+The plan is reordered so that every claim can be tested before more is built on
+it. Each stage ends with a measurement, not only a demo.
 
-Then, by evidence: import conformance reports, the first first-party capability
-package with an executable upgrade path, adapters for Cashier and similar,
-deployment through Laravel Cloud, L4 lifecycle and replacement.
+| Stage                     | Build                                                                                                                                                                                                                                                                        | Tests the claim                                                                                                                                |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **0 Measure first**       | The change-request record and the outcome events (§25.3); cost attribution through the gateway and sandbox; the evaluation harness skeleton with **sequential scenarios** and a simulated owner                                                                              | Nothing yet: makes every later claim measurable                                                                                                |
+| **1 Observe**             | `builder/introspect` v0 with test-run side-effect tracing; Product Behavior Graph V0; behaviour cards; behaviour diff with **requested vs unexpected changes**                                                                                                               | Behaviour-level review helps owners catch unrelated changes (§25.4, B1)                                                                        |
+| **2 Execute**             | `AgentTask`/`AgentResult`; runtime adapter and reproducible template; runner; `claude-agent-sdk` and `script` adapters; gateway and vault; routing table v0                                                                                                                  | An Agent SDK agent completes the continuation scenario end to end                                                                              |
+| **3 Context**             | `context_entries`, resolver, Context Compiler (§8) with inclusion logging; the decision check; selective memory creation; the "What I know" page; precedent files for the pilot domains, option questions with "Something different", common next steps, `reference` entries | Context and targeted questions lower cost per accepted change and retries (§25.4, C1–C3); curated precedents beat the model's own options (P1) |
+| **4 Run the experiments** | The condition matrix in §25.4 on the scenario set; the owner study                                                                                                                                                                                                           | Keep, simplify or remove context and questions by the pre-registered thresholds                                                                |
+| 5 Deterministic first     | `capability_config`; Rector (`rector-laravel` only) and normalization after the agent                                                                                                                                                                                        | Share of changes done without a model rises without more regressions                                                                           |
+| 6 Laravel semantics       | PHPStan and architecture rules; diff-triggered checks and approval gates; `migrate --pretend`                                                                                                                                                                                | A seeded set of bad changes is all caught                                                                                                      |
+| 7 Visual editor           | Selection context, inspector, Tailwind and text edits, semantic hand-off                                                                                                                                                                                                     | Tiny UI changes stop costing agent runs (§25.4, V1)                                                                                            |
+
+Then, by evidence: a second provider and learned routing; intent-vs-behaviour
+checks beyond structured rules; the first first-party capability package;
+adapters; imported applications; deployment through Laravel Cloud.
 
 ## 22. Risks
 
@@ -1021,6 +1277,10 @@ deployment through Laravel Cloud, L4 lifecycle and replacement.
 - **Visual editing gets hard at dynamic classes, shared components and
   conditional rendering.** The instance/all choice and "not static goes to an
   agent" keep it honest.
+- **A bad precedent steers inexperienced owners confidently the wrong way**, and
+  the library is content that needs upkeep. Curation status, sources, the
+  escape hatch, the review trigger on replaced or reversed options, and P1
+  deciding whether the library exists at all.
 - **Vendor terms** for subscription logins; approval before enabling on our
   cloud.
 - **Corpus privacy.** Learn from customer code only with consent.
@@ -1034,6 +1294,10 @@ deployment through Laravel Cloud, L4 lifecycle and replacement.
   in a hosted product.
 - The sandbox provider for managed runtimes.
 - The product's public name and category (not "Laravel builder").
+- Whether to charge for accepted changes rather than raw usage (§25.6).
+- Recruiting 3–5 owners for the behaviour-diff study (§25.4).
+- Who writes and reviews precedent files (us, or domain experts per vertical),
+  and whether owners' option choices may be aggregated anonymously.
 
 ## 24. Convention over generation: reassessment
 
@@ -1179,3 +1443,185 @@ beyond what the slice uses; the trust engine; a rule library beyond
 beyond keeping the product schema neutral; our own component library; page
 templates beyond four patterns; the visual editor before stage 6; learned
 routing; imported applications; deployment.
+
+## 25. Outcomes, measurement and falsification
+
+User research on current AI app builders (direction 09) shows the category has
+largely solved "can AI quickly make an application?". The complaints cluster
+around "can it keep changing that application without wasting my time, credits
+or trust?": repeated explanation, many prompts for simple behaviour, credits
+spent on rework and tiny UI tweaks, and regressions in things that used to work.
+Version 8 optimises for that second problem, and treats every mechanism in this
+document as a **hypothesis to be tested**, not a truth.
+
+### 25.1 What each mechanism is for
+
+| Complaint                                                    | Mechanism                                                                | Hypothesis                                                                           |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| "I already explained this"                                   | Project Context, Context Compiler                                        | C1: later requests need fewer corrections and retries                                |
+| Many prompts for simple behaviour; credits burned on rework  | targeted questions; minimum sufficient context                           | C2, C3: lower cost per accepted change                                               |
+| "It broke something that worked"                             | behaviour diff with unexpected changes; full test suite; protected tests | B1: owners catch unrelated changes they would otherwise miss                         |
+| "What does this do?" asked again and again                   | behaviour cards                                                          | B2: fewer explanatory model calls; owners answer questions about their app correctly |
+| "I didn't know that was possible"; decisions regretted later | precedent options with a reason from the user's context (§7)             | P1: important decisions are raised before they cause rework, and reversed less often |
+| Credits spent on tiny UI tweaks                              | deterministic visual edits                                               | V1: UI tweaks complete without agent runs                                            |
+| Backend churn                                                | convention over generation; capability metadata                          | D1: fewer files touched and fewer regressions per change                             |
+
+### 25.2 The economic metric: cost per accepted change
+
+The unit is a **change request**: from the user's request to its outcome
+(accepted, rejected, abandoned, or superseded by a correction).
+
+- **All cost is attributed to it:** every model call through the gateway
+  (including clarification, planning, annotation, memory and review calls),
+  sandbox and runtime seconds at their rate, verification runs, retries and
+  escalations, and external tools.
+- **Accepted** means the user explicitly accepts in the review, or keeps the
+  change with no revert or corrective follow-up on the same behaviours within
+  seven days. The two are recorded separately.
+- **Cost per accepted change** = total cost of all change requests in a period
+  (failed and abandoned ones included) ÷ accepted changes. Tokens per prompt is
+  deliberately not a target.
+- The same record also yields user-side cost: turns, questions answered and
+  wall-clock time to acceptance, since the user's time is spent too.
+
+### 25.3 Telemetry V0 preserves
+
+An append-only event stream keyed by change request. No dashboards in V0, only
+the raw events:
+
+| Event                                      | Fields that matter                                                                                                                                                               |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `request.created`                          | source (chat, behaviour card, visual selection), target scopes, project age                                                                                                      |
+| `question.asked` / `question.answered`     | key, category, pre- or post-build, latency to answer, whether the user left; options source (precedent and version, or model), option chosen, "Something different", "Show more" |
+| `suggestion.shown` / `suggestion.decided`  | next-step key, accepted, not now, don't suggest                                                                                                                                  |
+| `context.compiled`                         | entry ids included, tokens per section, condition (for experiments)                                                                                                              |
+| `stage.finished`                           | stage, engine, model, tokens in and out, cost, duration, outcome                                                                                                                 |
+| `sandbox.usage`                            | seconds, cost                                                                                                                                                                    |
+| `verification.finished`                    | per check, first attempt or retry                                                                                                                                                |
+| `behavior_diff.computed`                   | requested changes, unexpected changes                                                                                                                                            |
+| `unexpected_change.resolved`               | kept or undone; later confirmed as a real regression or not                                                                                                                      |
+| `review.decided`                           | accepted, rejected, follow-up requested, free-text reason                                                                                                                        |
+| `change.reverted` / `correction.requested` | within the seven-day window                                                                                                                                                      |
+| `memory.written`                           | source (answer, classifier, consolidation), provenance                                                                                                                           |
+| `visual_edit.applied`                      | deterministic, or handed to an agent                                                                                                                                             |
+
+These are enough to compute every metric in direction 09: cost per accepted
+change, first-attempt pass rate, retries before acceptance, whether questions
+reduced retries, context size against success, success and cost by task class
+and provider, transform and verification outcomes, and unexpected changes
+detected.
+
+### 25.4 Experiments, with thresholds set in advance
+
+**Context (C1–C3), run in the evaluation harness.** The benefit of accumulated
+context only appears in _later_ requests, so tasks are **sequential scenarios**:
+a project grows through 6–10 requests (the cleaning business: bookings,
+automatic assignment, recurring bookings, cancellations, reminders). A
+**simulated owner** holds the hidden intent, answers questions from it, and
+rejects wrong results; protected tests encode that intent. Conditions:
+
+| Condition | The agent receives                                                                |
+| --------- | --------------------------------------------------------------------------------- |
+| A         | repository + current request                                                      |
+| B         | A + compiled context pack (context, current behaviour, confirmed rules)           |
+| C         | B + the pre-build question gate                                                   |
+| D         | A + the full conversation history (the obvious alternative to structured context) |
+
+Measured per request: first-attempt pass, retries, tokens, runtime, regressions
+in untouched behaviours, cost per accepted change. Each scenario runs 3–5 times
+per condition, because agent runs vary.
+
+Decision rules, fixed before running:
+
+- If B does not beat A by at least 20% on cost per accepted change **or** 10
+  points on first-attempt pass rate in the later requests of each scenario,
+  shrink Project Context to application-level essentials only.
+- If B does not beat D, structured context is not worth its machinery; use
+  selected history instead.
+- If C does not reduce retries relative to B, raise the question threshold.
+- If B's packs regularly exceed a few thousand tokens without a matching gain,
+  cut the lower-priority sections.
+
+**Behaviour observability (B1, B2), with real owners.** In the pilot with 3–5
+owners (source plan §11), each performs a series of changes. One planted change
+also alters an unrelated behaviour (the cancellation cut-off). Groups see a
+behaviour diff, or a plain AI summary of the change. Measured: detection rate of
+the planted change, time to decide, stated confidence, and correct answers to
+"who can do X?" questions. If owners with behaviour diffs catch fewer than half
+of planted changes, or do no better than with a summary, rethink the review
+experience before building more on the graph.
+
+**Precedents (P1), in the harness.** The simulated owner's hidden intent
+includes decisions it would not volunteer (the organisation, not each person,
+pays; cancellations inside 24 hours are charged). Compare C (the question gate
+with options the model produces itself) against C+P (options and decisions from
+the curated library). Measured: hidden high-consequence decisions raised before
+building, decisions reversed later in the scenario, questions asked, and cost
+per accepted change. Decision rule: if C+P does not raise at least 25% more of
+the hidden decisions before building **or** cut later reversals by a third,
+keep the question format (options, reason, "Something different") and drop the
+curated library, except files that link to our capabilities. With owners:
+"Something different" and "Show more" rates, and precedent-backed decisions
+changed during the pilot.
+
+**Visual edits (V1).** Share of UI-adjustment requests completed without an
+agent run, with no increase in rejected changes.
+
+### 25.5 How much clarification helps speed
+
+- **Before the first visible result:** at most three questions, and one or two
+  is the aim; opening discovery must not delay the first preview beyond one
+  build.
+- **Typical request:** at most one question before building; everything else is
+  built with a stated assumption and confirmed in the review.
+- **Harm signals, tracked:** time to first preview, users leaving after a
+  question, questions answered with "you decide".
+- Precedents do not raise the budget: they change which question is asked and
+  how, not how many.
+- The threshold is tuned by experiment C, not by opinion.
+
+### 25.6 What the architecture does not solve
+
+Billing policies and credit expiry, outages and infrastructure reliability,
+support quality, account and project recovery, pricing transparency, the
+quality ceiling of the models themselves, and hosting and deployment
+operations. These need operational excellence: backups (every project is a git
+repository, pushed to storage we back up and optionally to the owner's own
+GitHub), status reporting, transparent billing, recovery tooling and good
+support. They are tracked as product operations, separate from this
+architecture. One business option the metrics make possible: charging for
+accepted changes rather than raw usage.
+
+### 25.7 What was postponed, and why
+
+Kept because they answer observed pain: Project Context and the Context
+Compiler (repeated explanation), the question gate (rework), behaviour diffs
+with unexpected-change detection (regressions and trust), behaviour cards
+(repeated explanatory calls), visual edits (credits on tiny tweaks), protected
+verification and previews, the runtime with the Agent SDK, the gateway, and
+telemetry.
+
+Postponed until a measurement asks for them: see the list at the top of
+[§20](#20-deliberately-not-built-yet). The common thread is that each is sound
+engineering but addresses no complaint we have evidence for yet.
+
+### 25.8 The slice that tests the claims
+
+The strategic problem is _continuing to change_ an application, so the slice is
+about continuation, not initial generation:
+
+1. **The same sequential scenario in the harness and with real owners.** An owner
+   works on an existing app (the customer-app fixture, then a small booking
+   fixture) through 6–10 changes: chat requests, a behaviour-card request, one
+   visual tweak.
+2. **The platform:** compiles context, asks only gated questions, runs the Agent
+   SDK agent in the runtime, verifies, previews, and shows the behaviour diff
+   with requested and unexpected changes.
+3. **One planted unrelated change** tests whether owners catch regressions
+   through behaviour diffs.
+4. **Every event** in §25.3 is recorded.
+
+It answers, with numbers: does accumulated context lower cost per accepted
+change and retries on later requests? Do questions pay for themselves? Do owners
+catch unrelated changes? If the answers are no, we simplify or remove the
+mechanism, as §25.4 commits us to.

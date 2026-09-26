@@ -13,6 +13,8 @@
     6. [Multi-model execution and visual editing](direction/06-multi-model-and-visual-editing.md)
     7. [Convention over generation](direction/07-convention-over-generation.md)
     8. [Product discovery and hierarchical context](direction/08-product-discovery-and-context.md)
+    9. [User research and outcome metrics](direction/09-user-research-and-outcome-metrics.md)
+    10. [Precedents and possibility discovery](direction/10-precedents-and-possibility-discovery.md)
 - **[source/](source/)**: the original planning documents.
     - [Implementation plan v1](source/implementation-plan-v1.md): gates G0–G6,
       the invitation contract and the pilot plan.
