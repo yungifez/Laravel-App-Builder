@@ -65,6 +65,19 @@ class FakeWorkspaceDriver implements WorkspaceDriver
         return $this->files["{$workspaceId}:{$path}"] ?? throw new RuntimeException("No such file [{$path}].");
     }
 
+    /** @var list<array{workspace: string, command: list<string>, port: int}> */
+    public array $services = [];
+
+    public function startService(string $workspaceId, array $command, int $port): void
+    {
+        $this->services[] = ['workspace' => $workspaceId, 'command' => $command, 'port' => $port];
+    }
+
+    public function serviceUrl(string $workspaceId, int $port): string
+    {
+        return "http://{$workspaceId}.test:{$port}";
+    }
+
     public function destroy(string $workspaceId): void
     {
         $this->destroyed[] = $workspaceId;

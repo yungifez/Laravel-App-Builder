@@ -136,6 +136,36 @@ Runs and verification run on the queue, so keep a worker running
 directory on this machine with a scrubbed environment. It is for trusted
 fixtures only (see `config/workspaces.php`).
 
+### Previews
+
+On a generated change, **Start preview** copies the project into its own
+workspace, applies the change and every change it follows up on, runs the
+preview setup (`config/builder.php`, `preview.setup`: install, key, migrate,
+build) and starts the app with PHP's built-in server. **Open preview** then
+takes the owner to `http://{host}.preview.localhost:8000`.
+
+- **Own origin.** Each preview has its own host, so the customer app never
+  shares the control plane's origin, cookies or session. A global middleware
+  hands preview hosts to the preview gateway before routing, so a preview host
+  never reaches the control plane's routes, even for a signed-in owner.
+- **Access.** Opening a preview issues a single-use grant that lives 60
+  seconds; the preview host exchanges it for an HttpOnly cookie scoped to that
+  host (two hours by default). Requests without it are refused and never reach
+  the app.
+- **Relay.** The gateway forwards requests to the app with the preview's host,
+  so the links and emails the app generates point at the preview. It strips
+  its own cookie, rebuilds form and file-upload bodies, and relays responses
+  and cookies unchanged.
+- **Lifetime.** `php artisan previews:reap` (every five minutes) stops
+  previews that are past `BUILDER_PREVIEW_MAX_MINUTES` or idle for
+  `BUILDER_PREVIEW_IDLE_MINUTES`, and stopping removes the workspace and its
+  server. Starting a preview again replaces the running one.
+
+The gateway relays plain HTTP only: previews serve built assets, not the Vite
+dev server, so there is no hot reload yet. The Docker workspace driver can run
+previews only on a network the control plane can reach
+(`WORKSPACE_DOCKER_NETWORK`, with `BUILDER_PREVIEW_LISTEN_HOST=0.0.0.0`).
+
 ### AI SDK
 
 The app uses the Laravel AI SDK (`laravel/ai`) with its published default

@@ -171,6 +171,62 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Previews
+    |--------------------------------------------------------------------------
+    |
+    | A preview runs the project with a feature request's change applied, in
+    | its own workspace, and serves it at http://{host}.{domain}. Each preview
+    | has its own host, so the customer app never shares the control plane's
+    | origin, cookies or session. Point the domain's wildcard at this app
+    | (*.localhost already resolves locally).
+    |
+    | Owners open a preview through a single-use grant that lives for
+    | "grant_seconds" and becomes a cookie on the preview host that lasts
+    | "session_minutes". Idle or expired previews are stopped by
+    | `previews:reap`.
+    |
+    */
+
+    'preview' => [
+        'workspace_driver' => env('BUILDER_PREVIEW_WORKSPACE_DRIVER', 'local'),
+        'domain' => env('BUILDER_PREVIEW_DOMAIN', 'preview.localhost'),
+        'scheme' => env('BUILDER_PREVIEW_SCHEME', 'http'),
+        'public_port' => env('BUILDER_PREVIEW_PORT', 8000),
+        'cookie' => 'builder_preview',
+        'grant_seconds' => 60,
+        'session_minutes' => 120,
+        'idle_minutes' => (int) env('BUILDER_PREVIEW_IDLE_MINUTES', 30),
+        'max_minutes' => (int) env('BUILDER_PREVIEW_MAX_MINUTES', 240),
+        'boot_seconds' => 30,
+        // Address the app's web server binds to inside the workspace. Use
+        // 0.0.0.0 for container drivers, which are reached at their own address.
+        'listen_host' => env('BUILDER_PREVIEW_LISTEN_HOST', '127.0.0.1'),
+        'request_timeout' => 60,
+
+        // Ports the app's web server may listen on inside a workspace.
+        'ports' => [20000, 20999],
+
+        // Commands that prepare the project to run, after the change is applied.
+        'setup' => [
+            ['name' => 'Create .env', 'command' => ['cp', '.env.example', '.env'], 'timeout' => 30],
+            ['name' => 'Install PHP dependencies', 'command' => ['composer', 'install', '--no-interaction', '--prefer-dist', '--no-progress'], 'timeout' => 900],
+            ['name' => 'Generate app key', 'command' => ['php', 'artisan', 'key:generate', '--no-interaction'], 'timeout' => 60],
+            ['name' => 'Create the database', 'command' => ['php', 'artisan', 'migrate', '--force', '--no-interaction'], 'timeout' => 120],
+            ['name' => 'Install Node dependencies', 'command' => ['npm', 'ci', '--no-audit', '--no-fund'], 'timeout' => 600],
+            ['name' => 'Build the frontend', 'command' => ['npm', 'run', 'build'], 'timeout' => 600],
+        ],
+
+        // Environment for the app's web server. APP_URL is set to the preview's URL.
+        'environment' => [
+            'APP_ENV' => 'local',
+            'APP_DEBUG' => 'true',
+            'MAIL_MAILER' => 'log',
+            'QUEUE_CONNECTION' => 'sync',
+        ],
+    ],
+
     'generators' => [
 
         'reference' => [

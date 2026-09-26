@@ -36,7 +36,21 @@ interface WorkspaceDriver
     public function readFile(string $workspaceId, string $path): string;
 
     /**
-     * Stop the workspace and delete everything in it.
+     * Start a long-running process in the workspace, such as the app's web
+     * server, listening on the given port. It runs until the workspace is
+     * destroyed.
+     *
+     * @param  list<string>  $command
+     */
+    public function startService(string $workspaceId, array $command, int $port): void;
+
+    /**
+     * Get the base URL the control plane reaches a service in the workspace at.
+     */
+    public function serviceUrl(string $workspaceId, int $port): string;
+
+    /**
+     * Stop the workspace and delete everything in it, including its services.
      */
     public function destroy(string $workspaceId): void;
 }

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { Form, Head, Link, setLayoutProps, usePoll } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
+import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
 import FeatureRequestStepChangeController from '@/actions/App/Http/Controllers/FeatureRequestStepChangeController';
 import FeatureRequestVerificationController from '@/actions/App/Http/Controllers/FeatureRequestVerificationController';
+import PreviewController from '@/actions/App/Http/Controllers/PreviewController';
 import RunCancellationController from '@/actions/App/Http/Controllers/RunCancellationController';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
@@ -21,6 +23,7 @@ import { index, show as showProject } from '@/routes/projects';
 import type {
     FeatureRequestDetail,
     FeatureRequestSummary,
+    Preview,
     Run,
     RunEvent,
     Verification,
@@ -34,6 +37,7 @@ const props = defineProps<{
     followUps: FeatureRequestSummary[];
     verification: Verification | null;
     run: Run | null;
+    preview: Preview | null;
 }>();
 
 const selectedStepKey = ref<string | null>(null);
@@ -60,7 +64,7 @@ watch(
 
 const { start, stop } = usePoll(
     1500,
-    { only: ['featureRequest', 'followUps', 'verification', 'run'] },
+    { only: ['featureRequest', 'followUps', 'verification', 'run', 'preview'] },
     { autoStart: false },
 );
 
@@ -86,6 +90,7 @@ const runInProgress = computed(
 watch(
     () =>
         runInProgress.value ||
+        props.preview?.status === 'starting' ||
         props.featureRequest.status === 'generating' ||
         verificationInProgress.value,
     (busy) => (busy ? start() : stop()),
@@ -135,6 +140,13 @@ function describeEvent(event: RunEvent): string {
             return event.type;
     }
 }
+
+const previewLabels: Record<Preview['status'], string> = {
+    starting: 'Starting',
+    ready: 'Running',
+    failed: 'Could not start',
+    stopped: 'Stopped',
+};
 
 const verificationLabels: Record<Verification['status'], string> = {
     queued: 'Queued',
@@ -506,6 +518,101 @@ function lineClass(line: string): string {
                 </Form>
             </section>
         </template>
+
+        <section
+            v-if="featureRequest.status === 'generated'"
+            class="max-w-2xl space-y-4"
+            data-test="preview"
+        >
+            <div class="flex items-center gap-3">
+                <Heading
+                    variant="small"
+                    title="Preview"
+                    description="Run the project with this change and try it in your browser"
+                />
+                <Badge
+                    v-if="preview"
+                    :variant="
+                        preview.status === 'ready'
+                            ? 'default'
+                            : preview.status === 'failed'
+                              ? 'destructive'
+                              : 'secondary'
+                    "
+                    data-test="preview-status"
+                >
+                    {{ previewLabels[preview.status] }}
+                </Badge>
+            </div>
+
+            <p
+                v-if="preview?.status === 'starting'"
+                class="text-sm text-muted-foreground"
+            >
+                Installing dependencies and starting the app. This can take a
+                few minutes…
+            </p>
+
+            <Alert v-if="preview?.error" variant="destructive">
+                <AlertTitle>The preview could not start</AlertTitle>
+                <AlertDescription class="whitespace-pre-wrap">{{
+                    preview.error
+                }}</AlertDescription>
+            </Alert>
+
+            <div class="flex flex-wrap items-center gap-2">
+                <Button v-if="preview?.status === 'ready'" as-child>
+                    <a
+                        :href="PreviewController.show.url(preview.id)"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        data-test="open-preview-link"
+                        >Open preview</a
+                    >
+                </Button>
+
+                <Form
+                    v-if="preview?.status !== 'starting'"
+                    v-bind="
+                        FeatureRequestPreviewController.store.form(
+                            featureRequest.id,
+                        )
+                    "
+                    v-slot="{ errors, processing }"
+                >
+                    <Button
+                        :variant="preview ? 'outline' : 'default'"
+                        :disabled="processing"
+                        data-test="start-preview-button"
+                    >
+                        {{
+                            preview?.status === 'ready'
+                                ? 'Restart preview'
+                                : 'Start preview'
+                        }}
+                    </Button>
+                    <InputError class="mt-2" :message="errors.preview" />
+                </Form>
+
+                <Form
+                    v-if="
+                        preview &&
+                        (preview.status === 'ready' ||
+                            preview.status === 'starting')
+                    "
+                    v-bind="PreviewController.destroy.form(preview.id)"
+                    v-slot="{ processing }"
+                >
+                    <Button
+                        variant="ghost"
+                        :disabled="processing"
+                        data-test="stop-preview-button"
+                    >
+                        Stop
+                    </Button>
+                </Form>
+            </div>
+        </section>
 
         <section
             v-if="featureRequest.status === 'generated'"

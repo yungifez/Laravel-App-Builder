@@ -92,8 +92,48 @@ class LocalDriver implements WorkspaceDriver
         return File::get($this->path($workspaceId, $path));
     }
 
+    /**
+     * Start the command detached from this PHP process, with the same
+     * scrubbed environment as other commands, and remember its process id.
+     */
+    public function startService(string $workspaceId, array $command, int $port): void
+    {
+        File::ensureDirectoryExists($this->servicesDirectory($workspaceId));
+
+        $result = Process::path($this->directory($workspaceId))->run([
+            'sh', '-c', 'log="$1"; pidfile="$2"; shift 2; nohup "$@" > "$log" 2>&1 < /dev/null & echo $! > "$pidfile"',
+            'sh',
+            $this->servicesDirectory($workspaceId).DIRECTORY_SEPARATOR."{$port}.log",
+            $this->servicesDirectory($workspaceId).DIRECTORY_SEPARATOR."{$port}.pid",
+            'env', '-i', ...$this->environment(), ...$command,
+        ]);
+
+        if ($result->failed()) {
+            throw new RuntimeException('Could not start the service: '.trim($result->errorOutput()));
+        }
+    }
+
+    public function serviceUrl(string $workspaceId, int $port): string
+    {
+        $this->directory($workspaceId);
+
+        return "http://127.0.0.1:{$port}";
+    }
+
+    /**
+     * Stop the workspace's services, then delete its directory.
+     */
     public function destroy(string $workspaceId): void
     {
+        foreach (File::glob($this->servicesDirectory($workspaceId).DIRECTORY_SEPARATOR.'*.pid') as $pidFile) {
+            $pid = (int) trim((string) File::get($pidFile));
+
+            if ($pid > 1) {
+                Process::run(['kill', '-TERM', (string) $pid]);
+            }
+        }
+
+        File::deleteDirectory($this->servicesDirectory($workspaceId));
         File::deleteDirectory($this->directory($workspaceId));
     }
 
@@ -107,6 +147,15 @@ class LocalDriver implements WorkspaceDriver
         }
 
         return rtrim($this->root, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.$workspaceId;
+    }
+
+    /**
+     * Get the directory holding the workspace's service logs and process ids,
+     * next to the workspace so the project never sees them.
+     */
+    protected function servicesDirectory(string $workspaceId): string
+    {
+        return $this->directory($workspaceId).'.services';
     }
 
     /**
