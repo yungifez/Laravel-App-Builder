@@ -85,6 +85,7 @@ const app = useAppPreview({
     projectId: () => props.project.id,
     preview: () => props.preview,
     element: () => props.element,
+    edits: () => props.edits,
     designing,
 });
 
@@ -431,7 +432,6 @@ function send(event: KeyboardEvent): void {
                 class="flex-1"
                 :project-id="project.id"
                 :preview="preview"
-                :element="element"
                 :edits="edits"
                 :state="app"
             />
@@ -592,7 +592,6 @@ function send(event: KeyboardEvent): void {
                 class="max-h-[45svh] shrink-0 rounded-lg border lg:hidden"
                 :project-id="project.id"
                 :preview="preview"
-                :element="element"
                 :edits="edits"
                 :state="app"
             />

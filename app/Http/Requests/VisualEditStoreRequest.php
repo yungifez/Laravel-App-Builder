@@ -40,6 +40,7 @@ class VisualEditStoreRequest extends FormRequest
             'target' => ['required', 'string', 'max:600'],
             'instance' => ['boolean'],
             'revision' => ['required', 'string', 'regex:/^[0-9a-f]{40,64}$/'],
+            'expected' => ['present', 'nullable', 'string', 'max:4000'],
             'device' => ['required', Rule::in(TailwindClasses::DEVICES)],
             'changes' => ['required', 'array:'.implode(',', TailwindClasses::PROPERTIES), 'min:1'],
             'changes.*' => ['nullable'],

@@ -19,6 +19,7 @@ class VisualEditController extends Controller
             $request->user(),
             $request->location(),
             $request->validated('revision'),
+            (string) $request->validated('expected'),
             $request->validated('device'),
             $request->validated('changes'),
         );

@@ -158,6 +158,15 @@ class TailwindClasses
     }
 
     /**
+     * Get a class list with its spacing made regular, so two lists that
+     * differ only in whitespace compare as equal.
+     */
+    public static function normalize(string $classes): string
+    {
+        return implode(' ', preg_split('/\s+/', trim($classes), flags: PREG_SPLIT_NO_EMPTY) ?: []);
+    }
+
+    /**
      * Get the utility for a spacing value in pixels, without a prefix:
      * 16 is "4", 15 is "3.75", 1 is "px" and 12.5 is "[12.5px]".
      */

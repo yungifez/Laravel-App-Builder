@@ -169,6 +169,7 @@ class VisualEditingTest extends TestCase
                 'preview' => $preview->id,
                 'target' => 'resources/js/pages/Plans.vue:2:5',
                 'revision' => $preview->revision,
+                'expected' => 'flex gap-4 p-4 text-sm',
                 'device' => 'md',
                 'changes' => ['gap' => 24, 'padding_x' => 15],
             ])
@@ -203,6 +204,7 @@ class VisualEditingTest extends TestCase
                 'preview' => $preview->id,
                 'target' => 'resources/js/pages/Plans.vue:2:5',
                 'revision' => $old,
+                'expected' => 'flex gap-4 p-4 text-sm',
                 'device' => 'base',
                 'changes' => ['gap' => 24],
             ])
@@ -223,6 +225,7 @@ class VisualEditingTest extends TestCase
             'preview' => $preview->id,
             'target' => 'resources/js/pages/Plans.vue:2:5',
             'revision' => $preview->revision,
+            'expected' => 'flex gap-4 p-4 text-sm',
             'device' => 'base',
             'changes' => ['gap' => 24],
         ])->assertSessionHasNoErrors();
@@ -254,6 +257,113 @@ class VisualEditingTest extends TestCase
                 ->whereNot('edits.0.reverted_at', null));
     }
 
+    public function test_an_edit_is_refused_when_the_element_no_longer_has_the_classes_the_owner_saw()
+    {
+        Queue::fake();
+        $preview = $this->runningPreview();
+
+        $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
+            'preview' => $preview->id,
+            'target' => 'resources/js/pages/Plans.vue:2:5',
+            'revision' => $preview->revision,
+            'expected' => 'flex gap-2 p-4 text-sm',
+            'device' => 'base',
+            'changes' => ['gap' => 24],
+        ])->assertSessionHasErrors(['edit' => 'This part was changed since you picked it. Pick it again to see how it looks now.']);
+
+        $this->assertSame($preview->revision, $this->repository->head($this->project));
+        $this->assertSame(0, $this->project->visualEdits()->count());
+    }
+
+    public function test_the_next_automatic_save_builds_on_the_last_one_without_waiting_for_the_rebuild()
+    {
+        Queue::fake();
+        $preview = $this->runningPreview();
+        $save = fn (string $revision, string $expected, array $changes) => $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
+            'preview' => $preview->id,
+            'target' => 'resources/js/pages/Plans.vue:2:5',
+            'revision' => $revision,
+            'expected' => $expected,
+            'device' => 'base',
+            'changes' => $changes,
+        ]);
+
+        $save((string) $preview->revision, 'flex gap-4 p-4 text-sm', ['gap' => 24])->assertSessionHasNoErrors();
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('edits.0.classes', 'flex gap-6 p-4 text-sm')
+                ->where('edits.0.revision', $this->repository->head($this->project)));
+
+        $save($this->repository->head($this->project), 'flex gap-6 p-4 text-sm', ['padding_x' => 8])->assertSessionHasNoErrors();
+
+        $this->assertStringContainsString('<div class="flex gap-6 px-2 py-4 text-sm">', (string) $this->repository->show($this->project, $this->repository->head($this->project), 'resources/js/pages/Plans.vue'));
+        $this->assertSame(2, $this->project->visualEdits()->count());
+    }
+
+    public function test_the_owner_redoes_an_undone_edit()
+    {
+        Queue::fake();
+        $preview = $this->runningPreview();
+
+        $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
+            'preview' => $preview->id,
+            'target' => 'resources/js/pages/Plans.vue:2:5',
+            'revision' => $preview->revision,
+            'expected' => 'flex gap-4 p-4 text-sm',
+            'device' => 'base',
+            'changes' => ['gap' => 24],
+        ])->assertSessionHasNoErrors();
+        $edit = $this->project->visualEdits()->sole();
+
+        $this->actingAs($this->owner)->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
+        $this->actingAs($this->owner)->delete(route('visual-edits.reversion.destroy', $edit))->assertSessionHasNoErrors();
+
+        $edit->refresh();
+        $this->assertNull($edit->reverted_at);
+        $this->assertSame($this->repository->head($this->project), $edit->commit_sha);
+        $this->assertStringContainsString('<div class="flex gap-6 p-4 text-sm">', (string) $this->repository->show($this->project, $edit->commit_sha, 'resources/js/pages/Plans.vue'));
+        $this->assertSame('Redo a change to how <div> looks', $this->repository->log($this->project, 1)[0]['subject']);
+
+        $this->actingAs($this->owner)
+            ->delete(route('visual-edits.reversion.destroy', $edit))
+            ->assertSessionHasErrors(['edit' => 'This change is already in place.']);
+
+        $this->actingAs(User::factory()->create())
+            ->delete(route('visual-edits.reversion.destroy', $edit))
+            ->assertForbidden();
+    }
+
+    public function test_undo_is_refused_when_something_else_changed_the_element_since()
+    {
+        Queue::fake();
+        $preview = $this->runningPreview();
+
+        $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
+            'preview' => $preview->id,
+            'target' => 'resources/js/pages/Plans.vue:2:5',
+            'revision' => $preview->revision,
+            'expected' => 'flex gap-4 p-4 text-sm',
+            'device' => 'base',
+            'changes' => ['gap' => 24],
+        ])->assertSessionHasNoErrors();
+        $edit = $this->project->visualEdits()->sole();
+
+        // A model changes the same element in a later commit.
+        $head = $this->repository->head($this->project);
+        $contents = (string) $this->repository->show($this->project, $head, 'resources/js/pages/Plans.vue');
+        $this->repository->commitFiles($this->project, $head, ['resources/js/pages/Plans.vue' => str_replace('flex gap-6 p-4 text-sm', 'flex gap-6 p-4 text-sm shadow', $contents)], 'Add a shadow', null);
+        $head = $this->repository->head($this->project);
+
+        $this->actingAs($this->owner)
+            ->post(route('visual-edits.reversion.store', $edit))
+            ->assertSessionHasErrors(['edit' => 'This part was changed since, so going back would lose that change.']);
+
+        $this->assertSame($head, $this->repository->head($this->project));
+        $this->assertNull($edit->fresh()->reverted_at);
+    }
+
     public function test_edits_that_cannot_be_made_in_place_are_refused()
     {
         $preview = $this->runningPreview();
@@ -261,6 +371,7 @@ class VisualEditingTest extends TestCase
             'preview' => $preview->id,
             'target' => 'resources/js/pages/Plans.vue:2:5',
             'revision' => $preview->revision,
+            'expected' => 'flex gap-4 p-4 text-sm',
             'device' => 'base',
             'changes' => ['gap' => 24],
         ]);
@@ -286,6 +397,7 @@ class VisualEditingTest extends TestCase
             'preview' => $preview->id,
             'target' => 'resources/js/pages/Plans.vue:2:5',
             'revision' => $preview->revision,
+            'expected' => 'flex gap-4 p-4 text-sm',
             'device' => 'base',
             'changes' => ['gap' => 24],
         ])->assertForbidden();
@@ -300,6 +412,7 @@ class VisualEditingTest extends TestCase
             'preview' => $other->id,
             'target' => 'resources/js/pages/Plans.vue:2:5',
             'revision' => $this->repository->head($this->project),
+            'expected' => 'flex gap-4 p-4 text-sm',
             'device' => 'base',
             'changes' => ['gap' => 24],
         ])->assertSessionHasErrors('preview');

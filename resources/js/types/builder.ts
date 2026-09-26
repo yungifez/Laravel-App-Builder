@@ -337,6 +337,9 @@ export type VisualEditSummary = {
     tag: string;
     device: Device;
     properties: VisualProperty[];
+    /** The part's classes and the app's version after this edit (or its undo). */
+    classes: string;
+    revision: string;
     created_at: string | null;
     reverted_at: string | null;
 };

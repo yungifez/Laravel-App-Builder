@@ -42,6 +42,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/previews', [ProjectPreviewController::class, 'store'])->name('projects.previews.store');
     Route::post('projects/{project}/visual-edits', [VisualEditController::class, 'store'])->name('visual-edits.store');
     Route::post('visual-edits/{visualEdit}/reversion', [VisualEditReversionController::class, 'store'])->name('visual-edits.reversion.store');
+    Route::delete('visual-edits/{visualEdit}/reversion', [VisualEditReversionController::class, 'destroy'])->name('visual-edits.reversion.destroy');
 
     Route::post('projects/{project}/feature-requests', [FeatureRequestController::class, 'store'])->name('feature-requests.store');
     Route::get('feature-requests/{featureRequest}', [FeatureRequestController::class, 'show'])->name('feature-requests.show');

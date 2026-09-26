@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Form, usePage } from '@inertiajs/vue3';
+import { Form } from '@inertiajs/vue3';
 import {
     AlignCenterVertical,
     AlignEndVertical,
@@ -10,6 +10,7 @@ import {
     AlignHorizontalSpaceAround,
     AlignHorizontalSpaceBetween,
     AlignStartVertical,
+    Check,
     ArrowDown,
     ArrowRight,
     ArrowRightToLine,
@@ -17,8 +18,10 @@ import {
     Columns3,
     EyeOff,
     LayoutGrid,
+    LoaderCircle,
     MessageSquare,
     MousePointerClick,
+    Redo2,
     Rows3,
     StretchVertical,
     TextWrap,
@@ -28,7 +31,6 @@ import {
 import { computed, ref } from 'vue';
 import type { Component } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
-import VisualEditReversionController from '@/actions/App/Http/Controllers/VisualEditReversionController';
 import PixelField from '@/components/design/PixelField.vue';
 import Segmented from '@/components/design/Segmented.vue';
 import SpacingBox from '@/components/design/SpacingBox.vue';
@@ -36,9 +38,8 @@ import Swatches from '@/components/design/Swatches.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import type { AppPreviewState } from '@/composables/useAppPreview';
-import { devices, properties, weights } from '@/lib/visualProperties';
+import { properties, weights } from '@/lib/visualProperties';
 import type {
-    Device,
     EditorPreview,
     InspectedElement,
     VisualEditSummary,
@@ -49,16 +50,12 @@ import type {
 const props = defineProps<{
     projectId: number;
     preview: EditorPreview | null;
-    element?: InspectedElement | null;
     edits: VisualEditSummary[];
     state: AppPreviewState;
 }>();
 
-const page = usePage();
 const asking = ref(false);
-
-const deviceLabel = (key: Device) =>
-    devices.find((option) => option.key === key)?.label ?? key;
+const element = computed(() => props.state.element);
 
 // The choices a property offers, with an icon where one says it better.
 const icons: Partial<Record<string, Component>> = {
@@ -125,7 +122,7 @@ const sizeIndex = computed(() =>
 );
 
 function set(property: VisualProperty, value: VisualValue | null): void {
-    props.state.changes[property] = value;
+    props.state.change(property, value);
 }
 
 const reasons: Record<NonNullable<InspectedElement['reason']>, string> = {
@@ -188,34 +185,23 @@ function describeEdit(edit: VisualEditSummary): string {
                                 ]"
                                 >{{ describeEdit(edit) }}</span
                             >
-                            <Form
-                                v-if="!edit.reverted_at"
-                                v-bind="
-                                    VisualEditReversionController.store.form(
-                                        edit.id,
-                                    )
-                                "
-                                :options="{
-                                    preserveScroll: true,
-                                    preserveState: true,
-                                }"
-                                v-slot="{ processing }"
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                class="size-11 shrink-0 text-muted-foreground sm:size-7"
+                                :disabled="state.saving"
+                                :aria-label="`${edit.reverted_at ? 'Redo' : 'Undo'} ${describeEdit(edit)}`"
+                                :title="edit.reverted_at ? 'Redo' : 'Undo'"
+                                :data-test="`${edit.reverted_at ? 'redo' : 'undo'}-edit-${edit.id}`"
+                                @click="state.step(edit)"
                             >
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    class="size-11 shrink-0 text-muted-foreground sm:size-7"
-                                    :disabled="processing"
-                                    :aria-label="`Undo ${describeEdit(edit)}`"
-                                    title="Undo"
-                                    :data-test="`undo-edit-${edit.id}`"
-                                >
-                                    <Undo2 class="size-3.5" />
-                                </Button>
-                            </Form>
+                                <component
+                                    :is="edit.reverted_at ? Redo2 : Undo2"
+                                    class="size-3.5"
+                                />
+                            </Button>
                         </li>
                     </ul>
-                    <InputError :message="page.props.errors?.edit" />
                 </section>
             </template>
 
@@ -579,41 +565,58 @@ function describeEdit(edit: VisualEditSummary): string {
         </div>
 
         <footer
-            v-if="state.hasChanges || state.saveError"
-            class="space-y-2 border-t bg-background p-3"
+            v-if="preview?.status === 'ready'"
+            class="flex items-center gap-1 border-t bg-background px-2 py-1"
+            data-test="design-status"
         >
+            <Button
+                variant="ghost"
+                size="icon"
+                class="size-11 shrink-0 sm:size-8"
+                :disabled="!state.undoable || state.saving"
+                aria-label="Undo"
+                title="Undo (Ctrl+Z)"
+                data-test="undo"
+                @click="state.undoable && state.step(state.undoable)"
+            >
+                <Undo2 class="size-4" />
+            </Button>
+            <Button
+                variant="ghost"
+                size="icon"
+                class="size-11 shrink-0 sm:size-8"
+                :disabled="!state.redoable || state.saving"
+                aria-label="Redo"
+                title="Redo (Ctrl+Shift+Z)"
+                data-test="redo"
+                @click="state.redoable && state.step(state.redoable)"
+            >
+                <Redo2 class="size-4" />
+            </Button>
             <p
                 v-if="state.saveError"
-                class="text-sm text-destructive"
+                class="min-w-0 flex-1 px-2 text-xs text-destructive"
+                role="alert"
                 data-test="save-error"
             >
                 {{ state.saveError }}
             </p>
-            <div class="flex items-center gap-2">
-                <span class="mr-auto text-xs text-muted-foreground"
-                    >On {{ deviceLabel(state.device) }}</span
-                >
-                <Button
-                    variant="ghost"
-                    :disabled="!state.hasChanges || state.saving"
-                    class="h-11 select-none sm:h-8"
-                    @click="state.clearChanges()"
-                >
-                    Discard
-                </Button>
-                <Button
-                    :disabled="
-                        !state.hasChanges ||
-                        state.saving ||
-                        preview?.updating === true
-                    "
-                    class="h-11 select-none sm:h-8"
-                    data-test="save-look-button"
-                    @click="state.save()"
-                >
-                    Save
-                </Button>
-            </div>
+            <p
+                v-else-if="state.saving"
+                class="ml-auto flex items-center gap-1.5 px-2 text-xs text-muted-foreground"
+                data-test="saving"
+            >
+                <LoaderCircle class="size-3.5 animate-spin" />
+                Saving
+            </p>
+            <p
+                v-else-if="edits.length > 0"
+                class="ml-auto flex items-center gap-1.5 px-2 text-xs text-muted-foreground"
+                data-test="saved"
+            >
+                <Check class="size-3.5" />
+                Saved
+            </p>
         </footer>
     </div>
 </template>

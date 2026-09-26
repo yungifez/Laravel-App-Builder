@@ -81,6 +81,11 @@ class ProjectController extends Controller
                     'tag' => $edit->tag,
                     'device' => $edit->device,
                     'properties' => array_keys($edit->changes),
+                    // What the element looks like after this edit, and the
+                    // commit that made it, so the next automatic save can
+                    // build on it without waiting for the rebuild.
+                    'classes' => $edit->reverted_at === null ? $edit->classes_after : $edit->classes_before,
+                    'revision' => $edit->reverted_at === null ? $edit->commit_sha : $edit->revert_sha,
                     'created_at' => $edit->created_at?->toIso8601String(),
                     'reverted_at' => $edit->reverted_at?->toIso8601String(),
                 ]),

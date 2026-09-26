@@ -1,0 +1,38 @@
+<?php
+
+namespace App\Actions\VisualEditing;
+
+use App\Models\User;
+use App\Models\VisualEdit;
+use Illuminate\Validation\ValidationException;
+
+class RedoVisualEdit
+{
+    public function __construct(private SwapElementClasses $swapElementClasses) {}
+
+    /**
+     * Make an undone change to how an element looks again, only while the
+     * element still looks the way the undo left it.
+     *
+     * @throws ValidationException when the edit is not undone or the element changed since.
+     */
+    public function handle(VisualEdit $edit, User $owner): VisualEdit
+    {
+        if ($edit->reverted_at === null) {
+            throw ValidationException::withMessages(['edit' => __('This change is already in place.')]);
+        }
+
+        $sha = $this->swapElementClasses->handle(
+            $edit,
+            $edit->classes_before,
+            $edit->classes_after,
+            "Redo a change to how <{$edit->tag}> looks\n\nThis makes commit {$edit->commit_sha} again.\nBuilder-Visual-Edit: yes",
+            $owner,
+        );
+
+        // The new commit rebuilds the editable preview (ProjectCommitted).
+        $edit->update(['commit_sha' => $sha, 'revert_sha' => null, 'reverted_at' => null]);
+
+        return $edit;
+    }
+}

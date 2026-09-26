@@ -23,14 +23,17 @@ class ApplyVisualEdit
      * classes are rewritten in place, keeping every class the edit does not
      * touch.
      *
-     * The owner edits what the inspector showed them at "revision". When the
-     * project moved on since, the edit is refused so nothing is overwritten.
+     * The owner edits what the inspector showed them at "revision", with the
+     * classes they expect the element to have. When the project moved on
+     * since, or the element's classes are not the expected ones (a model or
+     * another person changed them), the edit is refused so nothing is
+     * overwritten.
      *
      * @param  array<string, int|float|string|null>  $changes  Property values, in pixels and words
      *
      * @throws ValidationException when the edit cannot be made in place.
      */
-    public function handle(Preview $preview, User $owner, SourceLocation $location, string $revision, string $device, array $changes): VisualEdit
+    public function handle(Preview $preview, User $owner, SourceLocation $location, string $revision, string $expected, string $device, array $changes): VisualEdit
     {
         $project = $preview->project;
 
@@ -46,6 +49,10 @@ class ApplyVisualEdit
         }
 
         $before = $element->classes['value'] ?? '';
+
+        if (TailwindClasses::normalize($before) !== TailwindClasses::normalize($expected)) {
+            throw ValidationException::withMessages(['edit' => __('This part was changed since you picked it. Pick it again to see how it looks now.')]);
+        }
 
         try {
             $after = TailwindClasses::write($before, $device, $changes);
