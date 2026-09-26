@@ -258,12 +258,18 @@ export type VisualProperty =
     | 'columns'
     | 'gap'
     | 'width'
+    | 'max_width'
     | 'padding_x'
     | 'padding_y'
     | 'margin_x'
     | 'margin_y'
     | 'border'
-    | 'radius';
+    | 'radius'
+    | 'shadow'
+    | 'text_size'
+    | 'text_weight'
+    | 'text_color'
+    | 'background';
 
 export type VisualValue = number | string;
 

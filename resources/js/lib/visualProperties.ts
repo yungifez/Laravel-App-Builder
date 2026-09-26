@@ -40,6 +40,16 @@ export const properties: PropertyDefinition[] = [
                 { value: 'block', label: 'One under another' },
                 { value: 'flex', label: 'In a line' },
                 { value: 'grid', label: 'In a grid' },
+                { value: 'inline', label: 'Inside the text' },
+                { value: 'inline-block', label: 'Inside the text, as a box' },
+                {
+                    value: 'inline-flex',
+                    label: 'Inside the text, contents in a line',
+                },
+                {
+                    value: 'inline-grid',
+                    label: 'Inside the text, contents in a grid',
+                },
                 { value: 'hidden', label: 'Hidden' },
             ],
         },
@@ -136,6 +146,30 @@ export const properties: PropertyDefinition[] = [
         },
     },
     {
+        key: 'max_width',
+        label: 'Widest it gets',
+        group: 'Size',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'none', label: 'No limit' },
+                { value: 'full', label: 'The space it is in' },
+                { value: 'prose', label: 'A comfortable reading width' },
+                { value: 'xs', label: '320 px' },
+                { value: 'sm', label: '384 px' },
+                { value: 'md', label: '448 px' },
+                { value: 'lg', label: '512 px' },
+                { value: 'xl', label: '576 px' },
+                { value: '2xl', label: '672 px' },
+                { value: '3xl', label: '768 px' },
+                { value: '4xl', label: '896 px' },
+                { value: '5xl', label: '1024 px' },
+                { value: '6xl', label: '1152 px' },
+                { value: '7xl', label: '1280 px' },
+            ],
+        },
+    },
+    {
         key: 'padding_x',
         label: 'Space inside, left and right',
         group: 'Space',
@@ -182,6 +216,105 @@ export const properties: PropertyDefinition[] = [
             ],
         },
     },
+    {
+        key: 'shadow',
+        label: 'Shadow',
+        group: 'Edges',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'none', label: 'None' },
+                { value: '2xs', label: 'Barely there' },
+                { value: 'xs', label: 'Faint' },
+                { value: 'sm', label: 'Light' },
+                { value: 'md', label: 'Medium' },
+                { value: 'lg', label: 'Strong' },
+                { value: 'xl', label: 'Very strong' },
+                { value: '2xl', label: 'Floating' },
+            ],
+        },
+    },
+    {
+        key: 'text_size',
+        label: 'Text size',
+        group: 'Text',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'xs', label: 'Smallest' },
+                { value: 'sm', label: 'Small' },
+                { value: 'base', label: 'Normal' },
+                { value: 'lg', label: 'Large' },
+                { value: 'xl', label: 'Larger' },
+                { value: '2xl', label: 'Heading' },
+                { value: '3xl', label: 'Big heading' },
+                { value: '4xl', label: 'Bigger heading' },
+                { value: '5xl', label: 'Huge' },
+                { value: '6xl', label: 'Largest' },
+            ],
+        },
+    },
+    {
+        key: 'text_weight',
+        label: 'Text weight',
+        group: 'Text',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'light', label: 'Light' },
+                { value: 'normal', label: 'Normal' },
+                { value: 'medium', label: 'Medium' },
+                { value: 'semibold', label: 'Semi-bold' },
+                { value: 'bold', label: 'Bold' },
+            ],
+        },
+    },
+    // Colours come from the app's own theme, so they stay right in dark
+    // mode and when the theme changes.
+    {
+        key: 'text_color',
+        label: 'Text colour',
+        group: 'Colours',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'foreground', label: 'Normal text' },
+                { value: 'muted-foreground', label: 'Quiet text' },
+                { value: 'primary', label: 'Main colour' },
+                {
+                    value: 'primary-foreground',
+                    label: 'Text on the main colour',
+                },
+                {
+                    value: 'secondary-foreground',
+                    label: 'Text on the second colour',
+                },
+                {
+                    value: 'accent-foreground',
+                    label: 'Text on the highlight',
+                },
+                { value: 'destructive', label: 'Warning' },
+            ],
+        },
+    },
+    {
+        key: 'background',
+        label: 'Background',
+        group: 'Colours',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'transparent', label: 'None' },
+                { value: 'background', label: 'Page' },
+                { value: 'card', label: 'Panel' },
+                { value: 'muted', label: 'Quiet' },
+                { value: 'primary', label: 'Main colour' },
+                { value: 'secondary', label: 'Second colour' },
+                { value: 'accent', label: 'Highlight' },
+                { value: 'destructive', label: 'Warning' },
+            ],
+        },
+    },
 ];
 
 const radii: Record<string, string> = {
@@ -204,6 +337,57 @@ const widths: Record<string, string> = {
     screen: '100vw',
     min: 'min-content',
     max: 'max-content',
+};
+
+// Tailwind's defaults, for when the app's CSS leaves a theme variable out
+// because nothing used it yet.
+const containers: Record<string, string> = {
+    xs: '20rem',
+    sm: '24rem',
+    md: '28rem',
+    lg: '32rem',
+    xl: '36rem',
+    '2xl': '42rem',
+    '3xl': '48rem',
+    '4xl': '56rem',
+    '5xl': '64rem',
+    '6xl': '72rem',
+    '7xl': '80rem',
+};
+
+const shadows: Record<string, string> = {
+    '2xs': '0 1px rgb(0 0 0 / 0.05)',
+    xs: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
+    sm: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
+    md: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+    lg: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
+    xl: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)',
+    '2xl': '0 25px 50px -12px rgb(0 0 0 / 0.25)',
+};
+
+const textSizes: Record<string, [string, string]> = {
+    xs: ['0.75rem', '1rem'],
+    sm: ['0.875rem', '1.25rem'],
+    base: ['1rem', '1.5rem'],
+    lg: ['1.125rem', '1.75rem'],
+    xl: ['1.25rem', '1.75rem'],
+    '2xl': ['1.5rem', '2rem'],
+    '3xl': ['1.875rem', '2.25rem'],
+    '4xl': ['2.25rem', '2.5rem'],
+    '5xl': ['3rem', '1'],
+    '6xl': ['3.75rem', '1'],
+};
+
+// A theme colour, from Tailwind's variable or the theme's own.
+const color = (token: VisualValue): string =>
+    `var(--color-${token}, var(--${token}))`;
+
+const weights: Record<string, string> = {
+    light: '300',
+    normal: '400',
+    medium: '500',
+    semibold: '600',
+    bold: '700',
 };
 
 const flexPositions: Record<string, string> = {
@@ -231,7 +415,12 @@ export function inlineStyles(
     const styles: Record<string, string> = {};
 
     for (const [property, value] of Object.entries(changes)) {
-        if (value === null || value === undefined || value === 'mixed') {
+        if (
+            value === null ||
+            value === undefined ||
+            value === 'mixed' ||
+            value === 'custom'
+        ) {
             continue;
         }
 
@@ -282,6 +471,36 @@ export function inlineStyles(
             case 'radius':
                 styles.borderRadius = radii[value] ?? '0';
                 break;
+            case 'max_width':
+                styles.maxWidth =
+                    value === 'none'
+                        ? 'none'
+                        : value === 'full'
+                          ? '100%'
+                          : value === 'prose'
+                            ? '65ch'
+                            : `var(--container-${value}, ${containers[value] ?? 'none'})`;
+                break;
+            case 'shadow':
+                styles.boxShadow =
+                    value === 'none'
+                        ? 'none'
+                        : `var(--shadow-${value}, ${shadows[value] ?? 'none'})`;
+                break;
+            case 'text_size':
+                styles.fontSize = `var(--text-${value}, ${textSizes[value]?.[0] ?? 'inherit'})`;
+                styles.lineHeight = `var(--text-${value}--line-height, ${textSizes[value]?.[1] ?? 'inherit'})`;
+                break;
+            case 'text_weight':
+                styles.fontWeight = weights[value] ?? String(value);
+                break;
+            case 'text_color':
+                styles.color = color(value);
+                break;
+            case 'background':
+                styles.backgroundColor =
+                    value === 'transparent' ? 'transparent' : color(value);
+                break;
         }
     }
 
@@ -301,6 +520,10 @@ export function describeValue(
 
     if (value === 'mixed') {
         return 'different on each side';
+    }
+
+    if (value === 'custom') {
+        return 'a colour of its own';
     }
 
     if (definition.input.kind === 'choice') {

@@ -6,14 +6,16 @@ use InvalidArgumentException;
 
 /**
  * Reads and writes visual properties (width, space, layout, border, corners,
- * columns) as Tailwind utility classes, per device.
+ * shadow, columns, text and colours) as Tailwind utility classes, per device.
  *
  * Devices are Tailwind's own breakpoints: "base" (every screen, so phones),
  * "md" (tablets and up) and "lg" (desktops). A class with any other variant
  * (hover:, sm:, dark:) or one this adapter does not know is never touched.
  *
  * Spacing is written with theme-relative utilities where Tailwind v4 has one
- * (15px is `p-3.75`), and as an arbitrary value otherwise.
+ * (15px is `p-3.75`), and as an arbitrary value otherwise. Colours are the
+ * app's theme tokens only; any other colour reads as "custom", and choosing
+ * a token replaces it.
  */
 class TailwindClasses
 {
@@ -27,7 +29,8 @@ class TailwindClasses
      */
     public const PROPERTIES = [
         'layout', 'direction', 'wrap', 'align', 'justify', 'columns', 'gap',
-        'width', 'padding_x', 'padding_y', 'margin_x', 'margin_y', 'border', 'radius',
+        'width', 'max_width', 'padding_x', 'padding_y', 'margin_x', 'margin_y', 'border', 'radius', 'shadow',
+        'text_size', 'text_weight', 'text_color', 'background',
     ];
 
     protected const KEYWORDS = [
@@ -37,7 +40,19 @@ class TailwindClasses
         'align' => ['items-start' => 'start', 'items-center' => 'center', 'items-end' => 'end', 'items-stretch' => 'stretch', 'items-baseline' => 'baseline'],
         'justify' => ['justify-start' => 'start', 'justify-center' => 'center', 'justify-end' => 'end', 'justify-between' => 'between', 'justify-around' => 'around', 'justify-evenly' => 'evenly'],
         'radius' => ['rounded-none' => 'none', 'rounded-xs' => 'xs', 'rounded-sm' => 'sm', 'rounded' => 'sm', 'rounded-md' => 'md', 'rounded-lg' => 'lg', 'rounded-xl' => 'xl', 'rounded-2xl' => '2xl', 'rounded-3xl' => '3xl', 'rounded-4xl' => '4xl', 'rounded-full' => 'full'],
+        'max_width' => ['max-w-none' => 'none', 'max-w-xs' => 'xs', 'max-w-sm' => 'sm', 'max-w-md' => 'md', 'max-w-lg' => 'lg', 'max-w-xl' => 'xl', 'max-w-2xl' => '2xl', 'max-w-3xl' => '3xl', 'max-w-4xl' => '4xl', 'max-w-5xl' => '5xl', 'max-w-6xl' => '6xl', 'max-w-7xl' => '7xl', 'max-w-prose' => 'prose', 'max-w-full' => 'full'],
+        'shadow' => ['shadow-none' => 'none', 'shadow-2xs' => '2xs', 'shadow-xs' => 'xs', 'shadow-sm' => 'sm', 'shadow' => 'sm', 'shadow-md' => 'md', 'shadow-lg' => 'lg', 'shadow-xl' => 'xl', 'shadow-2xl' => '2xl'],
+        'text_size' => ['text-xs' => 'xs', 'text-sm' => 'sm', 'text-base' => 'base', 'text-lg' => 'lg', 'text-xl' => 'xl', 'text-2xl' => '2xl', 'text-3xl' => '3xl', 'text-4xl' => '4xl', 'text-5xl' => '5xl', 'text-6xl' => '6xl'],
+        'text_weight' => ['font-light' => 'light', 'font-normal' => 'normal', 'font-medium' => 'medium', 'font-semibold' => 'semibold', 'font-bold' => 'bold'],
+        'text_color' => ['text-foreground' => 'foreground', 'text-muted-foreground' => 'muted-foreground', 'text-primary' => 'primary', 'text-primary-foreground' => 'primary-foreground', 'text-secondary-foreground' => 'secondary-foreground', 'text-accent-foreground' => 'accent-foreground', 'text-destructive' => 'destructive'],
+        'background' => ['bg-transparent' => 'transparent', 'bg-background' => 'background', 'bg-card' => 'card', 'bg-muted' => 'muted', 'bg-primary' => 'primary', 'bg-secondary' => 'secondary', 'bg-accent' => 'accent', 'bg-destructive' => 'destructive'],
     ];
+
+    /**
+     * Colours that are not theme tokens: Tailwind's palette, white and
+     * black, a token with an opacity, or a written colour code.
+     */
+    protected const CUSTOM_COLOR = '/^(text|bg)-(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}|white|black|(?:foreground|muted-foreground|primary|primary-foreground|secondary|secondary-foreground|accent|accent-foreground|destructive|background|card|muted)|\[#[0-9a-fA-F]{3,8}\])(?:\/\d+)?$/';
 
     protected const WIDTH_KEYWORDS = ['full' => 'full', 'auto' => 'auto', 'fit' => 'fit', 'screen' => 'screen', 'min' => 'min', 'max' => 'max'];
 
@@ -200,6 +215,10 @@ class TailwindClasses
             if (isset($keywords[$utility])) {
                 return [$device, $property, $keywords[$utility]];
             }
+        }
+
+        if (preg_match(self::CUSTOM_COLOR, $utility, $match) === 1) {
+            return [$device, $match[1] === 'bg' ? 'background' : 'text_color', 'custom'];
         }
 
         if (preg_match('/^grid-cols-(\d+)$/', $utility, $match) === 1) {

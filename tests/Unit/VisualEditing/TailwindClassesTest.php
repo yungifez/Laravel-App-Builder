@@ -20,6 +20,7 @@ class TailwindClassesTest extends TestCase
             'width' => '50%',
             'radius' => 'lg',
             'border' => 1,
+            'text_size' => 'sm',
             'padding_x' => 15,
             'padding_y' => 15,
         ], $values['base']);
@@ -96,6 +97,36 @@ class TailwindClassesTest extends TestCase
         $this->assertSame(['radius' => 'mixed'], TailwindClasses::read($classes)['lg']);
         $this->assertSame('lg', TailwindClasses::read('rounded-lg')['base']['radius']);
         $this->assertSame('absolute rounded-full lg:rounded-t-none lg:rounded-r-lg', TailwindClasses::write($classes, 'base', ['radius' => 'full']));
+    }
+
+    public function test_text_shadow_and_max_width_are_read_and_written_as_utilities()
+    {
+        $this->assertSame(
+            ['max_width' => '2xl', 'shadow' => 'sm', 'text_size' => 'lg', 'text_weight' => 'semibold'],
+            TailwindClasses::read('max-w-2xl shadow text-lg font-semibold text-left')['base'],
+        );
+        $this->assertSame(
+            'max-w-prose shadow-md text-xl font-bold text-left',
+            TailwindClasses::write('max-w-2xl shadow text-lg font-semibold text-left', 'base', [
+                'max_width' => 'prose', 'shadow' => 'md', 'text_size' => 'xl', 'text_weight' => 'bold',
+            ]),
+        );
+    }
+
+    public function test_colours_are_theme_tokens_and_any_other_colour_reads_as_custom()
+    {
+        $this->assertSame(
+            ['text_color' => 'muted-foreground', 'background' => 'card'],
+            TailwindClasses::read('text-muted-foreground bg-card bg-cover')['base'],
+        );
+        $this->assertSame(['text_color' => 'custom', 'background' => 'custom'], TailwindClasses::read('text-gray-600 bg-primary/10')['base']);
+        $this->assertSame(['background' => 'custom'], TailwindClasses::read('md:bg-[#ff0000]')['md']);
+
+        // Choosing a token replaces the custom colour, so the two never fight.
+        $this->assertSame('bg-muted text-center', TailwindClasses::write('bg-primary/10 text-center', 'base', ['background' => 'muted']));
+
+        $this->expectException(InvalidArgumentException::class);
+        TailwindClasses::write('', 'base', ['text_color' => 'red-500']);
     }
 
     public function test_it_refuses_unknown_devices_properties_and_values()

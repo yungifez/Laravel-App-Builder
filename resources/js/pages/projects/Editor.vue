@@ -248,7 +248,8 @@ function valueOf(property: VisualProperty): VisualValue | null {
 }
 
 function visible(definition: PropertyDefinition): boolean {
-    const layout = valueOf('layout');
+    // Contents inside the text line up the same way as contents in a box.
+    const layout = String(valueOf('layout') ?? '').replace('inline-', '');
 
     return (
         definition.when === undefined ||
@@ -342,8 +343,8 @@ const groups = computed(() =>
                     {{ project.name }}
                 </h1>
                 <p class="text-sm text-muted-foreground">
-                    Point at a part of your app, then change its size, space and
-                    shape.
+                    Point at a part of your app, then change its size, space,
+                    shape, text and colours.
                 </p>
             </header>
 
