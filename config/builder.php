@@ -131,6 +131,49 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Coding Agents
+    |--------------------------------------------------------------------------
+    |
+    | The "sdk" construction driver builds with a coding agent SDK working in
+    | the workspace, through the Node runner in resources/agent-runner. The
+    | agents are tried in "order": the next one is used only when a provider
+    | cannot serve the task (down, overloaded, rate-limited, out of quota or
+    | refusing the credentials), never because a change failed. An agent whose
+    | provider failed "circuit.failures" times is tried last for
+    | "circuit.minutes". The reviewer always uses the other provider from the
+    | one that built the change.
+    |
+    */
+
+    'agents' => [
+        'order' => ['claude', 'codex'],
+
+        'runner' => [
+            'node' => env('BUILDER_AGENT_NODE', 'node'),
+            'path' => env('BUILDER_AGENT_RUNNER', resource_path('agent-runner/run.mjs')),
+        ],
+
+        'adapters' => [
+            'claude' => ['provider' => 'anthropic', 'model' => env('BUILDER_CLAUDE_AGENT_MODEL')],
+            'codex' => ['provider' => 'openai', 'model' => env('BUILDER_CODEX_AGENT_MODEL')],
+        ],
+
+        'max_turns' => (int) env('BUILDER_AGENT_MAX_TURNS', 80),
+        'max_budget_usd' => (float) env('BUILDER_AGENT_MAX_BUDGET_USD', 5),
+
+        'circuit' => [
+            'failures' => 3,
+            'minutes' => 10,
+        ],
+
+        'reviewers' => [
+            'anthropic' => ['provider' => 'openai', 'model' => env('BUILDER_OPENAI_REVIEWER_MODEL')],
+            'openai' => ['provider' => 'anthropic', 'model' => env('BUILDER_ANTHROPIC_REVIEWER_MODEL')],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Project Context
     |--------------------------------------------------------------------------
     |

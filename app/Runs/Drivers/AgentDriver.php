@@ -50,7 +50,7 @@ class AgentDriver implements ConstructionDriver
     public function build(Run $run, Plan $plan, ToolSession $tools): string
     {
         $response = FeatureCoder::make($tools, "coder:{$run->repairs}")->prompt(
-            $this->buildPrompt($run, $plan, $tools),
+            $this->buildPrompt($run, $plan)."\n\nThe workspace is at revision {$tools->revision()}.",
             provider: ModelRole::Coder->provider(),
             model: ModelRole::Coder->model(),
         );
@@ -64,10 +64,18 @@ class AgentDriver implements ConstructionDriver
 
     public function review(Run $run, ReviewEvidence $evidence): Review
     {
+        return $this->reviewWith($run, $evidence, ModelRole::Reviewer->provider(), ModelRole::Reviewer->model());
+    }
+
+    /**
+     * Have the reviewer judge the change on the given provider and model.
+     */
+    protected function reviewWith(Run $run, ReviewEvidence $evidence, string $provider, ?string $model): Review
+    {
         $response = ChangeReviewer::make()->prompt(
             $this->reviewPrompt($evidence),
-            provider: ModelRole::Reviewer->provider(),
-            model: ModelRole::Reviewer->model(),
+            provider: $provider,
+            model: $model,
         );
 
         $this->recordModelUsage->handle($run, ModelRole::Reviewer, $response);
@@ -134,7 +142,7 @@ class AgentDriver implements ConstructionDriver
     /**
      * Describe the plan, and any feedback to address, for the coder.
      */
-    protected function buildPrompt(Run $run, Plan $plan, ToolSession $tools): string
+    protected function buildPrompt(Run $run, Plan $plan): string
     {
         $sections = ["## Owner's request\n\n{$run->featureRequest->prompt}"];
 
@@ -164,8 +172,6 @@ class AgentDriver implements ConstructionDriver
         if ($run->feedback !== null) {
             $sections[] = "## Fix these problems with your earlier attempt\n\nThe files already contain your earlier changes.\n\n".$this->list($run->feedback['details']);
         }
-
-        $sections[] = "The workspace is at revision {$tools->revision()}.";
 
         return implode("\n\n", $sections);
     }

@@ -59,12 +59,16 @@ class DockerDriver implements WorkspaceDriver
      * Run a command in the container under coreutils `timeout`, so the process
      * inside the container is killed too, not just the local docker client.
      */
-    public function exec(string $workspaceId, array $command, int $timeoutSeconds): CommandResult
+    public function exec(string $workspaceId, array $command, int $timeoutSeconds, array $environment = []): CommandResult
     {
         $startedAt = hrtime(true);
 
-        $result = Process::timeout($timeoutSeconds + 30)->run([
-            $this->binary, 'exec', $workspaceId,
+        // "-e NAME" without a value makes docker read the value from its own
+        // environment, so secrets never appear on a command line.
+        $variables = array_merge(...array_map(fn (string $name) => ['-e', $name], array_keys($environment)));
+
+        $result = Process::timeout($timeoutSeconds + 30)->env($environment)->run([
+            $this->binary, 'exec', ...$variables, $workspaceId,
             'timeout', '--kill-after=5', "{$timeoutSeconds}s",
             ...$command,
         ]);

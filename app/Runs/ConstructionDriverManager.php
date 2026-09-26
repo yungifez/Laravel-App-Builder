@@ -6,6 +6,7 @@ use App\Features\FeatureGeneratorManager;
 use App\Runs\Contracts\ConstructionDriver;
 use App\Runs\Drivers\AgentDriver;
 use App\Runs\Drivers\ScriptedDriver;
+use App\Runs\Drivers\SdkDriver;
 use Illuminate\Support\Manager;
 
 /**
@@ -35,5 +36,13 @@ class ConstructionDriverManager extends Manager
     public function createAgentDriver(): ConstructionDriver
     {
         return $this->container->make(AgentDriver::class);
+    }
+
+    /**
+     * Create the driver that builds with a coding agent SDK in the workspace.
+     */
+    public function createSdkDriver(): ConstructionDriver
+    {
+        return $this->container->make(SdkDriver::class);
     }
 }

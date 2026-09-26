@@ -41,14 +41,19 @@ class LocalDriver implements WorkspaceDriver
         return $spec->name;
     }
 
-    public function exec(string $workspaceId, array $command, int $timeoutSeconds): CommandResult
+    /**
+     * The local driver is for trusted development use: extra environment
+     * variables are passed to `env` on its command line.
+     */
+    public function exec(string $workspaceId, array $command, int $timeoutSeconds, array $environment = []): CommandResult
     {
         $startedAt = hrtime(true);
+        $extra = array_map(fn (string $name, string $value) => "{$name}={$value}", array_keys($environment), $environment);
 
         try {
             $result = Process::path($this->directory($workspaceId))
                 ->timeout($timeoutSeconds)
-                ->run(['env', '-i', ...$this->environment(), ...$command]);
+                ->run(['env', '-i', ...$this->environment(), ...$extra, ...$command]);
         } catch (ProcessTimedOutException $exception) {
             return new CommandResult(
                 exitCode: self::TIMEOUT_EXIT_CODE,
