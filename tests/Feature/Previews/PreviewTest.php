@@ -34,6 +34,7 @@ class PreviewTest extends TestCase
         config([
             'builder.preview.workspace_driver' => 'fake',
             'builder.preview.domain' => 'preview.test',
+            'builder.preview.listen_host' => '127.0.0.1',
             'builder.preview.public_port' => null,
             'builder.preview.setup' => [
                 ['name' => 'Install', 'command' => ['composer', 'install'], 'timeout' => 600],

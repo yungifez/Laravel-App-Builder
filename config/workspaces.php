@@ -113,6 +113,9 @@ return [
             'poll_seconds' => (int) env('WORKSPACE_RUNNER_POLL_SECONDS', 5),
             // Where the coding agent runner is inside a box.
             'agent_runner' => env('WORKSPACE_RUNNER_AGENT_RUNNER', '/opt/agent-runner/run.mjs'),
+            // Where the preview locator is inside a box. It stays outside the
+            // workspace, so it never reaches the customer's repository.
+            'preview_locator' => env('WORKSPACE_RUNNER_PREVIEW_LOCATOR', '/opt/preview-tools/locate-sources.mjs'),
             // A runner must take a command within "answer_seconds" and
             // finish it within its timeout plus "grace_seconds".
             'answer_seconds' => (int) env('WORKSPACE_RUNNER_ANSWER_SECONDS', 60),

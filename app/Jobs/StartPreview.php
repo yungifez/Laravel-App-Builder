@@ -94,7 +94,7 @@ class StartPreview implements ShouldQueue
             $workspaceFiles->sync($project, $workspace);
 
             if ($this->preview->editable) {
-                $this->run($runWorkspaceCommand, $workspace, self::locatorCommand(), 300, __('The preview could not be prepared for editing.'));
+                $this->run($runWorkspaceCommand, $workspace, self::locatorCommand($workspace), 300, __('The preview could not be prepared for editing.'));
 
                 /** @var list<array{name: string, command: list<string>, timeout: int}> $rebuild */
                 $rebuild = config('builder.preview.rebuild', []);
@@ -165,11 +165,14 @@ class StartPreview implements ShouldQueue
      *
      * @return list<string>
      */
-    public static function locatorCommand(): array
+    public static function locatorCommand(?Workspace $workspace = null): array
     {
+        // A box has its own read-only copy; the other drivers use ours.
+        $boxPath = $workspace === null ? null : config("workspaces.drivers.{$workspace->driver}.preview_locator");
+
         return [
             Config::string('builder.preview.locator.node'),
-            Config::string('builder.preview.locator.path'),
+            is_string($boxPath) && $boxPath !== '' ? $boxPath : Config::string('builder.preview.locator.path'),
             ...array_values(array_filter(Config::array('builder.preview.locator.directories'), is_string(...))),
         ];
     }

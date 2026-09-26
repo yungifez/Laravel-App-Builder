@@ -4,7 +4,7 @@
 # PHP on the host) also works.
 # This file is NOT the future isolation design for customer code: it must
 # never mount the Docker socket. `runner` stands in for a workspace box: it
-# gets only the two runner folders and its own volume, never the project,
+# gets only the runner and preview-tool folders and its own volume, never the project,
 # .env or the database (WORKSPACE_DRIVER=runner). `reverb` rings its doorbell.
 name: builder-control-plane
 
@@ -58,6 +58,7 @@ services:
         volumes:
             - './resources/box-runner:/opt/box-runner:ro'
             - './resources/agent-runner:/opt/agent-runner:ro'
+            - './resources/preview-tools:/opt/preview-tools:ro'
             - box-workspaces:/workspaces
         depends_on:
             - laravel.test
