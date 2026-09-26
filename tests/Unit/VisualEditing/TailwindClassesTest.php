@@ -88,6 +88,16 @@ class TailwindClassesTest extends TestCase
         $this->assertSame('flex-wrap justify-between', TailwindClasses::write('flex-nowrap', 'base', ['wrap' => 'wrap', 'justify' => 'between']));
     }
 
+    public function test_corners_rounded_one_side_at_a_time_read_as_mixed_and_are_replaced()
+    {
+        $classes = 'absolute rounded-t-lg rounded-sm lg:rounded-t-none lg:rounded-r-lg';
+
+        $this->assertSame(['radius' => 'mixed'], TailwindClasses::read($classes)['base']);
+        $this->assertSame(['radius' => 'mixed'], TailwindClasses::read($classes)['lg']);
+        $this->assertSame('lg', TailwindClasses::read('rounded-lg')['base']['radius']);
+        $this->assertSame('absolute rounded-full lg:rounded-t-none lg:rounded-r-lg', TailwindClasses::write($classes, 'base', ['radius' => 'full']));
+    }
+
     public function test_it_refuses_unknown_devices_properties_and_values()
     {
         foreach ([

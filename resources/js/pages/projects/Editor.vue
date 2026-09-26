@@ -559,7 +559,7 @@ const groups = computed(() =>
                             <div
                                 v-for="definition in group.items"
                                 :key="definition.key"
-                                class="grid grid-cols-[minmax(0,1fr)_9rem] items-center gap-2 border-t py-1 first:border-t-0"
+                                class="grid grid-cols-[minmax(0,1fr)_11rem] items-center gap-2 border-t py-1 first:border-t-0"
                             >
                                 <Label
                                     :for="`property-${definition.key}`"

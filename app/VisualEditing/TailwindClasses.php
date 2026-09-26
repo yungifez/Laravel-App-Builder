@@ -75,7 +75,7 @@ class TailwindClasses
             if (is_array($value)) {
                 $sides = $values[$device][$property] ?? [];
                 $values[$device][$property] = array_replace(is_array($sides) ? $sides : [], $value);
-            } else {
+            } elseif (($values[$device][$property] ?? null) !== 'mixed') {
                 $values[$device][$property] = $value;
             }
         }
@@ -188,6 +188,12 @@ class TailwindClasses
 
         if (! in_array($device, self::DEVICES, true)) {
             return null;
+        }
+
+        // One corner or side rounded on its own: the corners differ, and
+        // setting the corners replaces these classes.
+        if (preg_match('/^rounded-(?:[trbl]|tl|tr|br|bl|[se]|ss|se|es|ee)(?:-(?:none|xs|sm|md|lg|xl|[234]xl|full))?$/', $utility) === 1) {
+            return [$device, 'radius', 'mixed'];
         }
 
         foreach (self::KEYWORDS as $property => $keywords) {
