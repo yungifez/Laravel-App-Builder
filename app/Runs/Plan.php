@@ -24,6 +24,7 @@ final readonly class Plan
      * @param  list<string>  $acceptance  Protected acceptance test files that apply to the change
      * @param  list<string>  $capabilities  The areas of the product (`.builder/capabilities`) the change is about
      * @param  list<array{area: string|null, statement: string}>  $preserve  What must stay as it is, by area
+     * @param  array{text: string, why: string, options: list<string>, recommended: string|null}|null  $question  The one product question to ask the owner before building, if any
      */
     public function __construct(
         public string $summary,
@@ -37,6 +38,7 @@ final readonly class Plan
         public ?string $understoodAs = null,
         public ?string $currentBehavior = null,
         public array $preserve = [],
+        public ?array $question = null,
     ) {}
 
     /**
@@ -72,13 +74,19 @@ final readonly class Plan
             'preserve' => ['sometimes', 'array', 'max:20'],
             'preserve.*.area' => ['nullable', 'string', 'max:60'],
             'preserve.*.statement' => ['required', 'string', 'max:500'],
+            'question' => ['sometimes', 'nullable', 'array'],
+            'question.text' => ['required_with:question', 'string', 'max:300'],
+            'question.why' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'question.options' => ['required_with:question', 'array', 'min:2', 'max:4'],
+            'question.options.*' => ['required', 'string', 'max:120', 'distinct'],
+            'question.recommended' => ['sometimes', 'nullable', 'string', 'max:120'],
         ]);
 
         if ($validator->fails()) {
             throw new ConstructionFailed(__('The planner returned an invalid plan: :errors', ['errors' => implode(' ', $validator->errors()->all())]));
         }
 
-        /** @var array{summary: string, acceptance_criteria: array<int, string>, assumptions: array<int, string>, tasks: array<int, string>, steps: array<int, array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, capabilities?: array<int, string>, understood_as?: string|null, current_behavior?: string|null, preserve?: array<int, array{area?: string|null, statement: string}>} $valid */
+        /** @var array{summary: string, acceptance_criteria: array<int, string>, assumptions: array<int, string>, tasks: array<int, string>, steps: array<int, array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, capabilities?: array<int, string>, understood_as?: string|null, current_behavior?: string|null, preserve?: array<int, array{area?: string|null, statement: string}>, question?: array{text: string, why?: string|null, options: array<int, string>, recommended?: string|null}|null} $valid */
         $valid = $validator->validated();
 
         return new self(
@@ -100,7 +108,28 @@ final readonly class Plan
             understoodAs: $valid['understood_as'] ?? null,
             currentBehavior: $valid['current_behavior'] ?? null,
             preserve: array_values(array_map(self::preserveItem(...), $valid['preserve'] ?? [])),
+            question: isset($valid['question']) ? self::question($valid['question']) : null,
         );
+    }
+
+    /**
+     * Read the planner's question. A recommendation that is not one of the
+     * options is dropped rather than shown as a choice the owner cannot make.
+     *
+     * @param  array{text: string, why?: string|null, options: array<int, string>, recommended?: string|null}  $question
+     * @return array{text: string, why: string, options: list<string>, recommended: string|null}
+     */
+    protected static function question(array $question): array
+    {
+        $options = array_values(array_map('trim', $question['options']));
+        $recommended = $question['recommended'] ?? null;
+
+        return [
+            'text' => trim($question['text']),
+            'why' => trim($question['why'] ?? ''),
+            'options' => $options,
+            'recommended' => in_array($recommended, $options, true) ? $recommended : null,
+        ];
     }
 
     /**

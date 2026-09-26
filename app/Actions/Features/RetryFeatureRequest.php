@@ -21,7 +21,8 @@ class RetryFeatureRequest
      */
     public static function retryable(FeatureRequest $featureRequest): bool
     {
-        if ($featureRequest->status === FeatureRequestStatus::Generated) {
+        // A change that waits for the owner's answer has not stopped.
+        if ($featureRequest->status === FeatureRequestStatus::Generated || $featureRequest->latestRun?->question !== null) {
             return false;
         }
 

@@ -156,6 +156,17 @@ export type Run = {
     status: RunStatus;
     driver: string;
     error: string | null;
+    question: {
+        text: string;
+        why: string;
+        options: string[];
+        recommended: string | null;
+    } | null;
+    answers: {
+        question: string;
+        answer: string;
+        decided_by: 'owner' | 'builder';
+    }[];
     workspace_revision: number;
     plan: {
         summary: string;

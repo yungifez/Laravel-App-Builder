@@ -22,6 +22,7 @@ class StartRun
             $run = $featureRequest->runs()->create([
                 'driver' => $this->drivers->getDefaultDriver(),
                 'status' => RunStatus::Queued,
+                'question_limit' => (int) config('builder.construction.questions.before_building'),
             ]);
 
             $run->recordEvent('created', ['driver' => $run->driver]);

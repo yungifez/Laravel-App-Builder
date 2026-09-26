@@ -128,6 +128,19 @@ class ConstructRun
         $workspace = $this->prepareRunWorkspace->handle($run, $lease);
         $planningContext = $this->gatherPlanningContext->handle($run, $workspace);
         $plan = $driver->plan($run, $planningContext);
+
+        // One product question before building (§7): the run waits for the
+        // owner and plans again with their answer. The gate is the run's
+        // question limit, not the model's wish to ask.
+        if ($plan->question !== null && $planningContext->mayAsk) {
+            $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['question' => $plan->question, 'error' => null], [
+                'reason' => 'question',
+                'question' => $plan->question['text'],
+            ]);
+
+            return;
+        }
+
         $pack = $this->compileContext->handle($planningContext->projectContext, [...$planningContext->preselectedCapabilities(), ...$plan->capabilities]);
 
         $this->recordEvent($run, $lease, 'context_compiled', [

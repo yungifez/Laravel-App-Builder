@@ -149,6 +149,13 @@ return [
             'context_files' => ['AGENTS.md', 'CLAUDE.md', 'composer.json', 'routes/web.php'],
         ],
 
+        // How many product questions the planner may ask before building:
+        // one by default, more once the owner asks for them (§7).
+        'questions' => [
+            'before_building' => (int) env('BUILDER_QUESTIONS_BEFORE_BUILDING', 1),
+            'when_asked_for_more' => (int) env('BUILDER_QUESTIONS_WHEN_ASKED_FOR_MORE', 3),
+        ],
+
         // Bounds on what tools accept and return.
         'limits' => [
             'read_bytes' => 262144,

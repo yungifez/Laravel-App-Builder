@@ -19,8 +19,8 @@ class GatherPlanningContext
 
     /**
      * Build the planner's bounded view of the project: the request, what it
-     * follows up on, the file list, a few key files and the application's
-     * own notes in `.builder/`.
+     * follows up on, the file list, a few key files, the application's own
+     * notes in `.builder/`, and what the owner already answered.
      */
     public function handle(Run $run, Workspace $workspace): PlanningContext
     {
@@ -47,6 +47,8 @@ class GatherPlanningContext
             parentSummary: $parent?->summary,
             targetStep: $targetStep,
             projectContext: $this->readProjectContext->handle($workspace, $files),
+            answers: $run->answers ?? [],
+            mayAsk: count($run->answers ?? []) < $run->question_limit,
         );
     }
 

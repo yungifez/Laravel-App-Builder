@@ -2,6 +2,7 @@
 import { Form, Head, Link, setLayoutProps, usePoll } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import FeatureRequestAcceptanceController from '@/actions/App/Http/Controllers/FeatureRequestAcceptanceController';
+import FeatureRequestAnswerController from '@/actions/App/Http/Controllers/FeatureRequestAnswerController';
 import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
 import FeatureRequestRetryController from '@/actions/App/Http/Controllers/FeatureRequestRetryController';
 import FeatureRequestReversionController from '@/actions/App/Http/Controllers/FeatureRequestReversionController';
@@ -47,6 +48,7 @@ const props = defineProps<{
 }>();
 
 const selectedStepKey = ref<string | null>(null);
+const moreQuestions = ref(false);
 
 // Inertia reuses this component when navigating from one request to another
 // (for example to a follow-up), so refresh the breadcrumbs and selection.
@@ -231,6 +233,10 @@ const stateLabel = computed(() => {
         return 'Kept';
     }
 
+    if (props.run?.question) {
+        return 'Waiting for your answer';
+    }
+
     if (props.run) {
         return runLabels[props.run.status];
     }
@@ -246,6 +252,10 @@ const stateLabel = computed(() => {
 const stateDot = computed(() => {
     if (props.featureRequest.commit_sha && !props.featureRequest.reverted_at) {
         return 'bg-green-600';
+    }
+
+    if (props.run?.question) {
+        return 'bg-amber-500';
     }
 
     const status = props.run?.status ?? props.featureRequest.status;
@@ -525,6 +535,108 @@ function lineClass(line: string): string {
                 <Link :href="showProject(project.id)">Ask in other words</Link>
             </Button>
         </div>
+
+        <section
+            v-if="run?.question"
+            class="max-w-2xl space-y-4 rounded-lg border p-4"
+            data-test="question"
+        >
+            <div class="space-y-1">
+                <p class="text-sm text-muted-foreground">
+                    One thing I want to confirm
+                </p>
+                <h2 class="text-lg font-medium break-words">
+                    {{ run.question.text }}
+                </h2>
+                <p
+                    v-if="run.question.why"
+                    class="text-sm text-muted-foreground"
+                >
+                    {{ run.question.why }}
+                </p>
+            </div>
+
+            <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <Form
+                    v-for="option in run.question.options"
+                    :key="option"
+                    v-bind="
+                        FeatureRequestAnswerController.store.form(
+                            featureRequest.id,
+                        )
+                    "
+                    :options="{ preserveScroll: true }"
+                    v-slot="{ processing }"
+                >
+                    <input type="hidden" name="answer" :value="option" />
+                    <input
+                        type="hidden"
+                        name="more_questions"
+                        :value="moreQuestions ? 1 : 0"
+                    />
+                    <Button
+                        :variant="
+                            option === run.question.recommended
+                                ? 'default'
+                                : 'outline'
+                        "
+                        :disabled="processing"
+                        class="h-11 w-full justify-start select-none sm:h-9 sm:w-auto"
+                        :data-test="`answer-${option}`"
+                    >
+                        {{ option }}
+                    </Button>
+                </Form>
+            </div>
+
+            <p
+                v-if="run.question.recommended"
+                class="text-xs text-muted-foreground"
+            >
+                I would pick “{{ run.question.recommended }}”.
+            </p>
+
+            <div class="flex flex-wrap items-center gap-2 border-t pt-3">
+                <Form
+                    v-bind="
+                        FeatureRequestAnswerController.store.form(
+                            featureRequest.id,
+                        )
+                    "
+                    :options="{ preserveScroll: true }"
+                    v-slot="{ processing, errors }"
+                >
+                    <input
+                        type="hidden"
+                        name="more_questions"
+                        :value="moreQuestions ? 1 : 0"
+                    />
+                    <Button
+                        variant="ghost"
+                        :disabled="processing"
+                        class="-ml-3 h-11 select-none sm:h-9"
+                        data-test="answer-you-decide"
+                    >
+                        You decide
+                    </Button>
+                    <InputError :message="errors.answer" />
+                </Form>
+                <Button
+                    v-if="!moreQuestions"
+                    type="button"
+                    variant="ghost"
+                    class="h-11 select-none sm:h-9"
+                    data-test="ask-more-questions"
+                    @click="moreQuestions = true"
+                >
+                    Ask me more questions
+                </Button>
+                <p v-else class="text-sm text-muted-foreground">
+                    After this, I'll ask about the other things I'm unsure of,
+                    one at a time.
+                </p>
+            </div>
+        </section>
 
         <!-- The story of the change on the left; what to do about it on the
              right, where it stays in view. On a phone the decision comes
@@ -914,6 +1026,25 @@ function lineClass(line: string): string {
             </aside>
 
             <div class="max-w-2xl space-y-8">
+                <section
+                    v-if="run && run.answers.length > 0"
+                    class="space-y-2 text-sm"
+                    data-test="answers"
+                >
+                    <h2 class="font-medium">What you told me</h2>
+                    <ul class="space-y-1">
+                        <li v-for="(item, index) in run.answers" :key="index">
+                            {{ item.question }}
+                            <span class="font-medium">{{ item.answer }}</span>
+                            <span
+                                v-if="item.decided_by === 'builder'"
+                                class="text-xs text-muted-foreground"
+                                >· you let me decide</span
+                            >
+                        </li>
+                    </ul>
+                </section>
+
                 <section
                     v-if="run?.plan && run.plan.assumptions.length > 0"
                     class="space-y-2 text-sm"

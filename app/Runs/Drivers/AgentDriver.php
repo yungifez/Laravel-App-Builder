@@ -152,6 +152,19 @@ class AgentDriver implements ConstructionDriver
             ));
         }
 
+        if ($context->answers !== []) {
+            $sections[] = "## The owner's answers\n\nThe owner settled these for this request. Plan with them and do not ask about them again.\n\n".implode("\n", array_map(
+                fn (array $answer) => $answer['decided_by'] === 'owner'
+                    ? "- {$answer['question']} {$answer['answer']}"
+                    : "- {$answer['question']} The owner left this to you; use: {$answer['answer']}",
+                $context->answers,
+            ));
+        }
+
+        if (! $context->mayAsk) {
+            $sections[] = "## Questions\n\nDo not ask the owner anything more for this request: return question as null and build on your recommendation.";
+        }
+
         $sections[] = "## Project files\n\n".implode("\n", $context->files);
 
         foreach ($context->contents as $path => $contents) {

@@ -53,6 +53,8 @@ class FeatureRequestController extends Controller
             'status' => $run->status->value,
             'driver' => $run->driver,
             'error' => $run->error,
+            'question' => $run->status === RunStatus::NeedsUserDecision ? $run->question : null,
+            'answers' => $run->answers ?? [],
             'workspace_revision' => $run->workspace_revision,
             'plan' => $run->plan === null ? null : [
                 'summary' => $run->plan['summary'],
