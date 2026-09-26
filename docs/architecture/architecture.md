@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 19.** This document consolidates the direction in [direction/](direction/)
+**Version 20.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -37,7 +37,10 @@ maintained product understanding, ranked for after V1. Version 18 frames people
 in the loop as leverage, not fallback ([§29](#29-human-judgment-where-it-has-leverage-version-18)):
 developer guidance lives in the notes and reaches every later change. Version 19 names the
 product a software stewardship platform ([§30](#30-software-stewardship-version-19)):
-three primitives (notes, Change Records, evidence) and no new entities. When they disagree, the direction documents state intent
+three primitives (notes, Change Records, evidence) and no new entities. Version 20 adds
+that complexity moves upward ([§31](#31-complexity-moves-upward-version-20)): knowledge
+is not enforcement, constraints graduate into checks, and human interventions are
+measured. When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -71,6 +74,7 @@ silently following either.
 - [Grandma first: the translation layer](#28-grandma-first-the-translation-layer-version-17)
 - [Human judgment where it has leverage](#29-human-judgment-where-it-has-leverage-version-18)
 - [Software stewardship](#30-software-stewardship-version-19)
+- [Complexity moves upward](#31-complexity-moves-upward-version-20)
 
 ## 1. Principles
 
@@ -2627,3 +2631,66 @@ Context Compiler.
    credentials or customer data) and **explainable escalation** (the reason
    is always shown; bring-your-own developer always works). These need the
    access model that later gates design.
+
+## 31. Complexity moves upward (version 20)
+
+Source: [direction 21](direction/21-complexity-moves-upward.md). Capable agents
+do not remove the work of managing software; they move it up to continuity,
+context selection, rule enforcement, verification and change history. The
+platform carries that work so the owner does not have to. We must beat
+"Claude Code + Laravel + good documents + an attentive human architect", not
+"repo + a bare prompt".
+
+### 31.1 Four primitives, as they exist in V1
+
+This refines §30.1 by splitting the notes by what they do. It adds no store.
+
+| Primitive     | Owner sees                      | V1 home                                                                  |
+| ------------- | ------------------------------- | ------------------------------------------------------------------------ |
+| Understanding | About your app, How things work | `.builder/project.md` and each area's summary and behaviours             |
+| Constraints   | Things that must always be true | "## Rules" in each area, and "Engineering direction" in `project.md`     |
+| Relationships | Things this is connected to     | `effects` in each area's frontmatter                                     |
+| Changes       | What changed                    | Kept feature requests (brief, evidence, commit) and visual edits (§30.1) |
+
+Code and runtime stay the source of implementation reality.
+
+### 31.2 Knowledge is not enforcement
+
+A rule the agent has read can still be broken. Constraints therefore
+graduate from prose towards checks:
+
+1. **V1 (built):** rules become the brief's _preserve_ clauses; _verify_ items
+   become tests the independent verification runs; "preserved" says how it is
+   known (§27.4).
+2. **Later: the Constraint Compiler.** "This must always be true" becomes an
+   actor × data × action matrix (for example Owner A → Org B → deny), then
+   policy, route and query tests in the app's suite. Laravel's fixed places
+   for authorization, validation, routing and tests make this feasible.
+3. **Later: guidance as guardrails.** Some developer guidance becomes a
+   structural check (for example "no Stripe calls outside BillingGateway" as a
+   dependency search in the quick check).
+
+### 31.3 Selective context is the hypothesis
+
+The claim is "task-relevant product state beats accumulated history", not
+"structured beats Markdown". The hierarchy (project → area → behaviour)
+stores knowledge; the Context Compiler (§8, §26.3) picks the small packet the
+agent sees. The experiment in direction 21 §9 (full documents against the
+compiled packet, same model and code) tests it directly.
+
+### 31.4 Measure human interventions
+
+- **Research log:** [docs/research/interventions.md](../research/interventions.md)
+  records each time a human had to steer, with one of six reasons: missing
+  context, wrong interpretation, ignored constraint, missed effect, bad
+  verification, architecture drift. It stays a Markdown log until the
+  categories prove useful.
+- **Metric:** human interventions per kept change, beside cost per kept change
+  (§25.3).
+- **Evolution Benchmark (later):** a fixed sequence of 20–50 realistic
+  changes to one app, measured at changes 1, 5, 10, 20, 35 and 50 for
+  regressions, corrective prompts, cost and missed rules. This project is the
+  first one.
+- **Learned relationships (later):** when Change Records show two areas
+  changing together repeatedly, propose the Effect to the owner ("Remember
+  this relationship?").
