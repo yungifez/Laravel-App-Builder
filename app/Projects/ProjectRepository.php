@@ -2,6 +2,8 @@
 
 namespace App\Projects;
 
+use App\Context\ProjectContext;
+use App\Context\ProjectNotes;
 use App\Events\ProjectCommitted;
 use App\Models\Project;
 use App\Projects\Exceptions\RepositoryConflict;
@@ -32,6 +34,8 @@ use RuntimeException;
  */
 class ProjectRepository
 {
+    public function __construct(private ProjectNotes $notes) {}
+
     /**
      * Get the directory of the project's repository.
      */
@@ -80,6 +84,9 @@ class ProjectRepository
                 throw new RuntimeException(__('The project source could not be copied: :error', ['error' => trim($copy->errorOutput())]));
             }
 
+            // Notes kept in the app by older versions go to our database,
+            // never into the repository (CopyExclusions leaves them out).
+            $this->notes->importDirectory($project, config('builder.projects.branch'), $project->source_path.'/'.ProjectContext::LEGACY_DIRECTORY);
             $this->git($project, ['init', '--quiet', '--initial-branch='.config('builder.projects.branch')]);
             $this->git($project, ['add', '--all']);
             $this->commit($project, 'Import '.$project->name, null);
@@ -178,6 +185,8 @@ class ProjectRepository
     public function withCheckout(Project $project, ?string $revision, Closure $callback): mixed
     {
         if ($revision === null || ! $this->exists($project)) {
+            $this->notes->importDirectory($project, config('builder.projects.branch'), $project->source_path.'/'.ProjectContext::LEGACY_DIRECTORY);
+
             return $callback($project->source_path);
         }
 
@@ -245,7 +254,7 @@ class ProjectRepository
      * Callers read the files at "base", so a branch that moved on means they
      * edited an old version.
      *
-     * @param  array<string, string>  $files  New contents by path
+     * @param  array<string, string|null>  $files  New contents by path; null removes the file
      * @param  array{name: string, email: string}|null  $author
      *
      * @throws RepositoryConflict when the branch has moved on.
@@ -264,6 +273,14 @@ class ProjectRepository
             foreach ($files as $path => $contents) {
                 if (str_starts_with($path, '/') || in_array('..', explode('/', $path), true)) {
                     throw new RepositoryConflict(__('The file :path is outside the project.', ['path' => $path]));
+                }
+
+                if ($contents === null) {
+                    File::isDirectory($this->path($project).'/'.$path)
+                        ? File::deleteDirectory($this->path($project).'/'.$path)
+                        : File::delete($this->path($project).'/'.$path);
+
+                    continue;
                 }
 
                 File::ensureDirectoryExists(dirname($this->path($project).'/'.$path));

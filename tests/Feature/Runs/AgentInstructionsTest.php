@@ -1,14 +1,14 @@
 <?php
 
-namespace Tests\Unit;
+namespace Tests\Feature\Runs;
 
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeatureCoder;
 use App\Ai\Agents\FeaturePlanner;
 use App\Ai\Agents\NotesDrafter;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use Tests\TestCase;
 
 class AgentInstructionsTest extends TestCase
 {
@@ -23,7 +23,7 @@ class AgentInstructionsTest extends TestCase
     {
         $instructions = (string) (new ReflectionClass($agent))->newInstanceWithoutConstructor()->instructions();
 
-        $this->assertDoesNotMatchRegularExpression('/platform|control plane|inspector|builder(?!\/)/i', $instructions);
+        $this->assertDoesNotMatchRegularExpression('/platform|control plane|inspector|builder/i', $instructions);
     }
 
     /**

@@ -52,6 +52,11 @@ return [
             'name' => env('BUILDER_COMMITTER_NAME'),
             'email' => env('BUILDER_COMMITTER_EMAIL'),
         ],
+        // Files every workspace of a project needs that are not part of its
+        // code. The first workspace's setup makes them; they are saved
+        // (encrypted) and every later workspace gets the same copy after its
+        // setup, so any workspace can be thrown away.
+        'workspace_files' => json_decode((string) env('BUILDER_WORKSPACE_FILES', '[".env"]'), true) ?: [],
     ],
 
     /*
@@ -260,6 +265,11 @@ return [
 
     'context' => [
         'mode' => env('BUILDER_CONTEXT_MODE', 'selective'),
+
+        // Where a workspace gets its copy of the project's notes. The notes
+        // live in our database, never in the app's repository; the coding
+        // agent reads and updates them here.
+        'directory' => env('BUILDER_NOTES_DIRECTORY', '.product-notes'),
 
         // Context files larger than this are left out and reported.
         'max_file_bytes' => 65536,

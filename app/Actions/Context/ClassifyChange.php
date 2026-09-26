@@ -15,8 +15,9 @@ class ClassifyChange
      * unexpected when none does.
      *
      * @param  list<string>  $targets  The areas the change is about
+     * @param  list<string>  $notes  The notes the change rewrote
      */
-    public function handle(ProjectContext $context, array $targets, ?string $patch): ChangeClassification
+    public function handle(ProjectContext $context, array $targets, ?string $patch, array $notes = []): ChangeClassification
     {
         $targets = $context->known($targets);
         $effectTargets = [];
@@ -31,16 +32,10 @@ class ClassifyChange
         $mayAlsoAffect = [];
         $unexpected = [];
         $unclaimed = [];
-        $contextUpdates = [];
+        $contextUpdates = $notes;
 
         foreach (PatchSummary::files($patch) as $file) {
             $path = $file['path'];
-
-            if (str_starts_with($path, '.builder/')) {
-                $contextUpdates[] = $path;
-
-                continue;
-            }
 
             $claimers = $context->claiming($path);
             $requestedClaimers = array_values(array_intersect($claimers, $targets));

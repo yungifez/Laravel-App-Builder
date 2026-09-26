@@ -5,37 +5,35 @@ namespace App\Actions\Context;
 use App\Context\Capability;
 use App\Context\Exceptions\InvalidContextFile;
 use App\Context\ProjectContext;
+use App\Context\ProjectNotes;
 use App\Enums\NotesDraftStatus;
 use App\Models\Project;
-use App\Models\User;
-use App\Projects\Exceptions\RepositoryConflict;
-use App\Projects\ProjectRepository;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\Yaml\Yaml;
 
 class KeepNotesDraft
 {
-    public function __construct(private ProjectRepository $repository) {}
+    public function __construct(private ProjectNotes $notes) {}
 
     /**
-     * Write the drafted notes into the app, as the owner confirmed them:
-     * what it is for, and one file per area. Nothing the model drafted is
-     * used until this point.
+     * Save the drafted notes as the owner confirmed them: what the app is
+     * for, and one file per area. Nothing the model drafted is used until
+     * this point.
      *
      * @throws ValidationException when there is no draft, the app already
      *                             has notes, or a drafted area is not valid.
      */
-    public function handle(Project $project, User $owner): string
+    public function handle(Project $project): void
     {
         $draft = $project->notes_draft;
 
-        if ($project->notes_draft_status !== NotesDraftStatus::Ready || $draft === null || ! $this->repository->exists($project)) {
+        if ($project->notes_draft_status !== NotesDraftStatus::Ready || $draft === null) {
             throw ValidationException::withMessages(['draft' => __('There is no draft to keep. Reload the page.')]);
         }
 
-        $head = $this->repository->head($project);
+        $branch = $project->branch();
 
-        if ($this->repository->show($project, $head, ProjectContext::PROJECT_FILE) !== null) {
+        if (isset($this->notes->files($project, $branch)[ProjectContext::PROJECT_FILE])) {
             throw ValidationException::withMessages(['draft' => __('Your app already has notes, so I did not replace them.')]);
         }
 
@@ -54,21 +52,9 @@ class KeepNotesDraft
             }
         }
 
-        try {
-            $sha = $this->repository->commitFiles(
-                $project,
-                $head,
-                $files,
-                'Add notes that describe the app',
-                ['name' => $owner->name, 'email' => $owner->email],
-            );
-        } catch (RepositoryConflict $exception) {
-            throw ValidationException::withMessages(['draft' => $exception->getMessage()]);
-        }
+        $this->notes->put($project, $branch, $files);
 
         $project->update(['notes_draft_status' => null, 'notes_draft' => null, 'notes_draft_error' => null]);
-
-        return $sha;
     }
 
     /**

@@ -12,16 +12,16 @@ class CheckProjectNotes
     public function __construct(private ProjectRepository $repository, private ReadProjectContext $readProjectContext) {}
 
     /**
-     * Compare the notes with the code at a revision and list the obvious
-     * problems, in the owner's words. No model is involved: every finding
+     * Compare the notes of the line the owner works in with the code at the
+     * tip of its branch and list the obvious problems, in the owner's words. No model is involved: every finding
      * is a fact about the files, with the files it is about as its details.
      *
      * @return list<array{title: string, details: list<string>}>
      */
-    public function handle(Project $project, string $revision): array
+    public function handle(Project $project): array
     {
-        $files = $this->repository->files($project, $revision);
-        $context = $this->readProjectContext->atRevision($project, $revision);
+        $files = $this->repository->files($project, $this->repository->head($project));
+        $context = $this->readProjectContext->current($project);
         $findings = [];
 
         if ($context->problems !== []) {

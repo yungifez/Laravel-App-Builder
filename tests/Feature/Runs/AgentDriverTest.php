@@ -417,7 +417,7 @@ class AgentDriverTest extends TestCase
         $this->assertSame(RunStatus::Verifying, $run->status);
         $this->assertSame('selective', $run->context['mode']);
         $this->assertSame(['teams'], $run->context['targets']);
-        $this->assertSame(['.builder/project.md', '.builder/capabilities/teams.md', 'index'], array_column($run->context['included'], 'file'));
+        $this->assertSame(['project.md', 'capabilities/teams.md', 'index'], array_column($run->context['included'], 'file'));
         $this->assertGreaterThan(0, $run->events()->where('type', 'context_compiled')->sole()->data['tokens']);
 
         FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'We call customers clients.')
@@ -428,7 +428,7 @@ class AgentDriverTest extends TestCase
             && str_contains($prompt->prompt, '- People can still sign up.')
             && str_contains($prompt->prompt, 'A team always has a name.')
             && str_contains($prompt->prompt, '- Billing (possible): Each team is billed separately.')
-            && str_contains($prompt->prompt, '(.builder/capabilities/billing.md)')
+            && str_contains($prompt->prompt, '(capabilities/billing.md)')
             && ! str_contains($prompt->prompt, 'Only owners see invoices.'));
 
         $this->passVerification($run);
@@ -484,8 +484,8 @@ class AgentDriverTest extends TestCase
 
         $this->assertSame(['teams'], $run->context['targets']);
         $this->assertCount(2, $run->context['problems']);
-        $this->assertStringStartsWith('.builder/capabilities/broken.md:', $run->context['problems'][0]);
-        $this->assertSame('.builder/capabilities/copy.md: another file already describes "teams".', $run->context['problems'][1]);
+        $this->assertStringStartsWith('capabilities/broken.md:', $run->context['problems'][0]);
+        $this->assertSame('capabilities/copy.md: another file already describes "teams".', $run->context['problems'][1]);
     }
 
     /**

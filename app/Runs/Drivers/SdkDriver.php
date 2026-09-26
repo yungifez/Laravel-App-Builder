@@ -5,6 +5,7 @@ namespace App\Runs\Drivers;
 use App\Actions\Runs\RecordModelUsage;
 use App\Actions\Runs\RunCodingAgent;
 use App\Actions\Workspaces\RunWorkspaceCommand;
+use App\Context\ProjectNotes;
 use App\Enums\AgentOutcomeStatus;
 use App\Features\AcceptanceSelector;
 use App\Models\Run;
@@ -137,10 +138,12 @@ class SdkDriver extends AgentDriver
      */
     protected function workingRules(): string
     {
-        return <<<'RULES'
+        $notes = ProjectNotes::directory();
+
+        return <<<RULES
         ## How to work
 
-        You are working in the application's repository. Follow its AGENTS.md and Laravel's conventions. Add or update feature tests for the behaviour you build, run them with `php artisan test`, and fix failures. Never change tests/Acceptance, .env, vendor or .git: those changes are thrown away. Keep the notes in .builder/ up to date as described in AGENTS.md or, if it says nothing, by updating the notes of the areas you change.
+        You are working in the application's repository. Follow its AGENTS.md and Laravel's conventions. Add or update feature tests for the behaviour you build, run them with `php artisan test`, and fix failures. Never change tests/Acceptance, .env, vendor or .git: those changes are thrown away. Keep the notes in {$notes}/ up to date as described in AGENTS.md or, if it says nothing, by updating the notes of the areas you change.
 
         When you are done, reply with a short summary of what you changed. Your summary is not taken as proof: the change is verified and reviewed independently.
         RULES;

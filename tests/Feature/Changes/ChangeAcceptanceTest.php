@@ -5,6 +5,7 @@ namespace Tests\Feature\Changes;
 use App\Actions\Projects\CreateProject;
 use App\Actions\Runs\AcquireRunLease;
 use App\Actions\Runs\PrepareRunWorkspace;
+use App\Context\ProjectNotes;
 use App\Enums\RunStatus;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -196,6 +197,29 @@ class ChangeAcceptanceTest extends TestCase
 
         $this->assertNull($parent->refresh()->reverted_at);
         $this->assertSame('', trim($this->repository->git($this->project, ['status', '--porcelain'])->output()));
+    }
+
+    public function test_accepting_a_change_saves_what_it_did_to_the_notes_outside_the_repository()
+    {
+        $notes = app(ProjectNotes::class);
+        $notes->put($this->project, 'main', ['project.md' => "Old.\n", 'capabilities/plans.md' => "Mine.\n"]);
+        $request = $this->completedChange(self::ADD_COMMENT, ['note_changes' => [
+            'project.md' => ['before' => "Old.\n", 'after' => "New.\n"],
+            'capabilities/billing.md' => ['before' => null, 'after' => "Billing.\n"],
+            'capabilities/plans.md' => ['before' => "Before someone edited it.\n", 'after' => "Theirs.\n"],
+        ]]);
+
+        $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $request))->assertSessionHasNoErrors();
+
+        $this->assertSame(
+            ['capabilities/billing.md' => "Billing.\n", 'capabilities/plans.md' => "Mine.\n", 'project.md' => "New.\n"],
+            $notes->files($this->project),
+        );
+        $this->assertSame([], preg_grep('/^\\.|notes|capabilities/', array_diff($this->repository->files($this->project, (string) $request->refresh()->commit_sha), ['.gitignore'])));
+
+        $this->actingAs($this->owner)->post(route('feature-requests.reversion.store', $request))->assertSessionHasNoErrors();
+
+        $this->assertSame(['capabilities/plans.md' => "Mine.\n", 'project.md' => "Old.\n"], $notes->files($this->project));
     }
 
     public function test_the_page_offers_the_decision_and_says_when_the_backup_provider_built_the_change()

@@ -11,6 +11,7 @@ use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\Workspace;
 use App\Projects\ProjectRepository;
+use App\Workspaces\WorkspaceFiles;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -53,6 +54,7 @@ class StartPreview implements ShouldQueue
         AllocatePreviewPort $allocatePreviewPort,
         StopPreview $stopPreview,
         ProjectRepository $repository,
+        WorkspaceFiles $workspaceFiles,
     ): void {
         if ($this->preview->fresh()?->status !== PreviewStatus::Starting) {
             return;
@@ -83,6 +85,8 @@ class StartPreview implements ShouldQueue
             foreach ($setup as $step) {
                 $this->run($runWorkspaceCommand, $workspace, $step['command'], $step['timeout'], __('The setup step ":name" failed.', ['name' => $step['name']]));
             }
+
+            $workspaceFiles->sync($project, $workspace);
 
             if ($this->preview->editable) {
                 $this->run($runWorkspaceCommand, $workspace, self::locatorCommand(), 300, __('The preview could not be prepared for editing.'));

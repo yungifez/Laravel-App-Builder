@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Features;
 
+use App\Context\ProjectNotes;
 use App\Models\User;
 use App\Projects\ProjectRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -32,12 +33,13 @@ class NewProjectTest extends TestCase
         Queue::assertNothingPushed();
 
         $repository = app(ProjectRepository::class);
-        $this->assertSame(['Describe what the app is for', 'Import Bright Cleaning'], array_column($repository->log($project), 'subject'));
+        $this->assertSame(['Import Bright Cleaning'], array_column($repository->log($project), 'subject'));
         $this->assertSame('Ada Owner', $repository->log($project)[0]['author']);
         $this->assertStringContainsString(
             'Cleaners see their jobs for the day, and customers book a clean online.',
-            (string) $repository->show($project, $repository->head($project), '.builder/project.md'),
+            app(ProjectNotes::class)->files($project)['project.md'],
         );
+        $this->assertNotContains('.builder/project.md', $repository->files($project, $repository->head($project)));
         $this->assertFileExists($repository->path($project).'/app/Models/Team.php');
     }
 
@@ -50,7 +52,8 @@ class NewProjectTest extends TestCase
 
         $repository = app(ProjectRepository::class);
         $project = $owner->projects()->sole();
-        $notes = (string) $repository->show($project, $repository->head($project), '.builder/project.md');
+        $notes = app(ProjectNotes::class)->files($project)['project.md'];
+        $this->assertSame([], preg_grep('/^\.builder\//', $repository->files($project, $repository->head($project))));
         $this->assertStringContainsString('Plan the week.', $notes);
         $this->assertStringNotContainsString('A starter app.', $notes);
         $this->assertStringContainsString('- A team is a group.', $notes);

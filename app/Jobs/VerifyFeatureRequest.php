@@ -14,6 +14,7 @@ use App\Models\Workspace;
 use App\Models\WorkspaceCommand;
 use App\Projects\ProjectRepository;
 use App\Workspaces\Contracts\WorkspaceDriver;
+use App\Workspaces\WorkspaceFiles;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -74,6 +75,7 @@ class VerifyFeatureRequest implements ShouldQueue
         RunWorkspaceCommand $runWorkspaceCommand,
         DestroyWorkspace $destroyWorkspace,
         ProjectRepository $repository,
+        WorkspaceFiles $workspaceFiles,
     ): void {
         $featureRequest = $this->verification->featureRequest;
         $project = $featureRequest->project;
@@ -110,6 +112,8 @@ class VerifyFeatureRequest implements ShouldQueue
 
                 return;
             }
+
+            $workspaceFiles->sync($project, $workspace);
 
             $checksPassed = $this->runSteps($runWorkspaceCommand, $workspace, 'checks', stopOnFailure: false);
             $acceptance = $this->runAcceptance($driver, $runWorkspaceCommand, $workspace, $featureRequest);

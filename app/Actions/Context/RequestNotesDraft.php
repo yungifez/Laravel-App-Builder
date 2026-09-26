@@ -3,6 +3,7 @@
 namespace App\Actions\Context;
 
 use App\Context\ProjectContext;
+use App\Context\ProjectNotes;
 use App\Enums\NotesDraftStatus;
 use App\Jobs\DraftProjectNotes;
 use App\Models\Project;
@@ -10,7 +11,7 @@ use App\Projects\ProjectRepository;
 
 class RequestNotesDraft
 {
-    public function __construct(private ProjectRepository $repository) {}
+    public function __construct(private ProjectRepository $repository, private ProjectNotes $notes) {}
 
     /**
      * Draft notes for an imported app that has none, for the owner to
@@ -18,7 +19,7 @@ class RequestNotesDraft
      */
     public function handle(Project $project): bool
     {
-        if (! $this->repository->exists($project) || $this->repository->show($project, $this->repository->head($project), ProjectContext::PROJECT_FILE) !== null) {
+        if (! $this->repository->exists($project) || isset($this->notes->files($project)[ProjectContext::PROJECT_FILE])) {
             return false;
         }
 

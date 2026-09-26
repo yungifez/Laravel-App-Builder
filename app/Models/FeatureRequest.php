@@ -33,7 +33,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $base_revision The project commit the change is built on; null builds on the project's source directory
  * @property string|null $solution_key
  * @property string|null $summary
- * @property string|null $patch
+ * @property string|null $patch The code change; notes are not part of it
+ * @property array<string, array{before: string|null, after: string|null}>|null $note_changes The notes the change rewrote, by path, as they were and as it left them
  * @property list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>|null $steps
  * @property list<string>|null $acceptance Protected acceptance test files that apply to the change
  * @property string|null $error
@@ -44,15 +45,14 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['experiment_id', 'project_id', 'user_id', 'parent_id', 'retry_of_id', 'prompt', 'selection', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'steps', 'acceptance', 'error', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at'])]
+#[Fillable(['experiment_id', 'project_id', 'user_id', 'parent_id', 'retry_of_id', 'prompt', 'selection', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'note_changes', 'steps', 'acceptance', 'error', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at'])]
 class FeatureRequest extends Model
 {
     /**
      * Where a workspace keeps the patches of earlier changes while applying
-     * them. It is removed before the workspace is used; `.builder/` itself
-     * belongs to the application (its project context).
+     * them. It is removed before the workspace is used.
      */
-    public const LINEAGE_DIRECTORY = '.builder-lineage';
+    public const LINEAGE_DIRECTORY = '.patches-to-apply';
 
     /** @use HasFactory<FeatureRequestFactory> */
     use HasFactory;
@@ -67,6 +67,7 @@ class FeatureRequest extends Model
         return [
             'status' => FeatureRequestStatus::class,
             'steps' => 'array',
+            'note_changes' => 'array',
             'acceptance' => 'array',
             'selection' => 'array',
             'accepted_at' => 'datetime',

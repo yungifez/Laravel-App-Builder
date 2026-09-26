@@ -3,9 +3,9 @@
 namespace App\Actions\Projects;
 
 use App\Actions\Context\UpdateProjectNotes;
+use App\Context\ProjectNotes;
 use App\Models\Project;
 use App\Models\User;
-use App\Projects\ProjectRepository;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -14,7 +14,7 @@ class StartProjectFromTemplate
     public function __construct(
         private CreateProject $createProject,
         private UpdateProjectNotes $updateProjectNotes,
-        private ProjectRepository $repository,
+        private ProjectNotes $notes,
     ) {}
 
     /**
@@ -45,7 +45,7 @@ class StartProjectFromTemplate
         return DB::transaction(function () use ($owner, $name, $purpose, $template) {
             $project = $this->createProject->handle($owner, $name, $template, draftNotes: false);
 
-            $this->updateProjectNotes->handle($project, $owner, 'introduction', $purpose, $this->repository->head($project));
+            $this->updateProjectNotes->handle($project, 'introduction', $purpose, $this->notes->version($project));
 
             return $project;
         });

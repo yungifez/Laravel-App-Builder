@@ -8,6 +8,7 @@ use App\Actions\Context\UpdateProjectNotes;
 use App\Context\Capability;
 use App\Context\Effect;
 use App\Context\NotesDocument;
+use App\Context\ProjectNotes;
 use App\Http\Requests\ProjectNotesUpdateRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -25,12 +26,13 @@ class ProjectUnderstandingController extends Controller
      * for, how things work, what must always be true, what is connected, and
      * what changed. The quick check runs on request.
      */
-    public function show(Project $project, ProjectRepository $repository, ReadProjectContext $readProjectContext, CheckProjectNotes $checkProjectNotes): Response
+    public function show(Project $project, ProjectRepository $repository, ProjectNotes $projectNotes, ReadProjectContext $readProjectContext, CheckProjectNotes $checkProjectNotes): Response
     {
         Gate::authorize('view', $project);
 
-        $revision = $repository->exists($project) ? $repository->head($project) : null;
-        $context = $revision === null ? null : $readProjectContext->atRevision($project, $revision);
+        // An edit carries the version of the notes it was made on.
+        $revision = $repository->exists($project) ? $projectNotes->version($project) : null;
+        $context = $revision === null ? null : $readProjectContext->current($project);
         $notes = NotesDocument::parse($context->project ?? '');
         $names = array_map(fn (Capability $capability) => $capability->name, $context->capabilities ?? []);
 
@@ -77,7 +79,7 @@ class ProjectUnderstandingController extends Controller
                 ], $project->notes_draft['areas'] ?? []),
                 'error' => $project->notes_draft_error,
             ],
-            'check' => Inertia::optional(fn () => $revision === null ? [] : $checkProjectNotes->handle($project, $revision)),
+            'check' => Inertia::optional(fn () => $revision === null ? [] : $checkProjectNotes->handle($project)),
         ]);
     }
 
@@ -88,7 +90,6 @@ class ProjectUnderstandingController extends Controller
     {
         $updateProjectNotes->handle(
             $project,
-            $request->user(),
             $request->validated('part'),
             (string) $request->validated('body'),
             $request->validated('revision'),

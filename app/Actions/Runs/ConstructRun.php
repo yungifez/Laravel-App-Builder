@@ -172,6 +172,7 @@ class ConstructRun
         $this->recordEvent($run, $lease, 'build_finished', ['attempt' => $run->repairs, 'account' => Str::limit($account, 2000)]);
 
         $patch = $this->extractCandidateChange->handle($workspace);
+        $noteChanges = $this->extractCandidateChange->notes($workspace);
 
         if (trim($patch) === '') {
             $this->stopForDecision($run, $lease, __('The run finished without changing the project.'), 'no_changes');
@@ -198,7 +199,7 @@ class ConstructRun
             return;
         }
 
-        DB::transaction(function () use ($run, $lease, $plan, $patch) {
+        DB::transaction(function () use ($run, $lease, $plan, $patch, $noteChanges) {
             $featureRequest = $run->featureRequest;
 
             $featureRequest->update([
@@ -206,6 +207,7 @@ class ConstructRun
                 'solution_key' => $plan->solutionKey,
                 'summary' => $plan->summary,
                 'patch' => $patch,
+                'note_changes' => $noteChanges === [] ? null : $noteChanges,
                 'steps' => $plan->steps,
                 'acceptance' => $plan->acceptance,
                 'error' => null,
@@ -230,7 +232,7 @@ class ConstructRun
         $plan = $this->planFor($run);
         $pack = $run->context !== null ? ContextPack::fromArray($run->context) : null;
         $projectContext = $pack?->projectContext() ?? new ProjectContext;
-        $classification = $this->classifyChange->handle($projectContext, $pack->targets ?? [], $featureRequest->patch);
+        $classification = $this->classifyChange->handle($projectContext, $pack->targets ?? [], $featureRequest->patch, array_keys($featureRequest->note_changes ?? []));
 
         $review = $driver->review($run, new ReviewEvidence(
             request: $featureRequest->instructions(),

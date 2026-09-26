@@ -42,7 +42,9 @@ class AnswerRunQuestion
         if ($decidedBy === 'owner') {
             // The decision belongs in the notes, but failing to write it must
             // not lose the answer: the run still carries it.
-            rescue(fn () => $this->recordDecision->handle($featureRequest->project, $owner, $question['text'], $answer));
+            if (($branch = $featureRequest->branch()) !== null) {
+                rescue(fn () => $this->recordDecision->handle($featureRequest->project, $question['text'], $answer, $branch));
+            }
         }
 
         $this->transitionRun->handle($run, RunStatus::Planning, attributes: [

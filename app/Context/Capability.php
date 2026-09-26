@@ -12,7 +12,7 @@ use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * One area of the product as its context file in `.builder/capabilities/`
+ * One area of the product as its notes file under `capabilities/`
  * describes it: what it is, which code belongs to it, its behaviours, what
  * it may also affect, and the owner-readable notes.
  */

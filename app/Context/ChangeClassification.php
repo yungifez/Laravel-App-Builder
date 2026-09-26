@@ -13,7 +13,7 @@ final readonly class ChangeClassification
      * @param  array<string, list<string>>  $mayAlsoAffect  Changed files per area a requested area's Effects name
      * @param  array<string, list<string>>  $unexpected  Changed files per other area
      * @param  list<string>  $unclaimed  Changed files no area claims
-     * @param  list<string>  $contextUpdates  Changed files under `.builder/`
+     * @param  list<string>  $contextUpdates  The notes the change rewrote
      * @param  list<string>  $targets  The areas the change is about
      */
     public function __construct(

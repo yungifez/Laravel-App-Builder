@@ -6,6 +6,7 @@ use App\Actions\Runs\RecordModelUsage;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeatureCoder;
 use App\Ai\Agents\FeaturePlanner;
+use App\Context\ProjectNotes;
 use App\Enums\ModelRole;
 use App\Features\AcceptanceSelector;
 use App\Models\Run;
@@ -179,15 +180,20 @@ class AgentDriver implements ConstructionDriver
      * code (§5): the facts live where tools can read them, and the notes say
      * them in the owner's words.
      */
-    protected const OBSERVABILITY = <<<'TEXT'
-    ## Make it easy to see what the app does
+    protected function observability(): string
+    {
+        $notes = ProjectNotes::directory();
 
-    The owner does not read code. They find out what the app does from the notes in .builder/ and from the code's own settings, enums and test names. Build so both stay true:
-    - Put business settings (amounts, limits, time periods, who may do what) in config or enums, not inline in the code.
-    - Name each test as a plain business statement, for example "a manager can cancel a booking".
-    - In the notes for each area you change, say in plain words: who can do the new thing, what it changes, whether it sends an email or message, charges money or calls another service, and what happens automatically. Use the owner's words for things (bookings, customers), never class, table or route names.
-    - When something fails for a person using the app, tell them what happened and what to do next, in plain words.
-    TEXT;
+        return <<<TEXT
+        ## Make it easy to see what the app does
+
+        The owner does not read code. They find out what the app does from the notes in {$notes}/ and from the code's own settings, enums and test names. Build so both stay true:
+        - Put business settings (amounts, limits, time periods, who may do what) in config or enums, not inline in the code.
+        - Name each test as a plain business statement, for example "a manager can cancel a booking".
+        - In the notes for each area you change, say in plain words: who can do the new thing, what it changes, whether it sends an email or message, charges money or calls another service, and what happens automatically. Use the owner's words for things (bookings, customers), never class, table or route names.
+        - When something fails for a person using the app, tell them what happened and what to do next, in plain words.
+        TEXT;
+    }
 
     /**
      * The repository can belong to the customer and go anywhere, so what
@@ -222,7 +228,7 @@ class AgentDriver implements ConstructionDriver
             "## Acceptance criteria\n\nAdd or update a test for each one: the change is only accepted when every criterion is checked by a test in the change. Only tests under ".implode(', ', (array) config('builder.verification.suite_paths'))." are run by the checks, so put them there.\n\n".$this->list($plan->acceptanceCriteria),
         );
 
-        $sections[] = self::OBSERVABILITY;
+        $sections[] = $this->observability();
         $sections[] = self::DISCRETION;
 
         if ($plan->preserve !== []) {

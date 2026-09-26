@@ -39,7 +39,7 @@ class ProjectContextTest extends TestCase
 
     public function test_a_capability_file_is_read_from_its_frontmatter_and_notes()
     {
-        $capability = Capability::fromMarkdown('.builder/capabilities/invitations.md', self::INVITATIONS);
+        $capability = Capability::fromMarkdown('capabilities/invitations.md', self::INVITATIONS);
 
         $this->assertSame('invitations', $capability->key);
         $this->assertSame('Invitations', $capability->name);
@@ -55,7 +55,7 @@ class ProjectContextTest extends TestCase
 
     public function test_a_plain_markdown_file_is_an_area_named_after_the_file()
     {
-        $capability = Capability::fromMarkdown('.builder/capabilities/team-billing.md', "Owners pay per team.\n");
+        $capability = Capability::fromMarkdown('capabilities/team-billing.md', "Owners pay per team.\n");
 
         $this->assertSame('team-billing', $capability->key);
         $this->assertSame('Team Billing', $capability->name);
@@ -66,9 +66,9 @@ class ProjectContextTest extends TestCase
     public function test_an_invalid_capability_file_is_refused_with_the_reason()
     {
         $this->expectException(InvalidContextFile::class);
-        $this->expectExceptionMessage('.builder/capabilities/x.md:');
+        $this->expectExceptionMessage('capabilities/x.md:');
 
-        Capability::fromMarkdown('.builder/capabilities/x.md', "---\ncapability: x\neffects:\n    - to: y\n      strength: certain\n      reason: Because.\n      source: agent\n---\n");
+        Capability::fromMarkdown('capabilities/x.md', "---\ncapability: x\neffects:\n    - to: y\n      strength: certain\n      reason: Because.\n      source: agent\n---\n");
     }
 
     public function test_selective_context_has_the_project_notes_the_requested_areas_their_effects_and_an_index()
@@ -80,9 +80,9 @@ class ProjectContextTest extends TestCase
         $this->assertStringContainsString('Only owners and admins can invite.', $pack->text);
         $this->assertStringContainsString('- Membership (strong): Accepted invitations create memberships.', $pack->text);
         $this->assertStringContainsString('- billing (possible): Active members may count towards paid seats.', $pack->text);
-        $this->assertStringContainsString('- Membership: People in a team and their roles. (.builder/capabilities/membership.md)', $pack->text);
+        $this->assertStringContainsString('- Membership: People in a team and their roles. (capabilities/membership.md)', $pack->text);
         $this->assertStringNotContainsString('Owners can remove members.', $pack->text);
-        $this->assertSame(['.builder/project.md', '.builder/capabilities/invitations.md', 'index'], array_column($pack->included, 'file'));
+        $this->assertSame(['project.md', 'capabilities/invitations.md', 'index'], array_column($pack->included, 'file'));
         $this->assertGreaterThan(0, $pack->tokens());
         $this->assertCount(2, $pack->outline);
     }
@@ -115,9 +115,9 @@ class ProjectContextTest extends TestCase
     public function test_a_change_is_sorted_into_requested_may_also_affect_unexpected_and_unclaimed_files()
     {
         $context = new ProjectContext(capabilities: [
-            'invitations' => Capability::fromMarkdown('.builder/capabilities/invitations.md', self::INVITATIONS),
-            'membership' => Capability::fromMarkdown('.builder/capabilities/membership.md', "---\ncapability: membership\npaths: [app/Models/Membership.php, routes/web.php]\n---\n"),
-            'account' => Capability::fromMarkdown('.builder/capabilities/account.md', "---\ncapability: account\npaths: [app/Actions/Account/*]\n---\n"),
+            'invitations' => Capability::fromMarkdown('capabilities/invitations.md', self::INVITATIONS),
+            'membership' => Capability::fromMarkdown('capabilities/membership.md', "---\ncapability: membership\npaths: [app/Models/Membership.php, routes/web.php]\n---\n"),
+            'account' => Capability::fromMarkdown('capabilities/account.md', "---\ncapability: account\npaths: [app/Actions/Account/*]\n---\n"),
         ]);
 
         $classification = app(ClassifyChange::class)->handle($context, ['invitations'], $this->diffFor([
@@ -126,14 +126,13 @@ class ProjectContextTest extends TestCase
             'app/Models/Membership.php',
             'app/Actions/Account/DeleteAccount.php',
             'database/migrations/2026_09_26_000000_create_invitations_table.php',
-            '.builder/capabilities/invitations.md',
-        ]));
+        ]), ['capabilities/invitations.md']);
 
         $this->assertSame(['invitations' => ['app/Actions/Invitations/InviteMember.php', 'routes/web.php']], $classification->requested);
         $this->assertSame(['membership' => ['app/Models/Membership.php']], $classification->mayAlsoAffect);
         $this->assertSame(['account' => ['app/Actions/Account/DeleteAccount.php']], $classification->unexpected);
         $this->assertSame(['database/migrations/2026_09_26_000000_create_invitations_table.php'], $classification->unclaimed);
-        $this->assertSame(['.builder/capabilities/invitations.md'], $classification->contextUpdates);
+        $this->assertSame(['capabilities/invitations.md'], $classification->contextUpdates);
         $this->assertSame('requested', $classification->sectionFor('invitations'));
         $this->assertSame('may_also_affect', $classification->sectionFor('membership'));
         $this->assertSame('unexpected', $classification->sectionFor('account'));
@@ -156,8 +155,8 @@ class ProjectContextTest extends TestCase
         return new ProjectContext(
             project: 'We call customers clients.',
             capabilities: [
-                'invitations' => Capability::fromMarkdown('.builder/capabilities/invitations.md', self::INVITATIONS),
-                'membership' => Capability::fromMarkdown('.builder/capabilities/membership.md', "---\ncapability: membership\nsummary: People in a team and their roles.\n---\n# Membership\n\nOwners can remove members.\n"),
+                'invitations' => Capability::fromMarkdown('capabilities/invitations.md', self::INVITATIONS),
+                'membership' => Capability::fromMarkdown('capabilities/membership.md', "---\ncapability: membership\nsummary: People in a team and their roles.\n---\n# Membership\n\nOwners can remove members.\n"),
             ],
         );
     }

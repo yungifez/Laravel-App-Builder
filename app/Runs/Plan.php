@@ -23,7 +23,7 @@ final readonly class Plan
      * @param  list<string>  $tasks
      * @param  list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>  $steps
      * @param  list<string>  $acceptance  Protected acceptance test files that apply to the change
-     * @param  list<string>  $capabilities  The areas of the product (`.builder/capabilities`) the change is about
+     * @param  list<string>  $capabilities  The areas of the product (capability notes) the change is about
      * @param  list<array{area: string|null, statement: string}>  $preserve  What must stay as it is, by area
      * @param  array{text: string, why: string, options: list<string>, recommended: string|null}|null  $question  The one product question to ask the owner before building, if any
      * @param  string|null  $commitSubject  How the app's own developer would name the commit; the owner's words never reach the repository

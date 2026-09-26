@@ -5,12 +5,12 @@ namespace Tests\Feature\Runs;
 use App\Actions\Runs\StartRun;
 use App\Ai\Agents\FeatureCoder;
 use App\Ai\Agents\FeaturePlanner;
+use App\Context\ProjectNotes;
 use App\Enums\RunStatus;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\User;
-use App\Projects\ProjectRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -82,8 +82,8 @@ class RunQuestionTest extends TestCase
             && str_contains($prompt->prompt, 'Do not ask the owner anything more'));
 
         // The answer is a decision in the notes, so no later change asks it.
-        $notes = app(ProjectRepository::class)->show($featureRequest->project, app(ProjectRepository::class)->head($featureRequest->project), '.builder/project.md');
-        $this->assertStringContainsString("## Decisions\n\n- Can customers use more than one location? Yes", (string) $notes);
+        $notes = app(ProjectNotes::class)->files($featureRequest->project)['project.md'];
+        $this->assertStringContainsString("## Decisions\n\n- Can customers use more than one location? Yes", $notes);
     }
 
     public function test_you_decide_uses_the_recommendation_without_recording_a_decision()
@@ -105,9 +105,7 @@ class RunQuestionTest extends TestCase
         $this->assertSame(3, $run->question_limit);
         FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'The owner left this to you; use: No')
             && ! str_contains($prompt->prompt, 'Do not ask the owner anything more'));
-        $repository = app(ProjectRepository::class);
-        $repository->import($featureRequest->project);
-        $this->assertStringNotContainsString('Decisions', (string) $repository->show($featureRequest->project, 'HEAD', '.builder/project.md'));
+        $this->assertStringNotContainsString('Decisions', app(ProjectNotes::class)->files($featureRequest->project)['project.md']);
     }
 
     public function test_the_planner_cannot_ask_past_the_limit()

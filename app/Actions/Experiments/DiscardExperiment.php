@@ -3,6 +3,7 @@
 namespace App\Actions\Experiments;
 
 use App\Actions\Runs\CancelRun;
+use App\Context\ProjectNotes;
 use App\Enums\ExperimentStatus;
 use App\Models\Experiment;
 use App\Models\FeatureRequest;
@@ -15,6 +16,7 @@ class DiscardExperiment
         private ProjectRepository $repository,
         private SwitchExperiment $switchExperiment,
         private CancelRun $cancelRun,
+        private ProjectNotes $notes,
     ) {}
 
     /**
@@ -43,6 +45,7 @@ class DiscardExperiment
         }
 
         $this->repository->deleteBranch($project, $experiment->branch, Experiment::mainBranch());
+        $this->notes->forget($project, $experiment->branch);
 
         return $experiment;
     }

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Experiments;
 
 use App\Actions\Projects\CreateProject;
+use App\Context\ProjectNotes;
 use App\Enums\ExperimentStatus;
 use App\Enums\RunStatus;
 use App\Models\Experiment;
@@ -180,6 +181,37 @@ class ExperimentTest extends TestCase
         $this->actingAs($this->owner)
             ->post(route('feature-requests.acceptance.store', $waiting))
             ->assertSessionHasErrors(['change' => 'This idea was thrown away, so its changes cannot be kept.']);
+    }
+
+    public function test_an_idea_has_its_own_notes_until_it_is_used_or_thrown_away()
+    {
+        $notes = app(ProjectNotes::class);
+        $notes->put($this->project, 'main', ['project.md' => "A shop.\n", 'capabilities/plans.md' => "Plans.\n"]);
+
+        $this->actingAs($this->owner)->post(route('experiments.store', $this->project), ['name' => 'Coupons']);
+        $idea = $this->project->experiments()->sole();
+        $this->assertSame($notes->files($this->project, 'main'), $notes->files($this->project, $idea->branch));
+
+        $notes->put($this->project, $idea->branch, ['capabilities/coupons.md' => "Coupons.\n"]);
+        $notes->put($this->project, 'main', ['capabilities/plans.md' => "Plans, changed in the app.\n"]);
+        $this->assertArrayNotHasKey('capabilities/coupons.md', $notes->files($this->project, 'main'));
+
+        $this->actingAs($this->owner)->post(route('experiments.merge.store', $idea))->assertSessionHasNoErrors();
+
+        $this->assertSame([
+            'capabilities/coupons.md' => "Coupons.\n",
+            'capabilities/plans.md' => "Plans, changed in the app.\n",
+            'project.md' => "A shop.\n",
+        ], $notes->files($this->project, 'main'));
+        $this->assertSame([], $notes->files($this->project, $idea->branch));
+
+        $this->actingAs($this->owner)->post(route('experiments.store', $this->project), ['name' => 'Gift cards']);
+        $thrownAway = $this->project->experiments()->latest('id')->first();
+        $notes->put($this->project, $thrownAway->branch, ['project.md' => "A gift card shop.\n"]);
+        $this->actingAs($this->owner)->delete(route('experiments.destroy', $thrownAway));
+
+        $this->assertSame([], $notes->files($this->project, $thrownAway->branch));
+        $this->assertSame("A shop.\n", $notes->files($this->project, 'main')['project.md']);
     }
 
     public function test_only_the_main_app_is_published()

@@ -129,6 +129,26 @@ class Project extends Model
     }
 
     /**
+     * Get what we know about the product, for every line of work.
+     *
+     * @return HasMany<ProjectNote, $this>
+     */
+    public function notes(): HasMany
+    {
+        return $this->hasMany(ProjectNote::class);
+    }
+
+    /**
+     * Get the files its workspaces need that are not part of its code.
+     *
+     * @return HasMany<WorkspaceFile, $this>
+     */
+    public function workspaceFiles(): HasMany
+    {
+        return $this->hasMany(WorkspaceFile::class);
+    }
+
+    /**
      * Get the place the project is published to, safe to show: the remote
      * without its credentials.
      */

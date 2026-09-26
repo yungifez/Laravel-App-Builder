@@ -3,6 +3,7 @@
 namespace Tests\Feature\Understanding;
 
 use App\Actions\Projects\CreateProject;
+use App\Context\ProjectNotes;
 use App\Models\Project;
 use App\Models\User;
 use App\Projects\ProjectRepository;
@@ -99,7 +100,7 @@ class ProjectUnderstandingTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('projects/Understanding')
-                ->where('revision', $this->repository->head($this->project))
+                ->where('revision', $this->version())
                 ->where('about.introduction', 'A shop for **plans**.')
                 ->where('about.sections', [['heading' => 'People', 'body' => '- Customers buy plans.']])
                 ->where('guidance', '- Use Actions for changes.')
@@ -129,7 +130,7 @@ class ProjectUnderstandingTest extends TestCase
                 ])));
     }
 
-    public function test_the_owner_changes_what_the_app_is_for_and_it_is_committed()
+    public function test_the_owner_changes_what_the_app_is_for_and_it_is_saved_outside_the_app()
     {
         $head = $this->repository->head($this->project);
 
@@ -137,19 +138,16 @@ class ProjectUnderstandingTest extends TestCase
             ->put(route('projects.understanding.update', $this->project), [
                 'part' => 'introduction',
                 'body' => "A shop where teams buy plans.\n",
-                'revision' => $head,
+                'revision' => $this->version(),
             ])
             ->assertRedirect()
             ->assertSessionHasNoErrors();
 
-        $newHead = $this->repository->head($this->project);
-        $this->assertNotSame($head, $newHead);
+        $this->assertSame($head, $this->repository->head($this->project));
         $this->assertSame(
             "# Project\n\nA shop where teams buy plans.\n\n## People\n\n- Customers buy plans.\n\n## Engineering direction\n\n- Use Actions for changes.\n",
-            $this->repository->show($this->project, $newHead, '.builder/project.md'),
+            $this->notes('project.md'),
         );
-        $this->assertSame('Describe what the app is for', $this->repository->log($this->project, 1)[0]['subject']);
-        $this->assertSame('Ada Owner', $this->repository->log($this->project, 1)[0]['author']);
     }
 
     public function test_the_owner_edits_an_areas_summary_and_rules_without_touching_the_rest()
@@ -158,7 +156,7 @@ class ProjectUnderstandingTest extends TestCase
             ->put(route('projects.understanding.update', $this->project), [
                 'part' => 'summary:plans',
                 'body' => 'Customers pick one of three plans.',
-                'revision' => $this->repository->head($this->project),
+                'revision' => $this->version(),
             ])
             ->assertSessionHasNoErrors();
 
@@ -166,11 +164,11 @@ class ProjectUnderstandingTest extends TestCase
             ->put(route('projects.understanding.update', $this->project), [
                 'part' => 'rules:plans',
                 'body' => "Every customer sees the same plans.\n\n- Prices include tax.",
-                'revision' => $this->repository->head($this->project),
+                'revision' => $this->version(),
             ])
             ->assertSessionHasNoErrors();
 
-        $notes = (string) $this->repository->show($this->project, $this->repository->head($this->project), '.builder/capabilities/plans.md');
+        $notes = $this->notes('capabilities/plans.md');
 
         $this->assertSame(str_replace(
             ["summary: Customers pick a plan.\n", "- Every customer sees the same plans.\n"],
@@ -185,31 +183,30 @@ class ProjectUnderstandingTest extends TestCase
             ->put(route('projects.understanding.update', $this->project), [
                 'part' => 'section:Engineering direction',
                 'body' => '- External services go through adapters.',
-                'revision' => $this->repository->head($this->project),
+                'revision' => $this->version(),
             ])
             ->assertSessionHasNoErrors();
 
         $this->assertStringEndsWith(
             "## Engineering direction\n\n- External services go through adapters.\n",
-            (string) $this->repository->show($this->project, $this->repository->head($this->project), '.builder/project.md'),
+            $this->notes('project.md'),
         );
-        $this->assertSame('Update the guidance from the developer', $this->repository->log($this->project, 1)[0]['subject']);
     }
 
     public function test_an_edit_made_on_an_old_version_is_refused()
     {
-        $old = $this->repository->head($this->project);
+        $old = $this->version();
 
         $this->actingAs($this->owner)->put(route('projects.understanding.update', $this->project), ['part' => 'introduction', 'body' => 'First.', 'revision' => $old]);
 
         $this->actingAs($this->owner)
             ->put(route('projects.understanding.update', $this->project), ['part' => 'introduction', 'body' => 'Second.', 'revision' => $old])
-            ->assertSessionHasErrors(['body' => 'The app changed while you were editing. Try again on the updated version.']);
+            ->assertSessionHasErrors(['body' => 'The notes changed while you were editing. Try again on the updated version.']);
     }
 
     public function test_edits_that_would_break_the_notes_or_change_nothing_are_refused()
     {
-        $head = $this->repository->head($this->project);
+        $head = $this->version();
 
         $this->actingAs($this->owner)
             ->put(route('projects.understanding.update', $this->project), ['part' => 'summary:plans', 'body' => str_repeat('a', 501), 'revision' => $head])
@@ -227,7 +224,7 @@ class ProjectUnderstandingTest extends TestCase
             ->put(route('projects.understanding.update', $this->project), ['part' => 'file:../../etc', 'body' => 'x', 'revision' => $head])
             ->assertSessionHasErrors('part');
 
-        $this->assertSame($head, $this->repository->head($this->project));
+        $this->assertSame($head, $this->version());
     }
 
     public function test_other_people_cannot_see_or_edit_the_notes()
@@ -236,7 +233,23 @@ class ProjectUnderstandingTest extends TestCase
 
         $this->actingAs($stranger)->get(route('projects.understanding.show', $this->project))->assertForbidden();
         $this->actingAs($stranger)
-            ->put(route('projects.understanding.update', $this->project), ['part' => 'introduction', 'body' => 'Mine.', 'revision' => $this->repository->head($this->project)])
+            ->put(route('projects.understanding.update', $this->project), ['part' => 'introduction', 'body' => 'Mine.', 'revision' => $this->version()])
             ->assertForbidden();
+    }
+
+    /**
+     * Get the version of the notes the page shows.
+     */
+    protected function version(): string
+    {
+        return app(ProjectNotes::class)->version($this->project);
+    }
+
+    /**
+     * Get one of the saved notes.
+     */
+    protected function notes(string $path): string
+    {
+        return app(ProjectNotes::class)->files($this->project)[$path];
     }
 }

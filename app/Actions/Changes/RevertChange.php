@@ -2,6 +2,7 @@
 
 namespace App\Actions\Changes;
 
+use App\Context\ProjectNotes;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\User;
@@ -12,11 +13,12 @@ use Illuminate\Validation\ValidationException;
 
 class RevertChange
 {
-    public function __construct(private ProjectRepository $repository) {}
+    public function __construct(private ProjectRepository $repository, private ProjectNotes $notes) {}
 
     /**
      * Undo an accepted change with a new commit. Every request the commit
-     * holds is marked as undone.
+     * holds is marked as undone, and its notes go back where nobody
+     * changed them since.
      *
      * @throws ValidationException when the change is not accepted or cannot be undone.
      */
@@ -46,8 +48,13 @@ class RevertChange
             throw ValidationException::withMessages(['change' => $exception->getMessage()]);
         }
 
-        DB::transaction(function () use ($project, $commit, $sha, $featureRequest) {
-            $project->featureRequests()->where('commit_sha', $commit)->update(['revert_sha' => $sha, 'reverted_at' => now()]);
+        DB::transaction(function () use ($project, $branch, $commit, $sha, $featureRequest) {
+            $requests = $project->featureRequests()->where('commit_sha', $commit)->orderByDesc('id')->get();
+
+            foreach ($requests as $request) {
+                $request->update(['revert_sha' => $sha, 'reverted_at' => now()]);
+                $this->notes->undo($project, $branch, $request->note_changes ?? []);
+            }
 
             $featureRequest->latestRun?->recordEvent('change_reverted', ['commit' => $commit, 'revert' => $sha]);
         });

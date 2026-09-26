@@ -2,6 +2,7 @@
 
 namespace App\Actions\Experiments;
 
+use App\Context\ProjectNotes;
 use App\Enums\ExperimentStatus;
 use App\Models\Experiment;
 use App\Models\User;
@@ -11,7 +12,7 @@ use Illuminate\Validation\ValidationException;
 
 class MergeExperiment
 {
-    public function __construct(private ProjectRepository $repository, private SwitchExperiment $switchExperiment) {}
+    public function __construct(private ProjectRepository $repository, private ProjectNotes $notes, private SwitchExperiment $switchExperiment) {}
 
     /**
      * Use an idea in the app: merge its branch into the main branch, then
@@ -41,6 +42,7 @@ class MergeExperiment
         }
 
         $experiment->update(['status' => ExperimentStatus::Merged, 'merge_sha' => $sha, 'finished_at' => now()]);
+        $this->notes->merge($project, $experiment->branch, Experiment::mainBranch());
         $this->repository->deleteBranch($project, $experiment->branch, Experiment::mainBranch());
 
         if ($project->experiment_id === $experiment->id) {

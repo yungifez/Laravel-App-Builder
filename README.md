@@ -121,6 +121,17 @@ fits, nothing is committed and the owner asks again. An accepted change can be
 **undone** with a revert commit, unless later commits build on it. Git runs
 there with hooks and signing off; customer code never runs in the repository.
 
+**Project notes** (what the app is for, its areas and rules) live in the
+`project_notes` table, one copy for the main app and one for each idea. They
+are never committed to the project's repository. A write is saved to the
+database first. Each workspace gets a copy in `BUILDER_NOTES_DIRECTORY`
+(default `.product-notes`), and what a run changes there is kept with the change
+and saved when the change is accepted. Files a workspace's setup makes, such as
+`.env` (`BUILDER_WORKSPACE_FILES`), are kept encrypted and given to every later
+workspace, so a workspace can be thrown away at any time. Run
+`php artisan projects:move-notes` once to move notes that older versions kept
+in `.builder/` out of existing repositories.
+
 Each request starts a **build run** (`config/builder.php`, `construction`). The
 run moves through queued → planning → implementing → verifying → reviewing →
 completed, or stops at "needs your decision", cancelled or failed; the page

@@ -5,6 +5,7 @@ namespace App\Actions\Context;
 use App\Context\Capability;
 use App\Context\Exceptions\InvalidContextFile;
 use App\Context\ProjectContext;
+use App\Context\ProjectNotes;
 use App\Models\Project;
 use App\Models\Workspace;
 use App\Projects\ProjectRepository;
@@ -13,40 +14,52 @@ use Closure;
 
 class ReadProjectContext
 {
-    public function __construct(private WorkspaceManager $workspaces, private ProjectRepository $repository) {}
+    public function __construct(
+        private WorkspaceManager $workspaces,
+        private ProjectRepository $repository,
+        private ProjectNotes $notes,
+    ) {}
 
     /**
-     * Read the application's `.builder/` notes from a workspace. A file that
-     * cannot be read is reported as a problem and left out; it never stops a
-     * run.
+     * Read a workspace's copy of the notes, with any changes made in it. A
+     * file that cannot be read is reported as a problem and left out; it
+     * never stops a run.
      *
      * @param  list<string>  $files  The workspace's files
      */
     public function handle(Workspace $workspace, array $files): ProjectContext
     {
         $driver = $this->workspaces->driver($workspace->driver);
+        $prefix = ProjectNotes::directory().'/';
+        $notes = array_values(array_map(
+            fn (string $path) => substr($path, strlen($prefix)),
+            array_filter($files, fn (string $path) => str_starts_with($path, $prefix)),
+        ));
 
-        return $this->read($files, fn (string $path) => $driver->readFile((string) $workspace->driver_id, $path));
+        return $this->read($files, $notes, fn (string $path) => $driver->readFile((string) $workspace->driver_id, $prefix.$path));
     }
 
     /**
-     * Read the notes as they are in the project's repository at a revision.
+     * Read the notes of a line of work as they are now, against the code at
+     * the tip of its branch.
      */
-    public function atRevision(Project $project, string $revision): ProjectContext
+    public function current(Project $project, ?string $branch = null): ProjectContext
     {
-        return $this->read(
-            $this->repository->files($project, $revision),
-            fn (string $path) => $this->repository->show($project, $revision, $path),
-        );
+        $branch ??= $project->branch();
+        $notes = $this->notes->files($project, $branch);
+        $files = $this->repository->exists($project) ? $this->repository->files($project, $this->repository->head($project, $branch)) : [];
+
+        return $this->read($files, array_keys($notes), fn (string $path) => $notes[$path] ?? null);
     }
 
     /**
      * Read the notes through a function that returns a file's contents.
      *
-     * @param  list<string>  $files  The project's files
+     * @param  list<string>  $files  The project's code files
+     * @param  list<string>  $notes  The notes' paths
      * @param  Closure(string): (string|null)  $contents
      */
-    protected function read(array $files, Closure $contents): ProjectContext
+    protected function read(array $files, array $notes, Closure $contents): ProjectContext
     {
         $limit = (int) config('builder.context.max_file_bytes');
         $problems = [];
@@ -69,10 +82,10 @@ class ReadProjectContext
             return $text;
         };
 
-        $project = in_array(ProjectContext::PROJECT_FILE, $files, true) ? $read(ProjectContext::PROJECT_FILE) : null;
+        $project = in_array(ProjectContext::PROJECT_FILE, $notes, true) ? $read(ProjectContext::PROJECT_FILE) : null;
         $capabilities = [];
 
-        foreach ($files as $path) {
+        foreach ($notes as $path) {
             if (! str_starts_with($path, ProjectContext::CAPABILITIES_DIRECTORY.'/') || ! str_ends_with($path, '.md')) {
                 continue;
             }

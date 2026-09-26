@@ -12,31 +12,28 @@ use App\Models\Workspace;
 use App\Projects\ProjectRepository;
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\RunLease;
+use App\Workspaces\WorkspaceFiles;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
 class PrepareRunWorkspace
 {
-    /**
-     * Git identity for the baseline commit, so no host configuration is needed.
-     *
-     * @var list<string>
-     */
-    protected const GIT_IDENTITY = ['-c', 'user.name=Builder', '-c', 'user.email=builder@localhost', '-c', 'commit.gpgsign=false'];
-
     public function __construct(
         private WorkspaceManager $workspaces,
         private ProvisionWorkspace $provisionWorkspace,
         private RunWorkspaceCommand $runWorkspaceCommand,
         private DestroyWorkspace $destroyWorkspace,
         private ProjectRepository $repository,
+        private WorkspaceFiles $workspaceFiles,
     ) {}
 
     /**
      * Get the run's workspace, preparing one if it has none: copy the project
-     * in as of the request's base revision, apply the changes the request follows up on, commit that as the
-     * baseline the run's change is measured against, then run the setup.
+     * in as of the request's base revision, apply the changes the request
+     * follows up on, add the notes, commit that as the baseline the run's
+     * change is measured against, run the setup, then add the saved
+     * workspace files.
      *
      * @throws ConstructionFailed when the project cannot be prepared.
      */
@@ -64,9 +61,13 @@ class PrepareRunWorkspace
             }
 
             $this->run($workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], __('The workspace could not be prepared.'));
+            $this->workspaceFiles->placeNotes($featureRequest, $workspace);
+
+            // The agent can read this history, so it names only the owner.
+            $identity = ['-c', "user.name={$project->owner->name}", '-c', "user.email={$project->owner->email}", '-c', 'commit.gpgsign=false'];
             $this->run($workspace, ['git', 'init', '--quiet'], __('The workspace could not be prepared.'));
             $this->run($workspace, ['git', 'add', '--all'], __('The workspace could not be prepared.'));
-            $this->run($workspace, ['git', ...self::GIT_IDENTITY, 'commit', '--quiet', '--allow-empty', '--no-verify', '-m', 'Baseline'], __('The workspace could not be prepared.'));
+            $this->run($workspace, ['git', ...$identity, 'commit', '--quiet', '--allow-empty', '--no-verify', '-m', 'Baseline'], __('The workspace could not be prepared.'));
 
             /** @var list<array{name: string, command: list<string>, timeout: int}> $setup */
             $setup = config('builder.construction.setup', []);
@@ -74,6 +75,8 @@ class PrepareRunWorkspace
             foreach ($setup as $step) {
                 $this->run($workspace, $step['command'], __('The setup step ":name" failed.', ['name' => $step['name']]), $step['timeout']);
             }
+
+            $this->workspaceFiles->sync($project, $workspace);
 
             DB::transaction(function () use ($run, $lease, $workspace) {
                 $locked = Run::query()->lockForUpdate()->findOrFail($run->id);

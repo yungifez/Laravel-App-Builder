@@ -475,8 +475,9 @@ contextual questions over time, never through a questionnaire, and never in
 project-management vocabulary. The goal is the feeling "this understands what I
 am building", not "this made me a product manager".
 
-> **Version 10:** V0 stores context as Markdown files in the application
-> (`.builder/`, [§26.3](#263-context-as-markdown-in-the-application)). The
+> **Version 10:** V0 stores context as Markdown files, kept in our database
+> and copied into each workspace
+> ([§26.3](#263-context-as-markdown-in-the-application)). The
 > table below is the later stage, built only when Markdown limits us.
 
 ### Schema (V0)
@@ -1376,14 +1377,15 @@ shows it honestly; normalization improves it over time.
 - **The customer repository shows no trade secrets:** by default, a project's
   repository is a private repository in our organisation. Owners can also bring
   their own. Either way, it must look like the work of the app's own developer.
-  - Commit subjects are written in a developer's words (the planner's
-    `commit_subject`). They never quote the owner's request. They have no
-    trailers and do not name the builder or its screens.
-  - Commits are committed by their author, unless an operator sets
-    `BUILDER_COMMITTER_NAME` and `BUILDER_COMMITTER_EMAIL`.
-  - Agent prompts do not mention a platform, a builder or a control plane. The
-    coder is told to write as the app's own developer. Files the runner puts in
-    a workspace go inside `.git/` and have neutral names.
+    - Commit subjects are written in a developer's words (the planner's
+      `commit_subject`). They never quote the owner's request. They have no
+      trailers and do not name the builder or its screens.
+    - Commits are committed by their author, unless an operator sets
+      `BUILDER_COMMITTER_NAME` and `BUILDER_COMMITTER_EMAIL`.
+    - Agent prompts do not mention a platform, a builder or a control plane. The
+      coder is told to write as the app's own developer. Files the runner puts in
+      a workspace go inside `.git/` and have neutral names.
+    - The project notes are never committed to the repository (§26.3).
 
 ## 20. Deliberately not built yet
 
@@ -1789,7 +1791,7 @@ by the agent, not extracted.
 
 | Step                                     | V0                                                                                                                                 | State                     |
 | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| 1. Describe a small application          | Project created from the template; the description seeds `.builder/project.md`                                                     | new                       |
+| 1. Describe a small application          | Project created from the template; the description seeds the notes' `project.md`                                                   | new                       |
 | 2. Answer one useful product question    | The planner may return one question before building (optionally with hand-written precedent options); the run waits for the answer | new (run state exists)    |
 | 3. See something generated               | Run, verification, preview                                                                                                         | built                     |
 | 4. Select an element or request a change | Text requests; one selection path from instrumented components in the preview                                                      | text built; selection new |
@@ -1800,11 +1802,42 @@ by the agent, not extracted.
 ### 26.3 Context as Markdown in the application
 
 ```
-.builder/
-    project.md              # goal, users, terminology, design, app-wide rules
-    capabilities/
-        invitations.md
-        billing.md
+project.md              # goal, users, terminology, design, app-wide rules
+capabilities/
+    invitations.md
+    billing.md
+```
+
+**Where the notes live.** The notes are a trade secret, so they never go in the
+app's repository (§19). The database is the lasting copy:
+
+- `project_notes` holds one row per file for each line of work (the main branch
+  and each idea's branch). A write from the owner, a question's answer or a
+  kept change is saved there first and is available at once.
+- Each workspace gets a copy in a hidden directory (`BUILDER_NOTES_DIRECTORY`,
+  default `.product-notes`) before its baseline commit. The workspace can be
+  thrown away at any time.
+- A run's patch never includes that directory. What the run did to the notes
+  is kept on the change as `note_changes` (each file before and after). Keeping
+  the change applies them; undoing it reverses them. A file someone edited in
+  the meantime keeps their version. A follow-up starts from the notes its
+  parent left.
+- An idea starts with a copy of the main notes. Using it brings back the files
+  the idea changed; throwing it away forgets them.
+- Files a workspace's setup makes and that should survive it, such as `.env`
+  (`BUILDER_WORKSPACE_FILES`), are kept encrypted in `workspace_files`. The
+  first workspace saves them, and every later workspace gets the saved copy.
+- Notes that older versions kept in `.builder/` are imported when a project is
+  imported. `php artisan projects:move-notes` moves them out of existing
+  repositories with one commit.
+
+The layout of the files:
+
+```
+project.md              # goal, users, terminology, design, app-wide rules
+capabilities/
+    invitations.md
+    billing.md
 ```
 
 A capability file is plain Markdown with a small frontmatter:
@@ -1854,15 +1887,15 @@ effects:
    the capability names and summaries, or from a visual selection's capability.
 3. For each target, its Effects as one-line hints (name and reason), not the
    affected capabilities' files.
-4. The agent may open any other `.builder/` file itself; the pack guides, it
+4. The agent may open any other notes file itself; the pack guides, it
    never imprisons.
 5. Log the files and tokens included.
 
 **Writing knowledge.** An answer to a question is appended to the relevant file
-deterministically. The agent may propose edits to `.builder/` as part of its
-change, including Effects it discovered ("accepting an invitation changes the
-seat count"); they are part of the diff and listed in the review. Owners edit
-the files directly. Everything is versioned by git.
+deterministically. The agent may edit its workspace copy of the notes as part
+of its change, including Effects it discovered ("accepting an invitation changes
+the seat count"); they are kept with the change and listed in the review. Owners
+edit the notes on the Understanding page. An edit made on an old copy is refused.
 
 **Progression.** V0 is stage 3 of: one `PROJECT.md` → plus capability files →
 frontmatter and behaviour notes → indexed retrieval → the richer compiler with
@@ -1931,10 +1964,10 @@ the same repository state and the same request.
 | --------- | --------------------------------------------------- |
 | A         | repository + request                                |
 | B         | A + `PROJECT.md`: all the project's knowledge, flat |
-| C0        | A + the selected `.builder/` files, without Effects |
+| C0        | A + the selected notes files, without Effects       |
 | C         | A + the selected files with Effects                 |
 
-B is generated by concatenating the same `.builder/` files that C selects from,
+B is generated by concatenating the same notes files that C selects from,
 so the content is identical and only the selection differs. The question is not
 whether C beats B on a small project (it may not) but **at what project size it
 starts to**. The same tasks therefore run at several sizes of accumulated
@@ -2062,7 +2095,7 @@ checking", never as fact.
 
 | Level                        | Does                                                                                                                                                                                                                                                                                    | Intelligence                                                           | When           |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | -------------- |
-| **Quick health check**       | Reconciles `.builder/` with the code: paths that match nothing, code no area claims, Effects naming unknown areas, areas changed since the last audit whose notes did not change; dependency advisories (`composer audit`, `npm audit`); the full test suite and static analysis        | deterministic; at most one small-model call to phrase the summary      | **V0**         |
+| **Quick health check**       | Reconciles the notes with the code: paths that match nothing, code no area claims, Effects naming unknown areas, areas changed since the last audit whose notes did not change; dependency advisories (`composer audit`, `npm audit`); the full test suite and static analysis          | deterministic; at most one small-model call to phrase the summary      | **V0**         |
 | Thorough audit               | Quick, plus one reasoning pass per area changed since the last audit (and the areas their Effects name): notes and rules against the code, behaviours without tests, proposed Effects                                                                                                   | frontier model per area, bounded by a budget shown up front            | after V0       |
 | Deep audit                   | Thorough across every area, changed areas first; tracing workflows across areas; architectural drift                                                                                                                                                                                    | frontier model; decision model to prioritise areas                     | later          |
 | Permissions challenge        | The first adversarial level: a **who-can-do-what matrix** from route and policy introspection, probed with generated requests as each role, including another team's records (tenant isolation needs no stated intent: crossing it is always a finding); compared with the notes' rules | deterministic probes; a model only turns prose rules into expectations | first after V0 |
@@ -2358,7 +2391,7 @@ The claim is "it understands the product, retrieves what matters, knows what
 else may be affected, scopes the change, verifies it and explains it". Only
 these components prove that claim, so only these are **required**:
 
-1. Project notes in `.builder/` with selective compilation (built: §26.3).
+1. Project notes with selective compilation (built: §26.3).
 2. Behaviours and Effects in the capability notes, and the change sorted by
    area (built: §26.4).
 3. **The Change Brief** with _preserve_ and _verify_ clauses (new; §27.4).
@@ -2370,8 +2403,8 @@ these components prove that claim, so only these are **required**:
 7. Selection with "What this does", and the deterministic Tailwind editor
    (§26.12).
 8. Creating a project from the template, and a constrained import that drafts
-   `.builder/` for the owner to confirm.
-9. A minimal Project Understanding page: the `.builder/` files rendered in
+   the notes for the owner to confirm.
+9. A minimal Project Understanding page: the notes files rendered in
    product language and editable.
 10. Git boundaries per accepted change, revert, and deploy by pushing to the
     branch Laravel Cloud deploys from.
@@ -2506,7 +2539,7 @@ Telemetry (1–6) and the owner sessions run alongside.
 ### 27.8 Milestones
 
 1. **M1: the continuation loop, in a sandbox.** On the fixture (an existing app
-   with `.builder/`): request, brief with preserve and verify, Agent SDK in the
+   with the notes): request, brief with preserve and verify, Agent SDK in the
    runtime, verification, review by area with evidence-labelled "preserved",
    accept and commit, and the next request using the updated notes.
    Measured: cost per accepted change, first-attempt pass, unexpected changes.
@@ -2586,7 +2619,7 @@ left-hand one.
 | Behaviour                                    | What people can do                                         |
 | Actor                                        | Who can do it                                              |
 | Rules in the notes                           | Things that must always be true                            |
-| Project Context, `.builder/`                 | What I know about your business                            |
+| Project Context, the notes                   | What I know about your business                            |
 | Verification                                 | Checks I ran                                               |
 | Behaviour diff, review by area               | What changed                                               |
 | Evidence: verified / untouched / not checked | Checked by a test / Not touched / Not checked yet          |
@@ -2648,7 +2681,7 @@ for each (notes with rules and Effects, change summaries, assumptions, evidence
 labels). Later stages, in order:
 
 1. **Decision history.** Store a kept change's assumptions and the owner's
-   answers as decisions in `.builder/` (value, why, "Change this rule"), so
+   answers as decisions in the notes (value, why, "Change this rule"), so
    "why is this here" can cite them.
 2. **Impact preview before important changes.** Show "This may also touch"
    before the agent runs when the brief flags permissions, stored data or
@@ -2696,14 +2729,14 @@ Escalation is a normal path, not a failure state.
 
 The owner (intent, rules, goals), the platform (implementation, verification,
 the notes it maintains) and developers (architecture, risk, simplification,
-long-term direction) all write to the same `.builder/` notes. Nothing a
+long-term direction) all write to the same notes. Nothing a
 developer says lives only in a chat or a report.
 
 ### 29.3 What V1 does
 
 Only what the notes already support:
 
-- **Engineering direction is a section of `.builder/project.md`.** The Context
+- **Engineering direction is a section of `project.md` in the notes.** The Context
   Compiler includes the project notes in every change (§26.3), so a rule such
   as "Use Actions for state-changing operations" or "External integrations go
   through adapters" reaches every later brief, coder and reviewer. A developer
@@ -2750,11 +2783,11 @@ is the smallest durable structure that gives most of the leverage?
 
 ### 30.1 Three primitives, no new ones
 
-| Primitive               | What it holds                                                                                                                                                                   | Where it lives now                                                                           |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| **Notes** (`.builder/`) | Owner intent (rules, invariants), developer guidance, the areas of the app                                                                                                      | The project repository, so it travels with the code                                          |
-| **Change Record**       | What the owner wanted, how it was understood, the assumptions used and how each is known, before and after, what was kept the same, what it may touch, the commit, the evidence | The accepted feature request and its brief, verify items, preserved items, checks and commit |
-| **Evidence**            | Which checks ran, which tests cover which promise, and what was not checked                                                                                                     | Runs and verification, linked from the Change Record                                         |
+| Primitive         | What it holds                                                                                                                                                                   | Where it lives now                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| **Notes**         | Owner intent (rules, invariants), developer guidance, the areas of the app                                                                                                      | Our database, with a copy in each workspace (§26.3)                                          |
+| **Change Record** | What the owner wanted, how it was understood, the assumptions used and how each is known, before and after, what was kept the same, what it may touch, the commit, the evidence | The accepted feature request and its brief, verify items, preserved items, checks and commit |
+| **Evidence**      | Which checks ran, which tests cover which promise, and what was not checked                                                                                                     | Runs and verification, linked from the Change Record                                         |
 
 The feature request already is the Change Record: the change page shows it in
 owner language (§28). V1 adds no new entity for it. Visual edits (M2) are
@@ -2783,9 +2816,9 @@ Context Compiler.
    the rest go under "## Assumptions" with how each is known (checked in the
    code, confirmed by you, assumed). The planner reads them first (§7), and one
    question before building uses the same list. Markdown, no new store.
-2. **Change Records in the repository.** Write a short Markdown record of each
-   kept change under `.builder/changes/`, so the handover package (direction 20
-   §17) is the repository itself, not an export.
+2. **Change Records in the handover package.** Export a short Markdown record
+   of each kept change with the notes, so the handover package (direction 20
+   §17) needs no extra work. They stay out of the repository (§19).
 3. **Guidance that ages.** Record the commit each guidance item was last
    reviewed against, and show "This guidance was written before … It may need
    another review" when its area changed a lot since. The count comes from
@@ -2817,7 +2850,7 @@ This refines §30.1 by splitting the notes by what they do. It adds no store.
 
 | Primitive     | Owner sees                      | V1 home                                                                  |
 | ------------- | ------------------------------- | ------------------------------------------------------------------------ |
-| Understanding | About your app, How things work | `.builder/project.md` and each area's summary and behaviours             |
+| Understanding | About your app, How things work | The notes' `project.md` and each area's summary and behaviours           |
 | Constraints   | Things that must always be true | "## Rules" in each area, and "Engineering direction" in `project.md`     |
 | Relationships | Things this is connected to     | `effects` in each area's frontmatter                                     |
 | Changes       | What changed                    | Kept feature requests (brief, evidence, commit) and visual edits (§30.1) |

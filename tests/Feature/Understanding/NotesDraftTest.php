@@ -4,6 +4,7 @@ namespace Tests\Feature\Understanding;
 
 use App\Actions\Context\ReadProjectContext;
 use App\Ai\Agents\NotesDrafter;
+use App\Context\ProjectNotes;
 use App\Enums\NotesDraftStatus;
 use App\Jobs\DraftProjectNotes;
 use App\Models\Project;
@@ -133,9 +134,10 @@ class NotesDraftTest extends TestCase
         $project->refresh();
         $this->assertNull($project->notes_draft_status);
         $this->assertNull($project->notes_draft);
-        $this->assertSame('Add notes that describe the app', $this->repository->log($project)[0]['subject']);
+        // The notes live with us, so the app's history is untouched.
+        $this->assertCount(1, $this->repository->log($project));
 
-        $context = app(ReadProjectContext::class)->atRevision($project, $this->repository->head($project));
+        $context = app(ReadProjectContext::class)->current($project);
         $this->assertSame([], $context->problems);
         $this->assertStringContainsString('A place where teams plan their work.', (string) $context->project);
         $this->assertCount(1, $context->capabilities);
@@ -149,13 +151,13 @@ class NotesDraftTest extends TestCase
     public function test_keeping_never_replaces_notes_the_app_already_has()
     {
         $project = $this->importedProject(ready: true);
-        $this->repository->commitFiles($project, $this->repository->head($project), ['.builder/project.md' => "# Project\n\nWritten by hand.\n"], 'Add notes', null);
+        app(ProjectNotes::class)->put($project, 'main', ['project.md' => "# Project\n\nWritten by hand.\n"]);
 
         $this->actingAs($this->owner)
             ->post(route('projects.notes-draft.store', $project))
             ->assertSessionHasErrors(['draft' => 'Your app already has notes, so I did not replace them.']);
 
-        $this->assertSame("# Project\n\nWritten by hand.\n", $this->repository->show($project, $this->repository->head($project), '.builder/project.md'));
+        $this->assertSame("# Project\n\nWritten by hand.\n", app(ProjectNotes::class)->files($project)['project.md']);
     }
 
     public function test_discarding_the_draft_leaves_the_app_unchanged()

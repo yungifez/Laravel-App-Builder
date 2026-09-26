@@ -20,7 +20,7 @@ class GatherPlanningContext
     /**
      * Build the planner's bounded view of the project: the request, what it
      * follows up on, the file list, a few key files, the application's own
-     * notes in `.builder/`, and what the owner already answered.
+     * notes (the workspace's copy), and what the owner already answered.
      */
     public function handle(Run $run, Workspace $workspace): PlanningContext
     {

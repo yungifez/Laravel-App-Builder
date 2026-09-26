@@ -2,6 +2,7 @@
 
 namespace App\Actions\Experiments;
 
+use App\Context\ProjectNotes;
 use App\Models\Experiment;
 use App\Models\Project;
 use App\Models\User;
@@ -10,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 
 class StartExperiment
 {
-    public function __construct(private ProjectRepository $repository, private ShowLatestVersion $showLatestVersion) {}
+    public function __construct(private ProjectRepository $repository, private ProjectNotes $notes, private ShowLatestVersion $showLatestVersion) {}
 
     /**
      * Start trying an idea: a branch from the main app as it is now, which
@@ -34,6 +35,7 @@ class StartExperiment
             // or about how it was made.
             $experiment->update(['branch' => "ideas/{$experiment->id}"]);
             $this->repository->createBranch($project, $experiment->branch, $base);
+            $this->notes->copy($project, Experiment::mainBranch(), $experiment->branch);
 
             $project->update(['experiment_id' => $experiment->id]);
             $this->showLatestVersion->handle($project->setRelation('experiment', $experiment));

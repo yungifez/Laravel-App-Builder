@@ -55,7 +55,7 @@ class InspectElement
             },
             'classes' => $classes,
             'values' => TailwindClasses::effective($classes),
-            'area' => $this->area($preview, $head, $location->file),
+            'area' => $this->area($preview, $location->file),
             'revision' => $head,
         ];
     }
@@ -65,9 +65,9 @@ class InspectElement
      *
      * @return array{key: string, name: string, summary: string|null, rules: list<string>, behaviors: list<string>}|null
      */
-    protected function area(Preview $preview, string $head, string $file): ?array
+    protected function area(Preview $preview, string $file): ?array
     {
-        $context = $this->readProjectContext->atRevision($preview->project, $head);
+        $context = $this->readProjectContext->current($preview->project);
 
         /** @var Capability|null $capability */
         $capability = collect($context->capabilities)->first(fn (Capability $capability) => $capability->claims($file));

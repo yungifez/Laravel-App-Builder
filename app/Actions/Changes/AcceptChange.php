@@ -2,6 +2,7 @@
 
 namespace App\Actions\Changes;
 
+use App\Context\ProjectNotes;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Models\FeatureRequest;
@@ -13,12 +14,13 @@ use Illuminate\Validation\ValidationException;
 
 class AcceptChange
 {
-    public function __construct(private ProjectRepository $repository) {}
+    public function __construct(private ProjectRepository $repository, private ProjectNotes $notes) {}
 
     /**
      * Commit a built, verified and reviewed change to the project's
      * repository. A follow-up is committed together with the changes it
-     * builds on that are not accepted yet, as one commit.
+     * builds on that are not accepted yet, as one commit. What the changes
+     * did to the notes is saved to our database, never to the repository.
      *
      * @throws ValidationException when the change cannot be accepted.
      */
@@ -61,9 +63,10 @@ class AcceptChange
             throw ValidationException::withMessages(['change' => $exception->getMessage().' '.__('Ask for it again to build it on the current project.')]);
         }
 
-        DB::transaction(function () use ($pending, $sha, $run, $featureRequest) {
+        DB::transaction(function () use ($project, $branch, $pending, $sha, $run, $featureRequest) {
             foreach ($pending as $request) {
                 $request->update(['commit_sha' => $sha, 'accepted_at' => now()]);
+                $this->notes->apply($project, $branch, $request->note_changes ?? []);
             }
 
             $run->recordEvent('change_accepted', [

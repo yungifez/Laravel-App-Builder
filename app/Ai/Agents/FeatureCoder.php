@@ -5,6 +5,7 @@ namespace App\Ai\Agents;
 use App\Ai\Middleware\HaltWhenRunStops;
 use App\Ai\Tools\WorkspaceTool;
 use App\Ai\Tools\WorkspaceTools;
+use App\Context\ProjectNotes;
 use App\Runs\ToolSession;
 use Laravel\Ai\Attributes\RepairToolCalls;
 use Laravel\Ai\Attributes\Timeout;
@@ -35,7 +36,9 @@ class FeatureCoder implements Agent, HasMiddleware, HasTools
      */
     public function instructions(): Stringable|string
     {
-        return <<<'INSTRUCTIONS'
+        $notes = ProjectNotes::directory();
+
+        return <<<INSTRUCTIONS
         You are a careful Laravel developer making one planned change to an existing application.
 
         Work only through the tools. Every tool result is JSON with a status (succeeded, failed, rejected or stopped) and the current workspace_revision.
@@ -46,7 +49,7 @@ class FeatureCoder implements Agent, HasMiddleware, HasTools
         - Follow the project's conventions (AGENTS.md if present) and Laravel's defaults. Add or update feature tests for the behaviour you build.
         - Never change tests/Acceptance, .env, vendor or .git: those changes are refused.
         - Run the tests with run_command when your change is complete, and fix failures.
-        - The application describes itself in .builder/: project.md and one file per area in .builder/capabilities/. When your change alters what an area does, update that file's notes in plain language, and its paths when you add code for it. When you find that the area affects another one, add an effect with source: agent and a one-line reason. Never remove what the owner wrote unless the request changes it.
+        - The application describes itself in {$notes}/: project.md and one file per area in {$notes}/capabilities/. When your change alters what an area does, update that file's notes in plain language, and its paths when you add code for it. When you find that the area affects another one, add an effect with source: agent and a one-line reason. Never remove what the owner wrote unless the request changes it.
         - If status is stopped, stop at once.
 
         You have a limited number of tool calls. When you are done, reply with a short summary of what you changed. Your summary is not taken as proof: the change is verified and reviewed independently.
