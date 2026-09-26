@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Form, Head, Link } from '@inertiajs/vue3';
+import NewProjectController from '@/actions/App/Http/Controllers/NewProjectController';
 import ProjectController from '@/actions/App/Http/Controllers/ProjectController';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
@@ -15,7 +16,7 @@ import { Label } from '@/components/ui/label';
 import { index, show } from '@/routes/projects';
 import type { ProjectSummary } from '@/types';
 
-defineProps<{ projects: ProjectSummary[] }>();
+defineProps<{ projects: ProjectSummary[]; canStartNew: boolean }>();
 
 defineOptions({
     layout: {
@@ -52,11 +53,60 @@ defineOptions({
             <CardHeader>
                 <CardTitle>No projects yet</CardTitle>
                 <CardDescription>
-                    Add a customer application below to start requesting
-                    features for it.
+                    Start a new app or bring in one you already have.
                 </CardDescription>
             </CardHeader>
         </Card>
+
+        <section
+            v-if="canStartNew"
+            class="max-w-xl space-y-6"
+            data-test="start-new"
+        >
+            <Heading
+                variant="small"
+                title="Start a new app"
+                description="I set up a working app to start from. Then you tell me what to change."
+            />
+
+            <Form
+                v-bind="NewProjectController.store.form()"
+                class="space-y-6"
+                v-slot="{ errors, processing }"
+            >
+                <div class="grid gap-2">
+                    <Label for="new-name">Name</Label>
+                    <Input
+                        id="new-name"
+                        name="name"
+                        required
+                        placeholder="Bright Cleaning"
+                    />
+                    <InputError :message="errors.name" />
+                </div>
+
+                <div class="grid gap-2">
+                    <Label for="purpose">What is your app for?</Label>
+                    <textarea
+                        id="purpose"
+                        name="purpose"
+                        rows="3"
+                        required
+                        placeholder="My cleaners see their jobs for the day, and customers book a clean online."
+                        class="w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                    />
+                    <InputError :message="errors.purpose" />
+                </div>
+
+                <Button
+                    :disabled="processing"
+                    class="h-11 select-none sm:h-9"
+                    data-test="start-project-button"
+                >
+                    Start my app
+                </Button>
+            </Form>
+        </section>
 
         <section class="max-w-xl space-y-6">
             <Heading

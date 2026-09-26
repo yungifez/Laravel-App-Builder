@@ -25,6 +25,7 @@ class ProjectController extends Controller
         return Inertia::render('projects/Index', [
             'projects' => $request->user()->projects()->latest()->get()
                 ->map(fn (Project $project) => $project->only('id', 'name', 'source_path')),
+            'canStartNew' => filled(config('builder.projects.template')),
         ]);
     }
 

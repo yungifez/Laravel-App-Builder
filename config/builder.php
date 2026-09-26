@@ -39,6 +39,9 @@ return [
     'projects' => [
         'root' => env('BUILDER_PROJECT_REPOSITORIES', storage_path('app/private/projects')),
         'branch' => env('BUILDER_PROJECT_BRANCH', 'main'),
+        // The app a new project starts from. Without it, owners can only
+        // bring in an app that already exists.
+        'template' => env('BUILDER_TEMPLATE_PATH'),
         'committer' => [
             'name' => env('BUILDER_COMMITTER_NAME', 'Builder'),
             'email' => env('BUILDER_COMMITTER_EMAIL', 'builder@localhost'),

@@ -17,13 +17,13 @@ class CreateProject
     /**
      * Register a customer application for the owner and import its source
      * into the project's repository as the first commit. An app without
-     * notes gets a draft for the owner to confirm.
+     * notes gets a draft for the owner to confirm, unless "draftNotes" is off.
      *
      * @throws ValidationException when the source cannot be imported.
      */
-    public function handle(User $owner, string $name, string $sourcePath): Project
+    public function handle(User $owner, string $name, string $sourcePath, bool $draftNotes = true): Project
     {
-        return DB::transaction(function () use ($owner, $name, $sourcePath) {
+        return DB::transaction(function () use ($owner, $name, $sourcePath, $draftNotes) {
             $project = $owner->projects()->create([
                 'name' => $name,
                 'source_path' => $sourcePath,
@@ -35,7 +35,9 @@ class CreateProject
                 throw ValidationException::withMessages(['source_path' => $exception->getMessage()]);
             }
 
-            $this->requestNotesDraft->handle($project);
+            if ($draftNotes) {
+                $this->requestNotesDraft->handle($project);
+            }
 
             return $project;
         });

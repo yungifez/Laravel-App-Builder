@@ -8,6 +8,7 @@ use App\Http\Controllers\FeatureRequestPreviewController;
 use App\Http\Controllers\FeatureRequestReversionController;
 use App\Http\Controllers\FeatureRequestStepChangeController;
 use App\Http\Controllers\FeatureRequestVerificationController;
+use App\Http\Controllers\NewProjectController;
 use App\Http\Controllers\PreviewController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectEditorController;
@@ -27,6 +28,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('projects', [ProjectController::class, 'index'])->name('projects.index');
     Route::post('projects', [ProjectController::class, 'store'])->name('projects.store');
+    Route::post('projects/new', [NewProjectController::class, 'store'])->name('projects.new.store');
     Route::get('projects/{project}', [ProjectController::class, 'show'])->name('projects.show');
     Route::get('projects/{project}/understanding', [ProjectUnderstandingController::class, 'show'])->name('projects.understanding.show');
     Route::put('projects/{project}/understanding', [ProjectUnderstandingController::class, 'update'])->name('projects.understanding.update');
