@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 17.** This document consolidates the direction in [direction/](direction/)
+**Version 18.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -33,7 +33,9 @@ merge, no model call. **Version 16 sets the V1 plan ([§27](#27-v1-plan-version-
 over §21 and §26 for V1.** Version 17 adds the Grandma-first rule and its
 translation layer ([§28](#28-grandma-first-the-translation-layer-version-17)): no
 internal noun in the default UI, and the differentiators that follow from
-maintained product understanding, ranked for after V1. When they disagree, the direction documents state intent
+maintained product understanding, ranked for after V1. Version 18 frames people
+in the loop as leverage, not fallback ([§29](#29-human-judgment-where-it-has-leverage-version-18)):
+developer guidance lives in the notes and reaches every later change. When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -65,6 +67,7 @@ silently following either.
 - [V0: what we build now](#26-v0-what-we-build-now-version-10)
 - [V1 plan](#27-v1-plan-version-16)
 - [Grandma first: the translation layer](#28-grandma-first-the-translation-layer-version-17)
+- [Human judgment where it has leverage](#29-human-judgment-where-it-has-leverage-version-18)
 
 ## 1. Principles
 
@@ -2504,3 +2507,66 @@ or evolution does not belong in the core product.
   through and asks at "Keep this change"; §28.5 (2) is the proposal.
 - Whether to enforce §28.2 mechanically (a check that fails when a default-UI
   page uses an internal noun). V1 relies on review.
+
+## 29. Human judgment where it has leverage (version 18)
+
+Direction 19 reframes people in the loop. A developer is not the fallback when
+the AI fails. People add concentrated judgment where it has unusual leverage,
+and the platform carries that judgment into every later change. The promise is
+"you no longer need a developer for every change", not "never again".
+
+### 29.1 Who decides what
+
+| Kind of decision                      | Who                     |
+| ------------------------------------- | ----------------------- |
+| Routine implementation                | AI                      |
+| Ambiguous but low risk                | AI with the owner       |
+| High-consequence product decision     | Owner                   |
+| High-consequence engineering judgment | Developer or specialist |
+
+Escalation is a normal path, not a failure state.
+
+### 29.2 Three sources, one understanding
+
+The owner (intent, rules, goals), the platform (implementation, verification,
+the notes it maintains) and developers (architecture, risk, simplification,
+long-term direction) all write to the same `.builder/` notes. Nothing a
+developer says lives only in a chat or a report.
+
+### 29.3 What V1 does
+
+Only what the notes already support:
+
+- **Engineering direction is a section of `.builder/project.md`.** The Context
+  Compiler includes the project notes in every change (§26.3), so a rule such
+  as "Use Actions for state-changing operations" or "External integrations go
+  through adapters" reaches every later brief, coder and reviewer. A developer
+  writes it once.
+- **The Understanding page (M3) shows it** as "Guidance from your developer",
+  editable, with the other sections. Changes to it are commits like any other,
+  so its history is visible.
+- **The reviewer checks changes against it**, because the reviewer already
+  receives the project notes.
+
+Grandma sees none of the vocabulary: no "architecture consultation", no
+"audit". Where V1 shows anything, it says "Guidance from your developer".
+
+### 29.4 Later
+
+In order, each built on the notes rather than beside them:
+
+1. **Review packet**: a page generated from the notes (business, main goal,
+   important rules, the change, what it may touch, open questions) so an
+   expert spends the hour on judgment, not on reverse-engineering. It is a
+   view, not a new store.
+2. **"Ask a developer to review it first"** beside "Continue", offered before
+   high-consequence changes (permissions, stored data, billing, destructive
+   changes), from the same flags as §28.5 (2).
+3. **Expert sessions** (developer check, architecture session, feature review,
+   periodic health review) whose output is edits to the notes and invariants,
+   reviewed by the owner.
+4. **A marketplace for judgment, not for feature work** ("lend your judgment to
+   my software"), with levels from general developer to specialist.
+
+The developer access model (accounts, permissions, payment) is not designed
+yet, and V1 has no invitations or roles (see AGENTS.md: later gates).
