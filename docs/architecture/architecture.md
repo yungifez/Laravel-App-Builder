@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 21.** This document consolidates the direction in [direction/](direction/)
+**Version 22.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -44,7 +44,11 @@ measured. Version 21 makes tests the bridge between product meaning and code
 ([direction 22](direction/22-tests-as-the-semantic-bridge.md)): Effects gain
 evidence from test execution ([§6](#effects), [§26.4](#264-effects)), verification is
 scoped by risk and never by diff size, and publishing always runs the full checks
-([§12](#12-verification)). When they disagree, the direction documents state intent
+([§12](#12-verification)). Version 22 makes assumptions first-class inside and
+one question outside ([direction 23](direction/23-assumptions.md),
+[§7](#when-to-ask-the-decision-check)): existing assumptions are questioned before new
+ones, evidence resolves what it can, and the owner sees the one question where
+being wrong matters most. When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -505,8 +509,23 @@ outside the platform.
 In the interpret stage, the planner lists the product decisions the task depends
 on. For each one it states whether Project Context answers it, the default it
 would choose, which consequence categories a wrong guess touches, and whether a
-prototype would make the question easier to answer. A deterministic gate then
-decides:
+prototype would make the question easier to answer.
+
+**Existing assumptions come first.** Before it looks for new ambiguity, the
+planner checks, in order: recorded assumptions relevant to the task, those the
+request contradicts, those that became more consequential, and those more of
+the product now depends on. Only then does it look for new ones. "Earlier I
+was working on the assumption that each customer belongs to one location. This
+feature may change that" feels like continuity; a fresh question does not.
+
+**Evidence before questions.** An assumption that code, tests, framework
+introspection, test impact analysis or earlier Change Records can settle is
+settled that way and becomes a fact. The owner is never asked what the
+application can answer.
+
+**Priority is consequence, not uncertainty:** consequence if wrong × difficulty
+to reverse × relevance to this task, with the model's uncertainty only as a
+modifier. A deterministic gate then decides:
 
 | Situation                                                                                                                                            | Action                                                                                                                                                              |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -514,7 +533,7 @@ decides:
 | Engineering decision (controllers, queues, validation, migrations, policies, tests)                                                                  | Decide by convention. Never ask.                                                                                                                                    |
 | Unanswered, wrong guess touches data model, money, permissions, destructive behaviour, external integrations, legal expectations or a major workflow | **Ask before building.** One concise question, multiple choice with a recommended default.                                                                          |
 | Unanswered, easier to judge after seeing it, or low consequence                                                                                      | **Build with the default**, record it as `proposed`, and ask for confirmation in the review ("I set it up so cleaners are assigned automatically. Is that right?"). |
-| Several high-consequence unknowns                                                                                                                    | Ask the minimum set that avoids likely rework, one at a time, most consequential first.                                                                             |
+| Several high-consequence unknowns                                                                                                                    | Ask the most consequential one. The rest wait behind "Ask me more questions", one at a time.                                                                        |
 
 The rule underneath: ask when the cost of a wrong assumption is meaningfully
 greater than the cost of interrupting. The consequence categories come from the
@@ -523,7 +542,15 @@ is mostly mechanical; the model only proposes the decision list and defaults.
 
 ### Not annoying people
 
-- At most one question before building, for a typical request.
+- **One question by default, depth on demand.** At most one question before
+  building ("One thing I want to confirm"), with "Ask me more questions" for
+  owners who want the rest. No beginner and expert modes: the same page, at two
+  depths.
+- The same pattern serves discovery ("One thing I want to understand"),
+  building ("One thing I want to confirm"), evolution ("Something we assumed
+  earlier may have changed") and expert review ("These are the assumptions most
+  likely to affect this decision"). They are one question: what is the most
+  important thing I do not know yet?
 - Always multiple choice, with a recommended option and "you decide".
 - Never an engineering question; never a question already answered.
 - Post-build confirmations are bundled into the change review, next to the
@@ -710,6 +737,24 @@ Facts derived from the code belong in the Product Behavior Graph, not in Project
 Context. Package guarantees are `package_contract`. Not every sentence becomes
 memory: only durable, product-relevant statements are written.
 
+**Every statement keeps its kind,** so inferences never drift into truth:
+_fact_ (observed or verified: `derived`), _decision_ (the owner chose:
+`confirmed`), _assumption_ (treated as true for now: `proposed` or
+`ai_interpretation`), _guidance_ (a developer recommends), _invariant_ (must
+stay true: a confirmed `constraint`), and _effect_ (may interact). The owner
+never sees these words.
+
+**An assumption's life** is unconfirmed → confirmed (it becomes a decision),
+rejected (a `retracted` entry, and the areas built on it are re-planned), or
+superseded. Nothing is promoted without the owner or evidence.
+
+**Assumption debt** is not the number of unconfirmed assumptions. It is an
+important unconfirmed assumption that more and more of the product depends on,
+counted from the areas and Change Records that used it. When it grows, the
+assumption is raised once, before it gets harder to change: "Quick question
+before this gets harder to change: can a customer ever use more than one
+location?"
+
 ### Versioning
 
 Append-only. A change of mind writes a new entry that supersedes the old one;
@@ -732,9 +777,11 @@ behaviour, permission, workflow and terminology mismatches, and design drift.
 
 ### Contradictions
 
-Two kinds: intent against behaviour ("you said only owners manage billing, but
-administrators can change payment methods"), and new intent against older intent
-at another scope. Both appear as a plain question with two answers, "keep how
+Three kinds: intent against behaviour ("you said only owners manage billing, but
+administrators can change payment methods"), new intent against older intent
+at another scope, and a new request against an earlier assumption ("Something
+we assumed earlier may have changed: your app assumed one location, and you are
+adding a second"). Both appear as a plain question with two answers, "keep how
 it works now" (updates intent) or "change the app to match" (starts a change),
 inline on the behaviour card, in the change review, and in a short "needs your
 decision" list. Neither side is ever corrected automatically.
@@ -862,6 +909,9 @@ Behavior Graph, capability metadata.
    truncated.
 7. **Log exactly what was included:** entry ids and tokens per section, for the
    experiments in §25.
+8. **Keep each statement's kind** (§7 Provenance): unconfirmed assumptions are
+   rendered as assumptions, never mixed into DECIDED, so the agent cannot
+   mistake an inference for a decision.
 
 Precedents (§7) are compiled only for the interpret stage, as the decisions
 attached to the target scopes, capped. The build stage gets only the chosen
@@ -2612,8 +2662,10 @@ Grandma sees none of the vocabulary: no "architecture consultation", no
 In order, each built on the notes rather than beside them:
 
 1. **Review packet**: a page generated from the notes (business, main goal,
-   important rules, the change, what it may touch, open questions) so an
-   expert spends the hour on judgment, not on reverse-engineering. It is a
+   important rules, the change, what it may touch, open questions, and the
+   **unconfirmed assumptions the design rests on**) so an expert spends the
+   hour on judgment, not on reverse-engineering. "These assumptions decide the
+   tenancy model" is the kind of catch the packet exists for. It is a
    view, not a new store.
 2. **"Ask a developer to review it first"** beside "Continue", offered before
    high-consequence changes (permissions, stored data, billing, destructive
@@ -2638,11 +2690,11 @@ is the smallest durable structure that gives most of the leverage?
 
 ### 30.1 Three primitives, no new ones
 
-| Primitive               | What it holds                                                                                                                       | Where it lives now                                                                           |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| **Notes** (`.builder/`) | Owner intent (rules, invariants), developer guidance, the areas of the app                                                          | The project repository, so it travels with the code                                          |
-| **Change Record**       | What the owner wanted, how it was understood, before and after, what was kept the same, what it may touch, the commit, the evidence | The accepted feature request and its brief, verify items, preserved items, checks and commit |
-| **Evidence**            | Which checks ran, which tests cover which promise, and what was not checked                                                         | Runs and verification, linked from the Change Record                                         |
+| Primitive               | What it holds                                                                                                                                                                   | Where it lives now                                                                           |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| **Notes** (`.builder/`) | Owner intent (rules, invariants), developer guidance, the areas of the app                                                                                                      | The project repository, so it travels with the code                                          |
+| **Change Record**       | What the owner wanted, how it was understood, the assumptions used and how each is known, before and after, what was kept the same, what it may touch, the commit, the evidence | The accepted feature request and its brief, verify items, preserved items, checks and commit |
+| **Evidence**            | Which checks ran, which tests cover which promise, and what was not checked                                                                                                     | Runs and verification, linked from the Change Record                                         |
 
 The feature request already is the Change Record: the change page shows it in
 owner language (§28). V1 adds no new entity for it. Visual edits (M2) are
@@ -2659,24 +2711,33 @@ Context Compiler.
 - Keeps owner rules and developer guidance in the notes, visible on the
   Understanding page (M3).
 - Marks evidence honestly: "not checked" is never shown as "verified" (§27).
+- Shows each change's assumptions as "Decisions I made for you" (the planner's
+  `assumptions`). They are plain text for that change only: not kept in the
+  notes, not checked against evidence, and never asked before building. The
+  next steps close that gap (§30.3).
 
 ### 30.3 Later, in order
 
-1. **Change Records in the repository.** Write a short Markdown record of each
+1. **Assumptions in the notes.** Keeping a change keeps its assumptions: each
+   one the owner confirmed becomes a rule or decision in the area's notes, and
+   the rest go under "## Assumptions" with how each is known (checked in the
+   code, confirmed by you, assumed). The planner reads them first (§7), and one
+   question before building uses the same list. Markdown, no new store.
+2. **Change Records in the repository.** Write a short Markdown record of each
    kept change under `.builder/changes/`, so the handover package (direction 20
    §17) is the repository itself, not an export.
-2. **Guidance that ages.** Record the commit each guidance item was last
+3. **Guidance that ages.** Record the commit each guidance item was last
    reviewed against, and show "This guidance was written before … It may need
    another review" when its area changed a lot since. The count comes from
    Change Records per area, so no new data is needed.
-3. **Review freshness.** "Billing was reviewed 8 months ago; 6 billing changes
+4. **Review freshness.** "Billing was reviewed 8 months ago; 6 billing changes
    since." Same count.
-4. **Intent against reality.** Compare owner rules with what policies, routes
+5. **Intent against reality.** Compare owner rules with what policies, routes
    and tests allow ("You said managers cannot see payroll; the app lets them").
    This builds on the active testing in direction 14.
-5. **Selective context for humans.** The review packet (§29.4) includes only
+6. **Selective context for humans.** The review packet (§29.4) includes only
    the areas, rules, Change Records and evidence that the question touches.
-6. **Scoped expert access** (read-only snapshot, isolated preview, no
+7. **Scoped expert access** (read-only snapshot, isolated preview, no
    credentials or customer data) and **explainable escalation** (the reason
    is always shown; bring-your-own developer always works). These need the
    access model that later gates design.
