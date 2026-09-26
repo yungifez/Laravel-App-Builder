@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 9.** This document consolidates the direction in [direction/](direction/)
+**Version 11.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -14,7 +14,14 @@ elegance. Version 9 adds precedents to discovery
 ([§7](#precedents-showing-what-is-possible)): questions offer the common ways
 products solve a problem, with a recommendation grounded in the user's own
 context and "Something different" always available; references to other
-products are stored by the aspect the user meant. When they disagree, the direction documents state intent
+products are stored by the aspect the user meant. **Version 10 freezes the
+architecture and defines V0 ([§26](#26-v0-what-we-build-now-version-10)):
+selective context as Markdown files in the application, advisory Effects, a
+plain-language behaviour review and verification, with every other subsystem
+deferred until a real failure asks for it. For V0, §26 wins over the sections
+before it.** Version 11 adds decisions before generation
+([§26.9](#269-decisions-before-generation-version-11)): the cheapest reliable
+decision first, failing safe to the baseline. When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -43,6 +50,7 @@ silently following either.
 - [Open decisions](#23-open-decisions)
 - [Convention over generation: reassessment](#24-convention-over-generation-reassessment)
 - [Outcomes, measurement and falsification](#25-outcomes-measurement-and-falsification)
+- [V0: what we build now](#26-v0-what-we-build-now-version-10)
 
 ## 1. Principles
 
@@ -358,6 +366,13 @@ will not happen. Its limit is stated honestly: it catches changes the graph can
 see (who may do what, rules from config and tests, side effects, surfaces), not
 subtle logic bugs, which only tests catch.
 
+### Effects
+
+Advisory relationships between behaviours and capabilities ("inviting a member
+may also affect billing"), with a strength, a reason and a source. They are
+relevance hints for context, review and verification, never a dependency graph.
+V0 keeps them in capability files; see [§26.4](#264-effects).
+
 ### Storage
 
 Postgres, relational tables plus `jsonb`. No graph database: queries are at most
@@ -386,6 +401,10 @@ what the application does. Discovery fills Project Context through natural,
 contextual questions over time, never through a questionnaire, and never in
 project-management vocabulary. The goal is the feeling "this understands what I
 am building", not "this made me a product manager".
+
+> **Version 10:** V0 stores context as Markdown files in the application
+> (`.builder/`, [§26.3](#263-context-as-markdown-in-the-application)). The
+> table below is the later stage, built only when Markdown limits us.
 
 ### Schema (V0)
 
@@ -500,7 +519,7 @@ not:
 5. curated, reviewed wording, so a question reads the same way to every owner
    and can be evaluated.
 
-V0 tests whether this beats the model producing options itself (§25.4, P1). If
+V0 tests whether this beats the model producing options itself (§25.4, P1; in V0 by hand-written cards first, §26.6 F). If
 it does not, we keep the question format and drop the library.
 
 #### Entry format (V0)
@@ -631,7 +650,9 @@ screenshot referenced products.
 
 #### V0
 
-About 10–15 hand-curated decision files for the pilot's domains only: booking
+Version 10: hand-written precedent cards in owner sessions come first (§26.6,
+F); the files below follow only if the cards help. Then about 10–15
+hand-curated decision files for the pilot's domains only: booking
 and scheduling, subscriptions and billing, team membership and invitations. No
 database table, no editing interface, no retrieval beyond keys, no sources
 pipeline.
@@ -1236,25 +1257,11 @@ online routing experiments on high-risk work.
 | G3        | Planner / coder / reviewer roles on laravel/ai with faked tests; repairs; usage logging. The coder runs inside the control plane today and moves to the runtime with the execution adapters |
 | G2.4      | Previews on their own host with single-use grants                                                                                                                                           |
 
-### Next stages (version 8: measurement first)
+### Next stages
 
-The plan is reordered so that every claim can be tested before more is built on
-it. Each stage ends with a measurement, not only a demo.
-
-| Stage                     | Build                                                                                                                                                                                                                                                                        | Tests the claim                                                                                                                                |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| **0 Measure first**       | The change-request record and the outcome events (§25.3); cost attribution through the gateway and sandbox; the evaluation harness skeleton with **sequential scenarios** and a simulated owner                                                                              | Nothing yet: makes every later claim measurable                                                                                                |
-| **1 Observe**             | `builder/introspect` v0 with test-run side-effect tracing; Product Behavior Graph V0; behaviour cards; behaviour diff with **requested vs unexpected changes**                                                                                                               | Behaviour-level review helps owners catch unrelated changes (§25.4, B1)                                                                        |
-| **2 Execute**             | `AgentTask`/`AgentResult`; runtime adapter and reproducible template; runner; `claude-agent-sdk` and `script` adapters; gateway and vault; routing table v0                                                                                                                  | An Agent SDK agent completes the continuation scenario end to end                                                                              |
-| **3 Context**             | `context_entries`, resolver, Context Compiler (§8) with inclusion logging; the decision check; selective memory creation; the "What I know" page; precedent files for the pilot domains, option questions with "Something different", common next steps, `reference` entries | Context and targeted questions lower cost per accepted change and retries (§25.4, C1–C3); curated precedents beat the model's own options (P1) |
-| **4 Run the experiments** | The condition matrix in §25.4 on the scenario set; the owner study                                                                                                                                                                                                           | Keep, simplify or remove context and questions by the pre-registered thresholds                                                                |
-| 5 Deterministic first     | `capability_config`; Rector (`rector-laravel` only) and normalization after the agent                                                                                                                                                                                        | Share of changes done without a model rises without more regressions                                                                           |
-| 6 Laravel semantics       | PHPStan and architecture rules; diff-triggered checks and approval gates; `migrate --pretend`                                                                                                                                                                                | A seeded set of bad changes is all caught                                                                                                      |
-| 7 Visual editor           | Selection context, inspector, Tailwind and text edits, semantic hand-off                                                                                                                                                                                                     | Tiny UI changes stop costing agent runs (§25.4, V1)                                                                                            |
-
-Then, by evidence: a second provider and learned routing; intent-vs-behaviour
-checks beyond structured rules; the first first-party capability package;
-adapters; imported applications; deployment through Laravel Cloud.
+Version 10 replaces the staged plan with V0 ([§26](#26-v0-what-we-build-now-version-10)).
+The version 8 stages remain the likely order of what V0's failures will ask
+for; none is started without that evidence.
 
 ## 22. Risks
 
@@ -1295,7 +1302,7 @@ adapters; imported applications; deployment through Laravel Cloud.
 - The sandbox provider for managed runtimes.
 - The product's public name and category (not "Laravel builder").
 - Whether to charge for accepted changes rather than raw usage (§25.6).
-- Recruiting 3–5 owners for the behaviour-diff study (§25.4).
+- Recruiting 3–5 owners for the behaviour-diff study (§26.7).
 - Who writes and reviews precedent files (us, or domain experts per vertical),
   and whether owners' option choices may be aggregated anonymously.
 
@@ -1511,61 +1518,12 @@ reduced retries, context size against success, success and cost by task class
 and provider, transform and verification outcomes, and unexpected changes
 detected.
 
-### 25.4 Experiments, with thresholds set in advance
+### 25.4 Experiments
 
-**Context (C1–C3), run in the evaluation harness.** The benefit of accumulated
-context only appears in _later_ requests, so tasks are **sequential scenarios**:
-a project grows through 6–10 requests (the cleaning business: bookings,
-automatic assignment, recurring bookings, cancellations, reminders). A
-**simulated owner** holds the hidden intent, answers questions from it, and
-rejects wrong results; protected tests encode that intent. Conditions:
-
-| Condition | The agent receives                                                                |
-| --------- | --------------------------------------------------------------------------------- |
-| A         | repository + current request                                                      |
-| B         | A + compiled context pack (context, current behaviour, confirmed rules)           |
-| C         | B + the pre-build question gate                                                   |
-| D         | A + the full conversation history (the obvious alternative to structured context) |
-
-Measured per request: first-attempt pass, retries, tokens, runtime, regressions
-in untouched behaviours, cost per accepted change. Each scenario runs 3–5 times
-per condition, because agent runs vary.
-
-Decision rules, fixed before running:
-
-- If B does not beat A by at least 20% on cost per accepted change **or** 10
-  points on first-attempt pass rate in the later requests of each scenario,
-  shrink Project Context to application-level essentials only.
-- If B does not beat D, structured context is not worth its machinery; use
-  selected history instead.
-- If C does not reduce retries relative to B, raise the question threshold.
-- If B's packs regularly exceed a few thousand tokens without a matching gain,
-  cut the lower-priority sections.
-
-**Behaviour observability (B1, B2), with real owners.** In the pilot with 3–5
-owners (source plan §11), each performs a series of changes. One planted change
-also alters an unrelated behaviour (the cancellation cut-off). Groups see a
-behaviour diff, or a plain AI summary of the change. Measured: detection rate of
-the planted change, time to decide, stated confidence, and correct answers to
-"who can do X?" questions. If owners with behaviour diffs catch fewer than half
-of planted changes, or do no better than with a summary, rethink the review
-experience before building more on the graph.
-
-**Precedents (P1), in the harness.** The simulated owner's hidden intent
-includes decisions it would not volunteer (the organisation, not each person,
-pays; cancellations inside 24 hours are charged). Compare C (the question gate
-with options the model produces itself) against C+P (options and decisions from
-the curated library). Measured: hidden high-consequence decisions raised before
-building, decisions reversed later in the scenario, questions asked, and cost
-per accepted change. Decision rule: if C+P does not raise at least 25% more of
-the hidden decisions before building **or** cut later reversals by a third,
-keep the question format (options, reason, "Something different") and drop the
-curated library, except files that link to our capabilities. With owners:
-"Something different" and "Show more" rates, and precedent-backed decisions
-changed during the pilot.
-
-**Visual edits (V1).** Share of UI-adjustment requests completed without an
-agent run, with no increase in rejected changes.
+Superseded in version 10 by [§26.7](#267-experiments-revised). The version 8
+design set pass marks on 3–5 runs per condition, which is false precision for
+noisy agent runs; it also compared structured context against nothing rather
+than against a flat notes file, the strongest cheap alternative.
 
 ### 25.5 How much clarification helps speed
 
@@ -1607,6 +1565,8 @@ engineering but addresses no complaint we have evidence for yet.
 
 ### 25.8 The slice that tests the claims
 
+> **Version 10:** the V0 flow in [§26.2](#262-the-flow) replaces this slice.
+
 The strategic problem is _continuing to change_ an application, so the slice is
 about continuation, not initial generation:
 
@@ -1625,3 +1585,278 @@ It answers, with numbers: does accumulated context lower cost per accepted
 change and retries on later requests? Do questions pay for themselves? Do owners
 catch unrelated changes? If the answers are no, we simplify or remove the
 mechanism, as §25.4 commits us to.
+
+## 26. V0: what we build now (version 10)
+
+**The high-level architecture is frozen.** This section is what gets built now.
+Where it is simpler than §6–§25, it wins for V0; the rest is the direction of
+travel, and each part is built only when a V0 failure asks for it. The
+development rule is the product's own: idea → cheapest believable prototype →
+real interaction → observe pain or value → generalise only if necessary.
+
+### 26.1 Shape
+
+V0 is deliberately asymmetric: an ordinary Laravel application from our
+template, one coding agent from one provider behind the execution boundary (no
+provider concepts in the control plane), git, scoped Markdown context, the
+Laravel verification we already have, one visual selection path, and a
+plain-language behaviour review. The core mechanism is real, not mocked:
+**selective context, behaviour notes, Effects and verification**. What V0 defers
+is breadth and automation: behaviour notes and Effects are written by people and
+by the agent, not extracted.
+
+### 26.2 The flow
+
+| Step                                     | V0                                                                                                                                 | State                     |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| 1. Describe a small application          | Project created from the template; the description seeds `.builder/project.md`                                                     | new                       |
+| 2. Answer one useful product question    | The planner may return one question before building (optionally with hand-written precedent options); the run waits for the answer | new (run state exists)    |
+| 3. See something generated               | Run, verification, preview                                                                                                         | built                     |
+| 4. Select an element or request a change | Text requests; one selection path from instrumented components in the preview                                                      | text built; selection new |
+| 5. The agent uses project context        | Context selection (§26.3)                                                                                                          | new                       |
+| 6. See the changed application           | Preview                                                                                                                            | built                     |
+| 7. Review what changed                   | Requested, "may also affect" and unexpected changes in plain language (§26.5)                                                      | new                       |
+
+### 26.3 Context as Markdown in the application
+
+```
+.builder/
+    project.md              # goal, users, terminology, design, app-wide rules
+    capabilities/
+        invitations.md
+        billing.md
+```
+
+A capability file is plain Markdown with a small frontmatter:
+
+```markdown
+---
+capability: invitations
+summary: Owners and admins invite people to join a team.
+paths:
+    [
+        app/Actions/Invitations/**,
+        app/Http/Controllers/Invitation*,
+        resources/js/pages/invitations/**,
+    ]
+behaviors:
+    - key: invite-member
+      name: Invite a member
+effects:
+    - to: membership
+      strength: strong # strong | possible | historical
+      reason: Accepted invitations create memberships.
+      source: agent # agent | package | analysis | owner
+      observed: 2026-09-26
+    - to: billing
+      strength: possible
+      reason: Active members may count towards paid seats.
+      source: owner
+---
+
+# Invitations
+
+## Rules
+
+- Only owners and admins can invite.
+
+## What each behaviour does
+
+### Invite a member
+
+…
+```
+
+**Selection is the V0 Context Compiler** (§8), deterministic:
+
+1. `project.md`, always.
+2. The target capabilities' files. Targets come from the planner choosing among
+   the capability names and summaries, or from a visual selection's capability.
+3. For each target, its Effects as one-line hints (name and reason), not the
+   affected capabilities' files.
+4. The agent may open any other `.builder/` file itself; the pack guides, it
+   never imprisons.
+5. Log the files and tokens included.
+
+**Writing knowledge.** An answer to a question is appended to the relevant file
+deterministically. The agent may propose edits to `.builder/` as part of its
+change, including Effects it discovered ("accepting an invitation changes the
+seat count"); they are part of the diff and listed in the review. Owners edit
+the files directly. Everything is versioned by git.
+
+**Progression.** V0 is stage 3 of: one `PROJECT.md` → plus capability files →
+frontmatter and behaviour notes → indexed retrieval → the richer compiler with
+`context_entries` (§7). Each later stage is built only when the one before it
+demonstrably limits us.
+
+### 26.4 Effects
+
+An Effect says: this behaviour or capability may have a meaningful relationship
+with another area, worth inspecting when it changes. It is a soft relevance hint:
+not a contract, not an exhaustive dependency list, not a requirement that the
+other area change, not proof of causality. The wording to users is "May also
+affect: Billing".
+
+- **Strength** is `strong`, `possible` or `historical`; never a percentage.
+  Each Effect has a reason, a source (agent, package, analysis, owner) and when
+  it was last observed; an Effect whose reason no longer holds is removed or
+  downgraded, by the agent or the owner.
+- **Context:** Effects are listed as hints; the agent decides whether they
+  matter. "Change the Invite button text" does not look at billing; "invited
+  users become members immediately" probably does.
+- **Review:** the changed files are mapped to capabilities through `paths`, so a
+  change is classified deterministically as _requested_ (a target capability),
+  _may also affect_ (a capability named by a target's Effects) or _unexpected_
+  (anything else, including code no capability claims).
+- **Verification:** V0 runs the full suite anyway; Effects only order what the
+  review asks the owner to look at.
+- **Never:** load a whole related subsystem because an Effect exists, run
+  extra work automatically, or block until every Effect is handled.
+
+### 26.5 Behaviour review
+
+The reviewer (already built) writes, for each touched behaviour, what it did
+before and what it does now, in plain language, from the behaviour notes and the
+diff. The classification in §26.4 decides the sections: "Requested", "May also
+have changed" and "Also changed" (⚠). No graph extraction: the owner tests (D)
+start with hand-written diffs, and the automatic version is built only if they
+help.
+
+### 26.6 Hypotheses, each tested cheaply first
+
+| Hypothesis                                                       | Cheapest implementation                         | Tested by                                            |
+| ---------------------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------- |
+| A. Accumulated context reduces repeated explanation              | `project.md`                                    | harness: A vs B                                      |
+| B. Selective context eventually beats flat notes                 | capability files, selected by the control plane | harness: B vs C across project sizes                 |
+| C. Advisory Effects improve selection or regression detection    | a handful of hand-written Effects               | harness: C with and without Effects; planted changes |
+| D. Owners value behaviour-level explanations of changes          | hand-written behaviour diffs                    | owner sessions, with a planted unrelated change      |
+| E. Small contextual questions cut rework without annoying people | the agent asks, no classifier                   | owner sessions and the harness                       |
+| F. Common approaches help owners who do not know what to ask for | hand-written precedent cards                    | owner sessions: cards vs an open question            |
+| G. Visual selection reduces ambiguity                            | one or two instrumented components              | owner sessions                                       |
+
+Also tested by hand before anything is automated: a "What this does" panel on
+one element, written by hand, to see whether owners open it and find it useful.
+
+### 26.7 Experiments, revised
+
+Replaces the pass marks in §25.4: fixed thresholds on 3–5 noisy agent runs were
+false precision.
+
+**Technical, in the harness.** Many short, paired tasks: every condition gets
+the same repository state and the same request.
+
+| Condition | The agent receives                                  |
+| --------- | --------------------------------------------------- |
+| A         | repository + request                                |
+| B         | A + `PROJECT.md`: all the project's knowledge, flat |
+| C0        | A + the selected `.builder/` files, without Effects |
+| C         | A + the selected files with Effects                 |
+
+B is generated by concatenating the same `.builder/` files that C selects from,
+so the content is identical and only the selection differs. The question is not
+whether C beats B on a small project (it may not) but **at what project size it
+starts to**. The same tasks therefore run at several sizes of accumulated
+knowledge (a handful of capabilities, then dozens). Measured per task:
+first-attempt success, verification pass, tokens, runtime, agent turns, retries,
+unrelated regressions, cost per accepted change. Results are reported as
+distributions and paired differences, and read as trends. If C never pulls
+ahead, or only far beyond realistic sizes, we use flat notes: that is a good
+outcome, because it is simpler.
+
+The simulated owner is an engineering tool for iteration, scenarios and
+automated checks. It is not evidence that people value anything.
+
+**Qualitative, with owners.** A few real sessions with hand-made prototypes for
+D, E, F, G and "What this does": did they understand what happened, did the
+questions annoy them, did the explanations help, did they notice the planted
+change, did they feel more confident, would they use it. Five owners are not
+statistics, but they expose major failures quickly.
+
+Complaints about other builders show that a problem exists, not that people want
+our solution. Every mechanism above is a product hypothesis until owners touch
+it.
+
+### 26.8 Deferred, and what would bring each back
+
+| Deferred                                            | Built when                                                                                    |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `context_entries`, the resolver, indexed retrieval  | Markdown selection demonstrably limits us (C beats B but misses, or files grow too large)     |
+| Behaviour extraction and the Product Behavior Graph | hand-written behaviour diffs help owners (D) and keeping notes by hand becomes the bottleneck |
+| The question gate and classifier                    | questions help (E) but the agent asks badly                                                   |
+| Precedent files and retrieval                       | hand-written cards beat open questions (F)                                                    |
+| A second provider; routing                          | a task class where another provider is clearly better, with data to show it                   |
+| Package trust beyond an allowlist                   | requests for unknown packages become frequent                                                 |
+| Custom Rector rules                                 | a real transformation we keep repeating                                                       |
+| The visual editor beyond one path                   | selection helps (G)                                                                           |
+
+The package allowlist records why each package was approved, compatible
+versions and integration notes. Rector stays in the architecture as a principle
+(known transformation → deterministic tool; unknown semantic change → agent);
+its first custom rule comes from a problem we actually hit.
+
+### 26.9 Decisions before generation (version 11)
+
+Direction 12 adds a principle: **use the cheapest mechanism that can make a
+trustworthy decision** (deterministic code, then a typed decision model such as
+Jev, then a small generative model, then a frontier agent, then the user). The
+test for every decision is not what the call costs but **what its answer changes
+downstream**. A decision earns its place only when a confident answer lets us
+skip or downgrade something expensive (a frontier call, a model tier, an agent
+run, context tokens). Otherwise it is telemetry, not control.
+
+**Fail-safe to the baseline.** When a decision is unsure, the run does exactly
+what it would do without the decision layer. Decisions that make a run cheaper
+(skip the planner, a cheaper coder, no question) act only above a high,
+per-decider threshold; decisions that make it safer (more context, a stronger
+model, more review emphasis) act at any confidence. So the layer can only lose
+money through _confident_ mistakes, and those are measured.
+
+| Decision (V0)                                               | Mechanism                                                                                                        | Changes downstream                                                     | When unsure  |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------ |
+| Areas the change is about                                   | Level 0 from the selected step or element's paths; else named by the planner, whose call happens anyway          | the context pack                                                       | include more |
+| Complexity: trivial, normal, substantial                    | decision model                                                                                                   | trivial: skip the planner, cheaper coder; substantial: strongest coder | normal       |
+| Touches permissions, persisted data, is destructive (flags) | decision model before the change; **Level 0 from the diff after it** (policies, migrations, deletes), which wins | more context and review emphasis; approval gates                       | assume yes   |
+| Direct visual edit or agent                                 | Level 0: the selection maps to a static class                                                                    | no agent run at all                                                    | agent        |
+| Is this statement durable product knowledge                 | decision model                                                                                                   | write a proposed context note                                          | do not write |
+
+**Stays deterministic:** sorting a change by area, risk from the diff, protected
+suites, budgets, verification, Effects lookup, and direct visual edits.
+**Goes straight to a generative model:** anything that produces text (plans,
+questions, option wording, behaviour descriptions) or needs the repository read.
+
+**Intent** is a primary label plus independent yes/no flags, each its own typed
+decision. V0 keeps only labels that change a path (complexity and the flags);
+the primary intent is recorded for learning, not used for control, until data
+shows it would change something.
+
+**Decisions only add, never restrict.** A flag can add context, review emphasis
+or a stronger model. It never removes context, limits tools, or tells the coder
+what not to touch; in the brief it appears at most as "likely". The coder still
+explores.
+
+**Rollout in shadow mode.** Decisions first run without acting, and each is
+compared with what actually happened (the areas the planner named, the final
+diff's risk, whether the change needed repairs). A decision starts acting only
+when its confident errors are rare enough that the repairs they cause cost less
+than the calls they save.
+
+**Provider independence.** One `Decider` contract returns a choice, the
+probabilities, a confidence and who decided. Drivers: rules, Jev, and a small
+model through the gateway with structured output. Thresholds are set per
+driver, because a small model's self-reported confidence is not calibrated the
+way Jev's is.
+
+**Telemetry:** a `decision` event per decision (name, driver, choice,
+confidence, threshold, acted or shadow, fallback used, latency, cost), joined
+later with the change request's outcome (verification, repairs, acceptance,
+the diff's areas). This yields the share decided at each level, confident
+errors, missed escalations and their repair cost, and the effect on cost per
+accepted change.
+
+**The honest expectation.** A change's cost is dominated by the coder loop and
+verification, and its latency by verification, so a 100 ms decision matters
+only when it removes a stage. V0 therefore proves the layer on one decision
+with a real payoff: _complexity_, which lets trivial changes skip the planner
+and use a cheaper coder. It keeps the layer only if shadow data shows that
+this lowers cost per accepted change once the repairs caused by wrong
+"trivial" calls are counted.
