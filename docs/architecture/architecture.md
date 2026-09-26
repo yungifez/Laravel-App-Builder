@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 14.** This document consolidates the direction in [direction/](direction/)
+**Version 15.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -26,7 +26,10 @@ decision first, failing safe to the baseline. Version 12 adds audits and adversa
 finding; V0 builds only the deterministic quick health check. Version 13 reserves room for Laravel-native active
 testing ([§26.11](#2611-laravel-native-active-testing-versions-1314-later-stage)):
 probes generated as tests from the framework's own routes, rules, policies and
-factories. When they disagree, the direction documents state intent
+factories. Version 15 makes visual editing concrete
+([§26.12](#2612-visual-properties-on-a-tailwind-substrate-version-15)):
+human-readable properties, written as clean Tailwind with the app's own
+merge, no model call. When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -1120,8 +1123,8 @@ clean.
 
 - **Tailwind classes:** spacing, sizing, alignment, flex and grid, typography,
   radius, borders, shadow, visibility, gap, position; tokens grouped by utility
-  family with variant and responsive prefixes; choices limited to the project's
-  Tailwind `@theme` scale.
+  family with variant and responsive prefixes; values snap to the project's
+  `@theme` steps but are not limited to them (§26.12).
 - **Literal text** in templates, or translation files for translation keys.
 - **Show or hide** by breakpoint.
 - **This instance or all instances:** editing a shared component changes it
@@ -2052,3 +2055,119 @@ explicitly allows it, and then only read-only.
 
 **Out of V0:** all of it, including the introspection this relies on, beyond
 what V0's own verification already uses.
+
+### 26.12 Visual properties on a Tailwind substrate (version 15)
+
+Direction 15 makes the §14 inspector concrete and moves it into the V0 demo:
+**the owner manipulates understandable visual properties; the platform keeps
+clean, ordinary Tailwind source.** Explicit design controls are deterministic;
+semantic design intent ("make overdue invoices stand out") goes to the agent.
+
+**The property model.** The inspector speaks only `StyleValue`, never class
+names:
+
+```
+StyleValue { property, value (number | keyword), unit (px | rem | % | vw | null),
+             breakpoint (base | md | lg), state (normal | hover | focus | active | disabled) }
+```
+
+A property schema (control type, units, semantic presets, plain labels and
+consequence hints such as "50% changes with the available space; 400px stays
+fixed") drives the inspector. A **Tailwind adapter** turns a `StyleValue` into
+a utility and reads utilities back. The **current value shown** comes from the
+preview's computed style, so it is right whatever set it (theme, component
+defaults, inheritance); the source's classes decide _where_ an edit is written.
+
+**V0 properties:** width and max width (with units); padding and margin per
+side; gap; layout (list or grid; across or down, wrap, alignment,
+distribution; grid columns); border width; corners and shadow as semantic
+scales; text size and weight; colours from theme tokens only; show or hide per
+device. Everything else waits.
+
+**Values and scales,** checked against Tailwind v4 in the fixture: spacing
+accepts any quarter step of `--spacing` (15px is `p-3.75`), widths accept any
+fraction (`w-13/20`), and border widths any integer (`border-3`). So "canonical
+or arbitrary" is rarely about validity. The rules:
+
+- **Prefer theme-relative utilities** (`p-3.75` over `p-[15px]`), because they
+  follow the app's theme.
+- **Snap to the preferred steps:** sliders move in the theme's usual steps (4px
+  for spacing, the named radius and shadow scale), and typing any value is
+  still allowed.
+- **Arbitrary values** (`w-[50vw]`, `w-[65%]` when no fraction is exact) only
+  when the unit has no scale, or the exact value cannot be expressed.
+- Colours are theme tokens only in V0.
+
+**Devices and states are variants of the same value.** Phone is the base
+value, tablet is `md:` and desktop is `lg:`. Tailwind is mobile-first, so the
+inspector shows inherited values as "same as phone" and editing phone changes
+every device that has no value of its own. States map to `hover:`, `focus:`,
+`active:` and `disabled:`, and combine (`lg:hover:`).
+
+**Writing source with the app's own merge.** The edit runs `twMerge` from the
+application's own `node_modules`, with its own configuration, in the workspace
+(checked in the fixture: `flex flex-col gap-4` + `flex-row` gives
+`flex gap-4 flex-row`). `twMerge` moves the new class to the end, so we write
+the merged set **in place**: the new utility takes the position of the class it
+replaced, and everything else keeps its order, giving one-word diffs. Source is
+patched, never wrapped in runtime `cn(...)` calls.
+
+**Where the edit lands.** Most visible elements in a shadcn-vue app are
+components. "This one" writes to the usage site's `class` attribute (the
+component merges it last with `cn()`); "all of these" edits the component's own
+classes. V0 edits:
+
+- static `class="…"` attributes;
+- literal string arguments of `cn(…)` in `:class`, where each
+  `condition && '…'` argument is a named state ("Selected", "Error") the owner
+  can pick.
+
+Anything else (`:class="styles(x)"`, template strings, cva variants, computed
+properties) goes to the agent. Blade uses the same mutation on `class="…"` and
+literal `@class([...])` entries; only the source mapping differs.
+
+**Confidence is checked, not assumed.** After an edit is applied to the preview,
+the computed style is compared with the intended value. If they differ (for
+example `!important`, custom CSS, specificity or an inherited constraint), the
+edit is reverted and offered to the agent with the selection. Other fallbacks
+to the agent: an unsupported property, a non-literal class source, a semantic
+request, or a change to a shared component's variants.
+
+**Preview first, then commit.** While the owner drags, the preview applies the
+value as an **inline style**. A new class would do nothing, because Tailwind
+only generates CSS for classes it has seen in the source. On release, the class
+is written to source, the preview's assets are rebuilt, and the page reloads.
+In V0 that rebuild takes seconds, not hot reload (the edge proxy and HMR stay
+postponed, §20); the inline style hides the delay. A visual edit is a change
+request with no model calls: its verification is that the build succeeds and
+the page renders.
+
+**The Visual Editability Contract,** in the template's `AGENTS.md` for the coding
+agent, and checked (reported, not blocking) in verification:
+
+- classes are static strings, or `cn()` with literal arguments;
+- conditional classes are `condition && '…'`;
+- components accept `class` and merge it last with `cn()`;
+- no class names built by concatenation or template strings, which Tailwind
+  cannot scan either;
+- no inline styles or custom CSS for properties the inspector manages;
+- no `!` important utilities;
+- design values come from `@theme` tokens.
+
+**The adapter boundary now, without generalising.** Two seams: the Tailwind
+adapter (styling substrate) and the source locator (rendered element → file
+and position, from the preview-only Vite plugin, and later a Blade
+precompiler). Both are small interfaces with one implementation each. The
+framework-adapter questions in direction 15 (§23) are recorded as the future
+interface; V0 does not build a generic adapter layer.
+
+**Native PHP later:** the visual editor, Tailwind adapter, context notes,
+Effects, the review by area and test-based verification carry over. Route,
+policy and validation introspection, behaviour extraction and Laravel-native
+assurance (§26.11) do not; they would become inferred rather than known, and
+the product should say so.
+
+**Is it worth the V0 demo?** Yes. It is the "select an element" step of the V0
+flow (§26.2) and hypothesis G, it is visible, and it proves the principle with
+no model call. Its risks are specific: the rebuild delay after each commit, and
+component-instance ambiguity in shadcn-vue apps. Both are handled above.
