@@ -33,7 +33,7 @@ class MergeExperiment
                 $project,
                 $experiment->branch,
                 Experiment::mainBranch(),
-                "Merge {$experiment->name}",
+                "Merge branch '{$experiment->branch}'",
                 ['name' => $owner->name, 'email' => $owner->email],
             );
         } catch (RepositoryConflict $exception) {

@@ -130,7 +130,8 @@ class ProjectRepository
                 return $this->tip($project);
             }
 
-            $result = $this->git($project, ['merge', '--no-ff', '--no-commit', "refs/heads/{$branch}"], throw: false);
+            $identity = $this->identity($project, $author);
+            $result = $this->git($project, ['-c', "user.name={$identity['name']}", '-c', "user.email={$identity['email']}", 'merge', '--no-ff', '--no-commit', "refs/heads/{$branch}"], throw: false);
 
             if ($result->failed() || $this->hasConflicts($project)) {
                 $this->git($project, ['merge', '--abort'], throw: false);
@@ -408,15 +409,12 @@ class ProjectRepository
      */
     public function git(Project $project, array $arguments, bool $throw = true, int $timeout = 60): ProcessResult
     {
-        $committer = config('builder.projects.committer');
-
         $result = Process::path($this->path($project))
             ->timeout($timeout)
             ->env([
                 'GIT_CONFIG_NOSYSTEM' => '1',
                 'GIT_TERMINAL_PROMPT' => '0',
-                'GIT_COMMITTER_NAME' => $committer['name'],
-                'GIT_COMMITTER_EMAIL' => $committer['email'],
+                ...$this->committer(),
             ])
             ->run(['git', '-c', 'safe.directory='.$this->path($project), '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...$arguments]);
 
@@ -428,14 +426,44 @@ class ProjectRepository
     }
 
     /**
-     * Commit what is staged, authored by the owner when known, and announce
-     * the new commit.
+     * The committer an operator set, if any. Without one, each commit is
+     * committed by its author, so the history names no tool.
+     *
+     * @return array<string, string>
+     */
+    protected function committer(): array
+    {
+        $committer = config('builder.projects.committer');
+
+        return filled($committer['name'] ?? null) && filled($committer['email'] ?? null)
+            ? ['GIT_COMMITTER_NAME' => $committer['name'], 'GIT_COMMITTER_EMAIL' => $committer['email']]
+            : [];
+    }
+
+    /**
+     * Who writes a commit: its author when known, else the operator's
+     * committer, else the project's owner.
+     *
+     * @param  array{name: string, email: string}|null  $author
+     * @return array{name: string, email: string}
+     */
+    protected function identity(Project $project, ?array $author): array
+    {
+        $committer = $this->committer();
+
+        return $author ?? ($committer !== []
+            ? ['name' => $committer['GIT_COMMITTER_NAME'], 'email' => $committer['GIT_COMMITTER_EMAIL']]
+            : ['name' => $project->owner->name, 'email' => $project->owner->email]);
+    }
+
+    /**
+     * Commit what is staged and announce the new commit.
      *
      * @param  array{name: string, email: string}|null  $author
      */
     protected function commit(Project $project, string $message, ?array $author): void
     {
-        $author ??= config('builder.projects.committer');
+        $author = $this->identity($project, $author);
 
         $this->git($project, ['add', '--all']);
         $this->git($project, [

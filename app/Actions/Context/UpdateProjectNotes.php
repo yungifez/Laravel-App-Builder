@@ -102,13 +102,11 @@ class UpdateProjectNotes
      */
     protected function message(string $kind, string $name): string
     {
-        $subject = match ($kind) {
+        return match ($kind) {
             'introduction' => 'Describe what the app is for',
             'section' => Str::lower($name) === Str::lower(self::GUIDANCE_SECTION) ? 'Update the guidance from the developer' : "Update the notes on \"{$name}\"",
             'summary' => "Describe what \"{$name}\" does",
             default => "Update what must always be true in \"{$name}\"",
         };
-
-        return "{$subject}\n\nEdited on the Understanding page.\nBuilder-Notes-Edit: yes";
     }
 }

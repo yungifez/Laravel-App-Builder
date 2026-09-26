@@ -56,10 +56,24 @@ class ChangeAcceptanceTest extends TestCase
         $this->assertSame("<?php\n// added\n", File::get($this->repository->path($this->project).'/app/A.php'));
 
         $commit = $this->repository->log($this->project)[0];
-        $this->assertSame('Let team owners invite people by email.', $commit['subject']);
+        $this->assertSame('Update the application', $commit['subject']);
         $this->assertSame('Ada Owner', $commit['author']);
-        $this->assertStringContainsString("Builder-Request: #{$request->id}", $this->repository->git($this->project, ['log', '-1', '--format=%B'])->output());
+        $this->assertSame('Update the application', trim($this->repository->git($this->project, ['log', '-1', '--format=%B'])->output()));
+        $this->assertSame('Ada Owner', trim($this->repository->git($this->project, ['log', '-1', '--format=%cn'])->output()));
         $this->assertSame('change_accepted', $request->latestRun->events()->latest('sequence')->first()->type);
+    }
+
+    public function test_the_commit_reads_like_a_developer_wrote_it()
+    {
+        $request = $this->completedChange(self::ADD_COMMENT);
+        $request->latestRun->update(['plan' => ['commit_subject' => 'Add comments to posts']]);
+
+        $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $request))->assertSessionHasNoErrors();
+
+        $message = $this->repository->git($this->project, ['log', '-1', '--format=%B%n%an%n%cn%n%ce'])->output();
+        $this->assertStringStartsWith("Add comments to posts\n", $message);
+        $this->assertStringNotContainsString($request->prompt, $message);
+        $this->assertStringNotContainsStringIgnoringCase('builder', $message);
     }
 
     public function test_the_next_request_builds_on_the_accepted_commit()
@@ -162,7 +176,7 @@ class ChangeAcceptanceTest extends TestCase
         $this->assertSame($this->repository->head($this->project), $request->revert_sha);
         $this->assertFalse($request->isAccepted());
         $this->assertSame("<?php\n", File::get($this->repository->path($this->project).'/app/A.php'));
-        $this->assertStringStartsWith('Undo: ', $this->repository->log($this->project)[0]['subject']);
+        $this->assertSame('Revert "Update the application"', $this->repository->log($this->project)[0]['subject']);
 
         $this->actingAs($this->owner)
             ->post(route('feature-requests.reversion.store', $request))

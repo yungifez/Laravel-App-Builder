@@ -30,6 +30,7 @@ class FeaturePlanner implements Agent, HasStructuredOutput
         - understood_as: a few words on the kind of change, for example "Permission and behaviour change" or "Visual change".
         - current_behavior: what the application does now in the part the request is about, in plain words, from the project notes and files. Write "New" when nothing like it exists yet.
         - summary: one or two plain sentences the owner can understand.
+        - commit_subject: the git commit subject the application's own developer would write for this change: imperative, under 60 characters, about the code, for example "Add a phone number to the contact form". Do not quote the request.
         - acceptance_criteria: observable behaviour that must hold when the change is done, including who may and may not do things.
         - assumptions: decisions you made where the request was silent. Prefer the conventional Laravel choice.
         - tasks: concrete, ordered instructions for a developer who will make the change with file tools. Name the files and Laravel features to use (migrations, models, policies, form requests, actions, notifications, Inertia pages, tests).
@@ -39,7 +40,7 @@ class FeaturePlanner implements Agent, HasStructuredOutput
 
         - question: null in most cases. Ask only when the request leaves open a product choice that the request, the project notes and the owner's earlier answers do not settle, and a wrong guess would touch money, who may see or do what, data being lost or changed, the shape of the data, outside services, legal expectations or a major way the business works. Then return the single most consequential question: text in the owner's words ("Can customers use more than one location?"), why it matters in one plain sentence, 2 to 4 short options, and the option you recommend. Never ask an engineering question (controllers, queues, validation, migrations, policies, tests): decide those by Laravel convention. Never ask what the code or notes already answer. Still return a complete plan built on your recommended option.
 
-        Follow the project's own conventions (for example AGENTS.md) and Laravel's defaults. Do not plan changes to tests/Acceptance: those tests belong to the platform.
+        Follow the project's own conventions (for example AGENTS.md) and Laravel's defaults. Do not plan changes to tests/Acceptance: those tests are fixed.
         INSTRUCTIONS;
     }
 
@@ -50,6 +51,7 @@ class FeaturePlanner implements Agent, HasStructuredOutput
     {
         return [
             'summary' => $schema->string()->required(),
+            'commit_subject' => $schema->string()->required(),
             'acceptance_criteria' => $schema->array()->items($schema->string())->required(),
             'assumptions' => $schema->array()->items($schema->string())->required(),
             'tasks' => $schema->array()->items($schema->string())->required(),

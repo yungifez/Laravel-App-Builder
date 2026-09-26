@@ -104,6 +104,6 @@ class ApplyVisualEdit
             default => '',
         };
 
-        return "Change how <{$element->tag}> looks{$on}\n\nEdited in the inspector at {$location}.\nBuilder-Visual-Edit: yes";
+        return "Change how <{$element->tag}> looks{$on}\n\nIn {$location}.";
     }
 }

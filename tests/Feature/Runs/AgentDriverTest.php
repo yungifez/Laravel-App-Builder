@@ -82,6 +82,8 @@ class AgentDriverTest extends TestCase
             && str_contains($prompt->prompt, 'app/Models/Team.php')
             && $prompt->model === 'planner-model');
         FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'Add a nullable description property.')
+            && str_contains($prompt->prompt, "## Write as the app's own developer")
+            && preg_match('/platform|control plane|inspector/i', $prompt->prompt) === 0
             && $prompt->model === 'coder-model');
 
         $this->passVerification($run);

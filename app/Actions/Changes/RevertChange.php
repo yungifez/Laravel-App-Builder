@@ -3,11 +3,11 @@
 namespace App\Actions\Changes;
 
 use App\Models\FeatureRequest;
+use App\Models\Project;
 use App\Models\User;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class RevertChange
@@ -38,7 +38,7 @@ class RevertChange
             $sha = $this->repository->revert(
                 $project,
                 $commit,
-                Str::limit('Undo: '.Str::squish($featureRequest->prompt), 70)."\n\nThis reverts commit {$commit}.\n\nBuilder-Request: #{$featureRequest->id}",
+                $this->message($project, $commit),
                 ['name' => $owner->name, 'email' => $owner->email],
                 $branch,
             );
@@ -53,5 +53,15 @@ class RevertChange
         });
 
         return $featureRequest->refresh();
+    }
+
+    /**
+     * Word the commit as `git revert` does, so it reads like any other.
+     */
+    protected function message(Project $project, string $commit): string
+    {
+        $subject = trim($this->repository->git($project, ['log', '-1', '--format=%s', $commit])->output());
+
+        return "Revert \"{$subject}\"\n\nThis reverts commit {$commit}.";
     }
 }

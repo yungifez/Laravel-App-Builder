@@ -59,7 +59,7 @@ class KeepNotesDraft
                 $project,
                 $head,
                 $files,
-                "Describe the app from its code\n\nDrafted from the imported code and confirmed by the owner.\nBuilder-Notes-Edit: yes",
+                'Add notes that describe the app',
                 ['name' => $owner->name, 'email' => $owner->email],
             );
         } catch (RepositoryConflict $exception) {

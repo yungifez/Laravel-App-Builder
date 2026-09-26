@@ -1373,6 +1373,17 @@ shows it honestly; normalization improves it over time.
 - **Metrics:** pass rate per task class and engine, cost, repairs, share of work
   done without a model, tokens avoided, generated foundation code per feature,
   behaviour-diff and annotation accuracy.
+- **The customer repository shows no trade secrets:** by default, a project's
+  repository is a private repository in our organisation. Owners can also bring
+  their own. Either way, it must look like the work of the app's own developer.
+  - Commit subjects are written in a developer's words (the planner's
+    `commit_subject`). They never quote the owner's request. They have no
+    trailers and do not name the builder or its screens.
+  - Commits are committed by their author, unless an operator sets
+    `BUILDER_COMMITTER_NAME` and `BUILDER_COMMITTER_EMAIL`.
+  - Agent prompts do not mention a platform, a builder or a control plane. The
+    coder is told to write as the app's own developer. Files the runner puts in
+    a workspace go inside `.git/` and have neutral names.
 
 ## 20. Deliberately not built yet
 

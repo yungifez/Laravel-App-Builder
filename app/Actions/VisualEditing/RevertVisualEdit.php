@@ -27,7 +27,7 @@ class RevertVisualEdit
             $edit,
             $edit->classes_after,
             $edit->classes_before,
-            "Undo a change to how <{$edit->tag}> looks\n\nThis undoes commit {$edit->commit_sha}.\nBuilder-Visual-Edit: yes",
+            "Undo a change to how <{$edit->tag}> looks\n\nThis undoes commit {$edit->commit_sha}.",
             $owner,
         );
 

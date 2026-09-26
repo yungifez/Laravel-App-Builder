@@ -32,7 +32,9 @@ return [
     | registered project is imported into it as the first commit. Each change
     | the owner accepts becomes one commit, which can be reverted. Runs,
     | verifications and previews start from the commit a request was based
-    | on. The owner is the author of each commit; "committer" commits it.
+    | on. The owner is the author of each commit. Set "committer" to commit
+    | as a named account instead of as the author. Customers can own these
+    | repositories, so no default names this application.
     |
     */
 
@@ -47,8 +49,8 @@ return [
         // releases are older Laravel versions.
         'template_package' => env('BUILDER_TEMPLATE_PACKAGE', 'laravel/vue-starter-kit:dev-main'),
         'committer' => [
-            'name' => env('BUILDER_COMMITTER_NAME', 'Builder'),
-            'email' => env('BUILDER_COMMITTER_EMAIL', 'builder@localhost'),
+            'name' => env('BUILDER_COMMITTER_NAME'),
+            'email' => env('BUILDER_COMMITTER_EMAIL'),
         ],
     ],
 

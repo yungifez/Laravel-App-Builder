@@ -9,7 +9,6 @@ use App\Models\User;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class AcceptChange
@@ -78,24 +77,16 @@ class AcceptChange
     }
 
     /**
-     * Describe the change in the commit message: the owner's request, the
-     * summary of the change, and the requests it holds.
+     * Name the commit as the app's own developer would. The repository can
+     * belong to the customer, so the owner's words, and anything that
+     * shows how the change was made, stay out of it.
      *
      * @param  list<FeatureRequest>  $requests
      */
     protected function message(FeatureRequest $featureRequest, array $requests): string
     {
-        $lines = [Str::limit(Str::squish($featureRequest->prompt), 70), ''];
+        $subjects = array_filter(array_map(fn (FeatureRequest $request) => $request->latestRun?->plan['commit_subject'] ?? null, [...$requests, $featureRequest]));
 
-        if (filled($featureRequest->summary)) {
-            $lines[] = wordwrap((string) $featureRequest->summary, 72);
-            $lines[] = '';
-        }
-
-        foreach ($requests as $request) {
-            $lines[] = "Builder-Request: #{$request->id}";
-        }
-
-        return implode("\n", $lines);
+        return (string) (end($subjects) ?: 'Update the application');
     }
 }

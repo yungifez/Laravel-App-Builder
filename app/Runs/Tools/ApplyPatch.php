@@ -14,9 +14,10 @@ use App\Runs\ToolContext;
 class ApplyPatch implements MutatingTool
 {
     /**
-     * Where the patch is staged inside the workspace, outside the project's files.
+     * Where the patch is staged inside the workspace, outside the project's
+     * files. Git names it in its errors, so the name stays neutral.
      */
-    protected const PATCH_PATH = '.git/builder-operation.patch';
+    protected const PATCH_PATH = '.git/operation.patch';
 
     public function rules(): array
     {

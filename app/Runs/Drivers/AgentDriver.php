@@ -182,11 +182,22 @@ class AgentDriver implements ConstructionDriver
     protected const OBSERVABILITY = <<<'TEXT'
     ## Make it easy to see what the app does
 
-    The owner does not read code. They find out what the app does from the notes in .builder/ and from facts the platform reads out of the code. Build so both stay true:
+    The owner does not read code. They find out what the app does from the notes in .builder/ and from the code's own settings, enums and test names. Build so both stay true:
     - Put business settings (amounts, limits, time periods, who may do what) in config or enums, not inline in the code.
     - Name each test as a plain business statement, for example "a manager can cancel a booking".
     - In the notes for each area you change, say in plain words: who can do the new thing, what it changes, whether it sends an email or message, charges money or calls another service, and what happens automatically. Use the owner's words for things (bookings, customers), never class, table or route names.
     - When something fails for a person using the app, tell them what happened and what to do next, in plain words.
+    TEXT;
+
+    /**
+     * The repository can belong to the customer and go anywhere, so what
+     * the agent writes must read like the work of the app's own developer.
+     * Nothing may reveal how the request reached it.
+     */
+    protected const DISCRETION = <<<'TEXT'
+    ## Write as the app's own developer
+
+    Code, comments, tests, notes and file names describe the application only. Do not quote this brief, and do not mention where the request came from, who sent it, or any tool or service that handled it.
     TEXT;
 
     /**
@@ -212,6 +223,7 @@ class AgentDriver implements ConstructionDriver
         );
 
         $sections[] = self::OBSERVABILITY;
+        $sections[] = self::DISCRETION;
 
         if ($plan->preserve !== []) {
             $sections[] = "## Keep as it is\n\nDo not change these. If the request cannot be done without changing one, stop and say so.\n\n".$this->list(array_column($plan->preserve, 'statement'));

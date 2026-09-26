@@ -15,9 +15,11 @@ use App\Workspaces\WorkspaceManager;
 class RunnerAgent implements CodingAgent
 {
     /**
-     * Where the task file goes while the agent runs. It is removed afterwards.
+     * Where the task file goes while the agent runs: inside .git, so it is
+     * never part of the change, with a name that says nothing about who
+     * wrote it. It is removed afterwards.
      */
-    public const TASK_DIRECTORY = '.builder-run';
+    public const TASK_DIRECTORY = '.git/agent-task';
 
     /**
      * @param  array<string, string>  $credentials  Environment variables for the runner

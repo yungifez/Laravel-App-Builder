@@ -210,7 +210,7 @@ class SdkDriverTest extends TestCase
         $this->assertSame([1200, 300, 0.42, 3], [$call['input_tokens'], $call['output_tokens'], $call['cost_usd'], $call['turns']]);
         $this->assertSame('model=claude-opus-5 turns='.config('builder.agents.max_turns').' key=present', $run->events()->where('type', 'build_finished')->sole()->data['account']);
         $this->assertStringContainsString('agent-output.txt', (string) $featureRequest->refresh()->patch);
-        $this->assertStringNotContainsString('.builder-run', (string) $featureRequest->patch);
+        $this->assertStringNotContainsString('agent-task', (string) $featureRequest->patch);
         $this->assertFalse(WorkspaceCommand::query()->get()->contains(fn (WorkspaceCommand $command) => str_contains((string) json_encode($command->command), 'test-anthropic-key')));
     }
 

@@ -124,7 +124,7 @@ class ExperimentTest extends TestCase
         $this->assertSame(ExperimentStatus::Merged, $experiment->status);
         $this->assertSame($main, $experiment->merge_sha);
         $this->assertSame("<?php\n// added\n", $this->repository->show($this->project, $main, 'app/A.php'));
-        $this->assertSame('Merge Comments', $this->repository->log($this->project, 1, 'main')[0]['subject']);
+        $this->assertSame("Merge branch '{$experiment->branch}'", $this->repository->log($this->project, 1, 'main')[0]['subject']);
         $this->assertSame('', trim($this->repository->git($this->project, ['branch', '--list', $experiment->branch])->output()));
         $this->assertNull($this->project->refresh()->experiment_id);
 

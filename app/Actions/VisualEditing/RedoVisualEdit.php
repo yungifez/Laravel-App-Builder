@@ -26,7 +26,7 @@ class RedoVisualEdit
             $edit,
             $edit->classes_before,
             $edit->classes_after,
-            "Redo a change to how <{$edit->tag}> looks\n\nThis makes commit {$edit->commit_sha} again.\nBuilder-Visual-Edit: yes",
+            "Redo a change to how <{$edit->tag}> looks\n\nThis makes commit {$edit->commit_sha} again.",
             $owner,
         );
 

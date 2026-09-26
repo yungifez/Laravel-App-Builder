@@ -133,7 +133,7 @@ class NotesDraftTest extends TestCase
         $project->refresh();
         $this->assertNull($project->notes_draft_status);
         $this->assertNull($project->notes_draft);
-        $this->assertSame('Describe the app from its code', $this->repository->log($project)[0]['subject']);
+        $this->assertSame('Add notes that describe the app', $this->repository->log($project)[0]['subject']);
 
         $context = app(ReadProjectContext::class)->atRevision($project, $this->repository->head($project));
         $this->assertSame([], $context->problems);
