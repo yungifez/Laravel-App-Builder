@@ -157,6 +157,19 @@ class SdkDriverTest extends TestCase
         $this->assertSame(0, $run->events()->where('type', 'failover')->count());
     }
 
+    public function test_agents_do_not_run_beside_the_control_plane_unless_it_is_allowed()
+    {
+        config(['workspaces.drivers.local.agents' => false]);
+        $this->agent('claude', 'anthropic', fn () => $this->fail('The agent must not run in the local driver.'));
+        $this->agent('codex', 'openai', fn () => $this->fail('The agent must not run in the local driver.'));
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(RunStatus::Failed, $run->status);
+        $this->assertSame('This change could not be started here. Nothing in your app was changed.', $run->error);
+        $this->assertSame(0, $run->events()->where('type', 'model_call')->where('data->role', 'coder')->count());
+    }
+
     public function test_used_up_turns_stop_the_run_for_the_owner()
     {
         $this->agent('claude', 'anthropic', fn () => $this->outcome('claude', 'anthropic', AgentOutcomeStatus::Failed, errorKind: 'error_max_turns'));

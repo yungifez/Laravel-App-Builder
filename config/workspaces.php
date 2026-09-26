@@ -82,6 +82,10 @@ return [
             // them never pick up the control plane's git or ignore files.
             'root' => env('WORKSPACE_LOCAL_ROOT', sys_get_temp_dir().DIRECTORY_SEPARATOR.'builder-workspaces'),
             'image' => 'host',
+            // A coding agent here runs beside the control plane and can read
+            // its files, including .env. Allow it only for apps you trust,
+            // such as our own fixtures, and never in production.
+            'agents' => (bool) env('WORKSPACE_LOCAL_AGENTS', false),
             // Only these variables reach commands; everything else is scrubbed.
             'env_passthrough' => [
                 'PATH', 'HOME', 'LANG', 'COMPOSER_HOME', 'COMPOSER_ALLOW_SUPERUSER',

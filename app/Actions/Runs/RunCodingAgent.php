@@ -18,6 +18,7 @@ use App\Runs\RunLease;
 use Closure;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class RunCodingAgent
 {
@@ -46,6 +47,8 @@ class RunCodingAgent
      */
     public function handle(Run $run, RunLease $lease, Workspace $workspace, AgentTask $task): AgentOutcome
     {
+        $this->ensureAgentsMayRunIn($workspace);
+
         $snapshot = $this->snapshot($workspace);
         $previous = null;
 
@@ -114,6 +117,27 @@ class RunCodingAgent
                 $locked->extendLease();
             });
         };
+    }
+
+    /**
+     * Refuse a workspace driver that does not keep agents away from the
+     * control plane, such as "local", unless an operator allowed it for
+     * trusted apps. The owner only hears that the change could not start.
+     *
+     * @throws ConstructionFailed
+     */
+    protected function ensureAgentsMayRunIn(Workspace $workspace): void
+    {
+        if (config("workspaces.drivers.{$workspace->driver}.agents") !== false) {
+            return;
+        }
+
+        Log::warning('A coding agent was refused in a workspace that does not isolate it.', [
+            'driver' => $workspace->driver,
+            'allow_with' => 'WORKSPACE_LOCAL_AGENTS=true (trusted apps only)',
+        ]);
+
+        throw new ConstructionFailed(__('This change could not be started here. Nothing in your app was changed.'));
     }
 
     /**
