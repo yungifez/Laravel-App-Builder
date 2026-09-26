@@ -1,0 +1,152 @@
+<?php
+
+namespace App\Workspaces\Drivers;
+
+use App\Enums\BoxCommandStatus;
+use App\Workspaces\Boxes\BoxChannel;
+use App\Workspaces\Boxes\Contracts\BoxProvider;
+use App\Workspaces\CommandResult;
+use App\Workspaces\Contracts\WorkspaceDriver;
+use App\Workspaces\WorkspaceSpec;
+use Closure;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Str;
+use InvalidArgumentException;
+use RuntimeException;
+
+/**
+ * Runs each workspace in a box with a runner in it. The provider only
+ * creates and destroys boxes; commands, files and services go through the
+ * runner, so this driver works the same with any provider.
+ *
+ * The box holds nothing of the control plane: no code, no .env and no
+ * database access. Credentials reach a single command, as with the other
+ * drivers, until the model gateway takes them out of the box too.
+ */
+class RunnerDriver implements WorkspaceDriver
+{
+    /**
+     * Exit code reported for a command that ran out of time or was lost.
+     */
+    protected const TIMEOUT_EXIT_CODE = 124;
+
+    public function __construct(
+        protected BoxChannel $channel,
+        protected BoxProvider $provider,
+        protected int $fileSeconds,
+    ) {}
+
+    public function create(WorkspaceSpec $spec): string
+    {
+        $box = $this->provider->create($spec);
+
+        $this->channel->call($box, 'open', [], $this->fileSeconds);
+
+        return $box;
+    }
+
+    public function exec(string $workspaceId, array $command, int $timeoutSeconds, array $environment = [], ?Closure $whileRunning = null): CommandResult
+    {
+        $sent = $this->channel->send($workspaceId, 'exec', ['command' => $command, 'env' => $environment], $timeoutSeconds);
+        $finished = $this->channel->await($sent, $whileRunning);
+        $result = $finished->result ?? [];
+
+        if ($finished->status === BoxCommandStatus::Lost) {
+            return new CommandResult(
+                exitCode: self::TIMEOUT_EXIT_CODE,
+                output: '',
+                errorOutput: (string) ($result['error_output'] ?? ''),
+                durationMs: (int) $finished->created_at?->diffInMilliseconds($finished->finished_at, true),
+                timedOut: true,
+            );
+        }
+
+        return new CommandResult(
+            exitCode: (int) ($result['exit_code'] ?? 1),
+            output: (string) ($result['output'] ?? ''),
+            errorOutput: (string) ($result['error_output'] ?? ''),
+            durationMs: (int) ($result['duration_ms'] ?? 0),
+            timedOut: (bool) ($result['timed_out'] ?? false),
+        );
+    }
+
+    /**
+     * Pack the directory here, without the excluded paths, and let the
+     * runner fetch and unpack it.
+     */
+    public function copyDirectory(string $workspaceId, string $sourcePath): void
+    {
+        $archive = Str::lower((string) Str::ulid()).'.tar.gz';
+        $path = self::archivePath($archive);
+
+        File::ensureDirectoryExists(dirname($path));
+
+        $packed = Process::run(['sh', '-c', 'tar -C "$1" '.CopyExclusions::tarFlags().' -czf "$2" .', 'sh', $sourcePath, $path]);
+
+        if ($packed->failed()) {
+            throw new RuntimeException('Could not pack the project for the workspace: '.trim($packed->errorOutput()));
+        }
+
+        try {
+            $this->channel->call($workspaceId, 'unpack', ['archive' => $archive], (int) config('workspaces.commands.timeout'));
+        } finally {
+            File::delete($path);
+        }
+    }
+
+    public function writeFile(string $workspaceId, string $path, string $contents): void
+    {
+        $this->channel->call($workspaceId, 'write', ['path' => $this->relative($path), 'contents' => base64_encode($contents)], $this->fileSeconds);
+    }
+
+    public function readFile(string $workspaceId, string $path): string
+    {
+        $result = $this->channel->call($workspaceId, 'read', ['path' => $this->relative($path)], $this->fileSeconds);
+
+        return (string) base64_decode((string) ($result['contents'] ?? ''), true);
+    }
+
+    public function startService(string $workspaceId, array $command, int $port): void
+    {
+        $this->channel->call($workspaceId, 'start_service', ['command' => $command, 'port' => $port], $this->fileSeconds);
+    }
+
+    public function serviceUrl(string $workspaceId, int $port): string
+    {
+        return $this->provider->serviceUrl($workspaceId, $port);
+    }
+
+    public function destroy(string $workspaceId): void
+    {
+        try {
+            $this->channel->call($workspaceId, 'close', [], $this->fileSeconds);
+        } finally {
+            $this->provider->destroy($workspaceId);
+        }
+    }
+
+    /**
+     * Where a packed project waits for its runner to fetch it.
+     */
+    public static function archivePath(string $archive): string
+    {
+        if (! preg_match('/^[a-z0-9]+\.tar\.gz$/', $archive)) {
+            throw new InvalidArgumentException("Invalid archive name [{$archive}].");
+        }
+
+        return storage_path("app/private/box-archives/{$archive}");
+    }
+
+    /**
+     * Refuse paths that leave the workspace. The runner checks again.
+     */
+    protected function relative(string $path): string
+    {
+        if (str_starts_with($path, '/') || in_array('..', explode('/', $path), true)) {
+            throw new InvalidArgumentException("Path [{$path}] must stay inside the workspace.");
+        }
+
+        return $path;
+    }
+}

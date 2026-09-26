@@ -101,6 +101,47 @@ return [
             'workdir' => '/workspace',
         ],
 
+        // Each workspace lives in a box with a runner in it
+        // (resources/box-runner). The runner connects out to the control
+        // plane: it fetches commands and posts results over HTTPS, and
+        // "socket_url" (Reverb) only wakes it when work arrives. Boxes come
+        // from the provider in "boxes".
+        'runner' => [
+            'image' => 'box',
+            'provider' => env('WORKSPACE_BOX_PROVIDER', 'static'),
+            'socket_url' => env('WORKSPACE_RUNNER_SOCKET_URL'),
+            'poll_seconds' => (int) env('WORKSPACE_RUNNER_POLL_SECONDS', 5),
+            // Where the coding agent runner is inside a box.
+            'agent_runner' => env('WORKSPACE_RUNNER_AGENT_RUNNER', '/opt/agent-runner/run.mjs'),
+            // A runner must take a command within "answer_seconds" and
+            // finish it within its timeout plus "grace_seconds".
+            'answer_seconds' => (int) env('WORKSPACE_RUNNER_ANSWER_SECONDS', 60),
+            'grace_seconds' => 30,
+            'file_seconds' => 60,
+            'poll_ms' => 200,
+        ],
+
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Box Providers
+    |--------------------------------------------------------------------------
+    |
+    | Where the runner driver gets its boxes. "static" is one runner that is
+    | already running, such as the runner container in local development; it
+    | holds every workspace, so it is for trusted apps only. A provider for a
+    | hosting service is added as another entry here and in
+    | App\Workspaces\Boxes\BoxProviderManager.
+    |
+    */
+
+    'boxes' => [
+        'static' => [
+            'runner' => env('WORKSPACE_RUNNER_NAME', 'local'),
+            'token' => env('WORKSPACE_RUNNER_TOKEN', ''),
+            'service_host' => env('WORKSPACE_RUNNER_SERVICE_HOST', 'runner'),
+        ],
     ],
 
 ];

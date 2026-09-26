@@ -3,7 +3,9 @@
 # Redis are trusted local services. Running only `postgres` and `redis` (and
 # PHP on the host) also works.
 # This file is NOT the future isolation design for customer code: it must
-# never mount the Docker socket, so Sail uses the `local` workspace driver.
+# never mount the Docker socket. `runner` stands in for a workspace box: it
+# gets only the two runner folders and its own volume, never the project,
+# .env or the database (WORKSPACE_DRIVER=runner). `reverb` rings its doorbell.
 name: builder-control-plane
 
 services:
@@ -32,6 +34,34 @@ services:
                 condition: service_healthy
             redis:
                 condition: service_healthy
+
+    reverb:
+        image: sail-8.4/app
+        user: '${WWWUSER:-1000}'
+        working_dir: /var/www/html
+        entrypoint:
+            ['php', 'artisan', 'reverb:start', '--host=0.0.0.0', '--port=8080']
+        volumes:
+            - '.:/var/www/html'
+        depends_on:
+            - laravel.test
+        restart: unless-stopped
+
+    runner:
+        image: sail-8.4/app
+        entrypoint: ['node', '/opt/box-runner/runner.mjs']
+        environment:
+            RUNNER_URL: 'http://laravel.test'
+            RUNNER_TOKEN: '${WORKSPACE_RUNNER_TOKEN:-}'
+            RUNNER_ROOT: /workspaces
+            RUNNER_USER: sail
+        volumes:
+            - './resources/box-runner:/opt/box-runner:ro'
+            - './resources/agent-runner:/opt/agent-runner:ro'
+            - box-workspaces:/workspaces
+        depends_on:
+            - laravel.test
+        restart: unless-stopped
 
     postgres:
         image: postgres:18.6
@@ -74,5 +104,6 @@ services:
         restart: unless-stopped
 
 volumes:
+    box-workspaces:
     postgres-data:
     redis-data:

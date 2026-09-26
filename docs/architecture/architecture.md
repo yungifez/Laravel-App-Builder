@@ -1146,13 +1146,26 @@ grades its own work.
   alternative is a loop in the control plane that only sends tool calls to the
   box. It would keep even the harness out, but it rebuilds what the SDKs
   already do well. We revisit it only if the gateway boundary proves too weak.
-- **Local development stands in for boxes and never replaces them.** The
-  `local` and `docker` drivers run our own trusted fixtures only. Not built
-  yet: a separate runner container in the Sail stack, with no project mount,
-  no `.env` and no database, that plays the part of the box, so local runs
-  exercise the same boundary. Until it exists, the `local` driver runs inside
-  the control plane's container, so an agent without its own sandbox there can
-  read the control plane's files.
+- **How the control plane and a box talk.** The runner in the box
+  (`resources/box-runner`) connects out, so the box accepts no connections
+  and needs nothing from its provider but outbound network. Commands (run a
+  program, write or read a file, unpack the project, start a service) and
+  their results travel over HTTPS, each command claimed exactly once, with a
+  token that opens only that runner's commands. Reverb (Laravel's WebSocket
+  server) only rings the runner's doorbell when work arrives, including a
+  request to stop a command. When the socket is down, the runner polls, so
+  work is delayed, never lost. Commands run as an unprivileged user, and the
+  runner itself as root, so code in the box cannot read the runner's token or
+  stop it. The `runner` workspace driver implements the whole workspace
+  contract this way. A provider adapter only creates boxes, destroys them and
+  says where a box's services are reachable.
+- **Local development stands in for boxes and never replaces them.** In Sail,
+  the `runner` service plays the box through the `static` provider: one runner
+  that is already running, with no project mount, no `.env` and no database,
+  so local runs cross the same boundary. It holds every local workspace under
+  one user, so it is for our trusted fixtures only. The `local` driver still
+  runs workspaces inside the control plane's container. Agents refuse to run
+  there unless `WORKSPACE_LOCAL_AGENTS` allows it for trusted apps.
 - **The runner** is a TypeScript process in the runtime that hosts the agent
   engines and speaks the runtime protocol to the control plane over an outbound
   connection: tasks (`transform`, `agent`, `prepare`) in; numbered events

@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Features\FeatureGeneratorManager;
 use App\Runs\Agents\CodingAgentManager;
 use App\Runs\ConstructionDriverManager;
+use App\Workspaces\Boxes\BoxProviderManager;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Foundation\DevCommands;
 use Illuminate\Support\ServiceProvider;
@@ -24,6 +25,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(FeatureGeneratorManager::class);
         $this->app->singleton(ConstructionDriverManager::class);
         $this->app->singleton(CodingAgentManager::class);
+        $this->app->singleton(BoxProviderManager::class);
     }
 
     /**

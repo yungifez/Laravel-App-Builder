@@ -67,8 +67,10 @@ endpoint is at <http://localhost:8000/up>.
 Use Sail when the host PHP lacks `pdo_pgsql` or `redis`. Sail runs PHP and
 Node in the `laravel.test` container of `compose.yaml`.
 
-1. In `.env`, set `DB_HOST=postgres`, `REDIS_HOST=redis` and
-   `WORKSPACE_DRIVER=local`. Set `APP_PORT`, `VITE_PORT`, `FORWARD_DB_PORT`
+1. In `.env`, set `DB_HOST=postgres`, `REDIS_HOST=redis`,
+   `WORKSPACE_DRIVER=runner`, `REVERB_HOST=reverb` and a long random
+   `WORKSPACE_RUNNER_TOKEN`. Run `vendor/bin/sail artisan reverb:install` once
+   for the Reverb keys. Set `APP_PORT`, `VITE_PORT`, `FORWARD_DB_PORT`
    and `FORWARD_REDIS_PORT` if the defaults are in use. Set `APP_URL` and
    `BUILDER_PREVIEW_PORT` to match `APP_PORT`.
 2. Start the services and prepare the app:
@@ -93,8 +95,32 @@ Node in the `laravel.test` container of `compose.yaml`.
     ```
 
 Run the checks with the `vendor/bin/sail` prefix, for example
-`vendor/bin/sail composer check:tests`. Sail has no Docker socket, so
-workspaces are directories inside the container (the `local` driver).
+`vendor/bin/sail composer check:tests`.
+
+#### Workspaces in Sail
+
+Each change is built, checked and previewed in a workspace. With Sail, the
+`runner` service stands in for the disposable box each workspace gets in
+production. It holds the workspaces, the language toolchains and the agent
+runner. It never sees this repository, `.env` or the database.
+
+- The runner (`resources/box-runner/runner.mjs`) connects out to the control
+  plane. It fetches commands and posts results over HTTP
+  (`/api/runner/*`, with its token). The `reverb` service only rings its
+  doorbell when work arrives. If Reverb is down, the runner polls every few
+  seconds instead.
+- Commands run as the `sail` user. The runner itself runs as root, so code in
+  a workspace cannot read its token or stop it.
+- Previews listen inside the runner. Set `BUILDER_PREVIEW_LISTEN_HOST=0.0.0.0`
+  so the control plane can reach them at `http://runner:{port}`.
+- After changing `resources/box-runner`, restart the runner only:
+  `vendor/bin/sail up -d --no-deps --force-recreate runner`. Without
+  `--no-deps`, compose restarts the app container and its workers too.
+
+The `local` driver still works: it runs workspaces as folders inside the app
+container. A coding agent there can read the control plane's files, so
+agents refuse to run in it unless `WORKSPACE_LOCAL_AGENTS=true`. Set that only
+for trusted apps, such as our fixtures.
 
 ### Creating the first user
 
@@ -226,9 +252,10 @@ review; a failing one is repaired or stops the run for the owner's decision.
 Runs and verification run on the queue, so keep a worker running
 (`composer dev` starts one). Verification can take several minutes, so keep
 `REDIS_QUEUE_RETRY_AFTER` above the jobs' one-hour timeout (see
-`.env.example`). The default `local` workspace driver runs in a temporary
-directory on this machine with a scrubbed environment. It is for trusted
-fixtures only (see `config/workspaces.php`).
+`.env.example`). Workspaces run in the `runner` service with Sail (see
+[Workspaces in Sail](#workspaces-in-sail)). The `local` workspace driver runs
+in a temporary directory on this machine with a scrubbed environment. It is
+for trusted fixtures only (see `config/workspaces.php`).
 
 ### Previews
 

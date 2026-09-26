@@ -191,7 +191,7 @@ return [
     'construction' => [
         'driver' => env('BUILDER_CONSTRUCTION_DRIVER', 'scripted'),
 
-        'workspace_driver' => env('BUILDER_CONSTRUCTION_WORKSPACE_DRIVER', 'local'),
+        'workspace_driver' => env('BUILDER_CONSTRUCTION_WORKSPACE_DRIVER', env('WORKSPACE_DRIVER', 'local')),
 
         'lease_seconds' => (int) env('BUILDER_RUN_LEASE_SECONDS', 300),
 
@@ -371,7 +371,7 @@ return [
     */
 
     'verification' => [
-        'workspace_driver' => env('BUILDER_VERIFICATION_DRIVER', 'local'),
+        'workspace_driver' => env('BUILDER_VERIFICATION_DRIVER', env('WORKSPACE_DRIVER', 'local')),
 
         // Platform-owned acceptance suites and their runner configuration.
         // They are copied fresh into tests/Acceptance after the checks, replacing
@@ -439,7 +439,7 @@ return [
         // is named; give it its own worker so they start in parallel.
         'automatic' => (bool) env('BUILDER_PREVIEW_AUTOMATIC', true),
         'queue' => env('BUILDER_PREVIEW_QUEUE'),
-        'workspace_driver' => env('BUILDER_PREVIEW_WORKSPACE_DRIVER', 'local'),
+        'workspace_driver' => env('BUILDER_PREVIEW_WORKSPACE_DRIVER', env('WORKSPACE_DRIVER', 'local')),
         'domain' => env('BUILDER_PREVIEW_DOMAIN', 'preview.localhost'),
         'scheme' => env('BUILDER_PREVIEW_SCHEME', 'http'),
         'public_port' => env('BUILDER_PREVIEW_PORT', 8000),

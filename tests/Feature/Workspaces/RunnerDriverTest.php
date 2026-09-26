@@ -1,0 +1,186 @@
+<?php
+
+namespace Tests\Feature\Workspaces;
+
+use App\Enums\BoxCommandStatus;
+use App\Models\BoxCommand;
+use App\Workspaces\Boxes\BoxProviderManager;
+use App\Workspaces\Drivers\RunnerDriver;
+use App\Workspaces\WorkspaceManager;
+use App\Workspaces\WorkspaceSpec;
+use Illuminate\Broadcasting\BroadcastException;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
+use RuntimeException;
+use Tests\Fakes\FakeBoxRunner;
+use Tests\TestCase;
+
+class RunnerDriverTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected FakeBoxRunner $runner;
+
+    protected RunnerDriver $driver;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $runner = $this->runner = new FakeBoxRunner('local');
+        Broadcast::extend('fake-runner', fn () => $runner);
+
+        config([
+            'broadcasting.default' => 'fake-runner',
+            'broadcasting.connections.fake-runner' => ['driver' => 'fake-runner'],
+            'workspaces.boxes.static' => ['runner' => 'local', 'token' => 'runner-token', 'service_host' => 'runner'],
+            'workspaces.drivers.runner.answer_seconds' => 1,
+            'workspaces.drivers.runner.grace_seconds' => 0,
+            'workspaces.drivers.runner.poll_ms' => 10,
+        ]);
+
+        $this->driver = $this->app->make(WorkspaceManager::class)->driver('runner');
+    }
+
+    public function test_a_workspace_is_opened_by_the_runner_that_serves_it()
+    {
+        $box = $this->driver->create(new WorkspaceSpec('workspace-1', 'box', 1, 256, 64));
+
+        $this->assertSame('workspace-1', $box);
+        $this->assertSame([['type' => 'open', 'box' => 'workspace-1', 'payload' => []]], $this->runner->received);
+        $this->assertSame('http://runner:8123', $this->driver->serviceUrl($box, 8123));
+    }
+
+    public function test_a_command_runs_in_the_box_and_its_credentials_do_not_outlive_it()
+    {
+        $this->runner->on('exec', fn (array $payload) => [
+            'exit_code' => 0,
+            'output' => implode(' ', $payload['command']).' with '.$payload['env']['API_KEY'],
+            'error_output' => '',
+            'timed_out' => false,
+            'duration_ms' => 12,
+        ]);
+
+        $result = $this->driver->exec('workspace-1', ['php', '-v'], 30, ['API_KEY' => 'secret']);
+
+        $this->assertSame(0, $result->exitCode);
+        $this->assertSame('php -v with secret', $result->output);
+        $this->assertSame(12, $result->durationMs);
+        $this->assertNull(BoxCommand::sole()->payload);
+    }
+
+    public function test_a_command_nobody_takes_is_reported_as_timed_out()
+    {
+        config(['workspaces.boxes.static.runner' => 'elsewhere']);
+        $this->app->forgetInstance(BoxProviderManager::class);
+        $driver = $this->app->make(WorkspaceManager::class)->createRunnerDriver();
+
+        $result = $driver->exec('workspace-1', ['php', '-v'], 1, ['API_KEY' => 'secret']);
+
+        $this->assertTrue($result->timedOut);
+        $this->assertSame('No runner took the command.', $result->errorOutput);
+        $this->assertSame(BoxCommandStatus::Lost, BoxCommand::sole()->status);
+        $this->assertNull(BoxCommand::sole()->payload);
+    }
+
+    public function test_a_caller_that_gives_up_stops_the_command_in_the_box()
+    {
+        $this->runner->on('exec', fn () => null);
+        $ticks = 0;
+
+        try {
+            $this->driver->exec('workspace-1', ['sleep', '60'], 60, [], function () use (&$ticks) {
+                if (++$ticks === 3) {
+                    throw new RuntimeException('Lease lost.');
+                }
+            });
+            $this->fail('The exception must reach the caller.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('Lease lost.', $exception->getMessage());
+        }
+
+        $command = BoxCommand::sole();
+        $this->assertNotNull($command->cancel_requested_at);
+        $this->assertSame([$command->id], $this->runner->cancelled);
+    }
+
+    public function test_files_travel_both_ways_and_paths_stay_inside_the_workspace()
+    {
+        $written = null;
+        $this->runner
+            ->on('write', function (array $payload) use (&$written) {
+                $written = [$payload['path'], base64_decode($payload['contents'])];
+
+                return ['exit_code' => 0, 'output' => '', 'error_output' => '', 'timed_out' => false, 'duration_ms' => 1];
+            })
+            ->on('read', fn (array $payload) => ['exit_code' => 0, 'output' => '', 'error_output' => '', 'timed_out' => false, 'duration_ms' => 1, 'contents' => base64_encode("read {$payload['path']}")]);
+
+        $this->driver->writeFile('workspace-1', '.git/agent-task/task.json', '{"a":1}');
+
+        $this->assertSame(['.git/agent-task/task.json', '{"a":1}'], $written);
+        $this->assertSame('read notes.md', $this->driver->readFile('workspace-1', 'notes.md'));
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->driver->readFile('workspace-1', '../../.env');
+    }
+
+    public function test_a_failed_file_command_throws()
+    {
+        $this->runner->on('read', fn () => ['exit_code' => 1, 'output' => '', 'error_output' => 'No such file', 'timed_out' => false, 'duration_ms' => 1]);
+
+        $this->expectExceptionMessage('The workspace could not read: No such file');
+
+        $this->driver->readFile('workspace-1', 'missing.txt');
+    }
+
+    public function test_the_project_is_packed_without_secrets_and_the_archive_is_removed_afterwards()
+    {
+        $source = storage_path('framework/testing/source-'.Str::lower(Str::random(8)));
+        File::ensureDirectoryExists("{$source}/app");
+        File::put("{$source}/app/Team.php", '<?php');
+        File::put("{$source}/.env", 'APP_KEY=secret');
+
+        $listed = null;
+        $this->runner->on('unpack', function (array $payload) use (&$listed) {
+            $listed = trim((string) shell_exec('tar -tzf '.escapeshellarg(RunnerDriver::archivePath($payload['archive']))));
+
+            return ['exit_code' => 0, 'output' => '', 'error_output' => '', 'timed_out' => false, 'duration_ms' => 1];
+        });
+
+        try {
+            $this->driver->copyDirectory('workspace-1', $source);
+        } finally {
+            File::deleteDirectory($source);
+        }
+
+        $this->assertStringContainsString('./app/Team.php', (string) $listed);
+        $this->assertStringNotContainsString('.env', (string) $listed);
+        $this->assertSame([], File::glob(storage_path('app/private/box-archives/*')));
+    }
+
+    public function test_a_doorbell_that_cannot_ring_does_not_fail_the_command()
+    {
+        Broadcast::extend('broken', fn () => new class extends FakeBoxRunner
+        {
+            public function broadcast(array $channels, $event, array $payload = []): void
+            {
+                throw new BroadcastException('Could not resolve host: reverb');
+            }
+        });
+        config(['broadcasting.default' => 'broken', 'broadcasting.connections.broken' => ['driver' => 'broken']]);
+
+        $result = $this->driver->exec('workspace-1', ['php', '-v'], 1);
+
+        $this->assertTrue($result->timedOut);
+        $this->assertSame('No runner took the command.', $result->errorOutput);
+    }
+
+    public function test_destroying_a_workspace_closes_it_in_the_box()
+    {
+        $this->driver->destroy('workspace-1');
+
+        $this->assertSame('close', $this->runner->received[0]['type']);
+    }
+}

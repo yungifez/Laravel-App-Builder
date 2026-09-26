@@ -59,7 +59,7 @@ class RunnerAgent implements CodingAgent
         try {
             $result = $this->runWorkspaceCommand->handle(
                 $workspace,
-                [(string) config('builder.agents.runner.node'), (string) config('builder.agents.runner.path'), $taskFile],
+                [(string) config('builder.agents.runner.node'), $this->runnerPath($workspace), $taskFile],
                 $task->timeoutSeconds,
                 array_filter($this->credentials, fn (string $value) => $value !== ''),
                 $whileRunning,
@@ -77,6 +77,15 @@ class RunnerAgent implements CodingAgent
         $this->removeTaskFiles($workspace);
 
         return AgentOutcome::fromRunnerOutput($this->adapter, $this->provider, $this->model, $result->output, $result->timed_out);
+    }
+
+    /**
+     * Get where the Node runner is for the workspace's driver: a box has its
+     * own copy, while the other drivers use the control plane's.
+     */
+    protected function runnerPath(Workspace $workspace): string
+    {
+        return (string) (config("workspaces.drivers.{$workspace->driver}.agent_runner") ?? config('builder.agents.runner.path'));
     }
 
     /**
