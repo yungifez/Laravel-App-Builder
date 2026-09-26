@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 23.** This document consolidates the direction in [direction/](direction/)
+**Version 24.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -54,7 +54,9 @@ control plane over a real Laravel application
 the formal system ([§1](#1-principles), [§4](#4-two-ontologies)), every change runs
 a closed loop that compares the result with the goal ([§9](#9-the-change-pipeline)),
 and symbolic planners and duplicated models of the app are ruled out
-([§20](#20-deliberately-not-built-yet)). When they disagree, the direction documents state intent
+([§20](#20-deliberately-not-built-yet)). Version 24 makes pricing Grandma-first
+([direction 25](direction/25-pricing-for-grandma.md), [§16](#16-model-gateway-and-credentials)):
+one unified price by default, and pay as you go for power users. When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -1322,8 +1324,11 @@ path.
 - **Credentials vault** per account, encrypted, masked, revocable, each checked
   by a test call before saving: `api_key`, `claude_subscription_token`,
   `codex_chatgpt_token`, and provider OAuth (for example OpenRouter) later.
-- **Seamless default:** included credits. Bring-your-own is an option chosen in
-  one onboarding question.
+- **Pricing is Grandma-first: one unified price.** The owner pays one plan
+  price and never sees credits, tokens, models or cost per call. What each
+  change costs us is internal telemetry (§25.2), not an owner-facing number.
+- **Power users choose pay as you go,** or bring their own keys, from
+  settings. It is an option they look for, not an onboarding question.
 - **Subscription tokens:** technically supported, but Anthropic's documentation
   states that third-party developers may not offer claude.ai login or rate
   limits in their products unless previously approved. They stay flagged off on
@@ -1454,7 +1459,8 @@ for; none is started without that evidence.
 
 ## 23. Open decisions
 
-- Included credits at launch, and pricing.
+- The unified price and the fair-use limit it includes; the pay-as-you-go
+  rates for power users.
 - Providers beyond Anthropic and OpenAI, and the OpenAI agent SDK choice.
 - Curated presets only, or also an open model picker.
 - Approval from Anthropic (and a position from OpenAI) for subscription tokens
