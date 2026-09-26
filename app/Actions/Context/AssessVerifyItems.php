@@ -2,6 +2,7 @@
 
 namespace App\Actions\Context;
 
+use App\Context\Capability;
 use App\Features\PatchSummary;
 use App\Runs\Plan;
 use App\Runs\Review;
@@ -12,8 +13,10 @@ class AssessVerifyItems
      * Say how we know each of the brief's verify items (its acceptance
      * criteria) holds. It is "tested" when the reviewer named a test file
      * that the change adds or changes and the test suite passed, "not_run"
-     * when that file is in the change but the suite did not pass, and
-     * "no_test" when no such file was named or it is not in the change.
+     * when that file is in the change but the suite did not pass,
+     * "not_run_by_checks" when the file is in the change but the suite does
+     * not run files there, and "no_test" when no such file was named or it
+     * is not in the change.
      * The reviewer's word alone is never counted as evidence.
      *
      * @param  list<array{name: string, stage: string, outcome: string}>  $verificationResults
@@ -37,6 +40,7 @@ class AssessVerifyItems
                 'test_file' => $file,
                 'test_name' => $name,
                 'evidence' => match (true) {
+                    $inChange && ! Capability::runBySuite($file) => 'not_run_by_checks',
                     $inChange && $suitePassed => 'tested',
                     $inChange => 'not_run',
                     default => 'no_test',

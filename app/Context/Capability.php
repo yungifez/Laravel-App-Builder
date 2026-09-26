@@ -155,13 +155,21 @@ final readonly class Capability
     }
 
     /**
+     * Determine if the project's test suite check runs the file.
+     */
+    public static function runBySuite(string $path): bool
+    {
+        return Str::startsWith($path, (array) config('builder.verification.suite_paths'));
+    }
+
+    /**
      * Get a copy that knows which of the project's test files the area claims.
      *
      * @param  list<string>  $files  The project's files
      */
     public function withTestFilesFrom(array $files): self
     {
-        $tests = array_values(array_filter($files, fn (string $path) => str_starts_with($path, 'tests/') && $this->claims($path)));
+        $tests = array_values(array_filter($files, fn (string $path) => self::runBySuite($path) && $this->claims($path)));
 
         return new self($this->key, $this->name, $this->summary, $this->paths, $this->behaviors, $this->effects, $this->file, $this->notes, $tests);
     }

@@ -212,6 +212,8 @@ function verifyLabel(item: RunReview['verified'][number]): string {
             return 'checked by a test';
         case 'not_run':
             return 'a test covers it, but the checks did not pass';
+        case 'not_run_by_checks':
+            return "a test covers it, but my checks don't run that test";
         default:
             return 'not checked yet';
     }

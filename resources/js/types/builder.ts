@@ -185,7 +185,7 @@ export type RunReview = {
         criterion: string;
         test_file: string | null;
         test_name: string | null;
-        evidence: 'tested' | 'not_run' | 'no_test';
+        evidence: 'tested' | 'not_run' | 'not_run_by_checks' | 'no_test';
         named_in_diff: boolean;
     }[];
     changes: {

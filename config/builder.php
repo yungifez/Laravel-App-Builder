@@ -268,6 +268,11 @@ return [
         // an area with its own tests counts as verified in the review.
         'suite_check' => 'Tests',
 
+        // Where the tests that the suite check runs live. A test file
+        // elsewhere (a Vitest file, for example) is not evidence, because
+        // no check runs it.
+        'suite_paths' => json_decode((string) env('BUILDER_SUITE_PATHS', '["tests/"]'), true) ?: ['tests/'],
+
         // Whether a change built by a model must have a test for each of the
         // brief's verify items (its acceptance criteria). A missing test is a
         // blocking finding, so the coder is sent back to add it.
