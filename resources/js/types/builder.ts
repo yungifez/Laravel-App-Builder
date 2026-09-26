@@ -285,7 +285,9 @@ export type VisualEditSummary = {
     id: number;
     tag: string;
     device: Device;
+    properties: VisualProperty[];
     created_at: string | null;
+    reverted_at: string | null;
 };
 
 export type NotesSection = {
@@ -312,4 +314,21 @@ export type UnderstandingArea = {
 export type CheckFinding = {
     title: string;
     details: string[];
+};
+
+export type DeploymentSummary = {
+    id: number;
+    status: 'checking' | 'pushing' | 'published' | 'failed';
+    commit: string;
+    checks: { name: string; passed: boolean }[];
+    error: string | null;
+    created_at: string | null;
+    finished_at: string | null;
+};
+
+export type ProjectPublishing = {
+    connected: boolean;
+    target: string | null;
+    branch: string | null;
+    deployments: DeploymentSummary[];
 };

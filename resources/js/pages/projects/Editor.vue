@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Form, Head, router, setLayoutProps, usePoll } from '@inertiajs/vue3';
+import {
+    Form,
+    Head,
+    router,
+    setLayoutProps,
+    usePage,
+    usePoll,
+} from '@inertiajs/vue3';
 import {
     computed,
     onBeforeUnmount,
@@ -12,6 +19,7 @@ import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequ
 import PreviewController from '@/actions/App/Http/Controllers/PreviewController';
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
 import VisualEditController from '@/actions/App/Http/Controllers/VisualEditController';
+import VisualEditReversionController from '@/actions/App/Http/Controllers/VisualEditReversionController';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
@@ -85,8 +93,20 @@ const busy = computed(
 const frameWidth = computed(
     () => devices.find((option) => option.key === device.value)?.width ?? null,
 );
+const page = usePage();
 const deviceLabel = (key: Device) =>
     devices.find((option) => option.key === key)?.label ?? key;
+
+// What a saved edit changed, in the inspector's words.
+function describeEdit(edit: VisualEditSummary): string {
+    const labels = edit.properties.map(
+        (key) =>
+            properties.find((property) => property.key === key)?.label ?? key,
+    );
+    const on = edit.device === 'base' ? '' : ` (${deviceLabel(edit.device)})`;
+
+    return `${labels.join(', ')}${on}`;
+}
 
 // The place in the source the edit goes to: the one use of a shared piece,
 // or where the element is written (which changes every use of it).
@@ -796,15 +816,55 @@ const groups = computed(() =>
 
                 <p v-else class="text-sm text-muted-foreground">Looking…</p>
 
-                <p
+                <section
                     v-if="edits.length > 0"
-                    class="text-xs text-muted-foreground"
+                    class="space-y-2 border-t pt-4"
+                    data-test="recent-edits"
                 >
-                    {{ edits.length }}
-                    {{ edits.length === 1 ? 'change' : 'changes' }}
-                    to how it looks saved recently, without asking me to write
-                    code.
-                </p>
+                    <h3 class="text-sm font-medium">Recent changes</h3>
+                    <ul class="divide-y text-sm">
+                        <li
+                            v-for="edit in edits"
+                            :key="edit.id"
+                            class="flex min-h-11 items-center justify-between gap-3"
+                        >
+                            <span
+                                :class="[
+                                    'min-w-0',
+                                    edit.reverted_at &&
+                                        'text-muted-foreground line-through',
+                                ]"
+                                >{{ describeEdit(edit) }}</span
+                            >
+                            <span
+                                v-if="edit.reverted_at"
+                                class="shrink-0 text-xs text-muted-foreground"
+                                >Undone</span
+                            >
+                            <Form
+                                v-else
+                                v-bind="
+                                    VisualEditReversionController.store.form(
+                                        edit.id,
+                                    )
+                                "
+                                :options="{ preserveScroll: true }"
+                                v-slot="{ processing }"
+                            >
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    class="h-11 shrink-0 font-normal select-none sm:h-8"
+                                    :disabled="processing"
+                                    :data-test="`undo-edit-${edit.id}`"
+                                >
+                                    Undo
+                                </Button>
+                            </Form>
+                        </li>
+                    </ul>
+                    <InputError :message="page.props.errors?.edit" />
+                </section>
             </aside>
         </div>
     </div>

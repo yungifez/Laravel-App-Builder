@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Database\Factories\ProjectFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -17,14 +18,37 @@ use Illuminate\Support\Carbon;
  * @property int $user_id
  * @property string $name
  * @property string $source_path
+ * @property string|null $deploy_remote The Git remote the hosting platform deploys from, credentials included
+ * @property string|null $deploy_branch
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'source_path'])]
+#[Fillable(['name', 'source_path', 'deploy_remote', 'deploy_branch'])]
+#[Hidden(['deploy_remote'])]
 class Project extends Model
 {
     /** @use HasFactory<ProjectFactory> */
     use HasFactory;
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'deploy_remote' => 'encrypted',
+        ];
+    }
+
+    /**
+     * Determine if the project is connected to a place to publish to.
+     */
+    public function publishable(): bool
+    {
+        return $this->deploy_remote !== null && $this->deploy_branch !== null;
+    }
 
     /**
      * Get the user who owns the project.
@@ -64,5 +88,24 @@ class Project extends Model
     public function visualEdits(): HasMany
     {
         return $this->hasMany(VisualEdit::class);
+    }
+
+    /**
+     * Get the place the project is published to, safe to show: the remote
+     * without its credentials.
+     */
+    public function publishTarget(): ?string
+    {
+        return $this->deploy_remote === null ? null : (string) preg_replace('#(://)[^/@\s]+@#', '$1', $this->deploy_remote);
+    }
+
+    /**
+     * Get the times the project was published, or tried to be.
+     *
+     * @return HasMany<Deployment, $this>
+     */
+    public function deployments(): HasMany
+    {
+        return $this->hasMany(Deployment::class);
     }
 }

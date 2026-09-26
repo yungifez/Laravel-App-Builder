@@ -26,10 +26,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $classes_after
  * @property string $base_revision
  * @property string $commit_sha
+ * @property string|null $revert_sha
+ * @property CarbonImmutable|null $reverted_at
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['user_id', 'file', 'line', 'column', 'tag', 'device', 'changes', 'classes_before', 'classes_after', 'base_revision', 'commit_sha'])]
+#[Fillable(['user_id', 'file', 'line', 'column', 'tag', 'device', 'changes', 'classes_before', 'classes_after', 'base_revision', 'commit_sha', 'revert_sha', 'reverted_at'])]
 class VisualEdit extends Model
 {
     /** @use HasFactory<VisualEditFactory> */
@@ -46,6 +48,7 @@ class VisualEdit extends Model
             'changes' => 'array',
             'line' => 'integer',
             'column' => 'integer',
+            'reverted_at' => 'datetime',
         ];
     }
 

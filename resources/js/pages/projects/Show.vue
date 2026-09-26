@@ -4,6 +4,7 @@ import { watch } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
+import PublishPanel from '@/components/PublishPanel.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,6 +23,7 @@ import type {
     KeptChange,
     ProjectCommit,
     ProjectSummary,
+    ProjectPublishing,
     ProjectTelemetry,
 } from '@/types';
 
@@ -31,6 +33,7 @@ const props = defineProps<{
     changes: KeptChange[];
     history: ProjectCommit[];
     telemetry: ProjectTelemetry;
+    publishing: ProjectPublishing;
 }>();
 
 function rate(part: number, whole: number): string {
@@ -155,6 +158,8 @@ watch(
                 </li>
             </ol>
         </section>
+
+        <PublishPanel :project-id="project.id" :publishing="publishing" />
 
         <section class="max-w-2xl space-y-4">
             <Heading variant="small" title="Your requests" />

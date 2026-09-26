@@ -47,6 +47,24 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Publishing
+    |--------------------------------------------------------------------------
+    |
+    | Publishing pushes one commit to the branch the hosting platform (for
+    | example Laravel Cloud) deploys from, after the verification setup and
+    | checks pass on that exact commit. The push never forces: when the
+    | branch has commits the project does not, publishing stops. Local paths
+    | as remotes are for development and tests only.
+    |
+    */
+
+    'publishing' => [
+        'allow_local_remotes' => (bool) env('BUILDER_PUBLISH_ALLOW_LOCAL_REMOTES', false),
+        'push_timeout' => (int) env('BUILDER_PUBLISH_PUSH_TIMEOUT', 300),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Model Tiers
     |--------------------------------------------------------------------------
     |

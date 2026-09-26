@@ -2,6 +2,7 @@
 
 namespace App\Projects;
 
+use App\Events\ProjectCommitted;
 use App\Models\Project;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Workspaces\Drivers\CopyExclusions;
@@ -265,6 +266,41 @@ class ProjectRepository
     }
 
     /**
+     * Push one commit to a branch of another repository, never forcing.
+     * Output is returned without the credentials the remote may contain.
+     *
+     * @throws RepositoryConflict when the branch has commits the project does not.
+     * @throws RuntimeException when the push fails for another reason.
+     */
+    public function push(Project $project, string $commit, string $remote, string $branch): void
+    {
+        $result = $this->git($project, ['push', '--porcelain', $remote, "{$commit}:refs/heads/{$branch}"], throw: false, timeout: (int) config('builder.publishing.push_timeout'));
+
+        if ($result->successful()) {
+            return;
+        }
+
+        $output = self::withoutCredentials($result->output()."\n".$result->errorOutput(), $remote);
+
+        if (preg_match('/\[rejected\]|non-fast-forward|fetch first/', $output) === 1) {
+            throw new RepositoryConflict(__('The published app has changes that are not in this project, so I did not replace them. Ask your developer to bring them in first.'));
+        }
+
+        throw new RuntimeException(trim($output));
+    }
+
+    /**
+     * Remove credentials from Git output: the remote as given, and any
+     * "user:password@" in a URL.
+     */
+    public static function withoutCredentials(string $output, string $remote): string
+    {
+        $safeRemote = (string) preg_replace('#(://)[^/@\s]+@#', '$1', $remote);
+
+        return (string) preg_replace('#(://)[^/@\s]+@#', '$1', str_replace($remote, $safeRemote, $output));
+    }
+
+    /**
      * Get the project's commits, newest first.
      *
      * @return list<array{sha: string, subject: string, author: string, committed_at: string}>
@@ -293,11 +329,12 @@ class ProjectRepository
      *
      * @throws RuntimeException when the command fails and "throw" is set.
      */
-    public function git(Project $project, array $arguments, bool $throw = true): ProcessResult
+    public function git(Project $project, array $arguments, bool $throw = true, int $timeout = 60): ProcessResult
     {
         $committer = config('builder.projects.committer');
 
         $result = Process::path($this->path($project))
+            ->timeout($timeout)
             ->env([
                 'GIT_CONFIG_NOSYSTEM' => '1',
                 'GIT_TERMINAL_PROMPT' => '0',
@@ -314,7 +351,8 @@ class ProjectRepository
     }
 
     /**
-     * Commit what is staged, authored by the owner when known.
+     * Commit what is staged, authored by the owner when known, and announce
+     * the new commit.
      *
      * @param  array{name: string, email: string}|null  $author
      */
@@ -327,6 +365,8 @@ class ProjectRepository
             '-c', "user.name={$author['name']}", '-c', "user.email={$author['email']}",
             'commit', '--quiet', '--allow-empty', '--no-verify', '--author', "{$author['name']} <{$author['email']}>", '-m', $message,
         ]);
+
+        ProjectCommitted::dispatch($project, $this->head($project));
     }
 
     /**

@@ -13,6 +13,7 @@ use App\Models\Workspace;
 use App\Projects\ProjectRepository;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -193,7 +194,8 @@ class VisualEditingTest extends TestCase
         Queue::fake();
         $preview = $this->runningPreview();
         $old = (string) $preview->revision;
-        $this->repository->commitFiles($this->project, $old, ['README.md' => "Hi\n"], 'Another change', null);
+        // Another commit whose own rebuild is not what this test is about.
+        Event::fakeFor(fn () => $this->repository->commitFiles($this->project, $old, ['README.md' => "Hi\n"], 'Another change', null));
         $head = $this->repository->head($this->project);
 
         $this->actingAs($this->owner)
@@ -209,6 +211,47 @@ class VisualEditingTest extends TestCase
         $this->assertSame($head, $this->repository->head($this->project));
         $this->assertSame(0, $this->project->visualEdits()->count());
         Queue::assertNothingPushed();
+    }
+
+    public function test_the_owner_undoes_an_edit_and_the_preview_is_rebuilt()
+    {
+        Queue::fake();
+        $preview = $this->runningPreview();
+        $before = $this->repository->show($this->project, $preview->revision, 'resources/js/pages/Plans.vue');
+
+        $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
+            'preview' => $preview->id,
+            'target' => 'resources/js/pages/Plans.vue:2:5',
+            'revision' => $preview->revision,
+            'device' => 'base',
+            'changes' => ['gap' => 24],
+        ])->assertSessionHasNoErrors();
+        $edit = $this->project->visualEdits()->sole();
+
+        $this->actingAs($this->owner)
+            ->post(route('visual-edits.reversion.store', $edit))
+            ->assertSessionHasNoErrors();
+
+        $edit->refresh();
+        $this->assertNotNull($edit->reverted_at);
+        $this->assertSame($this->repository->head($this->project), $edit->revert_sha);
+        $this->assertSame($before, $this->repository->show($this->project, $this->repository->head($this->project), 'resources/js/pages/Plans.vue'));
+        $this->assertSame('Undo a change to how <div> looks', $this->repository->log($this->project, 1)[0]['subject']);
+        Queue::assertPushed(RebuildPreview::class, 2);
+
+        $this->actingAs($this->owner)
+            ->post(route('visual-edits.reversion.store', $edit))
+            ->assertSessionHasErrors(['edit' => 'This change was already undone.']);
+
+        $this->actingAs(User::factory()->create())
+            ->post(route('visual-edits.reversion.store', $edit))
+            ->assertForbidden();
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.editor.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('edits.0.properties', ['gap'])
+                ->whereNot('edits.0.reverted_at', null));
     }
 
     public function test_edits_that_cannot_be_made_in_place_are_refused()
@@ -292,11 +335,27 @@ class VisualEditingTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('preview.updating', false));
     }
 
+    public function test_any_new_commit_brings_the_editable_preview_up_to_date()
+    {
+        Queue::fake();
+        $preview = $this->runningPreview();
+
+        $this->repository->commitFiles($this->project, (string) $preview->revision, ['.builder/project.md' => "# Acme\n"], 'Describe what the app is for', null);
+
+        Queue::assertPushed(RebuildPreview::class, fn (RebuildPreview $job) => $job->preview->is($preview));
+
+        Queue::fake();
+        $preview->update(['status' => PreviewStatus::Stopped]);
+        $this->repository->commitFiles($this->project, $this->repository->head($this->project), ['README.md' => "Hi\n"], 'Another change', null);
+
+        Queue::assertNothingPushed();
+    }
+
     public function test_a_failed_rebuild_is_reported_and_keeps_the_old_revision()
     {
         $preview = $this->runningPreview();
         $old = (string) $preview->revision;
-        $this->repository->commitFiles($this->project, $old, ['resources/js/pages/Plans.vue' => "<template />\n"], 'Edit', null);
+        Event::fakeFor(fn () => $this->repository->commitFiles($this->project, $old, ['resources/js/pages/Plans.vue' => "<template />\n"], 'Edit', null));
         $this->driver->onExec = fn () => new CommandResult(exitCode: 1, output: '', errorOutput: 'Build failed', durationMs: 5);
 
         RebuildPreview::dispatchSync($preview);

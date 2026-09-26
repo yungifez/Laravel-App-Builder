@@ -43,7 +43,9 @@ class ProjectEditorController extends Controller
                     'id' => $edit->id,
                     'tag' => $edit->tag,
                     'device' => $edit->device,
+                    'properties' => array_keys($edit->changes),
                     'created_at' => $edit->created_at?->toIso8601String(),
+                    'reverted_at' => $edit->reverted_at?->toIso8601String(),
                 ]),
         ]);
     }

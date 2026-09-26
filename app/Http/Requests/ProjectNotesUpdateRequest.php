@@ -16,7 +16,7 @@ class ProjectNotesUpdateRequest extends FormRequest
         /** @var Project $project */
         $project = $this->route('project');
 
-        return $this->user()->can('requestFeatures', $project);
+        return $this->user()->can('update', $project);
     }
 
     /**
