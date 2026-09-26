@@ -62,6 +62,36 @@ This runs the starter's `php artisan dev`, which starts the web server, queue
 worker, log tail and Vite. The app is at <http://localhost:8000> and the health
 endpoint is at <http://localhost:8000/up>.
 
+### Running with Sail
+
+Use Sail when the host PHP lacks `pdo_pgsql` or `redis`. Sail runs PHP and
+Node in the `laravel.test` container of `compose.yaml`.
+
+1. In `.env`, set `DB_HOST=postgres`, `REDIS_HOST=redis` and
+   `WORKSPACE_DRIVER=local`. Set `APP_PORT`, `VITE_PORT`, `FORWARD_DB_PORT`
+   and `FORWARD_REDIS_PORT` if the defaults are in use. Set `APP_URL` and
+   `BUILDER_PREVIEW_PORT` to match `APP_PORT`.
+2. Start the services and prepare the app:
+
+    ```sh
+    composer install
+    vendor/bin/sail up -d
+    vendor/bin/sail artisan key:generate
+    vendor/bin/sail artisan migrate
+    vendor/bin/sail npm ci && vendor/bin/sail npm run build
+    ```
+
+3. Start a queue worker and the scheduler, each in its own terminal:
+
+    ```sh
+    vendor/bin/sail artisan queue:work --timeout=3600
+    vendor/bin/sail artisan schedule:work
+    ```
+
+Run the checks with the `vendor/bin/sail` prefix, for example
+`vendor/bin/sail composer check:tests`. Sail has no Docker socket, so
+workspaces are directories inside the container (the `local` driver).
+
 ### Creating the first user
 
 1. Open <http://localhost:8000/register> and register.
