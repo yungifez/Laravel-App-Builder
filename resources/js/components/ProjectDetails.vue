@@ -78,7 +78,23 @@ function dollars(amount: number | null): string {
                         {{ telemetry.repairs_before_acceptance ?? '–' }}
                     </dd>
                 </div>
+                <div data-test="interventions">
+                    <dt class="text-xs text-muted-foreground">
+                        Times you stepped in, per kept change
+                    </dt>
+                    <dd class="font-medium tabular-nums">
+                        {{ telemetry.interventions_per_accepted_change ?? '–' }}
+                    </dd>
+                </div>
             </dl>
+
+            <p class="text-xs text-muted-foreground">
+                You adjusted a plan
+                {{ telemetry.interventions.adjustments }} times, stopped
+                {{ telemetry.interventions.stops }}, asked again
+                {{ telemetry.interventions.retries }} and undid
+                {{ telemetry.interventions.undos }}.
+            </p>
 
             <p class="text-xs text-muted-foreground">
                 {{ dollars(telemetry.cost_usd) }} in total over

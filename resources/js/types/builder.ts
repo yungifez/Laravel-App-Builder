@@ -56,6 +56,13 @@ export type ProjectTelemetry = {
     output_tokens: number;
     visual_edits: number;
     setup_cost_usd: number;
+    interventions: {
+        adjustments: number;
+        stops: number;
+        retries: number;
+        undos: number;
+    };
+    interventions_per_accepted_change: number | null;
 };
 
 export type ProjectCommit = {

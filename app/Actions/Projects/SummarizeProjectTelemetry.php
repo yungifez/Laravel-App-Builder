@@ -18,12 +18,17 @@ class SummarizeProjectTelemetry
      * change touched areas it was not about, and how many were undone. Visual
      * edits are counted apart: they change the app without a model call.
      *
+     * Interventions count each time the owner had to steer after asking
+     * (architecture §31.4): adjusting part of a plan, stopping a run, trying
+     * a stopped change again, or undoing a kept change. Answering a question
+     * the builder asked is not counted; the builder invited it.
+     *
      * Costs cover every request, accepted or not, since abandoned work is
      * part of what an accepted change costs. Calls without a known price are
      * counted, not guessed. Setting the project up (drafting its notes) is
      * reported apart, since it belongs to no change.
      *
-     * @return array{requests: int, accepted: int, reverted: int, cost_usd: float, unpriced_calls: int, cost_per_accepted_change_usd: float|null, runs_verified: int, first_attempt_passed: int, repairs_before_acceptance: float|null, reviewed: int, with_unexpected_changes: int, input_tokens: int, output_tokens: int, visual_edits: int, setup_cost_usd: float}
+     * @return array{requests: int, accepted: int, reverted: int, cost_usd: float, unpriced_calls: int, cost_per_accepted_change_usd: float|null, runs_verified: int, first_attempt_passed: int, repairs_before_acceptance: float|null, reviewed: int, with_unexpected_changes: int, input_tokens: int, output_tokens: int, visual_edits: int, setup_cost_usd: float, interventions: array{adjustments: int, stops: int, retries: int, undos: int}, interventions_per_accepted_change: float|null}
      */
     public function handle(Project $project): array
     {
@@ -56,10 +61,18 @@ class SummarizeProjectTelemetry
         $reviewed = Run::query()->whereIn('id', $runIds)->whereNotNull('review')->get();
         $acceptedRuns = Run::query()->whereIn('feature_request_id', $accepted->modelKeys())->where('status', RunStatus::Completed)->get();
 
+        $reverted = $accepted->filter(fn (FeatureRequest $request) => $request->reverted_at !== null)->unique('commit_sha')->count();
+        $interventions = [
+            'adjustments' => $requests->filter(fn (FeatureRequest $request) => $request->parent_id !== null && $request->retry_of_id === null)->count(),
+            'stops' => Run::query()->whereIn('id', $runIds)->where('status', RunStatus::Cancelled)->count(),
+            'retries' => $requests->filter(fn (FeatureRequest $request) => $request->retry_of_id !== null)->count(),
+            'undos' => $reverted,
+        ];
+
         return [
             'requests' => $requests->count(),
             'accepted' => $acceptedCount,
-            'reverted' => $accepted->filter(fn (FeatureRequest $request) => $request->reverted_at !== null)->unique('commit_sha')->count(),
+            'reverted' => $reverted,
             'cost_usd' => round($cost, 4),
             'unpriced_calls' => $unpriced,
             'cost_per_accepted_change_usd' => $acceptedCount > 0 ? round($cost / $acceptedCount, 4) : null,
@@ -72,6 +85,8 @@ class SummarizeProjectTelemetry
             'output_tokens' => (int) $calls->sum(fn (RunEvent $call) => (int) ($call->data['output_tokens'] ?? 0)),
             'visual_edits' => $project->visualEdits()->count(),
             'setup_cost_usd' => round((float) collect($project->setup_model_calls ?? [])->sum(fn (array $call) => $call['cost_usd'] ?? 0), 4),
+            'interventions' => $interventions,
+            'interventions_per_accepted_change' => $acceptedCount > 0 ? round(array_sum($interventions) / $acceptedCount, 2) : null,
         ];
     }
 }

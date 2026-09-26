@@ -46,6 +46,7 @@ class RetryFeatureRequestTest extends TestCase
         $this->assertFalse($retry->is($stopped));
         $response->assertRedirect(route('feature-requests.show', $retry));
         $this->assertSame($stopped->prompt, $retry->prompt);
+        $this->assertSame($stopped->id, $retry->retry_of_id);
         $this->assertSame($stopped->selection, $retry->selection);
         $this->assertSame(FeatureRequestStatus::Generating, $retry->status);
         $this->assertSame(RunStatus::NeedsUserDecision, $stopped->latestRun?->status);

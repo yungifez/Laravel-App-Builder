@@ -1099,7 +1099,7 @@ function lineClass(line: string): string {
                     <CollapsibleTrigger
                         class="min-h-11 text-sm font-medium underline-offset-4 select-none hover:underline sm:min-h-0"
                     >
-                        How I'll know it works ({{ doneWhen.length }})
+                        Done when ({{ doneWhen.length }})
                     </CollapsibleTrigger>
                     <CollapsibleContent class="mt-2">
                         <ul class="space-y-1 text-sm">

@@ -44,10 +44,12 @@ class RetryFeatureRequest
 
         $parent = $featureRequest->parent;
 
-        if ($parent !== null && $featureRequest->target_step !== null) {
-            return $this->requestStepChange->handle($parent, $requester, $featureRequest->target_step, $featureRequest->prompt);
-        }
+        $retry = $parent !== null && $featureRequest->target_step !== null
+            ? $this->requestStepChange->handle($parent, $requester, $featureRequest->target_step, $featureRequest->prompt)
+            : $this->requestFeature->handle($featureRequest->project, $requester, $featureRequest->prompt, $featureRequest->selection);
 
-        return $this->requestFeature->handle($featureRequest->project, $requester, $featureRequest->prompt, $featureRequest->selection);
+        $retry->update(['retry_of_id' => $featureRequest->id]);
+
+        return $retry;
     }
 }

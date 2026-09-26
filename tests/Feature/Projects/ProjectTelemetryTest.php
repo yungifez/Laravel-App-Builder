@@ -67,6 +67,27 @@ class ProjectTelemetryTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('telemetry.accepted', 1)->where('telemetry.cost_per_accepted_change_usd', 2));
     }
 
+    public function test_it_counts_each_time_the_owner_stepped_in_per_kept_change()
+    {
+        $project = Project::factory()->create();
+
+        $kept = $this->request($project, ['commit_sha' => 'abc', 'accepted_at' => now()]);
+        $undone = $this->request($project, ['commit_sha' => 'def', 'accepted_at' => now(), 'reverted_at' => now()]);
+        $this->request($project, ['parent_id' => $kept->id, 'target_step' => 'route']);
+
+        $stopped = $this->request($project);
+        Run::factory()->for($stopped)->create(['status' => RunStatus::Cancelled]);
+        $this->request($project, ['retry_of_id' => $stopped->id]);
+
+        // A question the builder asked and the owner answered is not steering.
+        Run::factory()->for($undone)->create(['answers' => [['question' => 'q', 'answer' => 'a', 'by' => 'owner']]]);
+
+        $telemetry = app(SummarizeProjectTelemetry::class)->handle($project);
+
+        $this->assertSame(['adjustments' => 1, 'stops' => 1, 'retries' => 1, 'undos' => 1], $telemetry['interventions']);
+        $this->assertSame(2.0, $telemetry['interventions_per_accepted_change']);
+    }
+
     public function test_model_calls_are_priced_from_the_configured_prices_and_unknown_models_are_left_unpriced()
     {
         config(['builder.prices' => ['planner.model-1' => ['input' => 3, 'output' => 15]]]);

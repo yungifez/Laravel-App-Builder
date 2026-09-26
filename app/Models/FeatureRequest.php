@@ -20,6 +20,7 @@ use Illuminate\Support\Carbon;
  * @property int $project_id
  * @property int $user_id
  * @property int|null $parent_id
+ * @property int|null $retry_of_id The stopped request this one tries again
  * @property string $prompt
  * @property array{file: string, line: int, column: int, tag: string, text: string|null, area: string|null}|null $selection The element the owner pointed at in the preview
  * @property string|null $target_step
@@ -39,7 +40,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['project_id', 'user_id', 'parent_id', 'prompt', 'selection', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'steps', 'acceptance', 'error', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at'])]
+#[Fillable(['project_id', 'user_id', 'parent_id', 'retry_of_id', 'prompt', 'selection', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'steps', 'acceptance', 'error', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at'])]
 class FeatureRequest extends Model
 {
     /**
