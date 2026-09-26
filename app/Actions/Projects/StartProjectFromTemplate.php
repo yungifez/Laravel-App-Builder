@@ -18,6 +18,16 @@ class StartProjectFromTemplate
     ) {}
 
     /**
+     * Get the folder new apps start from, or null when there is none.
+     */
+    public static function template(): ?string
+    {
+        $template = config('builder.projects.template');
+
+        return is_string($template) && $template !== '' && is_dir($template) ? $template : null;
+    }
+
+    /**
      * Start a new app from the configured template and write the owner's
      * one answer, what the app is for, into its notes.
      *
@@ -26,9 +36,9 @@ class StartProjectFromTemplate
      */
     public function handle(User $owner, string $name, string $purpose): Project
     {
-        $template = config('builder.projects.template');
+        $template = self::template();
 
-        if (! is_string($template) || $template === '') {
+        if ($template === null) {
             throw ValidationException::withMessages(['name' => __('Starting a new app is not set up here.')]);
         }
 

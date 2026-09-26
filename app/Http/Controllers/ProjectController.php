@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Previews\DescribeProjectPreview;
 use App\Actions\Projects\CreateProject;
+use App\Actions\Projects\StartProjectFromTemplate;
 use App\Actions\Projects\SummarizeChanges;
 use App\Actions\Projects\SummarizeProjectTelemetry;
 use App\Enums\DeploymentStatus;
@@ -35,7 +36,7 @@ class ProjectController extends Controller
                         ->latest('accepted_at')->first()?->accepted_at?->toIso8601String(),
                     'waiting' => $summarizeChanges->waiting($project),
                 ]),
-            'canStartNew' => filled(config('builder.projects.template')),
+            'canStartNew' => StartProjectFromTemplate::template() !== null,
         ]);
     }
 

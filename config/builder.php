@@ -39,9 +39,13 @@ return [
     'projects' => [
         'root' => env('BUILDER_PROJECT_REPOSITORIES', storage_path('app/private/projects')),
         'branch' => env('BUILDER_PROJECT_BRANCH', 'main'),
-        // The app a new project starts from. Without it, owners can only
-        // bring in an app that already exists.
-        'template' => env('BUILDER_TEMPLATE_PATH'),
+        // The app a new project starts from. `php artisan projects:template`
+        // puts the package below there. Until the folder exists, owners can
+        // only bring in an app that already exists.
+        'template' => env('BUILDER_TEMPLATE_PATH', storage_path('app/private/template')),
+        // The current starter kit lives on its main branch; its tagged
+        // releases are older Laravel versions.
+        'template_package' => env('BUILDER_TEMPLATE_PACKAGE', 'laravel/vue-starter-kit:dev-main'),
         'committer' => [
             'name' => env('BUILDER_COMMITTER_NAME', 'Builder'),
             'email' => env('BUILDER_COMMITTER_EMAIL', 'builder@localhost'),

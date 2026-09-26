@@ -65,7 +65,7 @@ class NewProjectTest extends TestCase
             ->assertSessionHasErrors(['purpose' => 'Tell me in a sentence or two what your app is for.']);
     }
 
-    public function test_starting_a_new_app_is_offered_only_when_a_template_is_set()
+    public function test_starting_a_new_app_is_offered_only_when_the_template_is_in_place()
     {
         $owner = User::factory()->create();
         config(['builder.projects.template' => null]);
@@ -78,7 +78,12 @@ class NewProjectTest extends TestCase
             ->assertSessionHasErrors(['name' => 'Starting a new app is not set up here.']);
         $this->assertSame(0, $owner->projects()->count());
 
-        config(['builder.projects.template' => '/srv/template']);
+        // A template that was never put in place is not offered either.
+        config(['builder.projects.template' => '/srv/no-template-here']);
+        $this->get(route('projects.index'))
+            ->assertInertia(fn (Assert $page) => $page->where('canStartNew', false));
+
+        config(['builder.projects.template' => $this->makeProjectSource($this->laravelApp())]);
         $this->get(route('projects.index'))
             ->assertInertia(fn (Assert $page) => $page->where('canStartNew', true));
     }
