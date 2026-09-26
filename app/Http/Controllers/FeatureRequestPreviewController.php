@@ -18,6 +18,6 @@ class FeatureRequestPreviewController extends Controller
 
         $requestPreview->handle($featureRequest);
 
-        return to_route('feature-requests.show', $featureRequest);
+        return back();
     }
 }

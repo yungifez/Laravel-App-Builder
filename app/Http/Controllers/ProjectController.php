@@ -2,15 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Features\DescribeFeatureRequest;
 use App\Actions\Previews\DescribeProjectPreview;
 use App\Actions\Projects\CreateProject;
 use App\Actions\Projects\StartProjectFromTemplate;
 use App\Actions\Projects\SummarizeChanges;
 use App\Actions\Projects\SummarizeProjectTelemetry;
+use App\Actions\VisualEditing\InspectSelection;
 use App\Enums\DeploymentStatus;
 use App\Http\Requests\ProjectStoreRequest;
 use App\Models\Deployment;
 use App\Models\Project;
+use App\Models\VisualEdit;
 use App\Projects\ProjectRepository;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -58,14 +61,29 @@ class ProjectController extends Controller
     }
 
     /**
-     * Show a project, the feature requests made for it, its latest commits,
-     * how its changes went, and where and when it was published.
+     * Show the project's workspace: the conversation about its changes, the
+     * app running beside it, and the design panel for changing how it looks.
+     * The element the owner selected is loaded on request.
      */
-    public function show(Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview): Response
+    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest): Response
     {
         Gate::authorize('view', $project);
 
         return Inertia::render('projects/Show', [
+            'design' => $request->boolean('design'),
+            'element' => Inertia::optional(fn () => $inspectSelection->handle($project, $request->query('target'), $request->boolean('instance'))),
+            'change' => fn () => $request->filled('change')
+                ? $describeFeatureRequest->handle($project->featureRequests()->findOrFail($request->integer('change')))
+                : null,
+            'edits' => $project->visualEdits()->latest('id')->limit(10)->get()
+                ->map(fn (VisualEdit $edit) => [
+                    'id' => $edit->id,
+                    'tag' => $edit->tag,
+                    'device' => $edit->device,
+                    'properties' => array_keys($edit->changes),
+                    'created_at' => $edit->created_at?->toIso8601String(),
+                    'reverted_at' => $edit->reverted_at?->toIso8601String(),
+                ]),
             'project' => [
                 ...$project->only('id', 'name', 'source_path'),
                 'published_at' => $this->publishedAt($project),

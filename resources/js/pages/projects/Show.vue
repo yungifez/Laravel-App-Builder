@@ -1,9 +1,27 @@
 <script setup lang="ts">
-import { Form, Head, Link, setLayoutProps, usePoll } from '@inertiajs/vue3';
+import { Form, Head, Link, usePoll } from '@inertiajs/vue3';
+import {
+    ArrowLeft,
+    ArrowUp,
+    CircleCheck,
+    CircleDot,
+    CircleX,
+    LoaderCircle,
+    Undo2,
+    ChevronDown,
+    ExternalLink,
+    MessageSquare,
+    Monitor,
+    MousePointerClick,
+    RotateCw,
+    Smartphone,
+    Tablet,
+} from '@lucide/vue';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
 import AppPreview from '@/components/AppPreview.vue';
-import AppTabs from '@/components/AppTabs.vue';
+import ChangeThread from '@/components/ChangeThread.vue';
+import DesignPanel from '@/components/DesignPanel.vue';
 import InputError from '@/components/InputError.vue';
 import ProjectDetails from '@/components/ProjectDetails.vue';
 import PublishPanel from '@/components/PublishPanel.vue';
@@ -14,34 +32,87 @@ import {
     DialogDescription,
     DialogHeader,
     DialogTitle,
-    DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
+import { useAppPreview } from '@/composables/useAppPreview';
 import { when } from '@/lib/when';
-import { show as showFeatureRequest } from '@/routes/feature-requests';
-import { index, show } from '@/routes/projects';
+import { show as showPreview } from '@/routes/previews';
+import { index, show as showProject } from '@/routes/projects';
+import { show as showUnderstanding } from '@/routes/projects/understanding';
 import type {
+    ChangeDetail,
     ChangeItem,
     ChangeState,
+    Device,
     EditorPreview,
+    InspectedElement,
     ProjectCommit,
     ProjectSummary,
     ProjectPublishing,
     ProjectTelemetry,
+    VisualEditSummary,
 } from '@/types';
 
 const props = defineProps<{
     project: ProjectSummary;
     changes: ChangeItem[];
+    change: ChangeDetail | null;
     preview: EditorPreview | null;
+    design: boolean;
+    element?: InspectedElement | null;
+    edits: VisualEditSummary[];
     history: ProjectCommit[];
     telemetry: ProjectTelemetry;
     publishing: ProjectPublishing;
 }>();
 
-// Like other app builders: the conversation on the left, the app itself on
-// the right. On a phone the two share the screen, one at a time.
-const pane = ref<'chat' | 'app'>('chat');
+// The left panel talks about changes (Chat) or changes how the app looks
+// (Design). Design turns the app into something to point at.
+const panel = ref<'chat' | 'design'>(props.design ? 'design' : 'chat');
+const designing = computed(() => panel.value === 'design');
+
+// On a phone the panel and the app take turns on the screen.
+const pane = ref<'panel' | 'app'>(props.design ? 'app' : 'panel');
+
+const app = useAppPreview({
+    projectId: () => props.project.id,
+    preview: () => props.preview,
+    element: () => props.element,
+    designing,
+});
+
+// A phone shows one thing at a time: the chat, the app with the design
+// panel under it, or just the app.
+const phoneViews = [
+    { key: 'chat', label: 'Chat', icon: MessageSquare },
+    { key: 'design', label: 'Design', icon: MousePointerClick },
+    { key: 'app', label: 'App', icon: Smartphone },
+] as const;
+
+const phoneView = computed<'chat' | 'design' | 'app'>({
+    get: () =>
+        pane.value === 'panel' ? 'chat' : designing.value ? 'design' : 'app',
+    set: (view) => {
+        pane.value = view === 'chat' ? 'panel' : 'app';
+        panel.value = view === 'design' ? 'design' : 'chat';
+    },
+});
+
+const detailsOpen = ref(false);
+const publishOpen = ref(false);
+
+const screens: { key: Device; label: string; icon: typeof Monitor }[] = [
+    { key: 'base', label: 'Phone', icon: Smartphone },
+    { key: 'md', label: 'Tablet', icon: Tablet },
+    { key: 'lg', label: 'Desktop', icon: Monitor },
+];
 
 // A conversation reads oldest first, with the newest ask next to the box.
 const thread = computed(() => [...props.changes].reverse());
@@ -63,239 +134,386 @@ const { start, stop } = usePoll(
 
 watch(working, (value) => (value ? start() : stop()), { immediate: true });
 
-onMounted(() => threadEnd.value?.scrollIntoView({ block: 'end' }));
-watch(
-    () => props.changes.length,
-    () => nextTick(() => threadEnd.value?.scrollIntoView({ block: 'end' })),
-);
+function toEnd(): void {
+    nextTick(() => threadEnd.value?.scrollIntoView({ block: 'end' }));
+}
 
-const states: Record<ChangeState, { label: string; dot: string }> = {
-    waiting: { label: 'Waiting for you', dot: 'bg-amber-500' },
-    working: { label: 'Working on it', dot: 'bg-amber-500 animate-pulse' },
-    kept: { label: 'Kept', dot: 'bg-green-600' },
-    stopped: { label: 'Stopped', dot: 'bg-red-600' },
-    undone: { label: 'Undone', dot: 'bg-muted-foreground' },
+onMounted(toEnd);
+watch(() => props.changes.length, toEnd);
+watch(panel, (value) => value === 'chat' && toEnd());
+
+const states: Record<
+    ChangeState,
+    { label: string; icon: typeof Monitor; tone: string }
+> = {
+    waiting: {
+        label: 'Ready for you',
+        icon: CircleDot,
+        tone: 'text-amber-500',
+    },
+    working: {
+        label: 'Working on it',
+        icon: LoaderCircle,
+        tone: 'animate-spin text-amber-500',
+    },
+    kept: { label: 'Kept', icon: CircleCheck, tone: 'text-green-600' },
+    stopped: { label: 'Stopped', icon: CircleX, tone: 'text-red-600' },
+    undone: { label: 'Undone', icon: Undo2, tone: '' },
 };
 
-// What the builder says back, in one line.
-function reply(change: ChangeItem): string {
-    switch (change.state) {
-        case 'working':
-            return 'I am working on this.';
-        case 'stopped':
-            return 'I stopped before finishing. Open it to try again.';
-        case 'waiting':
-            return change.summary ?? 'I have a question before I start.';
-        default:
-            return change.summary ?? change.prompt;
+// Starting points for an empty conversation. A tap puts one in the box.
+const ideas = [
+    'Add a contact form',
+    'Add a page that lists my customers',
+    'Let people sign up with Google',
+    'Send a welcome email to new users',
+];
+
+const composer = ref<HTMLTextAreaElement | null>(null);
+
+function suggest(idea: string): void {
+    if (composer.value !== null) {
+        composer.value.value = idea;
+        composer.value.focus();
     }
 }
 
 function send(event: KeyboardEvent): void {
     (event.target as HTMLTextAreaElement).form?.requestSubmit();
 }
-
-watch(
-    () => props.project,
-    (project) =>
-        setLayoutProps({
-            breadcrumbs: [
-                { title: 'Your apps', href: index() },
-                { title: project.name, href: show(project.id) },
-            ],
-        }),
-    { immediate: true },
-);
 </script>
 
 <template>
     <Head :title="project.name" />
 
-    <!-- The workspace fills the screen below the header on a wide screen,
-         so the conversation and the app scroll on their own. -->
-    <div class="flex flex-1 flex-col lg:h-[calc(100svh-5rem)] lg:min-h-0">
-        <header class="px-4 pt-3">
-            <div
-                class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2"
-            >
-                <div class="min-w-0">
-                    <h1
-                        class="text-lg font-semibold tracking-tight break-words"
-                    >
-                        {{ project.name }}
-                    </h1>
-                    <p
-                        class="text-sm text-muted-foreground"
-                        data-test="live-status"
-                    >
-                        <template v-if="project.published_at"
-                            >Live · last put online
-                            {{ when(project.published_at) }}</template
-                        >
-                        <template v-else>Not live yet</template>
-                    </p>
-                </div>
+    <header class="flex h-14 shrink-0 items-center gap-1 border-b px-2 sm:px-3">
+        <Button
+            variant="ghost"
+            size="icon"
+            class="size-11 shrink-0 sm:size-9"
+            as-child
+        >
+            <Link :href="index()" aria-label="Your apps" data-test="back">
+                <ArrowLeft class="size-4" />
+            </Link>
+        </Button>
 
-                <!-- When this row wraps on a phone, the first label lines up
-                     with the name above it. -->
-                <div class="flex items-center gap-1 max-sm:-ml-4">
-                    <Dialog>
-                        <DialogTrigger as-child>
-                            <Button
-                                variant="ghost"
-                                class="h-11 text-muted-foreground sm:h-9"
-                                data-test="details-open"
-                            >
-                                Details
-                            </Button>
-                        </DialogTrigger>
-                        <DialogContent class="max-h-[85svh] overflow-y-auto">
-                            <DialogHeader>
-                                <DialogTitle
-                                    >Details for your developer</DialogTitle
-                                >
-                                <DialogDescription>
-                                    Where the app came from, what changes cost,
-                                    and its history.
-                                </DialogDescription>
-                            </DialogHeader>
-                            <ProjectDetails
-                                :source-path="project.source_path"
-                                :telemetry="telemetry"
-                                :history="history"
-                            />
-                        </DialogContent>
-                    </Dialog>
-                    <Dialog>
-                        <DialogTrigger as-child>
-                            <Button
-                                variant="outline"
-                                class="h-11 select-none sm:h-9"
-                                data-test="publish-open"
-                            >
-                                Put it online
-                            </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                            <DialogHeader class="sr-only">
-                                <DialogTitle>Put it online</DialogTitle>
-                                <DialogDescription>
-                                    Your latest kept version, for everyone to
-                                    use
-                                </DialogDescription>
-                            </DialogHeader>
-                            <PublishPanel
-                                :project-id="project.id"
-                                :publishing="publishing"
-                            />
-                        </DialogContent>
-                    </Dialog>
+        <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+                <Button
+                    variant="ghost"
+                    class="h-11 min-w-0 shrink gap-2 px-2 select-none sm:h-9"
+                    data-test="app-menu"
+                >
+                    <span
+                        :class="[
+                            'size-2 shrink-0 rounded-full',
+                            project.published_at
+                                ? 'bg-green-600'
+                                : 'bg-muted-foreground/40',
+                        ]"
+                        aria-hidden="true"
+                    />
+                    <span class="truncate font-semibold">{{
+                        project.name
+                    }}</span>
+                    <ChevronDown class="size-4 shrink-0 opacity-60" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" class="w-64">
+                <p
+                    class="px-2 py-1.5 text-xs text-muted-foreground"
+                    data-test="live-status"
+                >
+                    <template v-if="project.published_at"
+                        >Live · put online
+                        {{ when(project.published_at) }}</template
+                    >
+                    <template v-else>Not live yet</template>
+                </p>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem as-child>
+                    <Link
+                        :href="showUnderstanding(project.id)"
+                        data-test="understanding-link"
+                        >What I know about it</Link
+                    >
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                    data-test="details-open"
+                    @select="detailsOpen = true"
+                >
+                    Details for your developer
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem as-child>
+                    <Link :href="index()">All your apps</Link>
+                </DropdownMenuItem>
+            </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div class="ml-auto flex shrink-0 items-center gap-1">
+            <template v-if="app.running && preview">
+                <div
+                    class="hidden items-center rounded-md bg-muted p-0.5 md:flex"
+                    role="group"
+                    aria-label="Screen size"
+                >
+                    <button
+                        v-for="screen in screens"
+                        :key="screen.key"
+                        type="button"
+                        :aria-pressed="app.device === screen.key"
+                        :aria-label="screen.label"
+                        :title="screen.label"
+                        :class="[
+                            'grid size-8 place-items-center rounded',
+                            app.device === screen.key
+                                ? 'bg-background shadow-sm'
+                                : 'text-muted-foreground hover:text-foreground',
+                        ]"
+                        :data-test="`screen-${screen.key}`"
+                        @click="app.device = screen.key"
+                    >
+                        <component :is="screen.icon" class="size-4" />
+                    </button>
+                </div>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    class="hidden size-9 md:inline-flex"
+                    aria-label="Reload"
+                    title="Reload"
+                    @click="app.reload()"
+                >
+                    <RotateCw class="size-4" />
+                </Button>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    class="hidden size-9 md:inline-flex"
+                    as-child
+                >
+                    <a
+                        :href="showPreview(preview.id).url"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label="Open in a new tab"
+                        title="Open in a new tab"
+                    >
+                        <ExternalLink class="size-4" />
+                    </a>
+                </Button>
+            </template>
+
+            <Button
+                class="ml-1 h-11 select-none sm:h-9"
+                data-test="publish-open"
+                @click="publishOpen = true"
+            >
+                Put it online
+            </Button>
+        </div>
+    </header>
+
+    <Dialog v-model:open="publishOpen">
+        <DialogContent>
+            <DialogHeader class="sr-only">
+                <DialogTitle>Put it online</DialogTitle>
+                <DialogDescription>
+                    Your latest kept version, for everyone to use
+                </DialogDescription>
+            </DialogHeader>
+            <PublishPanel :project-id="project.id" :publishing="publishing" />
+        </DialogContent>
+    </Dialog>
+
+    <Dialog v-model:open="detailsOpen">
+        <DialogContent class="max-h-[85svh] overflow-y-auto">
+            <DialogHeader>
+                <DialogTitle>Details for your developer</DialogTitle>
+                <DialogDescription>
+                    Where the app came from, what changes cost, and its history.
+                </DialogDescription>
+            </DialogHeader>
+            <ProjectDetails
+                :source-path="project.source_path"
+                :telemetry="telemetry"
+                :history="history"
+            />
+        </DialogContent>
+    </Dialog>
+
+    <div
+        class="grid grid-cols-3 border-b p-1 lg:hidden"
+        role="group"
+        aria-label="Show"
+    >
+        <button
+            v-for="option in phoneViews"
+            :key="option.key"
+            type="button"
+            :aria-pressed="phoneView === option.key"
+            :class="[
+                'flex min-h-11 items-center justify-center gap-1.5 rounded-md text-sm select-none',
+                phoneView === option.key
+                    ? 'bg-muted font-medium'
+                    : 'text-muted-foreground',
+            ]"
+            :data-test="`view-${option.key}`"
+            @click="phoneView = option.key"
+        >
+            <component :is="option.icon" class="size-4" />
+            {{ option.label }}
+            <span
+                v-if="option.key === 'chat' && waiting > 0"
+                class="rounded-full bg-amber-500/15 px-1.5 text-xs text-amber-700 tabular-nums dark:text-amber-400"
+                >{{ waiting }}</span
+            >
+        </button>
+    </div>
+
+    <div
+        class="grid min-h-0 flex-1 lg:grid-cols-[24rem_minmax(0,1fr)] [&>*]:min-w-0"
+    >
+        <aside
+            :class="[
+                'min-h-0 flex-col lg:flex lg:border-r',
+                pane === 'panel' ? 'flex' : 'hidden',
+            ]"
+        >
+            <div class="hidden border-b p-2 lg:block">
+                <div
+                    class="grid grid-cols-2 rounded-md bg-muted p-0.5 text-sm"
+                    role="tablist"
+                    aria-label="Panel"
+                >
+                    <button
+                        type="button"
+                        role="tab"
+                        :aria-selected="panel === 'chat'"
+                        :class="[
+                            'flex min-h-11 items-center justify-center gap-2 rounded select-none sm:min-h-8',
+                            panel === 'chat'
+                                ? 'bg-background font-medium shadow-sm'
+                                : 'text-muted-foreground',
+                        ]"
+                        data-test="panel-chat"
+                        @click="panel = 'chat'"
+                    >
+                        <MessageSquare class="size-4" /> Chat
+                        <span
+                            v-if="waiting > 0"
+                            class="rounded-full bg-amber-500/15 px-1.5 text-xs text-amber-700 tabular-nums dark:text-amber-400"
+                            >{{ waiting }}</span
+                        >
+                    </button>
+                    <button
+                        type="button"
+                        role="tab"
+                        :aria-selected="panel === 'design'"
+                        :class="[
+                            'flex min-h-11 items-center justify-center gap-2 rounded select-none sm:min-h-8',
+                            panel === 'design'
+                                ? 'bg-background font-medium shadow-sm'
+                                : 'text-muted-foreground',
+                        ]"
+                        data-test="panel-design"
+                        @click="panel = 'design'"
+                    >
+                        <MousePointerClick class="size-4" /> Design
+                    </button>
                 </div>
             </div>
 
-            <AppTabs :project-id="project.id" current="changes" class="mt-2" />
-        </header>
+            <DesignPanel
+                v-if="designing"
+                class="flex-1"
+                :project-id="project.id"
+                :preview="preview"
+                :element="element"
+                :edits="edits"
+                :state="app"
+            />
 
-        <div
-            class="grid grid-cols-2 border-b p-2 lg:hidden"
-            role="group"
-            aria-label="Show"
-        >
-            <button
-                v-for="option in [
-                    { key: 'chat', label: 'Chat' },
-                    { key: 'app', label: 'Your app' },
-                ] as const"
-                :key="option.key"
-                type="button"
-                :aria-pressed="pane === option.key"
-                :class="[
-                    'min-h-11 rounded-md text-sm select-none',
-                    pane === option.key
-                        ? 'bg-muted font-medium'
-                        : 'text-muted-foreground',
-                ]"
-                :data-test="`pane-${option.key}`"
-                @click="pane = option.key"
-            >
-                {{ option.label }}
-                <span
-                    v-if="option.key === 'chat' && waiting > 0"
-                    class="ml-1 tabular-nums"
-                    >· {{ waiting }} waiting</span
-                >
-            </button>
-        </div>
-
-        <div
-            class="grid min-h-0 flex-1 lg:grid-cols-[26rem_minmax(0,1fr)] [&>*]:min-w-0"
-        >
             <section
-                :class="[
-                    'min-h-0 flex-col lg:flex lg:border-r',
-                    pane === 'chat' ? 'flex' : 'hidden',
-                ]"
+                v-else
+                class="flex min-h-0 flex-1 flex-col"
                 data-test="conversation"
             >
-                <div class="min-h-0 flex-1 overflow-y-auto p-4">
+                <ChangeThread v-if="change" :change="change" />
+
+                <div v-else class="min-h-0 flex-1 overflow-y-auto p-4">
                     <div
                         v-if="thread.length === 0"
-                        class="flex h-full flex-col justify-end gap-2 pb-4 text-sm text-muted-foreground"
+                        class="flex h-full flex-col justify-end gap-3 pb-2"
+                        data-test="chat-empty"
                     >
-                        <p class="font-medium text-foreground">
-                            What would you like to change?
+                        <p class="text-lg font-semibold tracking-tight">
+                            What should your app do next?
                         </p>
-                        <p>
-                            Describe it the way you would to a colleague. I show
-                            you what I will do before anything in your app
-                            changes.
-                        </p>
+                        <div class="flex flex-wrap gap-2">
+                            <button
+                                v-for="idea in ideas"
+                                :key="idea"
+                                type="button"
+                                class="min-h-11 rounded-full border px-3 text-sm text-muted-foreground select-none hover:border-foreground/30 hover:text-foreground sm:min-h-8"
+                                @click="suggest(idea)"
+                            >
+                                {{ idea }}
+                            </button>
+                        </div>
                     </div>
 
-                    <ol v-else class="space-y-6" data-test="project-changes">
+                    <ol
+                        v-else
+                        class="-mx-2 divide-y"
+                        data-test="project-changes"
+                    >
                         <li
-                            v-for="change in thread"
-                            :key="change.id"
-                            class="space-y-2"
-                            :data-test="`change-${change.state}`"
+                            v-for="item in thread"
+                            :key="item.id"
+                            :data-test="`change-${item.state}`"
                         >
-                            <p
-                                class="ml-8 rounded-lg bg-muted px-3 py-2 text-sm break-words"
-                            >
-                                {{ change.prompt }}
-                            </p>
                             <Link
-                                :href="showFeatureRequest(change.id)"
-                                class="-mx-2 block min-h-11 rounded-md px-2 py-2 select-none hover:bg-muted/50"
+                                :href="
+                                    showProject(project.id, {
+                                        query: { change: item.id },
+                                    })
+                                "
+                                :only="['change']"
+                                preserve-state
+                                preserve-scroll
+                                class="flex min-h-11 items-start gap-2.5 rounded-md px-2 py-2.5 select-none hover:bg-muted/60"
                             >
-                                <span
-                                    class="flex items-center gap-2 text-xs text-muted-foreground"
-                                >
-                                    <span
-                                        :class="[
-                                            'size-2 shrink-0 rounded-full',
-                                            states[change.state].dot,
-                                        ]"
-                                        aria-hidden="true"
-                                    />
-                                    {{ states[change.state].label }}
-                                    <template v-if="change.updated_at"
-                                        >·
-                                        {{ when(change.updated_at) }}</template
-                                    >
-                                </span>
+                                <component
+                                    :is="states[item.state].icon"
+                                    :class="[
+                                        'mt-0.5 size-4 shrink-0',
+                                        states[item.state].tone,
+                                    ]"
+                                    :aria-label="states[item.state].label"
+                                />
                                 <span
                                     :class="[
-                                        'mt-1 block text-sm break-words',
-                                        change.state === 'undone' &&
-                                            'text-muted-foreground line-through',
+                                        'line-clamp-2 min-w-0 flex-1 text-sm break-words',
+                                        item.state === 'waiting'
+                                            ? 'font-medium'
+                                            : 'text-muted-foreground',
+                                        item.state === 'undone' &&
+                                            'line-through',
                                     ]"
-                                    >{{ reply(change) }}</span
+                                    >{{ item.prompt }}</span
                                 >
                                 <span
-                                    v-if="change.state === 'waiting'"
-                                    class="mt-1 block text-sm font-medium underline underline-offset-4"
-                                    >Look at it</span
+                                    v-if="item.state === 'waiting'"
+                                    class="mt-0.5 shrink-0 text-xs font-medium text-amber-600 dark:text-amber-400"
+                                    >Review</span
+                                >
+                                <span
+                                    v-else-if="item.updated_at"
+                                    class="mt-0.5 shrink-0 text-xs text-muted-foreground tabular-nums"
+                                    >{{ when(item.updated_at) }}</span
                                 >
                             </Link>
                         </li>
@@ -305,49 +523,79 @@ watch(
 
                 <Form
                     v-bind="FeatureRequestController.store.form(project.id)"
-                    class="space-y-2 border-t p-4"
+                    :options="{ preserveState: true }"
+                    class="p-3"
                     reset-on-success
                     v-slot="{ errors, processing }"
                 >
-                    <Label for="prompt" class="sr-only"
-                        >What would you like to change?</Label
+                    <div
+                        class="rounded-xl border bg-background shadow-xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50"
                     >
-                    <textarea
-                        id="prompt"
-                        name="prompt"
-                        rows="3"
-                        required
-                        class="w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
-                        placeholder="Let team owners and admins invite people to their team by email."
-                        @keydown.enter.meta.prevent="send"
-                        @keydown.enter.ctrl.prevent="send"
-                    />
-                    <InputError :message="errors.prompt" />
-                    <div class="flex items-center justify-between gap-2">
-                        <span
-                            class="hidden text-xs text-muted-foreground sm:inline"
-                            >Ctrl + Enter to send</span
+                        <Label for="prompt" class="sr-only"
+                            >What should your app do next?</Label
                         >
-                        <Button
-                            :disabled="processing"
-                            class="ml-auto h-11 select-none sm:h-9"
-                            data-test="request-feature-button"
-                        >
-                            Ask for this change
-                        </Button>
+                        <textarea
+                            id="prompt"
+                            ref="composer"
+                            name="prompt"
+                            rows="3"
+                            required
+                            class="block w-full resize-none bg-transparent px-3 pt-3 text-base outline-none placeholder:text-muted-foreground md:text-sm"
+                            placeholder="Ask for a change…"
+                            @keydown.enter.meta.prevent="send"
+                            @keydown.enter.ctrl.prevent="send"
+                        />
+                        <div class="flex items-center justify-between p-2">
+                            <span
+                                class="hidden pl-1 text-xs text-muted-foreground sm:inline"
+                                >Ctrl + Enter</span
+                            >
+                            <Button
+                                size="icon"
+                                :disabled="processing"
+                                class="ml-auto size-11 rounded-full sm:size-8"
+                                aria-label="Ask for this change"
+                                data-test="request-feature-button"
+                            >
+                                <ArrowUp class="size-4" />
+                            </Button>
+                        </div>
                     </div>
+                    <InputError :message="errors.prompt" class="mt-1" />
                 </Form>
             </section>
+        </aside>
 
-            <section
-                :class="[
-                    'min-h-0 p-2 lg:block lg:p-3',
-                    pane === 'app' ? 'block' : 'hidden',
-                ]"
-                data-test="app-pane"
+        <main
+            :class="[
+                'min-h-0 flex-col gap-2 p-2 lg:flex lg:p-3',
+                pane === 'app' ? 'flex' : 'hidden',
+            ]"
+            data-test="app-pane"
+        >
+            <p
+                v-if="preview?.updating"
+                class="text-center text-xs text-muted-foreground"
+                data-test="preview-updating"
             >
-                <AppPreview :project-id="project.id" :preview="preview" />
-            </section>
-        </div>
+                Putting your change in place…
+            </p>
+            <div class="min-h-0 flex-1">
+                <AppPreview
+                    :project-id="project.id"
+                    :preview="preview"
+                    :state="app"
+                />
+            </div>
+            <DesignPanel
+                v-if="designing && pane === 'app'"
+                class="max-h-[45svh] shrink-0 rounded-lg border lg:hidden"
+                :project-id="project.id"
+                :preview="preview"
+                :element="element"
+                :edits="edits"
+                :state="app"
+            />
+        </main>
     </div>
 </template>

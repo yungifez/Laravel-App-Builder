@@ -317,7 +317,7 @@ export const properties: PropertyDefinition[] = [
     },
 ];
 
-const radii: Record<string, string> = {
+export const radii: Record<string, string> = {
     none: '0',
     xs: '2px',
     sm: '4px',
@@ -355,7 +355,7 @@ const containers: Record<string, string> = {
     '7xl': '80rem',
 };
 
-const shadows: Record<string, string> = {
+export const shadows: Record<string, string> = {
     '2xs': '0 1px rgb(0 0 0 / 0.05)',
     xs: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
     sm: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
@@ -382,7 +382,7 @@ const textSizes: Record<string, [string, string]> = {
 const color = (token: VisualValue): string =>
     `var(--color-${token}, var(--${token}))`;
 
-const weights: Record<string, string> = {
+export const weights: Record<string, string> = {
     light: '300',
     normal: '400',
     medium: '500',

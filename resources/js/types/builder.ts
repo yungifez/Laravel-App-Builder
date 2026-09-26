@@ -254,6 +254,17 @@ export type Preview = {
     expires_at: string | null;
 };
 
+// Everything about one change, as its page and the workspace chat show it.
+export type ChangeDetail = {
+    project: { id: number; name: string };
+    featureRequest: FeatureRequestDetail;
+    parent: { id: number; prompt: string } | null;
+    followUps: FeatureRequestSummary[];
+    verification: Verification | null;
+    run: Run | null;
+    preview: Preview | null;
+};
+
 export type Device = 'base' | 'md' | 'lg';
 
 export type VisualProperty =

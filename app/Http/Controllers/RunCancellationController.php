@@ -18,6 +18,6 @@ class RunCancellationController extends Controller
 
         $cancelRun->handle($run);
 
-        return to_route('feature-requests.show', $run->featureRequest);
+        return back();
     }
 }

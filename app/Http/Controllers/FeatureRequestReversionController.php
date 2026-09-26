@@ -19,6 +19,6 @@ class FeatureRequestReversionController extends Controller
 
         $revertChange->handle($featureRequest, $request->user());
 
-        return to_route('feature-requests.show', $featureRequest);
+        return back();
     }
 }

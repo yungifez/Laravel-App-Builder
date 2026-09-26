@@ -48,6 +48,7 @@ class PreviewTest extends TestCase
         $request = FeatureRequest::factory()->generated()->for($parent->project)->create(['parent_id' => $parent->id, 'patch' => 'CHILD PATCH']);
 
         $this->actingAs($parent->project->owner)
+            ->from(route('feature-requests.show', $request))
             ->post(route('feature-requests.previews.store', $request))
             ->assertRedirect(route('feature-requests.show', $request));
 

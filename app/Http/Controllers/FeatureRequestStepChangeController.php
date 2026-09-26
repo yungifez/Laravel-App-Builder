@@ -21,6 +21,6 @@ class FeatureRequestStepChangeController extends Controller
             $request->validated('prompt'),
         );
 
-        return to_route('feature-requests.show', $followUp);
+        return to_route('projects.show', ['project' => $followUp->project_id, 'change' => $followUp->id]);
     }
 }

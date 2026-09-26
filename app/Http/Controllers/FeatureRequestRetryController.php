@@ -19,6 +19,6 @@ class FeatureRequestRetryController extends Controller
 
         $retry = $retryFeatureRequest->handle($featureRequest, $request->user());
 
-        return to_route('feature-requests.show', $retry);
+        return to_route('projects.show', ['project' => $retry->project_id, 'change' => $retry->id]);
     }
 }

@@ -19,6 +19,6 @@ class FeatureRequestAcceptanceController extends Controller
 
         $acceptChange->handle($featureRequest, $request->user());
 
-        return to_route('feature-requests.show', $featureRequest);
+        return back();
     }
 }

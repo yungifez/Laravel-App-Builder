@@ -149,8 +149,9 @@ class RunLifecycleTest extends TestCase
         $run = Run::factory()->for($featureRequest)->create();
 
         $this->actingAs($featureRequest->project->owner)
+            ->from(route('projects.show', ['project' => $featureRequest->project_id, 'change' => $featureRequest->id]))
             ->post(route('runs.cancellation.store', $run))
-            ->assertRedirect(route('feature-requests.show', $featureRequest));
+            ->assertRedirect(route('projects.show', ['project' => $featureRequest->project_id, 'change' => $featureRequest->id]));
 
         $this->assertSame(RunStatus::Cancelled, $run->refresh()->status);
         $this->assertSame(FeatureRequestStatus::Cancelled, $featureRequest->refresh()->status);

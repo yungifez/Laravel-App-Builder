@@ -169,4 +169,14 @@
     body {
         @apply bg-background text-foreground;
     }
+    /* Scrollbars follow the theme instead of staying light in dark mode. */
+    :root {
+        color-scheme: light;
+    }
+    .dark {
+        color-scheme: dark;
+    }
+    * {
+        scrollbar-width: thin;
+    }
 }

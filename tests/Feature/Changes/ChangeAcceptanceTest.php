@@ -46,8 +46,9 @@ class ChangeAcceptanceTest extends TestCase
         $request = $this->completedChange(self::ADD_COMMENT);
 
         $this->actingAs($this->owner)
+            ->from(route('projects.show', ['project' => $request->project_id, 'change' => $request->id]))
             ->post(route('feature-requests.acceptance.store', $request))
-            ->assertRedirect(route('feature-requests.show', $request));
+            ->assertRedirect(route('projects.show', ['project' => $request->project_id, 'change' => $request->id]));
 
         $request->refresh();
         $this->assertNotNull($request->accepted_at);
@@ -152,6 +153,7 @@ class ChangeAcceptanceTest extends TestCase
         $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $request));
 
         $this->actingAs($this->owner)
+            ->from(route('feature-requests.show', $request))
             ->post(route('feature-requests.reversion.store', $request))
             ->assertRedirect(route('feature-requests.show', $request));
 

@@ -102,9 +102,9 @@ class VisualEditingTest extends TestCase
         $this->assertContains(['npm', 'run', 'build'], $commands);
         $this->assertLessThan(array_search(['npm', 'run', 'build'], $commands, true), array_search(StartPreview::locatorCommand(), $commands, true), 'The locator marks the source before the build.');
 
-        $this->get(route('projects.editor.show', $this->project))
+        $this->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page
-                ->component('projects/Editor')
+                ->component('projects/Show')
                 ->where('preview.status', 'ready')
                 ->where('preview.updating', false)
                 ->where('preview.origin', "http://{$preview->host}.preview.test")
@@ -116,7 +116,7 @@ class VisualEditingTest extends TestCase
         $preview = $this->runningPreview();
 
         $this->actingAs($this->owner)
-            ->get(route('projects.editor.show', ['project' => $this->project, 'target' => 'resources/js/pages/Plans.vue:2:5']))
+            ->get(route('projects.show', ['project' => $this->project, 'target' => 'resources/js/pages/Plans.vue:2:5']))
             ->assertInertia(fn (Assert $page) => $page->reloadOnly('element', fn (Assert $page) => $page
                 ->where('element.tag', 'div')
                 ->where('element.editable', true)
@@ -132,7 +132,7 @@ class VisualEditingTest extends TestCase
         $this->runningPreview();
 
         $this->actingAs($this->owner)
-            ->get(route('projects.editor.show', ['project' => $this->project, 'target' => 'resources/js/pages/Plans.vue:4:9']))
+            ->get(route('projects.show', ['project' => $this->project, 'target' => 'resources/js/pages/Plans.vue:4:9']))
             ->assertInertia(fn (Assert $page) => $page->reloadOnly('element', fn (Assert $page) => $page
                 ->where('element.tag', 'p')
                 ->where('element.editable', false)
@@ -144,7 +144,7 @@ class VisualEditingTest extends TestCase
         $this->runningPreview();
 
         $this->actingAs($this->owner)
-            ->get(route('projects.editor.show', ['project' => $this->project, 'target' => 'resources/js/components/ui/Button.vue:2:5']))
+            ->get(route('projects.show', ['project' => $this->project, 'target' => 'resources/js/components/ui/Button.vue:2:5']))
             ->assertInertia(fn (Assert $page) => $page->reloadOnly('element', fn (Assert $page) => $page
                 ->where('element.shared', ['name' => 'Button', 'uses' => 1])));
     }
@@ -154,7 +154,7 @@ class VisualEditingTest extends TestCase
         $this->runningPreview();
 
         $this->actingAs($this->owner)
-            ->get(route('projects.editor.show', ['project' => $this->project, 'target' => '../../etc/passwd.vue:1:1']))
+            ->get(route('projects.show', ['project' => $this->project, 'target' => '../../etc/passwd.vue:1:1']))
             ->assertInertia(fn (Assert $page) => $page->reloadOnly('element', fn (Assert $page) => $page->where('element', null)));
     }
 
@@ -248,7 +248,7 @@ class VisualEditingTest extends TestCase
             ->assertForbidden();
 
         $this->actingAs($this->owner)
-            ->get(route('projects.editor.show', $this->project))
+            ->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('edits.0.properties', ['gap'])
                 ->whereNot('edits.0.reverted_at', null));
@@ -280,7 +280,7 @@ class VisualEditingTest extends TestCase
         $preview = $this->runningPreview();
         $stranger = User::factory()->create();
 
-        $this->actingAs($stranger)->get(route('projects.editor.show', $this->project))->assertForbidden();
+        $this->actingAs($stranger)->get(route('projects.show', $this->project))->assertForbidden();
         $this->actingAs($stranger)->post(route('projects.previews.store', $this->project))->assertForbidden();
         $this->actingAs($stranger)->post(route('visual-edits.store', $this->project), [
             'preview' => $preview->id,
@@ -315,7 +315,7 @@ class VisualEditingTest extends TestCase
         $head = $this->repository->head($this->project);
 
         $this->actingAs($this->owner)
-            ->get(route('projects.editor.show', $this->project))
+            ->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->where('preview.updating', true));
 
         RebuildPreview::dispatchSync($preview);
@@ -331,7 +331,7 @@ class VisualEditingTest extends TestCase
         $this->assertSame($head, $preview->revision);
         $this->assertNotNull($preview->rebuilt_at);
 
-        $this->get(route('projects.editor.show', $this->project))
+        $this->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->where('preview.updating', false));
     }
 
@@ -423,5 +423,12 @@ class VisualEditingTest extends TestCase
             'workspace_id' => Workspace::factory()->create(['user_id' => $this->owner->id])->id,
             ...$attributes,
         ]);
+    }
+
+    public function test_the_old_editor_address_opens_the_workspace_in_design_mode()
+    {
+        $this->actingAs($this->owner)
+            ->get(route('projects.editor.show', $this->project))
+            ->assertRedirect(route('projects.show', ['project' => $this->project, 'design' => 1]));
     }
 }
