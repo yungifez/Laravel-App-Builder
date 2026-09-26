@@ -49,6 +49,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
 import { useAppPreview } from '@/composables/useAppPreview';
+import { usePanelWidth } from '@/composables/usePanelWidth';
 import { when } from '@/lib/when';
 import { show as showPreview } from '@/routes/previews';
 import { index, show as showProject } from '@/routes/projects';
@@ -90,6 +91,9 @@ const designing = computed(() => panel.value === 'design');
 
 // On a phone the panel and the app take turns on the screen.
 const pane = ref<'panel' | 'app'>(props.design ? 'app' : 'panel');
+
+// On a wide screen the owner drags the panel's edge to read a change in full.
+const panelWidth = usePanelWidth();
 
 const app = useAppPreview({
     projectId: () => props.project.id,
@@ -474,11 +478,18 @@ function send(event: KeyboardEvent): void {
     </div>
 
     <div
-        class="grid min-h-0 flex-1 lg:grid-cols-[24rem_minmax(0,1fr)] [&>*]:min-w-0"
+        :class="[
+            'grid min-h-0 flex-1 lg:grid-cols-[var(--panel-width)_minmax(0,1fr)] [&>*]:min-w-0',
+            // The app is a frame that would swallow the drag.
+            panelWidth.resizing.value
+                ? 'cursor-col-resize select-none [&_iframe]:pointer-events-none'
+                : '',
+        ]"
+        :style="{ '--panel-width': `${panelWidth.width.value}px` }"
     >
         <aside
             :class="[
-                'min-h-0 flex-col lg:flex lg:border-r',
+                'relative min-h-0 flex-col lg:flex lg:border-r',
                 pane === 'panel' ? 'flex' : 'hidden',
             ]"
         >
@@ -667,6 +678,21 @@ function send(event: KeyboardEvent): void {
                     <InputError :message="errors.prompt" class="mt-1" />
                 </Form>
             </section>
+            <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Panel width"
+                :aria-valuenow="panelWidth.width.value"
+                :aria-valuemin="panelWidth.min"
+                tabindex="0"
+                title="Drag to resize. Double-click to reset."
+                class="absolute inset-y-0 -right-1.5 z-10 hidden w-3 cursor-col-resize touch-none after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-transparent after:transition-colors hover:after:bg-primary focus-visible:outline-none focus-visible:after:bg-primary lg:block"
+                :class="panelWidth.resizing.value ? 'after:bg-primary' : ''"
+                data-test="panel-resize"
+                @pointerdown="panelWidth.start"
+                @keydown="panelWidth.nudge"
+                @dblclick="panelWidth.reset"
+            />
         </aside>
 
         <main

@@ -763,7 +763,7 @@ const checks = computed(() => {
                                 </span>
                             </summary>
                             <pre
-                                class="mt-1 max-h-80 overflow-auto rounded-md bg-muted/40 py-2 font-mono text-[11px] leading-5"
+                                class="mt-1 max-h-[60vh] overflow-auto rounded-md bg-muted/40 py-2 font-mono text-xs leading-5"
                             ><div
                                 v-for="(line, index) in file.diff.split('\n')"
                                 :key="index"
