@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 16.** This document consolidates the direction in [direction/](direction/)
+**Version 17.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -30,7 +30,9 @@ factories. Version 15 makes visual editing concrete
 ([§26.12](#2612-visual-properties-on-a-tailwind-substrate-version-15)):
 human-readable properties, written as clean Tailwind with the app's own
 merge, no model call. **Version 16 sets the V1 plan ([§27](#27-v1-plan-version-16)), which wins
-over §21 and §26 for V1.** When they disagree, the direction documents state intent
+over §21 and §26 for V1.** Version 17 adds the Codex SDK as the OpenAI
+failover agent (§27.4), and positioning with a standard for judging
+competitors by effect, not label (§27.10). When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -1305,7 +1307,8 @@ for; none is started without that evidence.
 ## 23. Open decisions
 
 - Included credits at launch, and pricing.
-- Providers beyond Anthropic and OpenAI, and the OpenAI agent SDK choice.
+- Providers beyond Anthropic and OpenAI. (The OpenAI agent SDK choice is
+  settled: the Codex SDK, §27.4.)
 - Curated presets only, or also an open model picker.
 - Approval from Anthropic (and a position from OpenAI) for subscription tokens
   in a hosted product.
@@ -2256,6 +2259,31 @@ the sandbox, never committed).
 - deterministic paths (Tailwind edits, the notes check);
 - cost per accepted change.
 
+**Two agent adapters, one failover rule.** The primary coder is the Claude
+Agent SDK; the failover is OpenAI's **Codex SDK** (`@openai/codex-sdk`), the
+counterpart that runs the Codex agent over a working directory with a sandbox,
+shell, file patching and `AGENTS.md`. Both run in the same sandbox through a
+small Node runner and receive the same brief. The template carries `AGENTS.md`,
+with a `CLAUDE.md` that points to it, so both agents follow the same rules.
+
+- **Failover means provider trouble, not a bad result:** the provider is down,
+  overloaded, rate-limited, out of quota, or its credentials fail. A change
+  that fails verification or review is repaired, not failed over.
+- **A failover restarts the run:** the workspace resets to the baseline commit
+  and the same brief goes to the other adapter. Partial edits are never carried
+  across. Both attempts count against the same change request.
+- **Independence holds:** the reviewer normally uses the other provider from
+  the coder, so when the coder fails over to OpenAI, the reviewer moves to
+  Anthropic.
+- **A circuit breaker** sends new runs to the other provider for a while after
+  repeated provider failures.
+- **API keys only** for both providers; subscription logins stay off (§16).
+- The owner sees which provider built the change ("built with the backup
+  provider"), and power users see why.
+
+The OpenAI Agents SDK (shell, `apply_patch`, sandbox harness, Python first) is
+the alternative if the Codex SDK stops fitting.
+
 **The honest behaviour diff.** "Preserved: billing" is a claim, so the diff
 says how it knows:
 
@@ -2334,8 +2362,8 @@ Telemetry (1–6) and the owner sessions run alongside.
 ### 27.8 Milestones
 
 1. **M1: the continuation loop, in a sandbox.** On the fixture (an existing app
-   with `.builder/`): request, brief with preserve and verify, Agent SDK in the
-   runtime, verification, review by area with evidence-labelled "preserved",
+   with `.builder/`): request, brief with preserve and verify, the Agent SDK in
+   the runtime with the Codex SDK as tested failover, verification, review by area with evidence-labelled "preserved",
    accept and commit, and the next request using the updated notes.
    Measured: cost per accepted change, first-attempt pass, unexpected changes.
    Covers demo steps 5–12.
@@ -2374,3 +2402,76 @@ Two corrections to direction 16, from §26.12: 15px padding is `p-3.75` in
 Tailwind v4 (a theme-relative utility), not `p-[15px]`; and any fraction is a
 valid width (`w-73/100`), though `w-[73%]` reads more clearly and is fine as
 the arbitrary form.
+
+### 27.10 Positioning and competitors (version 17)
+
+**Public promise: cut complexity, make software observable, make software
+easier to evolve.** Laravel is how we deliver it, not the pitch. Internally,
+each layer removes one kind of guessing:
+
+| Layer               | Removes the guess                    |
+| ------------------- | ------------------------------------ |
+| Laravel conventions | how should this be implemented?      |
+| Project context     | what is the owner trying to achieve? |
+| Behaviour notes     | what does the application do now?    |
+| Effects             | what else might this change touch?   |
+| Preserve clauses    | what must stay true?                 |
+| Verification        | did the intended outcome happen?     |
+
+**Judge competitors by effect, not label.** A feature counts as equivalent only
+when public evidence shows the same effect on search space, uncertainty,
+correctness, verification and long-term evolution. No checkmark matrices. For
+each capability, ask:
+
+- **Planning:** only before the first build, or before every substantial
+  change? With preservation expectations and behaviour awareness?
+- **Memory:** full history, summary, retrieval, or scoped and selective? With
+  provenance?
+- **Visual editing:** prompt targeting, model-backed property editing, or
+  deterministic source mutation? Responsive and state-aware?
+- **Verification:** the build succeeds, the tests pass, the behaviour
+  expectations were checked, or the unrelated behaviour was shown to be
+  preserved?
+- **Code understanding:** semantic search, framework-aware retrieval,
+  deterministic introspection, or mapping between product and code?
+
+When the evidence is missing, the answer is **unknown**, never "yes".
+
+**LaraCopilot, the closest competitor** (direction 18, from the owner's
+reading of its public material). Credited:
+
+- Laravel-native generation;
+- genuine repository understanding (models, routes, relationships, patterns),
+  which reduces the engineering search space;
+- persistent project context (selectivity unknown);
+- policies, FormRequests and tests;
+- a code health monitor (codebase health, not product reconciliation);
+- automatic validation and fixes (not shown to be behaviour-aware);
+- visual editing on the preview (depth unknown);
+- source-level revert, Git and deployment;
+- users and distribution.
+
+Not credited without evidence:
+
+- a behaviour model, Effects, preserve clauses or change-scoped context;
+- behaviour-aware verification planning or behaviour-level diffs;
+- reconciliation of intent with implementation;
+- semantic evolution: reverting a behaviour, not a prompt's files.
+
+Its build plan applies to new projects; follow-up prompts go straight to
+building.
+
+It is dangerous regardless. It can move toward this direction, so the
+response is to make the engine real first, not to feel safe.
+
+**The head-to-head test** joins the experiments in §26.7:
+
+- the same evolving Laravel application, and the same sequence of substantial
+  changes, run on LaraCopilot and on our engine;
+- measured for each change: corrective prompts, tokens or credits, files
+  inspected, regressions, failures to preserve, verification quality, owner
+  corrections and cost per accepted change.
+
+The hypothesis is that our advantage **grows** with the application. If it
+does not, behaviour notes, context and Effects have not earned their
+complexity.
