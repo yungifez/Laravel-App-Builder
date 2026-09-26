@@ -386,6 +386,7 @@ export type ProjectPublishing = {
     connected: boolean;
     target: string | null;
     branch: string | null;
+    head: string | null;
     deployments: DeploymentSummary[];
 };
 

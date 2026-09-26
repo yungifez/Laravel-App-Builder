@@ -1,17 +1,25 @@
 <script setup lang="ts">
 import { Head, Link, router, setLayoutProps } from '@inertiajs/vue3';
+import {
+    Check,
+    CircleAlert,
+    CircleCheck,
+    Link2,
+    LoaderCircle,
+    SearchCheck,
+    ShieldCheck,
+} from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
-import AppTabs from '@/components/AppTabs.vue';
-import Heading from '@/components/Heading.vue';
 import NotesDraftPanel from '@/components/NotesDraftPanel.vue';
 import NotesPart from '@/components/NotesPart.vue';
+import PartsMap from '@/components/PartsMap.vue';
 import { Button } from '@/components/ui/button';
 import {
     Collapsible,
     CollapsibleContent,
     CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { show as showFeatureRequest } from '@/routes/feature-requests';
+import { when } from '@/lib/when';
 import { index, show } from '@/routes/projects';
 import { show as showUnderstanding } from '@/routes/projects/understanding';
 import type {
@@ -37,12 +45,6 @@ const props = defineProps<{
 
 const checking = ref(false);
 
-const connections = computed(() =>
-    props.areas.flatMap((area) =>
-        area.connections.map((connection) => ({ from: area, ...connection })),
-    ),
-);
-
 // Notes are Markdown; the owner reads them as plain text. Lines wrapped
 // in the file are joined, and list markers become bullets.
 function plain(text: string): string {
@@ -52,8 +54,75 @@ function plain(text: string): string {
         .replace(/^\s*[-*]\s+/gm, '• ');
 }
 
-function day(iso: string | null): string {
-    return iso === null ? '' : new Date(iso).toLocaleDateString();
+type Entry = { term: string | null; text: string };
+
+// A notes section is usually a list of "**Name**: what it means" lines
+// (people, terms). Split it so each entry can stand on its own tile.
+function entries(body: string): Entry[] {
+    return body
+        .replace(/\n(?!\s*[-*]\s)\s*/g, ' ')
+        .split('\n')
+        .map((line) => line.replace(/^\s*[-*]\s+/, '').trim())
+        .filter((line) => line !== '')
+        .map((line) => {
+            const named = line.match(/^\*\*(.+?)\*\*\s*[:—–-]\s*(.+)$/);
+
+            if (named) {
+                return { term: named[1], text: capitalise(named[2]) };
+            }
+
+            const bold = line.match(/\*\*(.+?)\*\*/);
+
+            return {
+                term: bold ? capitalise(bold[1]) : null,
+                text: plain(line),
+            };
+        });
+}
+
+function capitalise(text: string): string {
+    return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+const sections = computed(() =>
+    props.about.sections.map((section) => {
+        const items = entries(section.body);
+
+        return {
+            ...section,
+            items,
+            tiles: items.length > 0 && items.every((item) => item.term),
+        };
+    }),
+);
+
+const rules = computed(() =>
+    props.areas.reduce((total, area) => total + area.rules.length, 0),
+);
+
+// How much I know, said in one quiet line under the heading.
+const facts = computed(() =>
+    [
+        [props.areas.length, 'part', 'parts'],
+        [rules.value, 'rule', 'rules'],
+        [props.changes.length + props.looks, 'change kept', 'changes kept'],
+    ]
+        // Zeros say nothing the empty sections below don't already say.
+        .filter(([count]) => count !== 0)
+        .map(([count, one, many]) => `${count} ${count === 1 ? one : many}`)
+        .join(' · '),
+);
+
+// Linking a part to another scrolls there and briefly marks it, so the
+// owner sees which card the link meant.
+const marked = ref<string | null>(null);
+
+function visit(key: string): void {
+    document
+        .getElementById(`part-${key}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    marked.value = key;
+    window.setTimeout(() => (marked.value = null), 1600);
 }
 
 function runCheck(): void {
@@ -84,85 +153,128 @@ watch(
 <template>
     <Head :title="`${project.name}: what I know`" />
 
-    <div class="flex h-full flex-1 flex-col gap-10 p-4">
-        <div class="space-y-6">
-            <header class="space-y-1">
-                <h1 class="text-xl font-semibold tracking-tight break-words">
-                    {{ project.name }}
-                </h1>
-                <p class="text-sm text-muted-foreground">
-                    What I know about your app. Change anything that is wrong; I
-                    use it for every change.
-                </p>
-            </header>
-
-            <AppTabs :project-id="project.id" current="knows" />
-        </div>
-
+    <div
+        class="mx-auto flex max-w-5xl flex-col gap-20 px-4 pt-12 pb-24 sm:px-8"
+    >
         <NotesDraftPanel
             v-if="draft !== null"
             :project-id="project.id"
             :draft="draft"
         />
 
-        <p
-            v-if="revision === null"
-            class="max-w-2xl text-sm text-muted-foreground"
-        >
+        <p v-if="revision === null" class="text-sm text-muted-foreground">
             This app has no history yet, so there is nothing to show.
         </p>
 
         <template v-else>
-            <section class="max-w-2xl space-y-4" data-test="about">
-                <Heading variant="small" title="About your app" />
-
+            <!-- What the app is for, and how much I know about it -->
+            <section data-test="about">
                 <NotesPart
                     :project-id="project.id"
                     :revision="revision"
                     part="introduction"
                     :text="about.introduction"
                     label="what it is for"
+                    variant="icon"
                 >
-                    <p
+                    <h1
                         v-if="about.introduction"
-                        class="text-sm whitespace-pre-line"
+                        class="max-w-3xl pr-10 text-3xl leading-tight font-semibold tracking-[-0.025em] text-balance"
                     >
                         {{ plain(about.introduction) }}
-                    </p>
-                    <p v-else class="text-sm text-muted-foreground">
-                        Nothing written yet.
-                    </p>
+                    </h1>
+                    <h1 v-else class="text-3xl text-muted-foreground">
+                        What is your app for?
+                    </h1>
                 </NotesPart>
 
-                <div
-                    v-for="section in about.sections"
-                    :key="section.heading"
-                    class="space-y-1 border-t pt-4"
-                >
-                    <h3 class="text-sm font-medium">{{ section.heading }}</h3>
-                    <NotesPart
-                        :project-id="project.id"
-                        :revision="revision"
-                        :part="`section:${section.heading}`"
-                        :text="section.body"
-                        :label="section.heading.toLowerCase()"
-                        :rows="6"
+                <div class="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+                    <p
+                        v-if="facts"
+                        class="text-muted-foreground"
+                        data-test="facts"
                     >
-                        <p
-                            class="text-sm whitespace-pre-line text-muted-foreground"
+                        {{ facts }}
+                    </p>
+                    <Button
+                        variant="outline"
+                        class="h-11 gap-1.5 select-none sm:ml-auto sm:h-9"
+                        :disabled="checking"
+                        data-test="check-button"
+                        @click="runCheck"
+                    >
+                        <LoaderCircle
+                            v-if="checking"
+                            class="size-4 animate-spin"
+                        />
+                        <SearchCheck v-else class="size-4" />
+                        Check my app
+                    </Button>
+                </div>
+
+                <!-- Quick check: gaps between these notes and the app -->
+                <div
+                    v-if="check !== undefined"
+                    class="mt-4"
+                    data-test="quick-check"
+                >
+                    <p
+                        v-if="check.length === 0"
+                        class="flex items-center gap-2 text-sm"
+                        data-test="check-clear"
+                    >
+                        <CircleCheck class="size-4 text-green-600" />
+                        No obvious problems found.
+                    </p>
+                    <ul v-else class="space-y-2" data-test="check-findings">
+                        <li
+                            v-for="finding in check"
+                            :key="finding.title"
+                            class="flex gap-2 text-sm"
                         >
-                            {{ plain(section.body) }}
-                        </p>
-                    </NotesPart>
+                            <CircleAlert
+                                class="mt-0.5 size-4 shrink-0 text-amber-500"
+                            />
+                            <div class="min-w-0">
+                                <p>{{ finding.title }}</p>
+                                <Collapsible v-if="finding.details.length">
+                                    <CollapsibleTrigger
+                                        class="min-h-11 text-xs text-muted-foreground underline-offset-4 select-none hover:underline sm:min-h-0"
+                                    >
+                                        Details
+                                    </CollapsibleTrigger>
+                                    <CollapsibleContent>
+                                        <ul
+                                            class="mt-1 space-y-0.5 font-mono text-xs break-all text-muted-foreground"
+                                        >
+                                            <li
+                                                v-for="detail in finding.details"
+                                                :key="detail"
+                                            >
+                                                {{ detail }}
+                                            </li>
+                                        </ul>
+                                    </CollapsibleContent>
+                                </Collapsible>
+                            </div>
+                        </li>
+                    </ul>
                 </div>
             </section>
 
-            <section class="max-w-2xl space-y-4" data-test="areas">
-                <Heading
-                    variant="small"
-                    title="How things work"
-                    description="The parts of your app and what people can do in each"
-                />
+            <!-- The parts of the app: a map of how they tie together, then
+                 one card each with everything I know about that part -->
+            <section class="space-y-4" data-test="areas">
+                <h2
+                    class="flex items-baseline gap-2 text-xl font-semibold tracking-[-0.02em]"
+                >
+                    How your app works
+                    <span
+                        v-if="areas.length"
+                        class="font-normal text-muted-foreground tabular-nums"
+                        >{{ areas.length }}</span
+                    >
+                </h2>
 
                 <p
                     v-if="areas.length === 0"
@@ -171,229 +283,277 @@ watch(
                     No parts are described yet.
                 </p>
 
-                <ul v-else class="divide-y border-y">
-                    <li
-                        v-for="area in areas"
-                        :key="area.key"
-                        class="space-y-2 py-4"
-                    >
-                        <h3 class="font-medium">{{ area.name }}</h3>
-                        <NotesPart
-                            :project-id="project.id"
-                            :revision="revision"
-                            :part="`summary:${area.key}`"
-                            :text="area.summary ?? ''"
-                            label="what it does"
-                            :rows="2"
-                        >
-                            <p
-                                v-if="area.summary"
-                                class="text-sm text-muted-foreground"
-                            >
-                                {{ area.summary }}
-                            </p>
-                            <p v-else class="text-sm text-muted-foreground">
-                                Not described yet.
-                            </p>
-                        </NotesPart>
-                        <p v-if="area.behaviors.length" class="text-sm">
-                            People can: {{ area.behaviors.join(', ') }}.
-                        </p>
-                    </li>
-                </ul>
-            </section>
+                <template v-else>
+                    <!-- More than four parts crowd a phone-sized ring; the rows
+                         below say the same thing there -->
+                    <PartsMap
+                        :class="areas.length > 4 && 'hidden sm:block'"
+                        :areas="areas"
+                        @visit="visit"
+                    />
 
-            <section class="max-w-2xl space-y-4" data-test="rules">
-                <Heading
-                    variant="small"
-                    title="Things that must always be true"
-                    description="I keep these the same in every change, and say how I checked"
-                />
-
-                <ul class="divide-y border-y">
-                    <li
-                        v-for="area in areas"
-                        :key="area.key"
-                        class="space-y-1 py-4"
-                    >
-                        <h3 class="text-sm font-medium">{{ area.name }}</h3>
-                        <NotesPart
-                            :project-id="project.id"
-                            :revision="revision"
-                            :part="`rules:${area.key}`"
-                            :text="area.rules.join('\n')"
-                            :label="`the rules for ${area.name}`"
-                            :rows="Math.max(3, area.rules.length + 1)"
-                            hint="One rule per line."
-                        >
-                            <ul
-                                v-if="area.rules.length"
-                                class="list-disc space-y-1 pl-5 text-sm"
-                            >
-                                <li v-for="rule in area.rules" :key="rule">
-                                    {{ plain(rule) }}
-                                </li>
-                            </ul>
-                            <p v-else class="text-sm text-muted-foreground">
-                                No rules yet.
-                            </p>
-                        </NotesPart>
-                    </li>
-                </ul>
-            </section>
-
-            <section class="max-w-2xl space-y-4" data-test="connections">
-                <Heading
-                    variant="small"
-                    title="Things this is connected to"
-                    description="When one of these changes, I check the other"
-                />
-
-                <ul v-if="connections.length" class="divide-y border-y text-sm">
-                    <li
-                        v-for="connection in connections"
-                        :key="`${connection.from.key}-${connection.to}`"
-                        class="py-3"
-                    >
-                        <span class="font-medium">{{
-                            connection.from.name
-                        }}</span>
-                        is connected to
-                        <span class="font-medium">{{ connection.name }}</span
-                        >: {{ connection.reason }}
-                        <span
-                            v-if="connection.strength !== 'strong'"
-                            class="text-muted-foreground"
-                        >
-                            ({{
-                                connection.strength === 'possible'
-                                    ? 'maybe'
-                                    : 'in the past'
-                            }})</span
-                        >
-                    </li>
-                </ul>
-                <p v-else class="text-sm text-muted-foreground">
-                    No connections are known yet.
-                </p>
-            </section>
-
-            <section class="max-w-2xl space-y-4" data-test="guidance">
-                <Heading
-                    variant="small"
-                    title="Guidance from your developer"
-                    description="How your app should be built. I follow it in every change."
-                />
-                <NotesPart
-                    :project-id="project.id"
-                    :revision="revision"
-                    :part="`section:Engineering direction`"
-                    :text="guidance ?? ''"
-                    label="the guidance"
-                    :rows="6"
-                    hint="One point per line works well."
-                >
-                    <p
-                        v-if="guidance"
-                        class="text-sm whitespace-pre-line text-muted-foreground"
-                    >
-                        {{ plain(guidance) }}
-                    </p>
-                    <p v-else class="text-sm text-muted-foreground">
-                        None yet.
-                    </p>
-                </NotesPart>
-            </section>
-
-            <section class="max-w-2xl space-y-4" data-test="what-changed">
-                <Heading variant="small" title="What changed" />
-
-                <ol v-if="changes.length" class="divide-y border-y">
-                    <li v-for="change in changes" :key="change.id">
-                        <Link
-                            :href="showFeatureRequest(change.id)"
-                            class="flex min-h-11 items-baseline justify-between gap-4 py-3 text-sm hover:bg-muted/50"
-                        >
-                            <span class="min-w-0">{{ change.summary }}</span>
-                            <span
-                                class="shrink-0 text-xs text-muted-foreground"
-                                >{{ day(change.at) }}</span
-                            >
-                        </Link>
-                    </li>
-                </ol>
-                <p v-else class="text-sm text-muted-foreground">
-                    No changes kept yet.
-                </p>
-                <p v-if="looks > 0" class="text-sm text-muted-foreground">
-                    And {{ looks }} {{ looks === 1 ? 'change' : 'changes' }} to
-                    how it looks.
-                </p>
-            </section>
-
-            <section class="max-w-2xl space-y-4" data-test="quick-check">
-                <Heading
-                    variant="small"
-                    title="Quick check"
-                    description="Look for obvious gaps between these notes and your app"
-                />
-
-                <Button
-                    variant="outline"
-                    class="h-11 select-none sm:h-9"
-                    :disabled="checking"
-                    data-test="check-button"
-                    @click="runCheck"
-                >
-                    Check my app
-                </Button>
-
-                <template v-if="check !== undefined">
-                    <p
-                        v-if="check.length === 0"
-                        class="text-sm"
-                        data-test="check-clear"
-                    >
-                        No obvious problems found.
-                    </p>
-                    <ul
-                        v-else
-                        class="divide-y border-y"
-                        data-test="check-findings"
-                    >
+                    <ul class="divide-y border-y">
                         <li
-                            v-for="finding in check"
-                            :key="finding.title"
-                            class="py-3 text-sm"
+                            v-for="area in areas"
+                            :id="`part-${area.key}`"
+                            :key="area.key"
+                            :class="[
+                                'grid scroll-mt-20 gap-6 py-8 transition-colors duration-700 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:gap-12',
+                                marked === area.key && 'bg-muted/40',
+                            ]"
+                            :data-test="`part-${area.key}`"
                         >
-                            <p>{{ finding.title }}</p>
-                            <Collapsible v-if="finding.details.length">
-                                <CollapsibleTrigger
-                                    class="min-h-11 text-xs text-muted-foreground underline-offset-4 select-none hover:underline sm:min-h-0"
+                            <div class="space-y-3">
+                                <h3
+                                    class="flex items-center gap-2 text-xl font-semibold tracking-tight break-words"
                                 >
-                                    Details
-                                </CollapsibleTrigger>
-                                <CollapsibleContent>
-                                    <ul
-                                        class="mt-1 space-y-0.5 font-mono text-xs break-all text-muted-foreground"
+                                    {{ area.name }}
+                                    <span
+                                        v-if="area.tested"
+                                        class="flex items-center gap-1 text-xs font-normal tracking-normal text-muted-foreground"
+                                        title="Tests check this part"
                                     >
-                                        <li
-                                            v-for="detail in finding.details"
-                                            :key="detail"
-                                        >
-                                            {{ detail }}
-                                        </li>
-                                    </ul>
-                                </CollapsibleContent>
-                            </Collapsible>
+                                        <ShieldCheck
+                                            class="size-3.5 text-green-600"
+                                        />
+                                        Tested
+                                    </span>
+                                </h3>
+                                <NotesPart
+                                    :project-id="project.id"
+                                    :revision="revision"
+                                    :part="`summary:${area.key}`"
+                                    :text="area.summary ?? ''"
+                                    label="what it does"
+                                    :rows="3"
+                                    variant="icon"
+                                >
+                                    <p class="pr-8 text-muted-foreground">
+                                        {{
+                                            area.summary ?? 'Not described yet.'
+                                        }}
+                                    </p>
+                                </NotesPart>
+                                <ul
+                                    v-if="area.behaviors.length"
+                                    class="flex flex-wrap gap-x-4 gap-y-1 text-sm font-medium"
+                                    aria-label="People can"
+                                >
+                                    <li
+                                        v-for="behavior in area.behaviors"
+                                        :key="behavior"
+                                    >
+                                        {{ behavior }}
+                                    </li>
+                                </ul>
+                                <p
+                                    v-if="area.connections.length"
+                                    class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground"
+                                >
+                                    <Link2 class="size-3.5" />
+                                    <button
+                                        v-for="connection in area.connections"
+                                        :key="connection.to"
+                                        type="button"
+                                        :class="[
+                                            'min-h-11 underline-offset-4 select-none hover:text-foreground sm:min-h-6',
+                                            connection.strength === 'strong'
+                                                ? 'underline'
+                                                : 'underline decoration-dashed',
+                                        ]"
+                                        :title="connection.reason"
+                                        @click="visit(connection.to)"
+                                    >
+                                        {{ connection.name }}
+                                    </button>
+                                </p>
+                            </div>
+
+                            <NotesPart
+                                :project-id="project.id"
+                                :revision="revision"
+                                :part="`rules:${area.key}`"
+                                :text="area.rules.join('\n')"
+                                :label="`the rules for ${area.name}`"
+                                :rows="Math.max(3, area.rules.length + 1)"
+                                hint="One rule per line."
+                                variant="icon"
+                            >
+                                <p
+                                    class="mb-3 text-sm font-medium text-muted-foreground"
+                                >
+                                    Always true
+                                </p>
+                                <ul
+                                    v-if="area.rules.length"
+                                    class="space-y-2.5 pr-8"
+                                >
+                                    <li
+                                        v-for="rule in area.rules"
+                                        :key="rule"
+                                        class="flex gap-2.5"
+                                    >
+                                        <Check
+                                            class="mt-1 size-3.5 shrink-0 text-muted-foreground"
+                                        />
+                                        <span class="min-w-0">{{
+                                            plain(rule)
+                                        }}</span>
+                                    </li>
+                                </ul>
+                                <p v-else class="text-sm text-muted-foreground">
+                                    No rules yet.
+                                </p>
+                            </NotesPart>
                         </li>
                     </ul>
                 </template>
             </section>
 
-            <Collapsible v-if="problems.length" class="max-w-2xl">
+            <!-- People, terms and any other notes, side by side -->
+            <div
+                v-if="sections.length"
+                class="grid gap-16 lg:grid-cols-2 lg:gap-12"
+            >
+                <section
+                    v-for="section in sections"
+                    :key="section.heading"
+                    :data-test="`section-${section.heading}`"
+                >
+                    <NotesPart
+                        :project-id="project.id"
+                        :revision="revision"
+                        :part="`section:${section.heading}`"
+                        :text="section.body"
+                        :label="section.heading.toLowerCase()"
+                        :rows="6"
+                        variant="icon"
+                    >
+                        <h2
+                            class="mb-4 flex items-baseline gap-2 text-xl font-semibold tracking-[-0.02em]"
+                        >
+                            {{ section.heading }}
+                            <span
+                                v-if="section.tiles"
+                                class="font-normal text-muted-foreground tabular-nums"
+                                >{{ section.items.length }}</span
+                            >
+                        </h2>
+                        <dl v-if="section.tiles" class="divide-y border-y">
+                            <div
+                                v-for="item in section.items"
+                                :key="item.term ?? item.text"
+                                class="flex gap-4 py-3"
+                            >
+                                <dt
+                                    class="w-24 shrink-0 font-medium break-words"
+                                >
+                                    {{ item.term }}
+                                </dt>
+                                <dd
+                                    class="min-w-0 break-words text-muted-foreground"
+                                >
+                                    {{ item.text }}
+                                </dd>
+                            </div>
+                        </dl>
+                        <p
+                            v-else
+                            class="max-w-prose whitespace-pre-line text-muted-foreground"
+                        >
+                            {{ plain(section.body) }}
+                        </p>
+                    </NotesPart>
+                </section>
+            </div>
+
+            <!-- How it should be built, and what changed so far -->
+            <div class="grid gap-16 lg:grid-cols-2 lg:gap-12">
+                <section data-test="guidance">
+                    <NotesPart
+                        :project-id="project.id"
+                        :revision="revision"
+                        :part="`section:Engineering direction`"
+                        :text="guidance ?? ''"
+                        label="the guidance"
+                        :rows="6"
+                        hint="One point per line works well."
+                        :variant="guidance ? 'icon' : 'text'"
+                    >
+                        <h2
+                            class="mb-4 text-xl font-semibold tracking-[-0.02em]"
+                        >
+                            Guidance from your developer
+                        </h2>
+                        <p
+                            v-if="guidance"
+                            class="max-w-prose whitespace-pre-line"
+                        >
+                            {{ plain(guidance) }}
+                        </p>
+                        <p v-else class="text-sm text-muted-foreground">
+                            None yet. I follow anything written here in every
+                            change.
+                        </p>
+                    </NotesPart>
+                </section>
+
+                <section data-test="what-changed">
+                    <h2 class="mb-4 text-xl font-semibold tracking-[-0.02em]">
+                        What changed
+                    </h2>
+
+                    <ol
+                        v-if="changes.length || looks > 0"
+                        class="relative ml-1 border-l pl-5"
+                    >
+                        <li
+                            v-for="change in changes"
+                            :key="change.id"
+                            class="relative"
+                        >
+                            <span
+                                class="absolute top-4 -left-[1.6rem] size-2.5 rounded-full border-2 border-background bg-foreground"
+                                aria-hidden="true"
+                            />
+                            <Link
+                                :href="
+                                    show(project.id, {
+                                        query: { change: change.id },
+                                    })
+                                "
+                                class="-mx-2 flex min-h-11 items-baseline justify-between gap-4 rounded-md px-2 py-2.5 transition-colors duration-150 hover:bg-muted/50"
+                            >
+                                <span class="min-w-0">{{
+                                    change.summary
+                                }}</span>
+                                <span
+                                    class="shrink-0 text-xs text-muted-foreground tabular-nums"
+                                    >{{ when(change.at) }}</span
+                                >
+                            </Link>
+                        </li>
+                        <li v-if="looks > 0" class="relative py-2.5">
+                            <span
+                                class="absolute top-4 -left-[1.6rem] size-2.5 rounded-full border-2 border-background bg-muted-foreground/50"
+                                aria-hidden="true"
+                            />
+                            <span class="text-muted-foreground"
+                                >And {{ looks }}
+                                {{ looks === 1 ? 'change' : 'changes' }} to how
+                                it looks.</span
+                            >
+                        </li>
+                    </ol>
+                    <p v-else class="text-sm text-muted-foreground">
+                        No changes kept yet.
+                    </p>
+                </section>
+            </div>
+
+            <Collapsible v-if="problems.length">
                 <CollapsibleTrigger
-                    class="text-xs text-muted-foreground select-none hover:underline"
+                    class="min-h-11 text-xs text-muted-foreground select-none hover:underline sm:min-h-0"
                 >
                     Details: some notes could not be read
                 </CollapsibleTrigger>

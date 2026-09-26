@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Form } from '@inertiajs/vue3';
+import { Pencil } from '@lucide/vue';
 import { ref } from 'vue';
 import ProjectUnderstandingController from '@/actions/App/Http/Controllers/ProjectUnderstandingController';
 import InputError from '@/components/InputError.vue';
@@ -14,8 +15,11 @@ const props = withDefaults(
         label: string;
         rows?: number;
         hint?: string;
+        // "icon" puts a pencil in the corner instead of a text button, for
+        // places where many parts sit side by side.
+        variant?: 'text' | 'icon';
     }>(),
-    { rows: 4, hint: undefined },
+    { rows: 4, hint: undefined, variant: 'text' },
 );
 
 const editing = ref(false);
@@ -23,7 +27,25 @@ const editing = ref(false);
 
 <template>
     <div class="min-w-0">
-        <template v-if="!editing">
+        <div
+            v-if="!editing && variant === 'icon'"
+            class="group/part relative min-w-0"
+        >
+            <slot />
+            <Button
+                variant="ghost"
+                size="icon"
+                class="absolute -top-1.5 right-0 size-11 text-muted-foreground select-none hover:text-foreground sm:size-8 pointer-fine:opacity-0 pointer-fine:group-hover/part:opacity-100 pointer-fine:focus-visible:opacity-100"
+                :aria-label="`Change ${label}`"
+                :title="`Change ${label}`"
+                :data-test="`edit-${part}`"
+                @click="editing = true"
+            >
+                <Pencil class="size-3.5" />
+            </Button>
+        </div>
+
+        <template v-else-if="!editing">
             <slot />
             <Button
                 variant="ghost"

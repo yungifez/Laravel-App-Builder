@@ -117,6 +117,20 @@ const phoneView = computed<'chat' | 'design' | 'app'>({
 
 const detailsOpen = ref(false);
 const publishOpen = ref(false);
+
+// Online, but not the newest kept version: a dot on "Put it online" says
+// so without opening it. An app that was never online gets no dot.
+const behind = computed(() => {
+    const live = props.publishing.deployments.find(
+        (deployment) => deployment.status === 'published',
+    );
+
+    return (
+        live !== undefined &&
+        props.publishing.head !== null &&
+        props.publishing.head !== live.commit
+    );
+});
 const startingIdea = ref(false);
 const usingIdea = ref(false);
 
@@ -373,11 +387,18 @@ function send(event: KeyboardEvent): void {
             </Button>
             <Button
                 v-else
-                class="ml-1 h-11 select-none sm:h-9"
+                class="relative ml-1 h-11 select-none sm:h-9"
                 data-test="publish-open"
                 @click="publishOpen = true"
             >
                 Put it online
+                <span
+                    v-if="behind"
+                    class="absolute -top-1 -right-1 size-2.5 rounded-full border-2 border-background bg-amber-500"
+                    data-test="publish-behind"
+                >
+                    <span class="sr-only">Newer changes aren't online yet</span>
+                </span>
             </Button>
         </div>
     </header>

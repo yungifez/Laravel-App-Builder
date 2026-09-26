@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Form, usePoll } from '@inertiajs/vue3';
+import { CircleAlert, CircleCheck, CircleDot, LoaderCircle } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import DeploymentController from '@/actions/App/Http/Controllers/DeploymentController';
 import ProjectPublishingController from '@/actions/App/Http/Controllers/ProjectPublishingController';
@@ -23,11 +24,74 @@ const props = defineProps<{
 
 const changing = ref(false);
 const latest = computed(() => props.publishing.deployments[0] ?? null);
+const live = computed(
+    () =>
+        props.publishing.deployments.find(
+            (deployment) => deployment.status === 'published',
+        ) ?? null,
+);
 const active = computed(
     () =>
         latest.value !== null &&
         ['checking', 'pushing'].includes(latest.value.status),
 );
+
+// The owner opens this to learn one thing: is what I kept online? No
+// count of versions: a design edit and its undo are two versions but no
+// difference to the owner.
+const upToDate = computed(
+    () =>
+        live.value !== null &&
+        props.publishing.head !== null &&
+        props.publishing.head === live.value.commit,
+);
+
+const status = computed(() => {
+    switch (true) {
+        case latest.value?.status === 'checking':
+            return {
+                icon: LoaderCircle,
+                tone: 'animate-spin text-muted-foreground',
+                title: 'Checking your app first…',
+                detail: 'This takes a few minutes. You can close this.',
+            };
+        case latest.value?.status === 'pushing':
+            return {
+                icon: LoaderCircle,
+                tone: 'animate-spin text-muted-foreground',
+                title: 'Sending it to your hosting…',
+                detail: null,
+            };
+        case latest.value?.status === 'failed':
+            return {
+                icon: CircleAlert,
+                tone: 'text-red-600',
+                title: "It didn't go online",
+                detail: latest.value?.error ?? null,
+            };
+        case live.value === null:
+            return {
+                icon: CircleDot,
+                tone: 'text-muted-foreground',
+                title: 'Not online yet',
+                detail: 'Your latest kept version goes online once its checks pass.',
+            };
+        case upToDate.value:
+            return {
+                icon: CircleCheck,
+                tone: 'text-green-600',
+                title: 'Online and up to date',
+                detail: `Went online ${when(live.value?.finished_at ?? null)}.`,
+            };
+        default:
+            return {
+                icon: CircleDot,
+                tone: 'text-amber-500',
+                title: "Newer changes aren't online yet",
+                detail: `What's online is from ${when(live.value?.finished_at ?? null)}.`,
+            };
+    }
+});
 
 const { start, stop } = usePoll(
     3000,
@@ -40,41 +104,44 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
 
 <template>
     <section class="space-y-4" data-test="publishing">
-        <Heading
-            variant="small"
-            title="Put it online"
-            description="Your latest kept version, for everyone to use"
-        />
+        <Heading variant="small" title="Put it online" />
 
         <template v-if="publishing.connected && !changing">
-            <p class="text-sm" data-test="publish-status">
-                <template v-if="latest === null">Not published yet.</template>
-                <template v-else-if="latest.status === 'checking'"
-                    >Checking your app before publishing. This can take a few
-                    minutes.</template
-                >
-                <template v-else-if="latest.status === 'pushing'"
-                    >Publishing…</template
-                >
-                <template v-else-if="latest.status === 'published'"
-                    >Put online {{ when(latest.finished_at) }}. Your hosting
-                    serves this version now.</template
-                >
-                <template v-else>{{ latest.error }}</template>
-            </p>
+            <div class="flex gap-3" data-test="publish-status">
+                <component
+                    :is="status.icon"
+                    :class="['mt-0.5 size-5 shrink-0', status.tone]"
+                    aria-hidden="true"
+                />
+                <div class="min-w-0">
+                    <p class="font-medium">{{ status.title }}</p>
+                    <p
+                        v-if="status.detail"
+                        class="text-sm break-words text-muted-foreground"
+                    >
+                        {{ status.detail }}
+                    </p>
+                </div>
+            </div>
 
             <Form
+                v-if="!active && !upToDate"
                 v-bind="DeploymentController.store.form(projectId)"
                 :options="{ preserveScroll: true }"
                 v-slot="{ errors, processing }"
             >
                 <Button
-                    variant="outline"
-                    :disabled="processing || active"
-                    class="h-11 select-none sm:h-9"
+                    :disabled="processing"
+                    class="h-11 w-full select-none sm:h-9"
                     data-test="publish-button"
                 >
-                    Put it online
+                    {{
+                        latest?.status === 'failed'
+                            ? 'Try again'
+                            : live
+                              ? 'Put the newest version online'
+                              : 'Put it online'
+                    }}
                 </Button>
                 <InputError class="mt-2" :message="errors.publish" />
             </Form>

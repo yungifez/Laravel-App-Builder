@@ -118,6 +118,9 @@ class ProjectController extends Controller
                 'connected' => $project->publishable(),
                 'target' => $project->publishTarget(),
                 'branch' => $project->deploy_branch,
+                // The main app's newest version: only it is ever published,
+                // so the owner can see whether what they kept is online.
+                'head' => $repository->exists($project) ? ($repository->head($project, Experiment::mainBranch()) ?: null) : null,
                 'deployments' => $project->deployments()->latest('id')->limit(5)->get()
                     ->map(fn (Deployment $deployment) => [
                         'id' => $deployment->id,

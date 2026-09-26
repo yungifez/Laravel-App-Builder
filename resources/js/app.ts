@@ -1,6 +1,7 @@
 import { createInertiaApp } from '@inertiajs/vue3';
 import { initializeTheme } from '@/composables/useAppearance';
 import AppLayout from '@/layouts/AppLayout.vue';
+import AppPageLayout from '@/layouts/AppPageLayout.vue';
 import AuthLayout from '@/layouts/AuthLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import WorkspaceLayout from '@/layouts/WorkspaceLayout.vue';
@@ -16,6 +17,9 @@ void createInertiaApp({
                 return null;
             case name === 'projects/Show':
                 return WorkspaceLayout;
+            case name === 'projects/Understanding':
+            case name === 'feature-requests/Show':
+                return AppPageLayout;
             case name.startsWith('auth/'):
                 return AuthLayout;
             case name.startsWith('settings/'):

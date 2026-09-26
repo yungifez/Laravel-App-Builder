@@ -59,11 +59,14 @@ watch(
         setLayoutProps({
             breadcrumbs: [
                 { title: 'Your apps', href: index() },
+                // Back returns to this change in the workspace, not the list.
                 {
                     title: props.project.name,
-                    href: showProject(props.project.id),
+                    href: showProject(props.project.id, {
+                        query: { change: id },
+                    }),
                 },
-                { title: `Change #${id}`, href: showFeatureRequest(id) },
+                { title: 'Change details', href: showFeatureRequest(id) },
             ],
         });
     },
@@ -423,7 +426,7 @@ function lineClass(line: string): string {
 <template>
     <Head :title="featureRequest.prompt" />
 
-    <div class="flex h-full flex-1 flex-col gap-6 p-4">
+    <div class="flex flex-col gap-6 p-4 pb-16 sm:px-6">
         <header class="max-w-3xl space-y-1">
             <h1 class="text-xl font-semibold tracking-tight break-words">
                 {{ featureRequest.prompt }}
