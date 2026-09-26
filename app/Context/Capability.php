@@ -155,6 +155,30 @@ final readonly class Capability
     }
 
     /**
+     * Get the rules the notes list under "## Rules", one per bullet.
+     *
+     * @return list<string>
+     */
+    public function rules(): array
+    {
+        if (preg_match('/^##\s+Rules\s*$(.*?)(?=^##\s|\z)/ms', $this->notes, $section) !== 1) {
+            return [];
+        }
+
+        $rules = [];
+
+        foreach (preg_split('/\R/', trim($section[1])) ?: [] as $line) {
+            if (preg_match('/^\s*[-*]\s+(.*)$/', $line, $bullet) === 1) {
+                $rules[] = trim($bullet[1]);
+            } elseif (trim($line) !== '' && $rules !== []) {
+                $rules[array_key_last($rules)] .= ' '.trim($line);
+            }
+        }
+
+        return $rules;
+    }
+
+    /**
      * Determine if the project's test suite check runs the file.
      */
     public static function runBySuite(string $path): bool

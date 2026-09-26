@@ -4,10 +4,13 @@
 //   <div class="p-4">  →  <div data-builder-source="resources/js/pages/Home.vue:12:9" class="p-4">
 //
 // Runs in a preview workspace only, after `npm ci` and before the build. It
-// uses the app's own Vue compiler, from the workspace's node_modules. The
+// uses the app's own Vue compiler, from the workspace's node_modules (or the
+// control plane's, when the app has none). The
 // line and column are those of the element's "<" in the committed file.
-// Components are not stamped: their attributes fall through to their root
-// element, which has its own stamp.
+//
+// A component used in a template gets `data-builder-instance` instead. Vue
+// passes it through to the element the component renders, so a selected
+// button knows both where the button is defined and where this one is used.
 //
 // Usage: node locate-sources.mjs [directory ...]  (default: resources/js)
 
@@ -16,8 +19,21 @@ import { createRequire } from 'node:module';
 import { join, relative, sep } from 'node:path';
 
 const ATTRIBUTE = 'data-builder-source';
+const INSTANCE_ATTRIBUTE = 'data-builder-instance';
 const ELEMENT = 1;
 const PLAIN_ELEMENT = 0;
+const COMPONENT = 1;
+
+// Built-in and head-only components that render no element of their own.
+const SKIPPED_COMPONENTS = new Set([
+    'Transition',
+    'TransitionGroup',
+    'KeepAlive',
+    'Teleport',
+    'Suspense',
+    'component',
+    'Head',
+]);
 
 const root = process.cwd();
 const require = createRequire(join(root, 'package.json'));
@@ -27,11 +43,17 @@ let compiler;
 try {
     compiler = require('@vue/compiler-sfc');
 } catch {
-    console.error('The app has no @vue/compiler-sfc in node_modules; nothing was stamped.');
-    process.exit(0);
+    try {
+        // Fall back to the compiler next to this script.
+        compiler = createRequire(import.meta.url)('@vue/compiler-sfc');
+    } catch {
+        console.error('No @vue/compiler-sfc was found; nothing was stamped.');
+        process.exit(0);
+    }
 }
 
-const directories = process.argv.slice(2).length > 0 ? process.argv.slice(2) : ['resources/js'];
+const directories =
+    process.argv.slice(2).length > 0 ? process.argv.slice(2) : ['resources/js'];
 let files = 0;
 let elements = 0;
 
@@ -78,7 +100,7 @@ function* vueFiles(directory) {
 function stamp(file) {
     const source = readFileSync(file, 'utf8');
 
-    if (source.includes(ATTRIBUTE)) {
+    if (source.includes('data-builder-')) {
         return 0;
     }
 
@@ -92,17 +114,33 @@ function stamp(file) {
     const insertions = [];
 
     walk(descriptor.template.ast.children, (node) => {
-        if (node.type !== ELEMENT || node.tagType !== PLAIN_ELEMENT || node.tag === 'template' || node.tag === 'slot') {
+        if (node.type !== ELEMENT) {
             return;
         }
 
+        const attribute =
+            node.tagType === PLAIN_ELEMENT &&
+            node.tag !== 'template' &&
+            node.tag !== 'slot'
+                ? ATTRIBUTE
+                : node.tagType === COMPONENT &&
+                    !SKIPPED_COMPONENTS.has(node.tag)
+                  ? INSTANCE_ATTRIBUTE
+                  : null;
         const { offset, line, column } = node.loc.start;
 
-        if (source.slice(offset, offset + 1 + node.tag.length) !== `<${node.tag}`) {
+        if (
+            attribute === null ||
+            source.slice(offset, offset + 1 + node.tag.length) !==
+                `<${node.tag}`
+        ) {
             return;
         }
 
-        insertions.push({ at: offset + 1 + node.tag.length, text: ` ${ATTRIBUTE}="${name}:${line}:${column}"` });
+        insertions.push({
+            at: offset + 1 + node.tag.length,
+            text: ` ${attribute}="${name}:${line}:${column}"`,
+        });
     });
 
     if (insertions.length === 0) {

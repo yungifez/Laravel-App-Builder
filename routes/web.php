@@ -9,7 +9,10 @@ use App\Http\Controllers\FeatureRequestStepChangeController;
 use App\Http\Controllers\FeatureRequestVerificationController;
 use App\Http\Controllers\PreviewController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\ProjectEditorController;
+use App\Http\Controllers\ProjectPreviewController;
 use App\Http\Controllers\RunCancellationController;
+use App\Http\Controllers\VisualEditController;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'Welcome')->name('home');
@@ -20,6 +23,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('projects', [ProjectController::class, 'index'])->name('projects.index');
     Route::post('projects', [ProjectController::class, 'store'])->name('projects.store');
     Route::get('projects/{project}', [ProjectController::class, 'show'])->name('projects.show');
+    Route::get('projects/{project}/editor', [ProjectEditorController::class, 'show'])->name('projects.editor.show');
+    Route::post('projects/{project}/previews', [ProjectPreviewController::class, 'store'])->name('projects.previews.store');
+    Route::post('projects/{project}/visual-edits', [VisualEditController::class, 'store'])->name('visual-edits.store');
 
     Route::post('projects/{project}/feature-requests', [FeatureRequestController::class, 'store'])->name('feature-requests.store');
     Route::get('feature-requests/{featureRequest}', [FeatureRequestController::class, 'show'])->name('feature-requests.show');

@@ -200,7 +200,7 @@ class ConstructRun
         $classification = $this->classifyChange->handle($projectContext, $pack->targets ?? [], $featureRequest->patch);
 
         $review = $driver->review($run, new ReviewEvidence(
-            request: $featureRequest->prompt,
+            request: $featureRequest->instructions(),
             plan: $plan,
             patch: (string) $featureRequest->patch,
             weakenedTests: TestChanges::weakened($featureRequest->patch),
@@ -214,8 +214,10 @@ class ConstructRun
         $verified = $this->assessVerifyItems->handle($plan, $review, (string) $featureRequest->patch, $verification->results ?? []);
 
         if ($driver->canRepair() && config('builder.verification.require_verify_tests')) {
-            $review = $review->withBlockingFindings(array_values(array_filter(array_map(
-                fn (array $item) => match ($item['evidence']) {
+            $findings = [];
+
+            foreach ($verified as $item) {
+                $finding = match ($item['evidence']) {
                     'no_test' => __('No test in the change checks: :criterion', ['criterion' => $item['criterion']]),
                     'not_run_by_checks' => __('The test for ":criterion" (:file) is not run by the test suite. Check it in a test under :paths.', [
                         'criterion' => $item['criterion'],
@@ -223,9 +225,14 @@ class ConstructRun
                         'paths' => implode(', ', (array) config('builder.verification.suite_paths')),
                     ]),
                     default => null,
-                },
-                $verified,
-            ))));
+                };
+
+                if (is_string($finding)) {
+                    $findings[] = $finding;
+                }
+            }
+
+            $review = $review->withBlockingFindings($findings);
         }
 
         $this->recordEvent($run, $lease, 'review', [

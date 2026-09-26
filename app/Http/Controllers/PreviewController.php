@@ -15,7 +15,7 @@ class PreviewController extends Controller
      */
     public function show(Preview $preview, GrantPreviewAccess $grantPreviewAccess): RedirectResponse
     {
-        Gate::authorize('view', $preview->featureRequest->project);
+        Gate::authorize('view', $preview->project);
 
         return redirect()->away($grantPreviewAccess->handle($preview));
     }
@@ -25,10 +25,12 @@ class PreviewController extends Controller
      */
     public function destroy(Preview $preview, StopPreview $stopPreview): RedirectResponse
     {
-        Gate::authorize('requestFeatures', $preview->featureRequest->project);
+        Gate::authorize('requestFeatures', $preview->project);
 
         $stopPreview->handle($preview);
 
-        return to_route('feature-requests.show', $preview->featureRequest);
+        return $preview->featureRequest === null
+            ? to_route('projects.editor.show', $preview->project)
+            : to_route('feature-requests.show', $preview->featureRequest);
     }
 }

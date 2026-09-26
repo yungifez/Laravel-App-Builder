@@ -144,7 +144,7 @@ class AgentDriver implements ConstructionDriver
      */
     protected function buildPrompt(Run $run, Plan $plan): string
     {
-        $sections = ["## Owner's request\n\n{$run->featureRequest->prompt}"];
+        $sections = ["## Owner's request\n\n{$run->featureRequest->instructions()}"];
 
         if (filled($run->context['text'] ?? null)) {
             $sections[] = "## Project context\n\nWhat is known about the product for the areas this change touches.\n\n{$run->context['text']}";
@@ -158,7 +158,7 @@ class AgentDriver implements ConstructionDriver
             $sections,
             "## Plan\n\n{$plan->summary}",
             "## Tasks\n\n".$this->list($plan->tasks),
-            "## Acceptance criteria\n\nAdd or update a test for each one: the change is only accepted when every criterion is checked by a test in the change.\n\n".$this->list($plan->acceptanceCriteria),
+            "## Acceptance criteria\n\nAdd or update a test for each one: the change is only accepted when every criterion is checked by a test in the change. Only tests under ".implode(', ', (array) config('builder.verification.suite_paths'))." are run by the checks, so put them there.\n\n".$this->list($plan->acceptanceCriteria),
         );
 
         if ($plan->preserve !== []) {

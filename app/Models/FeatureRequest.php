@@ -21,6 +21,7 @@ use Illuminate\Support\Carbon;
  * @property int $user_id
  * @property int|null $parent_id
  * @property string $prompt
+ * @property array{file: string, line: int, column: int, tag: string, text: string|null, area: string|null}|null $selection The element the owner pointed at in the preview
  * @property string|null $target_step
  * @property FeatureRequestStatus $status
  * @property string $generator
@@ -38,7 +39,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['project_id', 'user_id', 'parent_id', 'prompt', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'steps', 'acceptance', 'error', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at'])]
+#[Fillable(['project_id', 'user_id', 'parent_id', 'prompt', 'selection', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'steps', 'acceptance', 'error', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at'])]
 class FeatureRequest extends Model
 {
     /**
@@ -62,9 +63,30 @@ class FeatureRequest extends Model
             'status' => FeatureRequestStatus::class,
             'steps' => 'array',
             'acceptance' => 'array',
+            'selection' => 'array',
             'accepted_at' => 'datetime',
             'reverted_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Get the request as the planner, coder and reviewer read it: the
+     * owner's words and, when they started from the preview, the element
+     * they pointed at.
+     */
+    public function instructions(): string
+    {
+        $selection = $this->selection;
+
+        if ($selection === null) {
+            return $this->prompt;
+        }
+
+        $element = "`<{$selection['tag']}>` at {$selection['file']}:{$selection['line']}";
+        $text = filled($selection['text'] ?? null) ? ' (it shows "'.str($selection['text'])->squish()->limit(120).'")' : '';
+        $area = filled($selection['area'] ?? null) ? " It belongs to the area \"{$selection['area']}\"." : '';
+
+        return "{$this->prompt}\n\nThe owner pointed at this element in the app: {$element}{$text}.{$area}";
     }
 
     /**

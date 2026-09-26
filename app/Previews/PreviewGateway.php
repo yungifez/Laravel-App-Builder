@@ -6,6 +6,7 @@ use App\Enums\PreviewStatus;
 use App\Models\Preview;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Cookie;
@@ -99,15 +100,18 @@ class PreviewGateway
             'session_expires_at' => now()->addMinutes($minutes),
         ]);
 
+        // An editable preview is shown inside the builder, where the preview
+        // host is a third party, so its cookie is partitioned to the builder.
         $response = new RedirectResponse('/');
         $response->headers->setCookie(Cookie::create(
             name: (string) config('builder.preview.cookie'),
             value: $secret,
             expire: now()->addMinutes($minutes),
             path: '/',
-            secure: config('builder.preview.scheme') === 'https',
+            secure: $preview->editable || config('builder.preview.scheme') === 'https',
             httpOnly: true,
-            sameSite: Cookie::SAMESITE_LAX,
+            sameSite: $preview->editable ? Cookie::SAMESITE_NONE : Cookie::SAMESITE_LAX,
+            partitioned: $preview->editable,
         ));
 
         return $response;
@@ -207,7 +211,47 @@ class PreviewGateway
 
         $response->headers->set('X-Robots-Tag', 'noindex, nofollow');
 
+        if ($preview->editable) {
+            $this->prepareForEditing($response);
+        }
+
         return $response;
+    }
+
+    /**
+     * Let the builder embed an editable preview, and add the point-and-edit
+     * overlay to its pages. Only the builder's origin may embed it.
+     */
+    protected function prepareForEditing(Response $response): void
+    {
+        $origin = self::builderOrigin();
+
+        $response->headers->remove('X-Frame-Options');
+        $response->headers->set('Content-Security-Policy', "frame-ancestors {$origin}", false);
+
+        $body = (string) $response->getContent();
+        $position = strripos($body, '</body>');
+        $encoded = ! in_array(strtolower((string) $response->headers->get('Content-Encoding', 'identity')), ['', 'identity'], true);
+
+        if ($encoded || $position === false || ! str_contains(strtolower((string) $response->headers->get('Content-Type')), 'text/html')) {
+            return;
+        }
+
+        $overlay = '<script data-builder-origin="'.e($origin).'">'.File::get((string) config('builder.preview.overlay')).'</script>';
+
+        $response->setContent(substr_replace($body, $overlay, $position, 0));
+        $response->headers->remove('Content-Length');
+    }
+
+    /**
+     * Get the origin of the builder (scheme, host and port of APP_URL).
+     */
+    public static function builderOrigin(): string
+    {
+        $url = parse_url((string) config('app.url'));
+        $port = isset($url['port']) ? ':'.$url['port'] : '';
+
+        return ($url['scheme'] ?? 'http').'://'.($url['host'] ?? 'localhost').$port;
     }
 
     /**

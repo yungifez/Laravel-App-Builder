@@ -40,6 +40,7 @@ export type ProjectTelemetry = {
     with_unexpected_changes: number;
     input_tokens: number;
     output_tokens: number;
+    visual_edits: number;
 };
 
 export type ProjectCommit = {
@@ -217,4 +218,72 @@ export type Preview = {
     error: string | null;
     url: string;
     expires_at: string | null;
+};
+
+export type Device = 'base' | 'md' | 'lg';
+
+export type VisualProperty =
+    | 'layout'
+    | 'direction'
+    | 'wrap'
+    | 'align'
+    | 'justify'
+    | 'columns'
+    | 'gap'
+    | 'width'
+    | 'padding_x'
+    | 'padding_y'
+    | 'margin_x'
+    | 'margin_y'
+    | 'border'
+    | 'radius';
+
+export type VisualValue = number | string;
+
+export type EditorPreview = {
+    id: number;
+    status: PreviewStatus;
+    error: string | null;
+    origin: string;
+    revision: string | null;
+    updating: boolean;
+};
+
+export type InspectedElement = {
+    target: string;
+    file: string;
+    line: number;
+    tag: string | null;
+    instance: boolean;
+    shared: { name: string; uses: number } | null;
+    editable: boolean;
+    reason: 'updating' | 'not_found' | 'dynamic' | null;
+    classes: string;
+    values: Record<
+        Device,
+        Partial<Record<VisualProperty, { value: VisualValue; from: Device }>>
+    >;
+    area: {
+        key: string;
+        name: string;
+        summary: string | null;
+        rules: string[];
+        behaviors: string[];
+    } | null;
+    revision: string;
+};
+
+export type SelectedElement = {
+    source: string | null;
+    instance: string | null;
+    tag: string;
+    text: string;
+    width: number;
+};
+
+export type VisualEditSummary = {
+    id: number;
+    tag: string;
+    device: Device;
+    created_at: string | null;
 };

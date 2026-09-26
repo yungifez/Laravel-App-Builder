@@ -14,6 +14,7 @@ use App\Projects\ProjectRepository;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
 use RuntimeException;
@@ -40,8 +41,10 @@ class StartPreview implements ShouldQueue
 
     /**
      * Copy the project into a workspace, apply the change and every change it
-     * follows up on, prepare the app, and start its web server. A duplicate
-     * delivery, or one for a preview already stopped, does nothing.
+     * follows up on (a project preview has none), prepare the app, and start
+     * its web server. An editable preview is marked for point-and-edit and
+     * rebuilt first. A duplicate delivery, or one for a preview already
+     * stopped, does nothing.
      */
     public function handle(
         WorkspaceManager $workspaces,
@@ -56,16 +59,16 @@ class StartPreview implements ShouldQueue
         }
 
         $featureRequest = $this->preview->featureRequest;
-        $project = $featureRequest->project;
+        $project = $this->preview->project;
 
         try {
             $workspace = $provisionWorkspace->handle($project->owner, (string) config('builder.preview.workspace_driver'));
             $this->preview->update(['workspace_id' => $workspace->id]);
 
             $driver = $workspaces->driver($workspace->driver);
-            $repository->withCheckout($project, $featureRequest->base_revision, fn (string $source) => $driver->copyDirectory((string) $workspace->driver_id, $source));
+            $repository->withCheckout($project, $featureRequest === null ? $this->preview->revision : $featureRequest->base_revision, fn (string $source) => $driver->copyDirectory((string) $workspace->driver_id, $source));
 
-            foreach ($featureRequest->lineage() as $position => $request) {
+            foreach ($featureRequest?->lineage() ?? [] as $position => $request) {
                 $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);
                 $driver->writeFile((string) $workspace->driver_id, $patch, (string) $request->patch);
 
@@ -79,6 +82,17 @@ class StartPreview implements ShouldQueue
 
             foreach ($setup as $step) {
                 $this->run($runWorkspaceCommand, $workspace, $step['command'], $step['timeout'], __('The setup step ":name" failed.', ['name' => $step['name']]));
+            }
+
+            if ($this->preview->editable) {
+                $this->run($runWorkspaceCommand, $workspace, self::locatorCommand(), 300, __('The preview could not be prepared for editing.'));
+
+                /** @var list<array{name: string, command: list<string>, timeout: int}> $rebuild */
+                $rebuild = config('builder.preview.rebuild', []);
+
+                foreach ($rebuild as $step) {
+                    $this->run($runWorkspaceCommand, $workspace, $step['command'], $step['timeout'], __('The setup step ":name" failed.', ['name' => $step['name']]));
+                }
             }
 
             $port = $allocatePreviewPort->handle();
@@ -134,6 +148,20 @@ class StartPreview implements ShouldQueue
             'sh', '-c', 'cd public && exec "$@"', 'sh',
             'php', '-S', config('builder.preview.listen_host').":{$port}",
             '../vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php',
+        ];
+    }
+
+    /**
+     * Get the command that marks elements with their source location.
+     *
+     * @return list<string>
+     */
+    public static function locatorCommand(): array
+    {
+        return [
+            Config::string('builder.preview.locator.node'),
+            Config::string('builder.preview.locator.path'),
+            ...array_values(array_filter(Config::array('builder.preview.locator.directories'), is_string(...))),
         ];
     }
 

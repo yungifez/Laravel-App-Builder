@@ -5,12 +5,15 @@ namespace App\Actions\Context;
 use App\Context\Capability;
 use App\Context\Exceptions\InvalidContextFile;
 use App\Context\ProjectContext;
+use App\Models\Project;
 use App\Models\Workspace;
+use App\Projects\ProjectRepository;
 use App\Workspaces\WorkspaceManager;
+use Closure;
 
 class ReadProjectContext
 {
-    public function __construct(private WorkspaceManager $workspaces) {}
+    public function __construct(private WorkspaceManager $workspaces, private ProjectRepository $repository) {}
 
     /**
      * Read the application's `.builder/` notes from a workspace. A file that
@@ -22,11 +25,34 @@ class ReadProjectContext
     public function handle(Workspace $workspace, array $files): ProjectContext
     {
         $driver = $this->workspaces->driver($workspace->driver);
+
+        return $this->read($files, fn (string $path) => $driver->readFile((string) $workspace->driver_id, $path));
+    }
+
+    /**
+     * Read the notes as they are in the project's repository at a revision.
+     */
+    public function atRevision(Project $project, string $revision): ProjectContext
+    {
+        return $this->read(
+            $this->repository->files($project, $revision),
+            fn (string $path) => $this->repository->show($project, $revision, $path),
+        );
+    }
+
+    /**
+     * Read the notes through a function that returns a file's contents.
+     *
+     * @param  list<string>  $files  The project's files
+     * @param  Closure(string): (string|null)  $contents
+     */
+    protected function read(array $files, Closure $contents): ProjectContext
+    {
         $limit = (int) config('builder.context.max_file_bytes');
         $problems = [];
 
-        $read = function (string $path) use ($driver, $workspace, $limit, &$problems): ?string {
-            $text = rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), null, report: false);
+        $read = function (string $path) use ($contents, $limit, &$problems): ?string {
+            $text = rescue(fn () => $contents($path), null, report: false);
 
             if (! is_string($text)) {
                 $problems[] = __(':path: the file could not be read.', ['path' => $path]);

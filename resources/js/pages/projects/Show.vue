@@ -14,6 +14,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { show as showFeatureRequest } from '@/routes/feature-requests';
 import { index, show } from '@/routes/projects';
+import { show as showEditor } from '@/routes/projects/editor';
 import { Badge } from '@/components/ui/badge';
 import type {
     FeatureRequestSummary,
@@ -60,7 +61,14 @@ watch(
     <Head :title="props.project.name" />
 
     <div class="flex h-full flex-1 flex-col gap-8 p-4">
-        <Heading :title="project.name" />
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <Heading :title="project.name" />
+            <Button as-child variant="outline">
+                <Link :href="showEditor(project.id)" data-test="editor-link">
+                    Change how it looks
+                </Link>
+            </Button>
+        </div>
 
         <section class="max-w-2xl space-y-6">
             <Heading
@@ -175,7 +183,7 @@ watch(
                 </p>
 
                 <section
-                    v-if="telemetry.requests > 0"
+                    v-if="telemetry.requests > 0 || telemetry.visual_edits > 0"
                     class="space-y-4"
                     data-test="project-telemetry"
                 >
@@ -242,6 +250,8 @@ watch(
                             {{ telemetry.unpriced_calls }} model calls have no
                             price and are not in the cost.
                         </template>
+                        {{ telemetry.visual_edits }} changes to how it looks
+                        were made without a model.
                     </p>
                 </section>
 

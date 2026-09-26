@@ -11,6 +11,7 @@ use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
 use App\Models\Verification;
+use App\Models\VisualEdit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Ai\Responses\AgentResponse;
@@ -39,9 +40,13 @@ class ProjectTelemetryTest extends TestCase
         $abandonedRun->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'input_tokens' => 100, 'output_tokens' => 10, 'cost_usd' => 0.25]);
         $this->verification($abandonedRun, VerificationStatus::Unverified);
 
+        VisualEdit::factory()->count(3)->for($project)->create();
+        VisualEdit::factory()->create();
+
         $telemetry = app(SummarizeProjectTelemetry::class)->handle($project);
 
         $this->assertSame(2, $telemetry['requests']);
+        $this->assertSame(3, $telemetry['visual_edits']);
         $this->assertSame(1, $telemetry['accepted']);
         $this->assertSame(2.0, $telemetry['cost_usd']);
         $this->assertSame(1, $telemetry['unpriced_calls']);

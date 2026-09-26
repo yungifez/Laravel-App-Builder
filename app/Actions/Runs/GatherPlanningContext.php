@@ -40,7 +40,7 @@ class GatherPlanningContext
         }
 
         return new PlanningContext(
-            request: $featureRequest->prompt,
+            request: $featureRequest->instructions(),
             files: array_slice($files, 0, $limit),
             contents: $this->contents($workspace, array_values(array_intersect(array_unique($contextFiles), $files))),
             parentRequest: $parent?->prompt,

@@ -45,4 +45,24 @@ class Project extends Model
     {
         return $this->hasMany(FeatureRequest::class);
     }
+
+    /**
+     * Get the project's previews, including those of its feature requests.
+     *
+     * @return HasMany<Preview, $this>
+     */
+    public function previews(): HasMany
+    {
+        return $this->hasMany(Preview::class);
+    }
+
+    /**
+     * Get the changes owners made in the inspector.
+     *
+     * @return HasMany<VisualEdit, $this>
+     */
+    public function visualEdits(): HasMany
+    {
+        return $this->hasMany(VisualEdit::class);
+    }
 }

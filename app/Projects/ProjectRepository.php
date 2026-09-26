@@ -170,6 +170,77 @@ class ProjectRepository
     }
 
     /**
+     * Commit new contents for files, when the branch is still at "base".
+     * Callers read the files at "base", so a branch that moved on means they
+     * edited an old version.
+     *
+     * @param  array<string, string>  $files  New contents by path
+     * @param  array{name: string, email: string}|null  $author
+     *
+     * @throws RepositoryConflict when the branch has moved on.
+     */
+    public function commitFiles(Project $project, string $base, array $files, string $message, ?array $author): string
+    {
+        return $this->locked($project, function () use ($project, $base, $files, $message, $author) {
+            if ($this->head($project) !== $base) {
+                throw new RepositoryConflict(__('The app changed while you were editing. Try again on the updated version.'));
+            }
+
+            foreach ($files as $path => $contents) {
+                if (str_starts_with($path, '/') || in_array('..', explode('/', $path), true)) {
+                    throw new RepositoryConflict(__('The file :path is outside the project.', ['path' => $path]));
+                }
+
+                File::ensureDirectoryExists(dirname($this->path($project).'/'.$path));
+                File::put($this->path($project).'/'.$path, $contents);
+            }
+
+            $this->commit($project, $message, $author);
+
+            return $this->head($project);
+        });
+    }
+
+    /**
+     * Get a file's contents at a revision, or null when it does not exist.
+     */
+    public function show(Project $project, string $revision, string $path): ?string
+    {
+        $result = $this->git($project, ['show', "{$revision}:{$path}"], throw: false);
+
+        return $result->successful() ? $result->output() : null;
+    }
+
+    /**
+     * Get the project's files at a revision.
+     *
+     * @return list<string>
+     */
+    public function files(Project $project, string $revision): array
+    {
+        return array_values(array_filter(explode("\n", trim($this->git($project, ['ls-tree', '-r', '--name-only', $revision])->output()))));
+    }
+
+    /**
+     * Get the files that differ between two revisions, with whether each
+     * was deleted.
+     *
+     * @return array<string, bool> Deleted, by path
+     */
+    public function changedFiles(Project $project, string $from, string $to): array
+    {
+        $output = $this->git($project, ['diff', '--name-status', '--no-renames', $from, $to])->output();
+        $files = [];
+
+        foreach (array_filter(explode("\n", trim($output))) as $line) {
+            [$status, $path] = explode("\t", $line, 2) + ['', ''];
+            $files[$path] = $status === 'D';
+        }
+
+        return $files;
+    }
+
+    /**
      * Undo an accepted commit with a new commit.
      *
      * @param  array{name: string, email: string}|null  $author

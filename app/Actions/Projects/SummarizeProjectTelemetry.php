@@ -15,13 +15,14 @@ class SummarizeProjectTelemetry
     /**
      * Summarise how changes to the project went: what they cost per accepted
      * change, how often the first attempt passed verification, how often a
-     * change touched areas it was not about, and how many were undone.
+     * change touched areas it was not about, and how many were undone. Visual
+     * edits are counted apart: they change the app without a model call.
      *
      * Costs cover every request, accepted or not, since abandoned work is
      * part of what an accepted change costs. Calls without a known price are
      * counted, not guessed.
      *
-     * @return array{requests: int, accepted: int, reverted: int, cost_usd: float, unpriced_calls: int, cost_per_accepted_change_usd: float|null, runs_verified: int, first_attempt_passed: int, repairs_before_acceptance: float|null, reviewed: int, with_unexpected_changes: int, input_tokens: int, output_tokens: int}
+     * @return array{requests: int, accepted: int, reverted: int, cost_usd: float, unpriced_calls: int, cost_per_accepted_change_usd: float|null, runs_verified: int, first_attempt_passed: int, repairs_before_acceptance: float|null, reviewed: int, with_unexpected_changes: int, input_tokens: int, output_tokens: int, visual_edits: int}
      */
     public function handle(Project $project): array
     {
@@ -68,6 +69,7 @@ class SummarizeProjectTelemetry
             'with_unexpected_changes' => $reviewed->filter(fn (Run $run) => ($run->review['classification']['unexpected'] ?? []) !== [])->count(),
             'input_tokens' => (int) $calls->sum(fn (RunEvent $call) => (int) ($call->data['input_tokens'] ?? 0)),
             'output_tokens' => (int) $calls->sum(fn (RunEvent $call) => (int) ($call->data['output_tokens'] ?? 0)),
+            'visual_edits' => $project->visualEdits()->count(),
         ];
     }
 }

@@ -334,6 +334,20 @@ return [
             ['name' => 'Build the frontend', 'command' => ['npm', 'run', 'build'], 'timeout' => 600],
         ],
 
+        // Point-and-edit. An editable preview runs the locator after setup,
+        // which marks each element with the template line it comes from,
+        // then runs the rebuild steps. The same steps run again after each
+        // visual edit.
+        'locator' => [
+            'node' => env('BUILDER_AGENT_NODE', 'node'),
+            'path' => env('BUILDER_PREVIEW_LOCATOR', resource_path('preview-tools/locate-sources.mjs')),
+            'directories' => ['resources/js'],
+        ],
+        'rebuild' => [
+            ['name' => 'Build the frontend', 'command' => ['npm', 'run', 'build'], 'timeout' => 600],
+        ],
+        'overlay' => resource_path('preview-tools/overlay.js'),
+
         // Environment for the app's web server. APP_URL is set to the preview's URL.
         'environment' => [
             'APP_ENV' => 'local',

@@ -34,6 +34,7 @@ class RequestPreview
 
         return DB::transaction(function () use ($featureRequest) {
             $preview = $featureRequest->previews()->create([
+                'project_id' => $featureRequest->project_id,
                 'host' => 'p'.Str::lower(Str::random(31)),
                 'status' => PreviewStatus::Starting,
                 'expires_at' => now()->addMinutes((int) config('builder.preview.max_minutes')),

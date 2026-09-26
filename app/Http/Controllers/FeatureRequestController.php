@@ -184,7 +184,7 @@ class FeatureRequestController extends Controller
      */
     public function store(FeatureRequestStoreRequest $request, Project $project, RequestFeature $requestFeature): RedirectResponse
     {
-        $featureRequest = $requestFeature->handle($project, $request->user(), $request->validated('prompt'));
+        $featureRequest = $requestFeature->handle($project, $request->user(), $request->validated('prompt'), $request->validated('selection'));
 
         return to_route('feature-requests.show', $featureRequest);
     }
