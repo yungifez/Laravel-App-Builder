@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 26.** This document consolidates the direction in [direction/](direction/)
+**Version 27.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -64,7 +64,10 @@ checks to judgment ([§12](#12-verification)), and each app gets a design contra
 ([§7](#design-context)); the demo is evolution, not generation ([§27](#27-v1-plan-version-16)). Version 26 moves
 every workspace into its own disposable box from any provider behind the runtime contract
 ([direction 27](direction/27-workspace-boxes.md), [§11](#adapters)): keys, git credentials
-and our instructions stay outside the box, and local development only stands in for it. When they disagree, the direction documents state intent
+and our instructions stay outside the box, and local development only stands in for it. Version 27 puts
+publishing behind the same kind of contract ([direction 28](direction/28-publishing-hosts.md),
+[§27.1](#271-what-proves-the-differentiation)): any host can serve a published app, and Grandma's apps
+publish to Laravel Cloud by default. When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -1607,6 +1610,9 @@ for; none is started without that evidence.
   in a hosted product.
 - Which box provider to start with. The code does not depend on the answer
   ([§11](#adapters)).
+- Whose Laravel Cloud account hosts Grandma's apps: ours, billed inside the
+  unified price, or hers, connected once. The host contract does not depend on
+  the answer ([§27.1](#271-what-proves-the-differentiation)).
 - The product's public name and category (not "Laravel builder").
 - Whether to charge for accepted changes rather than raw usage (§25.6).
 - Recruiting 3–5 owners for the behaviour-diff study (§26.7).
@@ -2575,8 +2581,14 @@ these components prove that claim, so only these are **required**:
    the notes for the owner to confirm.
 9. A minimal Project Understanding page: the notes files rendered in
    product language and editable.
-10. Git boundaries per accepted change, revert, and deploy by pushing to the
-    branch Laravel Cloud deploys from. Publishing is one click to a default
+10. Git boundaries per accepted change, revert, and deploy. Publishing goes
+    through a host contract with no host hard-coded (direction 28): a host
+    takes a commit and gives back an address and its deploy status, and
+    changing host changes configuration, not the loop. Grandma's apps publish
+    to **Laravel Cloud** by default, so she never picks a host; power users may
+    bring another host, or a plain branch that their own host deploys from.
+    Smoke checks, error intake and the health state sit above the contract and
+    are the same for every host. Publishing is one click to a default
     address, and it is a loop, not a push (direction 26): publish, run smoke
     checks against the published app (it boots, sign-in works, the critical
     journeys and invariants answer), link the deployment to the changes it
@@ -2684,7 +2696,8 @@ a later layer on top of it.
 5. **Project lifecycle:** create from the template (Pest, PHP 8.5 per the
    blessed stack; the fixture and control plane use PHPUnit today), constrained
    import with drafted notes, the Understanding page, the quick health check.
-6. **Deploy:** push to the Cloud-connected branch, show status, revert.
+6. **Deploy:** through the host contract (Laravel Cloud by default, direction
+   28), show status, revert.
 
 Telemetry (1–6) and the owner sessions run alongside.
 
