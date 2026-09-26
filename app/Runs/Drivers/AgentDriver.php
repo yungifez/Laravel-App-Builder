@@ -27,24 +27,46 @@ use Laravel\Ai\Responses\StructuredAgentResponse;
  */
 class AgentDriver implements ConstructionDriver
 {
+    /**
+     * How many times the planner is asked for a plan that fits the format.
+     */
+    protected const PLAN_ATTEMPTS = 2;
+
     public function __construct(
         protected AcceptanceSelector $acceptanceSelector,
         protected RecordModelUsage $recordModelUsage,
     ) {}
 
+    /**
+     * Plan the change. A plan that does not fit the format is asked for once
+     * more, with what was wrong, before the run gives up: a malformed answer
+     * is usually a slip, not a sign the request cannot be planned.
+     */
     public function plan(Run $run, PlanningContext $context): Plan
     {
-        $response = FeaturePlanner::make()->prompt(
-            $this->planningPrompt($context),
-            provider: ModelRole::Planner->provider(),
-            model: ModelRole::Planner->model(),
-        );
-
-        $this->recordModelUsage->handle($run, ModelRole::Planner, $response);
-
         $selection = $this->acceptanceSelector->for($run->featureRequest);
+        $prompt = $this->planningPrompt($context);
 
-        return Plan::fromModelOutput($this->structured($response, 'planner'), $selection['acceptance'], $selection['solution_key']);
+        for ($attempt = 1; ; $attempt++) {
+            $response = FeaturePlanner::make()->prompt(
+                $prompt,
+                provider: ModelRole::Planner->provider(),
+                model: ModelRole::Planner->model(),
+            );
+
+            $this->recordModelUsage->handle($run, ModelRole::Planner, $response);
+
+            try {
+                return Plan::fromModelOutput($this->structured($response, 'planner'), $selection['acceptance'], $selection['solution_key']);
+            } catch (ConstructionFailed $exception) {
+                if ($attempt >= self::PLAN_ATTEMPTS) {
+                    throw $exception;
+                }
+
+                $run->recordEvent('plan_rejected', ['attempt' => $attempt, 'error' => $exception->getMessage()]);
+                $prompt = $this->planningPrompt($context)."\n\n## Your previous plan was rejected\n\n{$exception->getMessage()}\nReturn a complete plan that fixes this.";
+            }
+        }
     }
 
     public function build(Run $run, Plan $plan, ToolSession $tools): string

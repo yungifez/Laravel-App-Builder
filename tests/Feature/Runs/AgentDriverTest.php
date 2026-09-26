@@ -141,9 +141,10 @@ class AgentDriverTest extends TestCase
         $this->assertSame('owner-only-invitations', $followUpRun->plan['solution_key']);
     }
 
-    public function test_an_invalid_plan_fails_the_run_with_a_reason()
+    public function test_a_plan_that_is_invalid_twice_fails_the_run_with_a_reason()
     {
-        FeaturePlanner::fake([['summary' => 'Something.', 'acceptance_criteria' => [], 'assumptions' => [], 'tasks' => [], 'steps' => []]]);
+        $invalid = ['summary' => 'Something.', 'acceptance_criteria' => [], 'assumptions' => [], 'tasks' => [], 'steps' => []];
+        FeaturePlanner::fake([$invalid, $invalid]);
 
         $run = app(StartRun::class)->handle($featureRequest = $this->request())->refresh();
 
@@ -151,6 +152,20 @@ class AgentDriverTest extends TestCase
         $this->assertStringStartsWith('The planner returned an invalid plan:', (string) $run->error);
         $this->assertSame(FeatureRequestStatus::Failed, $featureRequest->refresh()->status);
         FeatureCoder::assertNeverPrompted();
+        FeaturePlanner::assertPrompted(fn ($prompt) => $prompt->contains('Your previous plan was rejected'));
+    }
+
+    public function test_an_invalid_plan_is_asked_for_once_more_with_what_was_wrong()
+    {
+        FeaturePlanner::fake([['summary' => 'Something.', 'acceptance_criteria' => [], 'assumptions' => [], 'tasks' => [], 'steps' => []], $this->plan()]);
+        FeatureCoder::fake(['Nothing to change.']);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertNotNull($run->plan);
+        $this->assertSame(1, $run->events()->where('type', 'plan_rejected')->count());
+        $this->assertSame(2, $run->events()->where('type', 'model_call')->where('data->role', 'planner')->count());
+        FeaturePlanner::assertPrompted(fn ($prompt) => $prompt->contains('The steps field is required.'));
     }
 
     public function test_refused_and_unknown_tool_calls_go_back_to_the_model_and_a_claim_without_changes_is_not_accepted()
