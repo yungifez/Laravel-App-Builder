@@ -271,6 +271,10 @@ watch(
                         </template>
                         {{ telemetry.visual_edits }} changes to how it looks
                         were made without a model.
+                        <template v-if="telemetry.setup_cost_usd > 0">
+                            Reading your app to describe it cost
+                            {{ dollars(telemetry.setup_cost_usd) }}.
+                        </template>
                     </p>
                 </section>
 

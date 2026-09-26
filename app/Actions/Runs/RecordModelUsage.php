@@ -34,7 +34,7 @@ class RecordModelUsage
                 'input_tokens' => $response->usage->inputTokens,
                 'output_tokens' => $response->usage->outputTokens,
                 'tool_calls' => $response->toolCalls->count(),
-                'cost_usd' => $this->cost((string) $response->meta->model, $response->usage->inputTokens, $response->usage->outputTokens),
+                'cost_usd' => self::cost((string) $response->meta->model, $response->usage->inputTokens, $response->usage->outputTokens),
             ]);
         });
     }
@@ -42,7 +42,7 @@ class RecordModelUsage
     /**
      * Price a call from the configured prices, or null when the model has none.
      */
-    protected function cost(string $model, int $inputTokens, int $outputTokens): ?float
+    public static function cost(string $model, int $inputTokens, int $outputTokens): ?float
     {
         $price = ((array) config('builder.prices'))[$model] ?? null;
 

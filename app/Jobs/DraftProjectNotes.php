@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Actions\Runs\RecordModelUsage;
 use App\Ai\Agents\NotesDrafter;
 use App\Enums\ModelRole;
 use App\Enums\NotesDraftStatus;
@@ -65,6 +66,15 @@ class DraftProjectNotes implements ShouldQueue
             }
 
             $response = NotesDrafter::make()->prompt($prompt, provider: ModelRole::Planner->provider(), model: ModelRole::Planner->model());
+
+            $this->project->update(['setup_model_calls' => [...$this->project->setup_model_calls ?? [], [
+                'role' => ModelRole::Planner->value,
+                'provider' => $response->meta->provider,
+                'model' => $response->meta->model,
+                'input_tokens' => $response->usage->inputTokens,
+                'output_tokens' => $response->usage->outputTokens,
+                'cost_usd' => RecordModelUsage::cost((string) $response->meta->model, $response->usage->inputTokens, $response->usage->outputTokens),
+            ]]]);
 
             if (! $response instanceof StructuredAgentResponse) {
                 throw new RuntimeException('The notes drafter did not return structured output.');

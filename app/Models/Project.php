@@ -24,10 +24,11 @@ use Illuminate\Support\Carbon;
  * @property NotesDraftStatus|null $notes_draft_status
  * @property array{purpose: string, areas: list<array{key: string, name: string, summary: string, paths: list<string>, behaviors: list<array{key: string, name: string}>, rules: list<string>}>}|null $notes_draft Notes a model drafted from an imported app, waiting for the owner
  * @property string|null $notes_draft_error
+ * @property list<array{role: string, provider: string|null, model: string|null, input_tokens: int, output_tokens: int, cost_usd: float|null}>|null $setup_model_calls Model calls made to set the project up, outside any change
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'source_path', 'deploy_remote', 'deploy_branch', 'notes_draft_status', 'notes_draft', 'notes_draft_error'])]
+#[Fillable(['name', 'source_path', 'deploy_remote', 'deploy_branch', 'notes_draft_status', 'notes_draft', 'notes_draft_error', 'setup_model_calls'])]
 #[Hidden(['deploy_remote'])]
 class Project extends Model
 {
@@ -45,6 +46,7 @@ class Project extends Model
             'deploy_remote' => 'encrypted',
             'notes_draft_status' => NotesDraftStatus::class,
             'notes_draft' => 'array',
+            'setup_model_calls' => 'array',
         ];
     }
 

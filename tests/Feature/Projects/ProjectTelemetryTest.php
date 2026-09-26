@@ -25,7 +25,10 @@ class ProjectTelemetryTest extends TestCase
 
     public function test_it_reports_cost_per_accepted_change_first_attempt_passes_and_unexpected_changes()
     {
-        $project = Project::factory()->create();
+        $project = Project::factory()->create(['setup_model_calls' => [
+            ['role' => 'planner', 'provider' => 'anthropic', 'model' => 'm', 'input_tokens' => 9000, 'output_tokens' => 900, 'cost_usd' => 0.04],
+            ['role' => 'planner', 'provider' => 'anthropic', 'model' => 'n', 'input_tokens' => 10, 'output_tokens' => 1, 'cost_usd' => null],
+        ]]);
 
         $accepted = $this->request($project, ['commit_sha' => 'abc', 'accepted_at' => now()]);
         $acceptedRun = $this->completedRun($accepted, repairs: 1, unexpected: []);
@@ -49,6 +52,7 @@ class ProjectTelemetryTest extends TestCase
         $this->assertSame(3, $telemetry['visual_edits']);
         $this->assertSame(1, $telemetry['accepted']);
         $this->assertSame(2.0, $telemetry['cost_usd']);
+        $this->assertSame(0.04, $telemetry['setup_cost_usd']);
         $this->assertSame(1, $telemetry['unpriced_calls']);
         $this->assertSame(2.0, $telemetry['cost_per_accepted_change_usd']);
         $this->assertSame(2, $telemetry['runs_verified']);

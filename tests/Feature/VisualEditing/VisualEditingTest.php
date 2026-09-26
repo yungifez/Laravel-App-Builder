@@ -70,7 +70,7 @@ class VisualEditingTest extends TestCase
             'resources/js/components/ui/Button.vue' => "<template>\n    <button class=\"px-3\"><slot /></button>\n</template>\n",
             'resources/js/pages/Home.vue' => "<template>\n    <Button>Go</Button>\n</template>\n",
             '.builder/capabilities/plans.md' => self::PLANS_NOTES,
-        ]));
+        ]), draftNotes: false);
         $this->repository->import($this->project);
 
         config([

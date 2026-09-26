@@ -20,9 +20,10 @@ class SummarizeProjectTelemetry
      *
      * Costs cover every request, accepted or not, since abandoned work is
      * part of what an accepted change costs. Calls without a known price are
-     * counted, not guessed.
+     * counted, not guessed. Setting the project up (drafting its notes) is
+     * reported apart, since it belongs to no change.
      *
-     * @return array{requests: int, accepted: int, reverted: int, cost_usd: float, unpriced_calls: int, cost_per_accepted_change_usd: float|null, runs_verified: int, first_attempt_passed: int, repairs_before_acceptance: float|null, reviewed: int, with_unexpected_changes: int, input_tokens: int, output_tokens: int, visual_edits: int}
+     * @return array{requests: int, accepted: int, reverted: int, cost_usd: float, unpriced_calls: int, cost_per_accepted_change_usd: float|null, runs_verified: int, first_attempt_passed: int, repairs_before_acceptance: float|null, reviewed: int, with_unexpected_changes: int, input_tokens: int, output_tokens: int, visual_edits: int, setup_cost_usd: float}
      */
     public function handle(Project $project): array
     {
@@ -70,6 +71,7 @@ class SummarizeProjectTelemetry
             'input_tokens' => (int) $calls->sum(fn (RunEvent $call) => (int) ($call->data['input_tokens'] ?? 0)),
             'output_tokens' => (int) $calls->sum(fn (RunEvent $call) => (int) ($call->data['output_tokens'] ?? 0)),
             'visual_edits' => $project->visualEdits()->count(),
+            'setup_cost_usd' => round((float) collect($project->setup_model_calls ?? [])->sum(fn (array $call) => $call['cost_usd'] ?? 0), 4),
         ];
     }
 }

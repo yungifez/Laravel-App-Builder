@@ -38,7 +38,7 @@ class ChangeAcceptanceTest extends TestCase
 
         $this->repository = app(ProjectRepository::class);
         $this->owner = User::factory()->create(['name' => 'Ada Owner', 'email' => 'ada@example.com']);
-        $this->project = app(CreateProject::class)->handle($this->owner, 'Acme', $this->makeProjectSource(['app/A.php' => "<?php\n"]));
+        $this->project = app(CreateProject::class)->handle($this->owner, 'Acme', $this->makeProjectSource(['app/A.php' => "<?php\n"]), draftNotes: false);
     }
 
     public function test_the_owner_accepts_a_completed_change_as_a_commit_they_author()

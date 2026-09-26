@@ -43,7 +43,7 @@ class PublishingTest extends TestCase
         $this->driver = $this->fakeWorkspaces();
         $this->repository = app(ProjectRepository::class);
         $this->owner = User::factory()->create();
-        $this->project = app(CreateProject::class)->handle($this->owner, 'Acme', $this->makeProjectSource());
+        $this->project = app(CreateProject::class)->handle($this->owner, 'Acme', $this->makeProjectSource(), draftNotes: false);
         $this->repository->import($this->project);
 
         // A bare repository standing in for the one the hosting platform
@@ -144,7 +144,7 @@ class PublishingTest extends TestCase
 
     public function test_a_branch_with_commits_the_project_does_not_have_is_never_overwritten()
     {
-        $other = app(CreateProject::class)->handle($this->owner, 'Other', $this->makeProjectSource(['README.md' => "Someone else's work\n"]));
+        $other = app(CreateProject::class)->handle($this->owner, 'Other', $this->makeProjectSource(['README.md' => "Someone else's work\n"]), draftNotes: false);
         $this->repository->import($other);
         $this->repository->push($other, $this->repository->head($other), $this->remote, 'main');
         $theirs = $this->repository->head($other);

@@ -105,6 +105,8 @@ class NotesDraftTest extends TestCase
                 'rules' => ['Only owners can delete a team.'],
             ]],
         ], $project->notes_draft);
+        $this->assertCount(1, $project->setup_model_calls ?? []);
+        $this->assertSame('planner', $project->setup_model_calls[0]['role'] ?? null);
         NotesDrafter::assertPrompted(fn ($prompt) => $prompt->contains('app/Models/Team.php') && $prompt->contains('--- composer.json'));
     }
 
