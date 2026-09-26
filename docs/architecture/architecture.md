@@ -1,7 +1,11 @@
 # Architecture
 
-**Version 6.** This document consolidates the direction in [direction/](direction/)
-into one architecture. When they disagree, the direction documents state intent
+**Version 7.** This document consolidates the direction in [direction/](direction/)
+into one architecture. Version 7 adds the "convention over generation"
+reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
+product ontology, removes implementation details from the product model, and
+replaces Project Memory with hierarchical Project Context and discovery
+([§7](#7-project-context-and-discovery)). When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -11,7 +15,7 @@ silently following either.
 - [Two ontologies](#4-two-ontologies)
 - [System overview](#5-system-overview)
 - [Product Behavior Graph](#6-product-behavior-graph)
-- [Project Memory](#7-project-memory)
+- [Project Context and discovery](#7-project-context-and-discovery)
 - [Working context](#8-working-context)
 - [The change pipeline](#9-the-change-pipeline)
 - [Deterministic engines](#10-deterministic-engines)
@@ -28,31 +32,37 @@ silently following either.
 - [Status and staged plan](#21-status-and-staged-plan)
 - [Risks](#22-risks)
 - [Open decisions](#23-open-decisions)
+- [Convention over generation: reassessment](#24-convention-over-generation-reassessment)
 
 ## 1. Principles
 
 1. **Convention over generation.** Use the framework, then a first-party package,
    then a trusted package, then our own capability; generate only what is
-   specific, ambiguous or novel. The platform should generate less over time.
-2. **Generative models create new information; deterministic tooling propagates
+   specific, ambiguous or novel. The order of preference for any change is
+   **reuse → configure → compose → transform → generate**. The platform should
+   generate less over time.
+2. **Convention over questioning.** Never ask the user an engineering decision our
+   conventions already make. Ask about the product only when a wrong assumption
+   costs more than the interruption.
+3. **Generative models create new information; deterministic tooling propagates
    known information.** Before choosing a model, ask whether a model is needed.
-3. **Our orchestration works at the product level; the agent's works at the
+4. **Our orchestration works at the product level; the agent's works at the
    engineering level.** We decide what changes, what is already known, what
    context and limits apply, and whether the result is acceptable. The agent
    decides how to implement a semantic change. We never micromanage its steps.
-4. **The repository is the source of truth.** Everything we persist about an
-   application is either derived from it, versioned in it, or clearly labelled
-   as an interpretation.
-5. **Generated applications stay ordinary Laravel applications.** Everything we
+5. **The repository is the source of truth for behaviour.** Everything we persist
+   about what an application does is derived from its code. Product intent lives
+   in Project Context, with provenance, and is exported to the repository.
+6. **Generated applications stay ordinary Laravel applications.** Everything we
    add to a customer repository works without us: Rector sets, Pest invariants,
-   PHPStan rules, Boost guidelines, Project Memory files.
+   PHPStan rules, Boost guidelines, the exported Project Context.
    `git clone && composer install && npm install && php artisan migrate && npm run build`
    always works.
-6. **No single model provider is the intelligence layer.** Providers are
+7. **No single model provider is the intelligence layer.** Providers are
    replaceable execution engines chosen by evidence.
-7. **Every repeated piece of generative work is a candidate for infrastructure:**
+8. **Every repeated piece of generative work is a candidate for infrastructure:**
    a rule, package, adapter, verifier or template.
-8. **Say "unknown" rather than guess.** Every user-visible statement carries its
+9. **Say "unknown" rather than guess.** Every user-visible statement carries its
    provenance.
 
 ## 2. Positioning: convention over generation
@@ -70,6 +80,23 @@ silently following either.
   Laravel application" is the portability promise, and it is how a technical
   buyer trusts the product. Disclosure depth, not concealment, decides how much
   Laravel a user sees.
+- **Broad outcomes, constrained implementation.** Marketplaces, internal tools,
+  booking systems, APIs, workflow and content products, integration services,
+  realtime and admin systems are all in scope. How they are built is narrow:
+  one stack, one set of conventions, trusted capabilities.
+- **A strong default path with an unrestricted code escape hatch, not a template
+  catalogue.** Capabilities and conventions are the default; an agent can always
+  write ordinary code when a requirement does not fit (see §24.7).
+- **Stronger models should reduce our orchestration, not increase it.** Our
+  durable work is what models do not own: product intent, observability,
+  package trust and lifecycle, capability reuse, deterministic transformations,
+  behaviour-level review, safe production operations, visual selection, empirical
+  routing and framework-specific verification.
+- **Strategic test** for any major decision: does it make the application easier
+  to understand, reduce reinvention, make future changes safer, use Laravel's
+  structure, stay useful if models get much smarter, help both users, and keep
+  ordinary source code as the final artifact? If several answers are no,
+  challenge it.
 - **The measure of the idea:** the share of each change made without a model,
   and the amount of generated foundation code per feature, should both move in
   the right direction over time (see [Learning and privacy](#19-learning-and-privacy)).
@@ -108,21 +135,28 @@ People & permissions · Connections · History**.
 The user-facing model is independent of Laravel; everything beneath it is
 aggressively Laravel-native. The seam between them is deliberately thin.
 
-| Product ontology (what users see)  | Implementation ontology (Laravel substrate)                                           |
-| ---------------------------------- | ------------------------------------------------------------------------------------- |
-| Application                        | repository, Composer and npm manifests                                                |
-| Capability (Appointments, Billing) | native features, first-party and trusted packages, our packages, custom code          |
-| Behavior (Cancel an appointment)   | a handler plus its effects: controller action, job, listener, command, scheduled task |
-| Person / Role                      | guards, policies, gates, role and permission data                                     |
-| Data (Customers, Appointments)     | Eloquent models, tables, relationships, migrations                                    |
-| Automation                         | schedule entries, queued jobs, listeners                                              |
-| Connection                         | HTTP clients, SDK packages, webhook routes, `config/services.php`                     |
-| Screen                             | Inertia pages, Vue components, Wayfinder-bound actions                                |
+| Product ontology (what users see) | User-facing word                        | Implementation ontology (Laravel substrate)                                                      |
+| --------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Application                       | your app                                | repository, Composer and npm manifests                                                           |
+| Capability                        | (its own name: "Appointments")          | native features, first-party and trusted packages, our packages, custom code                     |
+| Behavior                          | (its own name: "Cancel an appointment") | a handler plus its effects: controller action, job, listener, command, scheduled task            |
+| Actor                             | person or role                          | guards, policies, gates, role and permission data                                                |
+| Data                              | your data ("Customers")                 | Eloquent models, tables, relationships, migrations                                               |
+| Rule                              | rule                                    | config values, enums, validation, policy conditions, tests                                       |
+| Automation                        | happens automatically                   | schedule entries, queued jobs, listeners (a view over behaviours, not a separate record)         |
+| Connection                        | connection ("Stripe")                   | HTTP clients, SDK packages, webhook routes, `config/services.php`                                |
+| Surface                           | screen, button, "other systems can…"    | Inertia pages, Vue components, Wayfinder-bound actions, API and webhook routes, schedule entries |
+
+The mapping between the two columns is part of the product's value; the layers
+are never collapsed.
 
 Rules for the seam:
 
-- The Product Behavior Graph schema, the product UI and Project Memory never
-  reference Laravel types. Behavior and surface kinds are stack-neutral.
+- The Product Behavior Graph schema, the product UI and Project Context never
+  reference Laravel types. Keys are opaque and stable (`cancel-appointment`),
+  never route names or class names; kinds are stack-neutral; Laravel
+  identifiers appear only in implementation references and in derivation data
+  kept outside product records.
 - Laravel knowledge lives in one layer, the **Laravel stack profile**: the
   introspector, the extractors that turn Laravel facts into graph fields, the
   verification checks, Rector sets, templates and Boost guidelines.
@@ -143,7 +177,7 @@ PRODUCT LAYER        views over the Product Behavior Graph, behaviour diffs,
   │                  visual editor, previews, approvals, history
 CONTROL PLANE        (Laravel; this repository)
   ├── Product Behavior Graph        persistent, derived, small
-  ├── Project Memory (cached)       intent, decisions, invariants (lives in the app repo)
+  ├── Project Context               intent, decisions, design, invariants; exported to the app repo
   ├── Change pipeline               classify → operations → execute → verify → explain
   ├── Execution router              per stage, by evidence
   ├── Deterministic engines         Rector, visual edits, capability config, scaffolds
@@ -168,16 +202,23 @@ code, rebuilt incrementally, never edited by hand.
 ### Contents
 
 ```
-Capability   key, name, source (native | laravel-pkg | our-pkg | trusted-pkg | custom), membership rule
-  Behavior   key, kind (action | view | automation | inbound | outbound),
+Capability   key (opaque), name, source (built-in | platform | trusted-package | custom), membership rule
+  Behavior   key (opaque), kind (action | view | automation | incoming),
              name, purpose, outcome, actors[], permissions, side_effects[],
-             surfaces[], impl_refs[], inputs[], provenance per field
-    Surface  kind (screen | form | ui_action | api | webhook | schedule | queue | command | integration_entry),
-             technical id, human label, audience (people | other systems | external services | automatic)
+             connections[], surfaces[], impl_refs[], provenance per field
+    Surface  kind (screen | control | api | webhook | schedule | trigger | operator_tool),
+             human label, audience (people | other systems | external services | automatic),
+             impl_ref (the route, component, schedule entry or command behind it)
+Connection   key (opaque), name ("Stripe"), direction (we call it | it calls us | both)
 ```
 
 Added when real cases need them, in the same document (a schema version bump,
-not a new data model): `data[]`, `rules[]`, `integrations[]`, `invariants[]`.
+not a new data model): `data[]` (business concepts, linked to models and tables
+through implementation references), `rules[]`, `invariants[]`.
+
+The build-cache inputs used for incremental regeneration are kept in a separate
+derivation table, not in the product record, so product records contain no file
+paths or class names outside `impl_refs`.
 
 Not persisted: the chains between routes, controllers, requests, policies,
 actions, models, events, listeners and jobs. Those belong to the ephemeral
@@ -185,10 +226,11 @@ engineering graph ([Working context](#8-working-context)).
 
 ### Behaviour identity and grouping
 
-- A behaviour is one entry handler plus what it causes, keyed stably by route
-  name, job class, schedule id or command signature. Renames made by known
-  transforms carry the key; other re-matches are confirmed, so history is never
-  silently broken.
+- A behaviour is one entry handler plus what it causes. It gets an opaque, stable
+  key the first time it is discovered, and an **anchor** (route name, job class,
+  schedule id or command signature) that re-finds it on each rebuild. Renames
+  made by known transforms move the anchor; other re-matches are confirmed, so
+  history is never silently broken.
 - Deterministic grouping keeps behaviours at a human scale: a create and store
   pair is one behaviour, resource routes group by model, read-only pages fold
   into "View X".
@@ -234,7 +276,7 @@ code into deterministic facts, and makes changing them a configuration edit.
 | Class                                          | Example                                                             | May become a hard protection                 |
 | ---------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------- |
 | DERIVED (static or observed in tests)          | "requires `ProjectPolicy::invite`", "queues InvitationNotification" | Yes                                          |
-| CONFIRMED (owner intent, Project Memory)       | "customers cannot cancel within 48 hours"                           | Yes                                          |
+| CONFIRMED (owner intent, Project Context)      | "customers cannot cancel within 48 hours"                           | Yes                                          |
 | PACKAGE CONTRACT (trusted manifest or adapter) | "a team always has an owner"                                        | Yes                                          |
 | AI INTERPRETATION                              | "invites someone to collaborate"                                    | No; display only, revisable                  |
 | PROPOSED                                       | "tenants never see each other's bookings?"                          | No, until confirmed or matched to a contract |
@@ -294,6 +336,7 @@ graph_nodes     (hash pk, project_id, kind, key, schema_version, body jsonb, cre
 snapshot_nodes  (snapshot_id, node_hash)                                                  -- which records a snapshot contains
 annotations     (id, project_id, subject_key, field, text, source, anchor_hash, model,
                  pinned, stale_since, created_at)                                         -- durable, they cost money
+derivations     (snapshot_id, behavior_key, anchor, inputs jsonb, input_hash)            -- build cache, outside product records
 surface_index   (snapshot_id, behavior_key, kind, technical_id, component_path,
                  template_line, wayfinder_action, audience)                               -- derived, disposable
 ```
@@ -303,26 +346,201 @@ snapshot only stores what changed, and history and diffs come free. Old
 snapshots are pruned, keeping `main`'s history and each run's base and
 candidate.
 
-## 7. Project Memory
+## 7. Project Context and discovery
 
-What code cannot tell us: intent, terminology, decisions and their reasons,
-rejected alternatives, unusual business rules, discoveries, invariants that
-cannot be derived.
+Project Context holds what the user intends; the Product Behavior Graph holds
+what the application does. Discovery fills Project Context through natural,
+contextual questions over time, never through a questionnaire, and never in
+project-management vocabulary. The goal is the feeling "this understands what I
+am building", not "this made me a product manager".
 
-- **Lives in the application repository**, `docs/product/`: `product.md` (goals,
-  actors, terminology), `decisions/*.md`, `rules.md` with structured
-  front-matter (for example `cancellation_cutoff: {value: 48h, behavior: appointments.cancel}`).
-  It is portable, reviewed in git, and useful to human developers. The product
-  edits it through the UI and commits; the control plane caches the parsed copy
-  per commit.
-- **Mismatch detection.** Structured rules are compared deterministically with
-  the graph's rules. Prose rules are compared by AI only when the related
-  behaviour changes, cached, and always shown as a possible mismatch with both
-  sides. Neither side is ever corrected automatically.
-- **Invariant lifecycle.** Proposals (from AI or mechanically implied) become
-  CONFIRMED or PACKAGE CONTRACT, or are dismissed. Owners are asked only about
-  high-impact invariants (money, deletion, access between customers), in plain
-  language, at natural moments. Low-impact AI proposals stay as reviewer hints.
+### Schema (V0)
+
+One append-only table. The conceptual model matters more than the storage; add
+specialised tables only when evidence demands them.
+
+```sql
+context_entries (
+  id, project_id,
+  scope_type,     -- application | capability | behavior | surface
+  scope_key,      -- null for application; otherwise a Product Behavior Graph key
+  category,       -- goal | user | real_world | workflow | terminology | design | rule
+                  -- | constraint | decision | rejected | future_direction | open_question
+  key,            -- a stable slug, e.g. cleaner_assignment, density, org_term
+  value jsonb,    -- {text, structured?} e.g. {"text": "…", "structured": {"hours": 48}}
+  source,         -- confirmed | derived | package_contract | ai_interpretation | proposed
+  status,         -- active | superseded | retracted | open
+  supersedes_id, overrides_id,
+  origin,         -- conversation message, run, selection, review
+  created_by, created_at
+)
+```
+
+The **current value** of a key at a scope is its latest `active` entry. History
+is the chain of `supersedes_id`. Open questions are entries with category
+`open_question` and status `open`; answering one writes a `confirmed` entry.
+
+Project Context is authoritative in the control plane, because it needs
+provenance, statuses and history, and is **exported to the application
+repository** as readable Markdown (`docs/product/`, generated, with a note that
+edits there are imported back as proposals). The app stays self-describing
+outside the platform.
+
+### Inheritance and overrides
+
+- Scopes form a chain: application → capability → behaviour or surface. The
+  chain comes from the Product Behavior Graph: a behaviour belongs to a
+  capability; a surface belongs to a behaviour or screen.
+- **Resolution** walks from the most specific scope upwards; the first active
+  entry for a key wins. A new screen therefore inherits "large controls, low
+  density" and "organizations are called Clinics" with no extra work.
+- **Categories that inherit downward:** terminology, design, users, constraints,
+  goals. **Categories that stay local:** decisions and rules, which apply to
+  their scope and everything beneath it but never spread sideways.
+- **An override** is an entry with the same key at a lower scope, pointing at the
+  entry it overrides (`overrides_id`). Overrides are shown as such ("Reporting:
+  higher density, overriding the app default"), so inheritance never becomes
+  rigidity and never hides.
+- Constraints ("what must never happen") can only be overridden by a confirmed
+  entry.
+
+### When to ask: the decision check
+
+In the interpret stage, the planner lists the product decisions the task depends
+on. For each one it states whether Project Context answers it, the default it
+would choose, which consequence categories a wrong guess touches, and whether a
+prototype would make the question easier to answer. A deterministic gate then
+decides:
+
+| Situation                                                                                                                                            | Action                                                                                                                                                              |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Answered by context                                                                                                                                  | Use it. Never re-ask unless the user reopens the decision.                                                                                                          |
+| Engineering decision (controllers, queues, validation, migrations, policies, tests)                                                                  | Decide by convention. Never ask.                                                                                                                                    |
+| Unanswered, wrong guess touches data model, money, permissions, destructive behaviour, external integrations, legal expectations or a major workflow | **Ask before building.** One concise question, multiple choice with a recommended default.                                                                          |
+| Unanswered, easier to judge after seeing it, or low consequence                                                                                      | **Build with the default**, record it as `proposed`, and ask for confirmation in the review ("I set it up so cleaners are assigned automatically. Is that right?"). |
+| Several high-consequence unknowns                                                                                                                    | Ask the minimum set that avoids likely rework, one at a time, most consequential first.                                                                             |
+
+The rule underneath: ask when the cost of a wrong assumption is meaningfully
+greater than the cost of interrupting. The consequence categories come from the
+decision's reach in the Product Behavior Graph and the change class, so the gate
+is mostly mechanical; the model only proposes the decision list and defaults.
+
+### Not annoying people
+
+- At most one question before building, for a typical request.
+- Always multiple choice, with a recommended option and "you decide".
+- Never an engineering question; never a question already answered.
+- Post-build confirmations are bundled into the change review, next to the
+  behaviour diff, where the user can see what they are confirming.
+- Opening discovery is at most a handful of plain questions (what are you
+  building, who is it for, what do people need to get done, how does it work
+  today, what is painful), then building starts.
+- An owner can say "ask me less"; the gate's threshold then rises for
+  medium-consequence decisions.
+- Tracked metric: questions per request, which should fall as the project
+  matures.
+
+### Provenance
+
+Only the user makes intent. An answer, an explicit statement or an approval of a
+listed assumption is `confirmed`. A default the platform chose is `proposed`
+until the user confirms it, and is shown as "assumed". Anything the model
+inferred from conversation is `ai_interpretation` and never drives hard gates.
+Facts derived from the code belong in the Product Behavior Graph, not in Project
+Context. Package guarantees are `package_contract`. Not every sentence becomes
+memory: only durable, product-relevant statements are written.
+
+### Versioning
+
+Append-only. A change of mind writes a new entry that supersedes the old one;
+retracting marks it `retracted`. The latest confirmed entry drives
+implementation. History is visible ("Early on: only staff create appointments.
+Since 12 March: patients self-book."), and each change is also a commit in the
+exported `docs/product/`.
+
+### Intent and behaviour together
+
+Scopes are Product Behavior Graph keys, so context attaches to real capabilities,
+behaviours and screens, and a new behaviour inherits its capability's context
+automatically. When a behaviour disappears, its local entries are flagged rather
+than silently dropped.
+
+Comparisons: structured rules (`{"hours": 48}`) are compared deterministically
+with the graph's rules; prose rules are compared by AI only when the related
+behaviour changes. The platform aims to surface missing behaviour, accidental
+behaviour, permission, workflow and terminology mismatches, and design drift.
+
+### Contradictions
+
+Two kinds: intent against behaviour ("you said only owners manage billing, but
+administrators can change payment methods"), and new intent against older intent
+at another scope. Both appear as a plain question with two answers, "keep how
+it works now" (updates intent) or "change the app to match" (starts a change),
+inline on the behaviour card, in the change review, and in a short "needs your
+decision" list. Neither side is ever corrected automatically.
+
+### Design context
+
+Design is product context in the same table (`category = design`): tone,
+density, primary devices, audience, accessibility, brand. It is hierarchical
+like everything else (application default → capability refinement → screen
+override). Following convention over generation, whatever can become code does:
+brand colours, radius and spacing scale live as Tailwind `@theme` tokens and
+component defaults; "large interaction targets" becomes component size
+defaults. What cannot (tone, density intent) goes into agent briefs for UI work
+and sets the visual editor's defaults. The user is never asked to restate
+aesthetic direction.
+
+### Hidden agile
+
+| Kept internally     | As                                                                            |
+| ------------------- | ----------------------------------------------------------------------------- |
+| Product vision      | application goal and identity entries                                         |
+| Personas            | `users` entries and Actors                                                    |
+| Epics               | capabilities                                                                  |
+| User stories        | behaviours                                                                    |
+| Acceptance criteria | "what should happen when this works" statements, which become protected tests |
+| Edge cases          | "what could go wrong" questions, which become tests                           |
+| Definition of done  | verification requirements                                                     |
+| Backlog             | behaviours with status "planned", shown as "Next up"                          |
+| Increment           | a verified behaviour change                                                   |
+| Retrospective       | lessons in Project Context and the learning loop                              |
+
+Deliberately omitted: sprints, story points and estimates, velocity, burndown,
+ceremonies, ticket numbers and boards, priority frameworks, formal requirement
+documents, sign-off workflows, agile role names, and any of these words in the
+product. The only prioritisation question is the natural one ("these three are
+enough for a first version: which matters most?").
+
+### Both users
+
+Target A answers plain, multiple-choice questions and sees a "What I know about
+your product" page in plain language, where anything can be corrected. Target B
+sees the same entries with scope, provenance, overrides, structured values and
+history, can edit them directly, and can open exactly what an agent was given
+for any run. Questions themselves disclose progressively: "Who will use this?"
+can expand into roles, permissions, data ownership and API access.
+
+### Smallest proof (V0)
+
+1. The `context_entries` table, the resolver with inheritance and overrides, and
+   the export to `docs/product/`.
+2. The decision check in the interpret stage, with the gate above.
+3. Answers saved as `confirmed`; defaults saved as `proposed` and confirmed in
+   the review.
+4. The effective context compiled into the agent brief.
+5. The "What I know about your product" page.
+
+Proven by a scripted session, first with faked models in tests, then live:
+
+- "I need booking software for my cleaning business" → a few opening questions,
+  including "Do customers choose a cleaner?" (no, assign whoever is available)
+  → first slice built.
+- "Add recurring bookings" → exactly one new question ("keep the same cleaner,
+  or assign whoever is available each time?"); none of the earlier questions
+  repeated; the brief contains the earlier answers.
+- A later request inherits both answers, and a new screen uses the stored
+  terminology and design context.
 
 ## 8. Working context
 
@@ -331,10 +549,22 @@ Ephemeral, per task, never persisted beyond the run.
 - Built in the runtime by `builder/introspect --around=<behavior-key>`: a
   budgeted traversal from the seed behaviour through middleware, FormRequest,
   policy, action, models, events, listeners, jobs, notifications and tests.
-- The brief: seed behaviours and their current descriptions; Project Memory rules
-  and invariants that apply; capability metadata ("extend this, do not recreate
-  it"); key paths; the project's own conventions; a selection context when the
-  request came from the visual editor.
+- The brief is compiled from, in priority order and within a token budget
+  (a few thousand tokens):
+    1. the user's request and any selection context;
+    2. the **effective Project Context** for the task's scopes (§7): decisions
+       already made (marked "decided, do not ask again"), rules, constraints,
+       terminology used in the touched area, and design context only when the task
+       touches UI;
+    3. current behaviour of the seed behaviours, from the Product Behavior Graph;
+    4. capability metadata ("extend this, do not recreate it");
+    5. implementation references and key paths;
+    6. the project's own conventions.
+
+    Application-level essentials form a stable prefix, cached per commit and
+    context version for prompt caching. Nothing else from the context store is
+    sent; the agent can query more through MCP (`context.query`).
+
 - A stable prefix (project summary, conventions, capabilities) is cached per
   commit for prompt caching.
 - The agent explores freely beyond it and can query more through MCP
@@ -348,13 +578,15 @@ Ephemeral, per task, never persisted beyond the run.
 
 ```
 request (chat, behaviour card, or visual selection)
- → intent: which capability and behaviours?           small model + graph + memory
+ → intent: which capability and behaviours?           small model + graph + context
+ → decision check: what does this depend on that      §7; at most a few questions,
+   the context does not answer?                        otherwise proceed with stated assumptions
  → classify into change classes and typed operations
  → deterministic operations                           no model
  → agent tasks                                        execution router → agent adapter
  → normalization                                      curated Rector set + Pint
  → verification                                       §12
- → behaviour diff and explanation → preview → approvals
+ → behaviour diff, assumptions to confirm → preview → approvals
  → learn: normalization hits, residuals, failures → candidate queue
 ```
 
@@ -727,7 +959,9 @@ shows it honestly; normalization improves it over time.
 
 ## 20. Deliberately not built yet
 
-A persistent engineering graph or graph database; trust scoring; a package
+Sprints, estimates, boards, backlog grooming and any project-management
+vocabulary in the product; a requirements database beyond one context table;
+onboarding questionnaires; a persistent engineering graph or graph database; trust scoring; a package
 marketplace; adapters beyond the packages we use; package replacement; a large
 rule catalogue; a page-builder document tree; generic multi-framework support;
 targeted test selection; multi-agent decomposition within one request;
@@ -749,17 +983,18 @@ online routing experiments on high-risk work.
 
 ### Next stages
 
-| Stage                  | Build                                                                                                                                                                                                                                                                                   | Proven when                                                                                                            |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| 1 Understand & observe | `builder/introspect` v0 with test-run side-effect tracing; Product Behavior Graph V0 (Capability, Behavior, Actor, Surface; purpose, permissions, outcome, side effects, implementation refs; provenance, freshness, `unknown`); behaviour cards; behaviour diff; preview source stamps | The owner-only change yields "Previously / Now" with no model call for the diff; only affected behaviours rebuild      |
-| 2 Execute              | `AgentTask`/`AgentResult`; provider profiles; runtime adapter and reproducible template; runner; `claude-agent-sdk` and `script` adapters; gateway and vault; routing table v0 and telemetry                                                                                            | An Agent SDK agent builds invitations from the clean starter and passes protected tests                                |
-| 2b Second provider     | OpenAI adapter; one change with stages on different providers                                                                                                                                                                                                                           | End to end across two providers                                                                                        |
-| 3 Deterministic first  | Typed operations; Rector with residuals and governance; `capability_config`; normalization after the agent                                                                                                                                                                              | "Only managers can invite" with zero model tokens for the change                                                       |
-| 4 Laravel semantics    | PHPStan and architecture rules; diff-triggered checks and gates; `migrate --pretend`; risk-triggered cross-provider review                                                                                                                                                              | A seeded set of bad changes is all caught                                                                              |
-| 5 Measure              | Evaluation harness across providers and models → routing table v1                                                                                                                                                                                                                       | Baseline numbers; a model swap is a config change with measured impact                                                 |
-| 6 Visual editor        | Selection context, inspector, Tailwind and text edits, semantic hand-off, edge proxy with hot reload                                                                                                                                                                                    | A non-technical user changes spacing without a model and hands a permission change to an agent from the same selection |
-| 7 Memory & context     | Project Memory in the repository; mismatch detection; invariant lifecycle; briefs seeded from behaviours and selections                                                                                                                                                                 | Brief vs no brief shows fewer tokens at equal or better pass rate                                                      |
-| 8 Learn                | Candidate queue; rule promotion; limited online routing                                                                                                                                                                                                                                 | One recurring agent pattern becomes a rule                                                                             |
+| Stage                   | Build                                                                                                                                                                                                                                                                                   | Proven when                                                                                                                |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 1a Understand & observe | `builder/introspect` v0 with test-run side-effect tracing; Product Behavior Graph V0 (Capability, Behavior, Actor, Surface; purpose, permissions, outcome, side effects, implementation refs; provenance, freshness, `unknown`); behaviour cards; behaviour diff; preview source stamps | The owner-only change yields "Previously / Now" with no model call for the diff; only affected behaviours rebuild          |
+| 1b Context & discovery  | One `context_entries` table with scopes, inheritance and overrides; the decision check in the interpret stage; assumptions confirmed in the review; the effective context in the agent brief; the "What I know about your product" page                                                 | The cleaning-business script (§7) asks only new questions as the product grows, and later requests inherit earlier answers |
+| 2 Execute               | `AgentTask`/`AgentResult`; provider profiles; runtime adapter and reproducible template; runner; `claude-agent-sdk` and `script` adapters; gateway and vault; routing table v0 and telemetry                                                                                            | An Agent SDK agent builds invitations from the clean starter and passes protected tests                                    |
+| 2b Second provider      | OpenAI adapter; one change with stages on different providers                                                                                                                                                                                                                           | End to end across two providers                                                                                            |
+| 3 Deterministic first   | Typed operations; Rector with residuals and governance; `capability_config`; normalization after the agent                                                                                                                                                                              | "Only managers can invite" with zero model tokens for the change                                                           |
+| 4 Laravel semantics     | PHPStan and architecture rules; diff-triggered checks and gates; `migrate --pretend`; risk-triggered cross-provider review                                                                                                                                                              | A seeded set of bad changes is all caught                                                                                  |
+| 5 Measure               | Evaluation harness across providers and models → routing table v1                                                                                                                                                                                                                       | Baseline numbers; a model swap is a config change with measured impact                                                     |
+| 6 Visual editor         | Selection context, inspector, Tailwind and text edits, semantic hand-off, edge proxy with hot reload                                                                                                                                                                                    | A non-technical user changes spacing without a model and hands a permission change to an agent from the same selection     |
+| 7 Intent vs behaviour   | Structured-rule mismatch detection; invariant lifecycle; contradiction questions; design context mapped to theme tokens; briefs seeded from behaviours and selections                                                                                                                   | Brief vs no brief shows fewer tokens at equal or better pass rate                                                          |
+| 8 Learn                 | Candidate queue; rule promotion; limited online routing                                                                                                                                                                                                                                 | One recurring agent pattern becomes a rule                                                                                 |
 
 Then, by evidence: import conformance reports, the first first-party capability
 package with an executable upgrade path, adapters for Cashier and similar,
@@ -799,3 +1034,148 @@ deployment through Laravel Cloud, L4 lifecycle and replacement.
   in a hosted product.
 - The sandbox provider for managed runtimes.
 - The product's public name and category (not "Laravel builder").
+
+## 24. Convention over generation: reassessment
+
+Version 7 re-examined the whole design against reuse → configure → compose →
+transform → generate.
+
+### 24.1 Where we still over-rely on generation
+
+- **Our own demo feature.** Team invitations (23 generated files in the fixture)
+  are foundation code that every multi-user app needs. Under this thesis the
+  product path for "invite people" is to compose a capability and configure
+  it; agent-built invitations stay only as an evaluation task.
+- **Plans that tell the agent how to implement.** The G3 planner writes task
+  lists for the coder. Strong coding agents plan their own implementation, so
+  the plan shrinks to intent, criteria, assumptions, affected behaviours and
+  typed operations. The task list goes.
+- **Our own agent loop in the control plane.** G3's tool loop re-implements a
+  harness that the Agent SDK already provides. It moves to the runtime and the
+  SDK (§11); the per-call journal stays only for scripted runs and tests.
+- **Per-feature protected tests.** For capability-backed behaviours, the
+  capability ships its contract tests; generated protected tests are only for
+  genuinely application-specific behaviour.
+- **Screens generated from nothing.** Agents should compose the starter kit's
+  components and a small set of page patterns (list, detail, form, settings)
+  that live as ordinary files in the app.
+- **Behaviour names and purposes.** Capability manifests carry their behaviours'
+  human names, so only custom behaviours need AI annotation.
+
+### 24.2 Recurring concerns and where they should come from
+
+Laravel or first-party first, then trusted packages through adapters; our own
+capability only for what neither covers:
+
+| Concern                                                                         | Source                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Sign-in, registration, password reset, email verification, two-factor, passkeys | starter kit (Fortify)                                                                                                                                                                      |
+| Billing and subscriptions                                                       | Cashier (first-party), with an adapter                                                                                                                                                     |
+| Feature access and flags                                                        | Pennant                                                                                                                                                                                    |
+| API tokens                                                                      | Sanctum                                                                                                                                                                                    |
+| Social login                                                                    | Socialite                                                                                                                                                                                  |
+| Search                                                                          | Scout                                                                                                                                                                                      |
+| Realtime                                                                        | Reverb and Echo                                                                                                                                                                            |
+| Files                                                                           | Storage and disks                                                                                                                                                                          |
+| Notifications, queues, scheduling, rate limiting, health                        | framework                                                                                                                                                                                  |
+| Roles and permissions beyond a simple enum                                      | a trusted package (for example Spatie's permission package) with an adapter                                                                                                                |
+| Audit history, media handling, outgoing webhooks                                | trusted Spatie packages with adapters, when needed                                                                                                                                         |
+| **Organizations: memberships, ownership, invitations, the tenant boundary**     | **our first capability**: recurring, not covered by the current starter kits as far as we have seen, and where standardisation buys verification (tenant isolation, "always has an owner") |
+| Onboarding, approvals, usage metering                                           | our capabilities only when evaluation data shows repeated generation                                                                                                                       |
+
+Rejected for now: a separate admin-panel framework, because a second UI stack
+would break the one blessed frontend and the visual editor.
+
+### 24.3 Laravel defaults to exploit deliberately in V0
+
+The official Vue starter kit as the project template; Fortify; policies and
+gates for all authorization; FormRequests for validation; named resource routes
+(stable anchors and behaviour grouping); route model binding; Eloquent,
+migrations and PostgreSQL; the database queue driver; notification classes with
+the log mailer in previews; the scheduler; enums and config for business
+parameters and roles; Pennant; Storage; Pest with architecture presets and
+browser tests; Pint; Larastan; Wayfinder and Inertia `<Form>`; Boost; `make:*`
+generators. Single-purpose action classes are a light convention, not a
+requirement.
+
+### 24.4 What stays fully open to coding agents
+
+Domain modelling and business logic; custom workflows and state machines;
+integrations with arbitrary external services; custom screens and interactions
+beyond the page patterns; data migrations and backfills; debugging and
+performance work; anything novel. There are no forbidden zones in the codebase
+beyond protected paths and the dependency policy.
+
+### 24.5 Is the product layer framework-independent?
+
+Mostly. The ontology table in §4 is now stack-neutral, and every Laravel term
+sits in implementation references, derivation data or the Laravel stack
+profile. Two tests keep it honest: the product UI at levels 1–3 must render
+without a single framework word, and the Product Behavior Graph schema must
+validate without any Laravel-specific enum value.
+
+### 24.6 Implementation details that were leaking, now fixed
+
+- Behaviour keys were route names and class names → opaque keys plus anchors.
+- Surface kinds `queue` and `command` → `trigger` and `operator_tool`.
+- Capability sources named Laravel package tiers → built-in, platform,
+  trusted-package, custom.
+- "Tables written" as data → business data concepts, with tables in
+  implementation references.
+- Build-cache inputs (file paths) inside product records → a separate
+  `derivations` table.
+- Project Context rules referenced route names → they reference behaviour keys.
+- Automation as a separate entity → a view over behaviours.
+
+### 24.7 Where we risk becoming low-code, and the escape hatch
+
+| Risk                                             | Escape hatch                                                                                                                                                                         |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Capabilities as closed boxes                     | Capabilities extend through ordinary Laravel: bind your own action, listen to events, override policies, publish views and components. Customisation is code, never a settings maze. |
+| Configuration schemas that cannot express a need | Any request that does not fit falls through to an agent task that edits code.                                                                                                        |
+| A component catalogue                            | UI components are copied into the app and owned by it (the shadcn approach), never a locked library.                                                                                 |
+| The visual editor                                | "Describe a change" is always available next to direct edits.                                                                                                                        |
+| Typed operations                                 | `agent_task` is always a valid operation.                                                                                                                                            |
+| Behaviours only from capabilities                | The graph is derived from all code, including custom code and edits made outside the platform.                                                                                       |
+
+Ejecting a capability into app code is a later, L4-style feature.
+
+### 24.8 What gets more valuable as models improve
+
+The Product Behavior Graph and behaviour diffs; Project Context; provenance and
+independent verification; trusted capabilities, adapters and deterministic
+rules; the evaluation harness and routing; the gateway, credentials and
+sandboxes; visual selection context; approvals.
+
+What we keep deliberately thin, because better models absorb it: planning
+detail, context-compilation heuristics, prompt engineering, step-level
+orchestration, and our own agent loop, which we drop.
+
+### 24.9 What the first slice can prove
+
+On the customer-app fixture, one sequence covering the whole ladder:
+
+1. **Reuse and configure.** "Only managers can invite": a configuration edit with
+   no model tokens for the change, and a behaviour diff in plain language.
+2. **Discover.** The decision check asks one question only when the answer
+   matters, and remembers it.
+3. **Generate the application-specific part.** For example "remind invitees the
+   day before their invitation expires": the agent writes only the new
+   behaviour, composing scheduler and notification conventions.
+4. **Observe.** Every step shows a behaviour diff at level 1 with zero framework
+   words, and levels 4–5 for the power user.
+5. **Ordinary software.** The fixture's own CI (clone, install, test) passes
+   with no platform involvement.
+
+Measured: share of each change done without a model, generated lines per
+behaviour, questions asked per request.
+
+### 24.10 Explicitly not building yet
+
+A first-party organizations package (prove the configure path on the fixture's
+own code first, then extract when a second app needs it); package adapters
+beyond what the slice uses; the trust engine; a rule library beyond
+`rector-laravel` and one normalization set; any generic multi-framework layer
+beyond keeping the product schema neutral; our own component library; page
+templates beyond four patterns; the visual editor before stage 6; learned
+routing; imported applications; deployment.
