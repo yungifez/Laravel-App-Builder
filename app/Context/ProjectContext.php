@@ -31,7 +31,7 @@ final readonly class ProjectContext
     /**
      * Restore the outline of a project's context from storage.
      *
-     * @param  list<array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed?: string|null}>}>  $capabilities
+     * @param  list<array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed?: string|null}>, test_files?: list<string>}>  $capabilities
      */
     public static function fromOutline(array $capabilities): self
     {
@@ -79,7 +79,7 @@ final readonly class ProjectContext
     /**
      * Get the outline of every capability for storage.
      *
-     * @return list<array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed: string|null}>}>
+     * @return list<array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed: string|null}>, test_files?: list<string>}>
      */
     public function outline(): array
     {

@@ -23,6 +23,7 @@ import { index, show as showProject } from '@/routes/projects';
 import type {
     ChangedArea,
     ChangeSection,
+    RunReview,
     FeatureRequestDetail,
     FeatureRequestSummary,
     Preview,
@@ -181,6 +182,17 @@ const contextModeLabels: Record<NonNullable<Run['context']>['mode'], string> = {
     selective_without_effects:
         'the notes for the parts this change touches, without related parts',
 };
+
+function evidenceLabel(item: RunReview['preserved'][number]): string {
+    switch (item.evidence) {
+        case 'verified':
+            return `checked by ${item.tests} test file${item.tests === 1 ? '' : 's'} that passed${item.unchanged ? '; not touched by this change' : ''}`;
+        case 'untouched':
+            return 'not touched by this change; no tests check it';
+        default:
+            return 'not checked';
+    }
+}
 
 function changesIn(section: ChangeSection) {
     return (props.run?.review?.changes ?? []).filter(
@@ -371,7 +383,37 @@ function lineClass(line: string): string {
                 class="space-y-2 rounded-lg border p-4 text-sm"
                 data-test="run-plan"
             >
+                <p
+                    v-if="run.plan.understood_as"
+                    class="text-xs text-muted-foreground"
+                    data-test="brief-understood-as"
+                >
+                    Understood as: {{ run.plan.understood_as }}
+                </p>
+                <template v-if="run.plan.current_behavior">
+                    <p class="font-medium">What it does now</p>
+                    <p class="text-muted-foreground">
+                        {{ run.plan.current_behavior }}
+                    </p>
+                </template>
+                <p class="font-medium" v-if="run.plan.current_behavior">
+                    The change
+                </p>
                 <p>{{ run.plan.summary }}</p>
+                <template v-if="run.plan.preserve.length > 0">
+                    <p class="font-medium">Keep as it is</p>
+                    <ul
+                        class="list-disc pl-5 text-muted-foreground"
+                        data-test="brief-preserve"
+                    >
+                        <li
+                            v-for="(statement, index) in run.plan.preserve"
+                            :key="index"
+                        >
+                            {{ statement }}
+                        </li>
+                    </ul>
+                </template>
                 <template v-if="run.plan.acceptance_criteria.length > 0">
                     <p class="font-medium">Done when</p>
                     <ul class="list-disc pl-5 text-muted-foreground">
@@ -464,6 +506,24 @@ function lineClass(line: string): string {
                         </p>
                     </div>
                 </template>
+                <div
+                    v-if="run.review.preserved.length > 0"
+                    class="space-y-2"
+                    data-test="review-preserved"
+                >
+                    <p class="font-medium">Kept as it was</p>
+                    <ul class="space-y-1">
+                        <li
+                            v-for="(item, index) in run.review.preserved"
+                            :key="index"
+                        >
+                            {{ item.statement }}
+                            <span class="text-xs text-muted-foreground">
+                                · {{ evidenceLabel(item) }}</span
+                            >
+                        </li>
+                    </ul>
+                </div>
                 <p
                     v-if="run.review.context_updates.length > 0"
                     class="text-xs text-muted-foreground"

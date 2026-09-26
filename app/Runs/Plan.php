@@ -6,8 +6,10 @@ use App\Runs\Exceptions\ConstructionFailed;
 use Illuminate\Support\Facades\Validator;
 
 /**
- * The saved intent a run builds against: what the change does, how to tell
- * it is done, and the steps the owner can later select and change.
+ * The saved intent a run builds against, also shown as the change brief:
+ * how the request was understood, what the application does now, what the
+ * change does, what must stay as it is, how to tell it is done, and the steps
+ * the owner can later select and change.
  *
  * The protected acceptance suites are chosen by the platform, never by the
  * model that writes the plan.
@@ -21,6 +23,7 @@ final readonly class Plan
      * @param  list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>  $steps
      * @param  list<string>  $acceptance  Protected acceptance test files that apply to the change
      * @param  list<string>  $capabilities  The areas of the product (`.builder/capabilities`) the change is about
+     * @param  list<array{area: string|null, statement: string}>  $preserve  What must stay as it is, by area
      */
     public function __construct(
         public string $summary,
@@ -31,6 +34,9 @@ final readonly class Plan
         public array $acceptance = [],
         public ?string $solutionKey = null,
         public array $capabilities = [],
+        public ?string $understoodAs = null,
+        public ?string $currentBehavior = null,
+        public array $preserve = [],
     ) {}
 
     /**
@@ -61,13 +67,18 @@ final readonly class Plan
             'steps.*.detail' => ['required', 'string', 'max:1000'],
             'capabilities' => ['sometimes', 'array', 'max:10'],
             'capabilities.*' => ['string', 'max:60'],
+            'understood_as' => ['sometimes', 'nullable', 'string', 'max:300'],
+            'current_behavior' => ['sometimes', 'nullable', 'string', 'max:2000'],
+            'preserve' => ['sometimes', 'array', 'max:20'],
+            'preserve.*.area' => ['nullable', 'string', 'max:60'],
+            'preserve.*.statement' => ['required', 'string', 'max:500'],
         ]);
 
         if ($validator->fails()) {
             throw new ConstructionFailed(__('The planner returned an invalid plan: :errors', ['errors' => implode(' ', $validator->errors()->all())]));
         }
 
-        /** @var array{summary: string, acceptance_criteria: array<int, string>, assumptions: array<int, string>, tasks: array<int, string>, steps: array<int, array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, capabilities?: array<int, string>} $valid */
+        /** @var array{summary: string, acceptance_criteria: array<int, string>, assumptions: array<int, string>, tasks: array<int, string>, steps: array<int, array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, capabilities?: array<int, string>, understood_as?: string|null, current_behavior?: string|null, preserve?: array<int, array{area?: string|null, statement: string}>} $valid */
         $valid = $validator->validated();
 
         return new self(
@@ -86,13 +97,16 @@ final readonly class Plan
             acceptance: $acceptance,
             solutionKey: $solutionKey,
             capabilities: array_values(array_unique($valid['capabilities'] ?? [])),
+            understoodAs: $valid['understood_as'] ?? null,
+            currentBehavior: $valid['current_behavior'] ?? null,
+            preserve: array_values(array_map(fn (array $item) => ['area' => $item['area'] ?? null, 'statement' => $item['statement']], $valid['preserve'] ?? [])),
         );
     }
 
     /**
      * Restore a plan saved on a run.
      *
-     * @param  array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>}  $data
+     * @param  array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>, understood_as?: string|null, current_behavior?: string|null, preserve?: list<array{area: string|null, statement: string}>}  $data
      */
     public static function fromArray(array $data): self
     {
@@ -105,13 +119,16 @@ final readonly class Plan
             acceptance: $data['acceptance'],
             solutionKey: $data['solution_key'],
             capabilities: $data['capabilities'] ?? [],
+            understoodAs: $data['understood_as'] ?? null,
+            currentBehavior: $data['current_behavior'] ?? null,
+            preserve: $data['preserve'] ?? [],
         );
     }
 
     /**
      * Get the plan as stored on the run.
      *
-     * @return array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities: list<string>}
+     * @return array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities: list<string>, understood_as: string|null, current_behavior: string|null, preserve: list<array{area: string|null, statement: string}>}
      */
     public function toArray(): array
     {
@@ -124,6 +141,9 @@ final readonly class Plan
             'acceptance' => $this->acceptance,
             'solution_key' => $this->solutionKey,
             'capabilities' => $this->capabilities,
+            'understood_as' => $this->understoodAs,
+            'current_behavior' => $this->currentBehavior,
+            'preserve' => $this->preserve,
         ];
     }
 }

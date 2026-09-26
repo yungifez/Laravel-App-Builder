@@ -183,6 +183,10 @@ return [
             ['name' => 'Generate route helpers', 'command' => ['php', 'artisan', 'wayfinder:generate', '--with-form'], 'timeout' => 120],
         ],
 
+        // The check that runs the project's whole test suite. When it passes,
+        // an area with its own tests counts as verified in the review.
+        'suite_check' => 'Tests',
+
         'checks' => [
             ['name' => 'Tests', 'command' => ['php', 'artisan', 'test'], 'timeout' => 600],
             ['name' => 'Static analysis', 'command' => ['vendor/bin/phpstan', 'analyse', '--no-progress'], 'timeout' => 600],

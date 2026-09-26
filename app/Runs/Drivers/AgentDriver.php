@@ -142,12 +142,20 @@ class AgentDriver implements ConstructionDriver
             $sections[] = "## Project context\n\nWhat is known about the product for the areas this change touches.\n\n{$run->context['text']}";
         }
 
+        if ($plan->currentBehavior !== null) {
+            $sections[] = "## What it does now\n\n{$plan->currentBehavior}";
+        }
+
         array_push(
             $sections,
             "## Plan\n\n{$plan->summary}",
             "## Tasks\n\n".$this->list($plan->tasks),
             "## Acceptance criteria\n\n".$this->list($plan->acceptanceCriteria),
         );
+
+        if ($plan->preserve !== []) {
+            $sections[] = "## Keep as it is\n\nDo not change these. If the request cannot be done without changing one, stop and say so.\n\n".$this->list(array_column($plan->preserve, 'statement'));
+        }
 
         if ($plan->assumptions !== []) {
             $sections[] = "## Assumptions\n\n".$this->list($plan->assumptions);
@@ -178,6 +186,7 @@ class AgentDriver implements ConstructionDriver
             $this->areasTouched($evidence),
             "## Plan\n\n{$evidence->plan->summary}",
             "## Acceptance criteria\n\n".$this->list($evidence->plan->acceptanceCriteria),
+            $evidence->plan->preserve !== [] ? "## Must stay as it is\n\n".$this->list(array_column($evidence->plan->preserve, 'statement')) : null,
             "## Verification: {$evidence->verificationStatus}\n\n".implode("\n", $results),
             "## Tests deleted or weakened by the diff\n\n".($evidence->weakenedTests === [] ? 'None.' : $this->json($evidence->weakenedTests)),
             "## Diff\n\n```diff\n".$this->bounded($evidence->patch)."\n```",

@@ -29,6 +29,7 @@ final readonly class Capability
      * @param  list<string>  $paths  Glob patterns for the code that belongs to the area
      * @param  list<array{key: string, name: string}>  $behaviors
      * @param  list<Effect>  $effects
+     * @param  list<string>  $testFiles  The project's test files the area claims
      */
     public function __construct(
         public string $key,
@@ -39,6 +40,7 @@ final readonly class Capability
         public array $effects = [],
         public ?string $file = null,
         public string $notes = '',
+        public array $testFiles = [],
     ) {}
 
     /**
@@ -95,7 +97,7 @@ final readonly class Capability
             throw InvalidContextFile::at($file, implode(' ', $validator->errors()->all()));
         }
 
-        /** @var array{capability: string, summary?: string|null, paths?: array<int, string>, behaviors?: array<int, array{key: string, name: string}>, effects?: array<int, array{to: string, strength: string, reason: string, source: string, observed?: string|null}>} $valid */
+        /** @var array{capability: string, summary?: string|null, paths?: array<int, string>, behaviors?: array<int, array{key: string, name: string}>, effects?: array<int, array{to: string, strength: string, reason: string, source: string, observed?: string|null}>, test_files?: list<string>} $valid */
         $valid = $validator->validated();
 
         $name = preg_match('/^#\s+(.+)$/m', $notes, $heading) === 1
@@ -117,7 +119,7 @@ final readonly class Capability
     /**
      * Restore a capability from its stored outline (without its notes).
      *
-     * @param  array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed?: string|null}>}  $data
+     * @param  array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed?: string|null}>, test_files?: list<string>}  $data
      */
     public static function fromArray(array $data): self
     {
@@ -129,13 +131,14 @@ final readonly class Capability
             behaviors: $data['behaviors'],
             effects: array_map(fn (array $effect) => Effect::fromArray($effect), $data['effects']),
             file: $data['file'],
+            testFiles: $data['test_files'] ?? [],
         );
     }
 
     /**
      * Get the capability's outline for storage: everything except its notes.
      *
-     * @return array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed: string|null}>}
+     * @return array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed: string|null}>, test_files?: list<string>}
      */
     public function toArray(): array
     {
@@ -147,7 +150,20 @@ final readonly class Capability
             'paths' => $this->paths,
             'behaviors' => $this->behaviors,
             'effects' => array_map(fn (Effect $effect) => $effect->toArray(), $this->effects),
+            'test_files' => $this->testFiles,
         ];
+    }
+
+    /**
+     * Get a copy that knows which of the project's test files the area claims.
+     *
+     * @param  list<string>  $files  The project's files
+     */
+    public function withTestFilesFrom(array $files): self
+    {
+        $tests = array_values(array_filter($files, fn (string $path) => str_starts_with($path, 'tests/') && $this->claims($path)));
+
+        return new self($this->key, $this->name, $this->summary, $this->paths, $this->behaviors, $this->effects, $this->file, $this->notes, $tests);
     }
 
     /**
