@@ -21,6 +21,8 @@
     14. [Laravel-native active testing](direction/14-laravel-native-active-testing.md)
     15. [Visual properties on a Tailwind substrate](direction/15-visual-properties-and-tailwind.md)
     16. [A coherent V1](direction/16-v1-direction.md)
+    17. [Grandma first](direction/17-grandma-first.md)
+    18. [Differentiators from maintained product understanding](direction/18-differentiators-from-product-understanding.md)
 - **[source/](source/)**: the original planning documents.
     - [Implementation plan v1](source/implementation-plan-v1.md): gates G0–G6,
       the invitation contract and the pilot plan.

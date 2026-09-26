@@ -75,7 +75,7 @@ class LocalDriver implements WorkspaceDriver
     public function copyDirectory(string $workspaceId, string $sourcePath): void
     {
         $result = Process::run([
-            'sh', '-c', 'tar -C "$1" '.CopyExclusions::tarFlags().' -cf - . | tar -C "$2" -xf -',
+            'sh', '-c', 'tar -C "$1" '.CopyExclusions::tarFlags().' -cf - . | tar -C "$2" --no-same-owner -xf -',
             'sh', $sourcePath, $this->directory($workspaceId),
         ]);
 

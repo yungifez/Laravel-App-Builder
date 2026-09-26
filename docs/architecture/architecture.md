@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 16.** This document consolidates the direction in [direction/](direction/)
+**Version 17.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -30,7 +30,10 @@ factories. Version 15 makes visual editing concrete
 ([§26.12](#2612-visual-properties-on-a-tailwind-substrate-version-15)):
 human-readable properties, written as clean Tailwind with the app's own
 merge, no model call. **Version 16 sets the V1 plan ([§27](#27-v1-plan-version-16)), which wins
-over §21 and §26 for V1.** When they disagree, the direction documents state intent
+over §21 and §26 for V1.** Version 17 adds the Grandma-first rule and its
+translation layer ([§28](#28-grandma-first-the-translation-layer-version-17)): no
+internal noun in the default UI, and the differentiators that follow from
+maintained product understanding, ranked for after V1. When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -61,6 +64,7 @@ silently following either.
 - [Outcomes, measurement and falsification](#25-outcomes-measurement-and-falsification)
 - [V0: what we build now](#26-v0-what-we-build-now-version-10)
 - [V1 plan](#27-v1-plan-version-16)
+- [Grandma first: the translation layer](#28-grandma-first-the-translation-layer-version-17)
 
 ## 1. Principles
 
@@ -2374,3 +2378,129 @@ Two corrections to direction 16, from §26.12: 15px padding is `p-3.75` in
 Tailwind v4 (a theme-relative utility), not `p-[15px]`; and any fraction is a
 valid width (`w-73/100`), though `w-[73%]` reads more clearly and is fine as
 the arbitrary form.
+
+## 28. Grandma first: the translation layer (version 17)
+
+Directions 17 and 18 add one product rule and a filter for what comes next.
+This section is the engineering answer. For V1 it adds to §27; it does not
+replace any milestone.
+
+### 28.1 The rule
+
+**Grandma first. Power users can drill down. Never require Grandma to drill
+up.** The test for every surface: could someone who knows their business very
+well, and software hardly at all, make the correct decision here? If not, the
+surface leaks implementation and must be simplified, or the complexity moves
+into the engine.
+
+> No internal architectural noun is allowed into the default UI unless Grandma
+> needs it to make a business decision.
+
+The translation layer is part of the V1 architecture, not copywriting. Every
+internal record keeps one user-language projection, and the page shows that
+projection first. Technical detail stays one click away, under "Details" (or
+"Show the code" for power users), and is never needed to act.
+
+### 28.2 Vocabulary
+
+The default UI uses the right-hand column. Code, notes and logs keep the
+left-hand one.
+
+| Internal                                  | Default UI                                               |
+| ----------------------------------------- | -------------------------------------------------------- |
+| Feature request, run                      | Change                                                   |
+| Change Brief, plan                        | Here's what I'm changing                                 |
+| Acceptance criteria, verify items         | Done when                                                |
+| Preserve clauses                          | I'll keep these the same                                 |
+| Effects, "may also affect"                | This may also touch                                      |
+| Capability                                | The area's own name (Teams, Billing), or "part of the app" |
+| Behaviour                                 | What people can do                                       |
+| Actor                                     | Who can do it                                            |
+| Rules in the notes                        | Things that must always be true                          |
+| Project Context, `.builder/`              | What I know about your business                          |
+| Verification                              | Checks I ran                                             |
+| Behaviour diff, review by area            | What changed                                             |
+| Evidence: verified / untouched / not checked | Checked by a test / Not touched / Not checked yet     |
+| Unexpected change                         | Something I didn't expect to change                      |
+| Accept (commit)                           | Keep this change                                         |
+| Revert                                    | Undo this change                                         |
+| Commit history                            | What changed, in the owner's words (the change summaries) |
+| Preview                                   | Try it                                                   |
+| Quick health check                        | Quick check: look for obvious problems                   |
+| Deploy (push to the Cloud branch)         | Publish                                                  |
+| Tailwind classes                          | Direction, wrap, alignment, space, columns per device    |
+
+Assumptions stay visible, as "Decisions I made for you": they are the product
+decisions the owner is most likely to want to correct.
+
+### 28.3 Depth
+
+Every surface renders the same records at four depths (§3 already has five
+levels; this is the same ladder, named by the question each answers):
+
+1. **What** does this do? (default)
+2. **Why and when**: who can do it, what else it may touch.
+3. **How**: the files, tests, rules and packages involved.
+4. **Source**.
+
+A lower level is never required to operate a higher one.
+
+### 28.4 What directions 17 and 18 change in V1
+
+Only what the V1 loop already produces the data for:
+
+- **Pages follow §28.2.** The change page leads with "Here's what I'm
+  changing", "I'll keep these the same", "This may also touch", "Done when"
+  and "Checks I ran"; the run log, token counts, file lists and model names
+  move under Details.
+- **"What changed" is product history.** The project page lists kept changes by
+  their summaries; commit hashes are details. (Direction 18, §9.)
+- **"Things that must always be true"** is the Understanding page's name for
+  the rules in the notes. They already feed the preserve clauses, the review
+  and verification. (Direction 18, §7.)
+- **Honest confidence.** The preserved lines say "Checked by a test", "Not
+  touched" or "Not checked yet". No percentages. (Direction 18, §10.)
+- **The inspector speaks in visual concepts** (§26.12 already did); Tailwind
+  shows only when the power user asks.
+- **Selection answers "What this does"** from the area's notes, and shows the
+  area's rules as the first answer to "Why is this here?". A fuller "why"
+  needs decision history. (Direction 18, §1.)
+- **The Understanding page is "Your business"**: what this app is for, who
+  uses it, how things work, important rules, connected services, things to add
+  later. It is not an ontology editor.
+- **The quick check and publish** use the labels in §28.2.
+
+### 28.5 Differentiators after V1
+
+Direction 18 ranks five: why is this here; things that must always be true;
+what happens if I change this; explain my app and what changed while I was
+away; goal-aware simplification. The V1 loop already stores the raw material
+for each (notes with rules and Effects, change summaries, assumptions, evidence
+labels). Later stages, in order:
+
+1. **Decision history.** Store a kept change's assumptions and the owner's
+   answers as decisions in `.builder/` (value, why, "Change this rule"), so
+   "why is this here" can cite them.
+2. **Impact preview before important changes.** Show "This may also touch"
+   before the agent runs when the brief flags permissions, stored data or
+   destructive changes. Question frequency follows consequence and
+   reversibility.
+3. **Invariants as tests.** Turn "Things that must always be true" into
+   protected tests, reused by verification and audits.
+4. **Explain my app** as a numbered list from the notes, where "Number 4 is
+   wrong" starts a reconciliation (notes stale, understanding wrong, or code
+   drifted).
+5. **Main goal** in the project notes, and suggestions judged against it.
+
+Progressive autonomy, safe experiments (a preview of an unkept change is
+already one), "Simplify this", the complexity budget and product-level undo
+stay later. A feature that improves none of complexity cutting, observability
+or evolution does not belong in the core product.
+
+### 28.6 Open
+
+- Whether the owner approves the brief ("Make the change") before the agent
+  runs on every change, or only on consequential ones. V1 runs straight
+  through and asks at "Keep this change"; §28.5 (2) is the proposal.
+- Whether to enforce §28.2 mechanically (a check that fails when a default-UI
+  page uses an internal noun). V1 relies on review.

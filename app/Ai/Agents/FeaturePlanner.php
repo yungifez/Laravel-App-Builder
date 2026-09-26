@@ -35,7 +35,7 @@ class FeaturePlanner implements Agent, HasStructuredOutput
         - tasks: concrete, ordered instructions for a developer who will make the change with file tools. Name the files and Laravel features to use (migrations, models, policies, form requests, actions, notifications, Inertia pages, tests).
         - preserve: what must stay as it is, each with the key of the area it belongs to (or null). Take them from the rules and behaviours in the project notes for the areas the change is about and the areas they may also affect, for example "Owners can still refund any amount". List only what a careless change could plausibly break.
         - capabilities: the keys of the areas of the application (listed under "Areas of the application") that this change is about. Leave it empty when there is no list or none fits. The developer receives those areas' notes.
-        - steps: the parts of the change the owner may want to adjust later, such as a permission check, a validation rule, an email or a button. Each has a short kebab-case key, a kind (permission, validation, notification, interface, data or behaviour), a plain label, the file and symbol that implement it, and a one-sentence detail.
+        - steps: the parts of the change the owner may want to adjust later, such as a permission check, a validation rule, an email or a button. Each has a short kebab-case key, a kind (permission, validation, notification, interface, data or behaviour), a plain label, the file and symbol that implement it, and a one-sentence detail. Every change has at least one step.
 
         Follow the project's own conventions (for example AGENTS.md) and Laravel's defaults. Do not plan changes to tests/Acceptance: those tests belong to the platform.
         INSTRUCTIONS;
@@ -65,7 +65,7 @@ class FeaturePlanner implements Agent, HasStructuredOutput
                 'file' => $schema->string()->required(),
                 'symbol' => $schema->string()->required(),
                 'detail' => $schema->string()->required(),
-            ])->withoutAdditionalProperties())->required(),
+            ])->withoutAdditionalProperties())->min(1)->required(),
         ];
     }
 }

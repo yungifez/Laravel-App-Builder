@@ -63,7 +63,7 @@ class ProjectRepository
             File::ensureDirectoryExists($path);
 
             $copy = Process::run([
-                'sh', '-c', 'tar -C "$1" '.CopyExclusions::tarFlags().' -cf - . | tar -C "$2" -xf -',
+                'sh', '-c', 'tar -C "$1" '.CopyExclusions::tarFlags().' -cf - . | tar -C "$2" --no-same-owner -xf -',
                 'sh', $project->source_path, $path,
             ]);
 
@@ -117,9 +117,14 @@ class ProjectRepository
         File::ensureDirectoryExists($directory);
 
         try {
-            $export = Process::path($this->path($project))->run([
-                'sh', '-c', 'git archive --format=tar "$1" | tar -C "$2" -xf -', 'sh', $revision, $directory,
-            ]);
+            $archive = $directory.'.tar';
+            $export = $this->git($project, ['archive', '--format=tar', '--output='.$archive, $revision], throw: false);
+
+            if ($export->successful()) {
+                $export = Process::run(['tar', '-C', $directory, '--no-same-owner', '-xf', $archive]);
+            }
+
+            File::delete($archive);
 
             if ($export->failed()) {
                 throw new RuntimeException(__('Revision :revision could not be checked out: :error', ['revision' => $revision, 'error' => trim($export->errorOutput())]));
@@ -209,7 +214,9 @@ class ProjectRepository
     }
 
     /**
-     * Run a Git command in the project's repository.
+     * Run a Git command in the project's repository. The repository belongs
+     * to the control plane, so it is trusted even when another system user
+     * (a queue worker, for example) created it; hooks never run.
      *
      * @param  list<string>  $arguments
      *
@@ -226,7 +233,7 @@ class ProjectRepository
                 'GIT_COMMITTER_NAME' => $committer['name'],
                 'GIT_COMMITTER_EMAIL' => $committer['email'],
             ])
-            ->run(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...$arguments]);
+            ->run(['git', '-c', 'safe.directory='.$this->path($project), '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...$arguments]);
 
         if ($throw && $result->failed()) {
             throw new RuntimeException(sprintf('git %s failed: %s', $arguments[0], trim($result->errorOutput())));
