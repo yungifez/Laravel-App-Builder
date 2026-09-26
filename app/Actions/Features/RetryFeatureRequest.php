@@ -43,6 +43,15 @@ class RetryFeatureRequest
             throw ValidationException::withMessages(['retry' => __('This change did not stop, so there is nothing to try again.')]);
         }
 
+        return $this->rebuild($featureRequest, $requester);
+    }
+
+    /**
+     * Ask for the same change again on the app as it is now, whatever state
+     * the request is in.
+     */
+    public function rebuild(FeatureRequest $featureRequest, User $requester): FeatureRequest
+    {
         $parent = $featureRequest->parent;
 
         $retry = $parent !== null && $featureRequest->target_step !== null

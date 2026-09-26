@@ -383,6 +383,34 @@ class AgentDriverTest extends TestCase
         $this->assertSame('tested', $run->review['verified'][0]['evidence']);
     }
 
+    public function test_a_named_test_that_did_not_run_is_not_evidence_and_sends_the_change_back()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        FeatureCoder::fake([
+            new ToolCall('call-1', 'write_file', ['path' => 'app/Models/Team.php', 'contents' => self::TEAM_WITH_DESCRIPTION, 'expected_sha256' => hash('sha256', self::TEAM), 'expected_revision' => 0]),
+            new ToolCall('call-2', 'write_file', ['path' => 'tests/Feature/TeamDescriptionTest.php', 'contents' => self::DESCRIPTION_TEST, 'expected_sha256' => null, 'expected_revision' => 1]),
+            'Done.',
+            'Nothing to change; the test is there.',
+        ]);
+        ChangeReviewer::fake([
+            ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams keep their colour']]],
+            ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]],
+        ]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run);
+
+        $run->refresh();
+        $this->assertSame(1, $run->repairs);
+        $this->assertSame('not_run_by_checks', $run->review['verified'][0]['evidence']);
+        $this->assertFalse($run->review['approved']);
+        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'The test "teams keep their colour" for "Teams have a nullable description." did not run in the test suite'));
+
+        $this->passVerification($run);
+
+        $this->assertSame('tested', $run->refresh()->review['verified'][0]['evidence']);
+    }
+
     public function test_a_test_the_checks_do_not_run_is_sent_back_before_verification_and_review()
     {
         FeaturePlanner::fake([$this->plan()]);
@@ -493,7 +521,7 @@ class AgentDriverTest extends TestCase
             && str_contains($prompt->prompt, '(capabilities/billing.md)')
             && ! str_contains($prompt->prompt, 'Only owners see invoices.'));
 
-        $this->passVerification($run);
+        $this->passVerification($run, [['file' => 'tests/Feature/TeamTest.php', 'name' => 'teams have a nullable description', 'outcome' => 'passed']]);
 
         $run->refresh();
         $this->assertSame(RunStatus::Completed, $run->status);
@@ -587,12 +615,16 @@ class AgentDriverTest extends TestCase
 
     /**
      * Record a passing verification for the run's change and carry it back.
+     * By default the suite's report shows the change's own test passing.
+     *
+     * @param  list<array{file: string, name: string, outcome: string}>|null  $tests
      */
-    protected function passVerification(Run $run): void
+    protected function passVerification(Run $run, ?array $tests = null): void
     {
+        $tests ??= [['file' => '/workspace/tests/Feature/TeamDescriptionTest.php', 'name' => 'teams have a nullable description', 'outcome' => 'passed']];
         $verification = $run->verifications()->latest('id')->firstOrFail();
         $verification->update(['status' => VerificationStatus::Passed, 'results' => [
-            ['name' => 'Tests', 'stage' => 'checks', 'outcome' => 'passed', 'exit_code' => 0, 'timed_out' => false, 'duration_ms' => 10, 'output' => 'OK'],
+            ['name' => 'Tests', 'stage' => 'checks', 'outcome' => 'passed', 'exit_code' => 0, 'timed_out' => false, 'duration_ms' => 10, 'output' => 'OK', 'tests' => $tests],
         ], 'finished_at' => now()]);
 
         app(CompleteRunVerification::class)->handle($verification);

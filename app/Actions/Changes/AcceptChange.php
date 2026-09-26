@@ -2,6 +2,7 @@
 
 namespace App\Actions\Changes;
 
+use App\Actions\Features\RetryFeatureRequest;
 use App\Context\ProjectNotes;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
@@ -14,13 +15,21 @@ use Illuminate\Validation\ValidationException;
 
 class AcceptChange
 {
-    public function __construct(private ProjectRepository $repository, private ProjectNotes $notes) {}
+    public function __construct(
+        private ProjectRepository $repository,
+        private ProjectNotes $notes,
+        private RetryFeatureRequest $retryFeatureRequest,
+    ) {}
 
     /**
      * Commit a built, verified and reviewed change to the project's
      * repository. A follow-up is committed together with the changes it
      * builds on that are not accepted yet, as one commit. What the changes
      * did to the notes is saved to our database, never to the repository.
+     *
+     * Only the state that was checked is committed. When the app changed
+     * after the change was checked, the same request is built and checked
+     * again on the app as it is now, and that new request is returned.
      *
      * @throws ValidationException when the change cannot be accepted.
      */
@@ -50,6 +59,17 @@ class AcceptChange
         $accepted = array_values(array_filter($lineage, fn (FeatureRequest $request) => $request->commit_sha !== null));
         $base = $accepted !== [] ? (string) end($accepted)->commit_sha : ($featureRequest->base_revision ?? $this->repository->root($project));
 
+        if ($this->repository->head($project, $branch) !== $base) {
+            // Built on its own from the app as it is now; a change that
+            // builds on others waiting to be kept would only rebuild on
+            // their old state again.
+            if (count($pending) === 1) {
+                return $this->retryFeatureRequest->rebuild($featureRequest, $owner);
+            }
+
+            throw ValidationException::withMessages(['change' => __('The app changed after this change was checked. Ask for it again to build it on the current app.')]);
+        }
+
         try {
             $sha = $this->repository->commitPatches(
                 $project,
@@ -60,7 +80,7 @@ class AcceptChange
                 $branch,
             );
         } catch (RepositoryConflict $exception) {
-            throw ValidationException::withMessages(['change' => $exception->getMessage().' '.__('Ask for it again to build it on the current project.')]);
+            throw ValidationException::withMessages(['change' => $exception->getMessage().' '.__('Ask for it again to build it on the current app.')]);
         }
 
         DB::transaction(function () use ($project, $branch, $pending, $sha, $run, $featureRequest) {

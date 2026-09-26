@@ -118,6 +118,7 @@ class ProjectController extends Controller
                 'connected' => $project->publishable(),
                 'target' => $project->publishTarget(),
                 'branch' => $project->deploy_branch,
+                'address' => $project->live_url,
                 // The main app's newest version: only it is ever published,
                 // so the owner can see whether what they kept is online.
                 'head' => $repository->exists($project) ? ($repository->head($project, Experiment::mainBranch()) ?: null) : null,
@@ -128,6 +129,9 @@ class ProjectController extends Controller
                         'commit' => $deployment->commit_sha,
                         'checks' => $deployment->checks ?? [],
                         'error' => $deployment->error,
+                        'health' => $deployment->health ?? [],
+                        'pushed_at' => $deployment->pushed_at?->toIso8601String(),
+                        'confirmed_at' => $deployment->confirmed_at?->toIso8601String(),
                         'created_at' => $deployment->created_at?->toIso8601String(),
                         'finished_at' => $deployment->finished_at?->toIso8601String(),
                     ]),

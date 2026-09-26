@@ -5,7 +5,9 @@ namespace App\Workspaces\Drivers;
 use App\Workspaces\CommandResult;
 use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\WorkspaceSpec;
+use Closure;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -16,6 +18,8 @@ use RuntimeException;
  */
 class DockerDriver implements WorkspaceDriver
 {
+    use WaitsWhileRunning;
+
     /**
      * Exit code returned by coreutils `timeout` when the command ran out of time.
      */
@@ -59,19 +63,29 @@ class DockerDriver implements WorkspaceDriver
      * Run a command in the container under coreutils `timeout`, so the process
      * inside the container is killed too, not just the local docker client.
      */
-    public function exec(string $workspaceId, array $command, int $timeoutSeconds, array $environment = []): CommandResult
+    public function exec(string $workspaceId, array $command, int $timeoutSeconds, array $environment = [], ?Closure $whileRunning = null): CommandResult
     {
         $startedAt = hrtime(true);
 
         // "-e NAME" without a value makes docker read the value from its own
         // environment, so secrets never appear on a command line.
         $variables = array_merge(...array_map(fn (string $name) => ['-e', $name], array_keys($environment)));
+        $pending = Process::timeout($timeoutSeconds + 30)->env($environment);
+        $timed = ['timeout', '--kill-after=5', "{$timeoutSeconds}s", ...$command];
 
-        $result = Process::timeout($timeoutSeconds + 30)->env($environment)->run([
-            $this->binary, 'exec', ...$variables, $workspaceId,
-            'timeout', '--kill-after=5', "{$timeoutSeconds}s",
-            ...$command,
-        ]);
+        if ($whileRunning === null) {
+            $result = $pending->run([$this->binary, 'exec', ...$variables, $workspaceId, ...$timed]);
+        } else {
+            // Stopping the local docker client leaves the command running in
+            // the container, so the command records its process ID for stop().
+            $pidFile = '/tmp/exec-'.Str::random(16).'.pid';
+            $process = $pending->start([
+                $this->binary, 'exec', ...$variables, $workspaceId,
+                'sh', '-c', 'echo $$ > "$0"; exec "$@"', $pidFile, ...$timed,
+            ]);
+
+            $result = $this->waitWhileRunning($process, $whileRunning, fn () => $this->stop($workspaceId, $pidFile));
+        }
 
         $exitCode = $result->exitCode() ?? 1;
 
@@ -82,6 +96,18 @@ class DockerDriver implements WorkspaceDriver
             durationMs: intdiv(hrtime(true) - $startedAt, 1_000_000),
             timedOut: $exitCode === self::TIMEOUT_EXIT_CODE,
         );
+    }
+
+    /**
+     * Stop a command started by exec(). Its `timeout` leads its own process
+     * group and passes the signal to the whole group.
+     */
+    protected function stop(string $workspaceId, string $pidFile): void
+    {
+        Process::timeout(30)->run([
+            $this->binary, 'exec', $workspaceId,
+            'sh', '-c', 'kill -TERM "$(cat "$0")"', $pidFile,
+        ]);
     }
 
     /**

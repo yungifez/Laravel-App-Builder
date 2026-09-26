@@ -20,6 +20,7 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property string $source_path
  * @property string|null $deploy_remote The Git remote the hosting platform deploys from, credentials included
+ * @property string|null $live_url Where the hosting platform serves the app
  * @property string|null $deploy_branch
  * @property NotesDraftStatus|null $notes_draft_status
  * @property int|null $experiment_id The idea the owner is working in; null is the main app
@@ -29,7 +30,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'source_path', 'experiment_id', 'deploy_remote', 'deploy_branch', 'notes_draft_status', 'notes_draft', 'notes_draft_error', 'setup_model_calls'])]
+#[Fillable(['name', 'source_path', 'experiment_id', 'deploy_remote', 'deploy_branch', 'live_url', 'notes_draft_status', 'notes_draft', 'notes_draft_error', 'setup_model_calls'])]
 #[Hidden(['deploy_remote'])]
 class Project extends Model
 {

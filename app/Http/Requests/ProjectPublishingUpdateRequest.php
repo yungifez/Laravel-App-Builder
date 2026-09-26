@@ -30,6 +30,7 @@ class ProjectPublishingUpdateRequest extends FormRequest
         return [
             'deploy_remote' => ['required', 'string', 'max:2000'],
             'deploy_branch' => ['required', 'string', 'max:100', 'regex:/^(?!-)(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._\/-]+(?<![\/.])$/'],
+            'live_url' => ['nullable', 'url', 'max:2000'],
         ];
     }
 
@@ -44,6 +45,10 @@ class ProjectPublishingUpdateRequest extends FormRequest
             function (Validator $validator) {
                 if (! self::acceptableRemote((string) $this->input('deploy_remote'))) {
                     $validator->errors()->add('deploy_remote', __('Use the repository address from your Git host, starting with https:// or git@.'));
+                }
+
+                if ($this->filled('live_url') && ! self::acceptableAddress((string) $this->input('live_url'))) {
+                    $validator->errors()->add('live_url', __('Use your app\'s web address, starting with https://.'));
                 }
             },
         ];
@@ -65,5 +70,26 @@ class ProjectPublishingUpdateRequest extends FormRequest
         }
 
         return config('builder.publishing.allow_local_remotes') && str_starts_with($remote, '/') && ! str_contains($remote, '..');
+    }
+
+    /**
+     * Determine if the app's address may be checked after a publish. Only
+     * HTTPS addresses on a named host are accepted, so the checks cannot
+     * be pointed at the control plane's own network. Local addresses are
+     * for development.
+     */
+    public static function acceptableAddress(string $address): bool
+    {
+        $host = (string) parse_url($address, PHP_URL_HOST);
+
+        if (config('builder.publishing.allow_local_remotes') && preg_match('#^https?://#', $address) === 1) {
+            return $host !== '';
+        }
+
+        return str_starts_with($address, 'https://')
+            && str_contains($host, '.')
+            && filter_var($host, FILTER_VALIDATE_IP) === false
+            && ! str_ends_with($host, '.localhost')
+            && ! str_ends_with($host, '.internal');
     }
 }

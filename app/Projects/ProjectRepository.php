@@ -215,13 +215,14 @@ class ProjectRepository
 
     /**
      * Apply the patches in order on top of the branch and commit them as one
-     * change. When the branch has moved on since "base", Git's three-way
-     * merge is used; if the patches no longer fit, nothing is committed.
+     * change, only while the branch is still at "base": the patches were
+     * checked against that state, and a merge onto newer commits would
+     * commit a combination nobody checked.
      *
      * @param  list<string>  $patches
      * @param  array{name: string, email: string}|null  $author
      *
-     * @throws RepositoryConflict when the patches do not apply.
+     * @throws RepositoryConflict when the branch has moved on or the patches do not apply.
      */
     public function commitPatches(Project $project, string $base, array $patches, string $message, ?array $author, ?string $branch = null): string
     {
@@ -229,17 +230,20 @@ class ProjectRepository
 
         return $this->locked($project, function () use ($project, $base, $patches, $message, $author, $branch) {
             $this->checkout($project, $branch);
-            $threeWay = $this->tip($project) !== $base;
+
+            if ($this->tip($project) !== $base) {
+                throw new RepositoryConflict(__('The app changed after this change was checked.'));
+            }
 
             foreach ($patches as $patch) {
                 $result = Process::path($this->path($project))->input($patch)->run([
-                    'git', 'apply', '--index', '--whitespace=nowarn', ...($threeWay ? ['--3way'] : []), '-',
+                    'git', 'apply', '--index', '--whitespace=nowarn', '-',
                 ]);
 
                 if ($result->failed() || $this->hasConflicts($project)) {
                     $this->discardChanges($project);
 
-                    throw new RepositoryConflict(__('The change no longer fits the project, which has changed since it was built.'));
+                    throw new RepositoryConflict(__('The change no longer fits the project.'));
                 }
             }
 

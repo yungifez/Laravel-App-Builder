@@ -295,11 +295,17 @@ class ConstructRun
             foreach ($verified as $item) {
                 $finding = match ($item['evidence']) {
                     'no_test' => __('No test in the change checks: :criterion', ['criterion' => $item['criterion']]),
-                    'not_run_by_checks' => __('The test for ":criterion" (:file) is not run by the test suite. Check it in a test under :paths.', [
-                        'criterion' => $item['criterion'],
-                        'file' => $item['test_file'],
-                        'paths' => implode(', ', (array) config('builder.verification.suite_paths')),
-                    ]),
+                    'not_run_by_checks' => Capability::runBySuite((string) $item['test_file'])
+                        ? __('The test ":name" for ":criterion" did not run in the test suite (:file). It is missing, skipped or named differently. Name a test that exists and runs.', [
+                            'name' => $item['test_name'] ?? '',
+                            'criterion' => $item['criterion'],
+                            'file' => $item['test_file'],
+                        ])
+                        : __('The test for ":criterion" (:file) is not run by the test suite. Check it in a test under :paths.', [
+                            'criterion' => $item['criterion'],
+                            'file' => $item['test_file'],
+                            'paths' => implode(', ', (array) config('builder.verification.suite_paths')),
+                        ]),
                     default => null,
                 };
 

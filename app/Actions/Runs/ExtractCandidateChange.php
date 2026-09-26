@@ -30,12 +30,18 @@ class ExtractCandidateChange
      * baseline, whatever the driver claims it did. The notes are not part
      * of it: they never go into the app's repository (see notes()).
      *
+     * The baseline is the commit recorded when the workspace was prepared,
+     * not the workspace's HEAD: an agent that commits its own work must not
+     * hide that work from the change.
+     *
      * @throws ConstructionFailed
      */
     public function handle(Workspace $workspace): string
     {
+        $baseline = $this->baseline($workspace);
+
         $this->run($workspace, ['git', 'add', '--all']);
-        $this->run($workspace, ['git', 'diff', '--cached', '--binary', '--no-color', '--no-ext-diff', '--output='.self::PATCH_PATH, '--', '.', ':(exclude)'.ProjectNotes::directory()]);
+        $this->run($workspace, ['git', 'diff', '--cached', '--binary', '--no-color', '--no-ext-diff', '--output='.self::PATCH_PATH, $baseline, '--', '.', ':(exclude)'.ProjectNotes::directory()]);
 
         return $this->workspaces->driver($workspace->driver)->readFile((string) $workspace->driver_id, self::PATCH_PATH);
     }
@@ -51,14 +57,15 @@ class ExtractCandidateChange
     public function notes(Workspace $workspace): array
     {
         $directory = ProjectNotes::directory();
+        $baseline = $this->baseline($workspace);
         $this->run($workspace, ['git', 'add', '--all']);
-        $changed = $this->run($workspace, ['git', 'diff', '--cached', '--name-only', '--no-renames', '-z', '--', $directory]);
+        $changed = $this->run($workspace, ['git', 'diff', '--cached', '--name-only', '--no-renames', '-z', $baseline, '--', $directory]);
         $driver = $this->workspaces->driver($workspace->driver);
         $changes = [];
 
         foreach (array_filter(explode("\0", $changed)) as $path) {
             // Command output is cut short, so the old copy goes through a file.
-            $before = $this->runWorkspaceCommand->handle($workspace, ['sh', '-c', 'git show "HEAD:$1" > "$2"', 'sh', $path, self::BEFORE_PATH], 60);
+            $before = $this->runWorkspaceCommand->handle($workspace, ['sh', '-c', 'git show "$1:$2" > "$3"', 'sh', $baseline, $path, self::BEFORE_PATH], 60);
             $after = rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), null, report: false);
 
             $changes[substr($path, strlen($directory) + 1)] = [
@@ -68,6 +75,16 @@ class ExtractCandidateChange
         }
 
         return $changes;
+    }
+
+    /**
+     * Get the commit the change is measured against.
+     *
+     * @throws ConstructionFailed
+     */
+    public function baseline(Workspace $workspace): string
+    {
+        return $workspace->baseline_commit ?? throw new ConstructionFailed(__('The change could not be read from the workspace. Its starting point is unknown.'));
     }
 
     /**

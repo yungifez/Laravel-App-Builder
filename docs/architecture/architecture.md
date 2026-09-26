@@ -1167,7 +1167,11 @@ the app ends at planning: the planner's `answer` is shown, the run moves from
 planning to completed and the request is "answered", with no workspace change,
 verification or review. Fencing moves from individual
 tool calls to runtime tasks when agents run in the runtime; the per-tool-call
-journal remains for the scripted engine and tests.
+journal remains for the scripted engine and tests. A lease is renewed while a
+coding agent works, not only at tool calls. When a renewal finds the lease lost
+or the run cancelled, the agent and its whole process group are stopped at
+once: fencing refuses a stale worker's writes to our records, but only
+stopping the process keeps it out of a workspace another worker took over.
 
 ## 12. Verification
 
@@ -1200,13 +1204,13 @@ a behaviour diff showing that no behaviour changed.
 **Scope by risk, never by diff size.** "Small" is a property of meaning: a
 three-line authorization change is riskier than a 200-line isolated component.
 
-| Change                                                                                                                  | Verification                                                                           |
-| ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| While the agent works                                                                                                   | Tests selected by test impact analysis, and cheap static checks: fast feedback.        |
-| Local and low-risk (only classes or only notes; no rule, schema, permission, billing or cross-area Effect)              | May commit on targeted checks.                                                         |
-| Any other kept change                                                                                                   | Targeted checks plus the full suite, before "Keep this change".                        |
-| Authentication, authorization, tenancy, billing, migrations, middleware, configuration, dependencies, or unknown impact | The full suite, whatever the size.                                                     |
-| Publishing (the integration boundary)                                                                                   | **The full checks on the exact commit, always**, however many small commits led to it. |
+| Change                                                                                                                  | Verification                                                                                                                                                                               |
+| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| While the agent works                                                                                                   | Tests selected by test impact analysis, and cheap static checks: fast feedback.                                                                                                            |
+| Local and low-risk (only classes or only notes; no rule, schema, permission, billing or cross-area Effect)              | May commit on targeted checks.                                                                                                                                                             |
+| Any other kept change                                                                                                   | Targeted checks plus the full suite, before "Keep this change".                                                                                                                            |
+| Authentication, authorization, tenancy, billing, migrations, middleware, configuration, dependencies, or unknown impact | The full suite, whatever the size.                                                                                                                                                         |
+| Publishing (the integration boundary)                                                                                   | **The full checks on the exact commit, always**, however many small commits led to it. Then smoke checks at the app's address: a push is "sent", and only an app that answers is "online". |
 
 Lack of evidence broadens verification: strong observed impact allows narrow
 checks, partial evidence widens them, and unknown impact runs everything. Test
@@ -1215,6 +1219,18 @@ impact analysis is the fast path, never the trust boundary.
 **A checkpoint is not an accepted change.** Agents commit freely inside their
 disposable workspace; only an accepted change reaches the project, after its
 verification. The Change Record, not the commit, is the unit of acceptance.
+The change is always the diff against the baseline commit recorded when the
+workspace was prepared, and that commit ID lives in our database, outside
+anything the agent can rewrite. Acceptance commits only the state that was
+checked: when the app moved on after the check, the change is built and
+checked again on the current app, never merged unchecked onto newer commits.
+
+**Evidence is what ran, not what anyone says ran.** The suite check writes a
+JUnit report. A verify item counts as tested only when the test named for it
+is in a file the change touches and the report shows it ran and passed. A
+named test that is missing, skipped or misnamed is a blocking finding. A
+suite without a report leaves the reviewer's claim as a claim, shown to the
+owner as not confirmed.
 
 Depend on the idea of observed test dependencies, not on Pest's cache format:
 use affected-test output or a supported extension point.

@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Runs;
 
+use App\Actions\Runs\AcquireRunLease;
+use App\Actions\Runs\CancelRun;
 use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Runs\StartRun;
 use App\Ai\Agents\ChangeReviewer;
@@ -22,6 +24,7 @@ use Closure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Laravel\Ai\Exceptions\InsufficientCreditsException;
 use Laravel\Ai\Prompts\AgentPrompt;
@@ -212,6 +215,90 @@ class SdkDriverTest extends TestCase
         $this->assertStringNotContainsString('tests/Acceptance', $patch);
     }
 
+    public function test_work_the_agent_commits_itself_is_still_part_of_the_change()
+    {
+        $this->agent('claude', 'anthropic', function (Workspace $workspace) {
+            $this->writes('claude', 'anthropic', 'app/First.php', "<?php // first\n")($workspace);
+            $this->commitIn($workspace, 'Checkpoint');
+            File::put($this->path($workspace, 'tests/Acceptance/Contract.php'), "<?php // weakened\n");
+            File::put($this->path($workspace, 'tests/Acceptance/Added.php'), "<?php\n");
+            $this->commitIn($workspace, 'Weaken the contract');
+
+            return $this->writes('claude', 'anthropic', 'app/Second.php', "<?php // second\n")($workspace);
+        });
+
+        $run = app(StartRun::class)->handle($featureRequest = $this->request())->refresh();
+
+        $patch = (string) $featureRequest->refresh()->patch;
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertStringContainsString('app/First.php', $patch);
+        $this->assertStringContainsString('app/Second.php', $patch);
+        $this->assertStringNotContainsString('tests/Acceptance', $patch);
+        $this->assertFileDoesNotExist($this->path($run->workspace, 'tests/Acceptance/Added.php'));
+        $this->assertSame(40, strlen((string) $run->workspace->baseline_commit));
+    }
+
+    public function test_the_lease_is_renewed_while_the_agent_works()
+    {
+        config(['builder.construction.heartbeat_seconds' => 0]);
+        $this->agent('claude', 'anthropic', function (Workspace $workspace, AgentTask $task, ?Closure $whileRunning) {
+            Run::query()->update(['lease_expires_at' => now()->addSeconds(5)]);
+
+            $whileRunning();
+
+            $this->assertTrue(Run::query()->sole()->lease_expires_at->isAfter(now()->addSeconds(200)));
+
+            return $this->writes('claude', 'anthropic', 'app/Done.php', "<?php\n")($workspace);
+        });
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+    }
+
+    public function test_a_worker_whose_run_is_taken_over_during_a_long_task_stops_its_agent()
+    {
+        config(['builder.construction.heartbeat_seconds' => 0]);
+        $this->agent('claude', 'anthropic', function (Workspace $workspace, AgentTask $task, ?Closure $whileRunning) {
+            // The task outlives the lease, and another worker takes the run.
+            $run = Run::query()->sole();
+            $run->update(['lease_expires_at' => now()->subSecond()]);
+            app(AcquireRunLease::class)->handle($run, 'other-worker');
+
+            $whileRunning();
+
+            File::put($this->path($workspace, 'app/Late.php'), "<?php\n");
+
+            return $this->outcome('claude', 'anthropic', AgentOutcomeStatus::Completed, summary: 'Done.');
+        });
+
+        $run = app(StartRun::class)->handle($featureRequest = $this->request())->refresh();
+
+        $this->assertSame('other-worker', $run->lease_owner);
+        $this->assertNotSame(RunStatus::Verifying, $run->status);
+        $this->assertFileDoesNotExist($this->path($run->workspace, 'app/Late.php'));
+        $this->assertNull($featureRequest->refresh()->patch);
+        $this->assertSame(0, $run->events()->where('type', 'model_call')->where('data->role', 'coder')->count());
+    }
+
+    public function test_cancelling_during_a_long_task_stops_the_agent()
+    {
+        config(['builder.construction.heartbeat_seconds' => 0]);
+        $this->agent('claude', 'anthropic', function (Workspace $workspace, AgentTask $task, ?Closure $whileRunning) {
+            app(CancelRun::class)->handle(Run::query()->sole());
+
+            $whileRunning();
+
+            File::put($this->path($workspace, 'app/Late.php'), "<?php\n");
+
+            return $this->outcome('claude', 'anthropic', AgentOutcomeStatus::Completed, summary: 'Done.');
+        });
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(RunStatus::Cancelled, $run->status);
+    }
+
     public function test_the_runner_agent_passes_the_task_and_credentials_and_reads_the_result_line()
     {
         config([
@@ -250,7 +337,7 @@ class SdkDriverTest extends TestCase
     /**
      * Register a scripted agent.
      *
-     * @param  Closure(Workspace, AgentTask): AgentOutcome  $behaviour
+     * @param  Closure(Workspace, AgentTask, (Closure(): void)|null): AgentOutcome  $behaviour
      */
     protected function agent(string $adapter, string $provider, Closure $behaviour): void
     {
@@ -271,6 +358,12 @@ class SdkDriverTest extends TestCase
 
             return $this->outcome($adapter, $provider, AgentOutcomeStatus::Completed, summary: 'Done.');
         };
+    }
+
+    protected function commitIn(Workspace $workspace, string $message): void
+    {
+        Process::path($this->path($workspace, ''))->run(['git', 'add', '--all'])->throw();
+        Process::path($this->path($workspace, ''))->run(['git', '-c', 'user.name=Agent', '-c', 'user.email=agent@example.com', '-c', 'commit.gpgsign=false', 'commit', '-qm', $message])->throw();
     }
 
     protected function outcome(string $adapter, string $provider, AgentOutcomeStatus $status, ?string $summary = null, ?string $errorKind = null, ?string $error = null): AgentOutcome

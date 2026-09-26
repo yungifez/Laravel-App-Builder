@@ -11,8 +11,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * One publish of a project: the full checks on one commit, then a push of
- * that commit to the branch the hosting platform deploys from.
+ * One publish of a project: the full checks on one commit, a push of that
+ * commit to the branch the hosting platform deploys from, then checks that
+ * the app answers at its address.
  *
  * @property int $id
  * @property int $project_id
@@ -22,11 +23,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property DeploymentStatus $status
  * @property list<array{name: string, passed: bool}>|null $checks
  * @property string|null $error
+ * @property CarbonImmutable|null $pushed_at
+ * @property CarbonImmutable|null $confirmed_at When the app answered its checks at its address
+ * @property list<array{path: string, status: int|null, passed: bool}>|null $health The latest checks of the app's address
  * @property CarbonImmutable|null $finished_at
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['user_id', 'commit_sha', 'branch', 'status', 'checks', 'error', 'finished_at'])]
+#[Fillable(['user_id', 'commit_sha', 'branch', 'status', 'checks', 'error', 'pushed_at', 'confirmed_at', 'health', 'finished_at'])]
 class Deployment extends Model
 {
     /** @use HasFactory<DeploymentFactory> */
@@ -42,6 +46,9 @@ class Deployment extends Model
         return [
             'status' => DeploymentStatus::class,
             'checks' => 'array',
+            'pushed_at' => 'datetime',
+            'confirmed_at' => 'datetime',
+            'health' => 'array',
             'finished_at' => 'datetime',
         ];
     }

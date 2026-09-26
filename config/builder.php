@@ -67,14 +67,27 @@ return [
     | Publishing pushes one commit to the branch the hosting platform (for
     | example Laravel Cloud) deploys from, after the verification setup and
     | checks pass on that exact commit. The push never forces: when the
-    | branch has commits the project does not, publishing stops. Local paths
-    | as remotes are for development and tests only.
+    | branch has commits the project does not, publishing stops. The app
+    | counts as online only once it answers at its address afterwards;
+    | without an address a publish is only "sent". Local paths as remotes,
+    | and local addresses, are for development and tests only.
     |
     */
 
     'publishing' => [
         'allow_local_remotes' => (bool) env('BUILDER_PUBLISH_ALLOW_LOCAL_REMOTES', false),
         'push_timeout' => (int) env('BUILDER_PUBLISH_PUSH_TIMEOUT', 300),
+
+        // After the push, the app's address is checked: first after
+        // "settle_seconds", then every "interval_seconds" until every path
+        // answers without an error, or "confirm_seconds" have passed.
+        'confirm' => [
+            'paths' => json_decode((string) env('BUILDER_PUBLISH_CHECK_PATHS', '["/up", "/"]'), true) ?: ['/'],
+            'settle_seconds' => (int) env('BUILDER_PUBLISH_SETTLE_SECONDS', 30),
+            'interval_seconds' => (int) env('BUILDER_PUBLISH_CHECK_INTERVAL', 15),
+            'confirm_seconds' => (int) env('BUILDER_PUBLISH_CONFIRM_SECONDS', 600),
+            'timeout' => 10,
+        ],
     ],
 
     /*
@@ -169,8 +182,9 @@ return [
     | below, through the same tools and records.
     |
     | One worker writes to a run at a time. Its lease lasts "lease_seconds"
-    | and is renewed by every tool call; a lease that expires can be taken
-    | over by another worker, and the old worker's writes are then refused.
+    | and is renewed by every tool call, and every "heartbeat_seconds" while
+    | a coding agent works. A lease that expires can be taken over by another
+    | worker; the old worker's writes are then refused and its agent stopped.
     |
     */
 
@@ -180,6 +194,8 @@ return [
         'workspace_driver' => env('BUILDER_CONSTRUCTION_WORKSPACE_DRIVER', 'local'),
 
         'lease_seconds' => (int) env('BUILDER_RUN_LEASE_SECONDS', 300),
+
+        'heartbeat_seconds' => (int) env('BUILDER_RUN_HEARTBEAT_SECONDS', 15),
 
         // When a run is out of budget it stops and asks the owner how to
         // continue; transport retries do not count against it.
@@ -375,7 +391,9 @@ return [
         ],
 
         // The check that runs the project's whole test suite. When it passes,
-        // an area with its own tests counts as verified in the review.
+        // an area with its own tests counts as verified in the review. Its
+        // "report" is the JUnit file it writes: a verify item counts as
+        // tested only when the test named for it is in that report, passed.
         'suite_check' => 'Tests',
 
         // Where the tests that the suite check runs live. A test file
@@ -389,7 +407,7 @@ return [
         'require_verify_tests' => (bool) env('BUILDER_REQUIRE_VERIFY_TESTS', true),
 
         'checks' => [
-            ['name' => 'Tests', 'command' => ['php', 'artisan', 'test'], 'timeout' => 600],
+            ['name' => 'Tests', 'command' => ['php', 'artisan', 'test', '--log-junit=storage/logs/junit.xml'], 'timeout' => 600, 'report' => 'storage/logs/junit.xml'],
             ['name' => 'Static analysis', 'command' => ['vendor/bin/phpstan', 'analyse', '--no-progress'], 'timeout' => 600],
             ['name' => 'PHP formatting', 'command' => ['vendor/bin/pint', '--test'], 'timeout' => 300],
             ['name' => 'Frontend format and lint', 'command' => ['npx', 'vp', 'check'], 'timeout' => 300],

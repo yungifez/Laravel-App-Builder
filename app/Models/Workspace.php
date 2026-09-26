@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
  * @property int $user_id
  * @property string $driver
  * @property string|null $driver_id
+ * @property string|null $baseline_commit The commit a run's change is measured against
  * @property WorkspaceStatus $status
  * @property string $image
  * @property float $cpus
@@ -29,7 +30,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['driver', 'driver_id', 'status', 'image', 'cpus', 'memory_mb', 'pids', 'last_activity_at', 'expires_at', 'destroyed_at'])]
+#[Fillable(['driver', 'driver_id', 'baseline_commit', 'status', 'image', 'cpus', 'memory_mb', 'pids', 'last_activity_at', 'expires_at', 'destroyed_at'])]
 class Workspace extends Model
 {
     /** @use HasFactory<WorkspaceFactory> */

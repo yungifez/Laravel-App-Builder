@@ -33,7 +33,14 @@ const live = computed(
 const active = computed(
     () =>
         latest.value !== null &&
-        ['checking', 'pushing'].includes(latest.value.status),
+        ['checking', 'pushing', 'confirming'].includes(latest.value.status),
+);
+
+// Sent with no address to check: sending it again changes nothing.
+const sentCurrent = computed(
+    () =>
+        latest.value?.status === 'sent' &&
+        latest.value.commit === props.publishing.head,
 );
 
 // The owner opens this to learn one thing: is what I kept online? No
@@ -62,12 +69,33 @@ const status = computed(() => {
                 title: 'Sending it to your hosting…',
                 detail: null,
             };
+        case latest.value?.status === 'confirming':
+            return {
+                icon: LoaderCircle,
+                tone: 'animate-spin text-muted-foreground',
+                title: 'Waiting for it to come online…',
+                detail: 'Your hosting is putting it online. I check that it answers.',
+            };
         case latest.value?.status === 'failed':
             return {
                 icon: CircleAlert,
                 tone: 'text-red-600',
                 title: "It didn't go online",
                 detail: latest.value?.error ?? null,
+            };
+        case latest.value?.status === 'needs_attention':
+            return {
+                icon: CircleAlert,
+                tone: 'text-amber-500',
+                title: 'Sent, but your app isn’t answering',
+                detail: latest.value?.error ?? null,
+            };
+        case latest.value?.status === 'sent':
+            return {
+                icon: CircleDot,
+                tone: 'text-muted-foreground',
+                title: 'Sent to your hosting',
+                detail: 'Add your app’s web address so I can check it’s online.',
             };
         case live.value === null:
             return {
@@ -125,7 +153,7 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
             </div>
 
             <Form
-                v-if="!active && !upToDate"
+                v-if="!active && !upToDate && !sentCurrent"
                 v-bind="DeploymentController.store.form(projectId)"
                 :options="{ preserveScroll: true }"
                 v-slot="{ errors, processing }"
@@ -136,7 +164,8 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                     data-test="publish-button"
                 >
                     {{
-                        latest?.status === 'failed'
+                        latest?.status === 'failed' ||
+                        latest?.status === 'needs_attention'
                             ? 'Try again'
                             : live
                               ? 'Put the newest version online'
@@ -168,6 +197,16 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                         >
                             {{ check.passed ? 'Passed' : 'Failed' }}:
                             {{ check.name }}
+                        </li>
+                    </ul>
+                    <ul v-if="latest?.health.length" class="space-y-0.5">
+                        <li
+                            v-for="check in latest.health"
+                            :key="check.path"
+                            :class="!check.passed && 'text-destructive'"
+                        >
+                            {{ check.passed ? 'Answered' : 'No answer' }}:
+                            <span class="font-mono">{{ check.path }}</span>
                         </li>
                     </ul>
                     <p v-if="latest" class="font-mono text-muted-foreground">
@@ -216,6 +255,18 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                     :default-value="publishing.branch ?? 'main'"
                 />
                 <InputError :message="errors.deploy_branch" />
+            </div>
+            <div class="grid gap-2">
+                <Label for="live_url">Your app’s web address (optional)</Label>
+                <Input
+                    id="live_url"
+                    name="live_url"
+                    type="url"
+                    autocomplete="off"
+                    placeholder="https://your-app.example.com"
+                    :default-value="publishing.address ?? ''"
+                />
+                <InputError :message="errors.live_url" />
             </div>
             <div class="flex gap-2">
                 <Button

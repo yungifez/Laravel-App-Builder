@@ -68,6 +68,7 @@ class PrepareRunWorkspace
             $this->run($workspace, ['git', 'init', '--quiet'], __('The workspace could not be prepared.'));
             $this->run($workspace, ['git', 'add', '--all'], __('The workspace could not be prepared.'));
             $this->run($workspace, ['git', ...$identity, 'commit', '--quiet', '--allow-empty', '--no-verify', '-m', 'Baseline'], __('The workspace could not be prepared.'));
+            $workspace->update(['baseline_commit' => trim($this->run($workspace, ['git', 'rev-parse', 'HEAD'], __('The workspace could not be prepared.')))]);
 
             /** @var list<array{name: string, command: list<string>, timeout: int}> $setup */
             $setup = config('builder.construction.setup', []);
@@ -100,18 +101,21 @@ class PrepareRunWorkspace
     }
 
     /**
-     * Run a preparation command and stop with the given reason if it fails.
+     * Run a preparation command and return its output, or stop with the
+     * given reason if it fails.
      *
      * @param  list<string>  $command
      *
      * @throws ConstructionFailed
      */
-    protected function run(Workspace $workspace, array $command, string $reason, int $timeoutSeconds = 120): void
+    protected function run(Workspace $workspace, array $command, string $reason, int $timeoutSeconds = 120): string
     {
         $result = $this->runWorkspaceCommand->handle($workspace, $command, $timeoutSeconds);
 
         if ($result->exit_code !== 0 || $result->timed_out) {
             throw new ConstructionFailed(trim($reason.' '.trim($result->error_output)));
         }
+
+        return $result->output;
     }
 }

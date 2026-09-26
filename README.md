@@ -119,9 +119,11 @@ Registering a project imports its source as the first commit, without
 records the commit it is based on, and runs, verifications and previews start
 from that commit. When a run completes, the owner can **accept** the change.
 It becomes one commit, authored by the owner. A follow-up is committed
-together with the unaccepted changes it builds on. When the project moved on
-in the meantime, Git's three-way merge applies the change; if it no longer
-fits, nothing is committed and the owner asks again. An accepted change can be
+together with the unaccepted changes it builds on. Only the state that was
+checked is committed. When the project moved on after the change was checked,
+it is never merged onto the newer commits. Instead, "Keep it" builds and
+checks the same request again on the current app. A follow-up that builds on
+other unkept changes is refused, and the owner asks again. An accepted change can be
 **undone** with a revert commit, unless later commits build on it. Git runs
 there with hooks and signing off; customer code never runs in the repository.
 
@@ -151,15 +153,21 @@ files the change touched, so formatting never costs a repair. The coder runs
 only the tests for what it changed; the full checks run afterwards.
 While implementing, the run works in its own workspace: the project is copied
 in, the changes it follows up on are applied, and the result is committed as
-a baseline. The construction driver then changes the project only through
-server-side tools (`read_file`, `list_files`, `search`, `write_file`,
+a baseline. The baseline's commit ID is stored with the workspace, outside
+the agent's reach. The construction driver then changes the project only
+through server-side tools (`read_file`, `list_files`, `search`, `write_file`,
 `apply_patch`, `run_command` by allowlisted name), and the change is read back
-from the workspace as a diff against the baseline.
+from the workspace as a diff against that stored baseline. Commits an agent
+makes itself stay part of the change, and cannot hide changes to protected
+paths.
 
 - **One writer.** A worker claims the run with a lease and a fencing token.
   An expired lease can be taken over; the new holder gets a higher token and
-  the old holder's writes are refused. A duplicate job finds the run claimed
-  and exits. `php artisan runs:reconcile` (scheduled every minute) resumes
+  the old holder's writes are refused. While a coding agent works, its lease
+  is renewed every `BUILDER_RUN_HEARTBEAT_SECONDS` (15). When the lease is
+  lost or the owner cancels, the agent and every process it started are
+  stopped at once, so it never edits a workspace another worker took over. A
+  duplicate job finds the run claimed and exits. `php artisan runs:reconcile` (scheduled every minute) resumes
   runs whose worker stopped and settles verifications whose result was lost.
 - **Operation journal.** Every tool call has an operation key and is recorded
   before it runs. Repeating a key replays the recorded result; reusing it for
@@ -175,10 +183,13 @@ from the workspace as a diff against the baseline.
 
 **Verify items.** The brief's "Done when" items are its verify items. The
 coder must add or update a test for each one. The reviewer names the test that
-checks each item, and the platform checks that the named file is part of the
-change and that the suite passed. The change page labels each item "checked
-by a test that passed", "not run" or "no test". A missing test is a blocking
-finding, so the coder is sent back to add it (`BUILDER_REQUIRE_VERIFY_TESTS`).
+checks each item. The platform holds that claim against what ran: the suite
+check writes a JUnit report (its `report` setting), and an item is "tested"
+only when the named test is in a file the change touches and the report shows
+it ran and passed. A named test that is missing, skipped or misnamed does not
+count, and neither does a suite without a report ("claimed"). A missing test,
+or one that did not run, is a blocking finding, so the coder is sent back to
+fix it (`BUILDER_REQUIRE_VERIFY_TESTS`).
 
 **Telemetry.** The project page shows cost per accepted change, the share of
 runs that passed verification on the first attempt, the share of changes that
@@ -253,6 +264,19 @@ The gateway relays plain HTTP only: previews serve built assets, not the Vite
 dev server, so there is no hot reload yet. The Docker workspace driver can run
 previews only on a network the control plane can reach
 (`WORKSPACE_DOCKER_NETWORK`, with `BUILDER_PREVIEW_LISTEN_HOST=0.0.0.0`).
+
+### Publishing
+
+**Put it online** runs the verification setup and every check on the exact
+commit, then pushes it to the branch the hosting platform deploys from. A push
+is not the app being online: the hosting platform can still fail to build or
+start it. When the owner gives the app's web address, the builder checks it
+after the push (`BUILDER_PUBLISH_CHECK_PATHS`, by default `/up` and `/`). The
+app is **Online** only when every path answers without an error. If it does
+not answer within `BUILDER_PUBLISH_CONFIRM_SECONDS` (600), the publish **needs
+attention**. Without an address, a publish is only **Sent**. Only public
+HTTPS addresses are accepted, unless `BUILDER_PUBLISH_ALLOW_LOCAL_REMOTES` is
+on for development.
 
 ### AI SDK
 

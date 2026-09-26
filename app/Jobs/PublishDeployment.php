@@ -38,7 +38,7 @@ class PublishDeployment implements ShouldQueue
     /**
      * Run the verification setup and every check on the exact commit being
      * published, in a fresh workspace, and push the commit only when all of
-     * them pass. Publishing is the integration boundary, so the full checks
+     * them pass. Then the app's address is checked (ConfirmDeployment). Publishing is the integration boundary, so the full checks
      * run however the commit was made (a kept change, a visual edit or a
      * notes edit).
      */
@@ -71,7 +71,18 @@ class PublishDeployment implements ShouldQueue
 
             $repository->push($project, $this->deployment->commit_sha, (string) $project->deploy_remote, $this->deployment->branch);
 
-            $this->finish(DeploymentStatus::Published);
+            // The hosting platform takes it from here; it is online only
+            // once its address answers.
+            if ($project->live_url === null) {
+                $this->deployment->update(['pushed_at' => now()]);
+                $this->finish(DeploymentStatus::Sent);
+
+                return;
+            }
+
+            $this->deployment->update(['status' => DeploymentStatus::Confirming, 'pushed_at' => now()]);
+
+            ConfirmDeployment::dispatch($this->deployment)->delay((int) config('builder.publishing.confirm.settle_seconds'));
         } catch (RepositoryConflict $exception) {
             $this->finish(DeploymentStatus::Failed, $exception->getMessage());
         } catch (Throwable $exception) {

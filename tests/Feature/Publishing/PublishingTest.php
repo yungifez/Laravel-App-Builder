@@ -13,6 +13,7 @@ use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -115,8 +116,10 @@ class PublishingTest extends TestCase
             ->post(route('deployments.store', $this->project))
             ->assertSessionHasNoErrors();
 
+        // Without the app's address nobody can say it is online: only sent.
         $deployment = Deployment::sole();
-        $this->assertSame(DeploymentStatus::Published, $deployment->status);
+        $this->assertSame(DeploymentStatus::Sent, $deployment->status);
+        $this->assertNotNull($deployment->pushed_at);
         $this->assertSame($head, $deployment->commit_sha);
         $this->assertSame([
             ['name' => 'Install PHP dependencies', 'passed' => true],
@@ -126,6 +129,68 @@ class PublishingTest extends TestCase
         $this->assertSame([['composer', 'install'], ['php', 'artisan', 'test'], ['vendor/bin/phpstan']], array_column($this->driver->executed, 'command'));
         $this->assertCount(1, $this->driver->destroyed);
         $this->assertSame($head, trim(Process::run(['git', '--git-dir', $this->remote, 'rev-parse', 'refs/heads/main'])->output()));
+    }
+
+    public function test_a_publish_counts_as_online_only_once_the_app_answers_at_its_address()
+    {
+        $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main', 'live_url' => 'https://shop.example.com']);
+        Http::fake([
+            // The hosting platform is still starting the app at first.
+            'shop.example.com/up' => Http::sequence()->push('', 503)->push('', 200),
+            'shop.example.com/' => Http::response('', 302),
+        ]);
+
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project))->assertSessionHasNoErrors();
+
+        $deployment = Deployment::sole();
+        $this->assertSame(DeploymentStatus::Published, $deployment->status);
+        $this->assertNotNull($deployment->confirmed_at);
+        $this->assertSame([
+            ['path' => '/up', 'status' => 200, 'passed' => true],
+            ['path' => '/', 'status' => 302, 'passed' => true],
+        ], $deployment->health);
+        Http::assertSentCount(4);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('project.published_at', $deployment->finished_at?->toIso8601String())
+                ->where('publishing.address', 'https://shop.example.com')
+                ->where('publishing.deployments.0.status', 'published'));
+    }
+
+    public function test_a_pushed_app_that_does_not_answer_needs_attention_and_is_not_called_online()
+    {
+        config(['builder.publishing.confirm.confirm_seconds' => 0]);
+        $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main', 'live_url' => 'https://shop.example.com']);
+        Http::fake(['shop.example.com/*' => Http::response('Server Error', 500)]);
+
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+
+        $deployment = Deployment::sole();
+        $this->assertSame(DeploymentStatus::NeedsAttention, $deployment->status);
+        $this->assertNotNull($deployment->pushed_at);
+        $this->assertNull($deployment->confirmed_at);
+        $this->assertSame('Your hosting has the new version, but the app is not answering properly at https://shop.example.com.', $deployment->error);
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('project.published_at', null));
+    }
+
+    public function test_the_app_address_must_be_a_public_https_address()
+    {
+        config(['builder.publishing.allow_local_remotes' => false]);
+
+        foreach (['http://shop.example.com', 'https://10.0.0.5', 'https://localhost', 'https://db.internal', 'not a url'] as $address) {
+            $this->actingAs($this->owner)
+                ->put(route('projects.publishing.update', $this->project), ['deploy_remote' => 'git@github.com:acme/shop.git', 'deploy_branch' => 'main', 'live_url' => $address])
+                ->assertSessionHasErrors('live_url');
+        }
+
+        $this->actingAs($this->owner)
+            ->put(route('projects.publishing.update', $this->project), ['deploy_remote' => 'git@github.com:acme/shop.git', 'deploy_branch' => 'main', 'live_url' => 'https://shop.example.com'])
+            ->assertSessionHasNoErrors();
+        $this->assertSame('https://shop.example.com', $this->project->refresh()->live_url);
     }
 
     public function test_a_failing_check_stops_the_publish_and_nothing_is_pushed()

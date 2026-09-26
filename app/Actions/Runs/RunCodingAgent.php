@@ -4,6 +4,7 @@ namespace App\Actions\Runs;
 
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\AgentOutcomeStatus;
+use App\Enums\RunStatus;
 use App\Models\Run;
 use App\Models\Workspace;
 use App\Runs\Agents\AgentOutcome;
@@ -12,7 +13,9 @@ use App\Runs\Agents\CodingAgentManager;
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\LeaseLost;
 use App\Runs\Exceptions\ProvidersUnavailable;
+use App\Runs\Exceptions\RunCancelled;
 use App\Runs\RunLease;
+use Closure;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -32,9 +35,14 @@ class RunCodingAgent
      * provider keeps failing is tried last for a while (a circuit breaker).
      * Every attempt is logged with what it cost.
      *
+     * While an agent works, its lease is renewed. When the lease is lost or
+     * the owner cancels, the agent is stopped at once, so it never edits a
+     * workspace another worker has taken over.
+     *
      * @throws ProvidersUnavailable when no provider could serve the task.
      * @throws ConstructionFailed
      * @throws LeaseLost
+     * @throws RunCancelled
      */
     public function handle(Run $run, RunLease $lease, Workspace $workspace, AgentTask $task): AgentOutcome
     {
@@ -51,7 +59,7 @@ class RunCodingAgent
                 ]);
             }
 
-            $outcome = $this->agents->driver($adapter)->run($workspace, $task);
+            $outcome = $this->agents->driver($adapter)->run($workspace, $task, $this->heartbeat($run, $lease));
 
             $this->recordEvent($run, $lease, 'model_call', [
                 'role' => 'coder',
@@ -73,6 +81,39 @@ class RunCodingAgent
         throw new ProvidersUnavailable(__('No AI provider could take the task right now (:reason). Try again later.', [
             'reason' => $previous->error ?? $previous->errorKind ?? 'unknown',
         ]));
+    }
+
+    /**
+     * Make the check an agent's command runs while it works: at most every
+     * "heartbeat_seconds", renew the lease, or stop when it is lost or the
+     * owner has cancelled.
+     *
+     * @return Closure(): void
+     */
+    protected function heartbeat(Run $run, RunLease $lease): Closure
+    {
+        $every = (int) config('builder.construction.heartbeat_seconds');
+        $last = hrtime(true);
+
+        return function () use ($run, $lease, $every, &$last) {
+            if (hrtime(true) - $last < $every * 1_000_000_000) {
+                return;
+            }
+
+            $last = hrtime(true);
+
+            DB::transaction(function () use ($run, $lease) {
+                $locked = Run::query()->lockForUpdate()->findOrFail($run->id);
+
+                $lease->assertHeldOn($locked);
+
+                if ($locked->status === RunStatus::Cancelling) {
+                    throw RunCancelled::forRun($locked->id);
+                }
+
+                $locked->extendLease();
+            });
+        };
     }
 
     /**

@@ -214,7 +214,12 @@ export type RunReview = {
         criterion: string;
         test_file: string | null;
         test_name: string | null;
-        evidence: 'tested' | 'not_run' | 'not_run_by_checks' | 'no_test';
+        evidence:
+            | 'tested'
+            | 'not_run'
+            | 'not_run_by_checks'
+            | 'claimed'
+            | 'no_test';
         named_in_diff: boolean;
     }[];
     changes: {
@@ -366,10 +371,20 @@ export type CheckFinding = {
 
 export type DeploymentSummary = {
     id: number;
-    status: 'checking' | 'pushing' | 'published' | 'failed';
+    status:
+        | 'checking'
+        | 'pushing'
+        | 'confirming'
+        | 'sent'
+        | 'published'
+        | 'needs_attention'
+        | 'failed';
     commit: string;
     checks: { name: string; passed: boolean }[];
     error: string | null;
+    health: { path: string; status: number | null; passed: boolean }[];
+    pushed_at: string | null;
+    confirmed_at: string | null;
     created_at: string | null;
     finished_at: string | null;
 };
@@ -378,6 +393,7 @@ export type ProjectPublishing = {
     connected: boolean;
     target: string | null;
     branch: string | null;
+    address: string | null;
     head: string | null;
     deployments: DeploymentSummary[];
 };

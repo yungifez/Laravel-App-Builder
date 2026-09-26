@@ -2,6 +2,7 @@
 
 namespace App\Runs\Drivers;
 
+use App\Actions\Runs\ExtractCandidateChange;
 use App\Actions\Runs\RecordModelUsage;
 use App\Actions\Runs\RunCodingAgent;
 use App\Actions\Workspaces\RunWorkspaceCommand;
@@ -41,6 +42,7 @@ class SdkDriver extends AgentDriver
         protected RunCodingAgent $runCodingAgent,
         protected CodingAgentManager $agents,
         protected RunWorkspaceCommand $runWorkspaceCommand,
+        protected ExtractCandidateChange $extractCandidateChange,
     ) {
         parent::__construct($acceptanceSelector, $recordModelUsage);
     }
@@ -134,8 +136,13 @@ class SdkDriver extends AgentDriver
         /** @var list<string> $protected */
         $protected = array_values(array_diff(config('builder.construction.protected_paths', []), ['.git']));
 
+        $baseline = $this->extractCandidateChange->baseline($workspace);
+
+        // Against the recorded baseline, so commits the agent made do not
+        // count as the original: remove what is there, put the baseline back.
         foreach ($protected as $path) {
-            $this->runWorkspaceCommand->handle($workspace, ['git', 'checkout', '-q', 'HEAD', '--', $path], 60);
+            $this->runWorkspaceCommand->handle($workspace, ['git', 'rm', '-rqf', '--ignore-unmatch', '--', $path], 60);
+            $this->runWorkspaceCommand->handle($workspace, ['git', 'checkout', '-q', $baseline, '--', $path], 60);
             $this->runWorkspaceCommand->handle($workspace, ['git', 'clean', '-fdq', '--', $path], 60);
         }
     }

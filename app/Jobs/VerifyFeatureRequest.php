@@ -8,6 +8,7 @@ use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\VerificationStatus;
 use App\Features\AcceptanceSuite;
+use App\Features\TestReport;
 use App\Models\FeatureRequest;
 use App\Models\Verification;
 use App\Models\Workspace;
@@ -52,7 +53,7 @@ class VerifyFeatureRequest implements ShouldQueue
     public const OUTCOME_NOT_APPLICABLE = 'not_applicable';
 
     /**
-     * @var list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string}>
+     * @var list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string, tests?: list<array{file: string, name: string, outcome: string}>}>
      */
     protected array $results = [];
 
@@ -106,7 +107,7 @@ class VerifyFeatureRequest implements ShouldQueue
 
             $runWorkspaceCommand->handle($workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], 30);
 
-            if (! $this->runSteps($runWorkspaceCommand, $workspace, 'setup')) {
+            if (! $this->runSteps($driver, $runWorkspaceCommand, $workspace, 'setup')) {
                 $this->skipRemaining(['checks'], $featureRequest);
                 $this->finish(VerificationStatus::Errored, __('A setup step failed, so the checks did not run.'));
 
@@ -115,7 +116,7 @@ class VerifyFeatureRequest implements ShouldQueue
 
             $workspaceFiles->sync($project, $workspace);
 
-            $checksPassed = $this->runSteps($runWorkspaceCommand, $workspace, 'checks', stopOnFailure: false);
+            $checksPassed = $this->runSteps($driver, $runWorkspaceCommand, $workspace, 'checks', stopOnFailure: false);
             $acceptance = $this->runAcceptance($driver, $runWorkspaceCommand, $workspace, $featureRequest);
 
             $this->finish(match (true) {
@@ -150,17 +151,26 @@ class VerifyFeatureRequest implements ShouldQueue
     }
 
     /**
-     * Run the configured setup commands or checks.
+     * Run the configured setup commands or checks. A step with a "report"
+     * writes a JUnit report there, and the tests it lists are recorded with
+     * the step's result: what actually ran, not what anyone says ran.
      */
-    protected function runSteps(RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, string $stage, bool $stopOnFailure = true): bool
+    protected function runSteps(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, string $stage, bool $stopOnFailure = true): bool
     {
         $allSucceeded = true;
         $steps = $this->configuredSteps($stage);
 
         foreach ($steps as $index => $step) {
-            $command = $runWorkspaceCommand->handle($workspace, $step['command'], $step['timeout']);
+            $report = $step['report'] ?? null;
 
-            if (! $this->record($step['name'], $stage, $command)) {
+            if ($report !== null) {
+                $runWorkspaceCommand->handle($workspace, ['rm', '-f', $report], 30);
+            }
+
+            $command = $runWorkspaceCommand->handle($workspace, $step['command'], $step['timeout']);
+            $tests = $report === null ? null : TestReport::fromJunit((string) rescue(fn () => $driver->readFile((string) $workspace->driver_id, $report), '', report: false));
+
+            if (! $this->record($step['name'], $stage, $command, $tests)) {
                 $allSucceeded = false;
 
                 if ($stopOnFailure) {
@@ -234,11 +244,11 @@ class VerifyFeatureRequest implements ShouldQueue
     /**
      * Get the configured setup commands or checks.
      *
-     * @return list<array{name: string, command: list<string>, timeout: int}>
+     * @return list<array{name: string, command: list<string>, timeout: int, report?: string}>
      */
     protected function configuredSteps(string $stage): array
     {
-        /** @var list<array{name: string, command: list<string>, timeout: int}> $steps */
+        /** @var list<array{name: string, command: list<string>, timeout: int, report?: string}> $steps */
         $steps = config("builder.verification.{$stage}", []);
 
         return $steps;
@@ -246,8 +256,10 @@ class VerifyFeatureRequest implements ShouldQueue
 
     /**
      * Add a command's outcome to the results and report whether it passed.
+     *
+     * @param  list<array{file: string, name: string, outcome: string}>|null  $tests  The tests the command ran, when it reports them
      */
-    protected function record(string $name, string $stage, WorkspaceCommand $command): bool
+    protected function record(string $name, string $stage, WorkspaceCommand $command, ?array $tests = null): bool
     {
         $outcome = $this->outcome($command);
 
@@ -259,6 +271,7 @@ class VerifyFeatureRequest implements ShouldQueue
             timedOut: $command->timed_out,
             durationMs: $command->duration_ms,
             output: $this->withoutTerminalCodes($command->output."\n".$command->error_output),
+            tests: $tests,
         );
 
         return $outcome === self::OUTCOME_PASSED;
@@ -278,8 +291,10 @@ class VerifyFeatureRequest implements ShouldQueue
 
     /**
      * Append a result and save progress so the owner sees it while the run continues.
+     *
+     * @param  list<array{file: string, name: string, outcome: string}>|null  $tests
      */
-    protected function addResult(string $name, string $stage, string $outcome, ?int $exitCode = null, bool $timedOut = false, int $durationMs = 0, string $output = ''): void
+    protected function addResult(string $name, string $stage, string $outcome, ?int $exitCode = null, bool $timedOut = false, int $durationMs = 0, string $output = '', ?array $tests = null): void
     {
         $output = trim($output);
 
@@ -291,6 +306,7 @@ class VerifyFeatureRequest implements ShouldQueue
             'timed_out' => $timedOut,
             'duration_ms' => $durationMs,
             'output' => mb_strlen($output) > self::OUTPUT_TAIL ? '…'.Str::substr($output, -self::OUTPUT_TAIL) : $output,
+            ...($tests === null ? [] : ['tests' => $tests]),
         ];
 
         $this->verification->update(['results' => $this->results]);

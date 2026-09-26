@@ -114,6 +114,53 @@ class VerificationTest extends TestCase
         $this->assertStringContainsString('Failures: 1', $acceptance['output']);
     }
 
+    public function test_the_tests_the_suite_ran_are_recorded_from_its_report()
+    {
+        config(['builder.verification.checks' => [
+            ['name' => 'Tests', 'command' => ['php', 'artisan', 'test', '--log-junit=storage/logs/junit.xml'], 'timeout' => 300, 'report' => 'storage/logs/junit.xml'],
+        ]]);
+        $this->driver->onExec = function (string $workspace, array $command) {
+            if ($command[0] === 'rm') {
+                unset($this->driver->files["{$workspace}:storage/logs/junit.xml"]);
+            }
+
+            if (($command[2] ?? null) === 'test') {
+                $this->driver->files["{$workspace}:storage/logs/junit.xml"] = '<testsuites><testcase name="test_teams_have_a_description" file="/workspace/tests/Feature/TeamTest.php"/><testcase name="test_later" file="/workspace/tests/Feature/TeamTest.php"><skipped/></testcase></testsuites>';
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        $featureRequest = FeatureRequest::factory()->generated()->create(['patch' => 'PATCH']);
+
+        app(RequestVerification::class)->handle($featureRequest);
+
+        $tests = collect($featureRequest->verifications()->sole()->results)->firstWhere('name', 'Tests');
+        $this->assertSame([
+            ['file' => '/workspace/tests/Feature/TeamTest.php', 'name' => 'test_teams_have_a_description', 'outcome' => 'passed'],
+            ['file' => '/workspace/tests/Feature/TeamTest.php', 'name' => 'test_later', 'outcome' => 'skipped'],
+        ], $tests['tests']);
+    }
+
+    public function test_a_suite_that_leaves_no_report_records_no_tests_run()
+    {
+        config(['builder.verification.checks' => [
+            ['name' => 'Tests', 'command' => ['php', 'artisan', 'test'], 'timeout' => 300, 'report' => 'storage/logs/junit.xml'],
+        ]]);
+        $featureRequest = FeatureRequest::factory()->generated()->create(['patch' => 'PATCH']);
+        $this->driver->files['fake-1:storage/logs/junit.xml'] = '<testsuites><testcase name="stale" file="tests/Feature/OldTest.php"/></testsuites>';
+        $this->driver->onExec = function (string $workspace, array $command) {
+            if ($command[0] === 'rm') {
+                unset($this->driver->files["{$workspace}:storage/logs/junit.xml"]);
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+
+        app(RequestVerification::class)->handle($featureRequest);
+
+        $this->assertSame([], collect($featureRequest->verifications()->sole()->results)->firstWhere('name', 'Tests')['tests']);
+    }
+
     public function test_a_change_without_protected_tests_is_unverified_not_passed()
     {
         $request = FeatureRequest::factory()->generated()->create(['acceptance' => null]);

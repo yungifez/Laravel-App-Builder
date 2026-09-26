@@ -5,7 +5,10 @@ namespace App\Runs\Agents;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Models\Workspace;
 use App\Runs\Contracts\CodingAgent;
+use App\Runs\Exceptions\LeaseLost;
 use App\Workspaces\WorkspaceManager;
+use Closure;
+use Throwable;
 
 /**
  * Runs an agent SDK through the Node runner (resources/agent-runner) inside
@@ -40,7 +43,7 @@ class RunnerAgent implements CodingAgent
         return $this->provider;
     }
 
-    public function run(Workspace $workspace, AgentTask $task): AgentOutcome
+    public function run(Workspace $workspace, AgentTask $task, ?Closure $whileRunning = null): AgentOutcome
     {
         $taskFile = self::TASK_DIRECTORY.'/task.json';
 
@@ -59,11 +62,28 @@ class RunnerAgent implements CodingAgent
                 [(string) config('builder.agents.runner.node'), (string) config('builder.agents.runner.path'), $taskFile],
                 $task->timeoutSeconds,
                 array_filter($this->credentials, fn (string $value) => $value !== ''),
+                $whileRunning,
             );
-        } finally {
-            rescue(fn () => $this->runWorkspaceCommand->handle($workspace, ['rm', '-rf', self::TASK_DIRECTORY], 30), report: false);
+        } catch (LeaseLost $exception) {
+            // The workspace may already belong to another worker, so its
+            // task files are left alone.
+            throw $exception;
+        } catch (Throwable $exception) {
+            $this->removeTaskFiles($workspace);
+
+            throw $exception;
         }
 
+        $this->removeTaskFiles($workspace);
+
         return AgentOutcome::fromRunnerOutput($this->adapter, $this->provider, $this->model, $result->output, $result->timed_out);
+    }
+
+    /**
+     * Remove the task files, so they never become part of the change.
+     */
+    protected function removeTaskFiles(Workspace $workspace): void
+    {
+        rescue(fn () => $this->runWorkspaceCommand->handle($workspace, ['rm', '-rf', self::TASK_DIRECTORY], 30), report: false);
     }
 }

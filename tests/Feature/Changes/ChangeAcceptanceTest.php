@@ -7,6 +7,7 @@ use App\Actions\Runs\AcquireRunLease;
 use App\Actions\Runs\PrepareRunWorkspace;
 use App\Context\ProjectNotes;
 use App\Enums\RunStatus;
+use App\Jobs\ExecuteRun;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
@@ -14,6 +15,7 @@ use App\Models\User;
 use App\Projects\ProjectRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\PreparesRuns;
 use Tests\TestCase;
@@ -24,6 +26,8 @@ class ChangeAcceptanceTest extends TestCase
     use RefreshDatabase;
 
     protected const ADD_COMMENT = "diff --git a/app/A.php b/app/A.php\n--- a/app/A.php\n+++ b/app/A.php\n@@ -1 +1,2 @@\n <?php\n+// added\n";
+
+    protected const ADD_TEAMS_COMMENT = "diff --git a/config/teams.php b/config/teams.php\n--- a/config/teams.php\n+++ b/config/teams.php\n@@ -1,3 +1,4 @@\n <?php\n \n+// teams\n return [\n";
 
     protected const ADD_SECOND_COMMENT = "diff --git a/app/A.php b/app/A.php\n--- a/app/A.php\n+++ b/app/A.php\n@@ -1,2 +1,3 @@\n <?php\n // added\n+// second\n";
 
@@ -116,31 +120,43 @@ class ChangeAcceptanceTest extends TestCase
         $this->assertSame("<?php\n// added\n// second\n", File::get($this->repository->path($this->project).'/app/A.php'));
     }
 
-    public function test_a_change_is_merged_onto_later_commits_when_it_still_fits()
+    public function test_a_change_checked_on_an_older_app_is_built_again_instead_of_merged()
     {
+        Queue::fake([ExecuteRun::class]);
         $first = $this->completedChange(self::ADD_COMMENT);
-        $second = $this->completedChange("diff --git a/config/teams.php b/config/teams.php\n--- a/config/teams.php\n+++ b/config/teams.php\n@@ -1,3 +1,4 @@\n <?php\n \n+// teams\n return [\n");
+        $second = $this->completedChange(self::ADD_TEAMS_COMMENT, ['prompt' => 'Note the teams config.']);
 
         $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $first))->assertSessionHasNoErrors();
-        $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $second))->assertSessionHasNoErrors();
+        $head = $this->repository->head($this->project);
 
-        $this->assertSame(3, count($this->repository->log($this->project)));
-        $this->assertStringContainsString('// teams', File::get($this->repository->path($this->project).'/config/teams.php'));
+        $response = $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $second))->assertSessionHasNoErrors();
+
+        // The two were never checked together, so the second is not merged.
+        $rebuild = $this->project->featureRequests()->latest('id')->firstOrFail();
+        $response->assertRedirect(route('projects.show', ['project' => $this->project->id, 'change' => $rebuild->id]));
+        $this->assertSame($second->id, $rebuild->retry_of_id);
+        $this->assertSame('Note the teams config.', $rebuild->prompt);
+        $this->assertNull($second->refresh()->commit_sha);
+        $this->assertSame($head, $this->repository->head($this->project));
+        $this->assertStringNotContainsString('// teams', File::get($this->repository->path($this->project).'/config/teams.php'));
+        Queue::assertPushed(ExecuteRun::class);
     }
 
-    public function test_a_change_that_no_longer_fits_is_refused_and_the_repository_is_left_clean()
+    public function test_a_follow_up_checked_on_an_older_app_is_refused_and_the_repository_is_left_clean()
     {
-        $first = $this->completedChange(self::ADD_COMMENT);
-        $clash = $this->completedChange("diff --git a/app/A.php b/app/A.php\n--- a/app/A.php\n+++ b/app/A.php\n@@ -1 +1,2 @@\n <?php\n+// something else\n");
+        $other = $this->completedChange(self::ADD_TEAMS_COMMENT);
+        $parent = $this->completedChange(self::ADD_COMMENT);
+        $followUp = $this->completedChange(self::ADD_SECOND_COMMENT, ['parent_id' => $parent->id, 'target_step' => 'permission']);
 
-        $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $first));
+        $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $other));
         $head = $this->repository->head($this->project);
 
         $this->actingAs($this->owner)
-            ->post(route('feature-requests.acceptance.store', $clash))
-            ->assertSessionHasErrors('change');
+            ->post(route('feature-requests.acceptance.store', $followUp))
+            ->assertSessionHasErrors(['change' => 'The app changed after this change was checked. Ask for it again to build it on the current app.']);
 
-        $this->assertNull($clash->refresh()->commit_sha);
+        $this->assertNull($followUp->refresh()->commit_sha);
+        $this->assertNull($parent->refresh()->commit_sha);
         $this->assertSame($head, $this->repository->head($this->project));
         $this->assertSame('', trim($this->repository->git($this->project, ['status', '--porcelain'])->output()));
     }

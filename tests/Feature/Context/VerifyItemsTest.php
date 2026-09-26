@@ -3,6 +3,7 @@
 namespace Tests\Feature\Context;
 
 use App\Actions\Context\AssessVerifyItems;
+use App\Features\TestReport;
 use App\Runs\Plan;
 use App\Runs\Review;
 use Tests\TestCase;
@@ -12,7 +13,7 @@ class VerifyItemsTest extends TestCase
     protected const PATCH = "diff --git a/tests/Feature/TeamTest.php b/tests/Feature/TeamTest.php\n--- /dev/null\n+++ b/tests/Feature/TeamTest.php\n@@ -0,0 +1 @@\n+test('teams have a description')\n"
         ."diff --git a/resources/js/pages/Team.test.ts b/resources/js/pages/Team.test.ts\n--- /dev/null\n+++ b/resources/js/pages/Team.test.ts\n@@ -0,0 +1 @@\n+it('shows the description field')\n";
 
-    public function test_only_a_test_the_suite_runs_counts_as_evidence()
+    public function test_only_a_test_the_suite_ran_and_passed_counts_as_evidence()
     {
         $plan = new Plan('Describe teams.', ['Teams have a description.', 'The page shows the field.', 'Members cannot edit it.']);
         $review = new Review(true, 'Fine.', verify: [
@@ -22,11 +23,35 @@ class VerifyItemsTest extends TestCase
         ]);
 
         $verified = app(AssessVerifyItems::class)->handle($plan, $review, self::PATCH, [
-            ['name' => 'Tests', 'stage' => 'checks', 'outcome' => 'passed'],
+            $this->suite('passed', [['file' => '/workspace/tests/Feature/TeamTest.php', 'name' => 'teams have a description', 'outcome' => 'passed']]),
         ]);
 
         $this->assertSame(['tested', 'not_run_by_checks', 'no_test'], array_column($verified, 'evidence'));
         $this->assertTrue($verified[0]['named_in_diff']);
+    }
+
+    public function test_a_named_test_that_did_not_run_is_not_evidence()
+    {
+        $plan = new Plan('Describe teams.', ['Teams have a description.']);
+        $review = new Review(true, 'Fine.', verify: [
+            ['criterion' => 1, 'test_file' => 'tests/Feature/TeamTest.php', 'test_name' => 'teams have a description'],
+        ]);
+        $evidence = fn (array $results) => app(AssessVerifyItems::class)->handle($plan, $review, self::PATCH, $results)[0]['evidence'];
+
+        // Skipped, missing from the report, or a different test in the file.
+        $this->assertSame('not_run_by_checks', $evidence([$this->suite('passed', [['file' => 'tests/Feature/TeamTest.php', 'name' => 'teams have a description', 'outcome' => 'skipped']])]));
+        $this->assertSame('not_run_by_checks', $evidence([$this->suite('passed', [])]));
+        $this->assertSame('not_run_by_checks', $evidence([$this->suite('passed', [['file' => 'tests/Feature/TeamTest.php', 'name' => 'teams have a name', 'outcome' => 'passed']])]));
+        // It ran and failed, or the suite failed.
+        $this->assertSame('not_run', $evidence([$this->suite('passed', [['file' => 'tests/Feature/TeamTest.php', 'name' => 'teams have a description', 'outcome' => 'failed']])]));
+        $this->assertSame('not_run', $evidence([$this->suite('failed', [['file' => 'tests/Feature/TeamTest.php', 'name' => 'teams have a description', 'outcome' => 'passed']])]));
+        // No report: only the reviewer says it ran.
+        $this->assertSame('claimed', $evidence([['name' => 'Tests', 'stage' => 'checks', 'outcome' => 'passed']]));
+        // PHPUnit method names match the reviewer's words, and so do data sets.
+        $this->assertSame('tested', $evidence([$this->suite('passed', [
+            ['file' => 'tests/Feature/TeamTest.php', 'name' => 'test_teams_have_a_description with data set "admin"', 'outcome' => 'passed'],
+            ['file' => 'tests/Feature/TeamTest.php', 'name' => 'test_teams_have_a_description with data set "member"', 'outcome' => 'passed'],
+        ])]));
     }
 
     public function test_the_suite_paths_are_configurable()
@@ -38,9 +63,43 @@ class VerifyItemsTest extends TestCase
         ]);
 
         $verified = app(AssessVerifyItems::class)->handle($plan, $review, self::PATCH, [
-            ['name' => 'Tests', 'stage' => 'checks', 'outcome' => 'passed'],
+            $this->suite('passed', [['file' => 'resources/js/pages/Team.test.ts', 'name' => 'shows the description field', 'outcome' => 'passed']]),
         ]);
 
         $this->assertSame('tested', $verified[0]['evidence']);
+    }
+
+    public function test_the_junit_report_is_read_for_phpunit_and_pest_tests()
+    {
+        $xml = <<<'XML'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <testsuites>
+          <testsuite name="Tests\Feature\TeamTest" file="/workspace/tests/Feature/TeamTest.php">
+            <testcase name="test_teams_have_a_description" file="/workspace/tests/Feature/TeamTest.php" class="Tests\Feature\TeamTest"/>
+            <testcase name="test_members_cannot_edit" class="Tests\Feature\TeamTest"><failure>Expected 403.</failure></testcase>
+            <testcase name="test_later" file="/workspace/tests/Feature/TeamTest.php"><skipped/></testcase>
+          </testsuite>
+          <testsuite name="Tests\Feature\PageTest">
+            <testcase name="it shows the field" file="tests/Feature/PageTest.php::it shows the field"><error>Boom</error></testcase>
+          </testsuite>
+        </testsuites>
+        XML;
+
+        $this->assertSame([
+            ['file' => '/workspace/tests/Feature/TeamTest.php', 'name' => 'test_teams_have_a_description', 'outcome' => 'passed'],
+            ['file' => '/workspace/tests/Feature/TeamTest.php', 'name' => 'test_members_cannot_edit', 'outcome' => 'failed'],
+            ['file' => '/workspace/tests/Feature/TeamTest.php', 'name' => 'test_later', 'outcome' => 'skipped'],
+            ['file' => 'tests/Feature/PageTest.php', 'name' => 'it shows the field', 'outcome' => 'failed'],
+        ], TestReport::fromJunit($xml));
+        $this->assertSame([], TestReport::fromJunit('not xml'));
+    }
+
+    /**
+     * @param  list<array{file: string, name: string, outcome: string}>  $tests
+     * @return array{name: string, stage: string, outcome: string, tests: list<array{file: string, name: string, outcome: string}>}
+     */
+    protected function suite(string $outcome, array $tests): array
+    {
+        return ['name' => 'Tests', 'stage' => 'checks', 'outcome' => $outcome, 'tests' => $tests];
     }
 }
