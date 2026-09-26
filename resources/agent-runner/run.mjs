@@ -10,10 +10,15 @@
 //
 // Usage: node run.mjs <task.json>
 // The task file: {adapter, prompt, model?, max_turns?, max_budget_usd?}.
+//
+// While the agent works, progress.json next to the task file says what it
+// is doing, so the owner can follow along:
+// {"doing":"reading|changing|testing","last":"path","read":[...],"changed":[...]}
 // Credentials come from the environment (ANTHROPIC_API_KEY, OPENAI_API_KEY,
 // and optionally ANTHROPIC_BASE_URL / OPENAI_BASE_URL for a gateway).
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 
 /** Assistant message errors from the Claude Agent SDK that mean the provider could not serve the task. */
 const CLAUDE_PROVIDER_ERRORS = new Set([
@@ -30,6 +35,40 @@ const CLAUDE_PROVIDER_ERRORS = new Set([
 /** Codex reports failures as text only, so provider trouble is recognised by these patterns. */
 const CODEX_PROVIDER_ERROR =
     /\b(401|403|429|500|502|503|504)\b|rate.?limit|quota|unauthori[sz]ed|invalid api key|incorrect api key|overloaded|server error|service unavailable|timed? ?out|ECONNRESET|ENOTFOUND|ECONNREFUSED/i;
+
+/** What the agent has done so far, written after each step. */
+const progress = { doing: 'reading', last: null, read: [], changed: [] };
+let progressFile = null;
+
+function track(doing, path = null) {
+    progress.doing = doing;
+
+    if (path) {
+        const file = isAbsolute(path) ? relative(process.cwd(), path) : path;
+        const list = doing === 'changing' ? progress.changed : progress.read;
+
+        if (!file.startsWith('..') && !list.includes(file)) {
+            list.push(file);
+        }
+
+        progress.last = file;
+    }
+
+    if (progressFile === null) {
+        return;
+    }
+
+    try {
+        // Written whole and then moved, so a reader never sees half a file.
+        writeFileSync(`${progressFile}.tmp`, JSON.stringify(progress));
+        renameSync(`${progressFile}.tmp`, progressFile);
+    } catch {
+        // Progress is a courtesy; the task goes on without it.
+    }
+}
+
+const TEST_COMMAND =
+    /\b(phpunit|pest|artisan test|npm (run )?test|vitest|jest)\b/;
 
 function print(result) {
     process.stdout.write(`${JSON.stringify({ type: 'result', ...result })}\n`);
@@ -56,6 +95,25 @@ async function runClaude(task) {
     })) {
         if (message.type === 'assistant' && message.error) {
             providerError = message.error;
+        }
+
+        for (const block of message.type === 'assistant'
+            ? (message.message?.content ?? [])
+            : []) {
+            if (block.type !== 'tool_use') {
+                continue;
+            }
+
+            if (['Write', 'Edit', 'MultiEdit'].includes(block.name)) {
+                track('changing', block.input?.file_path);
+            } else if (block.name === 'Read') {
+                track('reading', block.input?.file_path);
+            } else if (
+                block.name === 'Bash' &&
+                TEST_COMMAND.test(block.input?.command ?? '')
+            ) {
+                track('testing');
+            }
         }
 
         if (message.type === 'result') {
@@ -132,6 +190,19 @@ async function runCodex(task) {
     for await (const event of events) {
         if (
             event.type === 'item.completed' &&
+            event.item.type === 'file_change'
+        ) {
+            for (const change of event.item.changes ?? []) {
+                track('changing', change.path);
+            }
+        } else if (
+            event.type === 'item.started' &&
+            event.item.type === 'command_execution' &&
+            TEST_COMMAND.test(event.item.command ?? '')
+        ) {
+            track('testing');
+        } else if (
+            event.type === 'item.completed' &&
             event.item.type === 'agent_message'
         ) {
             summary = event.item.text;
@@ -167,6 +238,8 @@ async function runCodex(task) {
 }
 
 const task = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+progressFile = join(dirname(process.argv[2]), 'progress.json');
+track('reading');
 const adapters = { claude: runClaude, codex: runCodex };
 
 try {

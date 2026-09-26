@@ -295,7 +295,12 @@ const checks = computed(() => {
                         data-test="thread-working"
                     >
                         <LoaderCircle class="size-4 animate-spin" />
-                        <span>{{ steps[run?.status ?? 'queued'] }}…</span>
+                        <span data-test="thread-progress"
+                            >{{
+                                run?.progress?.text ??
+                                steps[run?.status ?? 'queued']
+                            }}…</span
+                        >
                         <Form
                             v-if="run && run.status !== 'cancelling'"
                             v-bind="

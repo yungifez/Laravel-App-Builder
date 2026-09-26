@@ -186,6 +186,8 @@ export type Run = {
         preserve: string[];
     } | null;
     review: RunReview | null;
+    /** What the change is doing right now, while it is being made. */
+    progress: { text: string; changed: number } | null;
     started_at: string | null;
     finished_at: string | null;
     /** What happened, in the owner's words; how it was done stays with us. */
