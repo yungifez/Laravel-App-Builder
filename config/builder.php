@@ -108,8 +108,10 @@ return [
 
         // Commands run in the workspace after the project is copied in and
         // before the driver starts, for example installing dependencies so
-        // the tests can run. A failing command fails the run.
-        'setup' => [],
+        // the tests can run. A failing command fails the run. Set
+        // BUILDER_CONSTRUCTION_SETUP to a JSON list of {name, command,
+        // timeout} to configure it per deployment.
+        'setup' => json_decode((string) env('BUILDER_CONSTRUCTION_SETUP', '[]'), true) ?: [],
 
         // Commands callers may run by name through the "run_command" tool.
         'commands' => [
