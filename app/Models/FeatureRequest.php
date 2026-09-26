@@ -39,6 +39,7 @@ use Illuminate\Support\Carbon;
  * @property list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>|null $steps
  * @property list<string>|null $acceptance Protected acceptance test files that apply to the change
  * @property string|null $error
+ * @property list<array{provider: string, model: string|null, input_tokens: int, output_tokens: int, cost_usd: float|null, cost_source: string|null, at: string}>|null $decision_model_calls The decision model's calls about the request, with what each cost
  * @property string|null $commit_sha The project commit that holds the change once the owner accepted it
  * @property Carbon|null $accepted_at
  * @property string|null $revert_sha The project commit that undid the change
@@ -46,7 +47,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['experiment_id', 'project_id', 'user_id', 'parent_id', 'retry_of_id', 'prompt', 'selection', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'note_changes', 'steps', 'acceptance', 'error', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at'])]
+#[Fillable(['experiment_id', 'project_id', 'user_id', 'parent_id', 'retry_of_id', 'prompt', 'selection', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'note_changes', 'steps', 'acceptance', 'error', 'decision_model_calls', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at'])]
 class FeatureRequest extends Model
 {
     /**
@@ -70,6 +71,7 @@ class FeatureRequest extends Model
             'steps' => 'array',
             'note_changes' => 'array',
             'acceptance' => 'array',
+            'decision_model_calls' => 'array',
             'selection' => 'array',
             'accepted_at' => 'datetime',
             'reverted_at' => 'datetime',

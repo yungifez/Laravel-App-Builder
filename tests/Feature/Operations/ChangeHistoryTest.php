@@ -96,7 +96,9 @@ class ChangeHistoryTest extends TestCase
     public function test_the_list_filters_by_project_date_outcome_driver_model_provider_and_reason()
     {
         $project = Project::factory()->create();
-        $match = FeatureRequest::factory()->generated()->create(['project_id' => $project->id, 'created_at' => now()->subDays(2)]);
+        $match = FeatureRequest::factory()->generated()->create(['project_id' => $project->id, 'created_at' => now()->subDays(2), 'decision_model_calls' => [
+            ['provider' => 'typesafe', 'model' => 'decider', 'input_tokens' => 10, 'output_tokens' => 0, 'cost_usd' => 0.25, 'cost_source' => 'estimated', 'at' => now()->toIso8601String()],
+        ]]);
         $run = Run::factory()->create(['feature_request_id' => $match->id, 'driver' => 'agent', 'status' => RunStatus::Completed]);
         $run->recordEvent('status', ['from' => 'implementing', 'to' => 'needs_user_decision', 'reason' => 'budget_exhausted']);
         $run->recordEvent('model_call', ['provider' => 'anthropic', 'model' => 'coder-1', 'cost_usd' => 0.5, 'cost_source' => 'reported']);
@@ -135,10 +137,10 @@ class ChangeHistoryTest extends TestCase
         $this->actingAs($this->operator)
             ->get(route('operations.changes.index', ['project' => $project->id]))
             ->assertInertia(fn (Assert $page) => $page
-                ->where('changes.data.0.calls', 2)
+                ->where('changes.data.0.calls', 3)
                 ->where('changes.data.0.unpriced_calls', 1)
-                ->where('changes.data.0.cost_usd', 0.5)
-                ->where('changes.data.0.models', ['coder-1'])
+                ->where('changes.data.0.cost_usd', 0.75)
+                ->where('changes.data.0.models', ['coder-1', 'decider'])
                 ->missing('changes.data.0.prompt')
                 ->missing('changes.data.0.patch'));
     }

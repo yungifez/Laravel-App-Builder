@@ -333,6 +333,29 @@ class SdkDriverTest extends TestCase
         $this->assertFalse(WorkspaceCommand::query()->get()->contains(fn (WorkspaceCommand $command) => str_contains((string) json_encode($command->command), 'test-anthropic-key')));
     }
 
+    public function test_an_agent_that_reports_no_cost_is_priced_from_config_only_when_its_model_is_known()
+    {
+        config(['builder.agents.order' => ['codex'], 'builder.prices' => ['codex-model' => ['input' => 2, 'output' => 8]]]);
+        $model = 'codex-model';
+        $this->agent('codex', 'openai', function (Workspace $workspace) use (&$model) {
+            File::put($this->path($workspace, 'app/Codex.php'), "<?php\n");
+
+            return new AgentOutcome('codex', 'openai', $model, AgentOutcomeStatus::Completed, 'Done.', turns: 1, inputTokens: 1_000_000, outputTokens: 100_000);
+        });
+        $cost = function () {
+            FeaturePlanner::fake([$this->plan()]);
+            $call = app(StartRun::class)->handle($this->request())->refresh()->events()->where('type', 'model_call')->where('data->role', 'coder')->sole()->data;
+
+            return [$call['cost_usd'], $call['cost_source']];
+        };
+
+        $this->assertSame([2.8, 'estimated'], $cost());
+
+        // With no model named, the agent's default is unknown, and so is the cost.
+        $model = null;
+        $this->assertSame([null, null], $cost());
+    }
+
     public function test_the_codex_agent_gets_its_configured_sandbox()
     {
         config([

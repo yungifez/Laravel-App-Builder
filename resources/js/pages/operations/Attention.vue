@@ -363,7 +363,16 @@ const completeness = computed(
                     </dd>
                 </div>
                 <div class="flex justify-between py-2">
-                    <dt>Decision calls, not metered</dt>
+                    <dt>Decision calls</dt>
+                    <dd class="tabular-nums">
+                        {{ attention.spend.decision_calls }}
+                    </dd>
+                </div>
+                <div
+                    v-if="attention.spend.unmetered_decision_calls > 0"
+                    class="flex justify-between py-2 text-destructive"
+                >
+                    <dt>Requests decided before metering</dt>
                     <dd class="tabular-nums">
                         {{ attention.spend.unmetered_decision_calls }}
                     </dd>

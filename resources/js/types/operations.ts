@@ -38,6 +38,7 @@ export type Spend = {
     total_usd: number;
     input_tokens: number;
     output_tokens: number;
+    decision_calls: number;
     setup_calls: number;
     setup_usd: number;
     undated_setup_calls: number;

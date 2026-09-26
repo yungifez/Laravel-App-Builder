@@ -2,6 +2,7 @@
 
 namespace App\Actions\Decisions;
 
+use App\Actions\Runs\RecordModelUsage;
 use App\Models\Decision;
 use App\Models\FeatureRequest;
 use Laravel\Ai\Classification;
@@ -36,6 +37,18 @@ class MakeDecisions
             ->timeout((int) config('builder.decisions.timeout'))
             ->classify($providers);
         $latency = (int) round((hrtime(true) - $started) / 1_000_000);
+
+        $cost = RecordModelUsage::cost((string) $response->meta->model, $response->usage->inputTokens, $response->usage->outputTokens);
+
+        $featureRequest->update(['decision_model_calls' => [...$featureRequest->decision_model_calls ?? [], [
+            'provider' => (string) $response->meta->provider,
+            'model' => $response->meta->model,
+            'input_tokens' => $response->usage->inputTokens,
+            'output_tokens' => $response->usage->outputTokens,
+            'cost_usd' => $cost,
+            'cost_source' => $cost === null ? null : 'estimated',
+            'at' => now()->toIso8601String(),
+        ]]]);
 
         $decisions = [];
 

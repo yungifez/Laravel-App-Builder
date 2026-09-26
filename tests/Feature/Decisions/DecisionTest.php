@@ -74,6 +74,10 @@ class DecisionTest extends TestCase
         $this->assertFalse($decisions['permissions']->confident());
         $this->assertSame('typesafe', $decisions['complexity']->driver);
         $this->assertFalse($decisions->contains(fn (Decision $decision) => $decision->acted));
+
+        // The call is metered once for all five answers.
+        $this->assertCount(1, $request->refresh()->decision_model_calls ?? []);
+        $this->assertSame('typesafe', $request->decision_model_calls[0]['provider'] ?? null);
     }
 
     public function test_an_answered_question_is_observed_as_a_question_that_touched_nothing()

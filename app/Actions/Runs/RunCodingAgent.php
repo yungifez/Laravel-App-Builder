@@ -64,11 +64,21 @@ class RunCodingAgent
 
             $outcome = $this->agents->driver($adapter)->run($workspace, $task, $this->heartbeat($run, $lease));
 
+            // Claude's SDK reports what the session cost. Codex's does not, so
+            // its tokens are priced from config when the model is known.
+            $estimate = $outcome->costUsd === null && $outcome->model !== null
+                ? RecordModelUsage::cost($outcome->model, $outcome->inputTokens, $outcome->outputTokens)
+                : null;
+
             $this->recordEvent($run, $lease, 'model_call', [
                 'role' => 'coder',
                 ...$outcome->toArray(),
-                // The agent's SDK reports what the session cost.
-                'cost_source' => $outcome->costUsd === null ? null : 'reported',
+                'cost_usd' => $outcome->costUsd ?? $estimate,
+                'cost_source' => match (true) {
+                    $outcome->costUsd !== null => 'reported',
+                    $estimate !== null => 'estimated',
+                    default => null,
+                },
             ]);
 
             if ($outcome->status !== AgentOutcomeStatus::ProviderUnavailable) {

@@ -190,7 +190,16 @@ class AttentionTest extends TestCase
         Run::factory()->create()->recordEvent('model_call', ['model' => 'a', 'cost_usd' => 0.5, 'cost_source' => 'reported']);
         $this->assertSame('complete', app(SummarizeSpend::class)->handle($since)['completeness']);
 
-        // Decision models are called but not metered.
+        // A metered decision call with a price keeps the total complete.
+        config(['builder.prices' => ['decider' => ['input' => 1, 'output' => 1]]]);
+        $metered = FeatureRequest::factory()->create(['decision_model_calls' => [
+            ['provider' => 'typesafe', 'model' => 'decider', 'input_tokens' => 500_000, 'output_tokens' => 0, 'cost_usd' => 0.5, 'cost_source' => 'estimated', 'at' => now()->toIso8601String()],
+        ]]);
+        Decision::factory()->create(['feature_request_id' => $metered->id, 'model' => 'decider']);
+        $spend = app(SummarizeSpend::class)->handle($since);
+        $this->assertSame([2, 1, 1.0, 'complete'], [$spend['calls'], $spend['decision_calls'], $spend['total_usd'], $spend['completeness']]);
+
+        // Requests decided before decision calls were metered make it partial.
         Decision::factory()->create(['feature_request_id' => FeatureRequest::factory(), 'model' => 'decider']);
         $spend = app(SummarizeSpend::class)->handle($since);
         $this->assertSame(1, $spend['unmetered_decision_calls']);

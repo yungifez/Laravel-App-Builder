@@ -3087,8 +3087,10 @@ compiled packet, same model and code) tests it directly.
   cleanup, spend with a completeness label) and each change's history, with
   queue, machine and owner time kept apart. Facts are recorded at the source:
   worker heartbeats, preview rebuilds, stop reasons, the execution settings
-  version, cleanup failures, where each cost came from, and which changes a
-  publish contains. No prompts or customer code appear on list screens.
+  version, cleanup failures, where each cost came from (a coding agent that
+  reports no cost is priced from config when its model is named), the
+  decision model's calls, and which changes a publish contains. No prompts
+  or customer code appear on list screens.
 - **Evolution Benchmark (later):** a fixed sequence of 20–50 realistic
   changes to one app, measured at changes 1, 5, 10, 20, 35 and 50 for
   regressions, corrective prompts, cost and missed rules. This project is the

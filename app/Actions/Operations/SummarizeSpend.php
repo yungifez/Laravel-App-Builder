@@ -2,11 +2,13 @@
 
 namespace App\Actions\Operations;
 
-use App\Models\Decision;
+use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\RunEvent;
 use App\Operations\ModelCalls;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 class SummarizeSpend
 {
@@ -18,7 +20,7 @@ class SummarizeSpend
      * makes the total a lower bound. Infrastructure (boxes, hosting) is not
      * recorded anywhere yet, so it is never part of the total.
      *
-     * @return array{calls: int, unpriced_calls: int, reported_usd: float, estimated_usd: float, total_usd: float, input_tokens: int, output_tokens: int, setup_calls: int, setup_usd: float, undated_setup_calls: int, unmetered_decision_calls: int, completeness: string}
+     * @return array{calls: int, unpriced_calls: int, reported_usd: float, estimated_usd: float, total_usd: float, input_tokens: int, output_tokens: int, decision_calls: int, setup_calls: int, setup_usd: float, undated_setup_calls: int, unmetered_decision_calls: int, completeness: string}
      */
     public function handle(CarbonImmutable $since): array
     {
@@ -39,14 +41,29 @@ class SummarizeSpend
 
         [$setupCalls, $setupUsd, $setupUnpriced, $undated] = $this->setup($since);
 
-        // Decision models are called for each request, but their tokens are
-        // not recorded, so what they cost is unknown.
-        $decisions = Decision::query()->where('created_at', '>=', $since)->whereNotNull('model')->count();
+        /** @var object{calls: int|string, unpriced: int|string, estimated: float|string|null, input_tokens: int|string|null, output_tokens: int|string|null} $decided */
+        $decided = FeatureRequest::query()
+            ->toBase()
+            ->crossJoin(DB::raw('jsonb_array_elements(feature_requests.decision_model_calls::jsonb) as call'))
+            ->whereRaw("(call->>'at')::timestamptz >= ?", [$since])
+            ->selectRaw("count(*) as calls,
+                count(*) filter (where (call->>'cost_usd') is null) as unpriced,
+                sum((call->>'cost_usd')::numeric) as estimated,
+                sum(coalesce((call->>'input_tokens')::bigint, 0)) as input_tokens,
+                sum(coalesce((call->>'output_tokens')::bigint, 0)) as output_tokens")
+            ->first();
 
-        $calls = (int) $row->calls + $setupCalls;
-        $unpriced = (int) $row->unpriced + $setupUnpriced;
+        // Requests decided on before decision calls were metered: the model
+        // was called, but what it cost is unknown.
+        $decisions = FeatureRequest::query()
+            ->whereNull('decision_model_calls')
+            ->whereHas('decisions', fn (Builder $decisions) => $decisions->where('created_at', '>=', $since)->whereNotNull('model'))
+            ->count();
+
+        $calls = (int) $row->calls + $setupCalls + (int) $decided->calls;
+        $unpriced = (int) $row->unpriced + $setupUnpriced + (int) $decided->unpriced;
         $reported = round((float) $row->reported, 4);
-        $estimated = round((float) $row->estimated + $setupUsd, 4);
+        $estimated = round((float) $row->estimated + $setupUsd + (float) $decided->estimated, 4);
 
         return [
             'calls' => $calls,
@@ -54,8 +71,9 @@ class SummarizeSpend
             'reported_usd' => $reported,
             'estimated_usd' => $estimated,
             'total_usd' => round($reported + $estimated, 4),
-            'input_tokens' => (int) $row->input_tokens,
-            'output_tokens' => (int) $row->output_tokens,
+            'input_tokens' => (int) $row->input_tokens + (int) $decided->input_tokens,
+            'output_tokens' => (int) $row->output_tokens + (int) $decided->output_tokens,
+            'decision_calls' => (int) $decided->calls,
             'setup_calls' => $setupCalls,
             'setup_usd' => round($setupUsd, 4),
             'undated_setup_calls' => $undated,

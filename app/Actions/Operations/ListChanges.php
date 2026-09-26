@@ -50,7 +50,8 @@ class ListChanges
         $page = $query->paginate($perPage)->withQueryString();
         $calls = $this->calls(array_values($page->getCollection()->map(fn (FeatureRequest $change) => $change->id)->all()));
 
-        return $page->through(fn (FeatureRequest $change) => $this->row($change, $calls[$change->id] ?? []));
+        // The decision model's calls about a request count toward its cost.
+        return $page->through(fn (FeatureRequest $change) => $this->row($change, [...$calls[$change->id] ?? [], ...$change->decision_model_calls ?? []]));
     }
 
     /**
