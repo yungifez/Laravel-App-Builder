@@ -52,6 +52,14 @@ class ToolSession
     }
 
     /**
+     * Get the lease of the worker running the session.
+     */
+    public function lease(): RunLease
+    {
+        return $this->lease;
+    }
+
+    /**
      * Get the workspace revision as of the latest call.
      */
     public function revision(): int

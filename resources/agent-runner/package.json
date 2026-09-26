@@ -1,0 +1,10 @@
+{
+    "name": "builder-agent-runner",
+    "private": true,
+    "description": "Runs one coding task in a workspace with the Claude Agent SDK or the Codex SDK and prints one JSON result line.",
+    "type": "module",
+    "dependencies": {
+        "@anthropic-ai/claude-agent-sdk": "0.3.283",
+        "@openai/codex-sdk": "0.157.1"
+    }
+}

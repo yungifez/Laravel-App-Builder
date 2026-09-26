@@ -20,6 +20,7 @@ use App\Runs\Contracts\ConstructionDriver;
 use App\Runs\Exceptions\BudgetExhausted;
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\LeaseLost;
+use App\Runs\Exceptions\ProvidersUnavailable;
 use App\Runs\Exceptions\RunCancelled;
 use App\Runs\Plan;
 use App\Runs\Review;
@@ -72,6 +73,8 @@ class ConstructRun
             // Another worker took the run over and carries on from here.
         } catch (BudgetExhausted $exception) {
             $this->stopForDecision($run, $lease, $exception->getMessage(), 'budget_exhausted');
+        } catch (ProvidersUnavailable $exception) {
+            $this->stopForDecision($run, $lease, $exception->getMessage(), 'providers_unavailable');
         } catch (ConstructionFailed|CannotGenerateFeature $exception) {
             $this->failRun->handle($run, $exception->getMessage(), $lease);
         }

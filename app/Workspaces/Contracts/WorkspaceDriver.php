@@ -13,11 +13,13 @@ interface WorkspaceDriver
     public function create(WorkspaceSpec $spec): string;
 
     /**
-     * Run a command inside the workspace, killing it after the timeout.
+     * Run a command inside the workspace, killing it after the timeout. The
+     * environment variables reach this command only.
      *
      * @param  list<string>  $command
+     * @param  array<string, string>  $environment
      */
-    public function exec(string $workspaceId, array $command, int $timeoutSeconds): CommandResult;
+    public function exec(string $workspaceId, array $command, int $timeoutSeconds, array $environment = []): CommandResult;
 
     /**
      * Copy a local directory into the workspace's working directory, skipping

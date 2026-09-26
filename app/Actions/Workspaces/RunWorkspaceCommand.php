@@ -21,11 +21,14 @@ class RunWorkspaceCommand
      * Each owner may only run a limited number of commands at once across all
      * of their workspaces, so one customer app cannot take over the hosts.
      *
+     * Environment variables are given to the command only and never stored.
+     *
      * @param  list<string>  $command
+     * @param  array<string, string>  $environment
      *
      * @throws WorkspaceBusyException when no command slot frees up in time.
      */
-    public function handle(Workspace $workspace, array $command, ?int $timeoutSeconds = null): WorkspaceCommand
+    public function handle(Workspace $workspace, array $command, ?int $timeoutSeconds = null, array $environment = []): WorkspaceCommand
     {
         if ($workspace->status !== WorkspaceStatus::Ready || $workspace->driver_id === null) {
             throw new InvalidArgumentException("Workspace [{$workspace->id}] is not ready.");
@@ -39,7 +42,7 @@ class RunWorkspaceCommand
             ->releaseAfter($timeoutSeconds + 60)
             ->block((int) config('workspaces.commands.wait_seconds'))
             ->then(
-                fn () => $this->run($workspace, $command, $timeoutSeconds),
+                fn () => $this->run($workspace, $command, $timeoutSeconds, $environment),
                 fn () => throw WorkspaceBusyException::forOwner($workspace->user_id),
             );
     }
@@ -56,11 +59,12 @@ class RunWorkspaceCommand
      * Execute the command through the workspace's driver and store the result.
      *
      * @param  list<string>  $command
+     * @param  array<string, string>  $environment
      */
-    protected function run(Workspace $workspace, array $command, int $timeoutSeconds): WorkspaceCommand
+    protected function run(Workspace $workspace, array $command, int $timeoutSeconds, array $environment): WorkspaceCommand
     {
         $result = $this->workspaces->driver($workspace->driver)
-            ->exec((string) $workspace->driver_id, $command, $timeoutSeconds);
+            ->exec((string) $workspace->driver_id, $command, $timeoutSeconds, $environment);
 
         $workspace->update(['last_activity_at' => now()]);
 

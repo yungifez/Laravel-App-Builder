@@ -16,6 +16,9 @@ class FakeWorkspaceDriver implements WorkspaceDriver
     /** @var list<array{workspace: string, command: list<string>, timeout: int}> */
     public array $executed = [];
 
+    /** @var list<array<string, string>> */
+    public array $environments = [];
+
     /** @var list<string> */
     public array $destroyed = [];
 
@@ -38,9 +41,10 @@ class FakeWorkspaceDriver implements WorkspaceDriver
         return 'fake-'.count($this->created);
     }
 
-    public function exec(string $workspaceId, array $command, int $timeoutSeconds): CommandResult
+    public function exec(string $workspaceId, array $command, int $timeoutSeconds, array $environment = []): CommandResult
     {
         $this->executed[] = ['workspace' => $workspaceId, 'command' => $command, 'timeout' => $timeoutSeconds];
+        $this->environments[] = $environment;
 
         return $this->onExec !== null
             ? ($this->onExec)($workspaceId, $command, $timeoutSeconds)
