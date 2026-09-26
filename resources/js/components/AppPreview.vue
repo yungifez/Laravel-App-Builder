@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Form, usePoll } from '@inertiajs/vue3';
-import { ExternalLink, RotateCw } from '@lucide/vue';
+import { Form, Link, usePoll } from '@inertiajs/vue3';
+import { ExternalLink, Paintbrush, RotateCw } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
 import InputError from '@/components/InputError.vue';
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { devices } from '@/lib/visualProperties';
 import { show as showPreview } from '@/routes/previews';
+import { show as showEditor } from '@/routes/projects/editor';
 import type { Device, EditorPreview } from '@/types';
 
 const props = defineProps<{
@@ -73,8 +74,10 @@ function reload(): void {
             v-if="running && preview"
             class="flex flex-wrap items-center justify-between gap-2 pb-2"
         >
+            <!-- A phone shows the app at its own size, so the choice only
+                 appears where there is room to change it. -->
             <div
-                class="inline-flex rounded-md bg-muted p-1"
+                class="hidden rounded-md bg-muted p-1 sm:inline-flex"
                 role="group"
                 aria-label="Screen size"
             >
@@ -103,6 +106,20 @@ function reload(): void {
                 >
                     <Spinner class="size-4" /> Putting your change in place
                 </span>
+                <!-- Like the "Edit" mode of other builders: point at a part
+                     of the app and change how it looks. -->
+                <Button
+                    variant="ghost"
+                    class="h-11 select-none sm:h-8"
+                    as-child
+                >
+                    <Link
+                        :href="showEditor(projectId)"
+                        data-test="edit-looks-link"
+                    >
+                        <Paintbrush class="size-4" /> Change how it looks
+                    </Link>
+                </Button>
                 <Button
                     variant="ghost"
                     size="icon"

@@ -3,6 +3,7 @@ import { Form, Head, Link, setLayoutProps, usePoll } from '@inertiajs/vue3';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
 import AppPreview from '@/components/AppPreview.vue';
+import AppTabs from '@/components/AppTabs.vue';
 import InputError from '@/components/InputError.vue';
 import ProjectDetails from '@/components/ProjectDetails.vue';
 import PublishPanel from '@/components/PublishPanel.vue';
@@ -19,8 +20,6 @@ import { Label } from '@/components/ui/label';
 import { when } from '@/lib/when';
 import { show as showFeatureRequest } from '@/routes/feature-requests';
 import { index, show } from '@/routes/projects';
-import { show as showEditor } from '@/routes/projects/editor';
-import { show as showUnderstanding } from '@/routes/projects/understanding';
 import type {
     ChangeItem,
     ChangeState,
@@ -115,92 +114,86 @@ watch(
     <!-- The workspace fills the screen below the header on a wide screen,
          so the conversation and the app scroll on their own. -->
     <div class="flex flex-1 flex-col lg:h-[calc(100svh-5rem)] lg:min-h-0">
-        <header
-            class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b px-4 py-3"
-        >
-            <div class="min-w-0">
-                <h1 class="text-lg font-semibold tracking-tight break-words">
-                    {{ project.name }}
-                </h1>
-                <p
-                    class="text-sm text-muted-foreground"
-                    data-test="live-status"
-                >
-                    <template v-if="project.published_at"
-                        >Live · last put online
-                        {{ when(project.published_at) }}</template
+        <header class="px-4 pt-3">
+            <div
+                class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2"
+            >
+                <div class="min-w-0">
+                    <h1
+                        class="text-lg font-semibold tracking-tight break-words"
                     >
-                    <template v-else>Not live yet</template>
-                </p>
+                        {{ project.name }}
+                    </h1>
+                    <p
+                        class="text-sm text-muted-foreground"
+                        data-test="live-status"
+                    >
+                        <template v-if="project.published_at"
+                            >Live · last put online
+                            {{ when(project.published_at) }}</template
+                        >
+                        <template v-else>Not live yet</template>
+                    </p>
+                </div>
+
+                <!-- When this row wraps on a phone, the first label lines up
+                     with the name above it. -->
+                <div class="flex items-center gap-1 max-sm:-ml-4">
+                    <Dialog>
+                        <DialogTrigger as-child>
+                            <Button
+                                variant="ghost"
+                                class="h-11 text-muted-foreground sm:h-9"
+                                data-test="details-open"
+                            >
+                                Details
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent class="max-h-[85svh] overflow-y-auto">
+                            <DialogHeader>
+                                <DialogTitle
+                                    >Details for your developer</DialogTitle
+                                >
+                                <DialogDescription>
+                                    Where the app came from, what changes cost,
+                                    and its history.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <ProjectDetails
+                                :source-path="project.source_path"
+                                :telemetry="telemetry"
+                                :history="history"
+                            />
+                        </DialogContent>
+                    </Dialog>
+                    <Dialog>
+                        <DialogTrigger as-child>
+                            <Button
+                                variant="outline"
+                                class="h-11 select-none sm:h-9"
+                                data-test="publish-open"
+                            >
+                                Put it online
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                            <DialogHeader class="sr-only">
+                                <DialogTitle>Put it online</DialogTitle>
+                                <DialogDescription>
+                                    Your latest kept version, for everyone to
+                                    use
+                                </DialogDescription>
+                            </DialogHeader>
+                            <PublishPanel
+                                :project-id="project.id"
+                                :publishing="publishing"
+                            />
+                        </DialogContent>
+                    </Dialog>
+                </div>
             </div>
 
-            <nav
-                class="flex flex-wrap items-center gap-1"
-                aria-label="Your app"
-            >
-                <Button variant="ghost" class="h-11 sm:h-9" as-child>
-                    <Link :href="showEditor(project.id)" data-test="editor-link"
-                        >How it looks</Link
-                    >
-                </Button>
-                <Button variant="ghost" class="h-11 sm:h-9" as-child>
-                    <Link
-                        :href="showUnderstanding(project.id)"
-                        data-test="understanding-link"
-                        >What I know</Link
-                    >
-                </Button>
-                <Dialog>
-                    <DialogTrigger as-child>
-                        <Button
-                            variant="ghost"
-                            class="h-11 text-muted-foreground sm:h-9"
-                            data-test="details-open"
-                        >
-                            Details
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent class="max-h-[85svh] overflow-y-auto">
-                        <DialogHeader>
-                            <DialogTitle
-                                >Details for your developer</DialogTitle
-                            >
-                            <DialogDescription>
-                                Where the app came from, what changes cost, and
-                                its history.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <ProjectDetails
-                            :source-path="project.source_path"
-                            :telemetry="telemetry"
-                            :history="history"
-                        />
-                    </DialogContent>
-                </Dialog>
-                <Dialog>
-                    <DialogTrigger as-child>
-                        <Button
-                            variant="outline"
-                            class="h-11 select-none sm:h-9"
-                            data-test="publish-open"
-                        >
-                            Put it online
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogHeader class="sr-only">
-                            <DialogTitle>Put it online</DialogTitle>
-                            <DialogDescription>
-                                Your latest kept version, for everyone to use
-                            </DialogDescription>
-                        </DialogHeader>
-                        <PublishPanel
-                            :project-id="project.id"
-                            :publishing="publishing"
-                        />
-                    </DialogContent>
-                </Dialog>
-            </nav>
+            <AppTabs :project-id="project.id" current="changes" class="mt-2" />
         </header>
 
         <div
@@ -210,7 +203,7 @@ watch(
         >
             <button
                 v-for="option in [
-                    { key: 'chat', label: 'Changes' },
+                    { key: 'chat', label: 'Chat' },
                     { key: 'app', label: 'Your app' },
                 ] as const"
                 :key="option.key"
