@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 10.** This document consolidates the direction in [direction/](direction/)
+**Version 11.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -19,7 +19,9 @@ architecture and defines V0 ([§26](#26-v0-what-we-build-now-version-10)):
 selective context as Markdown files in the application, advisory Effects, a
 plain-language behaviour review and verification, with every other subsystem
 deferred until a real failure asks for it. For V0, §26 wins over the sections
-before it.** When they disagree, the direction documents state intent
+before it.** Version 11 adds decisions before generation
+([§26.9](#269-decisions-before-generation-version-11)): the cheapest reliable
+decision first, failing safe to the baseline. When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -1791,3 +1793,70 @@ The package allowlist records why each package was approved, compatible
 versions and integration notes. Rector stays in the architecture as a principle
 (known transformation → deterministic tool; unknown semantic change → agent);
 its first custom rule comes from a problem we actually hit.
+
+### 26.9 Decisions before generation (version 11)
+
+Direction 12 adds a principle: **use the cheapest mechanism that can make a
+trustworthy decision** (deterministic code, then a typed decision model such as
+Jev, then a small generative model, then a frontier agent, then the user). The
+test for every decision is not what the call costs but **what its answer changes
+downstream**. A decision earns its place only when a confident answer lets us
+skip or downgrade something expensive (a frontier call, a model tier, an agent
+run, context tokens). Otherwise it is telemetry, not control.
+
+**Fail-safe to the baseline.** When a decision is unsure, the run does exactly
+what it would do without the decision layer. Decisions that make a run cheaper
+(skip the planner, a cheaper coder, no question) act only above a high,
+per-decider threshold; decisions that make it safer (more context, a stronger
+model, more review emphasis) act at any confidence. So the layer can only lose
+money through _confident_ mistakes, and those are measured.
+
+| Decision (V0)                                               | Mechanism                                                                                                        | Changes downstream                                                     | When unsure  |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------ |
+| Areas the change is about                                   | Level 0 from the selected step or element's paths; else named by the planner, whose call happens anyway          | the context pack                                                       | include more |
+| Complexity: trivial, normal, substantial                    | decision model                                                                                                   | trivial: skip the planner, cheaper coder; substantial: strongest coder | normal       |
+| Touches permissions, persisted data, is destructive (flags) | decision model before the change; **Level 0 from the diff after it** (policies, migrations, deletes), which wins | more context and review emphasis; approval gates                       | assume yes   |
+| Direct visual edit or agent                                 | Level 0: the selection maps to a static class                                                                    | no agent run at all                                                    | agent        |
+| Is this statement durable product knowledge                 | decision model                                                                                                   | write a proposed context note                                          | do not write |
+
+**Stays deterministic:** sorting a change by area, risk from the diff, protected
+suites, budgets, verification, Effects lookup, and direct visual edits.
+**Goes straight to a generative model:** anything that produces text (plans,
+questions, option wording, behaviour descriptions) or needs the repository read.
+
+**Intent** is a primary label plus independent yes/no flags, each its own typed
+decision. V0 keeps only labels that change a path (complexity and the flags);
+the primary intent is recorded for learning, not used for control, until data
+shows it would change something.
+
+**Decisions only add, never restrict.** A flag can add context, review emphasis
+or a stronger model. It never removes context, limits tools, or tells the coder
+what not to touch; in the brief it appears at most as "likely". The coder still
+explores.
+
+**Rollout in shadow mode.** Decisions first run without acting, and each is
+compared with what actually happened (the areas the planner named, the final
+diff's risk, whether the change needed repairs). A decision starts acting only
+when its confident errors are rare enough that the repairs they cause cost less
+than the calls they save.
+
+**Provider independence.** One `Decider` contract returns a choice, the
+probabilities, a confidence and who decided. Drivers: rules, Jev, and a small
+model through the gateway with structured output. Thresholds are set per
+driver, because a small model's self-reported confidence is not calibrated the
+way Jev's is.
+
+**Telemetry:** a `decision` event per decision (name, driver, choice,
+confidence, threshold, acted or shadow, fallback used, latency, cost), joined
+later with the change request's outcome (verification, repairs, acceptance,
+the diff's areas). This yields the share decided at each level, confident
+errors, missed escalations and their repair cost, and the effect on cost per
+accepted change.
+
+**The honest expectation.** A change's cost is dominated by the coder loop and
+verification, and its latency by verification, so a 100 ms decision matters
+only when it removes a stage. V0 therefore proves the layer on one decision
+with a real payoff: _complexity_, which lets trivial changes skip the planner
+and use a cheaper coder. It keeps the layer only if shadow data shows that
+this lowers cost per accepted change once the repairs caused by wrong
+"trivial" calls are counted.

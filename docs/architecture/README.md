@@ -16,6 +16,7 @@
     9. [User research and outcome metrics](direction/09-user-research-and-outcome-metrics.md)
     10. [Precedents and possibility discovery](direction/10-precedents-and-possibility-discovery.md)
     11. [Selective context, Effects and cheap validation](direction/11-selective-context-effects-and-cheap-validation.md)
+    12. [Layered intelligence and decision models](direction/12-layered-intelligence-and-decision-models.md)
 - **[source/](source/)**: the original planning documents.
     - [Implementation plan v1](source/implementation-plan-v1.md): gates G0–G6,
       the invitation contract and the pilot plan.
