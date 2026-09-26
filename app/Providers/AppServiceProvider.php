@@ -6,6 +6,7 @@ use App\Features\FeatureGeneratorManager;
 use App\Runs\Agents\CodingAgentManager;
 use App\Runs\ConstructionDriverManager;
 use App\Workspaces\WorkspaceManager;
+use Illuminate\Foundation\DevCommands;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -30,6 +31,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        // Previews on their own queue need their own worker under
+        // `composer dev` too, or they would never start.
+        if (is_string($queue = config('builder.preview.queue')) && $queue !== '') {
+            DevCommands::artisan("queue:listen --queue={$queue} --tries=1 --timeout=0", 'previews');
+        }
     }
 }

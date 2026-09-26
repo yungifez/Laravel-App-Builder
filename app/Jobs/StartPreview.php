@@ -38,7 +38,12 @@ class StartPreview implements ShouldQueue
     /**
      * Create a new job instance.
      */
-    public function __construct(public Preview $preview) {}
+    public function __construct(public Preview $preview)
+    {
+        // On a queue of its own, a preview starts while the run's checks
+        // take the main worker.
+        $this->onQueue(config('builder.preview.queue'));
+    }
 
     /**
      * Copy the project into a workspace, apply the change and every change it

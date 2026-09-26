@@ -8,10 +8,12 @@ use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Runs\StartRun;
 use App\Actions\Runs\TransitionRun;
 use App\Enums\FeatureRequestStatus;
+use App\Enums\PreviewStatus;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Enums\WorkspaceStatus;
 use App\Jobs\ExecuteRun;
+use App\Jobs\StartPreview;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -74,6 +76,21 @@ class RunLifecycleTest extends TestCase
         $this->assertStringContainsString("+        'members:invite',", (string) $featureRequest->patch);
         $this->assertSame(VerificationStatus::Queued, $run->verifications()->sole()->status);
         Queue::assertPushed(VerifyFeatureRequest::class, 1);
+    }
+
+    public function test_a_preview_of_the_change_starts_on_its_own_queue_as_soon_as_it_is_built()
+    {
+        config(['builder.preview.automatic' => true, 'builder.preview.queue' => 'previews']);
+        Queue::fake([VerifyFeatureRequest::class, StartPreview::class]);
+
+        $run = app(StartRun::class)->handle($featureRequest = $this->invitationRequest())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(PreviewStatus::Starting, $featureRequest->previews()->sole()->status);
+        Queue::assertPushedOn('previews', StartPreview::class);
+
+        $this->actingAs($featureRequest->project->owner)->get(route('projects.show', ['project' => $featureRequest->project_id, 'change' => $featureRequest->id]))
+            ->assertInertia(fn (Assert $page) => $page->where('change.preview.status', 'starting')->where('change.featureRequest.can_accept', false));
     }
 
     public function test_a_duplicate_delivery_does_not_repeat_the_work()

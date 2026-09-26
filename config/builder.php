@@ -416,6 +416,11 @@ return [
     */
 
     'preview' => [
+        // Start a preview of each change as soon as it is built, while it
+        // is checked and reviewed. Previews go to their own queue when one
+        // is named; give it its own worker so they start in parallel.
+        'automatic' => (bool) env('BUILDER_PREVIEW_AUTOMATIC', true),
+        'queue' => env('BUILDER_PREVIEW_QUEUE'),
         'workspace_driver' => env('BUILDER_PREVIEW_WORKSPACE_DRIVER', 'local'),
         'domain' => env('BUILDER_PREVIEW_DOMAIN', 'preview.localhost'),
         'scheme' => env('BUILDER_PREVIEW_SCHEME', 'http'),

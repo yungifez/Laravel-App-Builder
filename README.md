@@ -81,10 +81,14 @@ Node in the `laravel.test` container of `compose.yaml`.
     vendor/bin/sail npm ci && vendor/bin/sail npm run build
     ```
 
-3. Start a queue worker and the scheduler, each in its own terminal:
+3. Start the queue workers and the scheduler, each in its own terminal. The
+   second worker starts previews while the first runs changes and their
+   checks (set `BUILDER_PREVIEW_QUEUE=previews`; without it, previews wait in
+   line on the first worker):
 
     ```sh
     vendor/bin/sail artisan queue:work --timeout=3600
+    vendor/bin/sail artisan queue:work --queue=previews --timeout=3600
     vendor/bin/sail artisan schedule:work
     ```
 
@@ -216,6 +220,11 @@ directory on this machine with a scrubbed environment. It is for trusted
 fixtures only (see `config/workspaces.php`).
 
 ### Previews
+
+A preview of each change starts by itself as soon as the change is built,
+while it is checked and reviewed (`BUILDER_PREVIEW_AUTOMATIC`). The owner can
+try it straight away. Keeping the change still waits for the checks and the
+review.
 
 On a generated change, **Start preview** copies the project into its own
 workspace, applies the change and every change it follows up on, runs the

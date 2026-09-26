@@ -7,6 +7,7 @@ use App\Actions\Context\AssessVerifyItems;
 use App\Actions\Context\ClassifyChange;
 use App\Actions\Context\CompileContext;
 use App\Actions\Features\RequestVerification;
+use App\Actions\Previews\RequestPreview;
 use App\Actions\Workspaces\DestroyWorkspace;
 use App\Context\Capability;
 use App\Context\ChangeClassification;
@@ -60,6 +61,7 @@ class ConstructRun
         private AssessPreservation $assessPreservation,
         private AssessVerifyItems $assessVerifyItems,
         private FormatChange $formatChange,
+        private RequestPreview $requestPreview,
     ) {}
 
     /**
@@ -251,6 +253,12 @@ class ConstructRun
             ]);
             $this->requestVerification->handle($featureRequest, $run);
         });
+
+        // The owner can try the change while it is checked and reviewed;
+        // keeping it still waits for both.
+        if (config('builder.preview.automatic')) {
+            $this->requestPreview->handle($run->featureRequest->refresh());
+        }
     }
 
     /**
