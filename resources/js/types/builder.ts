@@ -399,3 +399,21 @@ export type NotesDraft = {
     }[];
     error: string | null;
 };
+
+/** Something that needs the owner, such as a change that is ready to try. */
+export type OwnerNotification = {
+    id: string;
+    kind: 'ready' | 'question' | 'failed';
+    title: string;
+    body: string;
+    project_id: number;
+    feature_request_id: number;
+    url: string;
+    read: boolean;
+    created_at: string | null;
+};
+
+export type Notifications = {
+    unread: number;
+    items: OwnerNotification[];
+};

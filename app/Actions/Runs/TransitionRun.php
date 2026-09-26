@@ -3,6 +3,7 @@
 namespace App\Actions\Runs;
 
 use App\Enums\RunStatus;
+use App\Events\RunStatusChanged;
 use App\Models\Run;
 use App\Runs\Exceptions\InvalidRunTransition;
 use App\Runs\Exceptions\LeaseLost;
@@ -13,7 +14,7 @@ use Illuminate\Support\Facades\DB;
 class TransitionRun
 {
     /**
-     * Move the run to a new state and log it.
+     * Move the run to a new state, log it and announce it.
      *
      * A worker passes its lease, and the move only happens while the lease
      * still holds the run. Once the owner has asked to cancel, the only move
@@ -61,6 +62,9 @@ class TransitionRun
             $locked->recordEvent('status', ['from' => $from->value, 'to' => $to->value, ...$details]);
 
             $run->setRawAttributes($locked->getAttributes(), sync: true);
+
+            // Sent once the transaction commits.
+            RunStatusChanged::dispatch($run, $from, $to);
 
             return $run;
         });

@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
+use Illuminate\Notifications\DatabaseNotification;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -40,6 +41,17 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'auth' => [
                 'user' => $request->user(),
+            ],
+            // What needs the owner, newest first. Pages poll this on its own.
+            'notifications' => fn () => $request->user() === null ? null : [
+                'unread' => $request->user()->unreadNotifications()->count(),
+                'items' => $request->user()->notifications()->latest()->limit(8)->get()
+                    ->map(fn (DatabaseNotification $notification) => [
+                        'id' => $notification->id,
+                        ...$notification->data,
+                        'read' => $notification->read_at !== null,
+                        'created_at' => $notification->created_at?->toIso8601String(),
+                    ]),
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];

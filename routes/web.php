@@ -11,6 +11,8 @@ use App\Http\Controllers\FeatureRequestReversionController;
 use App\Http\Controllers\FeatureRequestStepChangeController;
 use App\Http\Controllers\FeatureRequestVerificationController;
 use App\Http\Controllers\NewProjectController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\NotificationReadController;
 use App\Http\Controllers\PreviewController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectEditorController;
@@ -55,6 +57,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('feature-requests/{featureRequest}/previews', [FeatureRequestPreviewController::class, 'store'])->name('feature-requests.previews.store');
     Route::get('previews/{preview}', [PreviewController::class, 'show'])->name('previews.show');
     Route::delete('previews/{preview}', [PreviewController::class, 'destroy'])->name('previews.destroy');
+    Route::get('notifications/{notification}', [NotificationController::class, 'show'])->name('notifications.show');
+    Route::post('notifications/read', NotificationReadController::class)->name('notifications.read');
     Route::post('runs/{run}/cancellation', [RunCancellationController::class, 'store'])->name('runs.cancellation.store');
 });
 

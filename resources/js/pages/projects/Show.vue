@@ -24,6 +24,7 @@ import ChangeThread from '@/components/ChangeThread.vue';
 import DesignPanel from '@/components/DesignPanel.vue';
 import InputError from '@/components/InputError.vue';
 import ProjectDetails from '@/components/ProjectDetails.vue';
+import NotificationBell from '@/components/NotificationBell.vue';
 import PublishPanel from '@/components/PublishPanel.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -307,6 +308,7 @@ function send(event: KeyboardEvent): void {
                 </Button>
             </template>
 
+            <NotificationBell />
             <Button
                 class="ml-1 h-11 select-none sm:h-9"
                 data-test="publish-open"

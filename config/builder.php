@@ -399,6 +399,12 @@ return [
         ],
     ],
 
+    'notifications' => [
+        // Also email the owner when a change is ready, has a question or
+        // did not work. They are always told in the builder itself.
+        'email' => (bool) env('BUILDER_NOTIFY_BY_EMAIL', false),
+    ],
+
     'generators' => [
 
         'reference' => [

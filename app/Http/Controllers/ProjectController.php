@@ -17,6 +17,7 @@ use App\Models\VisualEdit;
 use App\Projects\ProjectRepository;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -68,6 +69,13 @@ class ProjectController extends Controller
     public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest): Response
     {
         Gate::authorize('view', $project);
+
+        // Opening a change is reading what the owner was told about it.
+        if ($request->filled('change')) {
+            $request->user()->unreadNotifications()->get()
+                ->filter(fn (DatabaseNotification $notification) => ($notification->data['feature_request_id'] ?? null) === $request->integer('change'))
+                ->each->markAsRead();
+        }
 
         return Inertia::render('projects/Show', [
             'design' => $request->boolean('design'),

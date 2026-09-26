@@ -101,6 +101,16 @@ class FeatureRequest extends Model
     }
 
     /**
+     * Get the person who asked for the change.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    /**
      * Get the request this one follows up on.
      *
      * @return BelongsTo<FeatureRequest, $this>
