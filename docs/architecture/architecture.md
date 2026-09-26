@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 24.** This document consolidates the direction in [direction/](direction/)
+**Version 25.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -56,7 +56,12 @@ a closed loop that compares the result with the goal ([§9](#9-the-change-pipeli
 and symbolic planners and duplicated models of the app are ruled out
 ([§20](#20-deliberately-not-built-yet)). Version 24 makes pricing Grandma-first
 ([direction 25](direction/25-pricing-for-grandma.md), [§16](#16-model-gateway-and-credentials)):
-one unified price by default, and pay as you go for power users. When they disagree, the direction documents state intent
+one unified price by default, and pay as you go for power users. Version 25 makes V1
+the smallest complete evolution loop ([direction 26](direction/26-evolution-loop-and-design-contract.md)):
+publishing ends in smoke checks and a plain health state, product concepts keep stable
+keys shared by tests and Change Records, soft requirements climb the same ladder from
+checks to judgment ([§12](#12-verification)), and each app gets a design contract
+([§7](#design-context)); the demo is evolution, not generation ([§27](#27-v1-plan-version-16)). When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -308,8 +313,14 @@ engineering graph, built on demand ([Context Compiler](#8-context-compiler)).
 
 ### Behaviour identity and grouping
 
-- A behaviour is one entry handler plus what it causes. It gets an opaque, stable
-  key the first time it is discovered, and an **anchor** (route name, job class,
+- A behaviour is one entry handler plus what it causes. It gets a stable key
+  the first time it is discovered (a readable slug such as `booking.cancel`;
+  journeys and invariants get the same kind of key, such as
+  `tenant.data-isolation`). Tests name the keys they cover and Change Records
+  name the keys they touch, so later runtime evidence can attach to them
+  without a new mapping (direction 26). The key is only a name: what it
+  refers to stays in the notes and in Laravel's own routes, policies and
+  tests, never in a second model of the app. It also gets an **anchor** (route name, job class,
   schedule id or command signature) that re-finds it on each rebuild. Renames
   made by known transforms move the anchor; other re-matches are confirmed, so
   history is never silently broken.
@@ -825,6 +836,19 @@ defaults. What cannot (tone, density intent) goes into agent briefs for UI work
 and sets the visual editor's defaults. The user is never asked to restate
 aesthetic direction.
 
+**Each app has a design contract** (direction 26): a design note, kept like
+every other note, written in constitution form: principles, then rules,
+patterns, tokens, examples and forbidden patterns. It is beefy in coverage and
+short in prose, because the coder reads it on every UI change. A new app's
+contract starts from the design direction the owner picks when creating it
+(one of a few, shown as looks, never as a form about design). Its tokens are
+the app's Tailwind `@theme`, and the coder uses them rather than inventing
+values. Invariants such as "do not add a new pattern when an existing one
+solves the problem" and "do not raise density unless it helps the owner's
+next decision" are part of it. Parts of the contract graduate into checks
+([§12](#12-verification)); what cannot be checked goes to the reviewer. The
+builder's own UI follows the same form in its repository `DESIGN.md`.
+
 ### Hidden agile
 
 | Kept internally     | As                                                                            |
@@ -1195,6 +1219,21 @@ verification. The Change Record, not the commit, is the unit of acceptance.
 Depend on the idea of observed test dependencies, not on Pest's cache format:
 use affected-test output or a supported extension point.
 
+**Soft requirements climb the same ladder** (direction 26). "Feels fast",
+"consistent", "accessible", "not cluttered" are checked as far as evidence
+allows, and no further:
+
+| Kind of requirement    | How it is checked                                                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Measurable             | Deterministic checks: response time budgets, query counts, bundle size.                                                                    |
+| Structurally inferable | Heuristics and static analysis: token use instead of invented values, one primary action per surface, existing components reused.          |
+| Visually observable    | Browser checks on touched screens: contrast, no sideways overflow at 390, 820 and 1280 px, visible focus, touch targets of at least 44 px. |
+| Subjective             | The reviewer (a model) or a person judges hierarchy, clutter and coherence against the design contract.                                    |
+| Unknown                | Ask the owner one question (§7).                                                                                                           |
+
+Subjective qualities are never reported as passed checks. The owner sees the
+results in plain words ("Buttons are easy to tap on phones"), not the ladder.
+
 ## 13. Packages: trust, understanding and adapters
 
 Dependency order: Laravel native → Laravel first-party → our first-party →
@@ -1398,8 +1437,7 @@ content-addressed snapshot storage (V0 stores plain per-snapshot rows); the
 second provider adapter and learned routing (the contract and telemetry stay);
 package trust levels and adapters beyond an allowlist; custom Rector rules and
 the rule-promotion pipeline; the typed-operation catalogue beyond
-`capability_config` and `agent_task`; mapping design context onto theme tokens;
-AI comparison of prose intent; the edge proxy and hot reload; imported
+`capability_config` and `agent_task`; AI comparison of prose intent; the edge proxy and hot reload; imported
 applications; the invariant lifecycle interface; showing all five provenance
 classes to users (three badges suffice). Postponed in version 9: a precedent
 sources pipeline (public examples, domain research, aggregate insights), an
@@ -1424,6 +1462,16 @@ behaviour or specification language, a copy of the app's schema or
 authorization model, a dependency ontology built by a model, and confidence
 scores for assumptions. Rules start as plain language and become checks
 progressively (§31.2); effects carry provenance, not percentages.
+
+Not V1 (version 25, direction 26), each a consequence of the core loop working
+rather than a prerequisite for proving it: business usage analytics, semantic
+runtime journey tracking and observability, production-derived Effects,
+anomaly detection, runtime behaviour reconciliation, goal optimisation from
+telemetry, an expert marketplace and expert matching, semantic undo, a mature
+architecture-rule compiler or complexity-budget scoring, mature audits and
+adversarial review, a learned model router, a large precedent database,
+native PHP or Symfony support, a fully deterministic Effect graph, and full
+reverse engineering of existing repositories.
 
 ## 21. Status and staged plan
 
@@ -2419,6 +2467,15 @@ Direction 16 freezes the V1 direction. This section is the engineering plan
 that answers it. For V1, it wins over §21 and §26 where they differ. The
 ambition is the depth of one loop, not the breadth of features.
 
+Direction 26 names that loop: V1 is **the smallest complete evolution loop**,
+from request to published and checked change, and **the demo is evolution, not
+generation**. First-generation demos are common; ours builds an app, then
+makes ten changes in a row, and by change 10 the owner still talks about their
+business exactly as at change 1. Speed and polish to the first result match
+the best builders; the edge is that the tenth change is as easy as the first.
+The thesis: can a real application grow more complex without the owner's
+experience growing more complex?
+
 ### 27.1 What proves the differentiation
 
 The claim is "it understands the product, retrieves what matters, knows what
@@ -2427,7 +2484,8 @@ these components prove that claim, so only these are **required**:
 
 1. Project notes with selective compilation (built: §26.3).
 2. Behaviours and Effects in the capability notes, and the change sorted by
-   area (built: §26.4).
+   area (built: §26.4). Capabilities, rules and behaviours keep stable keys
+   that tests and Change Records share (§6), in their thinnest form.
 3. **The Change Brief** with _preserve_ and _verify_ clauses (new; §27.4).
 4. The coding agent running in a sandboxed runtime through an agent SDK.
 5. Independent verification: the full suite, protected acceptance tests, and
@@ -2441,21 +2499,27 @@ these components prove that claim, so only these are **required**:
 9. A minimal Project Understanding page: the notes files rendered in
    product language and editable.
 10. Git boundaries per accepted change, revert, and deploy by pushing to the
-    branch Laravel Cloud deploys from.
+    branch Laravel Cloud deploys from. Publishing is one click to a default
+    address, and it is a loop, not a push (direction 26): publish, run smoke
+    checks against the published app (it boots, sign-in works, the critical
+    journeys and invariants answer), link the deployment to the changes it
+    carries, take in basic errors from the published app, and show one plain
+    state: "Published", "Checks passed" or "Needs attention". Runtime is light
+    in V1: no analytics, tracing or anomaly detection.
 11. Telemetry per change request (§25.3), including cost per accepted change.
 
 ### 27.2 Postponed to V1.1
 
-| Postponed                                                     | Why it can wait                                                                                                                                                                                                        |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Decision layer (Jev) acting on runs                           | The brief's model call already classifies. A decision model pays off only by skipping stages, and needs traffic to show which ones. V1.1 runs it in shadow mode only (§26.9, "As built"); V1 routes deterministically. |
-| Thorough and deep audits, adversarial review                  | They need real applications with history. V1 keeps the quick health check (deterministic), which protects the notes.                                                                                                   |
-| Precedent library                                             | Hand-written cards in owner sessions first (§26.6, F).                                                                                                                                                                 |
-| Compatibility mode                                            | V1 preserve clauses already cover "don't change these"; the mode is a user-chosen set of protected interfaces on top.                                                                                                  |
-| Backend flow visualisation                                    | Behaviour notes already say "what happens" in words. A diagram only restates them until behaviour is extracted automatically.                                                                                          |
-| Small-generative-model tier                                   | No V1 job needs it: answers are written deterministically, and the coder updates the notes in its own diff.                                                                                                            |
-| Deploy checks beyond Cloud's own (queues, schedule, env diff) | Laravel Cloud deploys and reports from the Git branch. V1 shows its status and keeps the revert.                                                                                                                       |
-| Multi-provider routing                                        | The reviewer already runs on a different provider through laravel/ai. Anything more waits for telemetry.                                                                                                               |
+| Postponed                                                          | Why it can wait                                                                                                                                                                                                        |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Decision layer (Jev) acting on runs                                | The brief's model call already classifies. A decision model pays off only by skipping stages, and needs traffic to show which ones. V1.1 runs it in shadow mode only (§26.9, "As built"); V1 routes deterministically. |
+| Thorough and deep audits, adversarial review                       | They need real applications with history. V1 keeps the quick health check (deterministic), which protects the notes.                                                                                                   |
+| Precedent library                                                  | Hand-written cards in owner sessions first (§26.6, F).                                                                                                                                                                 |
+| Compatibility mode                                                 | V1 preserve clauses already cover "don't change these"; the mode is a user-chosen set of protected interfaces on top.                                                                                                  |
+| Backend flow visualisation                                         | Behaviour notes already say "what happens" in words. A diagram only restates them until behaviour is extracted automatically.                                                                                          |
+| Small-generative-model tier                                        | No V1 job needs it: answers are written deterministically, and the coder updates the notes in its own diff.                                                                                                            |
+| Deploy checks beyond the smoke checks (queues, schedule, env diff) | Laravel Cloud deploys and reports from the Git branch. V1 runs the smoke checks, shows a plain health state and keeps the revert.                                                                                      |
+| Multi-provider routing                                             | The reviewer already runs on a different provider through laravel/ai. Anything more waits for telemetry.                                                                                                               |
 
 ### 27.3 Still architecture for architecture's sake
 
