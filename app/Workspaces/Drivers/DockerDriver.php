@@ -126,6 +126,37 @@ class DockerDriver implements WorkspaceDriver
     }
 
     /**
+     * Start the command detached inside the container.
+     */
+    public function startService(string $workspaceId, array $command, int $port): void
+    {
+        $result = Process::run([$this->binary, 'exec', '--detach', $workspaceId, ...$command]);
+
+        if ($result->failed()) {
+            throw new RuntimeException('Could not start the service: '.trim($result->errorOutput()));
+        }
+    }
+
+    /**
+     * Reach the service at the container's address. A container without a
+     * network (the default) has no address, so it cannot serve previews.
+     */
+    public function serviceUrl(string $workspaceId, int $port): string
+    {
+        $result = Process::run([
+            $this->binary, 'inspect', '--format', '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}', $workspaceId,
+        ]);
+
+        $address = trim($result->output());
+
+        if ($result->failed() || $address === '') {
+            throw new RuntimeException('The workspace container has no network address, so it cannot serve a preview. Set WORKSPACE_DOCKER_NETWORK to a network the control plane can reach.');
+        }
+
+        return "http://{$address}:{$port}";
+    }
+
+    /**
      * Remove the container and its filesystem.
      */
     public function destroy(string $workspaceId): void

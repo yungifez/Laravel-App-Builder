@@ -73,6 +73,24 @@ class FeatureRequestController extends Controller
     }
 
     /**
+     * Get the latest preview for the page.
+     *
+     * @return array<string, mixed>|null
+     */
+    protected function latestPreview(FeatureRequest $featureRequest): ?array
+    {
+        $preview = $featureRequest->previews()->latest('id')->first();
+
+        return $preview === null ? null : [
+            'id' => $preview->id,
+            'status' => $preview->status->value,
+            'error' => $preview->error,
+            'url' => $preview->url(),
+            'expires_at' => $preview->expires_at?->toIso8601String(),
+        ];
+    }
+
+    /**
      * Request a feature for the project.
      */
     public function store(FeatureRequestStoreRequest $request, Project $project, RequestFeature $requestFeature): RedirectResponse
@@ -108,6 +126,7 @@ class FeatureRequestController extends Controller
             'parent' => $parent?->only('id', 'prompt'),
             'verification' => $this->latestVerification($featureRequest),
             'run' => $this->latestRun($featureRequest),
+            'preview' => $this->latestPreview($featureRequest),
             'followUps' => $featureRequest->followUps()->latest()->get()
                 ->map(fn (FeatureRequest $followUp) => [
                     'id' => $followUp->id,

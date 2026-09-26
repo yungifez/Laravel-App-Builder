@@ -116,3 +116,13 @@ export type Run = {
     finished_at: string | null;
     events: RunEvent[];
 };
+
+export type PreviewStatus = 'starting' | 'ready' | 'failed' | 'stopped';
+
+export type Preview = {
+    id: number;
+    status: PreviewStatus;
+    error: string | null;
+    url: string;
+    expires_at: string | null;
+};

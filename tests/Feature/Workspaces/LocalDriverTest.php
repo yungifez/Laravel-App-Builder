@@ -99,4 +99,38 @@ class LocalDriverTest extends TestCase
 
         $this->driver->exec('../etc', ['ls'], 5);
     }
+
+    public function test_services_run_detached_with_a_scrubbed_environment_until_the_workspace_is_destroyed()
+    {
+        putenv('DB_PASSWORD=control-plane-secret');
+        $this->driver->writeFile($this->workspaceId, 'public/index.php', '<?php echo getenv("GREETING").":".var_export(getenv("DB_PASSWORD"), true);');
+        $socket = stream_socket_server('tcp://127.0.0.1:0');
+        $port = (int) Str::afterLast((string) stream_socket_get_name($socket, false), ':');
+        fclose($socket);
+
+        $this->driver->startService($this->workspaceId, ['env', 'GREETING=preview', 'php', '-S', "127.0.0.1:{$port}", '-t', 'public'], $port);
+        $url = $this->driver->serviceUrl($this->workspaceId, $port);
+
+        $body = false;
+
+        for ($attempt = 0; $attempt < 50 && $body === false; $attempt++) {
+            usleep(100_000);
+            $body = @file_get_contents($url.'/');
+        }
+
+        putenv('DB_PASSWORD');
+        $this->assertSame('preview:false', $body);
+
+        $this->driver->destroy($this->workspaceId);
+
+        $stopped = false;
+
+        for ($attempt = 0; $attempt < 30 && ! $stopped; $attempt++) {
+            usleep(100_000);
+            $stopped = @file_get_contents($url.'/') === false;
+        }
+
+        $this->assertTrue($stopped, 'The service kept running after the workspace was destroyed.');
+        $this->assertDirectoryDoesNotExist($this->root.'/'.$this->workspaceId.'.services');
+    }
 }

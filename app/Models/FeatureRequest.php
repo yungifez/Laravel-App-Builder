@@ -114,6 +114,16 @@ class FeatureRequest extends Model
     }
 
     /**
+     * Get the request's previews.
+     *
+     * @return HasMany<Preview, $this>
+     */
+    public function previews(): HasMany
+    {
+        return $this->hasMany(Preview::class);
+    }
+
+    /**
      * Get this request and the requests it follows up on, oldest first, so
      * their patches can be applied in order.
      *
