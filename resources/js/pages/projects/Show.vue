@@ -159,16 +159,48 @@ const screens: { key: Device; label: string; icon: typeof Monitor }[] = [
 ];
 
 // A conversation reads oldest first, with the newest ask next to the box.
-// Oldest first, like a chat, with the changes still open (working or
-// waiting for the owner) together just above the box, where the owner acts.
+// Finished changes are grouped by day, so the day is said once instead of on
+// every row. Changes still open sit together just above the box, where the
+// owner acts, under what they need: the owner, or only time.
 const thread = computed(() => {
     const oldestFirst = [...props.changes].reverse();
     const open = (item: ChangeItem) =>
         item.state === 'waiting' || item.state === 'working';
 
+    // A stopped change asked again later is the same ask: show the latest.
+    const history = oldestFirst.filter(
+        (item, index) =>
+            !open(item) &&
+            (item.state !== 'stopped' ||
+                !oldestFirst
+                    .slice(index + 1)
+                    .some(
+                        (later) => later.prompt.trim() === item.prompt.trim(),
+                    )),
+    );
+
+    const groups: { label: string; items: ChangeItem[] }[] = [];
+
+    for (const item of history) {
+        const day = when(item.updated_at);
+        const label = day.charAt(0).toUpperCase() + day.slice(1);
+
+        if (groups.at(-1)?.label === label) {
+            groups.at(-1)?.items.push(item);
+        } else {
+            groups.push({ label, items: [item] });
+        }
+    }
+
+    const working = oldestFirst.filter((item) => item.state === 'working');
+    const waiting = oldestFirst.filter((item) => item.state === 'waiting');
+
     return [
-        ...oldestFirst.filter((item) => !open(item)),
-        ...oldestFirst.filter(open),
+        ...groups,
+        ...(working.length ? [{ label: 'Working on it', items: working }] : []),
+        ...(waiting.length
+            ? [{ label: 'Waiting for you', items: waiting }]
+            : []),
     ];
 });
 const threadEnd = ref<HTMLElement | null>(null);
@@ -580,7 +612,7 @@ function send(event: KeyboardEvent): void {
 
                 <div v-else class="min-h-0 flex-1 overflow-y-auto p-4">
                     <div
-                        v-if="thread.length === 0"
+                        v-if="changes.length === 0"
                         class="flex h-full flex-col justify-end gap-3 pb-2"
                         data-test="chat-empty"
                     >
@@ -600,59 +632,75 @@ function send(event: KeyboardEvent): void {
                         </div>
                     </div>
 
-                    <ol
+                    <div
                         v-else
-                        class="-mx-2 divide-y"
+                        class="-mx-2 space-y-4"
                         data-test="project-changes"
                     >
-                        <li
-                            v-for="item in thread"
-                            :key="item.id"
-                            :data-test="`change-${item.state}`"
+                        <section
+                            v-for="(group, index) in thread"
+                            :key="`${index}-${group.label}`"
+                            :aria-label="group.label"
                         >
-                            <Link
-                                :href="
-                                    showProject(project.id, {
-                                        query: { change: item.id },
-                                    })
-                                "
-                                :only="['change']"
-                                preserve-state
-                                preserve-scroll
-                                class="flex min-h-11 items-start gap-2.5 rounded-md px-2 py-2.5 select-none hover:bg-muted/60"
+                            <h3
+                                class="px-2 pb-1 text-xs font-medium text-muted-foreground"
                             >
-                                <component
-                                    :is="states[item.state].icon"
-                                    :class="[
-                                        'mt-0.5 size-4 shrink-0',
-                                        states[item.state].tone,
-                                    ]"
-                                    :aria-label="states[item.state].label"
-                                />
-                                <span
-                                    :class="[
-                                        'line-clamp-2 min-w-0 flex-1 text-sm break-words',
-                                        item.state === 'waiting'
-                                            ? 'font-medium'
-                                            : 'text-muted-foreground',
-                                        item.state === 'undone' &&
-                                            'line-through',
-                                    ]"
-                                    >{{ item.prompt }}</span
+                                {{ group.label }}
+                            </h3>
+                            <ol>
+                                <li
+                                    v-for="item in group.items"
+                                    :key="item.id"
+                                    :data-test="`change-${item.state}`"
                                 >
-                                <span
-                                    v-if="item.state === 'waiting'"
-                                    class="mt-0.5 shrink-0 text-xs font-medium text-amber-600 dark:text-amber-400"
-                                    >{{ item.asks ? 'Answer' : 'Review' }}</span
-                                >
-                                <span
-                                    v-else-if="item.updated_at"
-                                    class="mt-0.5 shrink-0 text-xs text-muted-foreground tabular-nums"
-                                    >{{ when(item.updated_at) }}</span
-                                >
-                            </Link>
-                        </li>
-                    </ol>
+                                    <Link
+                                        :href="
+                                            showProject(project.id, {
+                                                query: { change: item.id },
+                                            })
+                                        "
+                                        :only="['change']"
+                                        preserve-state
+                                        preserve-scroll
+                                        class="flex min-h-11 items-start gap-2.5 rounded-md px-2 py-2 select-none hover:bg-muted/60"
+                                    >
+                                        <component
+                                            :is="states[item.state].icon"
+                                            :class="[
+                                                'mt-0.5 size-4 shrink-0',
+                                                // The heading says these wait;
+                                                // one amber word per row is enough.
+                                                item.state === 'waiting'
+                                                    ? 'text-muted-foreground'
+                                                    : states[item.state].tone,
+                                            ]"
+                                            :aria-label="
+                                                states[item.state].label
+                                            "
+                                        />
+                                        <span
+                                            :class="[
+                                                'line-clamp-2 min-w-0 flex-1 text-sm break-words',
+                                                item.state === 'waiting'
+                                                    ? 'font-medium'
+                                                    : 'text-muted-foreground',
+                                                item.state === 'undone' &&
+                                                    'line-through',
+                                            ]"
+                                            >{{ item.prompt }}</span
+                                        >
+                                        <span
+                                            v-if="item.state === 'waiting'"
+                                            class="mt-0.5 shrink-0 text-xs font-medium text-amber-600 dark:text-amber-400"
+                                            >{{
+                                                item.asks ? 'Answer' : 'Review'
+                                            }}</span
+                                        >
+                                    </Link>
+                                </li>
+                            </ol>
+                        </section>
+                    </div>
                     <div ref="threadEnd" />
                 </div>
 
