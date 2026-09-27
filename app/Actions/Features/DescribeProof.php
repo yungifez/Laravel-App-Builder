@@ -155,7 +155,8 @@ class DescribeProof
     /**
      * Say that the screens the change touched were opened on a phone, a
      * tablet and a computer and nothing was cut off, too small to tap or
-     * broken, when the screen check measured them.
+     * broken, when the screen check measured them, and name words too
+     * faint to read as a gap.
      *
      * @return list<array{kind: string, text: string}>
      */
@@ -167,7 +168,14 @@ class DescribeProof
             return [];
         }
 
-        return [['kind' => 'passed', 'text' => trans_choice('The screen it changed was opened on a phone, a tablet and a computer. Nothing was cut off, too small to tap or broken.|The :count screens it changed were opened on a phone, a tablet and a computer. Nothing was cut off, too small to tap or broken.', count($changed))]];
+        $faint = ScreenCheck::faint($verification->screens, $featureRequest->patch);
+        $lines = [['kind' => 'passed', 'text' => trans_choice('The screen it changed was opened on a phone, a tablet and a computer. Nothing was cut off, too small to tap or broken.|The :count screens it changed were opened on a phone, a tablet and a computer. Nothing was cut off, too small to tap or broken.', count($changed))]];
+
+        if ($faint !== []) {
+            $lines[] = ['kind' => 'gap', 'text' => trans_choice('Some words on it are hard to read against their background: ":text".|Some words on it are hard to read against their background, such as ":text".', count($faint), ['text' => $faint[0]['text']])];
+        }
+
+        return $lines;
     }
 
     /**

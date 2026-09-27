@@ -180,6 +180,14 @@ class ChangeProofTest extends TestCase
         $this->actingAs($fits->project->owner)
             ->get(route('feature-requests.show', $fits))
             ->assertInertia(fn (Assert $page) => $page->where('proof', fn ($proof) => collect($proof)->contains(['kind' => 'passed', 'text' => $line])));
+        // Faint words are a gap the owner sees, not a reason to hold the change.
+        $faint = $screens(0);
+        $faint['pages'][0]['widths'][0]['faint'] = [['text' => 'Delete team', 'ratio' => 3.76, 'needed' => 4.5]];
+        $fits->verifications()->sole()->update(['screens' => $faint]);
+        $this->actingAs($fits->project->owner)
+            ->get(route('feature-requests.show', $fits))
+            ->assertInertia(fn (Assert $page) => $page->where('proof', fn ($proof) => collect($proof)->contains(['kind' => 'passed', 'text' => $line])
+                && collect($proof)->contains(['kind' => 'gap', 'text' => 'Some words on it are hard to read against their background: "Delete team".'])));
         // A page that still scrolls sideways is never called a fit.
         $this->actingAs($scrolls->project->owner)
             ->get(route('feature-requests.show', $scrolls))

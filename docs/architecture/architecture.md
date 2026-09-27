@@ -1345,6 +1345,10 @@ changes the checks' result. A page names its screen through Inertia's page
 component. On a page whose screen file the change touched, each kind of
 problem is a blocking finding at its narrowest width. Other pages are
 measured but never blamed. The owner sees a clean result as one proof line.
+At 390 px it also measures contrast (WCAG 2.2 AA 1.4.3: 4.5 to 1, or 3 to 1
+for large text; text over a picture or gradient is unknown). Faint words on
+a touched screen are a gap line in the proof, never a send-back: they
+usually come from the app's shared theme.
 Where the tool is not installed, nothing is measured and nothing is said.
 `builder.verification.screens` holds the command and its switch.
 

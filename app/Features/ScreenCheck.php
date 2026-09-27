@@ -129,6 +129,30 @@ class ScreenCheck
     }
 
     /**
+     * Get the words too faint to read (WCAG 2.2 AA contrast) on the pages
+     * the change touched, once each. They are said to the owner as a gap,
+     * never a send-back: faint colours usually come from the app's shared
+     * theme, which a change to one screen should not rewrite.
+     *
+     * @param  array{pages: list<array<string, mixed>>, signed_in?: bool}|null  $screens
+     * @return list<array{path: string, file: string, text: string, ratio: float}>
+     */
+    public static function faint(?array $screens, ?string $patch): array
+    {
+        $faint = [];
+
+        foreach (self::changed($screens, $patch) as ['page' => $page, 'file' => $file]) {
+            foreach (is_array($page['widths'] ?? null) ? $page['widths'] : [] as $measured) {
+                foreach (is_array($measured['faint'] ?? null) ? $measured['faint'] : [] as $words) {
+                    $faint[$words['text']] ??= ['path' => (string) $page['path'], 'file' => $file, 'text' => (string) $words['text'], 'ratio' => (float) $words['ratio']];
+                }
+            }
+        }
+
+        return array_values($faint);
+    }
+
+    /**
      * Say what is wrong on a page and how to fix it, for the coder that
      * must fix it.
      *

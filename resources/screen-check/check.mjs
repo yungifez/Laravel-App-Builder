@@ -407,6 +407,151 @@ async function measure(browser, path, cookies) {
                         }
                     }
 
+                    // Words too faint to read against what is behind them
+                    // (WCAG 2.2 AA 1.4.3): 4.5 to 1, or 3 to 1 for large
+                    // text. A canvas turns any CSS colour (oklch too) into
+                    // sRGB. Text over a picture or gradient is unknown, and
+                    // disabled controls are exempt, as in the guideline.
+                    const faint = [];
+
+                    if (phone) {
+                        const canvas = document
+                            .createElement('canvas')
+                            .getContext('2d', { willReadFrequently: true });
+                        const rgba = (colour) => {
+                            canvas.clearRect(0, 0, 1, 1);
+                            canvas.fillStyle = '#000';
+                            canvas.fillStyle = colour;
+                            canvas.fillRect(0, 0, 1, 1);
+                            const [r, g, b, a] = canvas.getImageData(
+                                0,
+                                0,
+                                1,
+                                1,
+                            ).data;
+
+                            return [r, g, b, a / 255];
+                        };
+                        const over = ([r, g, b, a], [br, bg, bb]) => [
+                            r * a + br * (1 - a),
+                            g * a + bg * (1 - a),
+                            b * a + bb * (1 - a),
+                            1,
+                        ];
+                        const luminance = ([r, g, b]) => {
+                            const [lr, lg, lb] = [r, g, b].map((value) => {
+                                const c = value / 255;
+
+                                return c <= 0.04045
+                                    ? c / 12.92
+                                    : ((c + 0.055) / 1.055) ** 2.4;
+                            });
+
+                            return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+                        };
+                        const behind = (element) => {
+                            const layers = [];
+
+                            for (
+                                let node = element;
+                                node;
+                                node = node.parentElement
+                            ) {
+                                const style = getComputedStyle(node);
+
+                                if (style.backgroundImage !== 'none') {
+                                    return null;
+                                }
+
+                                const colour = rgba(style.backgroundColor);
+
+                                if (colour[3] > 0) {
+                                    layers.push(colour);
+                                }
+
+                                if (colour[3] === 1) {
+                                    break;
+                                }
+                            }
+
+                            return layers.reduceRight(
+                                (below, layer) => over(layer, below),
+                                [255, 255, 255, 1],
+                            );
+                        };
+
+                        for (const element of document.body.querySelectorAll(
+                            '*',
+                        )) {
+                            const words = [...element.childNodes]
+                                .filter(
+                                    (node) => node.nodeType === Node.TEXT_NODE,
+                                )
+                                .map((node) => node.textContent)
+                                .join('')
+                                .trim();
+                            const box = element.getBoundingClientRect();
+                            const style = getComputedStyle(element);
+
+                            if (
+                                words === '' ||
+                                box.width <= 1 ||
+                                box.height <= 1 ||
+                                style.visibility === 'hidden' ||
+                                element.closest(
+                                    '[aria-hidden=true], :disabled, [aria-disabled=true], script, style, noscript',
+                                )
+                            ) {
+                                continue;
+                            }
+
+                            let hidden = false;
+
+                            for (
+                                let node = element;
+                                node;
+                                node = node.parentElement
+                            ) {
+                                if (
+                                    Number(getComputedStyle(node).opacity) < 1
+                                ) {
+                                    hidden = true;
+                                    break;
+                                }
+                            }
+
+                            const background = hidden ? null : behind(element);
+
+                            if (background === null) {
+                                continue;
+                            }
+
+                            const text = over(rgba(style.color), background);
+                            const [light, dark] = [
+                                luminance(text),
+                                luminance(background),
+                            ].sort((a, b) => b - a);
+                            const ratio = (light + 0.05) / (dark + 0.05);
+                            const size = parseFloat(style.fontSize);
+                            const needed =
+                                size >= 24 ||
+                                (size >= 18.66 &&
+                                    Number(style.fontWeight) >= 700)
+                                    ? 3
+                                    : 4.5;
+
+                            if (ratio < needed) {
+                                faint.push({
+                                    text: words
+                                        .replace(/\s+/g, ' ')
+                                        .slice(0, 60),
+                                    ratio: Math.round(ratio * 100) / 100,
+                                    needed,
+                                });
+                            }
+                        }
+                    }
+
                     // The Inertia page component, which names the screen's file.
                     let screen = null;
                     const data = document.querySelector(
@@ -434,6 +579,8 @@ async function measure(browser, path, cookies) {
                         cut: cut.slice(0, maxListed),
                         small_targets: small.length,
                         small: small.slice(0, maxListed),
+                        low_contrast: faint.length,
+                        faint: faint.slice(0, maxListed),
                     };
                 },
                 {

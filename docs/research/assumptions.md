@@ -91,8 +91,13 @@ them and correct any that are wrong.
   default `.env.example`. An app that needs another database is not
   measured, and nothing is said. Undo: change
   `builder.verification.screens.command`.
-- **Contrast and visible focus are not checked yet.** They are next for this
-  check.
+- **Faint words are a gap, not a send-back.** The screen check measures
+  contrast (WCAG 2.2 AA) at 390 px. Words on a touched screen that fall
+  short show in the proof as "Some words on it are hard to read…". Why: on
+  the starter kit, the only failures were theme colours (white on red-500
+  at 3.76 to 1, muted tab text at 4.35 to 1). A change to one screen should
+  not rewrite the theme. Undo: return faint words from `ScreenCheck::found`.
+- **Visible focus is not checked yet.** It is next for this check.
 - **"What I know" adds up kept proof.** The overview line now adds "N tests
   added" (test functions in kept, not undone changes) and "N screens checked
   on a phone" (touched screens the latest passing verification found to

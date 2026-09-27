@@ -81,6 +81,12 @@ class ScreenCheckTest extends TestCase
             ScreenCheck::finding(ScreenCheck::found($screens, $patch)[0]),
         );
         $this->assertCount(1, ScreenCheck::changed($screens, $patch));
+        // Faint words are never a send-back.
+        $this->assertSame([], ScreenCheck::found(['pages' => [$this->page('/about', 'About', [390 => ['faint' => [['text' => 'Warning', 'ratio' => 4.36, 'needed' => 4.5]]]])]], $patch));
+        $this->assertSame(
+            [['path' => '/about', 'file' => 'resources/js/pages/About.vue', 'text' => 'Warning', 'ratio' => 4.36]],
+            ScreenCheck::faint(['pages' => [$this->page('/about', 'About', [390 => ['faint' => [['text' => 'Warning', 'ratio' => 4.36, 'needed' => 4.5]]], 820 => ['faint' => [['text' => 'Warning', 'ratio' => 4.36, 'needed' => 4.5]]]])]], $patch),
+        );
     }
 
     public function test_a_clean_or_missing_measurement_finds_nothing()
