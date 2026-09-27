@@ -66,6 +66,23 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
 `;
     (document.head || document.documentElement).appendChild(style);
 
+    // A rebuilt page loads behind the one on show and takes its place once
+    // drawn. Its own entrance effects (fading or sliding in) would then play
+    // in front of the owner after every change, so the page draws settled
+    // and its effects come back once it is on show.
+    const settle = document.createElement('style');
+    settle.textContent =
+        '*,*::before,*::after{transition:none!important;animation-duration:0s!important;animation-delay:0s!important}';
+    (document.head || document.documentElement).appendChild(settle);
+    const unsettle = () => {
+        if (settle.isConnected) {
+            setTimeout(() => settle.remove(), 300);
+        }
+    };
+    // A page the builder never sets up (it swaps a page in after 15 seconds
+    // at most) gets its effects back all the same.
+    setTimeout(unsettle, 15000);
+
     const part = (name, parent) => {
         const element = document.createElement('div');
         element.setAttribute('data-part', name);
@@ -979,6 +996,8 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         const message = event.data;
 
         if (message.type === 'mode') {
+            // The builder sets up a page only once it is on show.
+            unsettle();
             editing = Boolean(message.editing);
             document.documentElement.style.cursor = editing ? 'crosshair' : '';
 
