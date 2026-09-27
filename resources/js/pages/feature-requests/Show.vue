@@ -564,6 +564,13 @@ function lineClass(line: string): string {
                 <p v-if="run.question.why" class="text-muted-foreground">
                     {{ run.question.why }}
                 </p>
+                <p
+                    v-if="run.question.reversible === false"
+                    class="text-sm text-muted-foreground"
+                    data-test="question-lasting"
+                >
+                    This is hard to change later, so I am asking you.
+                </p>
             </div>
 
             <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">

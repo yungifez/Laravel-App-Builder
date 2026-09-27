@@ -191,5 +191,5 @@ them and correct any that are wrong.
   as hard to change later (`reversible: false`), the chat's question card
   adds "This is hard to change later, so I am asking you." Easy choices are
   already made without asking (direction 18 §6); this makes that visible.
-  Untagged questions (older runs) show no line. The details page does not
-  show it yet.
+  Untagged questions (older runs) show no line. The change details page
+  shows the same line.
