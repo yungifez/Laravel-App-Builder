@@ -126,7 +126,8 @@ class ClassifyChange
         return [
             'areas' => $areas,
             'tests' => count($tests),
-            'unmapped' => array_values(array_filter(array_keys($code), fn (string $path) => ! isset($map->files[$path]))),
+            // Code no test ran, where coverage would have seen a test run it.
+            'unmapped' => array_values(array_filter(array_keys($code), fn (string $path) => ! isset($map->files[$path]) && $map->measures($path))),
             'foundation' => $broad,
             'by_line' => $byLine,
         ];

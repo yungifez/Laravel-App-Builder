@@ -206,6 +206,25 @@ final readonly class TestMap
     }
 
     /**
+     * Determine if the map could have seen a file: code coverage measured
+     * other files in its top folder. Coverage usually measures app/ alone,
+     * so a config file, a migration or bootstrap/app.php no test "ran" is
+     * unknown to the map, not code without tests.
+     */
+    public function measures(string $path): bool
+    {
+        $folder = Str::before($path, '/').'/';
+
+        foreach (array_keys($this->files) as $file) {
+            if (str_starts_with($file, $folder)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Get the tests that ran any of the given lines of a file, or null when
      * the map cannot say: it kept no lines for the file, or no test ran any
      * of them (a new method, a signature). The caller then goes by the whole

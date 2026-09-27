@@ -3172,7 +3172,9 @@ compiled packet, same model and code) tests it directly.
   with the change in place, else as in the old one. So a change to one
   method of a large or foundation file is narrow when few tests run that
   method. When no test ran any changed line (new code, a signature), the
-  whole file counts: unknown broadens, never narrows. Next: impact by
+  whole file counts: unknown broadens, never narrows. Changed code no test
+  ran is a gap only in a top folder coverage measured (usually `app/`); a
+  config file or migration there is unknown to the map, not untested. Next: impact by
   behaviour, as tests gain `behavior:` groups.
   The owner sees this evidence in plain words. Each part says how many tests
   run its code, and lists what they check, in the tests' own names. Each

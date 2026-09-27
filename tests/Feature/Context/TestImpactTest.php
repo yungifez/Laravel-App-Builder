@@ -200,6 +200,20 @@ class TestImpactTest extends TestCase
             '@@ -1 +1,2 @@',
             ' <?php',
             '+// changed',
+            // Coverage measured nothing in these folders, so the map cannot
+            // say whether a test ran them: unknown, not a gap.
+            'diff --git a/config/teams.php b/config/teams.php',
+            '--- a/config/teams.php',
+            '+++ b/config/teams.php',
+            '@@ -1 +1,2 @@',
+            ' <?php',
+            '+// changed',
+            'diff --git a/database/migrations/2026_01_01_000000_add_seats.php b/database/migrations/2026_01_01_000000_add_seats.php',
+            'new file mode 100644',
+            '--- /dev/null',
+            '+++ b/database/migrations/2026_01_01_000000_add_seats.php',
+            '@@ -0,0 +1 @@',
+            '+<?php',
             '',
         ]);
 
