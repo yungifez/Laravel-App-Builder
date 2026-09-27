@@ -24,6 +24,7 @@ use App\Http\Controllers\PreviewController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectEditorController;
 use App\Http\Controllers\ProjectExperimentController;
+use App\Http\Controllers\ProjectNameController;
 use App\Http\Controllers\ProjectNotesDraftController;
 use App\Http\Controllers\ProjectPreviewController;
 use App\Http\Controllers\ProjectPublishingController;
@@ -47,6 +48,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('projects/{project}/understanding', [ProjectUnderstandingController::class, 'update'])->name('projects.understanding.update');
     Route::post('projects/{project}/notes-draft', [ProjectNotesDraftController::class, 'store'])->name('projects.notes-draft.store');
     Route::delete('projects/{project}/notes-draft', [ProjectNotesDraftController::class, 'destroy'])->name('projects.notes-draft.destroy');
+    Route::patch('projects/{project}/name', [ProjectNameController::class, 'update'])->name('projects.name.update');
     Route::put('projects/{project}/publishing', [ProjectPublishingController::class, 'update'])->name('projects.publishing.update');
     Route::post('projects/{project}/deployments', [DeploymentController::class, 'store'])->name('deployments.store');
     Route::post('projects/{project}/live-error-fixes', [LiveErrorFixController::class, 'store'])->name('live-error-fixes.store');

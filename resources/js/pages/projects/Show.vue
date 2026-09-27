@@ -41,6 +41,7 @@ import InputError from '@/components/InputError.vue';
 import ProjectDetails from '@/components/ProjectDetails.vue';
 import NotificationBell from '@/components/NotificationBell.vue';
 import PublishPanel from '@/components/PublishPanel.vue';
+import RenameAppDialog from '@/components/RenameAppDialog.vue';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -153,6 +154,7 @@ const behind = computed(() => {
     );
 });
 const startingIdea = ref(false);
+const renaming = ref(false);
 const usingIdea = ref(false);
 
 function openIdea(idea: Idea): void {
@@ -426,6 +428,12 @@ function send(event: KeyboardEvent): void {
                     >
                 </DropdownMenuItem>
                 <DropdownMenuItem
+                    data-test="app-rename"
+                    @select="renaming = true"
+                >
+                    Rename…
+                </DropdownMenuItem>
+                <DropdownMenuItem
                     data-test="details-open"
                     @select="detailsOpen = true"
                 >
@@ -528,6 +536,11 @@ function send(event: KeyboardEvent): void {
     </header>
 
     <StartIdeaDialog v-model:open="startingIdea" :project-id="project.id" />
+    <RenameAppDialog
+        v-model:open="renaming"
+        :project-id="project.id"
+        :name="project.name"
+    />
     <UseIdeaDialog
         v-if="ideas.current"
         v-model:open="usingIdea"
