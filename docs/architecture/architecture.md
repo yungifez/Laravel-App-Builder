@@ -1293,6 +1293,16 @@ named test that is missing, skipped or misnamed is a blocking finding. A
 suite without a report leaves the reviewer's claim as a claim, shown to the
 owner as not confirmed.
 
+**Common safety mistakes are found by pattern, on added lines only.** The
+review scans the lines a change adds for unescaped Blade output (`{!! !!}`),
+`v-html`, queries built from values mixed into their text, models open to
+every field, and committed `.env` files (`builder.verification.safety_scan`).
+Each one found is a blocking finding that names the line and the safe way.
+Code the app already had is never held against a change. A comment on the
+line, or the line above, that says why it is safe lets it through: a reason
+a person can read and question. The owner sees the clean result as one line
+of the change's proof.
+
 Depend on the idea of observed test dependencies, not on Pest's cache format:
 use affected-test output or a supported extension point.
 

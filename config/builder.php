@@ -486,6 +486,12 @@ return [
         // blocking finding, so the coder is sent back to add it.
         'require_verify_tests' => (bool) env('BUILDER_REQUIRE_VERIFY_TESTS', true),
 
+        // Whether the lines a change adds are scanned for common safety
+        // mistakes (unescaped output, raw HTML, queries built from values,
+        // records open to any field, committed .env files). Each one found
+        // is a blocking finding, so the coder is sent back to fix it.
+        'safety_scan' => (bool) env('BUILDER_SAFETY_SCAN', true),
+
         // Test impact evidence (direction 22). When the suite check passes,
         // the suite runs once more with code coverage, and the test list is
         // read with its groups, to record which tests ran which code files.

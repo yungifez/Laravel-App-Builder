@@ -349,6 +349,33 @@ class AgentDriverTest extends TestCase
         $this->assertSame('tested', $run->review['verified'][0]['evidence']);
     }
 
+    public function test_a_safety_mistake_the_change_adds_sends_it_back_even_when_the_reviewer_approves()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder(
+            $this->writes([
+                'app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION,
+                'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST,
+                'resources/views/team.blade.php' => "<h1>{{ \$team->name }}</h1>\n<p>{!! \$team->description !!}</p>\n",
+            ]),
+            $this->writes(['resources/views/team.blade.php' => "<h1>{{ \$team->name }}</h1>\n<p>{{ \$team->description }}</p>\n"], 'Escaped it.'),
+        );
+        $approve = ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]];
+        ChangeReviewer::fake([$approve, $approve]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run);
+
+        $run->refresh();
+        $this->assertSame(1, $run->repairs);
+        $this->assertFalse($run->review['approved']);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'Line 2 of resources/views/team.blade.php shows text on a page without escaping it'));
+
+        $this->passVerification($run);
+
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+    }
+
     public function test_a_named_test_that_did_not_run_is_not_evidence_and_sends_the_change_back()
     {
         FeaturePlanner::fake([$this->plan()]);

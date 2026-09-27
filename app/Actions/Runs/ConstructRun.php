@@ -18,6 +18,7 @@ use App\Enums\RunStatus;
 use App\Features\Exceptions\CannotGenerateFeature;
 use App\Features\PatchSummary;
 use App\Features\TestChanges;
+use App\Features\UnsafeCode;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\TestObservation;
@@ -351,6 +352,10 @@ class ConstructRun
             }
 
             $review = $review->withBlockingFindings($findings);
+        }
+
+        if ($driver->canRepair() && config('builder.verification.safety_scan')) {
+            $review = $review->withBlockingFindings(array_map(UnsafeCode::finding(...), UnsafeCode::found($featureRequest->patch)));
         }
 
         $this->recordEvent($run, $lease, 'review', [

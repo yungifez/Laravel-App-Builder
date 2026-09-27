@@ -74,6 +74,7 @@ class ChangeProofTest extends TestCase
                 ['kind' => 'passed', 'text' => 'All 3 of the app\'s own tests still pass.'],
                 ['kind' => 'passed', 'text' => '2 more checks on the code passed.'],
                 ['kind' => 'passed', 'text' => 'Separate checks, written before the work began, pass too.'],
+                ['kind' => 'passed', 'text' => 'Its code was checked for common safety mistakes, such as showing unsafe text or building unsafe database lookups. None were found.'],
                 ['kind' => 'reach', 'text' => '3 of those tests run the code this change touched, in Billing and Teams.'],
                 // Gaps are said as plainly as passes.
                 ['kind' => 'gap', 'text' => 'Some of the new code is not run by any test yet.'],
@@ -89,7 +90,7 @@ class ChangeProofTest extends TestCase
 
         $this->actingAs($request->project->owner)
             ->get(route('feature-requests.show', $request))
-            ->assertInertia(fn (Assert $page) => $page->where('proof.3', ['kind' => 'reach', 'text' => 'It changed code the whole app shares, so every part of the app was tested.']));
+            ->assertInertia(fn (Assert $page) => $page->where('proof.4', ['kind' => 'reach', 'text' => 'It changed code the whole app shares, so every part of the app was tested.']));
     }
 
     public function test_problems_caught_along_the_way_are_counted()

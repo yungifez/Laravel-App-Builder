@@ -4,6 +4,7 @@ namespace App\Actions\Features;
 
 use App\Enums\VerificationStatus;
 use App\Features\PatchSummary;
+use App\Features\UnsafeCode;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\RunEvent;
@@ -30,7 +31,7 @@ class DescribeProof
             return [];
         }
 
-        return [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest), ...$this->reach($featureRequest->latestRun)];
+        return [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest), ...$this->safety($featureRequest), ...$this->reach($featureRequest->latestRun)];
     }
 
     /**
@@ -101,6 +102,21 @@ class DescribeProof
         }
 
         return [['kind' => 'passed', 'text' => trans_choice('It added a test that keeps this checked from now on: ":test".|It added :count tests that keep this checked from now on, such as ":test".', count($tests), ['test' => $tests[0]])]];
+    }
+
+    /**
+     * Say that the change's code was scanned for common safety mistakes and
+     * none were left, when the scan is on and the change has code it reads.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function safety(FeatureRequest $featureRequest): array
+    {
+        if (! config('builder.verification.safety_scan') || ! UnsafeCode::scans($featureRequest->patch) || UnsafeCode::found($featureRequest->patch) !== []) {
+            return [];
+        }
+
+        return [['kind' => 'passed', 'text' => __('Its code was checked for common safety mistakes, such as showing unsafe text or building unsafe database lookups. None were found.')]];
     }
 
     /**
