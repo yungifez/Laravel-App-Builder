@@ -63,7 +63,16 @@ class OwnerWording
         $to = RunStatus::tryFrom((string) ($data['to'] ?? ''));
 
         if ($to === RunStatus::Implementing && in_array($from, [RunStatus::Implementing, RunStatus::Verifying, RunStatus::Reviewing], true)) {
-            return __('Went back to improve the change');
+            return match ($data['reason'] ?? null) {
+                'verification_failed' => __('Some checks failed, so I went back to fix them'),
+                'tests_not_run' => __('My test would not have been run, so I went back to put it where it will be'),
+                'review_findings' => __('Went back to fix what I found'),
+                default => __('Went back to improve the change'),
+            };
+        }
+
+        if ($to === RunStatus::Reviewing && ($data['verification'] ?? null) === 'passed') {
+            return __('The checks passed. Looking over what changed');
         }
 
         if ($to === RunStatus::Completed && ($data['reason'] ?? null) === 'answered') {

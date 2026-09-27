@@ -234,7 +234,7 @@ export type WorkStep = {
         | 'tested'
         | 'tried'
         | 'noted'
-        | 'repair';
+        | 'stage';
     text: string;
 };
 

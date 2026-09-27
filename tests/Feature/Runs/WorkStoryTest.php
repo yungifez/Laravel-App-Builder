@@ -40,7 +40,7 @@ class WorkStoryTest extends TestCase
         }
     }
 
-    public function test_the_story_names_the_parts_of_the_app_in_the_owners_words()
+    public function test_the_story_tells_each_stage_and_names_the_parts_of_the_app_in_the_owners_words()
     {
         [$run] = $this->implementingRun();
         $run->update([
@@ -60,7 +60,10 @@ class WorkStoryTest extends TestCase
             ['kind' => 'testing'],
             ['kind' => 'changed', 'file' => ProjectNotes::directory().'/teams.md'],
         ]]);
+        $run->recordEvent('status', ['from' => 'verifying', 'to' => 'implementing', 'reason' => 'verification_failed']);
         $run->recordEvent('agent_story', ['story' => [['kind' => 'changed', 'file' => 'app/Other.php']]]);
+        $run->recordEvent('status', ['from' => 'verifying', 'to' => 'reviewing', 'verification' => 'passed']);
+        $run->recordEvent('review', ['approved' => true]);
 
         $this->assertSame([
             ['kind' => 'thought', 'text' => 'First I want to understand how teams work today.'],
@@ -70,8 +73,10 @@ class WorkStoryTest extends TestCase
             ['kind' => 'tested', 'text' => 'Wrote a test for it'],
             ['kind' => 'tried', 'text' => 'Tried it out'],
             ['kind' => 'noted', 'text' => 'Wrote down what I learned'],
-            ['kind' => 'repair', 'text' => 'Went back to fix what the checks found'],
+            ['kind' => 'stage', 'text' => 'Some checks failed, so I went back to fix them'],
             ['kind' => 'changed', 'text' => 'Changed a part of your app'],
+            ['kind' => 'stage', 'text' => 'The checks passed. Looking over what changed'],
+            ['kind' => 'stage', 'text' => 'The change looks right'],
         ], app(NarrateWork::class)->handle($run->refresh()));
     }
 

@@ -56,6 +56,17 @@ const moreQuestions = ref(false);
 // latest steps show as they happen; afterwards the whole story folds away.
 const work = computed(() => run.value?.work ?? []);
 
+// While it works, the line with the spinner already names the stage it is
+// in, so the story leaves that stage out rather than say it twice.
+const liveWork = computed(() => {
+    const latest = work.value.slice(-6);
+    const last = latest.at(-1);
+
+    return last?.kind === 'stage' && Object.values(steps).includes(last.text)
+        ? latest.slice(0, -1)
+        : latest;
+});
+
 // What the owner might ask for next, one tap each, as in any chat. Offered
 // only while the chat can go on and nothing has been asked after this yet.
 const nextIdeas = computed(() =>
@@ -476,15 +487,19 @@ const checks = computed(() => {
                         </p>
 
                         <!-- How it is being made, step by step -->
-                        <template v-if="work.length > 0">
+                        <template
+                            v-if="
+                                working ? liveWork.length > 0 : work.length > 0
+                            "
+                        >
                             <ol
                                 v-if="working"
                                 class="space-y-1.5"
                                 data-test="thread-work"
                             >
                                 <li
-                                    v-for="(step, index) in work.slice(-6)"
-                                    :key="`${work.length - 6 + index}`"
+                                    v-for="(step, index) in liveWork"
+                                    :key="work.length - liveWork.length + index"
                                 >
                                     <WorkStepLine :step="step" />
                                 </li>

@@ -3,8 +3,8 @@
 namespace App\Actions\Runs;
 
 use App\Context\ProjectNotes;
+use App\Features\OwnerWording;
 use App\Models\Run;
-use App\Models\RunEvent;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 
@@ -21,36 +21,39 @@ class NarrateWork
 
     /**
      * Tell the owner how the change was made, step by step, in their words:
-     * what was thought about, which parts of the app were looked at or
-     * changed, and when it was tried out. Everything comes from what the
-     * coding agent did; its own words are kept only where they are plain.
-     * While it works, the live story continues the saved ones.
+     * each stage of the work (planning, checking, looking it over, going
+     * back to fix something), and within it what was thought about, which
+     * parts of the app were looked at or changed, and when it was tried
+     * out. The steps come from what the coding agent did; its own words
+     * are kept only where they are plain. While it works, the live story
+     * continues the saved one.
      *
      * @param  list<array{kind: string, text?: string, file?: string}>|null  $live
      * @return list<array{kind: string, text: string}>
      */
     public function handle(Run $run, ?array $live = null): array
     {
-        $stories = $run->events()
-            ->where('type', 'agent_story')
-            ->get()
-            ->map(fn (RunEvent $event) => $event->data['story'] ?? [])
-            ->all();
-
-        if ($live !== null) {
-            $stories[] = $live;
-        }
-
         $lines = [];
 
-        foreach ($stories as $index => $story) {
-            if ($index > 0 && $lines !== []) {
-                $lines[] = ['kind' => 'repair', 'names' => []];
+        foreach ($run->events()->whereIn('type', ['status', 'review', 'agent_story'])->get() as $event) {
+            if ($event->type === 'agent_story') {
+                foreach ($event->data['story'] ?? [] as $entry) {
+                    $this->add($lines, $run, $entry);
+                }
+
+                continue;
             }
 
-            foreach ($story as $entry) {
-                $this->add($lines, $run, $entry);
+            $text = OwnerWording::event($event);
+            $last = array_key_last($lines);
+
+            if ($text !== null && ($last === null || ($lines[$last]['text'] ?? null) !== $text)) {
+                $lines[] = ['kind' => 'stage', 'names' => [], 'text' => $text];
             }
+        }
+
+        foreach ($live ?? [] as $entry) {
+            $this->add($lines, $run, $entry);
         }
 
         return array_map($this->render(...), $lines);
@@ -136,8 +139,8 @@ class NarrateWork
      */
     protected function render(array $line): array
     {
-        if ($line['kind'] === 'thought') {
-            return ['kind' => 'thought', 'text' => $line['text'] ?? ''];
+        if (in_array($line['kind'], ['thought', 'stage'], true)) {
+            return ['kind' => $line['kind'], 'text' => $line['text'] ?? ''];
         }
 
         $names = Arr::join(array_slice($line['names'], 0, 3), ', ', ' and ');
@@ -147,7 +150,6 @@ class NarrateWork
             'changed' => $names === '' ? __('Changed a part of your app') : __('Worked on :areas', ['areas' => $names]),
             'tested' => __('Wrote a test for it'),
             'tried' => __('Tried it out'),
-            'repair' => __('Went back to fix what the checks found'),
             default => __('Wrote down what I learned'),
         };
 
