@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Projects\ProjectRepository;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -158,6 +159,8 @@ class PublishingTest extends TestCase
             // The hosting platform is still starting the app at first.
             'shop.example.com/up' => Http::sequence()->push('', 503)->push('', 200),
             'shop.example.com/' => Http::response('', 302),
+            // Signing in with an account that cannot exist is turned down.
+            'shop.example.com/login' => Http::sequence()->push('', 200, ['Set-Cookie' => 'XSRF-TOKEN=abc%3D; path=/'])->push(['errors' => ['email' => ['These credentials do not match our records.']]], 422),
         ]);
 
         $this->actingAs($this->owner)->post(route('deployments.store', $this->project))->assertSessionHasNoErrors();
@@ -168,8 +171,10 @@ class PublishingTest extends TestCase
         $this->assertSame([
             ['path' => '/up', 'status' => 200, 'passed' => true],
             ['path' => '/', 'status' => 302, 'passed' => true],
+            ['path' => '/login', 'status' => 422, 'passed' => true, 'key' => 'auth.sign-in'],
         ], $deployment->health);
-        Http::assertSentCount(4);
+        Http::assertSentCount(6);
+        Http::assertSent(fn (Request $request) => $request->method() === 'POST' && $request->hasHeader('X-XSRF-TOKEN', 'abc=') && $request['email'] === 'publish-check@example.invalid');
 
         $this->actingAs($this->owner)
             ->get(route('projects.show', $this->project))
@@ -195,6 +200,37 @@ class PublishingTest extends TestCase
         $this->actingAs($this->owner)
             ->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->where('project.published_at', null));
+    }
+
+    public function test_an_app_where_people_cannot_sign_in_needs_attention()
+    {
+        config(['builder.publishing.confirm.confirm_seconds' => 0]);
+        $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main', 'live_url' => 'https://shop.example.com']);
+        Http::fake([
+            'shop.example.com/login' => Http::sequence()->push('', 200)->push('Server Error', 500),
+            'shop.example.com/*' => Http::response('', 200),
+        ]);
+
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+
+        $deployment = Deployment::sole();
+        $this->assertSame(DeploymentStatus::NeedsAttention, $deployment->status);
+        $this->assertSame('Your app is online at https://shop.example.com, but people cannot sign in.', $deployment->error);
+    }
+
+    public function test_an_app_without_a_sign_in_page_is_online_once_it_answers()
+    {
+        $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main', 'live_url' => 'https://shop.example.com']);
+        Http::fake([
+            'shop.example.com/login' => Http::response('Not Found', 404),
+            'shop.example.com/*' => Http::response('', 200),
+        ]);
+
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+
+        $deployment = Deployment::sole();
+        $this->assertSame(DeploymentStatus::Published, $deployment->status);
+        $this->assertSame(['/up', '/'], array_column($deployment->health ?? [], 'path'));
     }
 
     public function test_the_app_address_must_be_a_public_https_address()

@@ -10,6 +10,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Throwable;
 
 class ConfirmDeployment implements ShouldQueue
@@ -56,6 +57,11 @@ class ConfirmDeployment implements ShouldQueue
         // so the address says nothing until the host is done.
         $health = $progress === ReleaseProgress::Pending ? [] : array_map(fn (string $path) => $this->check($address, $path), (array) config('builder.publishing.confirm.paths'));
 
+        // Pages answering is not the same as people getting in.
+        if ($health !== [] && ! in_array(false, array_column($health, 'passed'), true) && ($signIn = $this->checkSignIn($address)) !== null) {
+            $health[] = $signIn;
+        }
+
         if ($health !== [] && ! in_array(false, array_column($health, 'passed'), true)) {
             $deployment->update(['status' => DeploymentStatus::Published, 'health' => $health, 'confirmed_at' => now(), 'finished_at' => now()]);
 
@@ -75,9 +81,11 @@ class ConfirmDeployment implements ShouldQueue
         $deployment->update([
             'status' => DeploymentStatus::NeedsAttention,
             'health' => $health ?: $deployment->health,
-            'error' => $progress === ReleaseProgress::Pending
-                ? __('Your hosting is taking longer than usual to start the new version.')
-                : __('Your hosting has the new version, but the app is not answering properly at :address.', ['address' => $address]),
+            'error' => match (true) {
+                $progress === ReleaseProgress::Pending => __('Your hosting is taking longer than usual to start the new version.'),
+                collect($health)->contains(fn (array $check) => ($check['key'] ?? null) === 'auth.sign-in' && ! $check['passed']) => __('Your app is online at :address, but people cannot sign in.', ['address' => $address]),
+                default => __('Your hosting has the new version, but the app is not answering properly at :address.', ['address' => $address]),
+            },
             'finished_at' => now(),
         ]);
     }
@@ -92,6 +100,51 @@ class ConfirmDeployment implements ShouldQueue
             'error' => __('Your hosting has the new version, but I could not check that the app is online.'),
             'finished_at' => now(),
         ]);
+    }
+
+    /**
+     * Try to sign in with an account that cannot exist. A working app turns
+     * it down the usual way (wrong details, or too many tries); a broken
+     * session, database or sign-in page answers with an error instead. An
+     * app without a sign-in page has nothing to check.
+     *
+     * @return array{path: string, status: int|null, passed: bool, key: string}|null
+     */
+    protected function checkSignIn(string $address): ?array
+    {
+        $path = (string) config('builder.publishing.confirm.sign_in_path');
+
+        if ($path === '') {
+            return null;
+        }
+
+        $url = $address.'/'.ltrim($path, '/');
+        $request = fn () => Http::timeout((int) config('builder.publishing.confirm.timeout'))->withoutRedirecting();
+
+        try {
+            $page = $request()->get($url);
+
+            if ($page->status() === 404) {
+                return null;
+            }
+
+            $status = $page->status();
+
+            if ($status < 400) {
+                $token = $page->cookies()->getCookieByName('XSRF-TOKEN')?->getValue();
+
+                $status = $request()
+                    ->withOptions(['cookies' => $page->cookies()])
+                    ->withHeaders(array_filter(['X-XSRF-TOKEN' => $token === null ? null : urldecode($token)]))
+                    ->acceptJson()
+                    ->post($url, ['email' => 'publish-check@example.invalid', 'password' => Str::random(32)])
+                    ->status();
+            }
+        } catch (ConnectionException) {
+            $status = null;
+        }
+
+        return ['path' => $path, 'status' => $status, 'passed' => $status !== null && ($status < 400 || in_array($status, [401, 422, 429], true)), 'key' => 'auth.sign-in'];
     }
 
     /**

@@ -127,9 +127,12 @@ return [
 
         // After the push, the app's address is checked: first after
         // "settle_seconds", then every "interval_seconds" until every path
-        // answers without an error, or "confirm_seconds" have passed.
+        // answers without an error and sign-in works, or "confirm_seconds"
+        // have passed. Sign-in is tried with an account that cannot exist
+        // at "sign_in_path"; an app without that page skips it.
         'confirm' => [
             'paths' => json_decode((string) env('BUILDER_PUBLISH_CHECK_PATHS', '["/up", "/"]'), true) ?: ['/'],
+            'sign_in_path' => env('BUILDER_PUBLISH_SIGN_IN_PATH', '/login'),
             'settle_seconds' => (int) env('BUILDER_PUBLISH_SETTLE_SECONDS', 30),
             'interval_seconds' => (int) env('BUILDER_PUBLISH_CHECK_INTERVAL', 15),
             'confirm_seconds' => (int) env('BUILDER_PUBLISH_CONFIRM_SECONDS', 600),

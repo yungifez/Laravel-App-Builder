@@ -423,7 +423,12 @@ export type DeploymentSummary = {
     commit: string;
     checks: { name: string; passed: boolean }[];
     error: string | null;
-    health: { path: string; status: number | null; passed: boolean }[];
+    health: {
+        path: string;
+        status: number | null;
+        passed: boolean;
+        key?: string;
+    }[];
     pushed_at: string | null;
     confirmed_at: string | null;
     created_at: string | null;

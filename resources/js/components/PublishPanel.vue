@@ -223,8 +223,17 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                             :key="check.path"
                             :class="!check.passed && 'text-destructive'"
                         >
-                            {{ check.passed ? 'Answered' : 'No answer' }}:
-                            <span class="font-mono">{{ check.path }}</span>
+                            <template v-if="check.key === 'auth.sign-in'">
+                                {{
+                                    check.passed
+                                        ? 'Sign-in works'
+                                        : 'Sign-in does not work'
+                                }}
+                            </template>
+                            <template v-else>
+                                {{ check.passed ? 'Answered' : 'No answer' }}:
+                                <span class="font-mono">{{ check.path }}</span>
+                            </template>
                         </li>
                     </ul>
                     <p v-if="latest" class="font-mono text-muted-foreground">

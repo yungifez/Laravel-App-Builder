@@ -91,6 +91,7 @@ class LaravelCloudPublishingTest extends TestCase
                 $path === '/api/environments/env-1/deployments' => Http::response(['data' => ['id' => 'release-'.Deployment::query()->count(), 'attributes' => ['status' => 'pending']]], 201),
                 str_starts_with($path, '/api/deployments/') => Http::response(['data' => ['attributes' => ['status' => array_shift($this->releaseStatuses) ?? 'deployment.succeeded']]]),
                 $request->url() === 'https://acme-shop.laravel.cloud/up', $request->url() === 'https://acme-shop.laravel.cloud/' => Http::response('', 200),
+                $request->url() === 'https://acme-shop.laravel.cloud/login' => Http::response('', $request->method() === 'POST' ? 422 : 200),
                 default => Http::response('Unexpected request', 500),
             };
         });
@@ -125,7 +126,7 @@ class LaravelCloudPublishingTest extends TestCase
         Http::assertSent(fn (Request $request) => $request->method() === 'PATCH' && $request['uses_push_to_deploy'] === false && $request['database_schema_id'] === 'db-1');
         // While Cloud builds, the old version still answers, so the address
         // is checked only once Cloud says the new one is live.
-        Http::assertSentCount(9);
+        Http::assertSentCount(11);
 
         $this->actingAs($this->owner)
             ->get(route('projects.show', $this->project))
@@ -141,7 +142,7 @@ class LaravelCloudPublishingTest extends TestCase
         $this->actingAs($this->owner)->post(route('deployments.store', $this->project))->assertSessionHasNoErrors();
 
         $this->assertSame(DeploymentStatus::Published, Deployment::query()->latest('id')->firstOrFail()->status);
-        Http::assertSentCount(9 + 4);
+        Http::assertSentCount(11 + 6);
         $this->assertCount(1, Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/api/applications')));
     }
 

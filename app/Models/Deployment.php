@@ -29,7 +29,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property string|null $error
  * @property CarbonImmutable|null $pushed_at
  * @property CarbonImmutable|null $confirmed_at When the app answered its checks at its address
- * @property list<array{path: string, status: int|null, passed: bool}>|null $health The latest checks of the app's address
+ * @property list<array{path: string, status: int|null, passed: bool, key?: string}>|null $health The latest checks of the app's address, sign-in included
  * @property CarbonImmutable|null $finished_at
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
