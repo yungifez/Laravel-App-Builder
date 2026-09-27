@@ -37,7 +37,7 @@ import {
     Undo2,
     X,
 } from '@lucide/vue';
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import type { Component } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
 import PageConsistencyController from '@/actions/App/Http/Controllers/PageConsistencyController';
@@ -115,6 +115,30 @@ const destination = computed(() =>
         ? address.value.trim()
         : (props.state.selected?.href ?? ''),
 );
+// The list of parts and a part's details share one scroll. A part opens
+// at its top, and closing it goes back to the same place in the list.
+const scroller = ref<HTMLElement | null>(null);
+let listScroll = 0;
+
+watch(
+    () => props.state.selected === null,
+    (none, wasNone) => {
+        const box = scroller.value;
+
+        if (box === null || none === wasNone) {
+            return;
+        }
+
+        if (none) {
+            void nextTick(() => (box.scrollTop = listScroll));
+        } else {
+            listScroll = box.scrollTop;
+            box.scrollTop = 0;
+        }
+    },
+    { flush: 'pre' },
+);
+
 // Whether the owner is reading what making the page consistent does.
 const tidying = ref(false);
 const element = computed(() => props.state.element);
@@ -351,7 +375,7 @@ const recent = computed(() => {
 
 <template>
     <div class="flex min-h-0 flex-col" data-test="inspector">
-        <div class="min-h-0 flex-1 overflow-y-auto">
+        <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto">
             <div
                 v-if="!preview || preview.status !== 'ready'"
                 class="flex items-center justify-center gap-2 p-4 text-sm text-muted-foreground lg:flex-col lg:py-16"
