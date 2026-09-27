@@ -518,6 +518,23 @@ watch(
                                         Ask for tests
                                     </Button>
                                 </Form>
+                                <!-- Product simplification the owner can ask
+                                     for (direction 18 §13); nothing is removed
+                                     until they say so -->
+                                <Link
+                                    v-if="area.behaviors.length > 1"
+                                    :href="
+                                        show(project.id, {
+                                            query: {
+                                                ask: `Show me the simplest version of ${area.name}, with fewer choices for people to make. Ask me before you remove anything.`,
+                                            },
+                                        })
+                                    "
+                                    class="-my-2 inline-flex min-h-11 items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline sm:min-h-0"
+                                    data-test="part-simplify"
+                                >
+                                    Simplify this
+                                </Link>
                             </div>
 
                             <div class="min-w-0 space-y-6">

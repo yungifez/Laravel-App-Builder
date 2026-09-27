@@ -175,3 +175,10 @@ them and correct any that are wrong.
   came from a kept change shows once, with that change. Answers only the
   notes hold follow, marked "You chose this" with no link. A noted answer is
   split into question and answer at its last "? ".
+- **"Simplify this" asks, it does not act.** Each part of the app that
+  does more than one thing gets a "Simplify this" link on "What I know"
+  (direction 18 §13). It fills in the request box with "Show me the
+  simplest version of <part>, with fewer choices for people to make. Ask
+  me before you remove anything." The owner edits or sends it. Like any
+  change, it waits for them to keep it. There is no separate simplify
+  mode yet.

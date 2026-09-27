@@ -21,7 +21,7 @@ beforeEach(function () {
     $this->owner = User::factory()->create();
     $this->project = app(CreateProject::class)->handle($this->owner, 'Acme', $this->makeProjectSource([
         '.builder/project.md' => "# Project\n\nA shop for plans.\n",
-        '.builder/capabilities/plans.md' => "---\ncapability: plans\nsummary: Customers choose what they pay for.\npaths: [app/Models/Plan.php]\n---\n# Plans\n",
+        '.builder/capabilities/plans.md' => "---\ncapability: plans\nsummary: Customers choose what they pay for.\npaths: [app/Models/Plan.php]\nbehaviors:\n    - key: pick\n      name: Pick a plan\n    - key: switch\n      name: Switch plans\n---\n# Plans\n",
         '.builder/capabilities/teams.md' => "---\ncapability: teams\nsummary: People work in teams.\npaths: [app/Models/Team.php]\n---\n# Teams\n",
         'app/Models/Plan.php' => "<?php\n",
     ]), draftNotes: false);
@@ -46,4 +46,16 @@ it('shows what the tests check, and asks for tests for a part nothing checks', f
         ->assertSee('Add tests that check Teams works as described');
 
     expect($this->project->featureRequests()->sole()->prompt)->toBe('Add tests that check Teams works as described');
+});
+
+it('offers to simplify a part, leaving the owner to send the request', function () {
+    $this->actingAs($this->owner);
+
+    // Teams does one thing, so there is nothing to simplify there.
+    visit(route('projects.understanding.show', $this->project))
+        ->assertCount('@part-simplify', 1)
+        ->click('@part-simplify')
+        ->assertValue('textarea[name=prompt]', 'Show me the simplest version of Plans, with fewer choices for people to make. Ask me before you remove anything.');
+
+    expect($this->project->featureRequests()->count())->toBe(0);
 });
