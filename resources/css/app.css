@@ -258,6 +258,51 @@
     --transition-duration-base: 200ms;
     --transition-duration-panel: 300ms;
     --transition-duration-linger: 700ms;
+
+    /* A soft spring that lands a little past and settles back. */
+    --ease-spring: linear(
+        0,
+        0.1797,
+        0.5256,
+        0.8392,
+        1.0377,
+        1.1189,
+        1.1191,
+        1.0812,
+        1.0375,
+        1.0051,
+        0.9882,
+        0.9841,
+        0.9872,
+        0.9927,
+        0.9977,
+        1.0007,
+        1
+    );
+}
+
+/* Pressing gives at once; letting go springs back. Colours change at
+   the quick speed either way. */
+@utility press {
+    transition-property:
+        color, background-color, border-color, box-shadow, opacity, scale;
+    transition-duration: var(--transition-duration-quick);
+    transition-timing-function: var(--ease-settle);
+
+    &:not(:active) {
+        transition-duration:
+            var(--transition-duration-quick), var(--transition-duration-quick),
+            var(--transition-duration-quick), var(--transition-duration-quick),
+            var(--transition-duration-quick), 360ms;
+        transition-timing-function:
+            var(--ease-settle), var(--ease-settle), var(--ease-settle),
+            var(--ease-settle), var(--ease-settle), var(--ease-spring);
+    }
+
+    &:active:not(:disabled) {
+        scale: 0.98;
+        transition-duration: 60ms;
+    }
 }
 
 /* Going to another page crossfades quickly instead of cutting. The old
