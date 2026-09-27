@@ -501,7 +501,7 @@ const recent = computed(() => {
                 </section>
             </template>
 
-            <template v-else-if="element">
+            <template v-else>
                 <header
                     class="sticky top-0 z-10 flex items-center gap-2 border-b bg-background px-4 py-2"
                 >
@@ -541,7 +541,7 @@ const recent = computed(() => {
                         </nav>
                         <p class="truncate text-sm font-medium">
                             {{
-                                state.selected.text || element.area?.name || ''
+                                state.selected.text || element?.area?.name || ''
                             }}
                         </p>
                     </div>
@@ -580,542 +580,593 @@ const recent = computed(() => {
                     </Button>
                 </header>
 
-                <div class="space-y-4 p-4">
-                    <p
-                        v-if="element.area?.summary"
-                        class="line-clamp-2 text-xs text-muted-foreground"
-                        :title="element.area.summary"
-                        data-test="element-area"
-                    >
-                        {{ element.area.summary }}
-                    </p>
+                <template v-if="element">
+                    <div class="animate-in space-y-4 p-4 duration-base fade-in">
+                        <p
+                            v-if="element.area?.summary"
+                            class="line-clamp-2 text-xs text-muted-foreground"
+                            :title="element.area.summary"
+                            data-test="element-area"
+                        >
+                            {{ element.area.summary }}
+                        </p>
 
-                    <p
-                        v-if="element.origin"
-                        class="text-xs text-muted-foreground"
-                        data-test="element-origin"
-                    >
-                        {{
-                            element.origin.how === 'added' ? 'Added' : 'Changed'
-                        }}
-                        {{ originWhen }} when you asked
-                        <Link
-                            :href="
-                                FeatureRequestController.show.url(
-                                    element.origin.id,
-                                )
+                        <p
+                            v-if="element.origin"
+                            class="text-xs text-muted-foreground"
+                            data-test="element-origin"
+                        >
+                            {{
+                                element.origin.how === 'added'
+                                    ? 'Added'
+                                    : 'Changed'
+                            }}
+                            {{ originWhen }} when you asked
+                            <Link
+                                :href="
+                                    FeatureRequestController.show.url(
+                                        element.origin.id,
+                                    )
+                                "
+                                class="text-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground"
+                                >“{{ element.origin.asked }}”</Link
+                            ><template v-if="element.origin.decided"
+                                >. You chose “{{
+                                    element.origin.decided.answer
+                                }}”</template
+                            >.
+                        </p>
+
+                        <Segmented
+                            v-if="
+                                state.selected.instance && state.selected.source
                             "
-                            class="text-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground"
-                            >“{{ element.origin.asked }}”</Link
-                        ><template v-if="element.origin.decided"
-                            >. You chose “{{
-                                element.origin.decided.answer
-                            }}”</template
-                        >.
-                    </p>
+                            label="Which ones change"
+                            :value="state.onlyThisOne ? 'one' : 'all'"
+                            :options="[
+                                { value: 'one', label: 'Only this one' },
+                                {
+                                    value: 'all',
+                                    label: element.shared
+                                        ? `All ${element.shared.uses}`
+                                        : 'All like it',
+                                },
+                            ]"
+                            data-test="shared-choice"
+                            @change="state.onlyThisOne = $event !== 'all'"
+                        />
 
-                    <Segmented
-                        v-if="state.selected.instance && state.selected.source"
-                        label="Which ones change"
-                        :value="state.onlyThisOne ? 'one' : 'all'"
-                        :options="[
-                            { value: 'one', label: 'Only this one' },
-                            {
-                                value: 'all',
-                                label: element.shared
-                                    ? `All ${element.shared.uses}`
-                                    : 'All like it',
-                            },
-                        ]"
-                        data-test="shared-choice"
-                        @change="state.onlyThisOne = $event !== 'all'"
-                    />
-
-                    <p
-                        v-if="!element.editable && element.reason"
-                        class="rounded-md bg-muted p-3 text-sm"
-                        data-test="not-editable"
-                    >
-                        {{ reasons[element.reason] }}
-                    </p>
-
-                    <div
-                        v-else
-                        class="space-y-5 text-sm"
-                        data-test="properties"
-                    >
-                        <section
-                            v-if="state.selected?.words != null"
-                            class="space-y-2"
+                        <p
+                            v-if="!element.editable && element.reason"
+                            class="rounded-md bg-muted p-3 text-sm"
+                            data-test="not-editable"
                         >
-                            <h3 class="text-xs font-medium">Words</h3>
-                            <textarea
-                                id="property-words"
-                                v-model="draft"
-                                rows="2"
-                                aria-label="Words"
-                                class="block [field-sizing:content] w-full resize-none rounded-md bg-muted px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                                data-test="words"
-                                @blur="keepWords"
-                                @keydown.enter.exact.prevent="keepWords"
-                                @keydown.escape="
-                                    draft = state.selected?.words ?? ''
-                                "
-                            />
-                            <p class="text-xs text-muted-foreground">
-                                Or double-click the words in your app.
-                            </p>
-                        </section>
+                            {{ reasons[element.reason] }}
+                        </p>
 
-                        <section
-                            v-if="element.link"
-                            class="space-y-2"
-                            data-test="link"
+                        <div
+                            v-else
+                            class="space-y-5 text-sm"
+                            data-test="properties"
                         >
-                            <h3 class="text-xs font-medium">Goes to</h3>
-                            <input
-                                v-if="element.link.href !== null"
-                                id="property-link"
-                                v-model="address"
-                                type="text"
-                                inputmode="url"
-                                autocomplete="off"
-                                spellcheck="false"
-                                aria-label="Goes to"
-                                placeholder="/page or https://…"
-                                class="block h-11 w-full rounded-md bg-muted px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-9"
-                                data-test="link-address"
-                                @blur="keepAddress"
-                                @keydown.enter.prevent="keepAddress"
-                                @keydown.escape="
-                                    address = element.link.href ?? ''
-                                "
-                            />
-                            <p v-else class="text-xs text-muted-foreground">
-                                Your app decides where this link goes. Ask me to
-                                change it.
-                            </p>
-                        </section>
-
-                        <section class="space-y-2">
-                            <h3 class="text-xs font-medium">Layout</h3>
-                            <Segmented
-                                label="Arrange contents"
-                                caption="Arrange"
-                                :value="inline ? null : state.valueOf('layout')"
-                                :options="
-                                    options('layout', [
-                                        'block',
-                                        'flex',
-                                        'grid',
-                                        'hidden',
-                                    ])
-                                "
-                                @change="set('layout', $event)"
-                            />
-                            <div v-if="layout === 'flex'" class="space-y-2">
-                                <Segmented
-                                    label="Direction"
-                                    caption="Direction"
-                                    :value="state.valueOf('direction')"
-                                    :options="options('direction')"
-                                    @change="set('direction', $event)"
-                                />
-                                <Segmented
-                                    label="When there is no room"
-                                    caption="If full"
-                                    :value="state.valueOf('wrap')"
-                                    :options="options('wrap')"
-                                    @change="set('wrap', $event)"
-                                />
-                            </div>
-                            <template
-                                v-if="layout === 'flex' || layout === 'grid'"
+                            <section
+                                v-if="state.selected?.words != null"
+                                class="space-y-2"
                             >
-                                <Segmented
-                                    label="Line up"
-                                    caption="Line up"
-                                    :value="state.valueOf('align')"
-                                    :options="options('align')"
-                                    @change="set('align', $event)"
+                                <h3 class="text-xs font-medium">Words</h3>
+                                <textarea
+                                    id="property-words"
+                                    v-model="draft"
+                                    rows="2"
+                                    aria-label="Words"
+                                    class="block [field-sizing:content] w-full resize-none rounded-md bg-muted px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                                    data-test="words"
+                                    @blur="keepWords"
+                                    @keydown.enter.exact.prevent="keepWords"
+                                    @keydown.escape="
+                                        draft = state.selected?.words ?? ''
+                                    "
                                 />
-                                <Segmented
-                                    label="Spread"
-                                    caption="Spread"
-                                    :value="state.valueOf('justify')"
-                                    :options="options('justify')"
-                                    @change="set('justify', $event)"
+                                <p class="text-xs text-muted-foreground">
+                                    Or double-click the words in your app.
+                                </p>
+                            </section>
+
+                            <section
+                                v-if="element.link"
+                                class="space-y-2"
+                                data-test="link"
+                            >
+                                <h3 class="text-xs font-medium">Goes to</h3>
+                                <input
+                                    v-if="element.link.href !== null"
+                                    id="property-link"
+                                    v-model="address"
+                                    type="text"
+                                    inputmode="url"
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                    aria-label="Goes to"
+                                    placeholder="/page or https://…"
+                                    class="block h-11 w-full rounded-md bg-muted px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-9"
+                                    data-test="link-address"
+                                    @blur="keepAddress"
+                                    @keydown.enter.prevent="keepAddress"
+                                    @keydown.escape="
+                                        address = element.link.href ?? ''
+                                    "
                                 />
+                                <p v-else class="text-xs text-muted-foreground">
+                                    Your app decides where this link goes. Ask
+                                    me to change it.
+                                </p>
+                            </section>
+
+                            <section class="space-y-2">
+                                <h3 class="text-xs font-medium">Layout</h3>
+                                <Segmented
+                                    label="Arrange contents"
+                                    caption="Arrange"
+                                    :value="
+                                        inline ? null : state.valueOf('layout')
+                                    "
+                                    :options="
+                                        options('layout', [
+                                            'block',
+                                            'flex',
+                                            'grid',
+                                            'hidden',
+                                        ])
+                                    "
+                                    @change="set('layout', $event)"
+                                />
+                                <div v-if="layout === 'flex'" class="space-y-2">
+                                    <Segmented
+                                        label="Direction"
+                                        caption="Direction"
+                                        :value="state.valueOf('direction')"
+                                        :options="options('direction')"
+                                        @change="set('direction', $event)"
+                                    />
+                                    <Segmented
+                                        label="When there is no room"
+                                        caption="If full"
+                                        :value="state.valueOf('wrap')"
+                                        :options="options('wrap')"
+                                        @change="set('wrap', $event)"
+                                    />
+                                </div>
+                                <template
+                                    v-if="
+                                        layout === 'flex' || layout === 'grid'
+                                    "
+                                >
+                                    <Segmented
+                                        label="Line up"
+                                        caption="Line up"
+                                        :value="state.valueOf('align')"
+                                        :options="options('align')"
+                                        @change="set('align', $event)"
+                                    />
+                                    <Segmented
+                                        label="Spread"
+                                        caption="Spread"
+                                        :value="state.valueOf('justify')"
+                                        :options="options('justify')"
+                                        @change="set('justify', $event)"
+                                    />
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <MeasureField
+                                            :state="state"
+                                            property="gap"
+                                            mark="↔"
+                                        />
+                                        <MeasureField
+                                            v-if="layout === 'grid'"
+                                            :state="state"
+                                            property="columns"
+                                        />
+                                    </div>
+                                </template>
+                            </section>
+
+                            <section class="space-y-2">
+                                <h3 class="text-xs font-medium">Size</h3>
                                 <div class="grid grid-cols-2 gap-2">
                                     <MeasureField
                                         :state="state"
-                                        property="gap"
-                                        mark="↔"
+                                        property="width"
+                                        mark="W"
+                                        :measured="state.selected.width"
                                     />
                                     <MeasureField
-                                        v-if="layout === 'grid'"
                                         :state="state"
-                                        property="columns"
+                                        property="height"
+                                        mark="H"
+                                        :measured="state.selected.height"
                                     />
                                 </div>
-                            </template>
-                        </section>
+                                <Segmented
+                                    label="Width"
+                                    caption="Width"
+                                    :value="state.valueOf('width')"
+                                    :options="words('width')"
+                                    @change="set('width', $event)"
+                                />
+                                <Segmented
+                                    label="Height"
+                                    caption="Height"
+                                    :value="state.valueOf('height')"
+                                    :options="words('height')"
+                                    @change="set('height', $event)"
+                                />
+                                <StepSlider
+                                    id="property-max_width"
+                                    label="Widest"
+                                    :value="state.valueOf('max_width')"
+                                    :options="widest"
+                                    :rest="widest.length - 1"
+                                    @change="set('max_width', $event)"
+                                />
+                            </section>
 
-                        <section class="space-y-2">
-                            <h3 class="text-xs font-medium">Size</h3>
-                            <div class="grid grid-cols-2 gap-2">
-                                <MeasureField
-                                    :state="state"
-                                    property="width"
-                                    mark="W"
-                                    :measured="state.selected.width"
-                                />
-                                <MeasureField
-                                    :state="state"
-                                    property="height"
-                                    mark="H"
-                                    :measured="state.selected.height"
-                                />
-                            </div>
-                            <Segmented
-                                label="Width"
-                                caption="Width"
-                                :value="state.valueOf('width')"
-                                :options="words('width')"
-                                @change="set('width', $event)"
-                            />
-                            <Segmented
-                                label="Height"
-                                caption="Height"
-                                :value="state.valueOf('height')"
-                                :options="words('height')"
-                                @change="set('height', $event)"
-                            />
-                            <StepSlider
-                                id="property-max_width"
-                                label="Widest"
-                                :value="state.valueOf('max_width')"
-                                :options="widest"
-                                :rest="widest.length - 1"
-                                @change="set('max_width', $event)"
-                            />
-                        </section>
+                            <section class="space-y-2">
+                                <h3 class="text-xs font-medium">Space</h3>
+                                <SpacingBox :state="state" />
+                            </section>
 
-                        <section class="space-y-2">
-                            <h3 class="text-xs font-medium">Space</h3>
-                            <SpacingBox :state="state" />
-                        </section>
-
-                        <section class="space-y-2">
-                            <h3 class="text-xs font-medium">Turn and move</h3>
-                            <div class="grid grid-cols-3 gap-2">
-                                <MeasureField
-                                    :state="state"
-                                    property="rotate"
-                                    mark="↻"
-                                />
-                                <MeasureField
-                                    :state="state"
-                                    property="translate_x"
-                                    mark="X"
-                                />
-                                <MeasureField
-                                    :state="state"
-                                    property="translate_y"
-                                    mark="Y"
-                                />
-                            </div>
-                            <div
-                                v-if="
-                                    state.neighbours.earlier ||
-                                    state.neighbours.later
-                                "
-                                class="grid grid-cols-2 gap-2"
-                            >
-                                <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    class="h-11 sm:h-7"
-                                    :disabled="
-                                        !state.neighbours.earlier ||
-                                        state.saving
-                                    "
-                                    title="Put it before the part next to it (Alt + ←)"
-                                    data-test="move-earlier"
-                                    @click="state.shift(-1)"
-                                    >Earlier</Button
-                                >
-                                <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    class="h-11 sm:h-7"
-                                    :disabled="
-                                        !state.neighbours.later || state.saving
-                                    "
-                                    title="Put it after the part next to it (Alt + →)"
-                                    data-test="move-later"
-                                    @click="state.shift(1)"
-                                    >Later</Button
-                                >
-                            </div>
-                            <label class="flex items-center gap-3">
-                                <span class="w-14 text-xs text-muted-foreground"
-                                    >Opacity</span
-                                >
-                                <input
-                                    id="property-opacity-slider"
-                                    type="range"
-                                    min="0"
-                                    max="100"
-                                    :step="state.fine ? 1 : 5"
-                                    :value="
-                                        typeof state.valueOf('opacity') ===
-                                        'number'
-                                            ? state.valueOf('opacity')
-                                            : 100
-                                    "
-                                    class="min-h-11 flex-1 accent-foreground sm:min-h-6"
-                                    @pointerdown="state.hold(true)"
-                                    @pointerup="state.hold(false)"
-                                    @input="
-                                        set(
-                                            'opacity',
-                                            Number(
-                                                (
-                                                    $event.target as HTMLInputElement
-                                                ).value,
-                                            ),
-                                        )
-                                    "
-                                />
-                                <span
-                                    class="w-10 text-right text-xs tabular-nums"
-                                    >{{
-                                        state.valueOf('opacity') ?? 100
-                                    }}%</span
-                                >
-                            </label>
-                        </section>
-
-                        <section class="space-y-2">
-                            <h3 class="text-xs font-medium">Text</h3>
-                            <StepSlider
-                                id="property-text_size"
-                                label="Size"
-                                :value="state.valueOf('text_size')"
-                                :options="sizes"
-                                :rest="2"
-                                @change="set('text_size', $event)"
-                            />
-                            <Segmented
-                                label="Line up text"
-                                caption="Align"
-                                :value="state.valueOf('text_align')"
-                                :options="options('text_align')"
-                                @change="set('text_align', $event)"
-                            />
-                            <div class="flex items-center gap-3">
-                                <span
-                                    class="w-14 shrink-0 text-xs text-muted-foreground"
-                                    aria-hidden="true"
-                                    >Weight</span
-                                >
+                            <section class="space-y-2">
+                                <h3 class="text-xs font-medium">
+                                    Turn and move
+                                </h3>
+                                <div class="grid grid-cols-3 gap-2">
+                                    <MeasureField
+                                        :state="state"
+                                        property="rotate"
+                                        mark="↻"
+                                    />
+                                    <MeasureField
+                                        :state="state"
+                                        property="translate_x"
+                                        mark="X"
+                                    />
+                                    <MeasureField
+                                        :state="state"
+                                        property="translate_y"
+                                        mark="Y"
+                                    />
+                                </div>
                                 <div
-                                    class="flex min-w-0 flex-1 rounded-md bg-muted p-0.5"
-                                    role="group"
-                                    aria-label="Text weight"
+                                    v-if="
+                                        state.neighbours.earlier ||
+                                        state.neighbours.later
+                                    "
+                                    class="grid grid-cols-2 gap-2"
                                 >
-                                    <button
-                                        v-for="option in options('text_weight')"
-                                        :key="option.value"
-                                        type="button"
-                                        :aria-pressed="
-                                            state.valueOf('text_weight') ===
-                                            option.value
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        class="h-11 sm:h-7"
+                                        :disabled="
+                                            !state.neighbours.earlier ||
+                                            state.saving
                                         "
-                                        :aria-label="option.label"
-                                        :title="option.label"
-                                        :style="{
-                                            fontWeight: weights[option.value],
-                                        }"
-                                        :class="[
-                                            'min-h-11 min-w-0 flex-1 truncate rounded px-1 text-xs select-none sm:min-h-7',
-                                            state.valueOf('text_weight') ===
-                                            option.value
-                                                ? 'bg-background shadow-sm'
-                                                : 'text-muted-foreground hover:text-foreground',
-                                        ]"
-                                        @click="
+                                        title="Put it before the part next to it (Alt + ←)"
+                                        data-test="move-earlier"
+                                        @click="state.shift(-1)"
+                                        >Earlier</Button
+                                    >
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        class="h-11 sm:h-7"
+                                        :disabled="
+                                            !state.neighbours.later ||
+                                            state.saving
+                                        "
+                                        title="Put it after the part next to it (Alt + →)"
+                                        data-test="move-later"
+                                        @click="state.shift(1)"
+                                        >Later</Button
+                                    >
+                                </div>
+                                <label class="flex items-center gap-3">
+                                    <span
+                                        class="w-14 text-xs text-muted-foreground"
+                                        >Opacity</span
+                                    >
+                                    <input
+                                        id="property-opacity-slider"
+                                        type="range"
+                                        min="0"
+                                        max="100"
+                                        :step="state.fine ? 1 : 5"
+                                        :value="
+                                            typeof state.valueOf('opacity') ===
+                                            'number'
+                                                ? state.valueOf('opacity')
+                                                : 100
+                                        "
+                                        class="min-h-11 flex-1 accent-foreground sm:min-h-6"
+                                        @pointerdown="state.hold(true)"
+                                        @pointerup="state.hold(false)"
+                                        @input="
                                             set(
-                                                'text_weight',
-                                                state.valueOf('text_weight') ===
-                                                    option.value
-                                                    ? null
-                                                    : option.value,
+                                                'opacity',
+                                                Number(
+                                                    (
+                                                        $event.target as HTMLInputElement
+                                                    ).value,
+                                                ),
                                             )
                                         "
+                                    />
+                                    <span
+                                        class="w-10 text-right text-xs tabular-nums"
+                                        >{{
+                                            state.valueOf('opacity') ?? 100
+                                        }}%</span
                                     >
-                                        {{ option.short ?? option.label }}
-                                    </button>
-                                </div>
-                            </div>
-                            <Swatches
-                                label="Colour"
-                                name="Text colour"
-                                kind="color"
-                                :colors="state.theme"
-                                :value="state.valueOf('text_color')"
-                                :own="state.selected?.colors?.text_color"
-                                :options="options('text_color')"
-                                @change="set('text_color', $event)"
-                            />
-                        </section>
+                                </label>
+                            </section>
 
-                        <section class="space-y-2">
-                            <h3 class="text-xs font-medium">Fill and edges</h3>
-                            <Swatches
-                                label="Fill"
-                                kind="color"
-                                :colors="state.theme"
-                                :value="state.valueOf('background')"
-                                :own="state.selected?.colors?.background"
-                                :options="options('background')"
-                                @change="set('background', $event)"
-                            />
-                            <Swatches
-                                label="Corners"
-                                kind="radius"
-                                :value="state.valueOf('radius')"
-                                :options="options('radius')"
-                                @change="set('radius', $event)"
-                            />
-                            <StepSlider
-                                id="property-shadow"
-                                label="Shadow"
-                                :value="state.valueOf('shadow')"
-                                :options="options('shadow')"
-                                @change="set('shadow', $event)"
-                            />
-                            <div class="flex items-center gap-3">
-                                <span
-                                    class="w-14 shrink-0 text-xs text-muted-foreground"
-                                    >Border</span
-                                >
-                                <MeasureField
-                                    class="w-24"
-                                    :state="state"
-                                    property="border"
+                            <section class="space-y-2">
+                                <h3 class="text-xs font-medium">Text</h3>
+                                <StepSlider
+                                    id="property-text_size"
+                                    label="Size"
+                                    :value="state.valueOf('text_size')"
+                                    :options="sizes"
+                                    :rest="2"
+                                    @change="set('text_size', $event)"
                                 />
-                            </div>
-                            <Swatches
-                                v-if="
-                                    Number(state.valueOf('border') ?? 0) > 0 ||
-                                    state.valueOf('border_color') != null
-                                "
-                                label="Colour"
-                                name="Border colour"
-                                kind="color"
-                                :colors="state.theme"
-                                :value="state.valueOf('border_color')"
-                                :own="state.selected?.colors?.border_color"
-                                :options="options('border_color')"
-                                @change="set('border_color', $event)"
+                                <Segmented
+                                    label="Line up text"
+                                    caption="Align"
+                                    :value="state.valueOf('text_align')"
+                                    :options="options('text_align')"
+                                    @change="set('text_align', $event)"
+                                />
+                                <div class="flex items-center gap-3">
+                                    <span
+                                        class="w-14 shrink-0 text-xs text-muted-foreground"
+                                        aria-hidden="true"
+                                        >Weight</span
+                                    >
+                                    <div
+                                        class="flex min-w-0 flex-1 rounded-md bg-muted p-0.5"
+                                        role="group"
+                                        aria-label="Text weight"
+                                    >
+                                        <button
+                                            v-for="option in options(
+                                                'text_weight',
+                                            )"
+                                            :key="option.value"
+                                            type="button"
+                                            :aria-pressed="
+                                                state.valueOf('text_weight') ===
+                                                option.value
+                                            "
+                                            :aria-label="option.label"
+                                            :title="option.label"
+                                            :style="{
+                                                fontWeight:
+                                                    weights[option.value],
+                                            }"
+                                            :class="[
+                                                'min-h-11 min-w-0 flex-1 truncate rounded px-1 text-xs select-none sm:min-h-7',
+                                                state.valueOf('text_weight') ===
+                                                option.value
+                                                    ? 'bg-background shadow-sm'
+                                                    : 'text-muted-foreground hover:text-foreground',
+                                            ]"
+                                            @click="
+                                                set(
+                                                    'text_weight',
+                                                    state.valueOf(
+                                                        'text_weight',
+                                                    ) === option.value
+                                                        ? null
+                                                        : option.value,
+                                                )
+                                            "
+                                        >
+                                            {{ option.short ?? option.label }}
+                                        </button>
+                                    </div>
+                                </div>
+                                <Swatches
+                                    label="Colour"
+                                    name="Text colour"
+                                    kind="color"
+                                    :colors="state.theme"
+                                    :value="state.valueOf('text_color')"
+                                    :own="state.selected?.colors?.text_color"
+                                    :options="options('text_color')"
+                                    @change="set('text_color', $event)"
+                                />
+                            </section>
+
+                            <section class="space-y-2">
+                                <h3 class="text-xs font-medium">
+                                    Fill and edges
+                                </h3>
+                                <Swatches
+                                    label="Fill"
+                                    kind="color"
+                                    :colors="state.theme"
+                                    :value="state.valueOf('background')"
+                                    :own="state.selected?.colors?.background"
+                                    :options="options('background')"
+                                    @change="set('background', $event)"
+                                />
+                                <Swatches
+                                    label="Corners"
+                                    kind="radius"
+                                    :value="state.valueOf('radius')"
+                                    :options="options('radius')"
+                                    @change="set('radius', $event)"
+                                />
+                                <StepSlider
+                                    id="property-shadow"
+                                    label="Shadow"
+                                    :value="state.valueOf('shadow')"
+                                    :options="options('shadow')"
+                                    @change="set('shadow', $event)"
+                                />
+                                <div class="flex items-center gap-3">
+                                    <span
+                                        class="w-14 shrink-0 text-xs text-muted-foreground"
+                                        >Border</span
+                                    >
+                                    <MeasureField
+                                        class="w-24"
+                                        :state="state"
+                                        property="border"
+                                    />
+                                </div>
+                                <Swatches
+                                    v-if="
+                                        Number(state.valueOf('border') ?? 0) >
+                                            0 ||
+                                        state.valueOf('border_color') != null
+                                    "
+                                    label="Colour"
+                                    name="Border colour"
+                                    kind="color"
+                                    :colors="state.theme"
+                                    :value="state.valueOf('border_color')"
+                                    :own="state.selected?.colors?.border_color"
+                                    :options="options('border_color')"
+                                    @change="set('border_color', $event)"
+                                />
+                            </section>
+                        </div>
+
+                        <button
+                            v-if="!asking"
+                            type="button"
+                            class="flex min-h-11 w-full items-center gap-2 rounded-md border border-dashed px-3 text-sm text-muted-foreground select-none hover:text-foreground sm:min-h-9"
+                            data-test="ask-instead-open"
+                            @click="asking = true"
+                        >
+                            <MessageSquare class="size-4" /> Ask me to change it
+                        </button>
+                        <Form
+                            v-else
+                            v-bind="
+                                FeatureRequestController.store.form(projectId)
+                            "
+                            v-slot="{ errors, processing }"
+                            class="space-y-2"
+                        >
+                            <input
+                                type="hidden"
+                                name="selection[file]"
+                                :value="element.file"
                             />
+                            <input
+                                type="hidden"
+                                name="selection[line]"
+                                :value="element.line"
+                            />
+                            <input
+                                type="hidden"
+                                name="selection[column]"
+                                :value="element.target.split(':').pop()"
+                            />
+                            <input
+                                type="hidden"
+                                name="selection[tag]"
+                                :value="element.tag ?? state.selected.tag"
+                            />
+                            <input
+                                type="hidden"
+                                name="selection[text]"
+                                :value="state.selected.text"
+                            />
+                            <input
+                                v-if="element.area"
+                                type="hidden"
+                                name="selection[area]"
+                                :value="element.area.name"
+                            />
+                            <textarea
+                                name="prompt"
+                                rows="2"
+                                required
+                                aria-label="Your change"
+                                class="w-full rounded-md border bg-transparent px-3 py-2 text-base placeholder:text-muted-foreground md:text-sm"
+                                placeholder="Show the price next to each item"
+                            />
+                            <InputError :message="errors.prompt" />
+                            <p
+                                v-if="reach"
+                                class="text-xs text-muted-foreground"
+                                data-test="element-reach"
+                            >
+                                {{ reach }}
+                            </p>
+                            <Button
+                                :disabled="processing"
+                                class="h-11 w-full select-none sm:h-8"
+                            >
+                                Ask for this change
+                            </Button>
+                        </Form>
+
+                        <section
+                            v-if="showCode"
+                            class="space-y-1 border-t pt-3 text-xs"
+                            data-test="element-code"
+                        >
+                            <p
+                                class="truncate font-mono text-muted-foreground"
+                                :title="`${element.file}:${element.line}`"
+                            >
+                                {{ element.file }}:{{ element.line }}
+                            </p>
+                            <p
+                                v-if="element.classes"
+                                class="font-mono break-words select-all"
+                            >
+                                {{ element.classes }}
+                            </p>
                         </section>
                     </div>
+                </template>
 
-                    <button
-                        v-if="!asking"
-                        type="button"
-                        class="flex min-h-11 w-full items-center gap-2 rounded-md border border-dashed px-3 text-sm text-muted-foreground select-none hover:text-foreground sm:min-h-9"
-                        data-test="ask-instead-open"
-                        @click="asking = true"
+                <!-- While the part's details load: its shape, not a word,
+                     and only when the answer is slow, so it never flashes. -->
+                <div
+                    v-else
+                    class="animate-in space-y-6 p-4 delay-300 duration-base fill-mode-both fade-in"
+                    aria-busy="true"
+                    aria-label="Loading this part"
+                    data-test="part-loading"
+                >
+                    <div
+                        v-for="(rows, section) in [3, 2, 2]"
+                        :key="section"
+                        class="space-y-3"
                     >
-                        <MessageSquare class="size-4" /> Ask me to change it
-                    </button>
-                    <Form
-                        v-else
-                        v-bind="FeatureRequestController.store.form(projectId)"
-                        v-slot="{ errors, processing }"
-                        class="space-y-2"
-                    >
-                        <input
-                            type="hidden"
-                            name="selection[file]"
-                            :value="element.file"
-                        />
-                        <input
-                            type="hidden"
-                            name="selection[line]"
-                            :value="element.line"
-                        />
-                        <input
-                            type="hidden"
-                            name="selection[column]"
-                            :value="element.target.split(':').pop()"
-                        />
-                        <input
-                            type="hidden"
-                            name="selection[tag]"
-                            :value="element.tag ?? state.selected.tag"
-                        />
-                        <input
-                            type="hidden"
-                            name="selection[text]"
-                            :value="state.selected.text"
-                        />
-                        <input
-                            v-if="element.area"
-                            type="hidden"
-                            name="selection[area]"
-                            :value="element.area.name"
-                        />
-                        <textarea
-                            name="prompt"
-                            rows="2"
-                            required
-                            aria-label="Your change"
-                            class="w-full rounded-md border bg-transparent px-3 py-2 text-base placeholder:text-muted-foreground md:text-sm"
-                            placeholder="Show the price next to each item"
-                        />
-                        <InputError :message="errors.prompt" />
-                        <p
-                            v-if="reach"
-                            class="text-xs text-muted-foreground"
-                            data-test="element-reach"
+                        <div class="h-3 w-16 animate-pulse rounded bg-muted" />
+                        <div
+                            v-for="row in rows"
+                            :key="row"
+                            class="flex items-center gap-3"
                         >
-                            {{ reach }}
-                        </p>
-                        <Button
-                            :disabled="processing"
-                            class="h-11 w-full select-none sm:h-8"
-                        >
-                            Ask for this change
-                        </Button>
-                    </Form>
-
-                    <section
-                        v-if="showCode"
-                        class="space-y-1 border-t pt-3 text-xs"
-                        data-test="element-code"
-                    >
-                        <p
-                            class="truncate font-mono text-muted-foreground"
-                            :title="`${element.file}:${element.line}`"
-                        >
-                            {{ element.file }}:{{ element.line }}
-                        </p>
-                        <p
-                            v-if="element.classes"
-                            class="font-mono break-words select-all"
-                        >
-                            {{ element.classes }}
-                        </p>
-                    </section>
+                            <div
+                                class="h-3 w-14 shrink-0 animate-pulse rounded bg-muted/70"
+                            />
+                            <div
+                                class="h-8 flex-1 animate-pulse rounded-md bg-muted/70"
+                            />
+                        </div>
+                    </div>
                 </div>
             </template>
-
-            <p v-else class="p-4 text-sm text-muted-foreground">Looking…</p>
         </div>
 
         <footer
