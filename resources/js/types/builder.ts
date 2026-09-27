@@ -23,6 +23,8 @@ export type ProjectListItem = {
     offline: number;
     // How many of the app's own tests guard it; null before they first ran.
     tests: number | null;
+    // A picture of the app from its latest kept or waiting change.
+    picture: string | null;
 };
 
 /** A look an owner can start a new app with, drawn from its own colours. */

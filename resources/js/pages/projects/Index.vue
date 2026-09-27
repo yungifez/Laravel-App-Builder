@@ -281,12 +281,25 @@ function submitOnShortcut(event: KeyboardEvent): void {
                             class="group flex h-full flex-col gap-4 rounded-xl border bg-card p-4 transition-colors select-none hover:border-foreground/20 hover:bg-muted/40"
                             :data-test="`app-${project.id}`"
                         >
-                            <span class="flex items-center gap-3">
+                            <span
+                                aria-hidden="true"
+                                class="-mx-4 -mt-4 grid aspect-[16/9] place-items-center overflow-hidden rounded-t-xl border-b bg-muted"
+                            >
+                                <img
+                                    v-if="project.picture"
+                                    :src="project.picture"
+                                    alt=""
+                                    loading="lazy"
+                                    class="size-full object-cover object-top"
+                                    data-test="app-picture"
+                                />
                                 <span
-                                    aria-hidden="true"
-                                    class="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-sm font-semibold uppercase"
+                                    v-else
+                                    class="text-3xl font-semibold text-muted-foreground/60 uppercase"
                                     >{{ project.name.charAt(0) }}</span
                                 >
+                            </span>
+                            <span class="flex items-center gap-3">
                                 <span class="min-w-0">
                                     <span class="block truncate font-medium">{{
                                         project.name

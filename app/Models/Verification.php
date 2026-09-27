@@ -68,4 +68,17 @@ class Verification extends Model
     {
         return $this->belongsTo(Run::class);
     }
+
+    /**
+     * Pick the picture that best shows the app: the front page when it was
+     * pictured, otherwise the first screen, at its widest.
+     */
+    public function cover(): ?int
+    {
+        $shots = collect($this->screens['shots'] ?? [])->map(fn (array $shot, int $index) => [...$shot, 'index' => $index]);
+        $front = collect($this->screens['pages'] ?? [])->firstWhere('path', '/')['screen'] ?? null;
+        $screen = $shots->contains('screen', $front) ? $front : $shots->first()['screen'] ?? null;
+
+        return $shots->where('screen', $screen)->sortByDesc('width')->first()['index'] ?? null;
+    }
 }

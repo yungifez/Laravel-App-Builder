@@ -240,3 +240,8 @@ them and correct any that are wrong.
   the login, so the request also asks for the app's own front page. A new
   app is named after what the owner called it (`APP_NAME` in
   `.env.example`), not "Laravel".
+- **Each app card shows a picture of the app.** The picture is the
+  screen check's picture from the latest change that was kept or is
+  waiting for the owner. It prefers the front page, at computer width. A
+  change the owner turned down or undid is never used. Screen pictures
+  are new, so older apps show their first letter until their next change.

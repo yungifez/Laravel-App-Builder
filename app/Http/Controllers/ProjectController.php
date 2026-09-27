@@ -12,11 +12,13 @@ use App\Actions\Publishing\DescribeUnpublished;
 use App\Actions\VisualEditing\InspectSelection;
 use App\Enums\DeploymentStatus;
 use App\Enums\ExperimentStatus;
+use App\Enums\FeatureRequestStatus;
 use App\Http\Requests\ProjectStoreRequest;
 use App\Models\Deployment;
 use App\Models\Experiment;
 use App\Models\Project;
 use App\Models\TestObservation;
+use App\Models\Verification;
 use App\Models\VisualEdit;
 use App\Projects\DesignDirection;
 use App\Projects\ProjectRepository;
@@ -53,10 +55,38 @@ class ProjectController extends Controller
                     'offline' => $this->offline($describeUnpublished->handle($project, $repository->exists($project) ? ($repository->head($project, Experiment::mainBranch()) ?: null) : null)),
                     // How many of the app's own tests guard it, as last run.
                     'tests' => TestObservation::latestFor($project)?->testCount(),
+                    'picture' => $this->picture($project),
                 ]),
             'canStartNew' => StartProjectFromTemplate::template() !== null,
             'designs' => array_map(fn (DesignDirection $design) => $design->preview(), DesignDirection::all()),
         ]);
+    }
+
+    /**
+     * Get a picture of the app: the screen check's picture from the latest
+     * change that was kept or is waiting for the owner to try it. Never
+     * one that was turned down or undone.
+     */
+    protected function picture(Project $project): ?string
+    {
+        $verifications = Verification::query()
+            ->whereHas('featureRequest', fn ($query) => $query->whereBelongsTo($project)->whereNull('reverted_at')->where(fn ($query) => $query
+                ->whereNotNull('commit_sha')
+                ->orWhere(fn ($query) => $query->where('status', FeatureRequestStatus::Generated)->whereNull('dismissed_at'))))
+            ->whereNotNull('screens')
+            ->latest('id')
+            ->limit(10)
+            ->get();
+
+        foreach ($verifications as $verification) {
+            $shot = $verification->cover();
+
+            if ($shot !== null) {
+                return route('verifications.shots.show', [$verification, $shot]);
+            }
+        }
+
+        return null;
     }
 
     /**
