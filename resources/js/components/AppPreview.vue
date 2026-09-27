@@ -93,20 +93,24 @@ watch(scale, (value) => (props.state.zoom = value), { immediate: true });
             </template>
 
             <template v-else>
-                <p class="text-lg font-medium">See your app here</p>
-                <p
-                    v-if="preview?.status === 'failed'"
-                    class="max-w-xs text-sm text-destructive"
-                >
-                    {{ preview.error ?? 'Your app could not start.' }}
-                </p>
-                <p
-                    v-else-if="state.lost"
-                    class="max-w-xs text-sm text-muted-foreground"
-                    data-test="preview-lost"
-                >
-                    Your app stopped. Your work is safe.
-                </p>
+                <template v-if="preview?.status === 'failed'">
+                    <p class="text-lg font-medium">Your app could not start</p>
+                    <p
+                        v-if="preview.error"
+                        class="max-w-xs text-sm text-destructive"
+                    >
+                        {{ preview.error }}
+                    </p>
+                </template>
+                <template v-else-if="state.lost">
+                    <p class="text-lg font-medium" data-test="preview-lost">
+                        Your app stopped
+                    </p>
+                    <p class="max-w-xs text-sm text-muted-foreground">
+                        Your work is safe.
+                    </p>
+                </template>
+                <p v-else class="text-lg font-medium">See your app here</p>
                 <Form
                     v-bind="ProjectPreviewController.store.form(projectId)"
                     :options="{ preserveScroll: true, preserveState: true }"

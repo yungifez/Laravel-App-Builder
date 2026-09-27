@@ -906,7 +906,9 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
 
             const element = located(event.target);
 
-            if (element) {
+            // Clicking the selected part again, as a double-click does,
+            // keeps the panel as it is instead of loading the part again.
+            if (element && element !== selected) {
                 choose(element, true);
             }
         },
