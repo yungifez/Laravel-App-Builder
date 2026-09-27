@@ -218,10 +218,24 @@ export type Run = {
     review: RunReview | null;
     /** What the change is doing right now, while it is being made. */
     progress: { text: string; changed: number } | null;
+    /** How the change was made, step by step, in the owner's words. */
+    work: WorkStep[];
     started_at: string | null;
     finished_at: string | null;
     /** What happened, in the owner's words; how it was done stays with us. */
     log: RunLogEntry[];
+};
+
+export type WorkStep = {
+    kind:
+        | 'thought'
+        | 'read'
+        | 'changed'
+        | 'tested'
+        | 'tried'
+        | 'noted'
+        | 'repair';
+    text: string;
 };
 
 export type RunLogEntry = {

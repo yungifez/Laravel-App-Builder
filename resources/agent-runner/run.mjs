@@ -13,7 +13,10 @@
 //
 // While the agent works, progress.json next to the task file says what it
 // is doing, so the owner can follow along:
-// {"doing":"reading|changing|testing","last":"path","read":[...],"changed":[...]}
+// {"doing":"reading|changing|testing","last":"path","read":[...],"changed":[...],
+//  "story":[{"kind":"said","text":"..."}|{"kind":"read|changed","file":"path"}|{"kind":"testing"}]}
+// The story is what the agent did and said, in order; the result line
+// carries it too, so it outlives the task files.
 // Credentials come from the environment (ANTHROPIC_API_KEY, OPENAI_API_KEY,
 // and optionally ANTHROPIC_BASE_URL / OPENAI_BASE_URL for a gateway).
 
@@ -40,8 +43,35 @@ const PROVIDER_ERROR =
     /\b(401|403|429|500|502|503|504)\b|rate.?limit|quota|credit balance|billing|unauthori[sz]ed|invalid api key|incorrect api key|overloaded|server error|service unavailable|timed? ?out|ECONNRESET|ENOTFOUND|ECONNREFUSED/i;
 
 /** What the agent has done so far, written after each step. */
-const progress = { doing: 'reading', last: null, read: [], changed: [] };
+const progress = {
+    doing: 'reading',
+    last: null,
+    read: [],
+    changed: [],
+    story: [],
+};
 let progressFile = null;
+
+/** The story keeps the latest steps only, so the file stays small. */
+const STORY_LIMIT = 200;
+
+function tell(entry) {
+    progress.story.push(entry);
+
+    if (progress.story.length > STORY_LIMIT) {
+        progress.story.shift();
+    }
+}
+
+/** Keep what the agent says between steps, as its own words. */
+function say(text) {
+    const said = (text ?? '').trim().slice(0, 1000);
+
+    if (said !== '') {
+        tell({ kind: 'said', text: said });
+        write();
+    }
+}
 
 function track(doing, path = null) {
     progress.doing = doing;
@@ -54,9 +84,19 @@ function track(doing, path = null) {
             list.push(file);
         }
 
+        if (!file.startsWith('..')) {
+            tell({ kind: doing === 'changing' ? 'changed' : 'read', file });
+        }
+
         progress.last = file;
+    } else if (doing === 'testing') {
+        tell({ kind: 'testing' });
     }
 
+    write();
+}
+
+function write() {
     if (progressFile === null) {
         return;
     }
@@ -103,6 +143,10 @@ async function runClaude(task) {
         for (const block of message.type === 'assistant'
             ? (message.message?.content ?? [])
             : []) {
+            if (block.type === 'text') {
+                say(block.text);
+            }
+
             if (block.type !== 'tool_use') {
                 continue;
             }
@@ -211,6 +255,7 @@ async function runCodex(task) {
             event.item.type === 'agent_message'
         ) {
             summary = event.item.text;
+            say(event.item.text);
         } else if (event.type === 'turn.completed') {
             usage = event.usage;
         } else if (event.type === 'turn.failed') {
@@ -252,7 +297,11 @@ try {
         throw new Error(`Unknown adapter "${task.adapter}".`);
     }
 
-    print({ adapter: task.adapter, ...(await adapters[task.adapter](task)) });
+    print({
+        adapter: task.adapter,
+        ...(await adapters[task.adapter](task)),
+        story: progress.story,
+    });
 } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
@@ -267,5 +316,6 @@ try {
         input_tokens: 0,
         output_tokens: 0,
         cost_usd: null,
+        story: progress.story,
     });
 }

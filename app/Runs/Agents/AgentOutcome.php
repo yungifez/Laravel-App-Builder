@@ -10,6 +10,9 @@ use Illuminate\Support\Str;
  */
 final readonly class AgentOutcome
 {
+    /**
+     * @param  list<array{kind: string, text?: string, file?: string}>  $story  What the agent did and said, in order
+     */
     public function __construct(
         public string $adapter,
         public string $provider,
@@ -22,6 +25,7 @@ final readonly class AgentOutcome
         public int $inputTokens = 0,
         public int $outputTokens = 0,
         public ?float $costUsd = null,
+        public array $story = [],
     ) {}
 
     /**
@@ -62,7 +66,31 @@ final readonly class AgentOutcome
             inputTokens: (int) ($result['input_tokens'] ?? 0),
             outputTokens: (int) ($result['output_tokens'] ?? 0),
             costUsd: isset($result['cost_usd']) ? (float) $result['cost_usd'] : null,
+            story: self::story($result['story'] ?? []),
         );
+    }
+
+    /**
+     * Read the runner's story, keeping only entries of a known shape.
+     *
+     * @return list<array{kind: string, text?: string, file?: string}>
+     */
+    public static function story(mixed $story): array
+    {
+        $entries = [];
+
+        foreach (is_array($story) ? $story : [] as $entry) {
+            $kind = is_array($entry) ? ($entry['kind'] ?? null) : null;
+
+            $entries[] = match (true) {
+                $kind === 'said' && is_string($entry['text'] ?? null) => ['kind' => 'said', 'text' => Str::limit($entry['text'], 1000)],
+                in_array($kind, ['read', 'changed'], true) && is_string($entry['file'] ?? null) => ['kind' => $kind, 'file' => Str::limit($entry['file'], 500, '')],
+                $kind === 'testing' => ['kind' => 'testing'],
+                default => null,
+            };
+        }
+
+        return array_values(array_filter($entries));
     }
 
     /**

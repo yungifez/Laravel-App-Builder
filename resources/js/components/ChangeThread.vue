@@ -28,6 +28,7 @@ import RunCancellationController from '@/actions/App/Http/Controllers/RunCancell
 import DetailLevelController from '@/actions/App/Http/Controllers/Settings/DetailLevelController';
 import ChangeCode from '@/components/ChangeCode.vue';
 import InputError from '@/components/InputError.vue';
+import WorkStepLine from '@/components/WorkStepLine.vue';
 import { Button } from '@/components/ui/button';
 import {
     Collapsible,
@@ -50,6 +51,10 @@ const emit = defineEmits<{
 const request = computed(() => props.change.featureRequest);
 const run = computed(() => props.change.run);
 const moreQuestions = ref(false);
+
+// How the change is being made, in the owner's words. While it works the
+// latest steps show as they happen; afterwards the whole story folds away.
+const work = computed(() => run.value?.work ?? []);
 
 // What the owner might ask for next, one tap each, as in any chat. Offered
 // only while the chat can go on and nothing has been asked after this yet.
@@ -469,6 +474,46 @@ const checks = computed(() => {
                         <p v-else-if="run?.plan" class="leading-relaxed">
                             {{ run.plan.summary }}
                         </p>
+
+                        <!-- How it is being made, step by step -->
+                        <template v-if="work.length > 0">
+                            <ol
+                                v-if="working"
+                                class="space-y-1.5"
+                                data-test="thread-work"
+                            >
+                                <li
+                                    v-for="(step, index) in work.slice(-6)"
+                                    :key="`${work.length - 6 + index}`"
+                                >
+                                    <WorkStepLine :step="step" />
+                                </li>
+                            </ol>
+                            <Collapsible v-else>
+                                <CollapsibleTrigger
+                                    class="group flex min-h-11 items-center gap-1 text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-6"
+                                    data-test="thread-work-toggle"
+                                >
+                                    <ChevronRight
+                                        class="size-3.5 transition-transform group-data-[state=open]:rotate-90"
+                                    />
+                                    How I did it
+                                </CollapsibleTrigger>
+                                <CollapsibleContent>
+                                    <ol
+                                        class="mt-1.5 space-y-1.5"
+                                        data-test="thread-work"
+                                    >
+                                        <li
+                                            v-for="(step, index) in work"
+                                            :key="index"
+                                        >
+                                            <WorkStepLine :step="step" />
+                                        </li>
+                                    </ol>
+                                </CollapsibleContent>
+                            </Collapsible>
+                        </template>
 
                         <div
                             v-if="working"

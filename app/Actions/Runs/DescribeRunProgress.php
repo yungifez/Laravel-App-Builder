@@ -5,6 +5,7 @@ namespace App\Actions\Runs;
 use App\Context\ProjectNotes;
 use App\Enums\RunStatus;
 use App\Models\Run;
+use App\Runs\Agents\AgentOutcome;
 use App\Runs\Agents\RunnerAgent;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Support\Arr;
@@ -25,21 +26,31 @@ class DescribeRunProgress
      */
     public function handle(Run $run): ?array
     {
+        $progress = $this->live($run);
+
+        return $progress === null ? null : $this->describe($run, $progress);
+    }
+
+    /**
+     * Get what the coding agent last wrote about its progress, while it works.
+     *
+     * @return array{doing: string, last: string|null, read: list<string>, changed: list<string>, story: list<array{kind: string, text?: string, file?: string}>}|null
+     */
+    public function live(Run $run): ?array
+    {
         if ($run->status !== RunStatus::Implementing || $run->workspace === null) {
             return null;
         }
 
         // Several people may watch the same change; the workspace is read
         // at most once every few seconds.
-        $progress = Cache::remember("runs:{$run->id}:progress", now()->addSeconds(3), fn () => $this->read($run));
-
-        return $progress === null ? null : $this->describe($run, $progress);
+        return Cache::remember("runs:{$run->id}:progress", now()->addSeconds(3), fn () => $this->read($run));
     }
 
     /**
      * Read what the coding agent wrote about its progress.
      *
-     * @return array{doing: string, last: string|null, read: list<string>, changed: list<string>}|null
+     * @return array{doing: string, last: string|null, read: list<string>, changed: list<string>, story: list<array{kind: string, text?: string, file?: string}>}|null
      */
     protected function read(Run $run): ?array
     {
@@ -60,11 +71,12 @@ class DescribeRunProgress
             'last' => is_string($data['last'] ?? null) ? $data['last'] : null,
             'read' => array_values(array_filter(Arr::wrap($data['read'] ?? []), is_string(...))),
             'changed' => array_values(array_filter(Arr::wrap($data['changed'] ?? []), is_string(...))),
+            'story' => AgentOutcome::story($data['story'] ?? []),
         ];
     }
 
     /**
-     * @param  array{doing: string, last: string|null, read: list<string>, changed: list<string>}  $progress
+     * @param  array{doing: string, last: string|null, read: list<string>, changed: list<string>, story: list<array{kind: string, text?: string, file?: string}>}  $progress
      * @return array{text: string, changed: int}
      */
     protected function describe(Run $run, array $progress): array

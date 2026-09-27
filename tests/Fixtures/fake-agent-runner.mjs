@@ -1,5 +1,6 @@
 // Stands in for resources/agent-runner/run.mjs in tests: reads the task file,
-// writes a file into the workspace, and prints noise and one result line.
+// writes a file into the workspace, and prints noise and one result line
+// with the story of what it did.
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const task = JSON.parse(readFileSync(process.argv[2], 'utf8'));
@@ -16,5 +17,10 @@ process.stdout.write(
         input_tokens: 1200,
         output_tokens: 300,
         cost_usd: 0.42,
+        story: [
+            { kind: 'said', text: 'I will write down the task first.' },
+            { kind: 'changed', file: 'agent-output.txt' },
+            { kind: 'unknown' },
+        ],
     })}\n`,
 );

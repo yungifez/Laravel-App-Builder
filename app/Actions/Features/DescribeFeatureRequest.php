@@ -3,6 +3,7 @@
 namespace App\Actions\Features;
 
 use App\Actions\Runs\DescribeRunProgress;
+use App\Actions\Runs\NarrateWork;
 use App\Context\ProjectContext;
 use App\Context\ProjectNotes;
 use App\Enums\FeatureRequestStatus;
@@ -17,7 +18,10 @@ use Illuminate\Support\Str;
 
 class DescribeFeatureRequest
 {
-    public function __construct(private DescribeRunProgress $describeRunProgress) {}
+    public function __construct(
+        private DescribeRunProgress $describeRunProgress,
+        private NarrateWork $narrateWork,
+    ) {}
 
     /**
      * Describe a change for a page that shows it: the request, its latest
@@ -137,6 +141,7 @@ class DescribeFeatureRequest
             ],
             'review' => $this->review($run),
             'progress' => $this->describeRunProgress->handle($run),
+            'work' => $this->narrateWork->handle($run, $this->describeRunProgress->live($run)['story'] ?? null),
             'started_at' => $run->started_at?->toIso8601String(),
             'finished_at' => $run->finished_at?->toIso8601String(),
             'log' => $run->events()->get()

@@ -34,7 +34,8 @@ class RunCodingAgent
      * back exactly as it was before the first attempt, and the same task goes
      * to the next agent; partial edits never carry across. An agent whose
      * provider keeps failing is tried last for a while (a circuit breaker).
-     * Every attempt is logged with what it cost.
+     * Every attempt is logged with what it cost, and the attempt that stays
+     * with what it did.
      *
      * While an agent works, its lease is renewed. When the lease is lost or
      * the owner cancels, the agent is stopped at once, so it never edits a
@@ -83,6 +84,13 @@ class RunCodingAgent
 
             if ($outcome->status !== AgentOutcomeStatus::ProviderUnavailable) {
                 Cache::forget($this->circuitKey($adapter));
+
+                // What the agent did and said, kept for the owner to read
+                // back once the task files are gone. Attempts that failed
+                // over left nothing behind, so they tell no story.
+                if ($outcome->story !== []) {
+                    $this->recordEvent($run, $lease, 'agent_story', ['story' => $outcome->story]);
+                }
 
                 return $outcome;
             }

@@ -93,6 +93,27 @@ it('continues the open chat when the owner asks for more', function () {
     expect($followUp->solution_key)->toBe('invitation-reminders');
 });
 
+it('tells the owner how the change was made, in plain words', function () {
+    $this->actingAs($this->owner);
+
+    askForInvitations($this->project);
+
+    $run = $this->project->featureRequests()->sole()->latestRun;
+    $run->recordEvent('agent_story', ['story' => [
+        ['kind' => 'said', 'text' => 'Only team owners should send invitations, so I am adding that check first.'],
+        ['kind' => 'read', 'file' => 'app/Policies/TeamPolicy.php'],
+        ['kind' => 'testing'],
+    ]]);
+
+    visit(route('projects.show', ['project' => $this->project, 'change' => $run->feature_request_id]))
+        ->assertMissing('@thread-work')
+        ->click('@thread-work-toggle')
+        ->assertSeeIn('@thread-work', 'Only team owners should send invitations, so I am adding that check first.')
+        ->assertSeeIn('@thread-work', 'Tried it out')
+        ->assertDontSee('TeamPolicy')
+        ->assertNoJavaScriptErrors();
+});
+
 it('sends a suggested next step with one tap', function () {
     $this->actingAs($this->owner);
 
