@@ -236,4 +236,7 @@ them and correct any that are wrong.
   conversation instead of the template's welcome page.
   `BUILDER_FIRST_VERSION=false` turns it off. The new-app page also shows
   three example sentences to start from, and "Open my app" now shows that
-  it is opening.
+  it is opening. The first build of "Studio Classes" hid everything behind
+  the login, so the request also asks for the app's own front page. A new
+  app is named after what the owner called it (`APP_NAME` in
+  `.env.example`), not "Laravel".
