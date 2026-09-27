@@ -437,6 +437,36 @@ class AgentDriverTest extends TestCase
         $this->assertSame(RunStatus::Completed, $run->refresh()->status);
     }
 
+    public function test_words_cut_off_on_a_phone_send_the_change_back_to_fit_the_screen()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder(
+            $this->writes([
+                'app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION,
+                'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST,
+                'resources/js/pages/Team.vue' => "<template>\n    <p class=\"w-[700px]\">{{ team.description }}</p>\n</template>\n",
+            ]),
+            $this->writes(['resources/js/pages/Team.vue' => "<template>\n    <p class=\"max-w-full\">{{ team.description }}</p>\n</template>\n"], 'Let it wrap.'),
+        );
+        $approve = ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]];
+        ChangeReviewer::fake([$approve, $approve]);
+        $page = fn (array $cut) => ['pages' => [['path' => '/team', 'status' => 200, 'final' => '/team', 'screen' => 'Team', 'widths' => [
+            ['width' => 390, 'overflow' => 0, 'cut_off' => count($cut), 'cut' => $cut, 'small_targets' => 0, 'small' => [], 'errors' => []],
+        ]]], 'signed_in' => true];
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, screens: $page([['text' => 'A team for designers', 'width' => 700, 'past' => 310]]));
+
+        $run->refresh();
+        $this->assertSame(1, $run->repairs);
+        $this->assertFalse($run->review['approved']);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'At 390 px wide, "A team for designers" on /team (resources/js/pages/Team.vue) runs 310 px past the edge of the screen'));
+
+        $this->passVerification($run, screens: $page([]));
+
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+    }
+
     public function test_a_named_test_that_did_not_run_is_not_evidence_and_sends_the_change_back()
     {
         FeaturePlanner::fake([$this->plan()]);
@@ -734,13 +764,13 @@ class AgentDriverTest extends TestCase
      *
      * @param  list<array{file: string, name: string, outcome: string}>|null  $tests
      */
-    protected function passVerification(Run $run, ?array $tests = null): void
+    protected function passVerification(Run $run, ?array $tests = null, ?array $screens = null): void
     {
         $tests ??= [['file' => '/workspace/tests/Feature/TeamDescriptionTest.php', 'name' => 'teams have a nullable description', 'outcome' => 'passed']];
         $verification = $run->verifications()->latest('id')->firstOrFail();
         $verification->update(['status' => VerificationStatus::Passed, 'results' => [
             ['name' => 'Tests', 'stage' => 'checks', 'outcome' => 'passed', 'exit_code' => 0, 'timed_out' => false, 'duration_ms' => 10, 'output' => 'OK', 'tests' => $tests],
-        ], 'finished_at' => now()]);
+        ], 'screens' => $screens, 'finished_at' => now()]);
 
         app(CompleteRunVerification::class)->handle($verification);
     }

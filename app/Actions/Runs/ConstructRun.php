@@ -18,6 +18,7 @@ use App\Enums\RunStatus;
 use App\Features\Exceptions\CannotGenerateFeature;
 use App\Features\InventedColours;
 use App\Features\PatchSummary;
+use App\Features\ScreenCheck;
 use App\Features\TestChanges;
 use App\Features\UndescribedImages;
 use App\Features\UnsafeCode;
@@ -363,6 +364,10 @@ class ConstructRun
         if ($driver->canRepair() && config('builder.verification.design_scan')) {
             $review = $review->withBlockingFindings(array_map(InventedColours::finding(...), InventedColours::found($featureRequest->patch)));
             $review = $review->withBlockingFindings(array_map(UndescribedImages::finding(...), UndescribedImages::found($featureRequest->patch)));
+        }
+
+        if ($driver->canRepair() && config('builder.verification.screens.enabled')) {
+            $review = $review->withBlockingFindings(array_map(ScreenCheck::finding(...), ScreenCheck::found($verification->screens, $featureRequest->patch)));
         }
 
         $this->recordEvent($run, $lease, 'review', [

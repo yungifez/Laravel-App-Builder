@@ -58,3 +58,38 @@ them and correct any that are wrong.
   pictures were saved (for example, a follow-up on a change that cannot be
   built on) leaves them on disk. Why: rare, and small. Clean-up can come
   with the workspace clean-up work.
+- **Screens are opened at 390, 820 and 1280 px after the checks pass**
+  (2026-09-27). The box image carries Chromium, and the local `runner`
+  service now runs that image. Why: direction 26 lists "no sideways
+  overflow at 390, 820 and 1280 px" as a browser check on touched screens.
+  Measuring the app's real pages is the only honest way to say it fits a
+  phone. Cost: about 40 s per change that touches a screen, and a bigger
+  box image. Undo: `BUILDER_SCREEN_CHECK=false`.
+- **Tap targets use WCAG 2.2 AA (24 px), not 44 px.** A smaller control
+  passes when nothing else is within its 24 px circle, and a link in a line
+  of text passes. Why: at 44 px, every starter-kit text link failed. That
+  would send back almost every change for problems it did not make. The
+  starter kit passes at 24 px with spacing. Undo: `MIN_TARGET` in
+  `resources/screen-check/check.mjs`.
+- **Only the screens a change touched are blamed.** A page counts when its
+  Inertia page component matches a `pages/…` file in the change. Blade
+  pages, shared components and layouts are measured but never send a change
+  back. Why: a problem the app already had elsewhere must not block a
+  change. Undo: compare against a measurement of the app before the change
+  (costs a second build).
+- **Which pages:** every GET route without parameters, up to 15, home
+  first. Routes that log out, verify, confirm, export or download, and API
+  routes, are skipped. Why: visiting them could change the app or they are
+  not screens. Pages with parameters (`/teams/{team}`) are not reached yet.
+- **Signing in:** the check makes a user with `App\Models\User::forceCreate`
+  (random email and password, workspace database only), then signs in
+  through the app's own `/login` form. Why: it works for the Laravel starter
+  kits without knowing the app's code. When the app has no such model or
+  form, only the pages open to guests are measured.
+- **The app is served with SQLite.** The command touches
+  `database/database.sqlite` and runs migrations, matching the Laravel
+  default `.env.example`. An app that needs another database is not
+  measured, and nothing is said. Undo: change
+  `builder.verification.screens.command`.
+- **Contrast and visible focus are not checked yet.** They are next for this
+  check.

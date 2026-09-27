@@ -308,4 +308,51 @@ class VerificationTest extends TestCase
                 ->where('verification.status', 'passed')
                 ->where('verification.results.0.outcome', 'passed'));
     }
+
+    public function test_a_change_to_a_screen_has_its_pages_measured_once_the_checks_pass()
+    {
+        $measure = ['sh', '-c', 'measure the screens'];
+        config(['builder.verification.screens' => ['enabled' => true, 'command' => $measure, 'timeout' => 600, 'report' => 'screens.json']]);
+        $this->driver->onExec = function (string $workspace, array $command) use ($measure) {
+            if ($command === $measure) {
+                $this->driver->files["{$workspace}:screens.json"] = '{"pages":[{"path":"/teams","screen":"Teams","widths":[]}],"signed_in":true}';
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        $screen = FeatureRequest::factory()->generated()->create(['patch' => "diff --git a/resources/js/pages/Teams.vue b/resources/js/pages/Teams.vue\n+++ b/resources/js/pages/Teams.vue\n@@ -1 +1,2 @@\n+<p>Teams</p>"]);
+        $code = FeatureRequest::factory()->generated()->create(['patch' => "diff --git a/app/Models/Team.php b/app/Models/Team.php\n+++ b/app/Models/Team.php\n@@ -1 +1,2 @@\n+// Teams"]);
+
+        app(RequestVerification::class)->handle($screen);
+        app(RequestVerification::class)->handle($code);
+
+        $this->assertSame(['pages' => [['path' => '/teams', 'screen' => 'Teams', 'widths' => []]], 'signed_in' => true], $screen->verifications()->sole()->screens);
+        // A change with no screen is not measured, and the measuring is never one of the checks.
+        $this->assertNull($code->verifications()->sole()->screens);
+        $this->assertSame(1, collect($this->driver->executed)->where('command', $measure)->count());
+        $this->assertNotContains('Screens', array_column($screen->verifications()->sole()->results, 'name'));
+    }
+
+    public function test_screens_are_not_measured_when_the_checks_fail_or_the_tool_cannot_run()
+    {
+        $measure = ['sh', '-c', 'measure the screens'];
+        config(['builder.verification.screens' => ['enabled' => true, 'command' => $measure, 'timeout' => 600, 'report' => 'screens.json']]);
+        $patch = "diff --git a/resources/js/pages/Teams.vue b/resources/js/pages/Teams.vue\n+++ b/resources/js/pages/Teams.vue\n@@ -1 +1,2 @@\n+<p>Teams</p>";
+        $failing = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
+        $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(exitCode: $command === ['pint', '--test'] ? 1 : 0, output: 'ok', errorOutput: '', durationMs: 5);
+
+        app(RequestVerification::class)->handle($failing);
+
+        $this->assertSame(VerificationStatus::Failed, $failing->verifications()->sole()->status);
+        $this->assertSame(0, collect($this->driver->executed)->where('command', $measure)->count());
+
+        // Where the measuring tool is not installed its command fails, and nothing is kept.
+        $missing = FeatureRequest::factory()->generated()->create(['patch' => $patch, 'acceptance' => ['Invitations/ContractTest.php']]);
+        $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(exitCode: $command === $measure ? 1 : 0, output: '', errorOutput: 'test: not found', durationMs: 5);
+
+        app(RequestVerification::class)->handle($missing);
+
+        $this->assertSame(VerificationStatus::Passed, $missing->verifications()->sole()->status);
+        $this->assertNull($missing->verifications()->sole()->screens);
+    }
 }

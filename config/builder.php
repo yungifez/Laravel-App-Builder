@@ -508,6 +508,30 @@ return [
         // is sent back to fix it.
         'design_scan' => (bool) env('BUILDER_DESIGN_SCAN', true),
 
+        // Screens on phones, tablets and computers (direction 26). When the
+        // checks pass and the change touches a screen, the app is built,
+        // served and opened in a browser at each width. On a page whose
+        // screen file the change touched, words or controls cut off at the
+        // edge, sideways scrolling, controls too small to tap (WCAG 2.2 AA)
+        // and script errors are blocking findings. The command runs in the
+        // workspace and writes the measuring tool's JSON to "report"; where
+        // the tool is not installed (only the box image has it), nothing is
+        // measured and nothing is said.
+        'screens' => [
+            'enabled' => (bool) env('BUILDER_SCREEN_CHECK', true),
+            'command' => ['sh', '-c', implode(' && ', [
+                'rm -rf storage/logs/screens',
+                'mkdir -p storage/logs/screens',
+                'test -f '.env('BUILDER_SCREEN_CHECK_TOOL', '/opt/screen-check/check.mjs'),
+                'npm run build > storage/logs/screens/build.log 2>&1',
+                'touch database/database.sqlite',
+                'php artisan migrate --force > storage/logs/screens/migrate.log 2>&1',
+                'node '.env('BUILDER_SCREEN_CHECK_TOOL', '/opt/screen-check/check.mjs').' > storage/logs/screens/report.json',
+            ])],
+            'timeout' => 600,
+            'report' => 'storage/logs/screens/report.json',
+        ],
+
         // Test impact evidence (direction 22). When the suite check passes,
         // the suite runs once more with code coverage, and the test list is
         // read with its groups, to record which tests ran which code files.

@@ -4,3 +4,6 @@
 !agent-runner/run.mjs
 !box-runner/runner.mjs
 !preview-tools/
+!screen-check/package.json
+!screen-check/package-lock.json
+!screen-check/check.mjs

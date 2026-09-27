@@ -1330,6 +1330,24 @@ decoration. A tag with attributes spread in from elsewhere, or one that runs
 into lines the change did not add, is unknown and passes. Its clean result
 is a proof line too. `builder.verification.design_scan` turns both off.
 
+**Screens are opened at three widths** (direction 26, the first browser
+check). When the checks pass and a change touches a screen file (or CSS),
+verification builds the app, serves it in the workspace and runs the screen
+check (`resources/screen-check`, baked into the box image with Chromium). It
+visits every GET route without parameters, signed out, then signs in as a
+user it makes for the purpose to measure the pages behind a login. At 390,
+820 and 1280 px it records sideways scrolling, words or controls cut off at
+the screen's edge (a layout that hides overflow cuts them off instead of
+scrolling), script errors and, at 390 px, controls under 24 by 24 px with no
+room around them (WCAG 2.2 AA 2.5.8, with its spacing and inline-link
+exceptions). The result is kept on the verification (`screens`); it never
+changes the checks' result. A page names its screen through Inertia's page
+component. On a page whose screen file the change touched, each kind of
+problem is a blocking finding at its narrowest width. Other pages are
+measured but never blamed. The owner sees a clean result as one proof line.
+Where the tool is not installed, nothing is measured and nothing is said.
+`builder.verification.screens` holds the command and its switch.
+
 Depend on the idea of observed test dependencies, not on Pest's cache format:
 use affected-test output or a supported extension point.
 

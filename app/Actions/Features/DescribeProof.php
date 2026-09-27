@@ -5,6 +5,7 @@ namespace App\Actions\Features;
 use App\Enums\VerificationStatus;
 use App\Features\InventedColours;
 use App\Features\PatchSummary;
+use App\Features\ScreenCheck;
 use App\Features\UndescribedImages;
 use App\Features\UnsafeCode;
 use App\Models\FeatureRequest;
@@ -33,7 +34,7 @@ class DescribeProof
             return [];
         }
 
-        return [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest), ...$this->safety($featureRequest), ...$this->colours($featureRequest), ...$this->pictures($featureRequest), ...$this->reach($featureRequest->latestRun)];
+        return [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest), ...$this->safety($featureRequest), ...$this->colours($featureRequest), ...$this->pictures($featureRequest), ...$this->screens($featureRequest, $verification), ...$this->reach($featureRequest->latestRun)];
     }
 
     /**
@@ -149,6 +150,24 @@ class DescribeProof
         }
 
         return [['kind' => 'passed', 'text' => __('The pictures it added say what they show, for people who cannot see the screen.')]];
+    }
+
+    /**
+     * Say that the screens the change touched were opened on a phone, a
+     * tablet and a computer and nothing was cut off, too small to tap or
+     * broken, when the screen check measured them.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function screens(FeatureRequest $featureRequest, Verification $verification): array
+    {
+        $changed = ScreenCheck::changed($verification->screens, $featureRequest->patch);
+
+        if (! config('builder.verification.screens.enabled') || $changed === [] || ScreenCheck::found($verification->screens, $featureRequest->patch) !== []) {
+            return [];
+        }
+
+        return [['kind' => 'passed', 'text' => trans_choice('The screen it changed was opened on a phone, a tablet and a computer. Nothing was cut off, too small to tap or broken.|The :count screens it changed were opened on a phone, a tablet and a computer. Nothing was cut off, too small to tap or broken.', count($changed))]];
     }
 
     /**

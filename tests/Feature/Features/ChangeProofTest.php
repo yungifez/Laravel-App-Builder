@@ -155,6 +155,37 @@ class ChangeProofTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('proof.5', ['kind' => 'passed', 'text' => 'The pictures it added say what they show, for people who cannot see the screen.']));
     }
 
+    public function test_a_change_whose_screens_fit_every_width_says_so()
+    {
+        $patch = implode("\n", [
+            'diff --git a/resources/js/pages/Team.vue b/resources/js/pages/Team.vue',
+            '--- a/resources/js/pages/Team.vue',
+            '+++ b/resources/js/pages/Team.vue',
+            '@@ -1 +1,2 @@',
+            ' <template>',
+            '+    <p>Team</p>',
+        ]);
+        $screens = fn (int $overflow) => ['pages' => [['path' => '/team', 'status' => 200, 'final' => '/team', 'screen' => 'Team', 'widths' => [
+            ['width' => 390, 'overflow' => $overflow, 'cut_off' => 0, 'cut' => [], 'small_targets' => 0, 'small' => [], 'errors' => []],
+            ['width' => 1280, 'overflow' => 0, 'cut_off' => 0, 'cut' => [], 'small_targets' => 0, 'small' => [], 'errors' => []],
+        ]]], 'signed_in' => true];
+        $line = 'The screen it changed was opened on a phone, a tablet and a computer. Nothing was cut off, too small to tap or broken.';
+        $fits = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
+        $scrolls = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
+        $this->checked($fits);
+        $this->checked($scrolls);
+        $fits->verifications()->sole()->update(['screens' => $screens(0)]);
+        $scrolls->verifications()->sole()->update(['screens' => $screens(80)]);
+
+        $this->actingAs($fits->project->owner)
+            ->get(route('feature-requests.show', $fits))
+            ->assertInertia(fn (Assert $page) => $page->where('proof', fn ($proof) => collect($proof)->contains(['kind' => 'passed', 'text' => $line])));
+        // A page that still scrolls sideways is never called a fit.
+        $this->actingAs($scrolls->project->owner)
+            ->get(route('feature-requests.show', $scrolls))
+            ->assertInertia(fn (Assert $page) => $page->where('proof', fn ($proof) => ! collect($proof)->contains('text', $line)));
+    }
+
     public function test_the_tests_a_change_added_are_named()
     {
         $request = FeatureRequest::factory()->generated()->create(['patch' => implode("\n", [

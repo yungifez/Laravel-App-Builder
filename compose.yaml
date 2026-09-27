@@ -5,7 +5,8 @@
 # This file is NOT the future isolation design for customer code. Only the
 # opt-in `boxes` service may mount the Docker socket, never a container that
 # runs our app or customer code. `runner` stands in for a workspace box: it
-# gets only the runner and preview-tool folders and its own volume, never the project,
+# runs the box image (with the screen check's browser), gets only the runner,
+# preview-tool and screen-check files and its own volume, never the project,
 # .env or the database (WORKSPACE_DRIVER=runner). `reverb` rings its doorbell.
 name: builder-control-plane
 
@@ -49,7 +50,10 @@ services:
         restart: unless-stopped
 
     runner:
-        image: sail-8.4/app
+        build:
+            context: ./resources
+            dockerfile: ../docker/box/Dockerfile
+        image: builder-box
         entrypoint: ['node', '/opt/box-runner/runner.mjs']
         environment:
             RUNNER_URL: 'http://laravel.test'
@@ -60,6 +64,7 @@ services:
             - './resources/box-runner:/opt/box-runner:ro'
             - './resources/agent-runner:/opt/agent-runner:ro'
             - './resources/preview-tools:/opt/preview-tools:ro'
+            - './resources/screen-check/check.mjs:/opt/screen-check/check.mjs:ro'
             - box-workspaces:/workspaces
         depends_on:
             - laravel.test

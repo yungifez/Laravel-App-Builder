@@ -20,13 +20,14 @@ use Illuminate\Support\Carbon;
  * @property int|null $workspace_id
  * @property VerificationStatus $status
  * @property list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string, tests?: list<array{file: string, name: string, outcome: string}>}>|null $results
+ * @property array{pages: list<array<string, mixed>>, signed_in?: bool}|null $screens
  * @property string|null $error
  * @property Carbon|null $started_at
  * @property Carbon|null $finished_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['run_id', 'workspace_id', 'status', 'results', 'error', 'started_at', 'finished_at'])]
+#[Fillable(['run_id', 'workspace_id', 'status', 'results', 'screens', 'error', 'started_at', 'finished_at'])]
 class Verification extends Model
 {
     /** @use HasFactory<VerificationFactory> */
@@ -42,6 +43,7 @@ class Verification extends Model
         return [
             'status' => VerificationStatus::class,
             'results' => 'array',
+            'screens' => 'array',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
         ];

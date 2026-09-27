@@ -8,6 +8,7 @@ use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\VerificationStatus;
 use App\Features\AcceptanceSuite;
+use App\Features\ScreenCheck;
 use App\Features\TestMap;
 use App\Features\TestReport;
 use App\Models\FeatureRequest;
@@ -130,6 +131,10 @@ class VerifyFeatureRequest implements ShouldQueue
             $this->observeTests($driver, $runWorkspaceCommand, $workspace, $featureRequest);
             $acceptance = $this->runAcceptance($driver, $runWorkspaceCommand, $workspace, $featureRequest);
 
+            if ($checksPassed && in_array($acceptance, [self::OUTCOME_PASSED, self::OUTCOME_NOT_APPLICABLE], true)) {
+                $this->observeScreens($driver, $runWorkspaceCommand, $workspace, $featureRequest);
+            }
+
             $this->finish(match (true) {
                 $acceptance === self::OUTCOME_ERRORED => VerificationStatus::Errored,
                 ! $checksPassed || $acceptance === self::OUTCOME_FAILED => VerificationStatus::Failed,
@@ -232,6 +237,30 @@ class VerifyFeatureRequest implements ShouldQueue
                 },
             ]);
         });
+    }
+
+    /**
+     * When the change touches a screen, open the app's pages at phone,
+     * tablet and computer widths and keep what was measured (direction
+     * 26). The review reads it; like the test map it never changes the
+     * checks' result, and when it cannot run nothing is kept.
+     */
+    protected function observeScreens(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): void
+    {
+        /** @var array{enabled: bool, command: list<string>, timeout: int, report: string} $config */
+        $config = config('builder.verification.screens');
+
+        if (! $config['enabled'] || ! ScreenCheck::scans($featureRequest->patch)) {
+            return;
+        }
+
+        rescue(function () use ($driver, $runWorkspaceCommand, $workspace, $config) {
+            $command = $runWorkspaceCommand->handle($workspace, $config['command'], $config['timeout']);
+
+            if ($this->outcome($command) === self::OUTCOME_PASSED) {
+                $this->verification->update(['screens' => ScreenCheck::parse((string) $driver->readFile((string) $workspace->driver_id, $config['report']))]);
+            }
+        }, report: false);
     }
 
     /**
