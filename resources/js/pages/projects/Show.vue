@@ -700,7 +700,7 @@ function sendOnEnter(event: KeyboardEvent): void {
         />
 
         <div class="ml-auto flex shrink-0 items-center gap-1">
-            <template v-if="app.running && preview">
+            <template v-if="app.running && !app.lost && preview">
                 <!-- The page of the app on show, and the way back from it
                      once the owner has gone somewhere, as a browser gives. -->
                 <div class="mr-1 hidden min-w-0 items-center md:flex">

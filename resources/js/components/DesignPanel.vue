@@ -377,7 +377,7 @@ const recent = computed(() => {
     <div class="flex min-h-0 flex-col" data-test="inspector">
         <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto">
             <div
-                v-if="!preview || preview.status !== 'ready'"
+                v-if="!preview || preview.status !== 'ready' || state.lost"
                 class="flex items-center justify-center gap-2 p-4 text-sm text-muted-foreground lg:flex-col lg:py-16"
             >
                 <MousePointerClick class="size-5 lg:size-8" />
