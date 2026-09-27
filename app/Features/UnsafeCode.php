@@ -75,36 +75,16 @@ class UnsafeCode
                 continue;
             }
 
-            $inHunk = false;
-            $number = 0;
-            $previous = '';
-
-            foreach (explode("\n", $file['diff']) as $line) {
-                if (preg_match('/^@@ -\d+(?:,\d+)? \+(\d+)/', $line, $match) === 1) {
-                    $inHunk = true;
-                    $number = (int) $match[1] - 1;
-                    $previous = '';
-
+            foreach (PatchSummary::addedLines($file['diff']) as $added) {
+                if (preg_match(self::SAFE_COMMENT, $added['text'].' '.$added['previous']) === 1) {
                     continue;
                 }
 
-                // File headers, removed lines and "no newline" notes are not in the new file.
-                if (! $inHunk || str_starts_with($line, '-') || str_starts_with($line, '\\')) {
-                    continue;
-                }
-
-                $number++;
-                $text = substr($line, 1);
-
-                if (str_starts_with($line, '+') && preg_match(self::SAFE_COMMENT, $text.' '.$previous) !== 1) {
-                    foreach ($rules as $key => $rule) {
-                        if (! isset($found[$file['path'].$key]) && preg_match($rule['pattern'], $text) === 1) {
-                            $found[$file['path'].$key] = ['rule' => $key, 'path' => $file['path'], 'line' => $number];
-                        }
+                foreach ($rules as $key => $rule) {
+                    if (! isset($found[$file['path'].$key]) && preg_match($rule['pattern'], $added['text']) === 1) {
+                        $found[$file['path'].$key] = ['rule' => $key, 'path' => $file['path'], 'line' => $added['line']];
                     }
                 }
-
-                $previous = $text;
             }
         }
 

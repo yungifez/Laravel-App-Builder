@@ -112,4 +112,45 @@ class PatchSummary
 
         return $lines;
     }
+
+    /**
+     * Get the lines a file's diff adds, numbered as in the new file, each
+     * with the line above it (added or kept), where a comment about it
+     * would sit.
+     *
+     * @return list<array{line: int, text: string, previous: string}>
+     */
+    public static function addedLines(string $diff): array
+    {
+        $added = [];
+        $inHunk = false;
+        $number = 0;
+        $previous = '';
+
+        foreach (explode("\n", $diff) as $line) {
+            if (preg_match('/^@@ -\d+(?:,\d+)? \+(\d+)/', $line, $match) === 1) {
+                $inHunk = true;
+                $number = (int) $match[1] - 1;
+                $previous = '';
+
+                continue;
+            }
+
+            // File headers, removed lines and "no newline" notes are not in the new file.
+            if (! $inHunk || str_starts_with($line, '-') || str_starts_with($line, '\\')) {
+                continue;
+            }
+
+            $number++;
+            $text = substr($line, 1);
+
+            if (str_starts_with($line, '+')) {
+                $added[] = ['line' => $number, 'text' => $text, 'previous' => $previous];
+            }
+
+            $previous = $text;
+        }
+
+        return $added;
+    }
 }

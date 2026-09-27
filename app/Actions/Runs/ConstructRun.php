@@ -16,6 +16,7 @@ use App\Context\ProjectContext;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Features\Exceptions\CannotGenerateFeature;
+use App\Features\InventedColours;
 use App\Features\PatchSummary;
 use App\Features\TestChanges;
 use App\Features\UnsafeCode;
@@ -356,6 +357,10 @@ class ConstructRun
 
         if ($driver->canRepair() && config('builder.verification.safety_scan')) {
             $review = $review->withBlockingFindings(array_map(UnsafeCode::finding(...), UnsafeCode::found($featureRequest->patch)));
+        }
+
+        if ($driver->canRepair() && config('builder.verification.design_scan')) {
+            $review = $review->withBlockingFindings(array_map(InventedColours::finding(...), InventedColours::found($featureRequest->patch)));
         }
 
         $this->recordEvent($run, $lease, 'review', [

@@ -1303,6 +1303,17 @@ line, or the line above, that says why it is safe lets it through: a reason
 a person can read and question. The owner sees the clean result as one line
 of the change's proof.
 
+**Made-up colours are sent back too** (direction 26, the first design check
+that graduated from the contract). The lines a change adds to screen files
+(Vue, Blade, TSX, JSX; not tests, and not CSS, where the theme lives) are
+checked for colours written out instead of taken from the theme: hex values
+and colour functions, in a Tailwind arbitrary value (`text-[#1a2b3c]`) or an
+inline style. Theme references (`bg-[var(--brand)]`), sizes (`w-[73%]`) and
+the palette's own classes pass. Each file with one is a blocking finding. A
+comment that mentions the colour, on the line or the line above, lets it
+through. The owner sees the clean result as one line of the change's proof.
+`builder.verification.design_scan` turns it off.
+
 Depend on the idea of observed test dependencies, not on Pest's cache format:
 use affected-test output or a supported extension point.
 
@@ -3180,4 +3191,8 @@ compiled packet, same model and code) tests it directly.
   run its code, and lists what they check, in the tests' own names. Each
   change says how it is known to work: the checks that passed, the problems
   caught and fixed before the owner saw it, the tests it added, how many
-  tests ran the changed code, and the code no test runs yet.
+  tests ran the changed code, and the code no test runs yet. Each part also
+  lists what the owner asked for in the changes they kept, in their words:
+  the criteria a named test proved. The app's current code is searched for
+  each test name, since the last test map can predate a kept change; a test
+  renamed or removed since is shown as changed or gone, never as passing.

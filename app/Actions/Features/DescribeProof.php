@@ -3,6 +3,7 @@
 namespace App\Actions\Features;
 
 use App\Enums\VerificationStatus;
+use App\Features\InventedColours;
 use App\Features\PatchSummary;
 use App\Features\UnsafeCode;
 use App\Models\FeatureRequest;
@@ -31,7 +32,7 @@ class DescribeProof
             return [];
         }
 
-        return [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest), ...$this->safety($featureRequest), ...$this->reach($featureRequest->latestRun)];
+        return [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest), ...$this->safety($featureRequest), ...$this->colours($featureRequest), ...$this->reach($featureRequest->latestRun)];
     }
 
     /**
@@ -117,6 +118,21 @@ class DescribeProof
         }
 
         return [['kind' => 'passed', 'text' => __('Its code was checked for common safety mistakes, such as showing unsafe text or building unsafe database lookups. None were found.')]];
+    }
+
+    /**
+     * Say that the change's screens were checked for made-up colours and
+     * none were left, when the scan is on and the change has screens.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function colours(FeatureRequest $featureRequest): array
+    {
+        if (! config('builder.verification.design_scan') || ! InventedColours::scans($featureRequest->patch) || InventedColours::found($featureRequest->patch) !== []) {
+            return [];
+        }
+
+        return [['kind' => 'passed', 'text' => __('Its screens take their colours from your app\'s theme. None were made up.')]];
     }
 
     /**

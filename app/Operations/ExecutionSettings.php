@@ -38,6 +38,7 @@ class ExecutionSettings
         'builder.verification.workspace_driver',
         'builder.verification.require_verify_tests',
         'builder.verification.safety_scan',
+        'builder.verification.design_scan',
         'builder.verification.suite_paths',
         'builder.verification.suite_suffixes',
         'builder.preview.workspace_driver',

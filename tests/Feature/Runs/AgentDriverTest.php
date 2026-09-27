@@ -376,6 +376,33 @@ class AgentDriverTest extends TestCase
         $this->assertSame(RunStatus::Completed, $run->refresh()->status);
     }
 
+    public function test_a_made_up_colour_the_change_adds_sends_it_back_to_use_the_theme()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder(
+            $this->writes([
+                'app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION,
+                'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST,
+                'resources/js/pages/Team.vue' => "<template>\n    <p class=\"text-[#6b7280]\">{{ team.description }}</p>\n</template>\n",
+            ]),
+            $this->writes(['resources/js/pages/Team.vue' => "<template>\n    <p class=\"text-muted-foreground\">{{ team.description }}</p>\n</template>\n"], 'Used the theme.'),
+        );
+        $approve = ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]];
+        ChangeReviewer::fake([$approve, $approve]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run);
+
+        $run->refresh();
+        $this->assertSame(1, $run->repairs);
+        $this->assertFalse($run->review['approved']);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'Line 2 of resources/js/pages/Team.vue makes up a colour'));
+
+        $this->passVerification($run);
+
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+    }
+
     public function test_a_named_test_that_did_not_run_is_not_evidence_and_sends_the_change_back()
     {
         FeaturePlanner::fake([$this->plan()]);

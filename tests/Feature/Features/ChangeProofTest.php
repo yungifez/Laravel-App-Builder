@@ -114,6 +114,30 @@ class ChangeProofTest extends TestCase
                 ->where('proof.4', ['kind' => 'caught', 'text' => 'A second look found something to fix, and it was fixed first.']));
     }
 
+    public function test_a_change_whose_screens_use_the_theme_says_no_colours_were_made_up()
+    {
+        $screen = fn (string $class) => implode("\n", [
+            'diff --git a/resources/js/pages/Team.vue b/resources/js/pages/Team.vue',
+            '--- a/resources/js/pages/Team.vue',
+            '+++ b/resources/js/pages/Team.vue',
+            '@@ -1 +1,2 @@',
+            ' <template>',
+            "+    <p class=\"{$class}\">Team</p>",
+        ]);
+        $themed = FeatureRequest::factory()->generated()->create(['patch' => $screen('text-muted-foreground')]);
+        $madeUp = FeatureRequest::factory()->generated()->create(['patch' => $screen('text-[#6b7280]')]);
+        $this->checked($themed);
+        $this->checked($madeUp);
+
+        $this->actingAs($themed->project->owner)
+            ->get(route('feature-requests.show', $themed))
+            ->assertInertia(fn (Assert $page) => $page->where('proof.4', ['kind' => 'passed', 'text' => 'Its screens take their colours from your app\'s theme. None were made up.']));
+        // A made-up colour left in is never called clean.
+        $this->actingAs($madeUp->project->owner)
+            ->get(route('feature-requests.show', $madeUp))
+            ->assertInertia(fn (Assert $page) => $page->where('proof', fn ($proof) => ! collect($proof)->contains('text', 'Its screens take their colours from your app\'s theme. None were made up.')));
+    }
+
     public function test_the_tests_a_change_added_are_named()
     {
         $request = FeatureRequest::factory()->generated()->create(['patch' => implode("\n", [

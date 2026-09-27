@@ -492,6 +492,12 @@ return [
         // is a blocking finding, so the coder is sent back to fix it.
         'safety_scan' => (bool) env('BUILDER_SAFETY_SCAN', true),
 
+        // Made-up colours (direction 26). The screen lines a change adds are
+        // checked for colours written out (hex values, rgb() and the like)
+        // instead of taken from the app's theme. Each one is a blocking
+        // finding, so the coder is sent back to use the theme.
+        'design_scan' => (bool) env('BUILDER_DESIGN_SCAN', true),
+
         // Test impact evidence (direction 22). When the suite check passes,
         // the suite runs once more with code coverage, and the test list is
         // read with its groups, to record which tests ran which code files.
