@@ -19,6 +19,8 @@ export type ProjectListItem = {
     published_at: string | null;
     changed_at: string | null;
     waiting: number;
+    // Kept changes the version online does not have yet.
+    offline: number;
     // How many of the app's own tests guard it; null before they first ran.
     tests: number | null;
 };

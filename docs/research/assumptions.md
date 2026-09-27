@@ -182,3 +182,8 @@ them and correct any that are wrong.
   me before you remove anything." The owner edits or sends it. Like any
   change, it waits for them to keep it. There is no separate simplify
   mode yet.
+- **App cards count changes not online yet.** A live app's card on "Your
+  apps" says "N not online yet". N is the requests kept or undone since the
+  online version, plus the hand edits since then. It is the same count as
+  the publish panel's "Going online next" list. Each card costs one git
+  rev-list; fine for a handful of apps.

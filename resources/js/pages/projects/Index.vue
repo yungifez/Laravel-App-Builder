@@ -256,6 +256,13 @@ function submitOnShortcut(event: KeyboardEvent): void {
                                             }}</template
                                         >
                                         <template v-else>Not live yet</template>
+                                        <template v-if="project.offline > 0">
+                                            <span aria-hidden="true">·</span>
+                                            <span data-test="app-offline"
+                                                >{{ project.offline }} not
+                                                online yet</span
+                                            >
+                                        </template>
                                     </span>
                                 </span>
                             </span>

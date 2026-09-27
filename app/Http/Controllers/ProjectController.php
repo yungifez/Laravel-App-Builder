@@ -34,7 +34,7 @@ class ProjectController extends Controller
      * List the owner's apps with what they want to know at a glance: is it
      * live, when did it last change, and is anything waiting for them.
      */
-    public function index(Request $request, SummarizeChanges $summarizeChanges): Response
+    public function index(Request $request, SummarizeChanges $summarizeChanges, DescribeUnpublished $describeUnpublished, ProjectRepository $repository): Response
     {
         return Inertia::render('projects/Index', [
             // The app worked on last comes first, as the owner most likely
@@ -49,12 +49,25 @@ class ProjectController extends Controller
                     'changed_at' => $project->featureRequests()->whereNotNull('commit_sha')->whereNull('reverted_at')
                         ->latest('accepted_at')->first()?->accepted_at?->toIso8601String(),
                     'waiting' => $summarizeChanges->waiting($project),
+                    // Kept changes the version online does not have yet.
+                    'offline' => $this->offline($describeUnpublished->handle($project, $repository->exists($project) ? ($repository->head($project, Experiment::mainBranch()) ?: null) : null)),
                     // How many of the app's own tests guard it, as last run.
                     'tests' => TestObservation::latestFor($project)?->testCount(),
                 ]),
             'canStartNew' => StartProjectFromTemplate::template() !== null,
             'designs' => array_map(fn (DesignDirection $design) => $design->preview(), DesignDirection::all()),
         ]);
+    }
+
+    /**
+     * Count the changes waiting to go online: requests kept or undone since
+     * the online version, and edits made by hand.
+     *
+     * @param  array{added: list<array{id: int, asked: string}>, undone: list<array{id: int, asked: string}>, edits: int}|null  $unpublished
+     */
+    protected function offline(?array $unpublished): int
+    {
+        return $unpublished === null ? 0 : count($unpublished['added']) + count($unpublished['undone']) + $unpublished['edits'];
     }
 
     /**

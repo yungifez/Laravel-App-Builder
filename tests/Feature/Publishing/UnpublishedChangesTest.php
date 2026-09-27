@@ -57,6 +57,11 @@ class UnpublishedChangesTest extends TestCase
                 'undone' => [['id' => $taken->id, 'asked' => 'Show the opening hours']],
                 'edits' => 1,
             ]));
+
+        // The apps list counts the same: one kept, one undone, one edit.
+        $this->actingAs($this->owner)
+            ->get(route('projects.index'))
+            ->assertInertia(fn (Assert $page) => $page->where('projects.0.offline', 3));
     }
 
     public function test_nothing_is_listed_before_the_first_publish_or_when_online_is_newest()
@@ -64,6 +69,9 @@ class UnpublishedChangesTest extends TestCase
         $this->actingAs($this->owner)
             ->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->where('publishing.unpublished', null));
+        $this->actingAs($this->owner)
+            ->get(route('projects.index'))
+            ->assertInertia(fn (Assert $page) => $page->where('projects.0.offline', 0));
 
         Deployment::factory()->create(['project_id' => $this->project->id, 'user_id' => $this->owner->id, 'commit_sha' => $this->repository->head($this->project), 'status' => DeploymentStatus::Published]);
 
