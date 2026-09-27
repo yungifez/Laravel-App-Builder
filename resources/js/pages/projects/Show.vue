@@ -200,13 +200,23 @@ const screens: { key: Device; label: string; icon: typeof Monitor }[] = [
 // every row. Changes still open sit together just above the box, where the
 // owner acts, under what they need: the owner, or only time.
 // Quick filters over the list. "All" leaves out what the owner set aside;
-// that has a filter of its own.
-type Filter = 'all' | 'waiting' | 'kept' | 'answered' | 'stopped' | 'dismissed';
+// that has a filter of its own. What waits for the owner is split by the
+// job: a question from me to answer, or a change to try. The owner's own
+// questions, which I answered, are "Answered", so the two are not confused.
+type Filter =
+    | 'all'
+    | 'asks'
+    | 'waiting'
+    | 'kept'
+    | 'answered'
+    | 'stopped'
+    | 'dismissed';
 const filterLabels: Record<Filter, string> = {
     all: 'All',
-    waiting: 'Needs you',
+    asks: 'To answer',
+    waiting: 'To try',
     kept: 'Kept',
-    answered: 'Questions',
+    answered: 'Answered',
     stopped: 'Stopped',
     dismissed: 'Not needed',
 };
@@ -214,12 +224,20 @@ const shown = useRemember(
     reactive<{ filter: Filter }>({ filter: 'all' }),
     'change-filter',
 ) as { filter: Filter };
-const inFilter = (item: ChangeItem, filter: Filter) =>
-    filter === 'all'
-        ? item.state !== 'dismissed'
-        : filter === 'stopped'
-          ? item.state === 'stopped' || item.state === 'undone'
-          : item.state === filter;
+const inFilter = (item: ChangeItem, filter: Filter): boolean => {
+    switch (filter) {
+        case 'all':
+            return item.state !== 'dismissed';
+        case 'asks':
+            return item.state === 'waiting' && item.asks;
+        case 'waiting':
+            return item.state === 'waiting' && !item.asks;
+        case 'stopped':
+            return item.state === 'stopped' || item.state === 'undone';
+        default:
+            return item.state === filter;
+    }
+};
 const filters = computed(() =>
     (Object.keys(filterLabels) as Filter[])
         .map((filter) => ({
