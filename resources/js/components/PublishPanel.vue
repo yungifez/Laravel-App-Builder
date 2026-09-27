@@ -54,6 +54,22 @@ const upToDate = computed(
         props.publishing.head === live.value.commit,
 );
 
+// What going online would change, only while something is waiting and
+// nothing is on its way: the owner decides with the list in front of them.
+const waiting = computed(() => {
+    const unpublished = props.publishing.unpublished;
+
+    return (
+        unpublished !== null &&
+        !active.value &&
+        !upToDate.value &&
+        unpublished.added.length +
+            unpublished.undone.length +
+            unpublished.edits >
+            0
+    );
+});
+
 // Problems online: fixing them comes before anything else here.
 const troubled = computed(() => (live.value?.problems ?? 0) > 0);
 
@@ -163,6 +179,39 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                     >
                         {{ status.detail }}
                     </p>
+                    <div
+                        v-if="waiting"
+                        class="mt-2 space-y-1 text-sm"
+                        data-test="unpublished"
+                    >
+                        <p class="text-muted-foreground">Going online next:</p>
+                        <ul class="space-y-1">
+                            <li
+                                v-for="item in publishing.unpublished?.added"
+                                :key="`added-${item.id}`"
+                                class="line-clamp-2 break-words"
+                            >
+                                {{ item.asked }}
+                            </li>
+                            <li
+                                v-for="item in publishing.unpublished?.undone"
+                                :key="`undone-${item.id}`"
+                                class="line-clamp-2 break-words text-muted-foreground"
+                            >
+                                Takes back: {{ item.asked }}
+                            </li>
+                            <li
+                                v-if="publishing.unpublished?.edits"
+                                class="text-muted-foreground"
+                            >
+                                {{
+                                    publishing.unpublished.edits === 1
+                                        ? 'One change you made by hand'
+                                        : `${publishing.unpublished.edits} changes you made by hand`
+                                }}
+                            </li>
+                        </ul>
+                    </div>
                     <a
                         v-if="live && publishing.address"
                         :href="publishing.address"

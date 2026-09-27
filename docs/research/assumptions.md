@@ -133,3 +133,10 @@ them and correct any that are wrong.
   suite. Otherwise it says "Nothing checks … yet". All Effect strengths are
   shown. Hand edits to a part's look do not show it, because a colour or
   spacing change does not reach other areas.
+- **"Going online next" lists requests, not versions.** The publish panel
+  lists the kept requests between the online version and the newest one,
+  in the owner's words. It adds the requests undone since then ("Takes
+  back: …") and a count of look changes made by hand. A request kept and
+  undone in that window is left out, because it changes nothing online.
+  Nothing is listed before the first publish, because then everything is
+  new.

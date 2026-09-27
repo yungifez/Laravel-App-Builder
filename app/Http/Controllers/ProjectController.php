@@ -8,6 +8,7 @@ use App\Actions\Projects\CreateProject;
 use App\Actions\Projects\StartProjectFromTemplate;
 use App\Actions\Projects\SummarizeChanges;
 use App\Actions\Projects\SummarizeProjectTelemetry;
+use App\Actions\Publishing\DescribeUnpublished;
 use App\Actions\VisualEditing\InspectSelection;
 use App\Enums\DeploymentStatus;
 use App\Enums\ExperimentStatus;
@@ -78,7 +79,7 @@ class ProjectController extends Controller
      * app running beside it, and the design panel for changing how it looks.
      * The element the owner selected is loaded on request.
      */
-    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest): Response
+    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished): Response
     {
         Gate::authorize('view', $project);
 
@@ -144,7 +145,9 @@ class ProjectController extends Controller
                 'address' => $project->live_url,
                 // The main app's newest version: only it is ever published,
                 // so the owner can see whether what they kept is online.
-                'head' => $repository->exists($project) ? ($repository->head($project, Experiment::mainBranch()) ?: null) : null,
+                'head' => $head = $repository->exists($project) ? ($repository->head($project, Experiment::mainBranch()) ?: null) : null,
+                // What going online would change, in the owner's words.
+                'unpublished' => $describeUnpublished->handle($project, $head),
                 'deployments' => $project->deployments()->latest('id')->limit(5)->get()
                     ->map(fn (Deployment $deployment) => [
                         'id' => $deployment->id,

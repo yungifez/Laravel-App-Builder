@@ -506,6 +506,11 @@ export type ProjectPublishing = {
     branch: string | null;
     address: string | null;
     head: string | null;
+    unpublished: {
+        added: { id: number; asked: string }[];
+        undone: { id: number; asked: string }[];
+        edits: number;
+    } | null;
     deployments: DeploymentSummary[];
 };
 
