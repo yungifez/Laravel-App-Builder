@@ -987,17 +987,20 @@ function sendOnEnter(event: KeyboardEvent): void {
                                                 ]"
                                                 >{{ item.prompt }}</span
                                             >
-                                            <!-- What the owner has to do,
-                                                 not just that they must. -->
+                                            <!-- The question I am asking,
+                                                 so the owner can answer it
+                                                 from here. A change to try
+                                                 says so on the right. -->
                                             <span
-                                                v-if="item.state === 'waiting'"
+                                                v-if="
+                                                    item.state === 'waiting' &&
+                                                    item.asks
+                                                "
                                                 class="mt-0.5 line-clamp-2 text-xs break-words text-muted-foreground"
                                                 data-test="change-next-step"
                                                 >{{
-                                                    item.asks
-                                                        ? (item.question ??
-                                                          'I have a question for you.')
-                                                        : 'Try it, then keep it or undo it.'
+                                                    item.question ??
+                                                    'I have a question for you.'
                                                 }}</span
                                             >
                                         </span>
