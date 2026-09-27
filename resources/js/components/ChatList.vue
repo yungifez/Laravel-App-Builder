@@ -49,7 +49,7 @@ const dots: Record<ChangeState, string> = {
                     preserve-scroll
                     :aria-current="chat.id === current ? 'page' : undefined"
                     :class="[
-                        'flex min-h-9 items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors duration-200 select-none',
+                        'flex min-h-9 items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors duration-quick select-none',
                         chat.id === current
                             ? 'bg-muted font-medium'
                             : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',

@@ -1175,7 +1175,7 @@ function lineClass(line: string): string {
                         }}</span>
                         <ChevronDown
                             :class="[
-                                'size-5 text-muted-foreground transition-transform duration-150',
+                                'size-5 text-muted-foreground transition-transform duration-quick',
                                 open && 'rotate-180',
                             ]"
                         />
@@ -1240,7 +1240,7 @@ function lineClass(line: string): string {
                             <button
                                 type="button"
                                 :class="[
-                                    'group flex w-full items-start gap-4 py-4 text-left transition-colors duration-150 select-none',
+                                    'group flex w-full items-start gap-4 py-4 text-left transition-colors duration-quick select-none',
                                     selectedStepKey === step.key
                                         ? 'text-foreground'
                                         : 'hover:text-foreground',
@@ -1264,7 +1264,7 @@ function lineClass(line: string): string {
                                 </span>
                                 <ChevronRight
                                     :class="[
-                                        'mt-1 size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5',
+                                        'mt-1 size-4 shrink-0 text-muted-foreground transition-transform duration-quick group-hover:translate-x-0.5',
                                         selectedStepKey === step.key &&
                                             'rotate-90 group-hover:translate-x-0',
                                     ]"
@@ -1323,7 +1323,7 @@ function lineClass(line: string): string {
                         <li v-for="followUp in followUps" :key="followUp.id">
                             <Link
                                 :href="showFeatureRequest(followUp.id)"
-                                class="flex min-h-11 items-center justify-between gap-4 py-4 transition-colors duration-150 select-none hover:text-muted-foreground"
+                                class="flex min-h-11 items-center justify-between gap-4 py-4 transition-colors duration-quick select-none hover:text-muted-foreground"
                             >
                                 <span>{{ followUp.prompt }}</span>
                                 <StatusBadge :status="followUp.status" />
@@ -1350,7 +1350,7 @@ function lineClass(line: string): string {
                             Details
                             <ChevronDown
                                 :class="[
-                                    'size-4 transition-transform duration-150',
+                                    'size-4 transition-transform duration-quick',
                                     open && 'rotate-180',
                                 ]"
                             />

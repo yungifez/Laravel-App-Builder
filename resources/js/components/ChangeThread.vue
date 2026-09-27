@@ -534,7 +534,7 @@ const checks = computed(() => {
                                 v-if="working"
                                 tag="ol"
                                 class="space-y-1.5"
-                                enter-active-class="transition duration-300 ease-out"
+                                enter-active-class="transition duration-base ease-settle"
                                 enter-from-class="opacity-0 translate-y-1"
                                 data-test="thread-work"
                             >
@@ -1328,7 +1328,7 @@ const checks = computed(() => {
 
                 <!-- What to ask for next -->
                 <Transition
-                    enter-active-class="transition duration-300 ease-out"
+                    enter-active-class="transition duration-base ease-settle"
                     enter-from-class="opacity-0 translate-y-1"
                 >
                     <div

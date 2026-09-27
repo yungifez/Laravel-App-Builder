@@ -968,7 +968,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                 data-test="conversation"
             >
                 <Transition
-                    enter-active-class="transition duration-300 ease-out"
+                    enter-active-class="transition duration-panel ease-settle"
                     enter-from-class="opacity-0 -translate-x-2"
                 >
                     <ChatList
@@ -1332,7 +1332,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                 <!-- Always there with an open change, so its plan and code
                      can move in as soon as the screen is wide enough -->
                 <Transition
-                    enter-active-class="transition duration-300 ease-out"
+                    enter-active-class="transition duration-panel ease-settle"
                     enter-from-class="opacity-0 translate-x-2"
                 >
                     <BesidePanel

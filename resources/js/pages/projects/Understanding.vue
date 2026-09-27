@@ -396,7 +396,7 @@ watch(
                             :id="`part-${area.key}`"
                             :key="area.key"
                             :class="[
-                                'grid scroll-mt-20 gap-6 py-8 transition-colors duration-700 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:gap-12',
+                                'grid scroll-mt-20 gap-6 py-8 transition-colors duration-linger md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:gap-12',
                                 marked === area.key && 'bg-muted/40',
                             ]"
                             :data-test="`part-${area.key}`"
@@ -787,7 +787,7 @@ watch(
                                         query: { change: change.id },
                                     })
                                 "
-                                class="-mx-2 flex min-h-11 items-baseline justify-between gap-4 rounded-md px-2 py-2.5 transition-colors duration-150 hover:bg-muted/50"
+                                class="-mx-2 flex min-h-11 items-baseline justify-between gap-4 rounded-md px-2 py-2.5 transition-colors duration-quick hover:bg-muted/50"
                             >
                                 <span class="min-w-0"
                                     >{{ change.summary

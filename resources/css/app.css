@@ -248,7 +248,16 @@
   transition eases out, so it starts at speed and lands softly.
 */
 @theme {
-    --default-transition-timing-function: cubic-bezier(0.165, 0.84, 0.44, 1);
+    --ease-settle: cubic-bezier(0.165, 0.84, 0.44, 1);
+    --ease-snap: cubic-bezier(0.32, 0.72, 0, 1);
+    --default-transition-timing-function: var(--ease-settle);
+
+    /* Hover colours and toggles; small things appearing; panels sliding
+       in; a highlight fading away. */
+    --transition-duration-quick: 120ms;
+    --transition-duration-base: 200ms;
+    --transition-duration-panel: 300ms;
+    --transition-duration-linger: 700ms;
 }
 
 /* Going to another page crossfades quickly instead of cutting. The old

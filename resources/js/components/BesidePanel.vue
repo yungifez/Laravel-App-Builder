@@ -58,7 +58,7 @@ const tabs = [
                 role="tab"
                 :aria-selected="tab === option.key"
                 :class="[
-                    '-mb-px border-b-2 pb-2.5 transition-colors duration-200 select-none',
+                    '-mb-px border-b-2 pb-2.5 transition-colors duration-quick select-none',
                     tab === option.key
                         ? 'border-foreground font-medium text-foreground'
                         : 'border-transparent text-muted-foreground hover:text-foreground',
@@ -82,7 +82,7 @@ const tabs = [
                 }}
             </p>
             <Transition
-                enter-active-class="transition duration-200 ease-out"
+                enter-active-class="transition duration-base ease-settle"
                 enter-from-class="opacity-0 translate-y-1"
             >
                 <div
@@ -93,7 +93,7 @@ const tabs = [
                 />
             </Transition>
             <Transition
-                enter-active-class="transition duration-200 ease-out"
+                enter-active-class="transition duration-base ease-settle"
                 enter-from-class="opacity-0 translate-y-1"
             >
                 <div

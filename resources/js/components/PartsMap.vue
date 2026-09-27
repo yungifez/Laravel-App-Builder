@@ -112,7 +112,7 @@ function near(key: string): boolean {
                           : '1.5 4'
                 "
                 :class="[
-                    'transition-all duration-200',
+                    'transition-all duration-base',
                     lit(link)
                         ? 'stroke-foreground'
                         : hovered
@@ -128,7 +128,7 @@ function near(key: string): boolean {
             type="button"
             :style="{ left: `${node.x}%`, top: `${node.y}%` }"
             :class="[
-                'absolute flex min-h-11 max-w-[42%] -translate-x-1/2 -translate-y-1/2 flex-col items-center rounded-xl border bg-background px-4 py-2 transition duration-150 ease-out select-none hover:-translate-y-[calc(50%+1px)] hover:border-foreground/40 active:scale-[0.97] sm:max-w-56',
+                'absolute flex min-h-11 max-w-[42%] -translate-x-1/2 -translate-y-1/2 flex-col items-center rounded-xl border bg-background px-4 py-2 transition duration-quick ease-snap select-none hover:-translate-y-[calc(50%+1px)] hover:border-foreground/40 active:scale-[0.97] sm:max-w-56',
                 near(node.area.key) ? 'opacity-100' : 'opacity-40',
             ]"
             :data-test="`map-${node.area.key}`"
