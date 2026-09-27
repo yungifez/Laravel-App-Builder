@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\Consequence;
 use App\Runs\Tools\ApplyPatch;
 use App\Runs\Tools\ListFiles;
 use App\Runs\Tools\ReadFile;
@@ -274,10 +275,15 @@ return [
         ],
 
         // How many product questions the planner may ask before building:
-        // one by default, more once the owner asks for them (§7).
+        // one by default, more once the owner asks for them (§7). A question
+        // waits for the owner only when a wrong guess would touch one of
+        // "ask_about" and could not be taken back later; otherwise the
+        // change is built on the recommended option for the owner to review.
         'questions' => [
             'before_building' => (int) env('BUILDER_QUESTIONS_BEFORE_BUILDING', 1),
             'when_asked_for_more' => (int) env('BUILDER_QUESTIONS_WHEN_ASKED_FOR_MORE', 3),
+            'ask_about' => json_decode((string) env('BUILDER_QUESTIONS_ASK_ABOUT', ''), true)
+                ?: array_column(Consequence::cases(), 'value'),
         ],
 
         // Bounds on what tools accept and return.

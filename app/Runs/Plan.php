@@ -25,7 +25,7 @@ final readonly class Plan
      * @param  list<string>  $acceptance  Protected acceptance test files that apply to the change
      * @param  list<string>  $capabilities  The areas of the product (capability notes) the change is about
      * @param  list<array{area: string|null, statement: string}>  $preserve  What must stay as it is, by area
-     * @param  array{text: string, why: string, options: list<string>, recommended: string|null}|null  $question  The one product question to ask the owner before building, if any
+     * @param  array{text: string, why: string, options: list<string>, recommended: string|null, touches?: list<string>, reversible?: bool, easier_after_seeing?: bool}|null  $question  The one product question to ask the owner before building, if any, with what a wrong guess would touch
      * @param  string|null  $commitSubject  How the app's own developer would name the commit; the owner's words never reach the repository
      * @param  string|null  $answer  The reply when the owner only asked about the app, so nothing is built
      */
@@ -90,6 +90,10 @@ final readonly class Plan
             'question.options' => ['required_with:question', 'array', 'min:2', 'max:4'],
             'question.options.*' => ['required', 'string', 'max:120', 'distinct'],
             'question.recommended' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'question.touches' => ['sometimes', 'array', 'max:10'],
+            'question.touches.*' => ['string', 'max:40'],
+            'question.reversible' => ['sometimes', 'boolean'],
+            'question.easier_after_seeing' => ['sometimes', 'boolean'],
             'commit_subject' => ['sometimes', 'nullable', 'string', 'max:100'],
         ]);
 
@@ -97,7 +101,7 @@ final readonly class Plan
             throw new ConstructionFailed(__('The planner returned an invalid plan: :errors', ['errors' => implode(' ', $validator->errors()->all())]));
         }
 
-        /** @var array{summary: string, acceptance_criteria: array<int, string>, assumptions: array<int, string>, tasks: array<int, string>, steps: array<int, array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, capabilities?: array<int, string>, understood_as?: string|null, current_behavior?: string|null, preserve?: array<int, array{area?: string|null, statement: string}>, question?: array{text: string, why?: string|null, options: array<int, string>, recommended?: string|null}|null, commit_subject?: string|null, answer?: string|null} $valid */
+        /** @var array{summary: string, acceptance_criteria: array<int, string>, assumptions: array<int, string>, tasks: array<int, string>, steps: array<int, array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, capabilities?: array<int, string>, understood_as?: string|null, current_behavior?: string|null, preserve?: array<int, array{area?: string|null, statement: string}>, question?: array{text: string, why?: string|null, options: array<int, string>, recommended?: string|null, touches?: array<int, string>, reversible?: bool, easier_after_seeing?: bool}|null, commit_subject?: string|null, answer?: string|null} $valid */
         $valid = $validator->validated();
 
         return new self(
@@ -128,21 +132,82 @@ final readonly class Plan
     /**
      * Read the planner's question. A recommendation that is not one of the
      * options is dropped rather than shown as a choice the owner cannot make.
+     * What a wrong guess would touch is kept only when the planner said.
      *
-     * @param  array{text: string, why?: string|null, options: array<int, string>, recommended?: string|null}  $question
-     * @return array{text: string, why: string, options: list<string>, recommended: string|null}
+     * @param  array{text: string, why?: string|null, options: array<int, string>, recommended?: string|null, touches?: array<int, string>, reversible?: bool, easier_after_seeing?: bool}  $question
+     * @return array{text: string, why: string, options: list<string>, recommended: string|null, touches?: list<string>, reversible?: bool, easier_after_seeing?: bool}
      */
     protected static function question(array $question): array
     {
         $options = array_values(array_map('trim', $question['options']));
         $recommended = $question['recommended'] ?? null;
 
-        return [
+        $read = [
             'text' => trim($question['text']),
             'why' => trim($question['why'] ?? ''),
             'options' => $options,
             'recommended' => in_array($recommended, $options, true) ? $recommended : null,
         ];
+
+        if (isset($question['touches'])) {
+            $read['touches'] = array_values($question['touches']);
+        }
+
+        if (isset($question['reversible'])) {
+            $read['reversible'] = (bool) $question['reversible'];
+        }
+
+        if (isset($question['easier_after_seeing'])) {
+            $read['easier_after_seeing'] = (bool) $question['easier_after_seeing'];
+        }
+
+        return $read;
+    }
+
+    /**
+     * Determine if the question must wait for the owner (§7): a wrong guess
+     * would touch one of the given consequences and is hard to take back,
+     * and seeing the change first would not make it easier to judge. A
+     * question without a recommendation, or that the planner did not tag,
+     * is always asked, since there is nothing safe to build on.
+     *
+     * @param  list<string>  $consequences  What a wrong guess must touch to be worth asking about
+     */
+    public function asksOwner(array $consequences): bool
+    {
+        $question = $this->question;
+
+        if ($question === null) {
+            return false;
+        }
+
+        if ($question['recommended'] === null || ! isset($question['touches'], $question['reversible'], $question['easier_after_seeing'])) {
+            return true;
+        }
+
+        return array_intersect($question['touches'], $consequences) !== []
+            && ! $question['reversible']
+            && ! $question['easier_after_seeing'];
+    }
+
+    /**
+     * Build on the recommended option instead of asking, and list the choice
+     * with the other decisions, where the owner reviews it with the change.
+     */
+    public function decidedOnRecommendation(): self
+    {
+        if ($this->question === null || $this->question['recommended'] === null) {
+            return $this;
+        }
+
+        return new self(...[
+            ...get_object_vars($this),
+            'question' => null,
+            'assumptions' => [
+                ...$this->assumptions,
+                __(':question I went with: :option.', ['question' => $this->question['text'], 'option' => rtrim($this->question['recommended'], '.')]),
+            ],
+        ]);
     }
 
     /**

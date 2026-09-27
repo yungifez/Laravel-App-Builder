@@ -3,31 +3,40 @@
 namespace Tests\Feature\Runs;
 
 use App\Actions\Runs\StartRun;
-use App\Ai\Agents\FeatureCoder;
 use App\Ai\Agents\FeaturePlanner;
 use App\Context\ProjectNotes;
+use App\Enums\AgentOutcomeStatus;
 use App\Enums\RunStatus;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\User;
+use App\Models\Workspace;
+use App\Runs\Agents\AgentOutcome;
+use App\Runs\Agents\CodingAgentManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Ai\Prompts\AgentPrompt;
-use Laravel\Ai\Responses\Data\ToolCall;
 use Tests\Concerns\PreparesRuns;
+use Tests\Fakes\FakeCodingAgent;
 use Tests\TestCase;
 
 class RunQuestionTest extends TestCase
 {
     use PreparesRuns, RefreshDatabase;
 
+    protected FakeCodingAgent $coder;
+
     protected const QUESTION = [
         'text' => 'Can customers use more than one location?',
         'why' => 'It decides how bookings and bills are kept apart.',
         'options' => ['Yes', 'No'],
         'recommended' => 'No',
+        'touches' => ['data_shape'],
+        'reversible' => false,
+        'easier_after_seeing' => false,
     ];
 
     protected function setUp(): void
@@ -117,6 +126,54 @@ class RunQuestionTest extends TestCase
 
         $this->assertSame(RunStatus::Verifying, $run->status);
         $this->assertNull($run->question);
+    }
+
+    public function test_a_question_the_owner_could_change_later_is_built_on_the_recommendation_and_shown_with_the_decisions()
+    {
+        FeaturePlanner::fake([[...$this->plan(), 'question' => [...self::QUESTION, 'reversible' => true]]]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertNull($run->question);
+        $this->assertContains('Can customers use more than one location? I went with: No.', $run->plan['assumptions']);
+        $this->assertSame(['question' => 'Can customers use more than one location?', 'option' => 'No', 'touches' => ['data_shape']], $run->events()->where('type', 'question_decided')->sole()->data);
+    }
+
+    public function test_a_question_that_is_easier_to_judge_after_trying_the_change_is_not_asked_first()
+    {
+        FeaturePlanner::fake([[...$this->plan(), 'question' => [...self::QUESTION, 'easier_after_seeing' => true]]]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertNull($run->question);
+    }
+
+    public function test_only_the_configured_consequences_are_worth_stopping_for()
+    {
+        config(['builder.construction.questions.ask_about' => ['money']]);
+        FeaturePlanner::fake([[...$this->plan(), 'question' => self::QUESTION]]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertNull($run->question);
+    }
+
+    public function test_a_question_without_a_recommendation_or_tags_is_always_asked()
+    {
+        FeaturePlanner::fake([
+            [...$this->plan(), 'question' => [...self::QUESTION, 'reversible' => true, 'recommended' => 'Maybe']],
+            [...$this->plan(), 'question' => array_diff_key(self::QUESTION, ['touches' => true])],
+        ]);
+
+        $first = app(StartRun::class)->handle($this->request())->refresh();
+        $second = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(RunStatus::NeedsUserDecision, $first->status);
+        $this->assertNull($first->question['recommended']);
+        $this->assertSame(RunStatus::NeedsUserDecision, $second->status);
     }
 
     public function test_only_an_offered_answer_is_accepted_and_only_while_the_run_waits()

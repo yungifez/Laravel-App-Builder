@@ -2,6 +2,7 @@
 
 namespace App\Ai\Agents;
 
+use App\Enums\Consequence;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Attributes\Timeout;
 use Laravel\Ai\Contracts\Agent;
@@ -40,7 +41,7 @@ class FeaturePlanner implements Agent, HasStructuredOutput
 
         - answer: null when the owner wants something built or changed. When they only ask about the app as it is ("Who can see invoices?", "What happens when a payment fails?", "How does sign-up work?") and want nothing changed, answer them here instead: a few plain sentences from the project notes and files, in the owner's words, without code or file names. Then summary repeats the answer in one sentence, understood_as is "Question", commit_subject is "", and acceptance_criteria, tasks, steps and preserve are empty. If you are not sure whether they want a change, plan the change.
 
-        - question: null in most cases. Ask only when the request leaves open a product choice that the request, the project notes and the owner's earlier answers do not settle, and a wrong guess would touch money, who may see or do what, data being lost or changed, the shape of the data, outside services, legal expectations or a major way the business works. Then return the single most consequential question: text in the owner's words ("Can customers use more than one location?"), why it matters in one plain sentence, 2 to 4 short options, and the option you recommend. Never ask an engineering question (controllers, queues, validation, migrations, policies, tests): decide those by Laravel convention. Never ask what the code or notes already answer. Still return a complete plan built on your recommended option.
+        - question: null in most cases. Ask only when the request leaves open a product choice that the request, the project notes and the owner's earlier answers do not settle, and a wrong guess would touch money, who may see or do what, data being lost or changed, the shape of the data, outside services, legal expectations or a major way the business works. Then return the single most consequential question: text in the owner's words ("Can customers use more than one location?"), why it matters in one plain sentence, 2 to 4 short options, and the option you recommend. Also say what a wrong guess would touch (touches: money, access for who may see or do what, data_loss, data_shape, outside_services, legal, major_workflow), whether the owner could switch to another option later without losing or rewriting data, money or anyone's access (reversible), and whether the choice is easier to judge once they can try the change (easier_after_seeing). Be honest: you do not decide whether the owner is asked first. When they are not, the change is built on your recommendation and they review that choice with it. Never ask an engineering question (controllers, queues, validation, migrations, policies, tests): decide those by Laravel convention. Never ask what the code or notes already answer. Still return a complete plan built on your recommended option.
 
         Follow the project's own conventions (for example AGENTS.md) and Laravel's defaults. Do not plan changes to tests/Acceptance: those tests are fixed.
         INSTRUCTIONS;
@@ -70,6 +71,9 @@ class FeaturePlanner implements Agent, HasStructuredOutput
                 'why' => $schema->string()->required(),
                 'options' => $schema->array()->items($schema->string())->required(),
                 'recommended' => $schema->string()->required(),
+                'touches' => $schema->array()->items($schema->string()->enum(array_column(Consequence::cases(), 'value')))->required(),
+                'reversible' => $schema->boolean()->required(),
+                'easier_after_seeing' => $schema->boolean()->required(),
             ])->withoutAdditionalProperties()->nullable()->required(),
             'steps' => $schema->array()->items($schema->object([
                 'key' => $schema->string()->required(),

@@ -138,14 +138,26 @@ class ConstructRun
 
         // One product question before building (§7): the run waits for the
         // owner and plans again with their answer. The gate is the run's
-        // question limit, not the model's wish to ask.
+        // question limit and what a wrong guess would cost, not the model's
+        // wish to ask. Anything cheaper is built on the recommended option
+        // and shown with the change for the owner to review.
         if ($plan->question !== null && $planningContext->mayAsk) {
-            $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['question' => $plan->question, 'error' => null], [
-                'reason' => 'question',
+            if ($plan->asksOwner(config('builder.construction.questions.ask_about'))) {
+                $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['question' => $plan->question, 'error' => null], [
+                    'reason' => 'question',
+                    'question' => $plan->question['text'],
+                ]);
+
+                return;
+            }
+
+            $this->recordEvent($run, $lease, 'question_decided', [
                 'question' => $plan->question['text'],
+                'option' => $plan->question['recommended'],
+                'touches' => $plan->question['touches'] ?? [],
             ]);
 
-            return;
+            $plan = $plan->decidedOnRecommendation();
         }
 
         if ($plan->answer !== null) {

@@ -583,6 +583,12 @@ The rule underneath: ask when the cost of a wrong assumption is meaningfully
 greater than the cost of interrupting. The consequence categories come from the
 decision's reach in the Product Behavior Graph and the change class, so the gate
 is mostly mechanical; the model only proposes the decision list and defaults.
+Today the planner tags its one question with what a wrong guess touches,
+whether the owner could switch options later without losing data, money or
+access, and whether the choice is easier to judge after trying the change. The
+run stops only for a hard-to-reverse choice in one of the consequences listed
+in `builder.construction.questions.ask_about`. Otherwise it builds on the
+recommended option and lists that option with the change's other decisions.
 
 ### Not annoying people
 
