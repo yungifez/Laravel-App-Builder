@@ -305,12 +305,14 @@ export type RequestImage = { url: string; name: string };
 
 // One plain sentence on how we know a change works.
 export type ProofLine = {
-    kind: 'passed' | 'caught' | 'reach' | 'gap';
+    kind: 'passed' | 'caught' | 'reach' | 'gap' | 'rule';
     text: string;
     /** Pictures of a changed screen as a phone, a tablet and a computer show it. */
     pictures?: { url: string; label: string }[];
     /** Shows the change's own behaviour was tried, not only that the rest still works. */
     evidence?: boolean;
+    /** Things listed under the line, such as the rules a part must keep. */
+    items?: string[];
 };
 
 // Everything about one change, as its page and the workspace chat show it.

@@ -2,6 +2,7 @@
 
 namespace App\Actions\Features;
 
+use App\Actions\Context\ReadProjectContext;
 use App\Enums\VerificationStatus;
 use App\Features\InventedColours;
 use App\Features\PatchSummary;
@@ -12,9 +13,15 @@ use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\RunEvent;
 use App\Models\Verification;
+use App\Projects\ProjectRepository;
 
 class DescribeProof
 {
+    public function __construct(
+        private ProjectRepository $repository,
+        private ReadProjectContext $readProjectContext,
+    ) {}
+
     /**
      * Say, in the owner's words, how we know a change works: what the checks
      * proved, how far the app's own tests reached into the change, and what
@@ -36,7 +43,7 @@ class DescribeProof
             return [];
         }
 
-        return [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest), ...$this->safety($featureRequest), ...$this->colours($featureRequest), ...$this->pictures($featureRequest), ...$this->screens($featureRequest, $verification), ...$this->reach($featureRequest->latestRun)];
+        return [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest), ...$this->safety($featureRequest), ...$this->colours($featureRequest), ...$this->pictures($featureRequest), ...$this->screens($featureRequest, $verification), ...$this->reach($featureRequest->latestRun), ...$this->rules($featureRequest)];
     }
 
     /**
@@ -249,6 +256,51 @@ class DescribeProof
 
         if ($review['approved']) {
             $lines[] = ['kind' => 'passed', 'text' => __('The change was looked over a second time before it reached you.')];
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Name the things that must always be true in the parts of the app the
+     * change touched, from the project notes (direction 18 §7). They say
+     * what the change had to keep, not that a check proved it did, so they
+     * are never evidence. One line per part, at most three rules in all,
+     * so the proof stays short.
+     *
+     * @return list<array{kind: string, text: string, items: list<string>}>
+     */
+    protected function rules(FeatureRequest $featureRequest): array
+    {
+        $commit = $featureRequest->commit_sha;
+        $project = $featureRequest->project;
+
+        if ($commit === null || ! $this->repository->exists($project)) {
+            return [];
+        }
+
+        $changed = $this->repository->git($project, ['diff-tree', '--no-commit-id', '--name-only', '-r', '--root', $commit], throw: false, timeout: 10);
+
+        if (! $changed->successful()) {
+            return [];
+        }
+
+        $paths = array_filter(explode("\n", trim($changed->output())));
+        $left = 3;
+        $lines = [];
+
+        foreach ($this->readProjectContext->current($project)->capabilities as $capability) {
+            $rules = array_slice($capability->rules(), 0, $left);
+
+            if ($rules === [] || ! array_any($paths, fn (string $path) => $capability->claims($path))) {
+                continue;
+            }
+
+            $lines[] = ['kind' => 'rule', 'text' => __('Must stay true in :area:', ['area' => $capability->name]), 'items' => $rules];
+
+            if (($left -= count($rules)) === 0) {
+                break;
+            }
         }
 
         return $lines;

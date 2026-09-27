@@ -2,6 +2,7 @@
 import {
     CircleCheck,
     CircleDashed,
+    Lock,
     ScanSearch,
     ShieldCheck,
 } from '@lucide/vue';
@@ -66,6 +67,7 @@ const icons = {
     caught: { icon: ShieldCheck, tone: 'text-green-600' },
     reach: { icon: ScanSearch, tone: 'text-muted-foreground' },
     gap: { icon: CircleDashed, tone: 'text-amber-600' },
+    rule: { icon: Lock, tone: 'text-muted-foreground' },
 };
 </script>
 
@@ -149,7 +151,17 @@ const icons = {
                     :is="icons[line.kind].icon"
                     :class="['mt-px size-3.5 shrink-0', icons[line.kind].tone]"
                 />
-                {{ line.text }}
+                <div>
+                    {{ line.text }}
+                    <ul
+                        v-if="line.items?.length"
+                        class="mt-0.5 list-disc space-y-0.5 pl-4 marker:text-muted-foreground"
+                    >
+                        <li v-for="item in line.items" :key="item">
+                            {{ item }}
+                        </li>
+                    </ul>
+                </div>
             </li>
         </ul>
     </section>

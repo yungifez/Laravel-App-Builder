@@ -158,3 +158,8 @@ them and correct any that are wrong.
   or its screens opened at three widths. Otherwise it is "Lightly checked".
   The app's own tests still passing counts as "nothing broke", not as
   evidence that the new behaviour works.
+- **A change names the rules it had to keep.** The change proof lists the
+  "must always be true" rules of each part the change's commit touched, read
+  from the current project notes, not the notes at the time of the change.
+  At most three rules show. They are never counted as evidence, because no
+  check proves a rule held.
