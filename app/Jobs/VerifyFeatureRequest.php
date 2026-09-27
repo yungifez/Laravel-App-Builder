@@ -60,7 +60,12 @@ class VerifyFeatureRequest implements ShouldQueue
     /**
      * Create a new job instance.
      */
-    public function __construct(public Verification $verification) {}
+    public function __construct(public Verification $verification)
+    {
+        // On a queue of its own, a change's checks start as soon as it is
+        // built, instead of waiting behind other changes being built.
+        $this->onQueue(config('builder.verification.queue'));
+    }
 
     /**
      * Copy the project into a fresh workspace, apply the change and its

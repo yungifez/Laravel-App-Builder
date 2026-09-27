@@ -33,6 +33,7 @@ return [
     'workers' => [
         'queues' => array_values(array_unique(array_filter([
             'default',
+            env('BUILDER_VERIFICATION_QUEUE'),
             env('BUILDER_PREVIEW_QUEUE'),
         ]))),
         'stale_seconds' => (int) env('OPERATIONS_WORKER_STALE_SECONDS', 60),

@@ -78,6 +78,15 @@ class RunLifecycleTest extends TestCase
         Queue::assertPushed(VerifyFeatureRequest::class, 1);
     }
 
+    public function test_the_checks_of_a_built_change_go_to_their_own_queue()
+    {
+        config(['builder.verification.queue' => 'checks']);
+
+        app(StartRun::class)->handle($this->invitationRequest());
+
+        Queue::assertPushedOn('checks', VerifyFeatureRequest::class);
+    }
+
     public function test_a_preview_of_the_change_starts_on_its_own_queue_as_soon_as_it_is_built()
     {
         config(['builder.preview.automatic' => true, 'builder.preview.queue' => 'previews']);

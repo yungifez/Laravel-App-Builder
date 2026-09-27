@@ -41,10 +41,12 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('viewOperations', fn (User $user) => $user->hasVerifiedEmail()
             && in_array(strtolower($user->email), (array) config('operations.operators'), true));
 
-        // Previews on their own queue need their own worker under
-        // `composer dev` too, or they would never start.
-        if (is_string($queue = config('builder.preview.queue')) && $queue !== '') {
-            DevCommands::artisan("queue:listen --queue={$queue} --tries=1 --timeout=0", 'previews');
+        // Checks and previews on their own queues need their own workers
+        // under `composer dev` too, or they would never start.
+        foreach (['checks' => config('builder.verification.queue'), 'previews' => config('builder.preview.queue')] as $name => $queue) {
+            if (is_string($queue) && $queue !== '') {
+                DevCommands::artisan("queue:listen --queue={$queue} --tries=1 --timeout=0", $name);
+            }
         }
     }
 }

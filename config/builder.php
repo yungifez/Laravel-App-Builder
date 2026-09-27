@@ -392,6 +392,10 @@ return [
     'verification' => [
         'workspace_driver' => env('BUILDER_VERIFICATION_DRIVER', env('WORKSPACE_DRIVER', 'local')),
 
+        // Checks go to their own queue when one is named; give it its own
+        // worker so they do not wait behind other changes being built.
+        'queue' => env('BUILDER_VERIFICATION_QUEUE'),
+
         // Platform-owned acceptance suites and their runner configuration.
         // They are copied fresh into tests/Acceptance after the checks, replacing
         // anything the change put there, and run with this directory's

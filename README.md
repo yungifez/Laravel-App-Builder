@@ -84,12 +84,14 @@ Node in the `laravel.test` container of `compose.yaml`.
     ```
 
 3. Start the queue workers and the scheduler, each in its own terminal. The
-   second worker starts previews while the first runs changes and their
-   checks (set `BUILDER_PREVIEW_QUEUE=previews`; without it, previews wait in
+   first worker builds changes, the second runs their checks and the third
+   starts previews (set `BUILDER_VERIFICATION_QUEUE=checks` and
+   `BUILDER_PREVIEW_QUEUE=previews`; without them, checks and previews wait in
    line on the first worker):
 
     ```sh
     vendor/bin/sail artisan queue:work --timeout=3600
+    vendor/bin/sail artisan queue:work --queue=checks --timeout=3600
     vendor/bin/sail artisan queue:work --queue=previews --timeout=3600
     vendor/bin/sail artisan schedule:work
     ```
