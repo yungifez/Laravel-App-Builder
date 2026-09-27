@@ -14,4 +14,7 @@ enum ChangeState: string
     case Kept = 'kept';
     case Stopped = 'stopped';
     case Undone = 'undone';
+
+    // The owner said it is no longer needed.
+    case Dismissed = 'dismissed';
 }

@@ -19,7 +19,7 @@ class SummarizeChanges
      * owner. Otherwise a kept request wins, so a kept follow-up does not
      * leave its parent "waiting" for ever.
      *
-     * @return list<array{id: int, prompt: string, summary: string|null, state: string, asks: bool, updated_at: string|null}>
+     * @return list<array{id: int, prompt: string, summary: string|null, state: string, asks: bool, dismissable: bool, updated_at: string|null}>
      */
     public function handle(Project $project): array
     {
@@ -30,6 +30,12 @@ class SummarizeChanges
                 $thread = $this->thread($root, $requests)->sortByDesc('id')->values();
                 [$state, $shown] = $this->state($thread);
 
+                // Set aside by the owner; a kept change is in the app and
+                // stays kept.
+                if ($root->dismissed_at !== null && $state !== ChangeState::Kept) {
+                    $state = ChangeState::Dismissed;
+                }
+
                 return [
                     'id' => $shown->id,
                     'prompt' => $root->prompt,
@@ -37,6 +43,8 @@ class SummarizeChanges
                     'state' => $state->value,
                     // Waiting on an answer rather than on a look at the result.
                     'asks' => $state === ChangeState::Waiting && $shown->status === FeatureRequestStatus::Generating,
+                    // The ask can be marked as not needed: nothing of it is kept.
+                    'dismissable' => $state !== ChangeState::Kept,
                     'updated_at' => ($shown->reverted_at ?? $shown->accepted_at ?? $shown->updated_at)?->toIso8601String(),
                 ];
             })

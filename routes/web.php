@@ -7,6 +7,7 @@ use App\Http\Controllers\ExperimentMergeController;
 use App\Http\Controllers\FeatureRequestAcceptanceController;
 use App\Http\Controllers\FeatureRequestAnswerController;
 use App\Http\Controllers\FeatureRequestController;
+use App\Http\Controllers\FeatureRequestDismissalController;
 use App\Http\Controllers\FeatureRequestPreviewController;
 use App\Http\Controllers\FeatureRequestRetryController;
 use App\Http\Controllers\FeatureRequestReversionController;
@@ -67,6 +68,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('feature-requests/{featureRequest}/answers', [FeatureRequestAnswerController::class, 'store'])->name('feature-requests.answers.store');
     Route::post('feature-requests/{featureRequest}/retries', [FeatureRequestRetryController::class, 'store'])->name('feature-requests.retries.store');
     Route::post('feature-requests/{featureRequest}/reversion', [FeatureRequestReversionController::class, 'store'])->name('feature-requests.reversion.store');
+    Route::post('feature-requests/{featureRequest}/dismissal', [FeatureRequestDismissalController::class, 'store'])->name('feature-requests.dismissal.store');
+    Route::delete('feature-requests/{featureRequest}/dismissal', [FeatureRequestDismissalController::class, 'destroy'])->name('feature-requests.dismissal.destroy');
     Route::post('feature-requests/{featureRequest}/previews', [FeatureRequestPreviewController::class, 'store'])->name('feature-requests.previews.store');
     Route::get('previews/{preview}', [PreviewController::class, 'show'])->name('previews.show');
     Route::delete('previews/{preview}', [PreviewController::class, 'destroy'])->name('previews.destroy');

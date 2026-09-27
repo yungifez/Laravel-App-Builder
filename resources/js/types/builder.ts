@@ -48,7 +48,8 @@ export type ChangeState =
     | 'answered'
     | 'kept'
     | 'stopped'
-    | 'undone';
+    | 'undone'
+    | 'dismissed';
 
 /** One ask the owner made, with its follow-ups folded in. */
 export type ChangeItem = {
@@ -58,6 +59,8 @@ export type ChangeItem = {
     state: ChangeState;
     /** Waiting on the owner's answer to a question. */
     asks: boolean;
+    /** Nothing of it is kept, so it can be marked as not needed. */
+    dismissable: boolean;
     updated_at: string | null;
 };
 

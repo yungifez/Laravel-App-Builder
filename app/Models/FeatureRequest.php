@@ -44,10 +44,11 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $accepted_at
  * @property string|null $revert_sha The project commit that undid the change
  * @property Carbon|null $reverted_at
+ * @property Carbon|null $dismissed_at When the owner said the ask is no longer needed
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['experiment_id', 'project_id', 'user_id', 'parent_id', 'retry_of_id', 'prompt', 'selection', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'note_changes', 'steps', 'acceptance', 'error', 'decision_model_calls', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at'])]
+#[Fillable(['experiment_id', 'project_id', 'user_id', 'parent_id', 'retry_of_id', 'prompt', 'selection', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'note_changes', 'steps', 'acceptance', 'error', 'decision_model_calls', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at', 'dismissed_at'])]
 class FeatureRequest extends Model
 {
     /**
@@ -75,6 +76,7 @@ class FeatureRequest extends Model
             'selection' => 'array',
             'accepted_at' => 'datetime',
             'reverted_at' => 'datetime',
+            'dismissed_at' => 'datetime',
         ];
     }
 

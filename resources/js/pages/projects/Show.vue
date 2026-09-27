@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Form, Head, Link, router, usePoll } from '@inertiajs/vue3';
+import {
+    Form,
+    Head,
+    Link,
+    router,
+    usePoll,
+    useRemember,
+} from '@inertiajs/vue3';
 import {
     ArrowLeft,
     ArrowUp,
@@ -9,6 +16,7 @@ import {
     Lightbulb,
     LoaderCircle,
     Undo2,
+    X,
     ChevronDown,
     ExternalLink,
     MessageSquare,
@@ -18,8 +26,9 @@ import {
     Smartphone,
     Tablet,
 } from '@lucide/vue';
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
+import FeatureRequestDismissalController from '@/actions/App/Http/Controllers/FeatureRequestDismissalController';
 import ProjectExperimentController from '@/actions/App/Http/Controllers/ProjectExperimentController';
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
 import AppPreview from '@/components/AppPreview.vue';
@@ -162,8 +171,62 @@ const screens: { key: Device; label: string; icon: typeof Monitor }[] = [
 // Finished changes are grouped by day, so the day is said once instead of on
 // every row. Changes still open sit together just above the box, where the
 // owner acts, under what they need: the owner, or only time.
+// Quick filters over the list. "All" leaves out what the owner set aside;
+// that has a filter of its own.
+type Filter = 'all' | 'waiting' | 'kept' | 'answered' | 'stopped' | 'dismissed';
+const filterLabels: Record<Filter, string> = {
+    all: 'All',
+    waiting: 'Needs you',
+    kept: 'Kept',
+    answered: 'Questions',
+    stopped: 'Stopped',
+    dismissed: 'Not needed',
+};
+const shown = useRemember(
+    reactive<{ filter: Filter }>({ filter: 'all' }),
+    'change-filter',
+) as { filter: Filter };
+const inFilter = (item: ChangeItem, filter: Filter) =>
+    filter === 'all'
+        ? item.state !== 'dismissed'
+        : filter === 'stopped'
+          ? item.state === 'stopped' || item.state === 'undone'
+          : item.state === filter;
+const filters = computed(() =>
+    (Object.keys(filterLabels) as Filter[])
+        .map((filter) => ({
+            filter,
+            label: filterLabels[filter],
+            count: props.changes.filter((item) => inFilter(item, filter))
+                .length,
+        }))
+        .filter(({ filter, count }) => filter === 'all' || count > 0),
+);
+
+// A filter emptied by the owner's last action falls back to everything.
+watch(filters, (list) => {
+    if (!list.some(({ filter }) => filter === shown.filter)) {
+        shown.filter = 'all';
+    }
+});
+
+function dismiss(item: ChangeItem): void {
+    const action =
+        item.state === 'dismissed'
+            ? FeatureRequestDismissalController.destroy
+            : FeatureRequestDismissalController.store;
+
+    router.visit(action(item.id), {
+        preserveScroll: true,
+        preserveState: true,
+        only: ['changes'],
+    });
+}
+
 const thread = computed(() => {
-    const oldestFirst = [...props.changes].reverse();
+    const oldestFirst = [...props.changes]
+        .reverse()
+        .filter((item) => inFilter(item, shown.filter));
     const open = (item: ChangeItem) =>
         item.state === 'waiting' || item.state === 'working';
 
@@ -251,6 +314,7 @@ const states: Record<
     kept: { label: 'Kept', icon: CircleCheck, tone: 'text-green-600' },
     stopped: { label: 'Stopped', icon: CircleX, tone: 'text-red-600' },
     undone: { label: 'Undone', icon: Undo2, tone: '' },
+    dismissed: { label: 'Not needed', icon: X, tone: 'text-muted-foreground' },
 };
 
 // Starting points for an empty conversation. A tap puts one in the box.
@@ -637,6 +701,35 @@ function send(event: KeyboardEvent): void {
                         class="-mx-2 space-y-4"
                         data-test="project-changes"
                     >
+                        <div
+                            v-if="filters.length > 2"
+                            class="sticky -top-4 z-10 -mt-4 flex [scrollbar-width:none] gap-1.5 overflow-x-auto bg-background px-2 pt-4 pb-2"
+                            role="group"
+                            aria-label="Show"
+                            data-test="change-filters"
+                        >
+                            <button
+                                v-for="pill in filters"
+                                :key="pill.filter"
+                                type="button"
+                                :aria-pressed="shown.filter === pill.filter"
+                                :class="[
+                                    'flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs select-none sm:min-h-7',
+                                    shown.filter === pill.filter
+                                        ? 'border-foreground bg-foreground text-background'
+                                        : 'text-muted-foreground hover:border-foreground/30 hover:text-foreground',
+                                ]"
+                                :data-test="`change-filter-${pill.filter}`"
+                                @click="shown.filter = pill.filter"
+                            >
+                                {{ pill.label }}
+                                <span
+                                    v-if="pill.filter !== 'all'"
+                                    class="tabular-nums opacity-70"
+                                    >{{ pill.count }}</span
+                                >
+                            </button>
+                        </div>
                         <section
                             v-for="(group, index) in thread"
                             :key="`${index}-${group.label}`"
@@ -652,6 +745,7 @@ function send(event: KeyboardEvent): void {
                                     v-for="item in group.items"
                                     :key="item.id"
                                     :data-test="`change-${item.state}`"
+                                    class="group relative flex items-start"
                                 >
                                     <Link
                                         :href="
@@ -662,7 +756,11 @@ function send(event: KeyboardEvent): void {
                                         :only="['change']"
                                         preserve-state
                                         preserve-scroll
-                                        class="flex min-h-11 items-start gap-2.5 rounded-md px-2 py-2 select-none hover:bg-muted/60"
+                                        :class="[
+                                            'flex min-h-11 min-w-0 flex-1 items-start gap-2.5 rounded-md px-2 select-none hover:bg-muted/60',
+                                            'py-2',
+                                            item.dismissable && 'pr-11',
+                                        ]"
                                     >
                                         <component
                                             :is="states[item.state].icon"
@@ -697,6 +795,41 @@ function send(event: KeyboardEvent): void {
                                             }}</span
                                         >
                                     </Link>
+                                    <!-- On a pointer it shows on hover, so
+                                         15 rows are not 15 buttons; on touch
+                                         it is always there. -->
+                                    <button
+                                        v-if="item.dismissable"
+                                        type="button"
+                                        :class="[
+                                            'absolute right-0 flex size-11 items-center justify-center rounded-md text-muted-foreground select-none hover:bg-muted hover:text-foreground sm:size-9',
+                                            'top-0',
+                                            item.state === 'dismissed'
+                                                ? ''
+                                                : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100',
+                                        ]"
+                                        :aria-label="
+                                            item.state === 'dismissed'
+                                                ? 'Bring back'
+                                                : 'Not needed anymore'
+                                        "
+                                        :title="
+                                            item.state === 'dismissed'
+                                                ? 'Bring back'
+                                                : 'Not needed anymore'
+                                        "
+                                        :data-test="`change-dismiss-${item.id}`"
+                                        @click="dismiss(item)"
+                                    >
+                                        <component
+                                            :is="
+                                                item.state === 'dismissed'
+                                                    ? Undo2
+                                                    : X
+                                            "
+                                            class="size-4"
+                                        />
+                                    </button>
                                 </li>
                             </ol>
                         </section>
