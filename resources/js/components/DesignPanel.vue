@@ -821,6 +821,7 @@ const recent = computed(() => {
                             </div>
                             <Swatches
                                 label="Colour"
+                                name="Text colour"
                                 kind="color"
                                 :colors="state.theme"
                                 :value="state.valueOf('text_color')"
@@ -864,6 +865,19 @@ const recent = computed(() => {
                                     property="border"
                                 />
                             </div>
+                            <Swatches
+                                v-if="
+                                    Number(state.valueOf('border') ?? 0) > 0 ||
+                                    state.valueOf('border_color') != null
+                                "
+                                label="Colour"
+                                name="Border colour"
+                                kind="color"
+                                :colors="state.theme"
+                                :value="state.valueOf('border_color')"
+                                :options="options('border_color')"
+                                @change="set('border_color', $event)"
+                            />
                         </section>
                     </div>
 

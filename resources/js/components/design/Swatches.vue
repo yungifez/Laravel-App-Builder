@@ -6,6 +6,8 @@ import type { VisualValue } from '@/types';
 
 const props = defineProps<{
     label: string;
+    /** The group's full name, when the label is short, as "Colour" is. */
+    name?: string;
     kind: 'color' | 'radius';
     value: VisualValue | null;
     options: { value: VisualValue; label: string }[];
@@ -65,7 +67,7 @@ function look(kind: string, option: VisualValue): Record<string, string> {
         <div
             class="flex min-w-0 flex-1 flex-wrap gap-0.5"
             role="group"
-            :aria-label="label"
+            :aria-label="name ?? label"
         >
             <button
                 v-for="option in shown"

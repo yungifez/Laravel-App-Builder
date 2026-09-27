@@ -175,6 +175,31 @@ class TailwindClassesTest extends TestCase
         TailwindClasses::write('', 'base', ['text_color' => 'red-500']);
     }
 
+    public function test_a_border_colour_is_a_theme_token_apart_from_the_border_width()
+    {
+        $this->assertSame(['border' => 1, 'border_color' => 'input'], TailwindClasses::read('border border-input')['base']);
+        $this->assertSame(['border' => 2, 'border_color' => 'custom'], TailwindClasses::read('border-2 border-black')['base']);
+        $this->assertSame(['border_color' => 'custom'], TailwindClasses::read('md:border-[#eeeeec]')['md']);
+
+        // Choosing a colour keeps the width, and replaces the custom colour.
+        $this->assertSame('border border-primary', TailwindClasses::write('border border-black', 'base', ['border_color' => 'primary']));
+        $this->assertSame('border-4 border-primary', TailwindClasses::write('border border-primary', 'base', ['border' => 4]));
+    }
+
+    public function test_a_theme_colour_takes_away_the_parts_own_dark_mode_colour()
+    {
+        // The dark-mode colour would hide the chosen one; hover and other
+        // properties stay.
+        $this->assertSame(
+            'border border-black dark:bg-[#eeeeec] dark:hover:border-white lg:border-destructive',
+            TailwindClasses::write('border border-black dark:border-[#eeeeec] dark:bg-[#eeeeec] dark:hover:border-white', 'lg', ['border_color' => 'destructive']),
+        );
+        $this->assertSame('text-primary', TailwindClasses::write('text-white dark:text-[#1C1C1A]', 'base', ['text_color' => 'primary']));
+
+        // Removing a colour leaves the dark-mode one alone.
+        $this->assertSame('dark:bg-black', TailwindClasses::write('bg-muted dark:bg-black', 'base', ['background' => null]));
+    }
+
     public function test_it_refuses_unknown_devices_properties_and_values()
     {
         foreach ([

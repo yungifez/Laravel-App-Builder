@@ -427,6 +427,24 @@ export const properties: PropertyDefinition[] = [
         },
     },
     {
+        key: 'border_color',
+        label: 'Border colour',
+        group: 'Colours',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'transparent', label: 'None' },
+                { value: 'border', label: 'Edge' },
+                { value: 'input', label: 'Field edge' },
+                { value: 'foreground', label: 'Text' },
+                { value: 'muted-foreground', label: 'Quiet text' },
+                { value: 'primary', label: 'Main colour' },
+                { value: 'accent', label: 'Highlight' },
+                { value: 'destructive', label: 'Warning' },
+            ],
+        },
+    },
+    {
         key: 'background',
         label: 'Background',
         group: 'Colours',
@@ -797,6 +815,10 @@ export function inlineStyles(
                 break;
             case 'text_color':
                 styles.color = color(value);
+                break;
+            case 'border_color':
+                styles.borderColor =
+                    value === 'transparent' ? 'transparent' : color(value);
                 break;
             case 'background':
                 styles.backgroundColor =

@@ -360,6 +360,7 @@ export type VisualProperty =
     | 'text_weight'
     | 'text_align'
     | 'text_color'
+    | 'border_color'
     | 'background';
 
 export type VisualValue = number | string;

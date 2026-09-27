@@ -33,7 +33,7 @@ class TailwindClasses
      */
     public const PROPERTIES = [
         'layout', 'direction', 'wrap', 'align', 'justify', 'columns', 'gap',
-        'width', 'height', 'max_width', 'padding_x', 'padding_y', 'margin_x', 'margin_y', 'border', 'radius', 'shadow',
+        'width', 'height', 'max_width', 'padding_x', 'padding_y', 'margin_x', 'margin_y', 'border', 'border_color', 'radius', 'shadow',
         'rotate', 'translate_x', 'translate_y', 'opacity',
         'text_size', 'text_weight', 'text_align', 'text_color', 'background',
     ];
@@ -51,6 +51,7 @@ class TailwindClasses
         'text_weight' => ['font-light' => 'light', 'font-normal' => 'normal', 'font-medium' => 'medium', 'font-semibold' => 'semibold', 'font-bold' => 'bold'],
         'text_align' => ['text-left' => 'left', 'text-center' => 'center', 'text-right' => 'right', 'text-justify' => 'justify', 'text-start' => 'start', 'text-end' => 'end'],
         'text_color' => ['text-foreground' => 'foreground', 'text-muted-foreground' => 'muted-foreground', 'text-primary' => 'primary', 'text-primary-foreground' => 'primary-foreground', 'text-secondary-foreground' => 'secondary-foreground', 'text-accent-foreground' => 'accent-foreground', 'text-destructive' => 'destructive'],
+        'border_color' => ['border-border' => 'border', 'border-input' => 'input', 'border-foreground' => 'foreground', 'border-muted-foreground' => 'muted-foreground', 'border-primary' => 'primary', 'border-accent' => 'accent', 'border-destructive' => 'destructive', 'border-transparent' => 'transparent'],
         'background' => ['bg-transparent' => 'transparent', 'bg-background' => 'background', 'bg-card' => 'card', 'bg-muted' => 'muted', 'bg-primary' => 'primary', 'bg-secondary' => 'secondary', 'bg-accent' => 'accent', 'bg-destructive' => 'destructive'],
     ];
 
@@ -58,7 +59,12 @@ class TailwindClasses
      * Colours that are not theme tokens: Tailwind's palette, white and
      * black, a token with an opacity, or a written colour code.
      */
-    protected const CUSTOM_COLOR = '/^(text|bg)-(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}|white|black|(?:foreground|muted-foreground|primary|primary-foreground|secondary|secondary-foreground|accent|accent-foreground|destructive|background|card|muted)|\[#[0-9a-fA-F]{3,8}\])(?:\/\d+)?$/';
+    /**
+     * The properties that take a colour from the app's theme.
+     */
+    protected const COLORS = ['text_color', 'background', 'border_color'];
+
+    protected const CUSTOM_COLOR = '/^(text|bg|border)-(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}|white|black|(?:foreground|muted-foreground|primary|primary-foreground|secondary|secondary-foreground|accent|accent-foreground|destructive|background|card|muted|border|input)|\[#[0-9a-fA-F]{3,8}\])(?:\/\d+)?$/';
 
     /**
      * Properties written as a prefix and an amount, such as `w-60`, `h-1/2`
@@ -184,6 +190,17 @@ class TailwindClasses
             $tokens = self::writeGroup($tokens, $device, $group, $groupChanges);
         }
 
+        // A theme colour already changes in dark mode. The part's own
+        // dark-mode colour would hide the chosen one there, so it goes.
+        foreach ($changes as $property => $value) {
+            if ($value !== null && in_array($property, self::COLORS, true)) {
+                $tokens = array_values(array_filter(
+                    $tokens,
+                    fn (string $token) => ! str_starts_with($token, 'dark:') || (self::parse(substr($token, 5))[1] ?? null) !== $property,
+                ));
+            }
+        }
+
         return implode(' ', $tokens);
     }
 
@@ -257,7 +274,11 @@ class TailwindClasses
         }
 
         if (preg_match(self::CUSTOM_COLOR, $utility, $match) === 1) {
-            return [$device, $match[1] === 'bg' ? 'background' : 'text_color', 'custom'];
+            return [$device, match ($match[1]) {
+                'bg' => 'background',
+                'border' => 'border_color',
+                default => 'text_color',
+            }, 'custom'];
         }
 
         if (preg_match('/^grid-cols-(\d+)$/', $utility, $match) === 1) {
