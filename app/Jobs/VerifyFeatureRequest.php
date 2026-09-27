@@ -22,6 +22,7 @@ use App\Workspaces\WorkspaceFiles;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -247,20 +248,62 @@ class VerifyFeatureRequest implements ShouldQueue
      */
     protected function observeScreens(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): void
     {
-        /** @var array{enabled: bool, command: list<string>, timeout: int, report: string} $config */
+        /** @var array{enabled: bool, command: list<string>, timeout: int, report: string, shots_disk: string, shots_max: int} $config */
         $config = config('builder.verification.screens');
 
         if (! $config['enabled'] || ! ScreenCheck::scans($featureRequest->patch)) {
             return;
         }
 
-        rescue(function () use ($driver, $runWorkspaceCommand, $workspace, $config) {
-            $command = $runWorkspaceCommand->handle($workspace, $config['command'], $config['timeout']);
+        rescue(function () use ($driver, $runWorkspaceCommand, $workspace, $config, $featureRequest) {
+            $shoot = ScreenCheck::shootable($featureRequest->patch, $config['shots_max']);
+            $command = $runWorkspaceCommand->handle($workspace, $config['command'], $config['timeout'], ['SCREEN_CHECK_SHOOT' => implode(',', $shoot)]);
 
-            if ($this->outcome($command) === self::OUTCOME_PASSED) {
-                $this->verification->update(['screens' => ScreenCheck::parse((string) $driver->readFile((string) $workspace->driver_id, $config['report']))]);
+            if ($this->outcome($command) !== self::OUTCOME_PASSED) {
+                return;
             }
+
+            $screens = ScreenCheck::parse((string) $driver->readFile((string) $workspace->driver_id, $config['report']));
+
+            if ($screens !== null) {
+                $screens['shots'] = $this->keepShots($driver, $workspace, $screens['pages'], $config['shots_disk']);
+            }
+
+            $this->verification->update(['screens' => $screens]);
         }, report: false);
+    }
+
+    /**
+     * Copy the pictures the screen check took out of the workspace, so they
+     * outlive it. Only JPEG files the tool wrote under its own folder are
+     * read; anything else a page claims is ignored.
+     *
+     * @param  list<array<string, mixed>>  $pages
+     * @return list<array{screen: string, width: int, path: string}>
+     */
+    protected function keepShots(WorkspaceDriver $driver, Workspace $workspace, array $pages, string $disk): array
+    {
+        $shots = [];
+
+        foreach ($pages as $page) {
+            foreach (is_array($page['shots'] ?? null) ? $page['shots'] : [] as $shot) {
+                $file = (string) ($shot['file'] ?? '');
+
+                if (preg_match('#^storage/logs/screens/shots/[0-9]+-[0-9]+\.jpg$#', $file) !== 1) {
+                    continue;
+                }
+
+                $contents = rescue(fn () => $driver->readFile((string) $workspace->driver_id, $file), null, report: false);
+
+                if (is_string($contents) && str_starts_with($contents, "\xFF\xD8")) {
+                    $path = sprintf('screen-shots/%d/%s', $this->verification->id, basename($file));
+                    Storage::disk($disk)->put($path, $contents);
+                    $shots[] = ['screen' => (string) $page['screen'], 'width' => (int) $shot['width'], 'path' => $path];
+                }
+            }
+        }
+
+        return $shots;
     }
 
     /**

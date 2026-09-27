@@ -14,6 +14,7 @@
 // measures an app that is already running there.
 
 import { spawn, spawnSync } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 
 // The box image installs the browser here (docker/box/Dockerfile). The box
@@ -36,6 +37,14 @@ const NOT_SCREENS =
 const input = JSON.parse(process.argv[2] ?? '{}');
 const widths = input.widths ?? [PHONE, 820, 1280];
 const limit = input.limit ?? 15;
+// The screens to take pictures of, named as Inertia names them: the ones a
+// change touched, so the owner can see them as each device shows them.
+const shoot = new Set(
+    input.shoot ??
+        (process.env.SCREEN_CHECK_SHOOT ?? '').split(',').filter(Boolean),
+);
+const shotsDirectory = input.shots ?? 'storage/logs/screens/shots';
+const shot = new Set();
 const server = input.base ? null : serve();
 const base = new URL(input.base ?? `http://127.0.0.1:${PORT}`);
 
@@ -592,6 +601,23 @@ async function measure(browser, path, cookies) {
 
             result.screen ??= measured.screen;
             delete measured.screen;
+
+            // A picture of the screen as this device shows it, once per
+            // screen, before the keyboard moves focus around.
+            if (
+                shoot.has(result.screen) &&
+                !shot.has(`${result.screen}@${width}`)
+            ) {
+                shot.add(`${result.screen}@${width}`);
+                mkdirSync(shotsDirectory, { recursive: true });
+                const file = `${shotsDirectory}/${shot.size}-${width}.jpg`;
+                await page.screenshot({
+                    path: file,
+                    type: 'jpeg',
+                    quality: 70,
+                });
+                result.shots = [...(result.shots ?? []), { width, file }];
+            }
             const unfocused =
                 width === widths[widths.length - 1]
                     ? await focusless(page)

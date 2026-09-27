@@ -179,7 +179,19 @@ class ChangeProofTest extends TestCase
 
         $this->actingAs($fits->project->owner)
             ->get(route('feature-requests.show', $fits))
-            ->assertInertia(fn (Assert $page) => $page->where('proof', fn ($proof) => collect($proof)->contains(['kind' => 'passed', 'text' => $line])));
+            ->assertInertia(fn (Assert $page) => $page->where('proof', fn ($proof) => collect($proof)->contains(fn ($proofLine) => $proofLine['kind'] === 'passed' && $proofLine['text'] === $line && $proofLine['pictures'] === [])));
+
+        // The pictures of the first changed screen come with it, narrowest first.
+        $shot = fn (string $screen, int $width) => ['screen' => $screen, 'width' => $width, 'path' => "screen-shots/1/{$width}.jpg"];
+        $verification = $fits->verifications()->sole();
+        $verification->update(['screens' => [...$screens(0), 'shots' => [$shot('Team', 1280), $shot('Team', 390), $shot('Billing', 390), $shot('Team', 820)]]]);
+        $this->actingAs($fits->project->owner)
+            ->get(route('feature-requests.show', $fits))
+            ->assertInertia(fn (Assert $page) => $page->where('proof', fn ($proof) => collect($proof)->firstWhere('text', $line)['pictures'] === [
+                ['url' => route('verifications.shots.show', [$verification, 1]), 'label' => 'Phone'],
+                ['url' => route('verifications.shots.show', [$verification, 3]), 'label' => 'Tablet'],
+                ['url' => route('verifications.shots.show', [$verification, 0]), 'label' => 'Computer'],
+            ]));
         // Faint words and hidden focus are gaps the owner sees, not reasons to hold the change.
         $faint = $screens(0);
         $faint['pages'][0]['widths'][0]['faint'] = [['text' => 'Delete team', 'ratio' => 3.76, 'needed' => 4.5]];
@@ -187,7 +199,7 @@ class ChangeProofTest extends TestCase
         $fits->verifications()->sole()->update(['screens' => $faint]);
         $this->actingAs($fits->project->owner)
             ->get(route('feature-requests.show', $fits))
-            ->assertInertia(fn (Assert $page) => $page->where('proof', fn ($proof) => collect($proof)->contains(['kind' => 'passed', 'text' => $line])
+            ->assertInertia(fn (Assert $page) => $page->where('proof', fn ($proof) => collect($proof)->contains('text', $line)
                 && collect($proof)->contains(['kind' => 'gap', 'text' => 'Some words on it are hard to read against their background: "Delete team".'])
                 && collect($proof)->contains(['kind' => 'gap', 'text' => 'Someone using a keyboard cannot see when some controls on it are selected, such as "Menu".'])));
         // A page that still scrolls sideways is never called a fit.

@@ -1350,7 +1350,11 @@ for large text; text over a picture or gradient is unknown). Faint words on
 a touched screen are a gap line in the proof, never a send-back: they
 usually come from the app's shared theme. At 1280 px it presses Tab through
 the first 20 controls and names those that look the same focused as not
-(2.4.7). Hidden focus is a gap line for the same reason.
+(2.4.7). Hidden focus is a gap line for the same reason. The check also takes a
+picture of each touched Inertia screen (up to `shots_max`) at each width.
+Verification copies them out of the workspace to `shots_disk`, and the
+owner sees the first screen as Phone, Tablet and Computer pictures under the
+first proof line, served only to people who can view the app.
 Where the tool is not installed, nothing is measured and nothing is said.
 `builder.verification.screens` holds the command and its switch.
 

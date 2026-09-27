@@ -47,6 +47,12 @@ class ScreenCheckTest extends TestCase
         $this->assertFalse(ScreenCheck::scans($this->changing('app/Models/Team.php', 'tests/Browser/TeamTest.tsx')));
     }
 
+    public function test_it_names_the_touched_screens_to_take_pictures_of()
+    {
+        $this->assertSame(['teams/Index', 'Dashboard'], ScreenCheck::shootable($this->changing('resources/js/pages/teams/Index.vue', 'app/Models/Team.php', 'resources/js/pages/Dashboard.tsx', 'resources/js/pages/Plan.vue'), 2));
+        $this->assertSame([], ScreenCheck::shootable($this->changing('resources/js/components/Badge.vue'), 3));
+    }
+
     public function test_it_reads_the_report_and_nothing_else()
     {
         $this->assertSame(['pages' => [['path' => '/']], 'signed_in' => true], ScreenCheck::parse("{\"pages\":[{\"path\":\"/\"}],\"signed_in\":true}\n"));

@@ -307,6 +307,8 @@ export type RequestImage = { url: string; name: string };
 export type ProofLine = {
     kind: 'passed' | 'caught' | 'reach' | 'gap';
     text: string;
+    /** Pictures of a changed screen as a phone, a tablet and a computer show it. */
+    pictures?: { url: string; label: string }[];
 };
 
 // Everything about one change, as its page and the workspace chat show it.

@@ -20,7 +20,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $workspace_id
  * @property VerificationStatus $status
  * @property list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string, tests?: list<array{file: string, name: string, outcome: string}>}>|null $results
- * @property array{pages: list<array<string, mixed>>, signed_in?: bool}|null $screens
+ * @property array{pages: list<array<string, mixed>>, signed_in?: bool, shots?: list<array{screen: string, width: int, path: string}>}|null $screens
  * @property string|null $error
  * @property Carbon|null $started_at
  * @property Carbon|null $finished_at

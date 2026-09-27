@@ -24,6 +24,15 @@ const others = computed(() =>
     props.proof.filter((line) => line.kind !== 'passed'),
 );
 
+// Each picture keeps roughly its device's shape: phone, tablet, computer.
+const sizes = ['w-11', 'w-22', 'w-34'];
+
+// Seeing the changed screen on each device says more than any line, so its
+// pictures show outside the fold, under the first pass.
+const pictures = computed(
+    () => props.proof.find((line) => line.pictures?.length)?.pictures ?? [],
+);
+
 const icons = {
     passed: { icon: CircleCheck, tone: 'text-green-600' },
     caught: { icon: ShieldCheck, tone: 'text-green-600' },
@@ -46,6 +55,34 @@ const icons = {
             <CircleCheck class="mt-px size-3.5 shrink-0 text-green-600" />
             {{ passes[0].text }}
         </p>
+        <ul
+            v-if="pictures.length > 0"
+            class="flex items-end gap-2 pl-5.5"
+            data-test="change-proof-pictures"
+        >
+            <li v-for="(picture, index) in pictures" :key="picture.url">
+                <a
+                    :href="picture.url"
+                    target="_blank"
+                    rel="noopener"
+                    class="group block rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                >
+                    <img
+                        :src="picture.url"
+                        :alt="`The changed screen on a ${picture.label.toLowerCase()}`"
+                        loading="lazy"
+                        :class="[
+                            'h-24 rounded-md border object-cover object-top transition-opacity group-hover:opacity-80',
+                            sizes[index] ?? sizes[2],
+                        ]"
+                    />
+                    <span
+                        class="mt-0.5 block text-[11px] text-muted-foreground"
+                        >{{ picture.label }}</span
+                    >
+                </a>
+            </li>
+        </ul>
         <details
             v-if="passes.length > 1"
             class="group text-xs text-muted-foreground"

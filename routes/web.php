@@ -32,6 +32,7 @@ use App\Http\Controllers\ProjectPreviewController;
 use App\Http\Controllers\ProjectPublishingController;
 use App\Http\Controllers\ProjectUnderstandingController;
 use App\Http\Controllers\RunCancellationController;
+use App\Http\Controllers\VerificationShotController;
 use App\Http\Controllers\VisualEditController;
 use App\Http\Controllers\VisualEditReversionController;
 use App\Http\Controllers\VisualMoveController;
@@ -71,6 +72,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/feature-requests', [FeatureRequestController::class, 'store'])->name('feature-requests.store');
     Route::get('feature-requests/{featureRequest}', [FeatureRequestController::class, 'show'])->name('feature-requests.show');
     Route::get('feature-requests/{featureRequest}/images/{image}', [FeatureRequestImageController::class, 'show'])->whereNumber('image')->name('feature-requests.images.show');
+    Route::get('verifications/{verification}/shots/{shot}', [VerificationShotController::class, 'show'])->whereNumber('shot')->name('verifications.shots.show');
     Route::post('feature-requests/{featureRequest}/follow-ups', [FeatureRequestFollowUpController::class, 'store'])->name('feature-requests.follow-ups.store');
     Route::post('feature-requests/{featureRequest}/step-changes', [FeatureRequestStepChangeController::class, 'store'])->name('feature-requests.step-changes.store');
     Route::post('feature-requests/{featureRequest}/verifications', [FeatureRequestVerificationController::class, 'store'])->name('feature-requests.verifications.store');

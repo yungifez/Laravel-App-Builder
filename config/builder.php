@@ -530,6 +530,10 @@ return [
             ])],
             'timeout' => 600,
             'report' => 'storage/logs/screens/report.json',
+            // Pictures of the touched screens at each width, for the owner
+            // to see in the change's proof, and how many screens get them.
+            'shots_disk' => env('BUILDER_SCREEN_SHOTS_DISK', 'local'),
+            'shots_max' => (int) env('BUILDER_SCREEN_SHOTS_MAX', 3),
         ],
 
         // Test impact evidence (direction 22). When the suite check passes,

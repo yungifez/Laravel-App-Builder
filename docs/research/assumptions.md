@@ -108,3 +108,10 @@ them and correct any that are wrong.
   fit). Why: the owner should see what the app has gained over time, not
   only per change. A test later renamed or removed still counts; the
   per-part list already says when a test has changed since.
+- **Pictures of changed screens are kept and shown.** Up to 3 touched
+  screens get a JPEG at each width (about 30 to 90 KB each), kept on the
+  `local` disk under `screen-shots/{verification}`. The proof shows the
+  first screen's three pictures above the fold. Why: owners believe what
+  they see, and seeing their screen on a phone is the clearest proof that
+  it was checked there. Old pictures are never deleted yet; clean-up can
+  come with workspace clean-up. Undo: `BUILDER_SCREEN_SHOTS_MAX=0`.

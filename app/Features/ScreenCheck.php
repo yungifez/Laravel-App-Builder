@@ -33,6 +33,25 @@ class ScreenCheck
     }
 
     /**
+     * Get the screens the patch touches, named as Inertia names them, so
+     * the check takes pictures of them.
+     *
+     * @return list<string>
+     */
+    public static function shootable(?string $patch, int $max): array
+    {
+        $screens = [];
+
+        foreach (PatchSummary::files($patch) as $file) {
+            if (! str_contains($file['diff'], "\ndeleted file mode ") && preg_match('#(?:^|/)pages/(.+)\.(vue|tsx|jsx|svelte)$#i', $file['path'], $match) === 1) {
+                $screens[] = $match[1];
+            }
+        }
+
+        return array_slice(array_values(array_unique($screens)), 0, $max);
+    }
+
+    /**
      * Read the measuring tool's report, or null when it is not one.
      *
      * @return array{pages: list<array<string, mixed>>, signed_in?: bool}|null

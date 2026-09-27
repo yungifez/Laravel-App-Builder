@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Verification;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\FakesWorkspaces;
 use Tests\Concerns\UsesAcceptanceSuite;
@@ -312,7 +313,7 @@ class VerificationTest extends TestCase
     public function test_a_change_to_a_screen_has_its_pages_measured_once_the_checks_pass()
     {
         $measure = ['sh', '-c', 'measure the screens'];
-        config(['builder.verification.screens' => ['enabled' => true, 'command' => $measure, 'timeout' => 600, 'report' => 'screens.json']]);
+        config(['builder.verification.screens' => ['enabled' => true, 'command' => $measure, 'timeout' => 600, 'report' => 'screens.json', 'shots_disk' => 'local', 'shots_max' => 3]]);
         $this->driver->onExec = function (string $workspace, array $command) use ($measure) {
             if ($command === $measure) {
                 $this->driver->files["{$workspace}:screens.json"] = '{"pages":[{"path":"/teams","screen":"Teams","widths":[]}],"signed_in":true}';
@@ -326,7 +327,7 @@ class VerificationTest extends TestCase
         app(RequestVerification::class)->handle($screen);
         app(RequestVerification::class)->handle($code);
 
-        $this->assertSame(['pages' => [['path' => '/teams', 'screen' => 'Teams', 'widths' => []]], 'signed_in' => true], $screen->verifications()->sole()->screens);
+        $this->assertSame(['pages' => [['path' => '/teams', 'screen' => 'Teams', 'widths' => []]], 'signed_in' => true, 'shots' => []], $screen->verifications()->sole()->screens);
         // A change with no screen is not measured, and the measuring is never one of the checks.
         $this->assertNull($code->verifications()->sole()->screens);
         $this->assertSame(1, collect($this->driver->executed)->where('command', $measure)->count());
@@ -336,7 +337,7 @@ class VerificationTest extends TestCase
     public function test_screens_are_not_measured_when_the_checks_fail_or_the_tool_cannot_run()
     {
         $measure = ['sh', '-c', 'measure the screens'];
-        config(['builder.verification.screens' => ['enabled' => true, 'command' => $measure, 'timeout' => 600, 'report' => 'screens.json']]);
+        config(['builder.verification.screens' => ['enabled' => true, 'command' => $measure, 'timeout' => 600, 'report' => 'screens.json', 'shots_disk' => 'local', 'shots_max' => 3]]);
         $patch = "diff --git a/resources/js/pages/Teams.vue b/resources/js/pages/Teams.vue\n+++ b/resources/js/pages/Teams.vue\n@@ -1 +1,2 @@\n+<p>Teams</p>";
         $failing = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
         $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(exitCode: $command === ['pint', '--test'] ? 1 : 0, output: 'ok', errorOutput: '', durationMs: 5);
@@ -354,5 +355,56 @@ class VerificationTest extends TestCase
 
         $this->assertSame(VerificationStatus::Passed, $missing->verifications()->sole()->status);
         $this->assertNull($missing->verifications()->sole()->screens);
+    }
+
+    public function test_pictures_of_the_touched_screens_are_kept_after_the_workspace_is_gone()
+    {
+        Storage::fake('local');
+        $measure = ['sh', '-c', 'measure the screens'];
+        config(['builder.verification.screens' => ['enabled' => true, 'command' => $measure, 'timeout' => 600, 'report' => 'screens.json', 'shots_disk' => 'local', 'shots_max' => 3]]);
+        $this->driver->onExec = function (string $workspace, array $command) use ($measure) {
+            if ($command === $measure) {
+                $this->driver->files["{$workspace}:screens.json"] = json_encode(['pages' => [['path' => '/teams', 'screen' => 'teams/Index', 'widths' => [], 'shots' => [
+                    ['width' => 390, 'file' => 'storage/logs/screens/shots/1-390.jpg'],
+                    ['width' => 1280, 'file' => 'storage/logs/screens/shots/2-1280.jpg'],
+                    // Only JPEG pictures in the tool's own folder are kept.
+                    ['width' => 820, 'file' => '.env'],
+                    ['width' => 820, 'file' => 'storage/logs/screens/shots/3-820.jpg'],
+                ]]]]);
+                $this->driver->files["{$workspace}:storage/logs/screens/shots/1-390.jpg"] = "\xFF\xD8phone";
+                $this->driver->files["{$workspace}:storage/logs/screens/shots/2-1280.jpg"] = "\xFF\xD8computer";
+                $this->driver->files["{$workspace}:.env"] = "\xFF\xD8APP_KEY=secret";
+                $this->driver->files["{$workspace}:storage/logs/screens/shots/3-820.jpg"] = '<html>not a picture</html>';
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        $featureRequest = FeatureRequest::factory()->generated()->create(['patch' => implode("\n", [
+            'diff --git a/resources/js/pages/teams/Index.vue b/resources/js/pages/teams/Index.vue',
+            '+++ b/resources/js/pages/teams/Index.vue',
+            '@@ -1 +1,2 @@',
+            '+<p>Teams</p>',
+            'diff --git a/resources/js/components/Old.vue b/resources/js/components/Old.vue',
+            'deleted file mode 100644',
+        ])]);
+
+        app(RequestVerification::class)->handle($featureRequest);
+
+        $verification = $featureRequest->verifications()->sole();
+        // The check is told which screens to take pictures of.
+        $this->assertContains(['SCREEN_CHECK_SHOOT' => 'teams/Index'], $this->driver->environments);
+        $this->assertSame([
+            ['screen' => 'teams/Index', 'width' => 390, 'path' => "screen-shots/{$verification->id}/1-390.jpg"],
+            ['screen' => 'teams/Index', 'width' => 1280, 'path' => "screen-shots/{$verification->id}/2-1280.jpg"],
+        ], $verification->screens['shots']);
+        Storage::disk('local')->assertExists("screen-shots/{$verification->id}/2-1280.jpg");
+        $this->assertSame(["screen-shots/{$verification->id}/1-390.jpg", "screen-shots/{$verification->id}/2-1280.jpg"], Storage::disk('local')->allFiles("screen-shots/{$verification->id}"));
+
+        $this->actingAs($featureRequest->project->owner)
+            ->get(route('verifications.shots.show', [$verification, 1]))
+            ->assertOk()
+            ->assertHeader('Content-Security-Policy', "default-src 'none'");
+        $this->actingAs($featureRequest->project->owner)->get(route('verifications.shots.show', [$verification, 5]))->assertNotFound();
+        $this->actingAs(User::factory()->create())->get(route('verifications.shots.show', [$verification, 0]))->assertForbidden();
     }
 }

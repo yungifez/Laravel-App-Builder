@@ -24,7 +24,7 @@ class DescribeProof
      * Only facts the checks recorded, never a promise: nothing is said
      * until the checks pass, and gaps are said as plainly as passes.
      *
-     * @return list<array{kind: string, text: string}>
+     * @return list<array{kind: string, text: string, pictures?: list<array{url: string, label: string}>}>
      */
     public function handle(FeatureRequest $featureRequest): array
     {
@@ -158,7 +158,7 @@ class DescribeProof
      * broken, when the screen check measured them. Words too faint to read
      * and controls that hide keyboard focus are named as gaps.
      *
-     * @return list<array{kind: string, text: string}>
+     * @return list<array{kind: string, text: string, pictures?: list<array{url: string, label: string}>}>
      */
     protected function screens(FeatureRequest $featureRequest, Verification $verification): array
     {
@@ -169,7 +169,11 @@ class DescribeProof
         }
 
         $faint = ScreenCheck::faint($verification->screens, $featureRequest->patch);
-        $lines = [['kind' => 'passed', 'text' => trans_choice('The screen it changed was opened on a phone, a tablet and a computer. Nothing was cut off, too small to tap or broken.|The :count screens it changed were opened on a phone, a tablet and a computer. Nothing was cut off, too small to tap or broken.', count($changed))]];
+        $lines = [[
+            'kind' => 'passed',
+            'text' => trans_choice('The screen it changed was opened on a phone, a tablet and a computer. Nothing was cut off, too small to tap or broken.|The :count screens it changed were opened on a phone, a tablet and a computer. Nothing was cut off, too small to tap or broken.', count($changed)),
+            'pictures' => $this->screenPictures($verification),
+        ]];
 
         if ($faint !== []) {
             $lines[] = ['kind' => 'gap', 'text' => trans_choice('Some words on it are hard to read against their background: ":text".|Some words on it are hard to read against their background, such as ":text".', count($faint), ['text' => $faint[0]['text']])];
@@ -182,6 +186,30 @@ class DescribeProof
         }
 
         return $lines;
+    }
+
+    /**
+     * Get the pictures of the first changed screen the check took, narrowest
+     * first, named for the device each width stands for.
+     *
+     * @return list<array{url: string, label: string}>
+     */
+    protected function screenPictures(Verification $verification): array
+    {
+        $shots = collect($verification->screens['shots'] ?? [])->map(fn (array $shot, int $index) => [...$shot, 'index' => $index]);
+        $first = $shots->first();
+
+        if ($first === null) {
+            return [];
+        }
+
+        $labels = [(string) __('Phone'), (string) __('Tablet'), (string) __('Computer')];
+
+        return array_values($shots->where('screen', $first['screen'])->sortBy('width')->values()
+            ->map(fn (array $shot, int $position) => [
+                'url' => route('verifications.shots.show', [$verification, $shot['index']]),
+                'label' => $labels[min($position, 2)],
+            ])->all());
     }
 
     /**
