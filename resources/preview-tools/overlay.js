@@ -1362,7 +1362,14 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             const element = outlined[message.index];
 
             if (element?.isConnected) {
-                element.scrollIntoView({ block: 'nearest' });
+                const rect = element.getBoundingClientRect();
+
+                // A part out of sight comes to the middle, with room for its
+                // handles.
+                if (rect.top < 0 || rect.bottom > window.innerHeight) {
+                    element.scrollIntoView({ block: 'center' });
+                }
+
                 choose(element, true);
             }
         }

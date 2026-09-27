@@ -1409,7 +1409,7 @@ function sendOnEnter(event: KeyboardEvent): void {
             </div>
             <DesignPanel
                 v-if="designing && pane === 'app'"
-                class="max-h-[45svh] shrink-0 rounded-lg border lg:hidden"
+                class="h-[45svh] shrink-0 rounded-lg border lg:hidden"
                 :project-id="project.id"
                 :preview="preview"
                 :edits="edits"
