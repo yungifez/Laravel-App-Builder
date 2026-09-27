@@ -334,6 +334,9 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         width: Math.round(element.getBoundingClientRect().width),
         height: Math.round(element.getBoundingClientRect().height),
         words: plainWords(element),
+        // Where the link goes as the app draws it, even when the app works
+        // the address out, so the owner can go there.
+        href: element.closest('a[href]')?.href ?? null,
         // The parts it sits in, nearest first, so the owner sees where it
         // is and can pick one.
         trail: (() => {
@@ -1311,6 +1314,17 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         }
 
         const message = event.data;
+
+        // Go to another page of the app, as following a link would.
+        if (message.type === 'go' && typeof message.href === 'string') {
+            const to = new URL(message.href, location.href);
+
+            if (to.origin === location.origin) {
+                location.assign(to.href);
+            }
+
+            return;
+        }
 
         // Words typed in the builder's panel, or put back by undo and redo,
         // show at once. Only parts that hold nothing but words change.

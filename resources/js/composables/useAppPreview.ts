@@ -1106,6 +1106,53 @@ export function useAppPreview(source: Source) {
         );
     }
 
+    // An address as the owner reads it: a page of the app by its path,
+    // any other site in full.
+    function addressOf(href: string): string {
+        const preview = source.preview();
+
+        try {
+            const to = new URL(href);
+
+            return preview !== null &&
+                to.origin === new URL(preview.origin).origin
+                ? to.pathname + to.search + to.hash
+                : to.href;
+        } catch {
+            return href;
+        }
+    }
+
+    // Go where a link goes. A page of the app opens in the preview, still
+    // designing; any other site opens in a new tab, as it would for a
+    // visitor.
+    function follow(href: string): void {
+        const preview = source.preview();
+
+        if (preview === null || href.trim() === '') {
+            return;
+        }
+
+        let to: URL;
+
+        try {
+            to = new URL(href.trim(), preview.origin + framePath.value);
+        } catch {
+            return;
+        }
+
+        if (to.protocol !== 'http:' && to.protocol !== 'https:') {
+            return;
+        }
+
+        if (to.origin === new URL(preview.origin).origin) {
+            post({ type: 'go', href: to.href });
+            deselect();
+        } else {
+            window.open(to.href, '_blank', 'noopener');
+        }
+    }
+
     // Whether an edit is undone, counting undo and redo the server has not
     // done yet.
     function isUndone(edit: VisualEditSummary): boolean {
@@ -1417,6 +1464,8 @@ export function useAppPreview(source: Source) {
         showSpacing,
         reword,
         relink,
+        follow,
+        addressOf,
         press,
         hide,
         undoable,

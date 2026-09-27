@@ -21,6 +21,7 @@ import {
     ArrowDown,
     ArrowRight,
     ArrowRightToLine,
+    ArrowUpRight,
     Baseline,
     Columns3,
     EyeOff,
@@ -106,6 +107,14 @@ watch(
 function keepAddress(): void {
     props.state.relink(address.value);
 }
+
+// Where "Go there" goes: the address being typed for a link the owner can
+// change, or else where the app sends the link now.
+const destination = computed(() =>
+    props.state.element?.link?.href != null
+        ? address.value.trim()
+        : (props.state.selected?.href ?? ''),
+);
 // Whether the owner is reading what making the page consistent does.
 const tidying = ref(false);
 const element = computed(() => props.state.element);
@@ -674,13 +683,29 @@ const recent = computed(() => {
                             </section>
 
                             <section
-                                v-if="element.link"
+                                v-if="element.link || state.selected?.href"
                                 class="space-y-2"
                                 data-test="link"
                             >
-                                <h3 class="text-xs font-medium">Goes to</h3>
+                                <div
+                                    class="flex items-center justify-between gap-2"
+                                >
+                                    <h3 class="text-xs font-medium">Goes to</h3>
+                                    <Button
+                                        v-if="destination"
+                                        variant="ghost"
+                                        size="sm"
+                                        class="-my-2 h-11 gap-1 px-2 text-xs sm:-my-1 sm:h-7"
+                                        :title="`Go to ${state.addressOf(destination)}`"
+                                        data-test="link-follow"
+                                        @click="state.follow(destination)"
+                                    >
+                                        Go there
+                                        <ArrowUpRight class="size-3.5" />
+                                    </Button>
+                                </div>
                                 <input
-                                    v-if="element.link.href !== null"
+                                    v-if="element.link?.href != null"
                                     id="property-link"
                                     v-model="address"
                                     type="text"
@@ -694,13 +719,37 @@ const recent = computed(() => {
                                     @blur="keepAddress"
                                     @keydown.enter.prevent="keepAddress"
                                     @keydown.escape="
-                                        address = element.link.href ?? ''
+                                        address = element.link?.href ?? ''
                                     "
                                 />
-                                <p v-else class="text-xs text-muted-foreground">
-                                    Your app decides where this link goes. Ask
-                                    me to change it.
-                                </p>
+                                <template v-else>
+                                    <p
+                                        v-if="state.selected?.href"
+                                        class="truncate text-sm"
+                                        data-test="link-shown"
+                                    >
+                                        {{
+                                            state.addressOf(state.selected.href)
+                                        }}
+                                    </p>
+                                    <p
+                                        v-if="
+                                            element.link ||
+                                            state.selected?.tag === 'a'
+                                        "
+                                        class="text-xs text-muted-foreground"
+                                    >
+                                        Your app decides where this link goes.
+                                        Ask me to change it.
+                                    </p>
+                                    <p
+                                        v-else
+                                        class="text-xs text-muted-foreground"
+                                    >
+                                        This sits in a link. Pick the link to
+                                        change where it goes.
+                                    </p>
+                                </template>
                             </section>
 
                             <section class="space-y-2">
@@ -995,21 +1044,26 @@ const recent = computed(() => {
                                         property="border"
                                     />
                                 </div>
-                                <Swatches
-                                    v-if="
+                                <Reveal
+                                    :open="
                                         Number(state.valueOf('border') ?? 0) >
                                             0 ||
                                         state.valueOf('border_color') != null
                                     "
-                                    label="Colour"
-                                    name="Border colour"
-                                    kind="color"
-                                    :colors="state.theme"
-                                    :value="state.valueOf('border_color')"
-                                    :own="state.selected?.colors?.border_color"
-                                    :options="options('border_color')"
-                                    @change="set('border_color', $event)"
-                                />
+                                >
+                                    <Swatches
+                                        label="Colour"
+                                        name="Border colour"
+                                        kind="color"
+                                        :colors="state.theme"
+                                        :value="state.valueOf('border_color')"
+                                        :own="
+                                            state.selected?.colors?.border_color
+                                        "
+                                        :options="options('border_color')"
+                                        @change="set('border_color', $event)"
+                                    />
+                                </Reveal>
                             </section>
                         </div>
 
