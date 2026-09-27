@@ -1,21 +1,11 @@
 <script setup lang="ts">
 import { Form, Head, Link } from '@inertiajs/vue3';
-import { ShieldCheck } from '@lucide/vue';
+import { ArrowUp, Search, ShieldCheck } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import NewProjectController from '@/actions/App/Http/Controllers/NewProjectController';
-import ProjectController from '@/actions/App/Http/Controllers/ProjectController';
+import BringInApp from '@/components/BringInApp.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { when } from '@/lib/when';
 import { index, show } from '@/routes/projects';
 import type { DesignOption, ProjectListItem } from '@/types';
@@ -45,355 +35,262 @@ const shown = computed(() => {
           );
 });
 
-const textarea =
-    'w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30';
+// Ctrl or Cmd and Enter starts the app, as in the chat.
+function submitOnShortcut(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        (event.target as HTMLElement).closest('form')?.requestSubmit();
+    }
+}
 </script>
 
 <template>
     <Head title="Your apps" />
 
-    <div class="flex h-full flex-1 flex-col gap-6 p-4">
-        <header class="flex flex-wrap items-center justify-between gap-3">
-            <h1 class="text-xl font-semibold tracking-tight">Your apps</h1>
-
-            <div class="flex flex-wrap gap-2">
-                <Dialog>
-                    <DialogTrigger as-child>
-                        <Button
-                            variant="outline"
-                            class="h-11 select-none sm:h-9"
-                            data-test="bring-in-open"
-                        >
-                            Bring in an app you have
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Bring in an app you have</DialogTitle>
-                            <DialogDescription>
-                                I make my own copy. Your app stays as it is
-                                until you keep a change.
-                            </DialogDescription>
-                        </DialogHeader>
-
-                        <Form
-                            v-bind="ProjectController.store.form()"
-                            class="space-y-6"
-                            v-slot="{ errors, processing }"
-                        >
-                            <div class="grid gap-2">
-                                <Label for="name">Name</Label>
-                                <Input
-                                    id="name"
-                                    name="name"
-                                    required
-                                    placeholder="Acme"
-                                />
-                                <InputError :message="errors.name" />
-                            </div>
-
-                            <div class="grid gap-2">
-                                <Label for="source_path">Where it is</Label>
-                                <Input
-                                    id="source_path"
-                                    name="source_path"
-                                    required
-                                    placeholder="/srv/acme"
-                                    class="font-mono"
-                                />
-                                <InputError :message="errors.source_path" />
-                            </div>
-
-                            <Button
-                                :disabled="processing"
-                                class="h-11 w-full select-none sm:h-9 sm:w-auto"
-                                data-test="create-project-button"
-                            >
-                                Bring it in
-                            </Button>
-                        </Form>
-                    </DialogContent>
-                </Dialog>
-
-                <Dialog v-if="canStartNew">
-                    <DialogTrigger as-child>
-                        <Button
-                            class="h-11 select-none sm:h-9"
-                            data-test="start-new-open"
-                        >
-                            Start a new app
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Start a new app</DialogTitle>
-                            <DialogDescription>
-                                I set up a working app to start from. Then you
-                                tell me what to change.
-                            </DialogDescription>
-                        </DialogHeader>
-
-                        <Form
-                            v-bind="NewProjectController.store.form()"
-                            class="space-y-6"
-                            data-test="start-new"
-                            v-slot="{ errors, processing }"
-                        >
-                            <div class="grid gap-2">
-                                <Label for="new-name">Name</Label>
-                                <Input
-                                    id="new-name"
-                                    name="name"
-                                    required
-                                    placeholder="Bright Cleaning"
-                                />
-                                <InputError :message="errors.name" />
-                            </div>
-
-                            <div class="grid gap-2">
-                                <Label for="purpose"
-                                    >What is your app for?</Label
-                                >
-                                <textarea
-                                    id="purpose"
-                                    name="purpose"
-                                    rows="3"
-                                    required
-                                    placeholder="My cleaners see their jobs for the day, and customers book a clean online."
-                                    :class="textarea"
-                                />
-                                <InputError :message="errors.purpose" />
-                            </div>
-
-                            <fieldset
-                                v-if="designs.length > 0"
-                                class="grid gap-2"
-                                data-test="looks"
-                            >
-                                <legend class="mb-2 text-sm font-medium">
-                                    Pick a look
-                                </legend>
-                                <div class="grid grid-cols-2 gap-3">
-                                    <label
-                                        v-for="(design, i) in designs"
-                                        :key="design.key"
-                                        class="group cursor-pointer rounded-lg border border-border p-2 has-checked:border-primary has-checked:ring-2 has-checked:ring-ring/50 has-focus-visible:ring-2 has-focus-visible:ring-ring/50"
-                                        :data-test="`look-${design.key}`"
-                                    >
-                                        <input
-                                            type="radio"
-                                            name="design"
-                                            :value="design.key"
-                                            :checked="i === 0"
-                                            class="sr-only"
-                                        />
-                                        <span
-                                            aria-hidden="true"
-                                            class="flex h-16 flex-col justify-between border p-2"
-                                            :style="{
-                                                background:
-                                                    design.colors.background,
-                                                borderColor:
-                                                    design.colors.border,
-                                                borderRadius: design.radius,
-                                                fontFamily: `'${design.font}', sans-serif`,
-                                            }"
-                                        >
-                                            <span
-                                                class="text-xs font-semibold"
-                                                :style="{
-                                                    color: design.colors
-                                                        .foreground,
-                                                }"
-                                                >Aa</span
-                                            >
-                                            <span
-                                                class="flex items-center gap-1"
-                                            >
-                                                <span
-                                                    class="h-3 w-8"
-                                                    :style="{
-                                                        background:
-                                                            design.colors
-                                                                .primary,
-                                                        borderRadius: `calc(${design.radius} - 2px)`,
-                                                    }"
-                                                />
-                                                <span
-                                                    class="h-3 w-5"
-                                                    :style="{
-                                                        background:
-                                                            design.colors
-                                                                .accent,
-                                                        borderRadius: `calc(${design.radius} - 2px)`,
-                                                    }"
-                                                />
-                                            </span>
-                                        </span>
-                                        <span
-                                            class="mt-2 block text-sm font-medium"
-                                            >{{ design.name }}</span
-                                        >
-                                        <span
-                                            class="block text-xs text-muted-foreground"
-                                            >{{ design.description }}</span
-                                        >
-                                    </label>
-                                </div>
-                                <InputError :message="errors.design" />
-                            </fieldset>
-
-                            <Button
-                                :disabled="processing"
-                                class="h-11 w-full select-none sm:h-9 sm:w-auto"
-                                data-test="start-project-button"
-                            >
-                                Start my app
-                            </Button>
-                        </Form>
-                    </DialogContent>
-                </Dialog>
-            </div>
-        </header>
-
-        <p
-            v-if="projects.length === 0"
-            class="text-sm text-muted-foreground"
-            data-test="no-apps"
+    <div class="flex h-full flex-1 flex-col">
+        <!-- Making a new app comes first: say what it is for, and go. -->
+        <section
+            v-if="canStartNew"
+            class="mx-auto w-full max-w-2xl px-4 pt-12 pb-10 sm:pt-20 sm:pb-14"
         >
-            You have no apps yet. Start a new one, or bring in one you already
-            have.
-        </p>
-
-        <template v-else>
-            <Input
-                v-if="searchable"
-                v-model="query"
-                type="search"
-                aria-label="Find an app"
-                placeholder="Find an app"
-                class="h-11 max-w-sm sm:h-9"
-                data-test="apps-filter"
-            />
-            <p
-                v-if="shown.length === 0"
-                class="text-sm text-muted-foreground"
-                data-test="apps-none-found"
+            <h1
+                class="text-center text-3xl font-semibold tracking-tight text-balance sm:text-4xl"
             >
-                No app is called that.
+                What do you want to make?
+            </h1>
+            <p class="mt-3 text-center text-balance text-muted-foreground">
+                Say it in a sentence or two. I set up a working app, then you
+                shape it.
             </p>
 
-            <!-- A table where there is width to compare apps side by side;
-                 the same rows read as a list on a phone. -->
-            <table
-                v-if="shown.length > 0"
-                class="hidden w-full text-sm md:table"
-                data-test="apps-table"
+            <Form
+                v-bind="NewProjectController.store.form()"
+                class="mt-8"
+                data-test="start-new"
+                v-slot="{ errors, processing }"
             >
-                <thead>
-                    <tr
-                        class="border-b text-left text-xs text-muted-foreground"
+                <div
+                    class="rounded-2xl border bg-card shadow-sm transition-shadow focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30"
+                >
+                    <label for="purpose" class="sr-only"
+                        >What is your app for?</label
                     >
-                        <th class="py-2 pr-4 font-normal">App</th>
-                        <th class="py-2 pr-4 font-normal">Live</th>
-                        <th class="py-2 pr-4 font-normal">Last change kept</th>
-                        <th class="py-2 pr-4 font-normal">Checked by</th>
-                        <th class="py-2 text-right font-normal">
-                            Waiting for you
-                        </th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y">
-                    <tr
-                        v-for="project in shown"
-                        :key="project.id"
-                        class="relative hover:bg-muted/50"
-                    >
-                        <td class="py-3 pr-4 font-medium">
-                            <!-- The name's link covers the whole row. -->
-                            <Link
-                                :href="show(project.id)"
-                                class="select-none after:absolute after:inset-0"
-                            >
-                                {{ project.name }}
-                            </Link>
-                        </td>
-                        <td class="py-3 pr-4">
-                            <span v-if="project.published_at"
-                                >Since {{ when(project.published_at) }}</span
-                            >
-                            <span v-else class="text-muted-foreground"
-                                >Not yet</span
-                            >
-                        </td>
-                        <td class="py-3 pr-4">
-                            <span
-                                v-if="project.changed_at"
-                                class="inline-block first-letter:uppercase"
-                                >{{ when(project.changed_at) }}</span
-                            >
-                            <span v-else class="text-muted-foreground"
-                                >None yet</span
-                            >
-                        </td>
-                        <td class="py-3 pr-4 tabular-nums">
-                            <span
-                                v-if="project.tests"
-                                class="flex items-center gap-1.5 whitespace-nowrap"
-                                data-test="app-tests"
-                            >
-                                <ShieldCheck class="size-3.5 text-green-600" />
-                                {{ project.tests }}
-                                {{ project.tests === 1 ? 'test' : 'tests' }}
-                            </span>
-                            <span v-else class="text-muted-foreground"
-                                >Not yet</span
-                            >
-                        </td>
-                        <td class="py-3 text-right tabular-nums">
-                            <span v-if="project.waiting > 0" class="font-medium"
-                                >{{ project.waiting }} to look at</span
-                            >
-                            <span v-else class="text-muted-foreground">—</span>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+                    <textarea
+                        id="purpose"
+                        name="purpose"
+                        rows="3"
+                        required
+                        placeholder="My cleaners see their jobs for the day, and customers book a clean online."
+                        class="block w-full resize-none bg-transparent px-5 pt-4 pb-2 text-base outline-none placeholder:text-muted-foreground"
+                        @keydown="submitOnShortcut"
+                    />
+                    <div class="flex flex-wrap items-center gap-2 px-3 pb-3">
+                        <label for="new-name" class="sr-only">Name</label>
+                        <input
+                            id="new-name"
+                            name="name"
+                            required
+                            autocomplete="off"
+                            placeholder="Name it"
+                            class="h-11 w-full rounded-lg bg-muted px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-9 sm:w-36"
+                        />
 
-            <ul
-                v-if="shown.length > 0"
-                class="divide-y border-y md:hidden"
-                data-test="apps-list"
-            >
-                <li v-for="project in shown" :key="project.id">
-                    <Link
-                        :href="show(project.id)"
-                        class="flex min-h-11 items-center justify-between gap-4 py-3 select-none"
-                    >
-                        <span class="min-w-0">
-                            <span class="block font-medium break-words">{{
-                                project.name
-                            }}</span>
-                            <span class="block text-sm text-muted-foreground">
-                                <template v-if="project.published_at"
-                                    >Live since
-                                    {{ when(project.published_at) }}</template
-                                >
-                                <template v-else>Not live yet</template>
-                                <template v-if="project.tests">
-                                    · Checked by {{ project.tests }}
-                                    {{ project.tests === 1 ? 'test' : 'tests' }}
-                                </template>
-                            </span>
-                        </span>
-                        <span
-                            v-if="project.waiting > 0"
-                            class="shrink-0 text-sm font-medium tabular-nums"
-                            >{{ project.waiting }} to look at</span
+                        <fieldset
+                            v-if="designs.length > 0"
+                            class="flex flex-wrap items-center gap-1"
+                            data-test="looks"
                         >
-                    </Link>
-                </li>
-            </ul>
-        </template>
+                            <legend class="sr-only">Pick a look</legend>
+                            <label
+                                v-for="(design, i) in designs"
+                                :key="design.key"
+                                :title="design.description"
+                                class="flex h-11 cursor-pointer items-center gap-2 rounded-lg px-2.5 text-sm text-muted-foreground select-none hover:text-foreground has-checked:bg-muted has-checked:text-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/50 sm:h-9"
+                                :data-test="`look-${design.key}`"
+                            >
+                                <input
+                                    type="radio"
+                                    name="design"
+                                    :value="design.key"
+                                    :checked="i === 0"
+                                    class="sr-only"
+                                />
+                                <span
+                                    aria-hidden="true"
+                                    class="size-4 shrink-0 rounded-full border"
+                                    :style="{
+                                        background: `linear-gradient(135deg, ${design.colors.background} 50%, ${design.colors.primary} 50%)`,
+                                        borderColor: design.colors.border,
+                                    }"
+                                />
+                                {{ design.name }}
+                            </label>
+                        </fieldset>
+
+                        <Button
+                            size="icon"
+                            :disabled="processing"
+                            class="ml-auto size-11 shrink-0 rounded-full select-none sm:size-9"
+                            aria-label="Start my app"
+                            title="Start my app"
+                            data-test="start-project-button"
+                        >
+                            <ArrowUp class="size-4" />
+                        </Button>
+                    </div>
+                </div>
+                <InputError class="mt-2" :message="errors.purpose" />
+                <InputError class="mt-2" :message="errors.name" />
+                <InputError class="mt-2" :message="errors.design" />
+            </Form>
+
+            <p class="mt-5 text-center text-sm text-muted-foreground">
+                Or
+                <BringInApp>
+                    <button
+                        type="button"
+                        class="min-h-11 font-medium text-foreground underline-offset-4 select-none hover:underline sm:min-h-0"
+                        data-test="bring-in-open"
+                    >
+                        bring in an app you have
+                    </button>
+                </BringInApp>
+            </p>
+        </section>
+
+        <header
+            v-else
+            class="flex flex-wrap items-center justify-between gap-3 p-4"
+        >
+            <h1 class="text-xl font-semibold tracking-tight">Your apps</h1>
+            <BringInApp>
+                <Button
+                    variant="outline"
+                    class="h-11 select-none sm:h-9"
+                    data-test="bring-in-open"
+                >
+                    Bring in an app you have
+                </Button>
+            </BringInApp>
+        </header>
+
+        <section class="mx-auto w-full max-w-5xl px-4 pb-16">
+            <p
+                v-if="projects.length === 0"
+                class="text-center text-sm text-muted-foreground"
+                data-test="no-apps"
+            >
+                Your apps will show here.
+            </p>
+
+            <template v-else>
+                <div
+                    class="flex min-h-11 items-center justify-between gap-3 pb-3"
+                >
+                    <h2
+                        v-if="canStartNew"
+                        class="text-sm font-medium text-muted-foreground"
+                    >
+                        Your apps
+                    </h2>
+                    <label v-if="searchable" class="relative ml-auto">
+                        <Search
+                            class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+                        />
+                        <input
+                            v-model="query"
+                            type="search"
+                            aria-label="Find an app"
+                            placeholder="Find an app"
+                            class="h-11 w-52 rounded-lg bg-muted pr-3 pl-8 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-9"
+                            data-test="apps-filter"
+                        />
+                    </label>
+                </div>
+
+                <p
+                    v-if="shown.length === 0"
+                    class="text-sm text-muted-foreground"
+                    data-test="apps-none-found"
+                >
+                    No app is called that.
+                </p>
+
+                <ul
+                    v-else
+                    class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+                    data-test="apps-grid"
+                >
+                    <li v-for="project in shown" :key="project.id">
+                        <Link
+                            :href="show(project.id)"
+                            class="group flex h-full flex-col gap-4 rounded-xl border bg-card p-4 transition-colors select-none hover:border-foreground/20 hover:bg-muted/40"
+                            :data-test="`app-${project.id}`"
+                        >
+                            <span class="flex items-center gap-3">
+                                <span
+                                    aria-hidden="true"
+                                    class="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-sm font-semibold uppercase"
+                                    >{{ project.name.charAt(0) }}</span
+                                >
+                                <span class="min-w-0">
+                                    <span class="block truncate font-medium">{{
+                                        project.name
+                                    }}</span>
+                                    <span
+                                        class="flex items-center gap-1.5 text-xs text-muted-foreground"
+                                    >
+                                        <span
+                                            aria-hidden="true"
+                                            :class="[
+                                                'size-1.5 rounded-full',
+                                                project.published_at
+                                                    ? 'bg-green-500'
+                                                    : 'bg-muted-foreground/40',
+                                            ]"
+                                        />
+                                        <template v-if="project.published_at"
+                                            >Live since
+                                            {{
+                                                when(project.published_at)
+                                            }}</template
+                                        >
+                                        <template v-else>Not live yet</template>
+                                    </span>
+                                </span>
+                            </span>
+
+                            <span
+                                class="mt-auto flex items-center justify-between gap-3 text-xs text-muted-foreground tabular-nums"
+                            >
+                                <span
+                                    v-if="project.tests"
+                                    class="flex items-center gap-1.5"
+                                    data-test="app-tests"
+                                >
+                                    <ShieldCheck
+                                        class="size-3.5 text-green-600"
+                                    />
+                                    {{ project.tests }}
+                                    {{ project.tests === 1 ? 'test' : 'tests' }}
+                                </span>
+                                <span
+                                    v-else-if="project.changed_at"
+                                    class="first-letter:uppercase"
+                                    >Changed
+                                    {{ when(project.changed_at) }}</span
+                                >
+                                <span v-else>No changes yet</span>
+                                <span
+                                    v-if="project.waiting > 0"
+                                    class="rounded-full bg-primary/15 px-2 py-0.5 font-medium text-foreground"
+                                    >{{ project.waiting }} to look at</span
+                                >
+                            </span>
+                        </Link>
+                    </li>
+                </ul>
+            </template>
+        </section>
     </div>
 </template>
