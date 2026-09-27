@@ -1388,18 +1388,27 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             send({ type: 'outline', parts: outline() });
         }
 
+        // The part the selected one sits in, so many steps out.
+        const outFromSelected = (steps) => {
+            let element = selected;
+
+            for (let step = 0; element && step < steps; step++) {
+                element = located(element.parentElement);
+            }
+
+            return element;
+        };
+
         if (message.type === 'glance') {
-            const element = outlined[message.index];
+            const element = Number.isInteger(message.up)
+                ? outFromSelected(message.up)
+                : outlined[message.index];
 
             placeHover(element?.isConnected ? element : null);
         }
 
         if (message.type === 'pick' && Number.isInteger(message.up)) {
-            let element = selected;
-
-            for (let step = 0; element && step < message.up; step++) {
-                element = located(element.parentElement);
-            }
+            const element = outFromSelected(message.up);
 
             if (element) {
                 choose(element, true);

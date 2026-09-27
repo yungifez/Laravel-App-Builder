@@ -526,6 +526,10 @@ const recent = computed(() => {
                                             ? `${step.kind}: ${step.words}`
                                             : step.kind
                                     "
+                                    @mouseenter="state.glanceUp(step.up)"
+                                    @focus="state.glanceUp(step.up)"
+                                    @mouseleave="state.glanceUp(null)"
+                                    @blur="state.glanceUp(null)"
                                     @click="state.pickUp(step.up)"
                                 >
                                     {{ step.kind }}

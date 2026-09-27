@@ -635,6 +635,11 @@ export function useAppPreview(source: Source) {
         post({ type: 'glance', index });
     }
 
+    // Point at a part the selected one sits in, so many steps out.
+    function glanceUp(steps: number | null): void {
+        post({ type: 'glance', up: steps });
+    }
+
     // Select a part from the parts list.
     function pickPart(index: number): void {
         post({ type: 'pick', index });
@@ -1364,6 +1369,7 @@ export function useAppPreview(source: Source) {
         pickNear,
         parts,
         glance,
+        glanceUp,
         pickPart,
         pickUp,
         neighbours,
