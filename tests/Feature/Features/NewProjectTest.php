@@ -3,6 +3,7 @@
 namespace Tests\Feature\Features;
 
 use App\Context\ProjectNotes;
+use App\Jobs\ExecuteRun;
 use App\Models\User;
 use App\Projects\DesignDirection;
 use App\Projects\ProjectRepository;
@@ -18,9 +19,16 @@ class NewProjectTest extends TestCase
     use PreparesRuns;
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Building the first version is a queued run; these tests stop there.
+        Queue::fake();
+    }
+
     public function test_an_owner_starts_a_new_app_from_the_template_with_one_answer()
     {
-        Queue::fake();
         config(['builder.projects.template' => $this->makeProjectSource($this->laravelApp())]);
         $owner = User::factory()->create(['name' => 'Ada Owner']);
 
@@ -30,9 +38,14 @@ class NewProjectTest extends TestCase
         ]);
 
         $project = $owner->projects()->sole();
-        $response->assertRedirect(route('projects.show', $project));
         $this->assertNull($project->notes_draft_status);
-        Queue::assertNothingPushed();
+
+        // The owner's sentence is the first change, and they are taken to it.
+        $first = $project->featureRequests()->sole();
+        $this->assertSame('Make the first version: Cleaners see their jobs for the day, and customers book a clean online.', $first->prompt);
+        $this->assertTrue($first->user->is($owner));
+        $response->assertRedirect(route('projects.show', ['project' => $project, 'change' => $first->id]));
+        Queue::assertPushed(ExecuteRun::class);
 
         $repository = app(ProjectRepository::class);
         $this->assertSame(['Import Bright Cleaning'], array_column($repository->log($project), 'subject'));
@@ -43,6 +56,22 @@ class NewProjectTest extends TestCase
         );
         $this->assertNotContains('.builder/project.md', $repository->files($project, $repository->head($project)));
         $this->assertFileExists($repository->path($project).'/app/Models/Team.php');
+    }
+
+    public function test_the_first_version_can_be_left_to_the_owner()
+    {
+        config([
+            'builder.projects.template' => $this->makeProjectSource($this->laravelApp()),
+            'builder.projects.first_version' => false,
+        ]);
+        $owner = User::factory()->create();
+
+        $response = $this->actingAs($owner)->post(route('projects.new.store'), ['name' => 'Acme', 'purpose' => 'Plan the week.']);
+
+        $project = $owner->projects()->sole();
+        $response->assertRedirect(route('projects.show', $project));
+        $this->assertSame(0, $project->featureRequests()->count());
+        Queue::assertNothingPushed();
     }
 
     public function test_the_answer_replaces_what_the_template_says_the_app_is_for()

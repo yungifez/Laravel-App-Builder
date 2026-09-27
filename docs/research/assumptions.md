@@ -228,3 +228,12 @@ them and correct any that are wrong.
   "Some packages your app uses have known security problems. Ask me to
   update them." The result is not listed among the checks.
   `BUILDER_SECURITY_AUDIT=false` turns it off.
+- **A new app builds its first version at once.** You approved this cost
+  on 2026-09-27. The owner's sentence becomes the first change: "Make the
+  first version: …". It goes through the normal plan, build, checks, review
+  and keep steps, so nothing is kept without the owner. Each new app spends
+  model calls when it is made. The owner goes straight to that change's
+  conversation instead of the template's welcome page.
+  `BUILDER_FIRST_VERSION=false` turns it off. The new-app page also shows
+  three example sentences to start from, and "Open my app" now shows that
+  it is opening.

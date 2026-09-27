@@ -763,8 +763,14 @@ function sendOnEnter(event: KeyboardEvent): void {
                     :disabled="processing"
                     class="h-9 select-none"
                     data-test="header-open-app"
-                    >Open my app</Button
                 >
+                    <!-- Starting takes a moment; say so at once -->
+                    <LoaderCircle
+                        v-if="processing"
+                        class="size-4 animate-spin"
+                    />
+                    {{ processing ? 'Opening…' : 'Open my app' }}
+                </Button>
             </Form>
 
             <NotificationBell />

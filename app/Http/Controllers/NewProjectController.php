@@ -20,6 +20,9 @@ class NewProjectController extends Controller
             $request->design(),
         );
 
-        return to_route('projects.show', $project);
+        // The first version is being built: open its conversation.
+        $first = $project->featureRequests()->value('id');
+
+        return to_route('projects.show', $first === null ? $project : ['project' => $project, 'change' => $first]);
     }
 }

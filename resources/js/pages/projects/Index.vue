@@ -24,6 +24,43 @@ defineOptions({
 
 // A filter helps only once the list no longer fits at a glance.
 const searchable = computed(() => props.projects.length > 6);
+
+// Ideas to start from, one tap each: the owner sees what a sentence can
+// ask for, and can still change every word before starting.
+const examples = [
+    {
+        name: 'Bright Cleaning',
+        purpose:
+            'My cleaners see their jobs for the day, and customers book a clean online.',
+    },
+    {
+        name: 'Studio Classes',
+        purpose:
+            'Members book a place in a class, and trainers see who is coming.',
+    },
+    {
+        name: 'Corner Shop',
+        purpose:
+            'Customers order for pickup, and I see what to pack each morning.',
+    },
+];
+
+const purposeField = ref<HTMLTextAreaElement | null>(null);
+const nameField = ref<HTMLInputElement | null>(null);
+
+function useExample(example: (typeof examples)[number]): void {
+    if (purposeField.value === null || nameField.value === null) {
+        return;
+    }
+
+    purposeField.value.value = example.purpose;
+
+    if (nameField.value.value.trim() === '') {
+        nameField.value.value = example.name;
+    }
+
+    purposeField.value.focus();
+}
 const query = ref('');
 const shown = computed(() => {
     const words = query.value.trim().toLowerCase();
@@ -77,6 +114,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
                     >
                     <textarea
                         id="purpose"
+                        ref="purposeField"
                         name="purpose"
                         rows="3"
                         required
@@ -88,6 +126,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
                         <label for="new-name" class="sr-only">Name</label>
                         <input
                             id="new-name"
+                            ref="nameField"
                             name="name"
                             required
                             autocomplete="off"
@@ -142,6 +181,21 @@ function submitOnShortcut(event: KeyboardEvent): void {
                 <InputError class="mt-2" :message="errors.purpose" />
                 <InputError class="mt-2" :message="errors.name" />
                 <InputError class="mt-2" :message="errors.design" />
+
+                <div
+                    class="mt-3 flex flex-wrap justify-center gap-2"
+                    data-test="examples"
+                >
+                    <button
+                        v-for="example in examples"
+                        :key="example.name"
+                        type="button"
+                        class="min-h-11 rounded-full border px-3 text-sm text-muted-foreground transition-colors duration-quick select-none hover:bg-muted hover:text-foreground sm:min-h-8"
+                        @click="useExample(example)"
+                    >
+                        {{ example.name }}
+                    </button>
+                </div>
             </Form>
 
             <p class="mt-5 text-center text-sm text-muted-foreground">

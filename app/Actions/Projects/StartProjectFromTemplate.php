@@ -3,6 +3,7 @@
 namespace App\Actions\Projects;
 
 use App\Actions\Context\UpdateProjectNotes;
+use App\Actions\Features\RequestFeature;
 use App\Context\ProjectNotes;
 use App\Models\Project;
 use App\Models\User;
@@ -17,6 +18,7 @@ class StartProjectFromTemplate
         private UpdateProjectNotes $updateProjectNotes,
         private ProjectNotes $notes,
         private ApplyDesignDirection $applyDesignDirection,
+        private RequestFeature $requestFeature,
     ) {}
 
     /**
@@ -32,7 +34,9 @@ class StartProjectFromTemplate
     /**
      * Start a new app from the configured template and write the owner's
      * one answer, what the app is for, into its notes. The look the owner
-     * picked, if any, sets the app's theme and design contract.
+     * picked, if any, sets the app's theme and design contract. That same
+     * sentence is then the app's first change, so the owner's first sight
+     * is their app, built, checked and waiting for them to keep it.
      *
      * @throws ValidationException when no template is configured or it
      *                             cannot be imported.
@@ -53,6 +57,10 @@ class StartProjectFromTemplate
             }
 
             $this->updateProjectNotes->handle($project, 'introduction', $purpose, $this->notes->version($project));
+
+            if (config('builder.projects.first_version')) {
+                $this->requestFeature->handle($project, $owner, __('Make the first version: :purpose', ['purpose' => $purpose]));
+            }
 
             return $project;
         });

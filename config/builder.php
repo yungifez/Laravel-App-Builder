@@ -49,6 +49,10 @@ return [
         // The current starter kit lives on its main branch; its tagged
         // releases are older Laravel versions.
         'template_package' => env('BUILDER_TEMPLATE_PACKAGE', 'laravel/vue-starter-kit:dev-main'),
+        // Build the first version of a new app from the owner's sentence,
+        // as its first change, so they see their app and not the template's
+        // welcome page. Each new app then spends model calls at once.
+        'first_version' => (bool) env('BUILDER_FIRST_VERSION', true),
         // The looks an owner picks from when starting a new app: one JSON
         // file each (colours, font, corner radius and feel), plus
         // contract.md, the design contract every new app starts with.
