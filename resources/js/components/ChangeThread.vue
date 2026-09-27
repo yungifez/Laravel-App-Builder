@@ -875,9 +875,15 @@ const checks = computed(() => {
                             :proof="change.proof"
                         />
 
-                        <!-- Deeper answers, for whoever wants them -->
+                        <!-- Deeper answers, for whoever wants them. A change
+                             I could not finish has none to give. -->
                         <div
-                            v-if="run?.plan && !run.plan.answer && !sides"
+                            v-if="
+                                run?.plan &&
+                                !run.plan.answer &&
+                                !sides &&
+                                !failed
+                            "
                             class="flex items-center gap-1"
                         >
                             <div
