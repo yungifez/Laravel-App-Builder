@@ -27,6 +27,9 @@ const words = computed(() =>
 );
 const value = computed(() => props.state.valueOf(props.property));
 
+// Sides set apart have no one unit, and the word needs the room.
+const mixed = computed(() => value.value === 'mixed');
+
 const shown = computed(() =>
     typeof value.value === 'number' ? String(value.value) : '',
 );
@@ -39,7 +42,7 @@ const placeholder = computed(() => {
     }
 
     if (current === 'mixed') {
-        return 'mixed';
+        return 'Mixed';
     }
 
     return (
@@ -137,7 +140,7 @@ function scrubEnd(): void {
 <template>
     <label
         class="relative flex h-11 min-w-0 items-center gap-1 rounded-md bg-muted px-2 text-sm focus-within:ring-2 focus-within:ring-ring/50 sm:h-7"
-        :title="name"
+        :title="mixed ? `${name}: different on each side` : name"
     >
         <span class="sr-only">{{ name }}</span>
         <span
@@ -162,7 +165,7 @@ function scrubEnd(): void {
             @keydown="key"
         />
         <span
-            v-if="unit"
+            v-if="unit && !mixed"
             class="shrink-0 cursor-ew-resize touch-none text-xs text-muted-foreground select-none"
             aria-hidden="true"
             @pointerdown="scrubStart"
