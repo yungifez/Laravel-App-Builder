@@ -52,8 +52,10 @@ class DescribeFeatureRequest
                     && $featureRequest->commit_sha === null
                     && $featureRequest->latestRun?->status === RunStatus::Completed,
                 'can_retry' => RetryFeatureRequest::retryable($featureRequest),
+                'can_continue' => RequestFollowUp::continuable($featureRequest),
             ],
             'parent' => $parent?->only('id', 'prompt'),
+            'earlier' => $this->earlier($featureRequest),
             'verification' => $this->latestVerification($featureRequest),
             'run' => $this->latestRun($featureRequest),
             'preview' => $this->latestPreview($featureRequest),
@@ -65,6 +67,28 @@ class DescribeFeatureRequest
                     'target_step' => $followUp->target_step,
                 ]),
         ];
+    }
+
+    /**
+     * Get the messages this change follows up on, oldest first, so the chat
+     * reads as one conversation.
+     *
+     * @return list<array{id: int, prompt: string, summary: string|null, status: string}>
+     */
+    protected function earlier(FeatureRequest $featureRequest): array
+    {
+        $earlier = [];
+
+        for ($request = $featureRequest->parent; $request !== null; $request = $request->parent) {
+            array_unshift($earlier, [
+                'id' => $request->id,
+                'prompt' => $request->prompt,
+                'summary' => $request->summary,
+                'status' => $request->status->value,
+            ]);
+        }
+
+        return $earlier;
     }
 
     /**

@@ -137,7 +137,9 @@ class AgentDriver implements ConstructionDriver
     {
         $sections = ["## Owner's request\n\n{$context->request}"];
 
-        if ($context->parentRequest !== null) {
+        if ($context->parentRequest !== null && $context->parentAnswered) {
+            $sections[] = "## This follows an earlier question\n\nEarlier question: {$context->parentRequest}\n\nThe answer given: {$context->parentSummary}";
+        } elseif ($context->parentRequest !== null) {
             $sections[] = "## This changes an earlier feature\n\nEarlier request: {$context->parentRequest}\n\nWhat was built: {$context->parentSummary}";
         }
 

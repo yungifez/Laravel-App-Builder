@@ -4,6 +4,7 @@ namespace App\Actions\Runs;
 
 use App\Actions\Context\ReadProjectContext;
 use App\Actions\Workspaces\RunWorkspaceCommand;
+use App\Enums\FeatureRequestStatus;
 use App\Models\Run;
 use App\Models\Workspace;
 use App\Runs\PlanningContext;
@@ -49,6 +50,7 @@ class GatherPlanningContext
             projectContext: $this->readProjectContext->handle($workspace, $files),
             answers: $run->answers ?? [],
             mayAsk: count($run->answers ?? []) < $run->question_limit,
+            parentAnswered: $parent?->status === FeatureRequestStatus::Answered,
         );
     }
 

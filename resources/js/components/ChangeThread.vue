@@ -37,7 +37,9 @@ import { show as showFeatureRequest } from '@/routes/feature-requests';
 import { show as showProject } from '@/routes/projects';
 import type { ChangeDetail, Run } from '@/types';
 
-const props = defineProps<{ change: ChangeDetail }>();
+// Roomy when the chat has the whole screen: more air between messages and
+// the owner's messages kept narrow, so they read as a conversation.
+const props = defineProps<{ change: ChangeDetail; roomy?: boolean }>();
 
 const emit = defineEmits<{
     // Whether the change's code wants the whole screen.
@@ -162,6 +164,63 @@ const alsoTouches = computed(() =>
     (run.value?.review?.areas.may_also_affect ?? []).map((area) => area.name),
 );
 
+// Where the change landed, by the parts of the app the review sorted its
+// files into. Files outside every part come last.
+const whereChanged = computed(() => {
+    const files = request.value.files.map((file) => ({
+        ...file,
+        name: file.path.split('/').pop() ?? file.path,
+        folder: file.path.split('/').slice(0, -1).join('/'),
+    }));
+    const areas = run.value?.review?.areas;
+    const groups = [
+        ...(areas?.requested ?? []),
+        ...(areas?.may_also_affect ?? []),
+    ]
+        .map((area) => ({
+            name: area.name,
+            files: files.filter((file) => area.files.includes(file.path)),
+        }))
+        .filter((group) => group.files.length > 0);
+    const placed = new Set(
+        groups.flatMap((group) => group.files.map((file) => file.path)),
+    );
+    const rest = files.filter((file) => !placed.has(file.path));
+
+    return rest.length > 0
+        ? [
+              ...groups,
+              {
+                  name: groups.length > 0 ? 'Other files' : 'Files',
+                  files: rest,
+              },
+          ]
+        : groups;
+});
+
+const testsAdded = computed(() =>
+    request.value.files
+        .map((file) => file.path)
+        .filter(
+            (path) => path.startsWith('tests/') && path.endsWith('Test.php'),
+        ),
+);
+
+// A package shows as a new "name": "version" line in the app's package lists.
+const packagesAdded = computed(() =>
+    request.value.files
+        .filter((file) => ['composer.json', 'package.json'].includes(file.path))
+        .flatMap((file) =>
+            file.diff
+                .split('\n')
+                .map(
+                    (line) =>
+                        line.match(/^\+\s*"([^"]+)":\s*"[\^~>=<*\d]/)?.[1],
+                )
+                .filter((name): name is string => name !== undefined),
+        ),
+);
+
 const outcomes: Record<string, { icon: typeof CircleCheck; tone: string }> = {
     passed: { icon: CircleCheck, tone: 'text-green-600' },
     failed: { icon: CircleAlert, tone: 'text-red-600' },
@@ -242,14 +301,33 @@ const unexpected = computed(() =>
     changes.value.filter((change) => change.section === 'unexpected'),
 );
 
+// Every "done when" item has a test that the checks ran and that passed.
+const ownTestsPass = computed(() => {
+    const verified = run.value?.review?.verified ?? [];
+
+    return (
+        verified.length > 0 &&
+        verified.every((item) => item.evidence === 'tested')
+    );
+});
+
 const checks = computed(() => {
     switch (props.change.verification?.status) {
         case 'passed':
-        case 'unverified':
             return {
                 icon: CircleCheck,
                 tone: 'text-green-600',
                 label: 'Checks passed',
+            };
+        // No protected tests apply, so the change is not proven (§12, §30.2).
+        // Tests the builder wrote itself are said as such, never as proof.
+        case 'unverified':
+            return {
+                icon: CircleMinus,
+                tone: 'text-muted-foreground',
+                label: ownTestsPass.value
+                    ? 'Checks passed, tested only by its own tests'
+                    : 'Checks passed, but nothing tests this change',
             };
         case 'failed':
             return {
@@ -311,14 +389,53 @@ const checks = computed(() => {
         >
             <div
                 :class="[
-                    'min-h-0 flex-1 space-y-4 overflow-y-auto p-4',
+                    'min-h-0 flex-1 overflow-y-auto p-4',
+                    roomy ? 'space-y-7 py-6 leading-relaxed' : 'space-y-4',
                     full && 'lg:border-r',
                 ]"
             >
+                <!-- What came before in this chat -->
+                <template v-for="earlier in change.earlier" :key="earlier.id">
+                    <div class="flex justify-end">
+                        <p
+                            :class="[
+                                'rounded-2xl rounded-br-md bg-muted px-3.5 py-2.5 text-sm break-words whitespace-pre-line',
+                                roomy ? 'max-w-[65%]' : 'max-w-[85%]',
+                            ]"
+                        >
+                            {{ earlier.prompt }}
+                        </p>
+                    </div>
+                    <Link
+                        :href="
+                            showProject(change.project.id, {
+                                query: { change: earlier.id },
+                            })
+                        "
+                        :only="['change']"
+                        preserve-state
+                        class="flex gap-2.5 rounded-md text-sm text-muted-foreground hover:text-foreground"
+                        data-test="thread-earlier"
+                    >
+                        <span
+                            class="grid size-7 shrink-0 place-items-center rounded-full bg-muted"
+                            aria-hidden="true"
+                        >
+                            <Sparkles class="size-3.5" />
+                        </span>
+                        <span class="min-w-0 flex-1 pt-1 break-words">{{
+                            earlier.summary ?? 'Done.'
+                        }}</span>
+                    </Link>
+                </template>
+
                 <!-- What you asked -->
                 <div class="flex justify-end">
                     <p
-                        class="max-w-[85%] rounded-2xl rounded-br-md bg-muted px-3.5 py-2.5 text-sm break-words whitespace-pre-line"
+                        :class="[
+                            'rounded-2xl rounded-br-md bg-muted px-3.5 py-2.5 text-sm break-words whitespace-pre-line',
+                            roomy ? 'max-w-[65%]' : 'max-w-[85%]',
+                        ]"
                     >
                         {{ request.prompt }}
                     </p>
@@ -703,7 +820,7 @@ const checks = computed(() => {
                         </div>
 
                         <div
-                            v-if="depth >= 2 && run?.plan && !run.plan.answer"
+                            v-if="depth === 2 && run?.plan && !run.plan.answer"
                             class="space-y-4"
                             data-test="detail-why"
                         >
@@ -771,6 +888,77 @@ const checks = computed(() => {
                                     >
                                 </p>
                             </section>
+                        </div>
+
+                        <div
+                            v-if="depth === 3 && run?.plan && !run.plan.answer"
+                            class="space-y-4"
+                            data-test="detail-how"
+                        >
+                            <section
+                                v-for="group in whereChanged"
+                                :key="group.name"
+                                class="space-y-1"
+                            >
+                                <h3 class="text-xs text-muted-foreground">
+                                    {{ group.name }}
+                                </h3>
+                                <p
+                                    v-for="file in group.files"
+                                    :key="file.path"
+                                    class="flex items-baseline gap-1.5 text-xs"
+                                    :title="file.path"
+                                >
+                                    <span class="shrink-0 font-mono">{{
+                                        file.name
+                                    }}</span>
+                                    <span
+                                        class="min-w-0 flex-1 truncate text-muted-foreground"
+                                        >{{ file.folder }}</span
+                                    >
+                                    <span
+                                        class="shrink-0 font-mono tabular-nums"
+                                    >
+                                        <span class="text-green-600"
+                                            >+{{ file.additions }}</span
+                                        >
+                                        <span class="text-red-600">
+                                            −{{ file.deletions }}</span
+                                        >
+                                    </span>
+                                </p>
+                            </section>
+                            <section
+                                v-if="testsAdded.length > 0"
+                                class="space-y-1"
+                            >
+                                <h3 class="text-xs text-muted-foreground">
+                                    Tests I wrote
+                                </h3>
+                                <p
+                                    v-for="path in testsAdded"
+                                    :key="path"
+                                    class="truncate font-mono text-xs"
+                                    :title="path"
+                                >
+                                    {{ path.split('/').pop() }}
+                                </p>
+                            </section>
+                            <section
+                                v-if="packagesAdded.length > 0"
+                                class="space-y-1"
+                            >
+                                <h3 class="text-xs text-muted-foreground">
+                                    Packages it adds
+                                </h3>
+                                <p
+                                    v-for="name in packagesAdded"
+                                    :key="name"
+                                    class="font-mono text-xs"
+                                >
+                                    {{ name }}
+                                </p>
+                            </section>
                             <section
                                 v-if="
                                     change.verification &&
@@ -812,15 +1000,15 @@ const checks = computed(() => {
                         </div>
 
                         <div
-                            v-if="depth >= 3 && request.files.length > 0"
+                            v-if="depth === 4 && request.files.length > 0"
                             :class="['space-y-1.5', full && 'lg:hidden']"
-                            data-test="detail-how"
+                            data-test="detail-code"
                         >
                             <h3 class="text-xs text-muted-foreground">Files</h3>
                             <details
                                 v-for="file in request.files"
                                 :key="file.path"
-                                :open="depth >= 4"
+                                open
                                 class="group"
                             >
                                 <summary
@@ -906,6 +1094,36 @@ const checks = computed(() => {
                             </template>
                         </div>
                     </div>
+                </div>
+
+                <!-- What was asked after this, in the same chat -->
+                <div
+                    v-if="change.followUps.length > 0"
+                    class="space-y-1 border-t pt-3"
+                    data-test="thread-later"
+                >
+                    <p class="text-xs text-muted-foreground">
+                        Asked after this
+                    </p>
+                    <Link
+                        v-for="later in change.followUps"
+                        :key="later.id"
+                        :href="
+                            showProject(change.project.id, {
+                                query: { change: later.id },
+                            })
+                        "
+                        :only="['change']"
+                        preserve-state
+                        class="-mx-2 flex min-h-11 items-center gap-2 rounded-md px-2 text-sm hover:bg-muted/60 sm:min-h-8"
+                    >
+                        <span class="min-w-0 flex-1 truncate">{{
+                            later.prompt
+                        }}</span>
+                        <ChevronRight
+                            class="size-4 shrink-0 text-muted-foreground"
+                        />
+                    </Link>
                 </div>
             </div>
 

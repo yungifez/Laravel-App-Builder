@@ -282,6 +282,7 @@ class FeatureRequest extends Model
      * its base revision, oldest first, so their patches can be applied in
      * order on top of it. A request made after its parent was accepted is
      * based on the commit that holds the parent, so the lineage stops there.
+     * An answer in between changed nothing, so it is passed over.
      *
      * @return list<FeatureRequest>
      */
@@ -292,6 +293,10 @@ class FeatureRequest extends Model
 
         while ($current->parent_id !== null) {
             $current = $current->parent()->firstOrFail();
+
+            if ($current->status === FeatureRequestStatus::Answered) {
+                continue;
+            }
 
             if ($current->base_revision !== $this->base_revision) {
                 break;

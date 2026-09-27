@@ -8,6 +8,7 @@ use App\Http\Controllers\FeatureRequestAcceptanceController;
 use App\Http\Controllers\FeatureRequestAnswerController;
 use App\Http\Controllers\FeatureRequestController;
 use App\Http\Controllers\FeatureRequestDismissalController;
+use App\Http\Controllers\FeatureRequestFollowUpController;
 use App\Http\Controllers\FeatureRequestPreviewController;
 use App\Http\Controllers\FeatureRequestRetryController;
 use App\Http\Controllers\FeatureRequestReversionController;
@@ -66,6 +67,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::post('projects/{project}/feature-requests', [FeatureRequestController::class, 'store'])->name('feature-requests.store');
     Route::get('feature-requests/{featureRequest}', [FeatureRequestController::class, 'show'])->name('feature-requests.show');
+    Route::post('feature-requests/{featureRequest}/follow-ups', [FeatureRequestFollowUpController::class, 'store'])->name('feature-requests.follow-ups.store');
     Route::post('feature-requests/{featureRequest}/step-changes', [FeatureRequestStepChangeController::class, 'store'])->name('feature-requests.step-changes.store');
     Route::post('feature-requests/{featureRequest}/verifications', [FeatureRequestVerificationController::class, 'store'])->name('feature-requests.verifications.store');
     Route::post('feature-requests/{featureRequest}/acceptance', [FeatureRequestAcceptanceController::class, 'store'])->name('feature-requests.acceptance.store');

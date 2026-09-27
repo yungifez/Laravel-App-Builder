@@ -14,6 +14,7 @@ class RetryFeatureRequest
     public function __construct(
         private RequestFeature $requestFeature,
         private RequestStepChange $requestStepChange,
+        private RequestFollowUp $requestFollowUp,
     ) {}
 
     /**
@@ -54,11 +55,15 @@ class RetryFeatureRequest
     {
         $parent = $featureRequest->parent;
 
-        $retry = $parent !== null && $featureRequest->target_step !== null
-            ? $this->requestStepChange->handle($parent, $requester, $featureRequest->target_step, $featureRequest->prompt)
+        $retry = match (true) {
+            $parent !== null && $featureRequest->target_step !== null => $this->requestStepChange->handle($parent, $requester, $featureRequest->target_step, $featureRequest->prompt),
+            // A message in a chat is tried again in that chat while there is
+            // still something there to build on.
+            $parent !== null && RequestFollowUp::continuable($parent) => $this->requestFollowUp->handle($parent, $requester, $featureRequest->prompt, selection: $featureRequest->selection),
             // Tried again where it was asked: in its idea while that is
             // open, otherwise in the main app.
-            : $this->requestFeature->handle($featureRequest->project, $requester, $featureRequest->prompt, $featureRequest->selection, $featureRequest->experiment?->status === ExperimentStatus::Open ? $featureRequest->experiment : null);
+            default => $this->requestFeature->handle($featureRequest->project, $requester, $featureRequest->prompt, $featureRequest->selection, $featureRequest->experiment?->status === ExperimentStatus::Open ? $featureRequest->experiment : null),
+        };
 
         $retry->update(['retry_of_id' => $featureRequest->id]);
 

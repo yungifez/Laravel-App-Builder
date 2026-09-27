@@ -15,6 +15,8 @@ import {
     CircleX,
     Lightbulb,
     LoaderCircle,
+    Maximize2,
+    Minimize2,
     Undo2,
     X,
     ChevronDown,
@@ -29,6 +31,7 @@ import {
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
 import FeatureRequestDismissalController from '@/actions/App/Http/Controllers/FeatureRequestDismissalController';
+import FeatureRequestFollowUpController from '@/actions/App/Http/Controllers/FeatureRequestFollowUpController';
 import ProjectExperimentController from '@/actions/App/Http/Controllers/ProjectExperimentController';
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
 import AppPreview from '@/components/AppPreview.vue';
@@ -108,9 +111,32 @@ const panelWidth = usePanelWidth();
 // Or reads a change's code on the whole screen. Designing needs the app in
 // view, so it brings the app back.
 const codeFull = ref(false);
-const panelFull = computed(
-    () => codeFull.value && props.change !== null && !designing.value,
+
+// The chat has the whole screen until the app is open, since there is
+// nothing to show beside it yet. The owner can switch either way.
+const appOpen = computed(
+    () =>
+        props.preview !== null &&
+        ['starting', 'ready'].includes(props.preview.status),
 );
+// Kept in the browser history, so Back returns to the chat as it was.
+const chat = useRemember(
+    reactive<{ full: boolean | null }>({ full: null }),
+    'chat-full',
+) as { full: boolean | null };
+const chatFull = computed(() => chat.full ?? !appOpen.value);
+
+// Opening the app is the moment to see it, whatever was chosen before.
+watch(appOpen, (open) => open && (chat.full = null));
+
+// Code on the whole screen has its own switch, in the change.
+const codeOnScreen = computed(() => codeFull.value && props.change !== null);
+const panelFull = computed(
+    () => !designing.value && (codeOnScreen.value || chatFull.value),
+);
+
+// A chat on the whole screen reads down the middle, not stretched across.
+const chatCentred = computed(() => panelFull.value && !codeOnScreen.value);
 
 const app = useAppPreview({
     projectId: () => props.project.id,
@@ -264,11 +290,26 @@ const thread = computed(() => {
         ...groups,
         ...(working.length ? [{ label: 'Working on it', items: working }] : []),
         ...(waiting.length
-            ? [{ label: 'Waiting for you', items: waiting }]
+            ? [{ label: waitingLabel(waiting), items: waiting }]
             : []),
     ];
 });
 const threadEnd = ref<HTMLElement | null>(null);
+
+// Says what is waiting, so the owner knows the job before opening a row.
+function waitingLabel(items: ChangeItem[]): string {
+    const questions = items.filter((item) => item.asks).length;
+    const changes = items.length - questions;
+
+    return [
+        questions > 0 &&
+            `${questions} ${questions === 1 ? 'question' : 'questions'} to answer`,
+        changes > 0 &&
+            `${changes} ${changes === 1 ? 'change' : 'changes'} to try`,
+    ]
+        .filter(Boolean)
+        .join(' · ');
+}
 
 const waiting = computed(
     () => props.changes.filter((change) => change.state === 'waiting').length,
@@ -328,6 +369,20 @@ const suggestions = [
 ];
 
 const composer = ref<HTMLTextAreaElement | null>(null);
+
+// A message continues the open chat: it builds on the change there or follows
+// on from an answer. A change that failed or was undone leaves nothing to
+// build on, so the message starts a new chat.
+const continuing = computed(
+    () => props.change?.featureRequest.can_continue === true,
+);
+const composerForm = computed(() =>
+    props.change && continuing.value
+        ? FeatureRequestFollowUpController.store.form(
+              props.change.featureRequest.id,
+          )
+        : FeatureRequestController.store.form(props.project.id),
+);
 
 // The message box stays one line until the owner writes in it, so a change
 // open above it gets the room.
@@ -506,6 +561,22 @@ function send(event: KeyboardEvent): void {
                 </Button>
             </template>
 
+            <Form
+                v-if="panelFull && !appOpen"
+                v-bind="ProjectPreviewController.store.form(project.id)"
+                :options="{ preserveScroll: true, preserveState: true }"
+                v-slot="{ processing }"
+                class="hidden lg:block"
+            >
+                <Button
+                    variant="outline"
+                    :disabled="processing"
+                    class="h-9 select-none"
+                    data-test="header-open-app"
+                    >Open my app</Button
+                >
+            </Form>
+
             <NotificationBell />
             <!-- In an idea, the next step is to use it; only the app itself
                  goes online. -->
@@ -619,13 +690,16 @@ function send(event: KeyboardEvent): void {
     >
         <aside
             :class="[
-                'relative min-h-0 flex-col lg:flex lg:border-r',
+                'relative min-h-0 flex-col lg:flex',
                 pane === 'panel' ? 'flex' : 'hidden',
+                panelFull ? '' : 'lg:border-r',
+                chatCentred && 'lg:px-[max(0px,calc(50%-21rem))]',
             ]"
+            data-test="panel"
         >
-            <div class="hidden border-b p-2 lg:block">
+            <div class="hidden items-center gap-1 border-b p-2 lg:flex">
                 <div
-                    class="grid grid-cols-2 rounded-md bg-muted p-0.5 text-sm"
+                    class="grid flex-1 grid-cols-2 rounded-md bg-muted p-0.5 text-sm"
                     role="tablist"
                     aria-label="Panel"
                 >
@@ -665,6 +739,30 @@ function send(event: KeyboardEvent): void {
                         <MousePointerClick class="size-4" /> Design
                     </button>
                 </div>
+                <Button
+                    v-if="!designing && !codeOnScreen"
+                    variant="ghost"
+                    size="icon"
+                    class="size-9 shrink-0 text-muted-foreground"
+                    :aria-pressed="chatFull"
+                    :aria-label="
+                        chatFull
+                            ? 'Show the app beside the chat'
+                            : 'Chat on the whole screen'
+                    "
+                    :title="
+                        chatFull
+                            ? 'Show the app beside the chat'
+                            : 'Chat on the whole screen'
+                    "
+                    data-test="chat-full"
+                    @click="chat.full = !chatFull"
+                >
+                    <component
+                        :is="chatFull ? Minimize2 : Maximize2"
+                        class="size-4"
+                    />
+                </Button>
             </div>
 
             <DesignPanel
@@ -684,6 +782,7 @@ function send(event: KeyboardEvent): void {
                 <ChangeThread
                     v-if="change"
                     :change="change"
+                    :roomy="chatCentred"
                     @full="codeFull = $event"
                 />
 
@@ -771,7 +870,7 @@ function send(event: KeyboardEvent): void {
                                         preserve-scroll
                                         :class="[
                                             'flex min-h-11 min-w-0 flex-1 items-start gap-2.5 rounded-md px-2 select-none hover:bg-muted/60',
-                                            'py-2',
+                                            chatCentred ? 'py-4' : 'py-2',
                                             item.dismissable && 'pr-11',
                                         ]"
                                     >
@@ -789,17 +888,32 @@ function send(event: KeyboardEvent): void {
                                                 states[item.state].label
                                             "
                                         />
-                                        <span
-                                            :class="[
-                                                'line-clamp-2 min-w-0 flex-1 text-sm break-words',
-                                                item.state === 'waiting'
-                                                    ? 'font-medium'
-                                                    : 'text-muted-foreground',
-                                                item.state === 'undone' &&
-                                                    'line-through',
-                                            ]"
-                                            >{{ item.prompt }}</span
-                                        >
+                                        <span class="min-w-0 flex-1">
+                                            <span
+                                                :class="[
+                                                    'line-clamp-2 text-sm break-words',
+                                                    item.state === 'waiting'
+                                                        ? 'font-medium'
+                                                        : 'text-muted-foreground',
+                                                    item.state === 'undone' &&
+                                                        'line-through',
+                                                ]"
+                                                >{{ item.prompt }}</span
+                                            >
+                                            <!-- What the owner has to do,
+                                                 not just that they must. -->
+                                            <span
+                                                v-if="item.state === 'waiting'"
+                                                class="mt-0.5 line-clamp-2 text-xs break-words text-muted-foreground"
+                                                data-test="change-next-step"
+                                                >{{
+                                                    item.asks
+                                                        ? (item.question ??
+                                                          'I have a question for you.')
+                                                        : 'Try it, then keep it or undo it.'
+                                                }}</span
+                                            >
+                                        </span>
                                         <span
                                             v-if="item.state === 'waiting'"
                                             class="mt-0.5 shrink-0 text-xs font-medium text-amber-600 dark:text-amber-400"
@@ -816,7 +930,7 @@ function send(event: KeyboardEvent): void {
                                         type="button"
                                         :class="[
                                             'absolute right-0 flex size-11 items-center justify-center rounded-md text-muted-foreground select-none hover:bg-muted hover:text-foreground sm:size-9',
-                                            'top-0',
+                                            chatCentred ? 'top-1.5' : 'top-0',
                                             item.state === 'dismissed'
                                                 ? ''
                                                 : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100',
@@ -851,7 +965,7 @@ function send(event: KeyboardEvent): void {
                 </div>
 
                 <Form
-                    v-bind="FeatureRequestController.store.form(project.id)"
+                    v-bind="composerForm"
                     :options="{ preserveState: true }"
                     class="p-3"
                     reset-on-success
@@ -875,9 +989,11 @@ function send(event: KeyboardEvent): void {
                                 composerOpen ? 'pt-3' : 'py-2.5',
                             ]"
                             :placeholder="
-                                change
-                                    ? 'Ask for a new change…'
-                                    : 'Ask for a change…'
+                                continuing
+                                    ? 'Reply or ask for more…'
+                                    : change
+                                      ? 'Ask for a new change…'
+                                      : 'Ask for a change…'
                             "
                             @keydown.enter.meta.prevent="send"
                             @keydown.enter.ctrl.prevent="send"
@@ -889,8 +1005,17 @@ function send(event: KeyboardEvent): void {
                             class="flex items-center justify-between p-2"
                         >
                             <span
-                                class="hidden pl-1 text-xs text-muted-foreground sm:inline"
-                                >Ctrl + Enter</span
+                                class="pl-1 text-xs text-muted-foreground"
+                                data-test="composer-hint"
+                                >{{
+                                    continuing
+                                        ? 'Continues this chat'
+                                        : change
+                                          ? 'Starts a new change'
+                                          : ''
+                                }}<span class="hidden sm:inline"
+                                    >{{ change ? ' · ' : '' }}Ctrl + Enter</span
+                                ></span
                             >
                             <Button
                                 size="icon"

@@ -297,13 +297,24 @@ const previewLabels: Record<Preview['status'], string> = {
     stopped: 'Stopped',
 };
 
+// Every "done when" item has a test that the checks ran and that passed.
+// Those tests were written with the change, so they are never proof (§12).
+const ownTestsPass = computed(() => {
+    const verified = props.run?.review?.verified ?? [];
+
+    return (
+        verified.length > 0 &&
+        verified.every((item) => item.evidence === 'tested')
+    );
+});
+
 const verificationLabels: Record<Verification['status'], string> = {
     queued: 'Waiting to start',
     running: 'Running',
     passed: 'All passed',
     failed: 'Something failed',
     errored: 'Could not run',
-    unverified: 'All passed',
+    unverified: 'Passed, but not proven',
 };
 
 const outcomeMarks: Record<
@@ -954,8 +965,7 @@ function lineClass(line: string): string {
                                     verification.status === 'failed' ||
                                     verification.status === 'errored'
                                         ? 'text-destructive'
-                                        : verification.status === 'passed' ||
-                                            verification.status === 'unverified'
+                                        : verification.status === 'passed'
                                           ? 'text-green-700 dark:text-green-400'
                                           : 'text-muted-foreground',
                                 ]"
@@ -974,7 +984,11 @@ function lineClass(line: string): string {
                                     verification?.status === 'unverified'
                                 "
                             >
-                                None of them is about this change in particular.
+                                {{
+                                    ownTestsPass
+                                        ? 'Only tests written with this change check it. Nothing independent did.'
+                                        : 'None of them is about this change in particular.'
+                                }}
                             </template>
                             <template v-else-if="!verification">
                                 I try the change on a fresh copy of your app and

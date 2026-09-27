@@ -46,6 +46,7 @@ class ProjectOverviewTest extends TestCase
                 ->where('changes.2.id', $waiting->id)
                 ->where('changes.2.state', 'waiting')
                 ->where('changes.2.asks', false)
+                ->where('changes.2.question', null)
                 ->where('changes.3.id', $working->id)
                 ->where('changes.3.state', 'working')
                 ->where('changes.4.id', $stopped->id)
@@ -65,7 +66,8 @@ class ProjectOverviewTest extends TestCase
             ->get(route('projects.show', $project))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('changes.0.state', 'waiting')
-                ->where('changes.0.asks', true));
+                ->where('changes.0.asks', true)
+                ->where('changes.0.question', 'Who can invite?'));
     }
 
     public function test_the_app_page_shows_the_running_app_next_to_the_conversation()

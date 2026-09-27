@@ -59,6 +59,8 @@ export type ChangeItem = {
     state: ChangeState;
     /** Waiting on the owner's answer to a question. */
     asks: boolean;
+    /** The question it waits on, when it asks. */
+    question: string | null;
     /** Nothing of it is kept, so it can be marked as not needed. */
     dismissable: boolean;
     updated_at: string | null;
@@ -137,6 +139,7 @@ export type FeatureRequestDetail = {
     reverted_at: string | null;
     can_accept: boolean;
     can_retry: boolean;
+    can_continue: boolean;
 };
 
 export type VerificationStatus =
@@ -283,6 +286,12 @@ export type ChangeDetail = {
     project: { id: number; name: string };
     featureRequest: FeatureRequestDetail;
     parent: { id: number; prompt: string } | null;
+    earlier: {
+        id: number;
+        prompt: string;
+        summary: string | null;
+        status: FeatureRequestStatus;
+    }[];
     followUps: FeatureRequestSummary[];
     verification: Verification | null;
     run: Run | null;
