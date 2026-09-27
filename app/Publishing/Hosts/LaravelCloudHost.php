@@ -10,6 +10,7 @@ use App\Publishing\Contracts\PublishingHost;
 use App\Publishing\Exceptions\PublishingFailed;
 use App\Publishing\GitHubRepositories;
 use App\Publishing\ReleaseProgress;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -84,6 +85,47 @@ class LaravelCloudHost implements PublishingHost
             'build.failed', 'deployment.failed', 'failed', 'cancelled' => ReleaseProgress::Failed,
             default => ReleaseProgress::Pending,
         };
+    }
+
+    public function errors(Deployment $deployment, CarbonImmutable $from, CarbonImmutable $to): ?array
+    {
+        $environment = $deployment->project->host_state['environment'] ?? null;
+
+        if ($environment === null) {
+            return null;
+        }
+
+        $errors = [];
+        $cursor = null;
+
+        // A few pages are enough to tell the owner something is wrong; an
+        // app failing on every request does not need every entry counted.
+        for ($page = 0; $page < (int) config('builder.publishing.errors.pages'); $page++) {
+            $response = $this->cloud()->get("/environments/{$environment}/logs", array_filter([
+                'from' => $from->toIso8601String(),
+                'to' => $to->toIso8601String(),
+                'type' => 'application',
+                'cursor' => $cursor,
+            ]))->throw();
+
+            foreach ((array) $response->json('data') as $entry) {
+                if (($entry['type'] ?? null) === 'exception' || ($entry['level'] ?? null) === 'error') {
+                    $errors[] = [
+                        'class' => isset($entry['data']['class']) ? (string) $entry['data']['class'] : null,
+                        'message' => (string) ($entry['message'] ?? ''),
+                        'at' => (string) ($entry['logged_at'] ?? $to->toIso8601String()),
+                    ];
+                }
+            }
+
+            $cursor = $response->json('meta.cursor');
+
+            if (blank($cursor) || $response->json('data') === []) {
+                break;
+            }
+        }
+
+        return $errors;
     }
 
     /**

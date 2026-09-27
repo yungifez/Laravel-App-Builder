@@ -13,4 +13,5 @@ Artisan::command('inspire', function () {
 Schedule::command('workspaces:reap')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('runs:reconcile')->everyMinute()->withoutOverlapping();
 Schedule::command('previews:reap')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('publishing:collect-errors')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('model:prune', ['--model' => [BoxCommand::class, WorkerHeartbeat::class]])->daily();

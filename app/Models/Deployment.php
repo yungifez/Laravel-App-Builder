@@ -30,11 +30,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property CarbonImmutable|null $pushed_at
  * @property CarbonImmutable|null $confirmed_at When the app answered its checks at its address
  * @property list<array{path: string, status: int|null, passed: bool, key?: string}>|null $health The latest checks of the app's address, sign-in included
+ * @property list<array{class: string|null, message: string, count: int, last_at: string}>|null $live_errors Errors the host saw while this version was online, grouped by kind
+ * @property CarbonImmutable|null $live_errors_checked_at Up to when the host was asked for errors
  * @property CarbonImmutable|null $finished_at
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['user_id', 'commit_sha', 'branch', 'host', 'host_release_id', 'host_status', 'status', 'checks', 'error', 'pushed_at', 'confirmed_at', 'health', 'finished_at'])]
+#[Fillable(['user_id', 'commit_sha', 'branch', 'host', 'host_release_id', 'host_status', 'status', 'checks', 'error', 'pushed_at', 'confirmed_at', 'health', 'live_errors', 'live_errors_checked_at', 'finished_at'])]
 class Deployment extends Model
 {
     /** @use HasFactory<DeploymentFactory> */
@@ -53,8 +55,18 @@ class Deployment extends Model
             'pushed_at' => 'datetime',
             'confirmed_at' => 'datetime',
             'health' => 'array',
+            'live_errors' => 'array',
+            'live_errors_checked_at' => 'datetime',
             'finished_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Count the errors the host saw while this version was online.
+     */
+    public function liveErrorCount(): int
+    {
+        return (int) array_sum(array_column($this->live_errors ?? [], 'count'));
     }
 
     /**

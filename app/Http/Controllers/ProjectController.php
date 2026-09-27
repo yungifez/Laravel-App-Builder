@@ -144,6 +144,8 @@ class ProjectController extends Controller
                         'checks' => $deployment->checks ?? [],
                         'error' => $deployment->error,
                         'health' => $deployment->health ?? [],
+                        // A count only: the error text is for operators.
+                        'problems' => $deployment->liveErrorCount(),
                         'pushed_at' => $deployment->pushed_at?->toIso8601String(),
                         'confirmed_at' => $deployment->confirmed_at?->toIso8601String(),
                         'created_at' => $deployment->created_at?->toIso8601String(),

@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Publishing\Exceptions\PublishingFailed;
 use App\Publishing\ReleaseProgress;
+use Carbon\CarbonImmutable;
 
 /**
  * A place that serves published apps. A host takes a checked commit and puts
@@ -38,4 +39,12 @@ interface PublishingHost
      * Get how far the host is with taking the deployment online.
      */
     public function progress(Deployment $deployment): ReleaseProgress;
+
+    /**
+     * Get the errors the app raised online between two moments, oldest
+     * first, or null when the host cannot tell.
+     *
+     * @return list<array{class: string|null, message: string, at: string}>|null
+     */
+    public function errors(Deployment $deployment, CarbonImmutable $from, CarbonImmutable $to): ?array;
 }

@@ -53,6 +53,8 @@ const upToDate = computed(
         props.publishing.head === live.value.commit,
 );
 
+const times = (count: number) => (count === 1 ? 'once' : `${count} times`);
+
 const status = computed(() => {
     switch (true) {
         case latest.value?.status === 'checking':
@@ -103,6 +105,14 @@ const status = computed(() => {
                 tone: 'text-muted-foreground',
                 title: 'Not online yet',
                 detail: 'Your latest kept version goes online once its checks pass.',
+            };
+        // Errors outrank "newer changes": a broken app online matters more.
+        case (live.value?.problems ?? 0) > 0:
+            return {
+                icon: CircleAlert,
+                tone: 'text-amber-500',
+                title: 'Online, but it ran into problems',
+                detail: `Something went wrong ${times(live.value?.problems ?? 0)} since it went online ${when(live.value?.finished_at ?? null)}.`,
             };
         case upToDate.value:
             return {

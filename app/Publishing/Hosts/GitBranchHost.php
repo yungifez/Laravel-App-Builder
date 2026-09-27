@@ -9,6 +9,7 @@ use App\Projects\ProjectRepository;
 use App\Publishing\Contracts\PublishingHost;
 use App\Publishing\Exceptions\PublishingFailed;
 use App\Publishing\ReleaseProgress;
+use Carbon\CarbonImmutable;
 use RuntimeException;
 
 /**
@@ -44,5 +45,11 @@ class GitBranchHost implements PublishingHost
     public function progress(Deployment $deployment): ReleaseProgress
     {
         return ReleaseProgress::Unknown;
+    }
+
+    public function errors(Deployment $deployment, CarbonImmutable $from, CarbonImmutable $to): ?array
+    {
+        // The owner's own hosting keeps its logs to itself.
+        return null;
     }
 }

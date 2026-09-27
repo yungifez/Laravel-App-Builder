@@ -429,6 +429,7 @@ export type DeploymentSummary = {
         passed: boolean;
         key?: string;
     }[];
+    problems: number;
     pushed_at: string | null;
     confirmed_at: string | null;
     created_at: string | null;

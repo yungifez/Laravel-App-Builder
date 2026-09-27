@@ -61,6 +61,7 @@ class FindAttentionItems
                 $this->stuckProvisioning($now),
                 $this->orphanedWorkspaces($now),
                 $this->lostBoxCommands($since),
+                $this->liveErrors($since),
             ], fn (array $item) => $item['count'] > 0)),
             'failures' => $this->failures($since),
             'rebuilds' => $this->rebuildLatency($since),
@@ -287,6 +288,30 @@ class FindAttentionItems
             'at' => $command->created_at?->toIso8601String(),
             'href' => null,
         ]);
+    }
+
+    /**
+     * Published apps whose online version raised errors, newest first.
+     *
+     * @return AttentionItem
+     */
+    protected function liveErrors(CarbonImmutable $since): array
+    {
+        $query = Deployment::query()
+            ->where('status', DeploymentStatus::Published)
+            ->where('live_errors_checked_at', '>=', $since)
+            ->whereJsonLength('live_errors', '>', 0);
+
+        return $this->item('published_errors', 'Published apps raising errors', $query, function (Deployment $deployment) {
+            $top = $deployment->live_errors[0] ?? null;
+
+            return [
+                'label' => "Project {$deployment->project_id}, deployment {$deployment->id}: {$deployment->liveErrorCount()} error(s)",
+                'detail' => $top === null ? null : Str::limit(trim(($top['class'] ?? '').' '.$top['message']).' (×'.$top['count'].')', 160),
+                'at' => $top['last_at'] ?? null,
+                'href' => null,
+            ];
+        });
     }
 
     /**

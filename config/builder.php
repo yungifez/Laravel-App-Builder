@@ -138,6 +138,14 @@ return [
             'confirm_seconds' => (int) env('BUILDER_PUBLISH_CONFIRM_SECONDS', 600),
             'timeout' => 10,
         ],
+
+        // Errors the app raises online, read from the host every few
+        // minutes (publishing:collect-errors). At most "pages" pages of logs
+        // are read per check, and at most "kinds" kinds of error are kept.
+        'errors' => [
+            'pages' => (int) env('BUILDER_PUBLISH_ERROR_PAGES', 5),
+            'kinds' => (int) env('BUILDER_PUBLISH_ERROR_KINDS', 20),
+        ],
     ],
 
     /*
