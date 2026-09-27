@@ -116,6 +116,16 @@ const runInProgress = computed(
         ].includes(props.run.status),
 );
 
+// The side column holds the owner's next step. With nothing to do there,
+// it is left out, so no empty lines show beside the chat.
+const asideShown = computed(
+    () =>
+        props.featureRequest.can_accept ||
+        props.featureRequest.commit_sha !== null ||
+        props.featureRequest.status === 'generated' ||
+        (runInProgress.value && props.run?.status !== 'cancelling'),
+);
+
 watch(
     () =>
         runInProgress.value ||
@@ -775,7 +785,10 @@ function lineClass(line: string): string {
                 </section>
             </div>
 
-            <aside class="lg:col-start-2 lg:row-span-2 lg:row-start-1">
+            <aside
+                v-if="asideShown"
+                class="lg:col-start-2 lg:row-span-2 lg:row-start-1"
+            >
                 <div class="divide-y border-y lg:sticky lg:top-8">
                     <div
                         v-if="
@@ -1027,7 +1040,7 @@ function lineClass(line: string): string {
                 </div>
             </aside>
 
-            <div class="max-w-3xl space-y-12">
+            <div class="max-w-3xl space-y-12 lg:col-start-1">
                 <section
                     v-if="run && run.answers.length > 0"
                     class="space-y-3"
