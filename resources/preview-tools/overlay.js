@@ -63,6 +63,8 @@
 html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!important;cursor:var(--builder-cursor)!important}
 [data-builder-overlay] [data-part=drop]{position:fixed;display:none;background:${ACCENT};border-radius:2px;box-shadow:0 0 0 calc(2px*var(--bz)) #fff}
 [data-builder-overlay] [data-part=ghost]{position:fixed;display:none;border:calc(1.5px*var(--bz)) dashed ${ACCENT};border-radius:2px;background:rgba(37,99,235,.08)}
+[data-builder-overlay][data-writing] [data-handle],[data-builder-overlay][data-writing] [data-part=stem],[data-builder-overlay][data-writing] [data-part=chip]{display:none}
+[contenteditable][data-builder-writing]{outline:none;cursor:text;caret-color:${ACCENT}}
 [data-builder-overlay][data-reordering] [data-part=frame]{outline-style:dashed;opacity:.5}
 [data-builder-overlay][data-reordering] [data-handle],[data-builder-overlay][data-reordering] [data-part=stem],[data-builder-overlay][data-reordering] [data-part=outside]{display:none}
 `;
@@ -306,6 +308,21 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
     const send = (message) =>
         window.parent.postMessage({ builder: true, ...message }, origin);
 
+    // The words a part shows, when they are all it holds: those can be
+    // typed over in place.
+    const plainWords = (element) => {
+        const nodes = [...element.childNodes].filter(
+            (node) => node.nodeType !== Node.COMMENT_NODE,
+        );
+        const words = element.textContent.replace(/\s+/g, ' ').trim();
+
+        return nodes.length > 0 &&
+            nodes.every((node) => node.nodeType === Node.TEXT_NODE) &&
+            words !== ''
+            ? words
+            : null;
+    };
+
     const describe = (element) => ({
         source: element.getAttribute('data-builder-source'),
         instance: element.getAttribute('data-builder-instance'),
@@ -316,6 +333,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             .slice(0, 80),
         width: Math.round(element.getBoundingClientRect().width),
         height: Math.round(element.getBoundingClientRect().height),
+        words: plainWords(element),
     });
 
     const matching = (location) => {
@@ -668,6 +686,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                 editing &&
                 handlesOn &&
                 selected &&
+                !writing &&
                 event.button === 0 &&
                 located(event.target) === selected
             ) {
@@ -754,11 +773,82 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         true,
     );
 
+    // Double-click a part that holds only words to type over them, as in
+    // any editor. Enter keeps the new words and Escape puts the old back.
+    let writing = null;
+
+    const startWriting = (element) => {
+        if (writing || !editing || plainWords(element) === null) {
+            return;
+        }
+
+        writing = { element, before: element.textContent };
+        element.setAttribute('contenteditable', 'plaintext-only');
+        element.setAttribute('data-builder-writing', '');
+        layer.setAttribute('data-writing', '');
+        element.focus();
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        element.addEventListener('blur', () => stopWriting(true), {
+            once: true,
+        });
+    };
+
+    const stopWriting = (keep) => {
+        if (!writing) {
+            return;
+        }
+
+        const { element, before } = writing;
+        writing = null;
+        const after = element.textContent.replace(/\s+/g, ' ').trim();
+        element.removeAttribute('contenteditable');
+        element.removeAttribute('data-builder-writing');
+        layer.removeAttribute('data-writing');
+        window.getSelection()?.removeAllRanges();
+
+        if (
+            !keep ||
+            after === '' ||
+            after === before.replace(/\s+/g, ' ').trim()
+        ) {
+            element.textContent = before;
+        } else {
+            send({
+                type: 'words',
+                before: before.replace(/\s+/g, ' ').trim(),
+                text: after,
+            });
+        }
+
+        placeFrame();
+    };
+
+    document.addEventListener(
+        'dblclick',
+        (event) => {
+            const element = located(event.target);
+
+            if (editing && element && element === selected) {
+                event.preventDefault();
+                startWriting(element);
+            }
+        },
+        true,
+    );
+
     // While designing, the app's own fields and buttons do not take focus
     // or submit: a click picks a part, and keys go to the designer.
     document.addEventListener(
         'mousedown',
         (event) => {
+            if (writing?.element.contains(event.target)) {
+                return;
+            }
+
             if (editing && !event.target.closest?.('[data-builder-overlay]')) {
                 event.preventDefault();
                 // Keys still come here, to the page, not to a field.
@@ -800,6 +890,14 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             event.preventDefault();
             event.stopPropagation();
 
+            if (writing?.element.contains(event.target)) {
+                return;
+            }
+
+            // The page keeps focus where it is, so the words would not
+            // lose it: a click elsewhere keeps them.
+            stopWriting(true);
+
             if (swallowClick) {
                 swallowClick = false;
 
@@ -821,6 +919,20 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         'keydown',
         (event) => {
             if (!editing) {
+                return;
+            }
+
+            if (writing) {
+                event.stopPropagation();
+
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    stopWriting(true);
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    stopWriting(false);
+                }
+
                 return;
             }
 
@@ -1001,6 +1113,16 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
 
         // The space around the selected part shows only while the owner
         // works with it, so the part itself stays easy to see.
+        // Words typed in the builder's panel show at once.
+        if (
+            message.type === 'words' &&
+            selected &&
+            plainWords(selected) !== null
+        ) {
+            selected.textContent = String(message.text ?? '');
+            placeFrame();
+        }
+
         if (message.type === 'spacing') {
             layer.toggleAttribute('data-spacing', Boolean(message.on));
         }
@@ -1008,6 +1130,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         if (message.type === 'mode') {
             // The builder sets up a page only once it is on show.
             unsettle();
+            stopWriting(false);
             editing = Boolean(message.editing);
             document.documentElement.style.cursor = editing ? 'crosshair' : '';
 

@@ -26,12 +26,14 @@ class RevertVisualEdit
             throw ValidationException::withMessages(['edit' => __('This change was already undone.')]);
         }
 
-        $sha = $edit->moves()
+        // A move or new words put back the whole file; a new look puts back
+        // only the element's classes.
+        $sha = $edit->moves() || $edit->rewords()
             ? $this->swapMovedElement->handle(
                 $edit,
                 $edit->commit_sha,
                 $edit->base_revision,
-                "Undo moving <{$edit->tag}>\n\nThis undoes commit {$edit->commit_sha}.",
+                ($edit->moves() ? "Undo moving <{$edit->tag}>" : "Undo new words in <{$edit->tag}>")."\n\nThis undoes commit {$edit->commit_sha}.",
                 $owner,
             )
             : $this->swapElementClasses->handle(

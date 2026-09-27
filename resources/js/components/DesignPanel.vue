@@ -36,7 +36,7 @@ import {
     Undo2,
     X,
 } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { Component } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
 import PageConsistencyController from '@/actions/App/Http/Controllers/PageConsistencyController';
@@ -70,6 +70,19 @@ const props = defineProps<{
 }>();
 
 const asking = ref(false);
+
+// The words of the selected part, as the owner types them. They are saved
+// when the owner leaves the box or presses Enter.
+const draft = ref('');
+watch(
+    () => props.state.selected?.words,
+    (words) => (draft.value = words ?? ''),
+    { immediate: true },
+);
+
+function keepWords(): void {
+    props.state.reword(draft.value);
+}
 // Whether the owner is reading what making the page consistent does.
 const tidying = ref(false);
 const element = computed(() => props.state.element);
@@ -164,6 +177,10 @@ function describeEdit(edit: VisualEditSummary): string {
         return 'Moved';
     }
 
+    if (edit.kind === 'text') {
+        return 'Words';
+    }
+
     return edit.properties
         .map(
             (key) =>
@@ -179,6 +196,10 @@ function describeResult(
     edit: VisualEditSummary,
 ): { words: string; color: string | null } | null {
     const [property] = edit.properties;
+
+    if (edit.kind === 'text' && edit.words) {
+        return { words: `“${edit.words}”`, color: null };
+    }
 
     if (edit.kind === 'move' || edit.properties.length !== 1) {
         return null;
@@ -424,6 +445,29 @@ const recent = computed(() => {
                         class="space-y-5 text-sm"
                         data-test="properties"
                     >
+                        <section
+                            v-if="state.selected?.words != null"
+                            class="space-y-2"
+                        >
+                            <h3 class="text-xs font-medium">Words</h3>
+                            <textarea
+                                id="property-words"
+                                v-model="draft"
+                                rows="2"
+                                aria-label="Words"
+                                class="block [field-sizing:content] w-full resize-none rounded-md bg-muted px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                                data-test="words"
+                                @blur="keepWords"
+                                @keydown.enter.exact.prevent="keepWords"
+                                @keydown.escape="
+                                    draft = state.selected?.words ?? ''
+                                "
+                            />
+                            <p class="text-xs text-muted-foreground">
+                                Or double-click the words in your app.
+                            </p>
+                        </section>
+
                         <section class="space-y-2">
                             <h3 class="text-xs font-medium">Layout</h3>
                             <Segmented

@@ -11,6 +11,7 @@ import type { Ref } from 'vue';
 import VisualEditController from '@/actions/App/Http/Controllers/VisualEditController';
 import VisualEditReversionController from '@/actions/App/Http/Controllers/VisualEditReversionController';
 import VisualMoveController from '@/actions/App/Http/Controllers/VisualMoveController';
+import VisualTextController from '@/actions/App/Http/Controllers/VisualTextController';
 import {
     colorTokens,
     definition,
@@ -576,6 +577,10 @@ export function useAppPreview(source: Source) {
             };
         }
 
+        if (data.type === 'words' && typeof data.text === 'string') {
+            reword(data.text, String(data.before ?? ''));
+        }
+
         if (data.type === 'move' && data.to) {
             move(
                 data.to as SelectedElement,
@@ -917,6 +922,72 @@ export function useAppPreview(source: Source) {
         );
     }
 
+    // Put new words in the selected part, typed over it in the app or in
+    // the panel. The app shows them at once; changes waiting to be saved go
+    // first, so the words build on them.
+    function reword(text: string, before?: string): void {
+        const preview = source.preview();
+        const part = selected.value;
+        const words = text.replace(/\s+/g, ' ').trim();
+        const was = before ?? part?.words ?? '';
+        // Words are written where the part is placed: a shared piece's
+        // words are filled in where it is used.
+        const at = part?.instance ?? part?.source;
+
+        if (
+            preview === null ||
+            part === null ||
+            !at ||
+            words === '' ||
+            words === was
+        ) {
+            return;
+        }
+
+        if (sending.value !== null || queue.value.length > 0 || moving.value) {
+            save();
+            setTimeout(() => reword(text, before), 200);
+
+            return;
+        }
+
+        post({ type: 'words', text: words });
+        selected.value = { ...part, words, text: words.slice(0, 80) };
+        moving.value = true;
+        saveError.value = null;
+
+        router.post(
+            VisualTextController.store.url(source.projectId()),
+            {
+                preview: preview.id,
+                target: at,
+                instance: Boolean(part.instance),
+                before: was,
+                text: words,
+                revision: head.value ?? element.value?.revision,
+            },
+            {
+                only: ['edits', 'preview'],
+                async: true,
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => {
+                    last.value = null;
+                    head.value = null;
+                    known.value = null;
+                    inspect();
+                },
+                onError: (errors) => {
+                    saveError.value = Object.values(errors)[0] ?? null;
+                    selected.value = part;
+                    // The app shows the new words already: put the old back.
+                    reload();
+                },
+                onFinish: () => (moving.value = false),
+            },
+        );
+    }
+
     // Whether an edit is undone, counting undo and redo the server has not
     // done yet.
     function isUndone(edit: VisualEditSummary): boolean {
@@ -1199,6 +1270,7 @@ export function useAppPreview(source: Source) {
         step,
         isUndone,
         showSpacing,
+        reword,
         press,
         hide,
         undoable,

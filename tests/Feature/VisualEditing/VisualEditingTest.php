@@ -588,6 +588,66 @@ class VisualEditingTest extends TestCase
         $this->assertNull($edit->fresh()->reverted_at);
     }
 
+    public function test_the_owner_types_new_words_over_a_part_and_can_undo_and_redo_them()
+    {
+        Queue::fake();
+        $preview = $this->runningPreview();
+        $file = 'resources/js/pages/Plans.vue';
+        $reworded = str_replace('>Plans</h1>', '>Plans &amp; prices</h1>', self::CARD);
+
+        $this->actingAs($this->owner)->post(route('visual-texts.store', $this->project), [
+            'preview' => $preview->id,
+            'target' => "{$file}:3:9",
+            'before' => 'Plans',
+            'text' => ' Plans & prices ',
+            'revision' => $preview->revision,
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame($reworded, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+
+        $edit = $this->project->visualEdits()->sole();
+        $this->assertTrue($edit->rewords());
+
+        $this->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('edits.0.kind', 'text')
+                ->where('edits.0.words', 'Plans & prices')
+                ->where('edits.0.properties', [])
+                ->where('edits.0.sides', null));
+
+        $this->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
+        $this->assertSame(self::CARD, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+
+        $this->delete(route('visual-edits.reversion.destroy', $edit))->assertSessionHasNoErrors();
+        $this->assertSame($reworded, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+    }
+
+    public function test_words_that_come_from_the_app_or_changed_since_are_not_changed_in_place()
+    {
+        Queue::fake();
+        $preview = $this->runningPreview();
+        $reword = fn (array $data) => $this->actingAs($this->owner)->post(route('visual-texts.store', $this->project), $data + [
+            'preview' => $preview->id,
+            'target' => 'resources/js/pages/Plans.vue:3:9',
+            'before' => 'Plans',
+            'text' => 'Prices',
+            'revision' => $preview->revision,
+        ]);
+
+        // A slot is filled where the part is used, not where it is defined.
+        $reword(['target' => 'resources/js/components/ui/Button.vue:2:5', 'before' => 'Go'])
+            ->assertSessionHasErrors(['edit' => 'These words come from your app\'s data or code, so I can\'t change them here. Ask me to change them instead.']);
+        $reword(['target' => 'resources/js/pages/Plans.vue:2:5'])->assertSessionHasErrors('edit');
+        $reword(['before' => 'Pricing'])->assertSessionHasErrors(['edit' => 'These words were changed since. Look again and try once more.']);
+        $reword(['text' => 'Hi {{ name }}'])->assertSessionHasErrors('text');
+        $this->assertSame($preview->revision, $this->repository->head($this->project));
+
+        // Where the shared button is used, its words are plain.
+        $reword(['target' => 'resources/js/pages/Home.vue:2:5', 'instance' => true, 'before' => 'Go', 'text' => 'Start'])
+            ->assertSessionHasNoErrors();
+        $this->assertStringContainsString('<Button>Start</Button>', (string) $this->repository->show($this->project, $this->repository->head($this->project), 'resources/js/pages/Home.vue'));
+    }
+
     public function test_moves_between_files_or_across_parents_are_refused_and_undo_keeps_later_changes()
     {
         Queue::fake();

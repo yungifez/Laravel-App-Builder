@@ -100,8 +100,9 @@ class ProjectController extends Controller
                     'id' => $edit->id,
                     'tag' => $edit->tag,
                     'device' => $edit->device,
-                    'kind' => $edit->moves() ? 'move' : 'look',
-                    'properties' => $edit->moves() ? [] : array_keys($edit->changes),
+                    'kind' => $edit->kind(),
+                    'properties' => $edit->kind() === 'look' ? array_keys($edit->changes) : [],
+                    'words' => $edit->changes[VisualEdit::TEXT]['after'] ?? null,
                     // What the element looks like after this edit, and the
                     // commit that made it, so the next automatic save can
                     // build on it without waiting for the rebuild.
@@ -111,7 +112,7 @@ class ProjectController extends Controller
                     // the edit, so undo and redo show in the running app
                     // straight away.
                     'target' => "{$edit->file}:{$edit->line}:{$edit->column}",
-                    'sides' => $edit->moves() ? null : [
+                    'sides' => $edit->kind() !== 'look' ? null : [
                         'before' => ['classes' => $edit->classes_before, 'values' => array_map(fn (array $value) => $value['value'], TailwindClasses::effective($edit->classes_before)[$edit->device] ?? [])],
                         'after' => ['classes' => $edit->classes_after, 'values' => array_map(fn (array $value) => $value['value'], TailwindClasses::effective($edit->classes_after)[$edit->device] ?? [])],
                     ],

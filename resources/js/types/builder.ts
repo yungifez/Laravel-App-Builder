@@ -400,15 +400,19 @@ export type SelectedElement = {
     text: string;
     width: number;
     height?: number;
+    /** The words the part shows, when they are all it holds. */
+    words?: string | null;
 };
 
 export type VisualEditSummary = {
     id: number;
     tag: string;
     device: Device;
-    /** A change to how the part looks, or a move among its siblings. */
-    kind: 'look' | 'move';
+    /** A change to how the part looks, a move among its siblings, or new words. */
+    kind: 'look' | 'move' | 'text';
     properties: VisualProperty[];
+    /** The new words, for new words. */
+    words: string | null;
     /** The part's classes and the app's version after this edit (or its undo). */
     classes: string;
     revision: string;

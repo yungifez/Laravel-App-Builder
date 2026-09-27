@@ -45,6 +45,11 @@ class VisualEdit extends Model
     public const MOVE = 'move';
 
     /**
+     * The key in "changes" of new words: the words before and after.
+     */
+    public const TEXT = 'text';
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -67,6 +72,27 @@ class VisualEdit extends Model
     {
         // Inside the model, $this->changes is Eloquent's own change tracking.
         return isset($this->getAttribute('changes')[self::MOVE]);
+    }
+
+    /**
+     * Determine whether the edit changed the words the element shows.
+     */
+    public function rewords(): bool
+    {
+        return isset($this->getAttribute('changes')[self::TEXT]);
+    }
+
+    /**
+     * Get what kind of edit this is: a change to how the element looks, a
+     * move, or new words.
+     */
+    public function kind(): string
+    {
+        return match (true) {
+            $this->moves() => 'move',
+            $this->rewords() => 'text',
+            default => 'look',
+        };
     }
 
     /**
