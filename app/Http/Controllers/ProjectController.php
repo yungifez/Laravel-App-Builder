@@ -35,7 +35,11 @@ class ProjectController extends Controller
     public function index(Request $request, SummarizeChanges $summarizeChanges): Response
     {
         return Inertia::render('projects/Index', [
-            'projects' => $request->user()->projects()->latest()->get()
+            // The app worked on last comes first, as the owner most likely
+            // wants to go back to it.
+            'projects' => $request->user()->projects()->withMax('featureRequests', 'created_at')->get()
+                ->sortByDesc(fn (Project $project) => (string) ($project->getAttribute('feature_requests_max_created_at') ?? $project->created_at?->toDateTimeString()))
+                ->values()
                 ->map(fn (Project $project) => [
                     'id' => $project->id,
                     'name' => $project->name,

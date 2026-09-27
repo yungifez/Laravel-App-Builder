@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Form, Head, Link } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 import NewProjectController from '@/actions/App/Http/Controllers/NewProjectController';
 import ProjectController from '@/actions/App/Http/Controllers/ProjectController';
 import InputError from '@/components/InputError.vue';
@@ -18,7 +19,7 @@ import { when } from '@/lib/when';
 import { index, show } from '@/routes/projects';
 import type { DesignOption, ProjectListItem } from '@/types';
 
-defineProps<{
+const props = defineProps<{
     projects: ProjectListItem[];
     canStartNew: boolean;
     designs: DesignOption[];
@@ -28,6 +29,19 @@ defineOptions({
     layout: {
         breadcrumbs: [{ title: 'Your apps', href: index() }],
     },
+});
+
+// A filter helps only once the list no longer fits at a glance.
+const searchable = computed(() => props.projects.length > 6);
+const query = ref('');
+const shown = computed(() => {
+    const words = query.value.trim().toLowerCase();
+
+    return words === ''
+        ? props.projects
+        : props.projects.filter((project) =>
+              project.name.toLowerCase().includes(words),
+          );
 });
 
 const textarea =
@@ -251,9 +265,27 @@ const textarea =
         </p>
 
         <template v-else>
+            <Input
+                v-if="searchable"
+                v-model="query"
+                type="search"
+                aria-label="Find an app"
+                placeholder="Find an app"
+                class="h-11 max-w-sm sm:h-9"
+                data-test="apps-filter"
+            />
+            <p
+                v-if="shown.length === 0"
+                class="text-sm text-muted-foreground"
+                data-test="apps-none-found"
+            >
+                No app is called that.
+            </p>
+
             <!-- A table where there is width to compare apps side by side;
                  the same rows read as a list on a phone. -->
             <table
+                v-if="shown.length > 0"
                 class="hidden w-full text-sm md:table"
                 data-test="apps-table"
             >
@@ -271,7 +303,7 @@ const textarea =
                 </thead>
                 <tbody class="divide-y">
                     <tr
-                        v-for="project in projects"
+                        v-for="project in shown"
                         :key="project.id"
                         class="relative hover:bg-muted/50"
                     >
@@ -312,8 +344,12 @@ const textarea =
                 </tbody>
             </table>
 
-            <ul class="divide-y border-y md:hidden" data-test="apps-list">
-                <li v-for="project in projects" :key="project.id">
+            <ul
+                v-if="shown.length > 0"
+                class="divide-y border-y md:hidden"
+                data-test="apps-list"
+            >
+                <li v-for="project in shown" :key="project.id">
                     <Link
                         :href="show(project.id)"
                         class="flex min-h-11 items-center justify-between gap-4 py-3 select-none"
