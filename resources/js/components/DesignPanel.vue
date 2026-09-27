@@ -1112,77 +1112,87 @@ const recent = computed(() => {
                             </section>
                         </div>
 
-                        <button
-                            v-if="!asking"
-                            type="button"
-                            class="flex min-h-11 w-full items-center gap-2 rounded-md border border-dashed px-3 text-sm text-muted-foreground select-none hover:text-foreground sm:min-h-9"
-                            data-test="ask-instead-open"
-                            @click="asking = true"
+                        <!-- The form arrives rather than cutting in; the button
+                             goes at once. -->
+                        <Transition
+                            enter-active-class="transition duration-base ease-settle"
+                            enter-from-class="opacity-0 translate-y-1"
                         >
-                            <MessageSquare class="size-4" /> Ask me to change it
-                        </button>
-                        <Form
-                            v-else
-                            v-bind="
-                                FeatureRequestController.store.form(projectId)
-                            "
-                            v-slot="{ errors, processing }"
-                            class="space-y-2"
-                        >
-                            <input
-                                type="hidden"
-                                name="selection[file]"
-                                :value="element.file"
-                            />
-                            <input
-                                type="hidden"
-                                name="selection[line]"
-                                :value="element.line"
-                            />
-                            <input
-                                type="hidden"
-                                name="selection[column]"
-                                :value="element.target.split(':').pop()"
-                            />
-                            <input
-                                type="hidden"
-                                name="selection[tag]"
-                                :value="element.tag ?? state.selected.tag"
-                            />
-                            <input
-                                type="hidden"
-                                name="selection[text]"
-                                :value="state.selected.text"
-                            />
-                            <input
-                                v-if="element.area"
-                                type="hidden"
-                                name="selection[area]"
-                                :value="element.area.name"
-                            />
-                            <textarea
-                                name="prompt"
-                                rows="2"
-                                required
-                                aria-label="Your change"
-                                class="w-full rounded-md border bg-transparent px-3 py-2 text-base placeholder:text-muted-foreground md:text-sm"
-                                placeholder="Show the price next to each item"
-                            />
-                            <InputError :message="errors.prompt" />
-                            <p
-                                v-if="reach"
-                                class="text-xs text-muted-foreground"
-                                data-test="element-reach"
+                            <button
+                                v-if="!asking"
+                                type="button"
+                                class="flex min-h-11 w-full items-center gap-2 rounded-md border border-dashed px-3 text-sm text-muted-foreground select-none hover:text-foreground sm:min-h-9"
+                                data-test="ask-instead-open"
+                                @click="asking = true"
                             >
-                                {{ reach }}
-                            </p>
-                            <Button
-                                :disabled="processing"
-                                class="h-11 w-full select-none sm:h-8"
+                                <MessageSquare class="size-4" /> Ask me to
+                                change it
+                            </button>
+                            <Form
+                                v-else
+                                v-bind="
+                                    FeatureRequestController.store.form(
+                                        projectId,
+                                    )
+                                "
+                                v-slot="{ errors, processing }"
+                                class="space-y-2"
                             >
-                                Ask for this change
-                            </Button>
-                        </Form>
+                                <input
+                                    type="hidden"
+                                    name="selection[file]"
+                                    :value="element.file"
+                                />
+                                <input
+                                    type="hidden"
+                                    name="selection[line]"
+                                    :value="element.line"
+                                />
+                                <input
+                                    type="hidden"
+                                    name="selection[column]"
+                                    :value="element.target.split(':').pop()"
+                                />
+                                <input
+                                    type="hidden"
+                                    name="selection[tag]"
+                                    :value="element.tag ?? state.selected.tag"
+                                />
+                                <input
+                                    type="hidden"
+                                    name="selection[text]"
+                                    :value="state.selected.text"
+                                />
+                                <input
+                                    v-if="element.area"
+                                    type="hidden"
+                                    name="selection[area]"
+                                    :value="element.area.name"
+                                />
+                                <textarea
+                                    name="prompt"
+                                    rows="2"
+                                    required
+                                    aria-label="Your change"
+                                    class="w-full rounded-md border bg-transparent px-3 py-2 text-base placeholder:text-muted-foreground md:text-sm"
+                                    placeholder="Show the price next to each item"
+                                />
+                                <InputError :message="errors.prompt" />
+                                <p
+                                    v-if="reach"
+                                    class="text-xs text-muted-foreground"
+                                    data-test="element-reach"
+                                >
+                                    {{ reach }}
+                                </p>
+                                <Button
+                                    :disabled="processing"
+                                    class="h-11 w-full select-none sm:h-8"
+                                >
+                                    Ask for this change
+                                </Button>
+                            </Form>
+                        </Transition>
 
                         <section
                             v-if="showCode"
