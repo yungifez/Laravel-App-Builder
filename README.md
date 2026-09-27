@@ -443,6 +443,21 @@ starter's default), so it needs network access to that host. The PHP test suite
 does not need a build: `tests/TestCase.php` calls `withoutVite()`.
 `composer ci:check` runs all seven checks in this order.
 
+The browser tests in `tests/Browser` do need a build. They drive the owner's
+core loop (ask, read the details, ask for more, keep, undo) in Chromium, so they
+use the built frontend. Run `npm run build` before `composer check:tests`, or
+they test old code. Install Chromium once with
+`npx playwright install --with-deps chromium`. With Sail, run the system part
+as root: `docker compose exec -u root laravel.test npx playwright install-deps chromium`,
+then `sail npx playwright install chromium`.
+
+We use Pest's browser plugin instead of Laravel Dusk. Pest serves the app
+inside the test process, so browser tests share the test database, the
+`phpunit.xml` settings and the database guard. Dusk needs a running server and
+swaps `.env` during a run, which breaks other people who use the development
+server at the same time. The other tests stay PHPUnit classes; Pest runs them
+unchanged.
+
 Tests always use PostgreSQL database `control_plane_test`. `tests/TestCase.php`
 stops the run if the active connection is not `pgsql` or its database name does
 not end in `_test`.
