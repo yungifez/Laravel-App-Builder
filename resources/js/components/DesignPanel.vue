@@ -550,7 +550,8 @@ const recent = computed(() => {
                         size="icon"
                         class="size-11 shrink-0 text-muted-foreground sm:size-7"
                         aria-label="Select the part around it"
-                        title="Select the part around it"
+                        aria-keyshortcuts="Shift+Enter"
+                        title="Select the part around it (Shift+Enter)"
                         data-test="pick-parent"
                         @click="state.pickNear('parent')"
                     >
@@ -561,7 +562,8 @@ const recent = computed(() => {
                         size="icon"
                         class="size-11 shrink-0 text-muted-foreground sm:size-7"
                         aria-label="Select the first part inside it"
-                        title="Select the first part inside it"
+                        aria-keyshortcuts="Enter"
+                        title="Select the first part inside it (Enter)"
                         data-test="pick-child"
                         @click="state.pickNear('child')"
                     >
