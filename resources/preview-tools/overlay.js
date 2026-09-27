@@ -1096,6 +1096,18 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                 return;
             }
 
+            // Ctrl or Cmd and a click follows a link, as in a browser. The
+            // builder decides where it opens.
+            const link =
+                (event.ctrlKey || event.metaKey) &&
+                event.target.closest?.('a[href]');
+
+            if (link) {
+                send({ type: 'follow', href: link.href });
+
+                return;
+            }
+
             // The page keeps focus where it is, so the words would not
             // lose it: a click elsewhere keeps them.
             stopWriting(true);

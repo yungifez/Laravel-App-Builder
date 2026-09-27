@@ -720,7 +720,7 @@ const recent = computed(() => {
                                         variant="ghost"
                                         size="sm"
                                         class="-my-2 h-11 gap-1 px-2 text-xs sm:-my-1 sm:h-7"
-                                        :title="`Go to ${state.addressOf(destination)}`"
+                                        :title="`Go to ${state.addressOf(destination)} (or Ctrl+click the link in your app)`"
                                         data-test="link-follow"
                                         @click="state.follow(destination)"
                                     >

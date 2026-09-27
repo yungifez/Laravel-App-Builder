@@ -547,6 +547,12 @@ export function useAppPreview(source: Source) {
             return;
         }
 
+        if (data.type === 'follow' && typeof data.href === 'string') {
+            follow(data.href);
+
+            return;
+        }
+
         if (data.type === 'ready') {
             framePath.value = String(data.path ?? '/');
 
