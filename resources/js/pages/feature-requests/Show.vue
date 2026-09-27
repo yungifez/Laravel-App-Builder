@@ -219,6 +219,11 @@ const stateLabel = computed(() => {
         return 'Waiting for your answer';
     }
 
+    // A question gets an answer, not a change to keep.
+    if (props.run?.status === 'completed' && props.run.plan?.answer) {
+        return 'Answered';
+    }
+
     if (props.run) {
         return runLabels[props.run.status];
     }
@@ -239,6 +244,10 @@ const stateDot = computed(() => {
 
     if (props.run?.question) {
         return 'bg-amber-500';
+    }
+
+    if (props.run?.status === 'completed' && props.run.plan?.answer) {
+        return 'bg-muted-foreground';
     }
 
     const status = props.run?.status ?? props.featureRequest.status;
@@ -671,6 +680,7 @@ function lineClass(line: string): string {
                     <p
                         v-if="
                             !run.review &&
+                            !run.plan.answer &&
                             run.plan.current_behavior &&
                             run.plan.current_behavior !== 'New'
                         "
