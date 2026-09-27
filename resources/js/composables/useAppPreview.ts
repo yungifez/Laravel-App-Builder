@@ -640,6 +640,11 @@ export function useAppPreview(source: Source) {
         post({ type: 'pick', index });
     }
 
+    // Select a part the selected one sits in, so many steps out.
+    function pickUp(steps: number): void {
+        post({ type: 'pick', up: steps });
+    }
+
     // Select the part around the selected one, or the first part inside it.
     function pickNear(direction: 'parent' | 'child'): void {
         post({ type: 'pick', direction });
@@ -1360,6 +1365,7 @@ export function useAppPreview(source: Source) {
         parts,
         glance,
         pickPart,
+        pickUp,
         neighbours,
         shift,
         deselect,

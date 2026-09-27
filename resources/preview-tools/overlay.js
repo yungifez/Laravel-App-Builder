@@ -334,6 +334,21 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         width: Math.round(element.getBoundingClientRect().width),
         height: Math.round(element.getBoundingClientRect().height),
         words: plainWords(element),
+        // The parts it sits in, nearest first, so the owner sees where it
+        // is and can pick one.
+        trail: (() => {
+            const trail = [];
+
+            for (
+                let around = located(element.parentElement);
+                around && trail.length < 6;
+                around = located(around.parentElement)
+            ) {
+                trail.push({ kind: kindOf(around), words: wordsOf(around) });
+            }
+
+            return trail;
+        })(),
         // The colours the part is drawn in now, so a colour of its own
         // can be shown to the owner as it is.
         colors: (() => {
@@ -391,6 +406,39 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         'li',
         'label',
     ];
+    // A small part with no words is a shape.
+    const shapeLike = (element) => {
+        const rect = element.getBoundingClientRect();
+
+        return (
+            rect.width <= 24 &&
+            rect.height <= 24 &&
+            element.innerText.trim() === ''
+        );
+    };
+
+    // What kind of part it is, in plain words.
+    const kindOf = (element) =>
+        KINDS[element.tagName.toLowerCase()] ??
+        (plainWords(element) !== null
+            ? 'Text'
+            : shapeLike(element) || element.children.length === 0
+              ? 'Shape'
+              : 'Box');
+
+    // Words tell parts apart. A box shows none: its words are its parts'.
+    const wordsOf = (element) =>
+        (
+            plainWords(element) ??
+            element.getAttribute('aria-label') ??
+            (WORDY.includes(element.tagName.toLowerCase())
+                ? element.innerText
+                : '')
+        )
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 60);
+
     const outline = () => {
         outlined = [
             ...document.querySelectorAll(
@@ -407,25 +455,14 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             );
         });
 
-        // A small part with no words is a shape; what it is made of is not
-        // listed.
-        const shape = (element) => {
-            const rect = element.getBoundingClientRect();
-
-            return (
-                rect.width <= 24 &&
-                rect.height <= 24 &&
-                element.innerText.trim() === ''
-            );
-        };
-
+        // What a shape is made of is not listed.
         outlined = outlined.filter((element) => {
             for (
                 let around = located(element.parentElement);
                 around;
                 around = located(around.parentElement)
             ) {
-                if (shape(around)) {
+                if (shapeLike(around)) {
                     return false;
                 }
             }
@@ -463,8 +500,6 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         const listed = new Set(outlined);
 
         return outlined.slice(0, 300).map((element) => {
-            const tag = element.tagName.toLowerCase();
-            const words = plainWords(element);
             let depth = 0;
 
             for (
@@ -477,23 +512,8 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
 
             return {
                 depth,
-                kind:
-                    KINDS[tag] ??
-                    (words !== null
-                        ? 'Text'
-                        : shape(element) || element.children.length === 0
-                          ? 'Shape'
-                          : 'Box'),
-                // Words tell parts apart. A box shows none: its words are
-                // its parts'.
-                words: (
-                    words ??
-                    element.getAttribute('aria-label') ??
-                    (WORDY.includes(tag) ? element.innerText : '')
-                )
-                    .replace(/\s+/g, ' ')
-                    .trim()
-                    .slice(0, 60),
+                kind: kindOf(element),
+                words: wordsOf(element),
                 selected: element === selected,
             };
         });
@@ -1358,6 +1378,18 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             placeHover(element?.isConnected ? element : null);
         }
 
+        if (message.type === 'pick' && Number.isInteger(message.up)) {
+            let element = selected;
+
+            for (let step = 0; element && step < message.up; step++) {
+                element = located(element.parentElement);
+            }
+
+            if (element) {
+                choose(element, true);
+            }
+        }
+
         if (message.type === 'pick' && Number.isInteger(message.index)) {
             const element = outlined[message.index];
 
@@ -1374,7 +1406,11 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             }
         }
 
-        if (message.type === 'pick' && !Number.isInteger(message.index)) {
+        if (
+            message.type === 'pick' &&
+            !Number.isInteger(message.index) &&
+            !Number.isInteger(message.up)
+        ) {
             if (message.location) {
                 whenDrawn(message.location, (elements) =>
                     choose(elements[0], false),

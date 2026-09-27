@@ -85,6 +85,15 @@ function keepWords(): void {
     props.state.reword(draft.value);
 }
 
+// The three parts nearest around the selected one, outermost first.
+const trail = computed(() =>
+    (props.state.selected?.trail ?? [])
+        .slice(0, 3)
+        .map((step, index) => ({ ...step, up: index + 1 }))
+        .reverse(),
+);
+const trailCut = computed(() => (props.state.selected?.trail?.length ?? 0) > 3);
+
 // Where the selected link goes, as the owner types it. Saved like words.
 const address = ref('');
 watch(
@@ -496,9 +505,42 @@ const recent = computed(() => {
                 <header
                     class="sticky top-0 z-10 flex items-center gap-2 border-b bg-background px-4 py-2"
                 >
-                    <span class="min-w-0 flex-1 truncate text-sm font-medium">{{
-                        state.selected.text || element.area?.name || ''
-                    }}</span>
+                    <div class="min-w-0 flex-1">
+                        <!-- The parts it sits in, outermost first, so the
+                             owner sees where it is and can step out. -->
+                        <nav
+                            v-if="trail.length > 0"
+                            aria-label="Where it is"
+                            class="flex min-w-0 items-center text-xs text-muted-foreground"
+                            data-test="part-trail"
+                        >
+                            <span v-if="trailCut" aria-hidden="true"
+                                >…&nbsp;›&nbsp;</span
+                            >
+                            <template v-for="step in trail" :key="step.up">
+                                <button
+                                    type="button"
+                                    class="min-h-11 max-w-28 shrink truncate select-none hover:text-foreground sm:min-h-0"
+                                    :title="
+                                        step.words
+                                            ? `${step.kind}: ${step.words}`
+                                            : step.kind
+                                    "
+                                    @click="state.pickUp(step.up)"
+                                >
+                                    {{ step.kind }}
+                                </button>
+                                <span aria-hidden="true" class="shrink-0"
+                                    >&nbsp;›&nbsp;</span
+                                >
+                            </template>
+                        </nav>
+                        <p class="truncate text-sm font-medium">
+                            {{
+                                state.selected.text || element.area?.name || ''
+                            }}
+                        </p>
+                    </div>
                     <Button
                         variant="ghost"
                         size="icon"
