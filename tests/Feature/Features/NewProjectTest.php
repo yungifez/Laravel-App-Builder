@@ -58,6 +58,19 @@ class NewProjectTest extends TestCase
         $this->assertFileExists($repository->path($project).'/app/Models/Team.php');
     }
 
+    public function test_the_app_is_called_by_the_name_the_owner_gave_it()
+    {
+        config(['builder.projects.template' => $this->makeProjectSource(['.env.example' => "APP_NAME=Laravel\nAPP_ENV=local\n"] + $this->laravelApp())]);
+        $owner = User::factory()->create();
+
+        $this->actingAs($owner)->post(route('projects.new.store'), ['name' => 'Bright "Cleaning"', 'purpose' => 'Book a clean.']);
+
+        $repository = app(ProjectRepository::class);
+        $project = $owner->projects()->sole();
+        $this->assertSame("APP_NAME=\"Bright Cleaning\"\nAPP_ENV=local\n", $repository->show($project, $repository->head($project), '.env.example'));
+        $this->assertSame('Name the app Bright Cleaning', $repository->log($project)[0]['subject']);
+    }
+
     public function test_the_first_version_can_be_left_to_the_owner()
     {
         config([

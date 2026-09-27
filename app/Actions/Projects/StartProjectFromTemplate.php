@@ -8,6 +8,7 @@ use App\Context\ProjectNotes;
 use App\Models\Project;
 use App\Models\User;
 use App\Projects\DesignDirection;
+use App\Projects\ProjectRepository;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -20,6 +21,7 @@ class StartProjectFromTemplate
         private ProjectNotes $notes,
         private ApplyDesignDirection $applyDesignDirection,
         private RequestFeature $requestFeature,
+        private ProjectRepository $repository,
     ) {}
 
     /**
@@ -53,6 +55,8 @@ class StartProjectFromTemplate
         return DB::transaction(function () use ($owner, $name, $purpose, $template, $design) {
             $project = $this->createProject->handle($owner, $name, $template, draftNotes: false);
 
+            $this->nameApp($project, $owner, $name);
+
             if ($design !== null) {
                 $this->applyDesignDirection->handle($project, $design);
             }
@@ -69,5 +73,27 @@ class StartProjectFromTemplate
 
             return $project;
         });
+    }
+
+    /**
+     * Give the app its owner's name in place of the template's, so its tab
+     * and emails say "Bright Cleaning", not "Laravel". The name is written
+     * to the example settings every copy of the app starts from.
+     */
+    protected function nameApp(Project $project, User $owner, string $name): void
+    {
+        $head = $this->repository->head($project);
+        $settings = $this->repository->show($project, $head, '.env.example');
+        $name = trim((string) preg_replace('/[^\pL\pN .,&-]/u', '', $name));
+
+        if ($settings === null || $name === '' || preg_match('/^APP_NAME=.*$/m', $settings) !== 1) {
+            return;
+        }
+
+        $named = (string) preg_replace('/^APP_NAME=.*$/m', 'APP_NAME="'.$name.'"', $settings, 1);
+
+        if ($named !== $settings) {
+            $this->repository->commitFiles($project, $head, ['.env.example' => $named], "Name the app {$name}", ['name' => $owner->name, 'email' => $owner->email]);
+        }
     }
 }
