@@ -80,12 +80,15 @@ them and correct any that are wrong.
 - **Which pages:** every GET route without parameters, up to 15, home
   first. Routes that log out, verify, confirm, export or download, and API
   routes, are skipped. Why: visiting them could change the app or they are
-  not screens. Pages with parameters (`/teams/{team}`) are not reached yet.
-- **Signing in:** the check makes a user with `App\Models\User::forceCreate`
-  (random email and password, workspace database only), then signs in
-  through the app's own `/login` form. Why: it works for the Laravel starter
-  kits without knowing the app's code. When the app has no such model or
-  form, only the pages open to guests are measured.
+  not screens. A page with parameters (`/teams/{team}`, up to 5 routes) is
+  opened through the first link to it that another measured page shows.
+- **Signing in:** the app's seeder runs first (`db:seed`, and a failure is
+  ignored). The check then gives the app's first user a random password, or
+  makes a user when there is none, through `App\Models\User`, in the
+  workspace database only. It signs in through the app's own `/login` form.
+  Why: the seeded user owns the seeded records, so pages such as a team
+  page show real content instead of "not found". When the app has no such
+  model or form, only the pages open to guests are measured.
 - **The app is served with SQLite.** The command touches
   `database/database.sqlite` and runs migrations, matching the Laravel
   default `.env.example`. An app that needs another database is not

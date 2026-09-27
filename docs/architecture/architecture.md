@@ -1334,8 +1334,11 @@ is a proof line too. `builder.verification.design_scan` turns both off.
 check). When the checks pass and a change touches a screen file (or CSS),
 verification builds the app, serves it in the workspace and runs the screen
 check (`resources/screen-check`, baked into the box image with Chromium). It
-visits every GET route without parameters, signed out, then signs in as a
-user it makes for the purpose to measure the pages behind a login. At 390,
+visits every GET route without parameters, signed out. It then seeds the
+database with the app's own seeder, gives the app's first user (or one it
+makes) a password for the purpose, and signs in to measure the pages behind
+a login. Pages with parameters are reached through the links the measured
+pages show. At 390,
 820 and 1280 px it records sideways scrolling, words or controls cut off at
 the screen's edge (a layout that hides overflow cuts them off instead of
 scrolling), script errors and, at 390 px, controls under 24 by 24 px with no

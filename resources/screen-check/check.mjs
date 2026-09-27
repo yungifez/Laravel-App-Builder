@@ -28,6 +28,8 @@ const { chromium } = await import('playwright-core');
 const MIN_TARGET = 24;
 const PHONE = 390;
 const MAX_LISTED = 5;
+// How many pages with parameters are opened through the links others show.
+const MAX_FOLLOWED = 5;
 const PORT = 8123;
 
 // Routes that are not screens, or that change the app when visited.
@@ -45,12 +47,16 @@ const shoot = new Set(
 );
 const shotsDirectory = input.shots ?? 'storage/logs/screens/shots';
 const shot = new Set();
+// Every link the measured pages showed, as paths on this app.
+const links = new Set();
 const server = input.base ? null : serve();
 const base = new URL(input.base ?? `http://127.0.0.1:${PORT}`);
 
 try {
     await reachable(base);
-    const paths = input.pages ?? routes();
+    const { paths, patterns } = input.pages
+        ? { paths: input.pages, patterns: [] }
+        : routes();
     const browser = await chromium.launch({
         executablePath: process.env.SCREEN_CHECK_CHROMIUM || undefined,
     });
@@ -75,6 +81,23 @@ try {
                 ...(await measure(browser, page.path, cookies)),
                 signed_in: true,
             };
+        }
+
+        // A page with parameters is opened through the first link to it
+        // that another page showed, as the person who saw that link.
+        for (const pattern of patterns) {
+            const path = [...links].find(
+                (link) =>
+                    pattern.test(link) &&
+                    !pages.some((page) => page.path === link),
+            );
+
+            if (path !== undefined) {
+                pages.push({
+                    ...(await measure(browser, path, cookies)),
+                    ...(cookies.length > 0 ? { signed_in: true } : {}),
+                });
+            }
         }
 
         process.stdout.write(
@@ -119,28 +142,53 @@ async function reachable(url) {
     throw new Error(`The app did not answer at ${url.href}.`);
 }
 
-// The app's GET routes without parameters, home first.
+// The app's GET routes that are screens: those without parameters, home
+// first, and patterns for those with them (`/teams/{team}`), which are
+// reached through links the other pages show.
 function routes() {
     const listed = spawnSync(
         'php',
         ['artisan', 'route:list', '--json', '--method=GET'],
         { encoding: 'utf8' },
     );
-    const uris = JSON.parse(listed.stdout || '[]')
-        .map((route) => route.uri)
-        .filter((uri) => !uri.includes('{') && !NOT_SCREENS.test(uri));
+    const uris = [
+        ...new Set(
+            JSON.parse(listed.stdout || '[]')
+                .map((route) => route.uri)
+                .filter((uri) => !NOT_SCREENS.test(uri)),
+        ),
+    ];
+    const escape = (text) => text.replace(/[.*+?^$()|[\]\\]/g, '\\$&');
 
-    return [...new Set(uris)]
-        .sort((a, b) => (b === '/') - (a === '/'))
-        .slice(0, limit)
-        .map((uri) => (uri === '/' ? '/' : `/${uri}`));
+    return {
+        paths: uris
+            .filter((uri) => !uri.includes('{'))
+            .sort((a, b) => (b === '/') - (a === '/'))
+            .slice(0, limit)
+            .map((uri) => (uri === '/' ? '/' : `/${uri}`)),
+        patterns: uris
+            .filter((uri) => uri.includes('{'))
+            .slice(0, MAX_FOLLOWED)
+            .map(
+                (uri) =>
+                    new RegExp(
+                        `^/${uri
+                            .split(/(\{[^}]+\})/)
+                            .map((part) =>
+                                part.startsWith('{') ? '[^/]+' : escape(part),
+                            )
+                            .join('')}$`,
+                    ),
+            ),
+    };
 }
 
-// Make a user for this check and sign in through the app's own sign-in
-// form. Returns the session cookies, or none when the app has no such user
-// model or form.
+// Sign in through the app's own sign-in form. The app's first user (from
+// its seeder, when it has one) is given a password made for this check, so
+// the pages show that user's records; without one, a user is made. Both
+// happen only in the workspace's own database. Returns the session cookies,
+// or none when the app has no such user model or form.
 async function signIn(browser) {
-    const email = `screen-check-${randomBytes(4).toString('hex')}@example.test`;
     const password = randomBytes(16).toString('hex');
     const made = spawnSync(
         'php',
@@ -150,7 +198,9 @@ async function signIn(browser) {
             '--execute',
             [
                 'if (class_exists(\\App\\Models\\User::class)) {',
-                '    \\App\\Models\\User::forceCreate(["name" => "Screen check", "email" => getenv("SCREEN_EMAIL"), "password" => \\Illuminate\\Support\\Facades\\Hash::make(getenv("SCREEN_PASSWORD")), "email_verified_at" => now()]);',
+                '    $user = \\App\\Models\\User::query()->oldest("id")->first() ?? (new \\App\\Models\\User)->forceFill(["name" => "Screen check"]);',
+                '    $user->forceFill(["email" => $user->email ?? getenv("SCREEN_EMAIL"), "password" => \\Illuminate\\Support\\Facades\\Hash::make(getenv("SCREEN_PASSWORD")), "email_verified_at" => $user->email_verified_at ?? now()])->save();',
+                '    echo "SCREEN_EMAIL=".$user->email.PHP_EOL;',
                 '}',
             ].join(' '),
         ],
@@ -158,13 +208,14 @@ async function signIn(browser) {
             encoding: 'utf8',
             env: {
                 ...process.env,
-                SCREEN_EMAIL: email,
+                SCREEN_EMAIL: `screen-check-${randomBytes(4).toString('hex')}@example.test`,
                 SCREEN_PASSWORD: password,
             },
         },
     );
+    const email = /SCREEN_EMAIL=(\S+)/.exec(made.stdout ?? '')?.[1];
 
-    if (made.status !== 0) {
+    if (made.status !== 0 || email === undefined) {
         return [];
     }
 
@@ -618,6 +669,21 @@ async function measure(browser, path, cookies) {
                 });
                 result.shots = [...(result.shots ?? []), { width, file }];
             }
+            // The links this page shows, to reach pages with parameters.
+            if (width === widths[widths.length - 1]) {
+                for (const href of await page.evaluate(() =>
+                    [...document.querySelectorAll('a[href]')].map(
+                        (link) => link.href,
+                    ),
+                )) {
+                    const url = new URL(href);
+
+                    if (url.origin === base.origin) {
+                        links.add(url.pathname);
+                    }
+                }
+            }
+
             const unfocused =
                 width === widths[widths.length - 1]
                     ? await focusless(page)

@@ -526,6 +526,8 @@ return [
                 'npm run build > storage/logs/screens/build.log 2>&1',
                 'touch database/database.sqlite',
                 'php artisan migrate --force > storage/logs/screens/migrate.log 2>&1',
+                // Records to show, from the app's own seeder, when it has one.
+                '(php artisan db:seed --force > storage/logs/screens/seed.log 2>&1 || true)',
                 'node '.env('BUILDER_SCREEN_CHECK_TOOL', '/opt/screen-check/check.mjs').' > storage/logs/screens/report.json',
             ])],
             'timeout' => 600,
