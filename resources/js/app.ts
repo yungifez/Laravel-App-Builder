@@ -41,6 +41,17 @@ void createInertiaApp({
     progress: {
         color: '#4B5563',
     },
+    defaults: {
+        // Going to another page crossfades instead of cutting. Reloads,
+        // partial loads and form posts keep the page as it is.
+        visitOptions: (href, options) =>
+            (options.method ?? 'get') === 'get' &&
+            !options.preserveState &&
+            !options.async &&
+            (options.only ?? []).length === 0
+                ? { viewTransition: true }
+                : {},
+    },
 });
 
 // This will set light / dark mode on page load...

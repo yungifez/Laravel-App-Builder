@@ -242,3 +242,38 @@
         background: transparent;
     }
 }
+
+/*
+  Motion stays short and quiet: things settle rather than bounce. Every
+  transition eases out, so it starts at speed and lands softly.
+*/
+@theme {
+    --default-transition-timing-function: cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+
+/* Going to another page crossfades quickly instead of cutting. The old
+   page leaves faster than the new one arrives, so the two barely overlap. */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation-duration: 160ms;
+    animation-timing-function: cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+
+::view-transition-old(root) {
+    animation-duration: 90ms;
+}
+
+/* Owners who ask for less motion get none. */
+@media (prefers-reduced-motion: reduce) {
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+        animation: none !important;
+    }
+
+    *,
+    ::before,
+    ::after {
+        transition-duration: 0.01ms !important;
+    }
+}
