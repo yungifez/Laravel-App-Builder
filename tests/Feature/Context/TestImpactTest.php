@@ -446,6 +446,7 @@ class TestImpactTest extends TestCase
             ['id' => 'P\\Tests\\Feature\\PlanTest::__pest_evaluable_it_lists_plans_for_guests', 'file' => 'tests/Feature/PlanTest.php', 'groups' => []],
             ['id' => 'P\\Tests\\Feature\\PlanTest::it charges by seat with data set "(3)"', 'file' => 'tests/Feature/PlanTest.php', 'groups' => []],
             ['id' => 'Tests\\Unit\\MoneyTest::testRoundsHalfUp', 'file' => 'tests/Unit/MoneyTest.php', 'groups' => []],
+            ['id' => 'Tests\\Feature\\InactiveTest::test_people_inactive_for_at_least_30_days_show', 'file' => 'tests/Feature/InactiveTest.php', 'groups' => []],
         ], []);
 
         $this->assertSame([
@@ -454,6 +455,7 @@ class TestImpactTest extends TestCase
             // A data set is one more run of the same check.
             'It charges by seat',
             'Rounds half up',
-        ], array_map($map->sentence(...), [0, 1, 2, 3]));
+            'People inactive for at least 30 days show',
+        ], array_map($map->sentence(...), [0, 1, 2, 3, 4]));
     }
 }

@@ -135,7 +135,7 @@ class ChangeProofTest extends TestCase
             ->get(route('feature-requests.show', $request))
             ->assertInertia(fn (Assert $page) => $page->where('proof.3', [
                 'kind' => 'passed',
-                'text' => 'It added 4 tests that keep this checked from now on: Owners can archive teams; Members cannot archive teams; It hides archived teams; and 1 more.',
+                'text' => 'It added 4 tests that keep this checked from now on, such as "Owners can archive teams".',
             ]));
     }
 

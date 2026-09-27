@@ -13,11 +13,6 @@ use App\Models\Verification;
 class DescribeProof
 {
     /**
-     * How many of the tests a change added are named; the rest are counted.
-     */
-    protected const TESTS_NAMED = 3;
-
-    /**
      * Say, in the owner's words, how we know a change works: what the checks
      * proved, how far the app's own tests reached into the change, and what
      * nothing checks yet. A preview only shows that a change looks right;
@@ -96,7 +91,7 @@ class DescribeProof
 
     /**
      * Name the tests the change added to the app, which keep what it does
-     * checked on every later change. A few are named; the rest are counted.
+     * checked on every later change. One is named, in its own words.
      *
      * @return list<array{kind: string, text: string}>
      */
@@ -108,12 +103,7 @@ class DescribeProof
             return [];
         }
 
-        $named = implode('; ', array_slice($tests, 0, self::TESTS_NAMED));
-        $rest = count($tests) - self::TESTS_NAMED;
-
-        return [['kind' => 'passed', 'text' => trans_choice('It added a test that keeps this checked from now on: :tests.|It added :count tests that keep this checked from now on: :tests.', count($tests), [
-            'tests' => $rest > 0 ? $named.'; '.trans_choice('and :count more|and :count more', $rest) : $named,
-        ])]];
+        return [['kind' => 'passed', 'text' => trans_choice('It added a test that keeps this checked from now on: ":test".|It added :count tests that keep this checked from now on, such as ":test".', count($tests), ['test' => $tests[0]])]];
     }
 
     /**

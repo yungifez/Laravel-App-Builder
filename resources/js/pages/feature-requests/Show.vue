@@ -17,6 +17,7 @@ import FeatureRequestStepChangeController from '@/actions/App/Http/Controllers/F
 import FeatureRequestVerificationController from '@/actions/App/Http/Controllers/FeatureRequestVerificationController';
 import PreviewController from '@/actions/App/Http/Controllers/PreviewController';
 import RunCancellationController from '@/actions/App/Http/Controllers/RunCancellationController';
+import ChangeProof from '@/components/ChangeProof.vue';
 import InputError from '@/components/InputError.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -38,6 +39,7 @@ import type {
     FeatureRequestSummary,
     Preview,
     Run,
+    ProofLine,
     Verification,
     VerificationResult,
 } from '@/types';
@@ -48,6 +50,7 @@ const props = defineProps<{
     parent: { id: number; prompt: string } | null;
     followUps: FeatureRequestSummary[];
     verification: Verification | null;
+    proof: ProofLine[];
     run: Run | null;
     preview: Preview | null;
 }>();
@@ -80,7 +83,16 @@ watch(
 
 const { start, stop } = usePoll(
     1500,
-    { only: ['featureRequest', 'followUps', 'verification', 'run', 'preview'] },
+    {
+        only: [
+            'featureRequest',
+            'followUps',
+            'verification',
+            'proof',
+            'run',
+            'preview',
+        ],
+    },
     { autoStart: false },
 );
 
@@ -1002,6 +1014,8 @@ function lineClass(line: string): string {
                                 verification.error
                             }}</AlertDescription>
                         </Alert>
+
+                        <ChangeProof :proof="proof" />
 
                         <Form
                             v-if="!verificationInProgress"

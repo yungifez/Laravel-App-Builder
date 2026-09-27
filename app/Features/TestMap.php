@@ -199,7 +199,8 @@ final readonly class TestMap
     {
         $name = (string) preg_replace('/ with data set .*$/', '', $name);
         $name = (string) preg_replace('/^(__pest_evaluable_|test_?)/', '', $name);
-        $name = Str::squish(Str::snake(str_replace('_', ' ', $name), ' '));
+        // camelCase words part at each capital; digits stay with their words.
+        $name = Str::squish((string) preg_replace('/(?<=[a-z0-9])(?=[A-Z])/', ' ', str_replace('_', ' ', $name)));
 
         return Str::ucfirst(Str::lower($name));
     }
