@@ -514,6 +514,17 @@ function below(scale: Scale, size: number): number {
 /** The step on the scale nearest to a value. */
 export function snap(scale: Scale, value: number): number {
     const size = Math.abs(value);
+    const { steps, every } = scales[scale];
+
+    // A value already on the scale stays: the steps either side of it are
+    // both further away.
+    if (
+        steps.includes(size) ||
+        (size > (steps.at(-1) ?? 0) && size % every === 0)
+    ) {
+        return value;
+    }
+
     const up = above(scale, size);
     const down = size === 0 ? 0 : below(scale, size);
     const near = size - down <= up - size ? down : up;
