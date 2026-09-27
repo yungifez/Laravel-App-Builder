@@ -363,6 +363,19 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                 border_color: computed.borderTopColor,
             };
         })(),
+        // The sizes the part is drawn at now, so a slider with nothing
+        // chosen starts where the part is.
+        drawn: (() => {
+            const computed = getComputedStyle(element);
+
+            return {
+                text_size: parseFloat(computed.fontSize),
+                max_width: computed.maxWidth,
+                rem: parseFloat(
+                    getComputedStyle(document.documentElement).fontSize,
+                ),
+            };
+        })(),
     });
 
     // The parts on show, in page order, as the builder lists them. The

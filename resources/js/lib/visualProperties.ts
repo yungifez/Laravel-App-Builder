@@ -1,4 +1,4 @@
-import type { Device, VisualProperty, VisualValue } from '@/types';
+import type { Device, Drawn, VisualProperty, VisualValue } from '@/types';
 
 /**
  * The devices the owner edits for, and how wide the preview is for each.
@@ -706,6 +706,63 @@ const flexPositions: Record<string, string> = {
     around: 'space-around',
     evenly: 'space-evenly',
 };
+
+// The step nearest to a length in pixels, among steps given in rem.
+function nearest(
+    steps: Record<string, string>,
+    pixels: number,
+    rem: number,
+): string | null {
+    let best: string | null = null;
+
+    for (const [step, size] of Object.entries(steps)) {
+        const distance = Math.abs(parseFloat(size) * rem - pixels);
+
+        if (
+            best === null ||
+            distance < Math.abs(parseFloat(steps[best]) * rem - pixels)
+        ) {
+            best = step;
+        }
+    }
+
+    return best;
+}
+
+/**
+ * The step on a scale that is closest to how the part is drawn now, so a
+ * slider with nothing chosen starts where the part is.
+ */
+export function drawnStep(
+    property: 'text_size' | 'max_width',
+    drawn: Drawn | undefined,
+): string | null {
+    if (drawn === undefined) {
+        return null;
+    }
+
+    if (property === 'text_size') {
+        return nearest(
+            Object.fromEntries(
+                Object.entries(textSizes).map(([step, [size]]) => [step, size]),
+            ),
+            drawn.text_size,
+            drawn.rem,
+        );
+    }
+
+    if (drawn.max_width === 'none') {
+        return 'none';
+    }
+
+    if (drawn.max_width === '100%') {
+        return 'full';
+    }
+
+    return drawn.max_width.endsWith('px')
+        ? nearest(containers, parseFloat(drawn.max_width), drawn.rem)
+        : null;
+}
 
 const pixels = (value: VisualValue): string =>
     typeof value === 'number' ? `${value}px` : value;

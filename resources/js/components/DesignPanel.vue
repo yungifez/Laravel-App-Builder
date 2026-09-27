@@ -54,6 +54,7 @@ import { when } from '@/lib/when';
 import {
     definition,
     describeValue,
+    drawnStep,
     properties,
     weights,
 } from '@/lib/visualProperties';
@@ -901,6 +902,12 @@ const recent = computed(() => {
                                     :value="state.valueOf('max_width')"
                                     :options="widest"
                                     :rest="widest.length - 1"
+                                    :now="
+                                        drawnStep(
+                                            'max_width',
+                                            state.selected?.drawn,
+                                        )
+                                    "
                                     @change="set('max_width', $event)"
                                 />
                             </section>
@@ -1013,6 +1020,12 @@ const recent = computed(() => {
                                     :value="state.valueOf('text_size')"
                                     :options="sizes"
                                     :rest="2"
+                                    :now="
+                                        drawnStep(
+                                            'text_size',
+                                            state.selected?.drawn,
+                                        )
+                                    "
                                     @change="set('text_size', $event)"
                                 />
                                 <Segmented

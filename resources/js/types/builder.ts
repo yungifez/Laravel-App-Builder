@@ -445,6 +445,18 @@ export type SelectedElement = {
     trail?: { kind: string; words: string }[];
     /** The colours the part is drawn in now, by colour property. */
     colors?: Partial<Record<VisualProperty, string>>;
+    /** The sizes the part is drawn at now, so a slider starts there. */
+    drawn?: Drawn;
+};
+
+/** How a part is drawn now, as the preview measures it. */
+export type Drawn = {
+    /** The size of its words, in pixels. */
+    text_size: number;
+    /** The widest it may get, as the browser works it out. */
+    max_width: string;
+    /** The size of one rem in the app, in pixels. */
+    rem: number;
 };
 
 export type VisualEditSummary = {
