@@ -39,6 +39,8 @@
 [data-builder-overlay] [data-part=frame]{position:fixed;display:none;outline:calc(2px*var(--bz)) solid ${ACCENT};transform-origin:50% 50%}
 [data-builder-overlay] [data-part=inside]{position:absolute;border-style:solid;border-color:${INSIDE}}
 [data-builder-overlay] [data-part=outside]{position:absolute;border-style:solid;border-color:${OUTSIDE}}
+[data-builder-overlay] [data-part=inside],[data-builder-overlay] [data-part=outside]{opacity:0;transition:opacity .12s}
+[data-builder-overlay][data-spacing] [data-part=inside],[data-builder-overlay][data-spacing] [data-part=outside],[data-builder-overlay][data-spacing-drag] [data-part=inside],[data-builder-overlay][data-spacing-drag] [data-part=outside],[data-builder-overlay]:has([data-handle^=pad]:hover) [data-part=inside],[data-builder-overlay]:has([data-handle^=pad]:hover) [data-part=outside]{opacity:1}
 [data-builder-overlay] [data-handle]{position:absolute;pointer-events:auto;touch-action:none;width:calc(10px*var(--bz));height:calc(10px*var(--bz));transform:translate(-50%,-50%);background:#fff;border:calc(1.5px*var(--bz)) solid ${ACCENT};border-radius:2px}
 [data-builder-overlay] [data-handle]::after{content:"";position:absolute;inset:calc(-6px*var(--bz))}
 [data-builder-overlay] [data-handle=e]::after{inset:calc(-6px*var(--bz)) calc(-10px*var(--bz)) calc(-6px*var(--bz)) 0}
@@ -432,6 +434,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                 values: null,
             };
             document.documentElement.setAttribute('data-builder-dragging', '');
+            layer.toggleAttribute('data-spacing-drag', kind.startsWith('pad'));
             document.documentElement.style.setProperty(
                 '--builder-cursor',
                 kind === 'rotate'
@@ -469,6 +472,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             drag = null;
             hint = null;
             document.documentElement.removeAttribute('data-builder-dragging');
+            layer.removeAttribute('data-spacing-drag');
             requestAnimationFrame(placeFrame);
         };
 
@@ -994,6 +998,12 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         }
 
         const message = event.data;
+
+        // The space around the selected part shows only while the owner
+        // works with it, so the part itself stays easy to see.
+        if (message.type === 'spacing') {
+            layer.toggleAttribute('data-spacing', Boolean(message.on));
+        }
 
         if (message.type === 'mode') {
             // The builder sets up a page only once it is on show.

@@ -223,6 +223,11 @@ export function useAppPreview(source: Source) {
         }
     }
 
+    // Show the space around the selected part while the owner works with it.
+    function showSpacing(on: boolean): void {
+        post({ type: 'spacing', on });
+    }
+
     function here(batch: Batch | null | undefined): batch is Batch {
         return (
             batch != null &&
@@ -1193,6 +1198,7 @@ export function useAppPreview(source: Source) {
         save,
         step,
         isUndone,
+        showSpacing,
         press,
         hide,
         undoable,

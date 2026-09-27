@@ -1,9 +1,21 @@
 <script setup lang="ts">
 import { AlignHorizontalJustifyCenter } from '@lucide/vue';
+import { onBeforeUnmount, ref, watch } from 'vue';
 import MeasureField from '@/components/design/MeasureField.vue';
 import type { AppPreviewState } from '@/composables/useAppPreview';
 
-defineProps<{ state: AppPreviewState }>();
+const props = defineProps<{ state: AppPreviewState }>();
+
+// The app shows the space around the part while the owner points at or
+// types in this box.
+const hovered = ref(false);
+const focused = ref(false);
+
+watch(
+    () => hovered.value || focused.value,
+    (on) => props.state.showSpacing(on),
+);
+onBeforeUnmount(() => props.state.showSpacing(false));
 </script>
 
 <template>
@@ -13,6 +25,10 @@ defineProps<{ state: AppPreviewState }>();
         class="rounded-lg border border-dashed p-2"
         role="group"
         aria-label="Space"
+        @pointerenter="hovered = true"
+        @pointerleave="hovered = false"
+        @focusin="focused = true"
+        @focusout="focused = false"
     >
         <div class="flex items-center justify-between gap-2 pb-2">
             <span class="text-[11px] text-muted-foreground">Outside</span>
