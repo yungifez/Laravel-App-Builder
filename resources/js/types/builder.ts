@@ -419,6 +419,8 @@ export type SelectedElement = {
     height?: number;
     /** The words the part shows, when they are all it holds. */
     words?: string | null;
+    /** The colours the part is drawn in now, by colour property. */
+    colors?: Partial<Record<VisualProperty, string>>;
 };
 
 export type VisualEditSummary = {

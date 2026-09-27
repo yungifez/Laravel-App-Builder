@@ -334,6 +334,17 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         width: Math.round(element.getBoundingClientRect().width),
         height: Math.round(element.getBoundingClientRect().height),
         words: plainWords(element),
+        // The colours the part is drawn in now, so a colour of its own
+        // can be shown to the owner as it is.
+        colors: (() => {
+            const computed = getComputedStyle(element);
+
+            return {
+                text_color: computed.color,
+                background: computed.backgroundColor,
+                border_color: computed.borderTopColor,
+            };
+        })(),
     });
 
     const matching = (location) => {

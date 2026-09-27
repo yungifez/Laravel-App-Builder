@@ -825,6 +825,7 @@ const recent = computed(() => {
                                 kind="color"
                                 :colors="state.theme"
                                 :value="state.valueOf('text_color')"
+                                :own="state.selected?.colors?.text_color"
                                 :options="options('text_color')"
                                 @change="set('text_color', $event)"
                             />
@@ -837,6 +838,7 @@ const recent = computed(() => {
                                 kind="color"
                                 :colors="state.theme"
                                 :value="state.valueOf('background')"
+                                :own="state.selected?.colors?.background"
                                 :options="options('background')"
                                 @change="set('background', $event)"
                             />
@@ -875,6 +877,7 @@ const recent = computed(() => {
                                 kind="color"
                                 :colors="state.theme"
                                 :value="state.valueOf('border_color')"
+                                :own="state.selected?.colors?.border_color"
                                 :options="options('border_color')"
                                 @change="set('border_color', $event)"
                             />

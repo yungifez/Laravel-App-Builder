@@ -13,6 +13,8 @@ const props = defineProps<{
     options: { value: VisualValue; label: string }[];
     /** The app's own colours by token, as it draws them. */
     colors?: Record<string, string>;
+    /** The colour the part is drawn in now. */
+    own?: string;
 }>();
 
 const emit = defineEmits<{ change: [value: VisualValue | null] }>();
@@ -38,6 +40,14 @@ const shown = computed(() => {
         return true;
     });
 });
+
+// A colour of its own is none of the choices, so it is shown first, as
+// the part draws it, and marked as the one in use.
+const ownColor = computed(() =>
+    props.kind === 'color' && props.value === 'custom' && props.own
+        ? props.own
+        : null,
+);
 
 // Each swatch shows the choice itself: the colour or the corner.
 function look(kind: string, option: VisualValue): Record<string, string> {
@@ -69,6 +79,23 @@ function look(kind: string, option: VisualValue): Record<string, string> {
             role="group"
             :aria-label="name ?? label"
         >
+            <span
+                v-if="ownColor"
+                role="img"
+                aria-label="Its own colour, in use"
+                title="Its own colour"
+                class="grid size-11 place-items-center rounded-md ring-2 ring-foreground ring-offset-1 ring-offset-background select-none sm:size-7"
+                data-test="own-colour"
+            >
+                <span
+                    class="grid size-5 place-items-center rounded-full border shadow-xs"
+                    :style="{
+                        background: `linear-gradient(${ownColor}, ${ownColor}), repeating-linear-gradient(45deg, var(--muted) 0 3px, transparent 3px 6px)`,
+                    }"
+                >
+                    <Check class="size-3 text-white mix-blend-difference" />
+                </span>
+            </span>
             <button
                 v-for="option in shown"
                 :key="option.value"
