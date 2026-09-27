@@ -405,6 +405,18 @@ function suggest(idea: string): void {
 function send(event: KeyboardEvent): void {
     (event.target as HTMLTextAreaElement).form?.requestSubmit();
 }
+
+// Enter sends, as in any chat; Shift + Enter starts a new line. On a touch
+// screen the keyboard's Enter is the only way to a new line, so it stays one.
+// A key that ends an accented or Asian character being typed is not a send.
+function sendOnEnter(event: KeyboardEvent): void {
+    if (event.isComposing || window.matchMedia('(pointer: coarse)').matches) {
+        return;
+    }
+
+    event.preventDefault();
+    send(event);
+}
 </script>
 
 <template>
@@ -995,6 +1007,7 @@ function send(event: KeyboardEvent): void {
                                       ? 'Ask for a new change…'
                                       : 'Ask for a change…'
                             "
+                            @keydown.enter.exact="sendOnEnter"
                             @keydown.enter.meta.prevent="send"
                             @keydown.enter.ctrl.prevent="send"
                             @focus="composerOpen = true"
@@ -1014,7 +1027,8 @@ function send(event: KeyboardEvent): void {
                                           ? 'Starts a new change'
                                           : ''
                                 }}<span class="hidden sm:inline"
-                                    >{{ change ? ' · ' : '' }}Ctrl + Enter</span
+                                    >{{ change ? ' · ' : '' }}Shift + Enter for
+                                    a new line</span
                                 ></span
                             >
                             <Button
