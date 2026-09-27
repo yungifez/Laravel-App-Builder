@@ -181,4 +181,14 @@ class Project extends Model
     {
         return $this->hasMany(Deployment::class);
     }
+
+    /**
+     * Get what running the project's tests with code coverage showed.
+     *
+     * @return HasMany<TestObservation, $this>
+     */
+    public function testObservations(): HasMany
+    {
+        return $this->hasMany(TestObservation::class);
+    }
 }

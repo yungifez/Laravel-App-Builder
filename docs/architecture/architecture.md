@@ -1996,7 +1996,7 @@ effects:
     - to: membership
       strength: strong # strong | possible | historical
       reason: Accepted invitations create memberships.
-      source: agent # agent | package | analysis | owner
+      source: agent # agent | package | analysis | owner | tests
       observed: 2026-09-26
     - to: billing
       strength: possible
@@ -2048,8 +2048,8 @@ other area change, not proof of causality. The wording to users is "May also
 affect: Billing".
 
 - **Strength** is `strong`, `possible` or `historical`; never a percentage.
-  Each Effect has a reason, a source (agent, package, analysis, owner; later
-  `tests` from test impact analysis and `history` from accepted changes, §6)
+  Each Effect has a reason, a source (agent, package, analysis, owner,
+  `tests` from test impact analysis; later `history` from accepted changes, §6)
   and when it was last observed; an Effect whose reason no longer holds is removed or
   downgraded, by the agent or the owner.
 - **Context:** Effects are listed as hints; the agent decides whether they
@@ -3126,8 +3126,19 @@ compiled packet, same model and code) tests it directly.
 - **Learned relationships (later):** when Change Records show two areas
   changing together repeatedly, propose the Effect to the owner ("Remember
   this relationship?").
-- **Test-impact prototype (next experiment):** tag some tests with the
+- **Test-impact prototype (running):** tag some tests with the
   behaviour they prove (a `behavior:<key>` group; Pest groups and PHPUnit's
   `#[Group]` both work). For real changes, map behaviour → tests → affected
   tests → behaviours, and log useful, noisy and missed Effects, and important
   behaviours with no tests. Build an Effect graph only if this pays off.
+  Built: when a change's suite check passes, the suite runs again with code
+  coverage (`builder.verification.test_map`), before the protected tests are
+  copied in. PHPUnit's coverage XML and test list XML, both documented
+  formats, give which tests ran which code files; each run is kept as a test
+  observation. Tests of area B that ran code area A claims give A an Effect
+  on B with source `tests` (strong from two tests, possible from one). The
+  review gets the areas whose tests ran the changed code, and the changed PHP
+  files no test ran. `php artisan builder:effects` compares, per change, the
+  areas the tests reached with the areas touched outside the ask ("missed"),
+  and lists the behaviours no test proves. Not yet: selecting tests by
+  impact for the fast path, and `history` Effects.

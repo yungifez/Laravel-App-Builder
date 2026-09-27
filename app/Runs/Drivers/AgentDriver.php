@@ -282,6 +282,16 @@ abstract class AgentDriver implements ConstructionDriver
             $lines[] = '- Files no area claims: '.implode(', ', $classification->unclaimed);
         }
 
+        // Observed by running the tests: evidence of reach, not a full list.
+        if ($classification->observed !== null) {
+            $reached = array_map(fn (string $area, int $tests) => ($evidence->areaNames[$area] ?? $area)." ({$area}, {$tests})", array_keys($classification->observed['areas']), $classification->observed['areas']);
+            $lines[] = "- Tests that ran the changed code: {$classification->observed['tests']}".($reached === [] ? '' : '; they belong to '.implode(', ', $reached));
+
+            if ($classification->observed['unmapped'] !== []) {
+                $lines[] = '- Changed PHP files no test ran, so their reach is unknown: '.implode(', ', $classification->observed['unmapped']);
+            }
+        }
+
         return $lines === [] ? null : "## Areas this change touched\n\nUse these area keys for your behaviour changes.\n\n".implode("\n", $lines);
     }
 

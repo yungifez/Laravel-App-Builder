@@ -504,6 +504,8 @@ class AgentDriverTest extends TestCase
             'unclaimed' => ['app/Other.php'],
             'context_updates' => [],
             'targets' => ['teams'],
+            // No test map was made for this project.
+            'observed' => null,
         ], $run->review['classification']);
         $this->assertSame(['requested', 'unexpected', 'other'], array_column($run->review['changes'], 'section'));
         $this->assertSame([

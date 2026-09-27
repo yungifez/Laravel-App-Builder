@@ -8,8 +8,10 @@ use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\VerificationStatus;
 use App\Features\AcceptanceSuite;
+use App\Features\TestMap;
 use App\Features\TestReport;
 use App\Models\FeatureRequest;
+use App\Models\TestObservation;
 use App\Models\Verification;
 use App\Models\Workspace;
 use App\Models\WorkspaceCommand;
@@ -122,6 +124,10 @@ class VerifyFeatureRequest implements ShouldQueue
             $workspaceFiles->sync($project, $workspace);
 
             $checksPassed = $this->runSteps($driver, $runWorkspaceCommand, $workspace, 'checks', stopOnFailure: false);
+
+            // Before the protected acceptance tests are copied in, so the map
+            // only ever holds the project's own tests.
+            $this->observeTests($driver, $runWorkspaceCommand, $workspace, $featureRequest);
             $acceptance = $this->runAcceptance($driver, $runWorkspaceCommand, $workspace, $featureRequest);
 
             $this->finish(match (true) {
@@ -189,6 +195,42 @@ class VerifyFeatureRequest implements ShouldQueue
         }
 
         return $allSucceeded;
+    }
+
+    /**
+     * When the suite check passed, run the suite again with code coverage and
+     * keep which tests ran which code (direction 22). This is evidence for
+     * Effects and impact, never a check: whatever happens here, the result
+     * of the verification stays what the checks said.
+     */
+    protected function observeTests(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): void
+    {
+        /** @var array{enabled: bool, command: list<string>, timeout: int, report: string, listing: string} $config */
+        $config = config('builder.verification.test_map');
+        $suite = collect($this->results)->firstWhere('name', config('builder.verification.suite_check'));
+
+        if (! $config['enabled'] || ($suite['outcome'] ?? null) !== self::OUTCOME_PASSED) {
+            return;
+        }
+
+        rescue(function () use ($driver, $runWorkspaceCommand, $workspace, $featureRequest, $config) {
+            $command = $runWorkspaceCommand->handle($workspace, $config['command'], $config['timeout']);
+            $read = fn (string $path) => rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), null, report: false);
+            $map = $this->outcome($command) === self::OUTCOME_PASSED ? TestMap::parse((string) $read($config['report']), $read($config['listing'])) : null;
+
+            TestObservation::create([
+                'project_id' => $featureRequest->project_id,
+                'feature_request_id' => $featureRequest->id,
+                'verification_id' => $this->verification->id,
+                'tests' => $map->tests ?? [],
+                'files' => $map->files ?? [],
+                'error' => match (true) {
+                    $map === null => __('The tests could not run with code coverage.'),
+                    $map->isEmpty() => __('The tests ran, but no code coverage was recorded.'),
+                    default => null,
+                },
+            ]);
+        });
     }
 
     /**

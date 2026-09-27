@@ -478,6 +478,29 @@ return [
         // blocking finding, so the coder is sent back to add it.
         'require_verify_tests' => (bool) env('BUILDER_REQUIRE_VERIFY_TESTS', true),
 
+        // Test impact evidence (direction 22). When the suite check passes,
+        // the suite runs once more with code coverage, and the test list is
+        // read with its groups, to record which tests ran which code files.
+        // A test in a "behavior:<key>" group proves that behaviour. The run
+        // never changes the checks' result; without a coverage driver it
+        // records nothing. The command writes the condensed coverage
+        // ("report") and PHPUnit's test list ("listing"), using PHPUnit's
+        // documented report formats only.
+        'test_map' => [
+            'enabled' => (bool) env('BUILDER_TEST_MAP', true),
+            'command' => ['sh', '-c', implode(' && ', [
+                'rm -rf storage/logs/test-map',
+                'mkdir -p storage/logs/test-map',
+                'php -d pcov.enabled=1 artisan test --coverage-xml=storage/logs/test-map/coverage > /dev/null',
+                'test -f storage/logs/test-map/coverage/index.xml',
+                '(php artisan test --list-tests-xml=storage/logs/test-map/tests.xml > /dev/null || true)',
+                '{ pwd; grep -o \'<project source="[^"]*"\' storage/logs/test-map/coverage/index.xml; grep -rhoE \'<file name="[^"]*" path="[^"]*"|covered by="[^"]*"\' --include=\'*.php.xml\' storage/logs/test-map/coverage || true; } > storage/logs/test-map/covered.txt',
+            ])],
+            'timeout' => 900,
+            'report' => 'storage/logs/test-map/covered.txt',
+            'listing' => 'storage/logs/test-map/tests.xml',
+        ],
+
         'checks' => [
             ['name' => 'Tests', 'command' => ['php', 'artisan', 'test', '--log-junit=storage/logs/junit.xml'], 'timeout' => 600, 'report' => 'storage/logs/junit.xml'],
             ['name' => 'Static analysis', 'command' => ['vendor/bin/phpstan', 'analyse', '--no-progress'], 'timeout' => 600],

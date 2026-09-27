@@ -53,7 +53,8 @@ class ProjectUnderstandingController extends Controller
                 'connections' => array_map(fn (Effect $effect) => [
                     'to' => $effect->to,
                     'name' => $names[$effect->to] ?? Str::headline($effect->to),
-                    'reason' => $effect->reason,
+                    // Observed reasons name code files; the owner hears where it was seen.
+                    'reason' => $effect->source === 'tests' ? __('Seen when your app\'s tests ran.') : $effect->reason,
                     'strength' => $effect->strength->value,
                 ], $capability->effects),
                 'tested' => $capability->testFiles !== [],

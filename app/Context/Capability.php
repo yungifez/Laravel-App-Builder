@@ -19,11 +19,12 @@ use Symfony\Component\Yaml\Yaml;
 final readonly class Capability
 {
     /**
-     * Where Effects may come from.
+     * Where Effects may come from. "tests" is observed evidence: tests that
+     * belong to the other area ran this area's code (direction 22).
      *
      * @var list<string>
      */
-    public const EFFECT_SOURCES = ['agent', 'package', 'analysis', 'owner'];
+    public const EFFECT_SOURCES = ['agent', 'package', 'analysis', 'owner', 'tests'];
 
     /**
      * @param  list<string>  $paths  Glob patterns for the code that belongs to the area
@@ -209,6 +210,16 @@ final readonly class Capability
         $tests = array_values(array_filter($files, fn (string $path) => self::runBySuite($path) && $this->claims($path)));
 
         return new self($this->key, $this->name, $this->summary, $this->paths, $this->behaviors, $this->effects, $this->file, $this->notes, $tests);
+    }
+
+    /**
+     * Get a copy with more Effects, such as those observed from tests.
+     *
+     * @param  list<Effect>  $effects
+     */
+    public function withEffects(array $effects): self
+    {
+        return new self($this->key, $this->name, $this->summary, $this->paths, $this->behaviors, [...$this->effects, ...$effects], $this->file, $this->notes, $this->testFiles);
     }
 
     /**

@@ -15,6 +15,9 @@ final readonly class ChangeClassification
      * @param  list<string>  $unclaimed  Changed files no area claims
      * @param  list<string>  $contextUpdates  The notes the change rewrote
      * @param  list<string>  $targets  The areas the change is about
+     * @param  array{areas: array<string, int>, tests: int, unmapped: list<string>}|null  $observed  What the project's tests showed: the areas whose tests
+     *                                                                                               ran the changed code (with how many tests), all such tests, and changed PHP files no test ran;
+     *                                                                                               null without a test map
      */
     public function __construct(
         public array $requested = [],
@@ -23,22 +26,23 @@ final readonly class ChangeClassification
         public array $unclaimed = [],
         public array $contextUpdates = [],
         public array $targets = [],
+        public ?array $observed = null,
     ) {}
 
     /**
      * Restore a classification from storage.
      *
-     * @param  array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>}  $data
+     * @param  array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>, observed?: array{areas: array<string, int>, tests: int, unmapped: list<string>}|null}  $data
      */
     public static function fromArray(array $data): self
     {
-        return new self($data['requested'], $data['may_also_affect'], $data['unexpected'], $data['unclaimed'], $data['context_updates'], $data['targets']);
+        return new self($data['requested'], $data['may_also_affect'], $data['unexpected'], $data['unclaimed'], $data['context_updates'], $data['targets'], $data['observed'] ?? null);
     }
 
     /**
      * Get the classification for storage.
      *
-     * @return array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>}
+     * @return array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>, observed: array{areas: array<string, int>, tests: int, unmapped: list<string>}|null}
      */
     public function toArray(): array
     {
@@ -49,6 +53,7 @@ final readonly class ChangeClassification
             'unclaimed' => $this->unclaimed,
             'context_updates' => $this->contextUpdates,
             'targets' => $this->targets,
+            'observed' => $this->observed,
         ];
     }
 

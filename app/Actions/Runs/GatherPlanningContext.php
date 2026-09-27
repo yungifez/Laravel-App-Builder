@@ -47,7 +47,7 @@ class GatherPlanningContext
             parentRequest: $parent?->prompt,
             parentSummary: $parent?->summary,
             targetStep: $targetStep,
-            projectContext: $this->readProjectContext->handle($workspace, $files),
+            projectContext: $this->readProjectContext->handle($workspace, $files, $featureRequest->project),
             answers: $run->answers ?? [],
             mayAsk: count($run->answers ?? []) < $run->question_limit,
             parentAnswered: $parent?->status === FeatureRequestStatus::Answered,

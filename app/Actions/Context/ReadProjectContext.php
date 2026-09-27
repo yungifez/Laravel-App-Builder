@@ -18,16 +18,18 @@ class ReadProjectContext
         private WorkspaceManager $workspaces,
         private ProjectRepository $repository,
         private ProjectNotes $notes,
+        private ObserveEffects $observeEffects,
     ) {}
 
     /**
      * Read a workspace's copy of the notes, with any changes made in it. A
      * file that cannot be read is reported as a problem and left out; it
-     * never stops a run.
+     * never stops a run. With the project, the Effects its tests showed are
+     * added.
      *
      * @param  list<string>  $files  The workspace's files
      */
-    public function handle(Workspace $workspace, array $files): ProjectContext
+    public function handle(Workspace $workspace, array $files, ?Project $project = null): ProjectContext
     {
         $driver = $this->workspaces->driver($workspace->driver);
         $prefix = ProjectNotes::directory().'/';
@@ -36,12 +38,14 @@ class ReadProjectContext
             array_filter($files, fn (string $path) => str_starts_with($path, $prefix)),
         ));
 
-        return $this->read($files, $notes, fn (string $path) => $driver->readFile((string) $workspace->driver_id, $prefix.$path));
+        $context = $this->read($files, $notes, fn (string $path) => $driver->readFile((string) $workspace->driver_id, $prefix.$path));
+
+        return $project === null ? $context : $this->observeEffects->handle($project, $context);
     }
 
     /**
      * Read the notes of a line of work as they are now, against the code at
-     * the tip of its branch.
+     * the tip of its branch, with the Effects the project's tests showed.
      */
     public function current(Project $project, ?string $branch = null): ProjectContext
     {
@@ -49,7 +53,7 @@ class ReadProjectContext
         $notes = $this->notes->files($project, $branch);
         $files = $this->repository->exists($project) ? $this->repository->files($project, $this->repository->head($project, $branch)) : [];
 
-        return $this->read($files, array_keys($notes), fn (string $path) => $notes[$path] ?? null);
+        return $this->observeEffects->handle($project, $this->read($files, array_keys($notes), fn (string $path) => $notes[$path] ?? null));
     }
 
     /**
