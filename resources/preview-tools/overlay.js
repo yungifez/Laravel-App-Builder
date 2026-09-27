@@ -424,7 +424,23 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             ? 'Text'
             : shapeLike(element) || element.children.length === 0
               ? 'Shape'
-              : 'Box');
+              : boxKind(element));
+
+    // A box is named by how it lays out its parts, which owners can see:
+    // side by side, one under another, or in a grid.
+    const boxKind = (element) => {
+        const style = getComputedStyle(element);
+
+        if (style.display.endsWith('grid')) {
+            return 'Grid';
+        }
+
+        if (style.display.endsWith('flex') && element.children.length > 1) {
+            return style.flexDirection.startsWith('column') ? 'Column' : 'Row';
+        }
+
+        return 'Box';
+    };
 
     // Words tell parts apart. A box shows none: its words are its parts'.
     const wordsOf = (element) =>
