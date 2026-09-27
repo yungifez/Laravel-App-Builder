@@ -9,6 +9,7 @@ use App\Context\Capability;
 use App\Context\ProjectNotes;
 use App\Enums\ModelRole;
 use App\Features\AcceptanceSelector;
+use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Runs\Contracts\ConstructionDriver;
 use App\Runs\Exceptions\ConstructionFailed;
@@ -17,6 +18,9 @@ use App\Runs\PlanningContext;
 use App\Runs\Review;
 use App\Runs\ReviewEvidence;
 use App\Workspaces\WorkspaceFiles;
+use Illuminate\Support\Facades\Config;
+use Laravel\Ai\Files\Image;
+use Laravel\Ai\Files\StoredImage;
 use Laravel\Ai\Responses\AgentResponse;
 use Laravel\Ai\Responses\StructuredAgentResponse;
 
@@ -49,7 +53,7 @@ abstract class AgentDriver implements ConstructionDriver
         $prompt = $this->planningPrompt($context);
 
         for ($attempt = 1; ; $attempt++) {
-            $response = FeaturePlanner::make()->prompt($prompt, provider: ModelRole::Planner->providers());
+            $response = FeaturePlanner::make()->prompt($prompt, $this->pictures($run->featureRequest), provider: ModelRole::Planner->providers());
 
             $this->recordModelUsage->handle($run, ModelRole::Planner, $response);
 
@@ -80,7 +84,7 @@ abstract class AgentDriver implements ConstructionDriver
      */
     protected function reviewWith(Run $run, ReviewEvidence $evidence, array $providers): Review
     {
-        $response = ChangeReviewer::make()->prompt($this->reviewPrompt($evidence), provider: $providers);
+        $response = ChangeReviewer::make()->prompt($this->reviewPrompt($evidence), $this->pictures($run->featureRequest), provider: $providers);
 
         $this->recordModelUsage->handle($run, ModelRole::Reviewer, $response);
 
@@ -237,6 +241,20 @@ abstract class AgentDriver implements ConstructionDriver
         }
 
         return implode("\n\n", $sections);
+    }
+
+    /**
+     * Get the pictures the owner attached, for the planner to see what they
+     * mean and the reviewer to check the change against.
+     *
+     * @return list<StoredImage>
+     */
+    protected function pictures(FeatureRequest $featureRequest): array
+    {
+        return array_map(
+            fn (array $image) => Image::fromStorage($image['path'], Config::string('builder.construction.images.disk')),
+            $featureRequest->images ?? [],
+        );
     }
 
     /**

@@ -92,7 +92,7 @@ class FeatureRequest extends Model
     public function instructions(): string
     {
         $count = count($this->images ?? []);
-        $images = $count === 0 ? '' : "\n\nThe owner attached ".($count === 1 ? 'a picture' : "{$count} pictures").' that '.($count === 1 ? 'shows' : 'show').' what they mean. The coder is given '.($count === 1 ? 'it' : 'them').' to look at.';
+        $images = $count === 0 ? '' : "\n\nThe owner attached ".($count === 1 ? 'a picture that shows' : "{$count} pictures that show").' what they mean. Match what '.($count === 1 ? 'it shows' : 'they show').' unless the words say otherwise.';
 
         return $this->describedPrompt().$images;
     }

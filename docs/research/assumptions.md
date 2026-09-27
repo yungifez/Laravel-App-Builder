@@ -47,11 +47,10 @@ them and correct any that are wrong.
 - **Pictures with requests, up to 4, each up to 5 MB.** PNG, JPEG, WebP and
   GIF only. Why: this matches what Lovable accepts, and SVG can hold code.
   Undo: `BUILDER_REQUEST_IMAGES_MAX` and `BUILDER_REQUEST_IMAGE_MAX_KB`.
-- **Only the coder sees the pictures.** The planner and the reviewer are
-  told that pictures were attached, but they do not see them. Why: the
-  coder works in the workspace and can open files; giving the planner the
-  pictures needs the model's attachment support and costs more per plan.
-  This is the next step if plans miss what a picture shows.
+- **The planner and reviewer see the pictures too** (changed the same day).
+  They get them as image attachments, which costs a little more per plan
+  and review. Why: a plan that cannot see "make it look like this" misses
+  what the owner meant.
 - **Pictures stay inside `.git/attachments` in the workspace.** Why: they
   must never become part of the owner's code, and `.git` already holds the
   agent's task file and the change's diff.

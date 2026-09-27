@@ -27,6 +27,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Ai\Exceptions\InsufficientCreditsException;
+use Laravel\Ai\Files\StoredImage;
 use Laravel\Ai\Prompts\AgentPrompt;
 use Laravel\Ai\Providers\Provider;
 use Tests\Concerns\PreparesRuns;
@@ -368,12 +369,17 @@ class AgentDriverTest extends TestCase
         $featureRequest = $this->request();
         $featureRequest->update(['images' => [['path' => 'request-images/1/sketch.png', 'name' => 'Sketch.png']]]);
 
-        app(StartRun::class)->handle($featureRequest);
+        $run = app(StartRun::class)->handle($featureRequest)->refresh();
+        $this->passVerification($run);
 
         $this->assertSame('png bytes', $seen);
         $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, "## Pictures the owner attached\n\nThe owner attached these to show what they mean.")
             && str_contains($prompt, '- .git/attachments/1.png'));
-        FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'The owner attached a picture that shows what they mean.'));
+        // The planner and reviewer see the picture too.
+        FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'The owner attached a picture that shows what they mean. Match what it shows')
+            && $prompt->attachments->sole() instanceof StoredImage
+            && $prompt->attachments->sole()->path === 'request-images/1/sketch.png');
+        ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => $prompt->attachments->count() === 1);
         $this->assertStringNotContainsString('attachments', (string) $featureRequest->refresh()->patch);
     }
 

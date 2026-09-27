@@ -487,6 +487,14 @@ function clearImages(): void {
     syncImageInput();
 }
 
+// A picture dragged onto the box is attached; the box shows where it lands.
+const dragging = ref(false);
+
+function dropImages(event: DragEvent): void {
+    dragging.value = false;
+    addImages(Array.from(event.dataTransfer?.files ?? []));
+}
+
 // A screenshot pasted into the box is attached, as in any chat.
 function pasteImages(event: ClipboardEvent): void {
     const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
@@ -1122,7 +1130,14 @@ function sendOnEnter(event: KeyboardEvent): void {
                     "
                 >
                     <div
-                        class="rounded-xl border bg-background shadow-xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50"
+                        :class="[
+                            'rounded-xl border bg-background shadow-xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50',
+                            dragging && 'border-ring ring-[3px] ring-ring/50',
+                        ]"
+                        data-test="composer-box"
+                        @dragover.prevent="dragging = true"
+                        @dragleave.self="dragging = false"
+                        @drop.prevent="dropImages"
                     >
                         <Label for="prompt" class="sr-only"
                             >What should your app do next?</Label
