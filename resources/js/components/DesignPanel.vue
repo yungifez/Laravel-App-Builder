@@ -323,7 +323,7 @@ const recent = computed(() => {
 
             <template v-else-if="state.selected === null">
                 <div
-                    class="flex items-center justify-center gap-2 p-4 text-sm text-muted-foreground lg:flex-col lg:py-16"
+                    class="flex items-center justify-center gap-2 p-4 text-sm text-muted-foreground lg:flex-col lg:py-10"
                     data-test="design-empty"
                 >
                     <MousePointerClick class="size-5 lg:size-8" />
@@ -425,6 +425,48 @@ const recent = computed(() => {
                             >
                                 <Undo2 class="size-3.5" />
                             </Button>
+                        </li>
+                    </ul>
+                </section>
+
+                <!-- Every part of the page on show, so a small or hidden
+                     part is as easy to pick as a big one. -->
+                <section
+                    v-if="state.parts.length > 0"
+                    class="px-4 pb-4"
+                    data-test="page-parts"
+                >
+                    <h3 class="pb-1 text-xs font-medium text-muted-foreground">
+                        Parts of this page
+                    </h3>
+                    <ul class="text-sm" @mouseleave="state.glance(null)">
+                        <li v-for="(part, index) in state.parts" :key="index">
+                            <button
+                                type="button"
+                                class="flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md pr-2 text-left select-none hover:bg-muted focus-visible:bg-muted focus-visible:outline-none sm:min-h-8"
+                                :style="{
+                                    paddingLeft: `${0.5 + Math.min(part.depth, 8) * 0.75}rem`,
+                                }"
+                                @mouseenter="state.glance(index)"
+                                @focus="state.glance(index)"
+                                @blur="state.glance(null)"
+                                @click="state.pickPart(index)"
+                            >
+                                <span
+                                    :class="[
+                                        'shrink-0',
+                                        part.words
+                                            ? 'text-muted-foreground'
+                                            : '',
+                                    ]"
+                                    >{{ part.kind }}</span
+                                >
+                                <span
+                                    v-if="part.words"
+                                    class="min-w-0 truncate"
+                                    >{{ part.words }}</span
+                                >
+                            </button>
                         </li>
                     </ul>
                 </section>

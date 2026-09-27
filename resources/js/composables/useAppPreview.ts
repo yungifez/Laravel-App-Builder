@@ -26,6 +26,7 @@ import type {
     Device,
     EditorPreview,
     InspectedElement,
+    PagePart,
     SelectedElement,
     VisualEditSummary,
     VisualProperty,
@@ -131,6 +132,8 @@ export function useAppPreview(source: Source) {
     // The app's own theme colours as it draws them, by token, so a swatch
     // shows the colour the app will really get.
     const theme = ref<Record<string, string>>({});
+    // The parts on the page on show, in page order, for the parts list.
+    const parts = ref<PagePart[]>([]);
     // How much the app is drawn smaller than it is, so the handles in it
     // stay the same size on screen.
     const zoom = ref(1);
@@ -367,6 +370,7 @@ export function useAppPreview(source: Source) {
         known.value = null;
         neighbours.value = { earlier: false, later: false };
         post({ type: 'clear' });
+        post({ type: 'outline' });
     }
 
     function bind(key: number, element: HTMLIFrameElement | null): void {
@@ -426,6 +430,10 @@ export function useAppPreview(source: Source) {
         }
 
         showUnshown(to);
+
+        if (source.designing.value) {
+            post({ type: 'outline' }, to);
+        }
     }
 
     // Show the next frame in place of the current one, once it has drawn
@@ -526,6 +534,10 @@ export function useAppPreview(source: Source) {
             setUp(frame.value?.contentWindow);
         }
 
+        if (data.type === 'outline' && Array.isArray(data.parts)) {
+            parts.value = data.parts as PagePart[];
+        }
+
         if (data.type === 'theme' && typeof data.colors === 'object') {
             theme.value = data.colors as Record<string, string>;
         }
@@ -617,6 +629,16 @@ export function useAppPreview(source: Source) {
         }
     }
 
+    // Show a part from the parts list in the app, or show none.
+    function glance(index: number | null): void {
+        post({ type: 'glance', index });
+    }
+
+    // Select a part from the parts list.
+    function pickPart(index: number): void {
+        post({ type: 'pick', index });
+    }
+
     // Select the part around the selected one, or the first part inside it.
     function pickNear(direction: 'parent' | 'child'): void {
         post({ type: 'pick', direction });
@@ -629,6 +651,10 @@ export function useAppPreview(source: Source) {
 
     watch(source.designing, (editing) => {
         post({ type: 'mode', editing });
+
+        if (editing) {
+            post({ type: 'outline' });
+        }
 
         if (!editing) {
             deselect();
@@ -1271,6 +1297,9 @@ export function useAppPreview(source: Source) {
         zoom,
         dragging,
         pickNear,
+        parts,
+        glance,
+        pickPart,
         neighbours,
         shift,
         deselect,

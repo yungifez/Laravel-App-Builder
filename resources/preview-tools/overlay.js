@@ -347,6 +347,103 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         })(),
     });
 
+    // The parts on show, in page order, as the builder lists them. The
+    // list is kept, so the builder can name a part by its place in it.
+    let outlined = [];
+    const KINDS = {
+        a: 'Link',
+        button: 'Button',
+        h1: 'Heading',
+        h2: 'Heading',
+        h3: 'Heading',
+        h4: 'Heading',
+        h5: 'Heading',
+        h6: 'Heading',
+        p: 'Text',
+        ul: 'List',
+        ol: 'List',
+        li: 'Item',
+        img: 'Picture',
+        svg: 'Picture',
+        picture: 'Picture',
+        video: 'Video',
+        nav: 'Menu',
+        header: 'Top of the page',
+        footer: 'Bottom of the page',
+        main: 'Main area',
+        form: 'Form',
+        input: 'Field',
+        textarea: 'Field',
+        select: 'Field',
+        label: 'Label',
+        table: 'Table',
+    };
+    const WORDY = [
+        'a',
+        'button',
+        'h1',
+        'h2',
+        'h3',
+        'h4',
+        'h5',
+        'h6',
+        'p',
+        'li',
+        'label',
+    ];
+    const outline = () => {
+        outlined = [
+            ...document.querySelectorAll(
+                '[data-builder-source],[data-builder-instance]',
+            ),
+        ].filter((element) => {
+            const rect = element.getBoundingClientRect();
+
+            return (
+                rect.width > 0 &&
+                rect.height > 0 &&
+                !element.closest('[data-builder-overlay]') &&
+                !element.parentElement?.closest('svg')
+            );
+        });
+
+        return outlined.slice(0, 300).map((element) => {
+            const tag = element.tagName.toLowerCase();
+            const words = plainWords(element);
+            let depth = 0;
+
+            for (
+                let around = located(element.parentElement);
+                around;
+                around = located(around.parentElement)
+            ) {
+                depth++;
+            }
+
+            return {
+                depth,
+                kind:
+                    KINDS[tag] ??
+                    (words !== null
+                        ? 'Text'
+                        : element.children.length > 0
+                          ? 'Box'
+                          : 'Shape'),
+                // Words tell parts apart. A box shows none: its words are
+                // its parts'.
+                words: (
+                    words ??
+                    element.getAttribute('aria-label') ??
+                    (WORDY.includes(tag) ? element.innerText : '')
+                )
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .slice(0, 60),
+                selected: element === selected,
+            };
+        });
+    };
+
     const matching = (location) => {
         if (!location) {
             return [];
@@ -1194,7 +1291,28 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             shift(message.direction);
         }
 
-        if (message.type === 'pick') {
+        // The builder lists the page's parts; the owner points at one to
+        // see it in the app, and picks one to change it.
+        if (message.type === 'outline') {
+            send({ type: 'outline', parts: outline() });
+        }
+
+        if (message.type === 'glance') {
+            const element = outlined[message.index];
+
+            placeHover(element?.isConnected ? element : null);
+        }
+
+        if (message.type === 'pick' && Number.isInteger(message.index)) {
+            const element = outlined[message.index];
+
+            if (element?.isConnected) {
+                element.scrollIntoView({ block: 'nearest' });
+                choose(element, true);
+            }
+        }
+
+        if (message.type === 'pick' && !Number.isInteger(message.index)) {
             if (message.location) {
                 whenDrawn(message.location, (elements) =>
                     choose(elements[0], false),

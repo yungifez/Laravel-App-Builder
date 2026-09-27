@@ -410,6 +410,17 @@ export type InspectedElement = {
     revision: string;
 };
 
+/** A part of the page on show, as the parts list names it. */
+export type PagePart = {
+    /** How many parts it is inside. */
+    depth: number;
+    /** What kind of part it is, in plain words, as "Link". */
+    kind: string;
+    /** The words it shows, when they are all it holds. */
+    words: string;
+    selected: boolean;
+};
+
 export type SelectedElement = {
     source: string | null;
     instance: string | null;
