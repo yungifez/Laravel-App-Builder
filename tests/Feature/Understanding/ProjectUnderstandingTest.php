@@ -5,11 +5,13 @@ namespace Tests\Feature\Understanding;
 use App\Actions\Projects\CreateProject;
 use App\Context\ChangeClassification;
 use App\Context\ProjectNotes;
+use App\Enums\VerificationStatus;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
 use App\Models\TestObservation;
 use App\Models\User;
+use App\Models\Verification;
 use App\Projects\ProjectRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -122,6 +124,38 @@ class ProjectUnderstandingTest extends TestCase
                 ->where('areas.0.checked_by', null)
                 ->where('areas.0.checks', [])
                 ->missing('check'));
+    }
+
+    public function test_the_owner_sees_the_tests_and_fitting_screens_their_kept_changes_added()
+    {
+        $patch = implode("\n", [
+            'diff --git a/tests/Feature/TeamTest.php b/tests/Feature/TeamTest.php',
+            '+++ b/tests/Feature/TeamTest.php',
+            '@@ -1 +1,3 @@',
+            '+    public function test_owners_rename_teams()',
+            '+    public function test_members_cannot_rename_teams()',
+            'diff --git a/resources/js/pages/Team.vue b/resources/js/pages/Team.vue',
+            '+++ b/resources/js/pages/Team.vue',
+            '@@ -1 +1,2 @@',
+            '+<p>Team</p>',
+        ]);
+        $screens = fn (int $overflow) => ['pages' => [['path' => '/team', 'screen' => 'Team', 'widths' => [
+            ['width' => 390, 'overflow' => $overflow, 'cut' => [], 'small' => [], 'errors' => []],
+        ]]]];
+        $kept = function (array $attributes, ?array $screens) use ($patch) {
+            $featureRequest = FeatureRequest::factory()->generated()->for($this->project)->create(['patch' => $patch, ...$attributes]);
+            Verification::factory()->for($featureRequest)->create(['status' => VerificationStatus::Passed, 'screens' => $screens]);
+        };
+        $kept(['accepted_at' => now()], $screens(0));
+        // A screen that still scrolls sideways was not found to fit.
+        $kept(['accepted_at' => now()], $screens(80));
+        // Only changes still in the app count.
+        $kept(['accepted_at' => now(), 'reverted_at' => now()], $screens(0));
+        $kept([], $screens(0));
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('proven', ['tests' => 4, 'screens' => 1]));
     }
 
     public function test_the_owner_sees_how_many_problems_were_fixed_before_they_saw_their_changes()

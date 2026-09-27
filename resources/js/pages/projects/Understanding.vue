@@ -46,6 +46,8 @@ const props = defineProps<{
     looks: number;
     // Problems caught and fixed before the owner saw the kept changes.
     caught: number;
+    // Across the kept changes: tests they added, and screens found to fit.
+    proven: { tests: number; screens: number };
     draft: NotesDraft | null;
     check?: CheckFinding[];
 }>();
@@ -136,6 +138,12 @@ const facts = computed(() =>
             props.caught,
             'problem fixed before you saw it',
             'problems fixed before you saw them',
+        ],
+        [props.proven.tests, 'test added', 'tests added'],
+        [
+            props.proven.screens,
+            'screen checked on a phone',
+            'screens checked on a phone',
         ],
     ]
         // Zeros say nothing the empty sections below don't already say.

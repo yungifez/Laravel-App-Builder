@@ -6,6 +6,7 @@ use App\Actions\Context\CheckProjectNotes;
 use App\Actions\Context\ReadProjectContext;
 use App\Actions\Context\UpdateProjectNotes;
 use App\Actions\Features\DescribeAskedFor;
+use App\Actions\Features\TallyKeptProof;
 use App\Context\Capability;
 use App\Context\NotesDocument;
 use App\Context\ProjectNotes;
@@ -30,7 +31,7 @@ class ProjectUnderstandingController extends Controller
      * for, how things work, what must always be true, what is connected, and
      * what changed. The quick check runs on request.
      */
-    public function show(Project $project, ProjectRepository $repository, ProjectNotes $projectNotes, ReadProjectContext $readProjectContext, CheckProjectNotes $checkProjectNotes, DescribeAskedFor $describeAskedFor): Response
+    public function show(Project $project, ProjectRepository $repository, ProjectNotes $projectNotes, ReadProjectContext $readProjectContext, CheckProjectNotes $checkProjectNotes, DescribeAskedFor $describeAskedFor, TallyKeptProof $tallyKeptProof): Response
     {
         Gate::authorize('view', $project);
 
@@ -82,6 +83,8 @@ class ProjectUnderstandingController extends Controller
                 'feature_request_id',
                 $project->featureRequests()->select('id')->whereNotNull('accepted_at')->whereNull('reverted_at'),
             ))->count(),
+            // The tests the kept changes added, and their screens found to fit.
+            'proven' => $tallyKeptProof->handle($project),
             'draft' => $project->notes_draft_status === null ? null : [
                 'status' => $project->notes_draft_status->value,
                 'purpose' => $project->notes_draft['purpose'] ?? null,

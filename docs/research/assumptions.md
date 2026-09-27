@@ -93,3 +93,9 @@ them and correct any that are wrong.
   `builder.verification.screens.command`.
 - **Contrast and visible focus are not checked yet.** They are next for this
   check.
+- **"What I know" adds up kept proof.** The overview line now adds "N tests
+  added" (test functions in kept, not undone changes) and "N screens checked
+  on a phone" (touched screens the latest passing verification found to
+  fit). Why: the owner should see what the app has gained over time, not
+  only per change. A test later renamed or removed still counts; the
+  per-part list already says when a test has changed since.
