@@ -2692,7 +2692,9 @@ a later layer on top of it.
 ### 27.6 Dependency order
 
 1. **Execution in a runtime:** a sandbox provider behind the workspace driver,
-   and the Agent SDK coder replacing the in-process tool loop. The runtime is
+   and the Agent SDK coder replacing the in-process tool loop. The SDK coder
+   is built, and the in-process loop is removed; the scripted driver still
+   applies known-good patches through the server-side tools. The runtime is
    hosted by a provider; we still need to choose one (§23).
 2. **Brief and honest diff:** extend `Plan` and `Review`; test coverage per area
    from the test paths in the notes.

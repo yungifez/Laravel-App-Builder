@@ -158,12 +158,13 @@ return [
     | Model Tiers
     |--------------------------------------------------------------------------
     |
-    | Features are built by three model roles: a frontier "planner", an
-    | economical "coder" and an independent "reviewer". Each role names a
-    | laravel/ai provider (config/ai.php) and model. Leave a provider empty to
-    | use the AI SDK default, and a model empty to use that provider's default.
-    | Point every role at the same model to compare against a single stronger
-    | model; the split is a strategy, not a dependency.
+    | Two model roles plan and judge features: a frontier "planner" and an
+    | independent "reviewer". A coding agent builds the change in between
+    | (see "Coding Agents"). Each role names a laravel/ai provider
+    | (config/ai.php) and model. Leave a provider empty to use the AI SDK
+    | default, and a model empty to use that provider's default. Point both
+    | roles at the same model to compare against a single stronger model; the
+    | split is a strategy, not a dependency.
     |
     */
 
@@ -171,10 +172,6 @@ return [
         'planner' => [
             'provider' => env('BUILDER_PLANNER_PROVIDER'),
             'model' => env('BUILDER_PLANNER_MODEL'),
-        ],
-        'coder' => [
-            'provider' => env('BUILDER_CODER_PROVIDER'),
-            'model' => env('BUILDER_CODER_MODEL'),
         ],
         'reviewer' => [
             'provider' => env('BUILDER_REVIEWER_PROVIDER'),
@@ -241,8 +238,8 @@ return [
     | A run builds a feature request's change in its own workspace, through
     | server-side tools only, then hands the change to verification. The
     | "scripted" driver applies the generator's change through the tools. The
-    | "agent" driver plans, builds and reviews with the three model roles
-    | below, through the same tools and records.
+    | "sdk" driver plans and reviews with the model roles below, and builds
+    | with a coding agent in the workspace (see "Coding Agents").
     |
     | One worker writes to a run at a time. Its lease lasts "lease_seconds"
     | and is renewed by every tool call, and every "heartbeat_seconds" while

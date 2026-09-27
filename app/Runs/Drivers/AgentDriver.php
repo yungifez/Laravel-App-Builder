@@ -4,7 +4,6 @@ namespace App\Runs\Drivers;
 
 use App\Actions\Runs\RecordModelUsage;
 use App\Ai\Agents\ChangeReviewer;
-use App\Ai\Agents\FeatureCoder;
 use App\Ai\Agents\FeaturePlanner;
 use App\Context\Capability;
 use App\Context\ProjectNotes;
@@ -17,17 +16,16 @@ use App\Runs\Plan;
 use App\Runs\PlanningContext;
 use App\Runs\Review;
 use App\Runs\ReviewEvidence;
-use App\Runs\ToolSession;
 use Laravel\Ai\Responses\AgentResponse;
 use Laravel\Ai\Responses\StructuredAgentResponse;
 
 /**
- * Builds changes with three model roles: a planner writes the plan, a coder
- * carries it out through the run's tools, and an independent reviewer judges
- * the verified result. Each role uses its own provider and model
- * (config/builder.php "models").
+ * Plans and reviews changes with models: a planner writes the plan and an
+ * independent reviewer judges the verified result, each on its own provider
+ * and model (config/builder.php "models"). How the plan is carried out is
+ * left to the driver that extends this one.
  */
-class AgentDriver implements ConstructionDriver
+abstract class AgentDriver implements ConstructionDriver
 {
     /**
      * How many times the planner is asked for a plan that fits the format.
@@ -65,21 +63,6 @@ class AgentDriver implements ConstructionDriver
                 $prompt = $this->planningPrompt($context)."\n\n## Your previous plan was rejected\n\n{$exception->getMessage()}\nReturn a complete plan that fixes this.";
             }
         }
-    }
-
-    public function build(Run $run, Plan $plan, ToolSession $tools): string
-    {
-        $response = FeatureCoder::make($tools, "coder:{$run->repairs}")->prompt(
-            $this->buildPrompt($run, $plan)."\n\nThe workspace is at revision {$tools->revision()}.",
-            provider: ModelRole::Coder->provider(),
-            model: ModelRole::Coder->model(),
-        );
-
-        $this->recordModelUsage->handle($run, ModelRole::Coder, $response);
-
-        $tools->throwIfHalted();
-
-        return $response->text;
     }
 
     public function review(Run $run, ReviewEvidence $evidence): Review

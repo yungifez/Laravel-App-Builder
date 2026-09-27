@@ -3,7 +3,6 @@
 namespace Tests\Feature\Runs;
 
 use App\Ai\Agents\ChangeReviewer;
-use App\Ai\Agents\FeatureCoder;
 use App\Ai\Agents\FeaturePlanner;
 use App\Ai\Agents\NotesDrafter;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -33,7 +32,6 @@ class AgentInstructionsTest extends TestCase
     {
         return [
             'planner' => [FeaturePlanner::class],
-            'coder' => [FeatureCoder::class],
             'reviewer' => [ChangeReviewer::class],
             'notes' => [NotesDrafter::class],
         ];

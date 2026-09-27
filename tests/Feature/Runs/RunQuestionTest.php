@@ -38,21 +38,25 @@ class RunQuestionTest extends TestCase
         $this->buildInLocalWorkspaces();
 
         config([
-            'builder.construction.driver' => 'agent',
+            'builder.construction.driver' => 'sdk',
             'builder.generators.reference.path' => null,
+            'builder.agents.order' => ['claude'],
             'builder.models.planner' => ['provider' => 'anthropic', 'model' => 'planner-model'],
-            'builder.models.coder' => ['provider' => 'anthropic', 'model' => 'coder-model'],
             'builder.models.reviewer' => ['provider' => 'openai', 'model' => 'reviewer-model'],
         ]);
+
+        // Once the questions are settled, the coding agent adds a file.
+        $coder = $this->coder = new FakeCodingAgent('anthropic', function (Workspace $workspace) {
+            File::put(config('workspaces.drivers.local.root')."/{$workspace->driver_id}/app/Location.php", "<?php\n");
+
+            return new AgentOutcome('claude', 'anthropic', null, AgentOutcomeStatus::Completed, 'Done.');
+        });
+        app(CodingAgentManager::class)->extend('claude', fn () => $coder);
     }
 
     public function test_a_high_consequence_question_pauses_the_run_until_the_owner_answers()
     {
         FeaturePlanner::fake([[...$this->plan(), 'question' => self::QUESTION], $this->plan()]);
-        FeatureCoder::fake([
-            new ToolCall('call-1', 'write_file', ['path' => 'app/Location.php', 'contents' => "<?php\n", 'expected_sha256' => null, 'expected_revision' => 0]),
-            'Done.',
-        ]);
 
         $featureRequest = $this->request();
         $run = app(StartRun::class)->handle($featureRequest)->refresh();
@@ -60,7 +64,7 @@ class RunQuestionTest extends TestCase
         $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
         $this->assertSame('Can customers use more than one location?', $run->question['text']);
         $this->assertNull($run->plan);
-        FeatureCoder::assertNeverPrompted();
+        $this->assertSame([], $this->coder->tasks);
 
         $this->actingAs($featureRequest->project->owner)
             ->get(route('feature-requests.show', $featureRequest))
@@ -89,10 +93,6 @@ class RunQuestionTest extends TestCase
     public function test_you_decide_uses_the_recommendation_without_recording_a_decision()
     {
         FeaturePlanner::fake([[...$this->plan(), 'question' => self::QUESTION], $this->plan()]);
-        FeatureCoder::fake([
-            new ToolCall('call-1', 'write_file', ['path' => 'app/Location.php', 'contents' => "<?php\n", 'expected_sha256' => null, 'expected_revision' => 0]),
-            'Done.',
-        ]);
 
         $featureRequest = $this->request();
         $run = app(StartRun::class)->handle($featureRequest);
@@ -112,10 +112,6 @@ class RunQuestionTest extends TestCase
     {
         config(['builder.construction.questions.before_building' => 0]);
         FeaturePlanner::fake([[...$this->plan(), 'question' => self::QUESTION]]);
-        FeatureCoder::fake([
-            new ToolCall('call-1', 'write_file', ['path' => 'app/Location.php', 'contents' => "<?php\n", 'expected_sha256' => null, 'expected_revision' => 0]),
-            'Done.',
-        ]);
 
         $run = app(StartRun::class)->handle($this->request())->refresh();
 

@@ -27,8 +27,6 @@ class ExecutionSettings
         'builder.construction.questions',
         'builder.models.planner.provider',
         'builder.models.planner.model',
-        'builder.models.coder.provider',
-        'builder.models.coder.model',
         'builder.models.reviewer.provider',
         'builder.models.reviewer.model',
         'builder.models.failover',

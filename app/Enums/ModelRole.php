@@ -3,19 +3,17 @@
 namespace App\Enums;
 
 /**
- * The AI model tiers used to build features. Each role has its own provider and
- * model in config/builder.php, so the tiers can be tuned or collapsed into a
- * single model without code changes.
+ * The AI model tiers that plan and judge features. Each role has its own
+ * provider and model in config/builder.php, so the tiers can be tuned or
+ * collapsed into a single model without code changes. The change itself is
+ * built by a coding agent (config/builder.php "agents").
  */
 enum ModelRole: string
 {
     /** Turns a request into a saved plan with acceptance criteria (frontier tier). */
     case Planner = 'planner';
 
-    /** Carries out the plan through workspace tools (economical tier). */
-    case Coder = 'coder';
-
-    /** Judges the change from independently assembled evidence, never the coder's claims. */
+    /** Judges the change from independently assembled evidence, never the coding agent's claims. */
     case Reviewer = 'reviewer';
 
     /**

@@ -41,7 +41,7 @@ class OperationsFactsTest extends TestCase
         Queue::fake();
         config([
             'ai.providers.openai.key' => 'sk-live-do-not-store',
-            'builder.models.coder.model' => 'coder-model-1',
+            'builder.models.planner.model' => 'planner-model-1',
             'workspaces.drivers.runner.provider' => 'docker',
         ]);
 
@@ -49,7 +49,7 @@ class OperationsFactsTest extends TestCase
         $settings = ExecutionConfig::query()->findOrFail($run->config_version);
 
         $this->assertSame(hash('sha256', (string) json_encode($settings->settings)), $run->config_version);
-        $this->assertSame('coder-model-1', $settings->settings['builder.models.coder.model']);
+        $this->assertSame('planner-model-1', $settings->settings['builder.models.planner.model']);
         $this->assertSame('docker', $settings->settings['workspaces.drivers.runner.provider']);
         $this->assertStringNotContainsString('sk-live', (string) json_encode($settings->settings));
         $this->assertSame($run->config_version, $run->events()->where('type', 'created')->value('data')['config_version']);

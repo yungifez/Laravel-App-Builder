@@ -248,14 +248,16 @@ Two construction drivers are available (`BUILDER_CONSTRUCTION_DRIVER`):
 - `scripted` (default) makes the change that the `reference` generator finds
   among the known-good solutions in `BUILDER_REFERENCE_SOLUTIONS` (see
   `fixtures/reference-solutions`). It needs no model.
-- `agent` uses the three model roles (see [Model roles](#model-roles)). The
+- `sdk` uses the model roles (see [Model roles](#model-roles)). The
   **planner** turns the request into a saved plan: summary, acceptance
-  criteria, assumptions, tasks and selectable steps. The **coder** carries the
-  plan out through the tools. The **reviewer** judges the verified change from
+  criteria, assumptions, tasks and selectable steps. A **coding agent**
+  (Claude Code, or Codex when Anthropic cannot serve the task) carries the plan
+  out in the workspace through the Node runner in `resources/agent-runner`.
+  The **reviewer**, on the other provider, judges the verified change from
   evidence the platform assembles (plan, diff, deleted or weakened tests,
-  verification results), never from the coder's account. A failed
+  verification results), never from the coding agent's account. A failed
   verification or a blocking review finding sends the change back to the
-  coder with the failures, up to `BUILDER_RUN_MAX_REPAIRS` times. Which
+  coding agent with the failures, up to `BUILDER_RUN_MAX_REPAIRS` times. Which
   protected acceptance suites apply is decided by the platform, not by a
   model. Every model call is logged on the run with its tokens.
 
@@ -357,14 +359,15 @@ classification providers to try in order.
 
 ### Model roles
 
-The `agent` driver uses three roles, each with its own provider and model
-(`config/builder.php`, `models`):
+The `sdk` driver uses three roles. The planner and reviewer each have their own
+provider and model (`config/builder.php`, `models`). The coder is a coding agent
+(`config/builder.php`, `agents`):
 
-| Role     | Agent                          | Settings                                              |
-| -------- | ------------------------------ | ----------------------------------------------------- |
-| Planner  | `App\Ai\Agents\FeaturePlanner` | `BUILDER_PLANNER_PROVIDER`, `BUILDER_PLANNER_MODEL`   |
-| Coder    | `App\Ai\Agents\FeatureCoder`   | `BUILDER_CODER_PROVIDER`, `BUILDER_CODER_MODEL`       |
-| Reviewer | `App\Ai\Agents\ChangeReviewer` | `BUILDER_REVIEWER_PROVIDER`, `BUILDER_REVIEWER_MODEL` |
+| Role     | Agent                                    | Settings                                                  |
+| -------- | ---------------------------------------- | --------------------------------------------------------- |
+| Planner  | `App\Ai\Agents\FeaturePlanner`           | `BUILDER_PLANNER_PROVIDER`, `BUILDER_PLANNER_MODEL`       |
+| Coder    | Claude Code, then Codex (`agents.order`) | `BUILDER_CLAUDE_AGENT_MODEL`, `BUILDER_CODEX_AGENT_MODEL` |
+| Reviewer | `App\Ai\Agents\ChangeReviewer`           | `BUILDER_REVIEWER_PROVIDER`, `BUILDER_REVIEWER_MODEL`     |
 
 Providers are the names in `config/ai.php` (for example `anthropic` or
 `openai`); an empty provider uses the SDK default, and an empty model uses the

@@ -2,14 +2,13 @@
 
 namespace Tests\Feature\Runs;
 
-use App\Actions\Runs\CancelRun;
+use App\Actions\Features\RequestFollowUp;
 use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Runs\StartRun;
 use App\Ai\Agents\ChangeReviewer;
-use App\Ai\Agents\FeatureCoder;
 use App\Ai\Agents\FeaturePlanner;
+use App\Enums\AgentOutcomeStatus;
 use App\Enums\FeatureRequestStatus;
-use App\Enums\OperationStatus;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Enums\WorkspaceStatus;
@@ -17,20 +16,32 @@ use App\Jobs\VerifyFeatureRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
+use App\Models\Workspace;
+use App\Runs\Agents\AgentOutcome;
+use App\Runs\Agents\AgentTask;
+use App\Runs\Agents\CodingAgentManager;
+use Closure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Ai\Exceptions\InsufficientCreditsException;
 use Laravel\Ai\Prompts\AgentPrompt;
 use Laravel\Ai\Providers\Provider;
-use Laravel\Ai\Responses\Data\ToolCall;
 use Tests\Concerns\PreparesRuns;
 use Tests\Concerns\UsesReferenceSolutions;
+use Tests\Fakes\FakeCodingAgent;
 use Tests\TestCase;
 
+/**
+ * How a change is planned, repaired and reviewed around the coding agent,
+ * which each test scripts attempt by attempt.
+ */
 class AgentDriverTest extends TestCase
 {
     use PreparesRuns, RefreshDatabase, UsesReferenceSolutions;
+
+    protected FakeCodingAgent $coder;
 
     protected const TEAM = "<?php\n\nclass Team\n{\n    public string \$name = 'Team';\n}\n";
 
@@ -46,12 +57,17 @@ class AgentDriverTest extends TestCase
         $this->buildInLocalWorkspaces();
 
         config([
-            'builder.construction.driver' => 'agent',
+            'builder.construction.driver' => 'sdk',
             'builder.generators.reference.path' => null,
+            'builder.agents.order' => ['claude'],
             'builder.models.planner' => ['provider' => 'anthropic', 'model' => 'planner-model'],
-            'builder.models.coder' => ['provider' => 'anthropic', 'model' => 'coder-model'],
             'builder.models.reviewer' => ['provider' => 'openai', 'model' => 'reviewer-model'],
+            'builder.agents.reviewers.anthropic' => ['provider' => 'openai', 'model' => 'reviewer-model'],
+            'ai.providers.anthropic.key' => 'anthropic-test-key',
+            'ai.providers.openai.key' => 'openai-test-key',
         ]);
+
+        $this->coder();
     }
 
     public function test_the_plan_is_made_on_the_next_provider_when_the_planners_is_out_of_credit()
@@ -63,7 +79,6 @@ class AgentDriverTest extends TestCase
         FeaturePlanner::fake(fn (string $prompt, $attachments, Provider $provider) => $provider->name() === 'anthropic'
             ? throw InsufficientCreditsException::forProvider('anthropic')
             : $this->plan());
-        FeatureCoder::fake(['Done.']);
 
         $run = app(StartRun::class)->handle($this->request())->refresh();
 
@@ -74,12 +89,10 @@ class AgentDriverTest extends TestCase
     public function test_the_planner_coder_and_reviewer_build_and_accept_a_verified_change()
     {
         FeaturePlanner::fake([$this->plan()]);
-        FeatureCoder::fake([
-            new ToolCall('call-1', 'read_file', ['path' => 'app/Models/Team.php']),
-            new ToolCall('call-2', 'write_file', ['path' => 'app/Models/Team.php', 'contents' => self::TEAM_WITH_DESCRIPTION, 'expected_sha256' => hash('sha256', self::TEAM), 'expected_revision' => 0]),
-            new ToolCall('call-3', 'write_file', ['path' => 'tests/Feature/TeamDescriptionTest.php', 'contents' => self::DESCRIPTION_TEST, 'expected_sha256' => null, 'expected_revision' => 1]),
-            'I added a description to teams and every test passes.',
-        ]);
+        $this->coder($this->writes([
+            'app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION,
+            'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST,
+        ], 'I added a description to teams and every test passes.'));
         ChangeReviewer::fake([['approved' => true, 'summary' => 'The diff adds the field the plan asks for.', 'findings' => [], 'verify' => [
             ['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description'],
         ]]]);
@@ -90,8 +103,6 @@ class AgentDriverTest extends TestCase
         $this->assertSame('Teams get an optional description.', $run->plan['summary']);
         $this->assertSame(['Teams have a nullable description.'], $run->plan['acceptance_criteria']);
         $this->assertSame([], $run->plan['acceptance']);
-        $this->assertSame(2, $run->workspace_revision);
-        $this->assertSame(['coder:0:call-1', 'coder:0:call-2', 'coder:0:call-3'], $run->operations()->orderBy('id')->pluck('operation_key')->all());
 
         $featureRequest->refresh();
         $this->assertSame(FeatureRequestStatus::Generated, $featureRequest->status);
@@ -101,10 +112,9 @@ class AgentDriverTest extends TestCase
         FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'Give teams a description')
             && str_contains($prompt->prompt, 'app/Models/Team.php')
             && $prompt->model === 'planner-model');
-        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'Add a nullable description property.')
-            && str_contains($prompt->prompt, "## Write as the app's own developer")
-            && preg_match('/platform|control plane|inspector/i', $prompt->prompt) === 0
-            && $prompt->model === 'coder-model');
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'Add a nullable description property.')
+            && str_contains($prompt, "## Write as the app's own developer")
+            && preg_match('/platform|control plane|inspector/i', $prompt) === 0);
 
         $this->passVerification($run);
 
@@ -125,7 +135,7 @@ class AgentDriverTest extends TestCase
 
         $calls = $run->events()->where('type', 'model_call')->get()->pluck('data');
         $this->assertSame(['planner', 'coder', 'reviewer'], $calls->pluck('role')->all());
-        $this->assertSame(['planner-model', 'coder-model', 'reviewer-model'], $calls->pluck('model')->all());
+        $this->assertSame(['planner-model', 'reviewer-model'], $calls->where('role', '!=', 'coder')->pluck('model')->values()->all());
         $this->assertSame('I added a description to teams and every test passes.', $run->events()->where('type', 'build_finished')->sole()->data['account']);
     }
 
@@ -151,7 +161,7 @@ class AgentDriverTest extends TestCase
         $this->assertSame(RunStatus::Completed, $run->status);
         $this->assertSame("Only a team's owner can invite people. Members cannot.", $run->plan['answer']);
         $this->assertSame(WorkspaceStatus::Destroyed, $run->workspace->status);
-        FeatureCoder::assertNeverPrompted();
+        $this->assertSame([], $this->coder->tasks);
         ChangeReviewer::assertNeverPrompted();
 
         $featureRequest->refresh();
@@ -171,6 +181,34 @@ class AgentDriverTest extends TestCase
             ->assertSessionHasErrors('change');
     }
 
+    public function test_a_message_after_an_answer_continues_the_chat_and_builds_on_the_app_as_it_is()
+    {
+        $answer = [
+            'summary' => 'Teams have only a name.',
+            'answer' => 'Teams have only a name.',
+            'understood_as' => 'Question',
+            'current_behavior' => 'Teams have a name.',
+            'commit_subject' => '',
+            'acceptance_criteria' => [],
+            'assumptions' => [],
+            'tasks' => [],
+            'steps' => [],
+            'preserve' => [],
+            'capabilities' => [],
+            'question' => null,
+        ];
+        FeaturePlanner::fake([$answer, $answer]);
+        $question = $this->request();
+        app(StartRun::class)->handle($question);
+
+        $followUp = app(RequestFollowUp::class)->handle($question->refresh(), $question->user, 'Then give teams a description.');
+
+        $this->assertSame(FeatureRequestStatus::Answered, $followUp->refresh()->status);
+        $this->assertSame([$followUp->id], array_map(fn (FeatureRequest $request) => $request->id, $followUp->lineage()));
+        FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, "## This follows an earlier question\n\nEarlier question: Give teams a description.\n\nThe answer given: Teams have only a name.")
+            && ! str_contains($prompt->prompt, 'This changes an earlier feature'));
+    }
+
     public function test_the_platform_not_the_planner_chooses_the_protected_suites_including_for_follow_ups()
     {
         $solutions = $this->useReferenceSolutions();
@@ -179,12 +217,10 @@ class AgentDriverTest extends TestCase
             [...$this->plan(), 'acceptance' => ['Invitations/AlwaysPasses.php']],
             $this->plan(),
         ]);
-        FeatureCoder::fake([
-            new ToolCall('call-1', 'write_file', ['path' => 'app/Invitation.php', 'contents' => "<?php\n", 'expected_sha256' => null, 'expected_revision' => 0]),
-            'Done.',
-            new ToolCall('call-1', 'write_file', ['path' => 'app/OwnerOnly.php', 'contents' => "<?php\n", 'expected_sha256' => null, 'expected_revision' => 0]),
-            'Done.',
-        ]);
+        $this->coder(
+            $this->writes(['app/Invitation.php' => "<?php\n"]),
+            $this->writes(['app/OwnerOnly.php' => "<?php\n"]),
+        );
         $project = Project::factory()->create(['source_path' => "{$solutions}/source"]);
         $parent = FeatureRequest::factory()->for($project)->create(['prompt' => 'Let owners invite people.']);
 
@@ -215,14 +251,13 @@ class AgentDriverTest extends TestCase
         $this->assertSame(RunStatus::Failed, $run->status);
         $this->assertStringStartsWith('The planner returned an invalid plan:', (string) $run->error);
         $this->assertSame(FeatureRequestStatus::Failed, $featureRequest->refresh()->status);
-        FeatureCoder::assertNeverPrompted();
+        $this->assertSame([], $this->coder->tasks);
         FeaturePlanner::assertPrompted(fn ($prompt) => $prompt->contains('Your previous plan was rejected'));
     }
 
     public function test_an_invalid_plan_is_asked_for_once_more_with_what_was_wrong()
     {
         FeaturePlanner::fake([['summary' => 'Something.', 'acceptance_criteria' => [], 'assumptions' => [], 'tasks' => [], 'steps' => []], $this->plan()]);
-        FeatureCoder::fake(['Nothing to change.']);
 
         $run = app(StartRun::class)->handle($this->request())->refresh();
 
@@ -232,79 +267,13 @@ class AgentDriverTest extends TestCase
         FeaturePlanner::assertPrompted(fn ($prompt) => $prompt->contains('The steps field is required.'));
     }
 
-    public function test_refused_and_unknown_tool_calls_go_back_to_the_model_and_a_claim_without_changes_is_not_accepted()
-    {
-        FeaturePlanner::fake([$this->plan()]);
-        FeatureCoder::fake([
-            new ToolCall('call-1', 'write_file', ['path' => 'tests/Acceptance/Contract.php', 'contents' => '<?php // passes', 'expected_sha256' => null, 'expected_revision' => 0]),
-            new ToolCall('call-2', 'shell', ['command' => 'rm -rf /']),
-            new ToolCall('call-3', 'write_file', ['path' => '../escape.php', 'contents' => 'x', 'expected_sha256' => null, 'expected_revision' => 0]),
-            'Done! The feature is complete and all tests pass.',
-        ]);
-
-        $run = app(StartRun::class)->handle($this->request())->refresh();
-
-        $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
-        $this->assertSame('The run finished without changing the project.', $run->error);
-        $this->assertSame(
-            [['coder:0:call-1', 'rejected'], ['coder:0:call-3', 'rejected']],
-            $run->operations()->orderBy('id')->get()->map(fn ($operation) => [$operation->operation_key, $operation->status->value])->all(),
-        );
-        $this->assertSame(0, $run->workspace_revision);
-        ChangeReviewer::assertNeverPrompted();
-    }
-
-    public function test_the_model_loop_stops_when_the_operation_budget_is_used()
-    {
-        config(['builder.construction.budgets.operations' => 2]);
-        FeaturePlanner::fake([$this->plan()]);
-        FeatureCoder::fake([
-            new ToolCall('call-1', 'list_files', []),
-            new ToolCall('call-2', 'read_file', ['path' => 'app/Models/Team.php']),
-            new ToolCall('call-3', 'read_file', ['path' => 'config/teams.php']),
-            new ToolCall('call-4', 'read_file', ['path' => 'config/teams.php']),
-            'Finished.',
-        ]);
-
-        $run = app(StartRun::class)->handle($this->request())->refresh();
-
-        $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
-        $this->assertSame('The run used all 2 of its tool operations.', $run->error);
-        $this->assertSame(2, $run->operations()->count());
-        $this->assertSame('budget_exhausted', $run->events()->get()->last()->data['reason']);
-    }
-
-    public function test_cancelling_during_the_model_loop_stops_it_before_the_next_model_call()
-    {
-        $steps = 0;
-        FeaturePlanner::fake([$this->plan()]);
-        FeatureCoder::fake(function () use (&$steps) {
-            $steps++;
-
-            if ($steps === 2) {
-                app(CancelRun::class)->handle(Run::query()->sole());
-            }
-
-            return new ToolCall("call-{$steps}", 'list_files', []);
-        });
-
-        $run = app(StartRun::class)->handle($featureRequest = $this->request())->refresh();
-
-        $this->assertSame(RunStatus::Cancelled, $run->status);
-        $this->assertSame(2, $steps);
-        $this->assertSame(['succeeded'], $run->operations()->pluck('status')->map(fn (OperationStatus $status) => $status->value)->all());
-        $this->assertSame(FeatureRequestStatus::Cancelled, $featureRequest->refresh()->status);
-    }
-
     public function test_a_failed_verification_sends_the_change_back_to_the_coder_with_the_failures()
     {
         FeaturePlanner::fake([$this->plan()]);
-        FeatureCoder::fake([
-            new ToolCall('call-1', 'write_file', ['path' => 'app/Models/Team.php', 'contents' => self::TEAM_WITH_DESCRIPTION, 'expected_sha256' => hash('sha256', self::TEAM), 'expected_revision' => 0]),
-            'Done.',
-            new ToolCall('call-1', 'write_file', ['path' => 'app/Team.php', 'contents' => "<?php\n", 'expected_sha256' => null, 'expected_revision' => 1]),
-            'Fixed.',
-        ]);
+        $this->coder(
+            $this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION]),
+            $this->writes(['app/Team.php' => "<?php\n"], 'Fixed.'),
+        );
 
         $run = app(StartRun::class)->handle($this->request())->refresh();
         $this->failVerification($run, 'Tests: 1 failed. Expected description to be fillable.');
@@ -313,11 +282,12 @@ class AgentDriverTest extends TestCase
         $this->assertSame(RunStatus::Verifying, $run->status);
         $this->assertSame(1, $run->repairs);
         $this->assertNull($run->feedback);
-        $this->assertSame(['coder:0:call-1', 'coder:1:call-1'], $run->operations()->orderBy('id')->pluck('operation_key')->all());
-        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'Fix these problems')
-            && str_contains($prompt->prompt, 'Expected description to be fillable.')
-            && str_contains($prompt->prompt, 'revision 1'));
+        $this->assertCount(2, $this->coder->tasks);
+        $this->assertStringNotContainsString('Fix these problems', $this->coder->tasks[0]->prompt);
+        $this->assertStringContainsString('Fix these problems', $this->coder->tasks[1]->prompt);
+        $this->assertStringContainsString('Expected description to be fillable.', $this->coder->tasks[1]->prompt);
         $this->assertStringContainsString('app/Team.php', (string) $run->featureRequest->patch);
+        $this->assertStringContainsString('app/Models/Team.php', (string) $run->featureRequest->patch);
         FeaturePlanner::assertPromptedTimes(1);
     }
 
@@ -325,12 +295,10 @@ class AgentDriverTest extends TestCase
     {
         config(['builder.construction.budgets.repairs' => 1]);
         FeaturePlanner::fake([$this->plan()]);
-        FeatureCoder::fake([
-            new ToolCall('call-1', 'write_file', ['path' => 'app/Models/Team.php', 'contents' => self::TEAM_WITH_DESCRIPTION, 'expected_sha256' => hash('sha256', self::TEAM), 'expected_revision' => 0]),
-            'Done.',
-            new ToolCall('call-1', 'write_file', ['path' => 'app/Team.php', 'contents' => "<?php\n", 'expected_sha256' => null, 'expected_revision' => 1]),
-            'Fixed.',
-        ]);
+        $this->coder(
+            $this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION]),
+            $this->writes(['app/Team.php' => "<?php\n"], 'Fixed.'),
+        );
         $finding = ['severity' => 'blocking', 'summary' => 'Anyone can edit the description.', 'file' => 'app/Models/Team.php'];
         ChangeReviewer::fake([
             ['approved' => true, 'summary' => 'Looks fine apart from authorization.', 'findings' => [$finding]],
@@ -343,7 +311,7 @@ class AgentDriverTest extends TestCase
         $run->refresh();
         $this->assertSame(RunStatus::Verifying, $run->status, 'An approval with a blocking finding must not complete the run.');
         $this->assertSame(1, $run->repairs);
-        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'app/Models/Team.php: Anyone can edit the description.'));
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'app/Models/Team.php: Anyone can edit the description.'));
 
         $this->passVerification($run);
 
@@ -355,12 +323,10 @@ class AgentDriverTest extends TestCase
     public function test_a_verify_item_without_a_test_in_the_change_sends_the_change_back_even_when_the_reviewer_approves()
     {
         FeaturePlanner::fake([$this->plan()]);
-        FeatureCoder::fake([
-            new ToolCall('call-1', 'write_file', ['path' => 'app/Models/Team.php', 'contents' => self::TEAM_WITH_DESCRIPTION, 'expected_sha256' => hash('sha256', self::TEAM), 'expected_revision' => 0]),
-            'Done.',
-            new ToolCall('call-2', 'write_file', ['path' => 'tests/Feature/TeamDescriptionTest.php', 'contents' => self::DESCRIPTION_TEST, 'expected_sha256' => null, 'expected_revision' => 1]),
-            'Added the test.',
-        ]);
+        $this->coder(
+            $this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION]),
+            $this->writes(['tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST], 'Added the test.'),
+        );
         ChangeReviewer::fake([
             ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamTest.php', 'test_name' => 'it has a description']]],
             ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]],
@@ -374,7 +340,7 @@ class AgentDriverTest extends TestCase
         $this->assertSame(1, $run->repairs);
         $this->assertSame('no_test', $run->review['verified'][0]['evidence']);
         $this->assertFalse($run->review['approved']);
-        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'No test in the change checks: Teams have a nullable description.'));
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'No test in the change checks: Teams have a nullable description.'));
 
         $this->passVerification($run);
 
@@ -386,12 +352,10 @@ class AgentDriverTest extends TestCase
     public function test_a_named_test_that_did_not_run_is_not_evidence_and_sends_the_change_back()
     {
         FeaturePlanner::fake([$this->plan()]);
-        FeatureCoder::fake([
-            new ToolCall('call-1', 'write_file', ['path' => 'app/Models/Team.php', 'contents' => self::TEAM_WITH_DESCRIPTION, 'expected_sha256' => hash('sha256', self::TEAM), 'expected_revision' => 0]),
-            new ToolCall('call-2', 'write_file', ['path' => 'tests/Feature/TeamDescriptionTest.php', 'contents' => self::DESCRIPTION_TEST, 'expected_sha256' => null, 'expected_revision' => 1]),
-            'Done.',
-            'Nothing to change; the test is there.',
-        ]);
+        $this->coder(
+            $this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]),
+            $this->writes([], 'Nothing to change; the test is there.'),
+        );
         ChangeReviewer::fake([
             ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams keep their colour']]],
             ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]],
@@ -404,7 +368,7 @@ class AgentDriverTest extends TestCase
         $this->assertSame(1, $run->repairs);
         $this->assertSame('not_run_by_checks', $run->review['verified'][0]['evidence']);
         $this->assertFalse($run->review['approved']);
-        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'The test "teams keep their colour" for "Teams have a nullable description." did not run in the test suite'));
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'The test "teams keep their colour" for "Teams have a nullable description." did not run in the test suite'));
 
         $this->passVerification($run);
 
@@ -414,13 +378,10 @@ class AgentDriverTest extends TestCase
     public function test_a_test_the_checks_do_not_run_is_sent_back_before_verification_and_review()
     {
         FeaturePlanner::fake([$this->plan()]);
-        FeatureCoder::fake([
-            new ToolCall('call-1', 'write_file', ['path' => 'app/Models/Team.php', 'contents' => self::TEAM_WITH_DESCRIPTION, 'expected_sha256' => hash('sha256', self::TEAM), 'expected_revision' => 0]),
-            new ToolCall('call-2', 'write_file', ['path' => 'resources/js/pages/Team.test.ts', 'contents' => "it('has a description', () => {});\n", 'expected_sha256' => null, 'expected_revision' => 1]),
-            'Done.',
-            new ToolCall('call-1', 'write_file', ['path' => 'tests/Feature/TeamDescriptionTest.php', 'contents' => self::DESCRIPTION_TEST, 'expected_sha256' => null, 'expected_revision' => 2]),
-            'Moved the test.',
-        ]);
+        $this->coder(
+            $this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'resources/js/pages/Team.test.ts' => "it('has a description', () => {});\n"]),
+            $this->writes(['tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST], 'Moved the test.'),
+        );
         ChangeReviewer::fake([]);
 
         $run = app(StartRun::class)->handle($this->request())->refresh();
@@ -429,49 +390,41 @@ class AgentDriverTest extends TestCase
         $this->assertSame(1, $run->repairs);
         $this->assertSame(1, $run->verifications()->count(), 'Only the repaired change is verified.');
         $this->assertSame(['resources/js/pages/Team.test.ts'], $run->events()->where('type', 'status')->where('data->reason', 'tests_not_run')->sole()->data['files']);
-        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'The checks do not run resources/js/pages/Team.test.ts'));
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'The checks do not run resources/js/pages/Team.test.ts'));
         ChangeReviewer::assertNeverPrompted();
     }
 
     public function test_a_script_test_under_the_test_folder_is_not_run_by_the_checks_either()
     {
         FeaturePlanner::fake([$this->plan()]);
-        FeatureCoder::fake([
-            new ToolCall('call-1', 'write_file', ['path' => 'app/Models/Team.php', 'contents' => self::TEAM_WITH_DESCRIPTION, 'expected_sha256' => hash('sha256', self::TEAM), 'expected_revision' => 0]),
-            new ToolCall('call-2', 'write_file', ['path' => 'tests/Frontend/Team.test.ts', 'contents' => "it('has a description', () => {});\n", 'expected_sha256' => null, 'expected_revision' => 1]),
-            'Done.',
-            new ToolCall('call-1', 'write_file', ['path' => 'tests/Feature/TeamDescriptionTest.php', 'contents' => self::DESCRIPTION_TEST, 'expected_sha256' => null, 'expected_revision' => 2]),
-            'Moved the test.',
-        ]);
+        $this->coder(
+            $this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Frontend/Team.test.ts' => "it('has a description', () => {});\n"]),
+            $this->writes(['tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST], 'Moved the test.'),
+        );
         ChangeReviewer::fake([]);
 
         $run = app(StartRun::class)->handle($this->request())->refresh();
 
         $this->assertSame(RunStatus::Verifying, $run->status);
         $this->assertSame(['tests/Frontend/Team.test.ts'], $run->events()->where('type', 'status')->where('data->reason', 'tests_not_run')->sole()->data['files']);
-        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'Only tests under tests/, in a file whose name ends in Test.php are run by the checks'));
-        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'The checks do not run tests/Frontend/Team.test.ts'));
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'Only tests under tests/, in a file whose name ends in Test.php are run by the checks'));
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'The checks do not run tests/Frontend/Team.test.ts'));
     }
 
     public function test_the_coder_is_asked_to_keep_what_the_app_does_easy_to_see()
     {
         FeaturePlanner::fake([$this->plan()]);
-        FeatureCoder::fake(['Nothing to do.']);
 
         app(StartRun::class)->handle($this->request());
 
-        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'Make it easy to see what the app does')
-            && str_contains($prompt->prompt, 'never class, table or route names'));
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'Make it easy to see what the app does')
+            && str_contains($prompt, 'never class, table or route names'));
     }
 
     public function test_the_reviewer_sees_tests_the_change_deletes()
     {
         FeaturePlanner::fake([$this->plan()]);
-        FeatureCoder::fake([
-            new ToolCall('call-1', 'read_file', ['path' => 'tests/Feature/TeamTest.php']),
-            new ToolCall('call-2', 'apply_patch', ['patch' => "diff --git a/tests/Feature/TeamTest.php b/tests/Feature/TeamTest.php\ndeleted file mode 100644\n--- a/tests/Feature/TeamTest.php\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-<?php\n-\n-test('teams have names', fn () => expect(true)->toBeTrue());\n", 'expected_revision' => 0]),
-            'Removed a slow test.',
-        ]);
+        $this->coder($this->writes(['tests/Feature/TeamTest.php' => null], 'Removed a slow test.'));
         ChangeReviewer::fake([['approved' => false, 'summary' => 'Deletes a test.', 'findings' => [['severity' => 'blocking', 'summary' => 'A test was deleted.', 'file' => 'tests/Feature/TeamTest.php']]]]);
         config(['builder.construction.budgets.repairs' => 0]);
 
@@ -494,14 +447,13 @@ class AgentDriverTest extends TestCase
             ['area' => 'settings', 'statement' => 'Owners can still invite.'],
             ['area' => null, 'statement' => 'Nothing else changes.'],
         ]]]);
-        FeatureCoder::fake([
-            new ToolCall('call-1', 'write_file', ['path' => 'app/Models/Team.php', 'contents' => self::TEAM_WITH_DESCRIPTION, 'expected_sha256' => hash('sha256', self::TEAM), 'expected_revision' => 0]),
-            new ToolCall('call-2', 'write_file', ['path' => 'config/billing.php', 'contents' => "<?php\n\nreturn [];\n", 'expected_sha256' => null, 'expected_revision' => 1]),
-            new ToolCall('call-3', 'write_file', ['path' => 'config/teams.php', 'contents' => str_replace('members:invite', 'members:remove', $config), 'expected_sha256' => hash('sha256', $config), 'expected_revision' => 2]),
-            new ToolCall('call-4', 'write_file', ['path' => 'app/Other.php', 'contents' => "<?php\n", 'expected_sha256' => null, 'expected_revision' => 3]),
-            new ToolCall('call-5', 'write_file', ['path' => 'tests/Feature/TeamTest.php', 'contents' => self::DESCRIPTION_TEST, 'expected_sha256' => hash('sha256', "<?php\n"), 'expected_revision' => 4]),
-            'Done.',
-        ]);
+        $this->coder($this->writes([
+            'app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION,
+            'config/billing.php' => "<?php\n\nreturn [];\n",
+            'config/teams.php' => str_replace('members:invite', 'members:remove', $config),
+            'app/Other.php' => "<?php\n",
+            'tests/Feature/TeamTest.php' => self::DESCRIPTION_TEST,
+        ]));
         ChangeReviewer::fake([[
             'approved' => true,
             'summary' => 'Adds the description.',
@@ -533,13 +485,13 @@ class AgentDriverTest extends TestCase
         FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'We call customers clients.')
             && str_contains($prompt->prompt, '- teams: Teams. Clients belong to teams.')
             && ! str_contains($prompt->prompt, 'A team always has a name.'));
-        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, "## What it does now\n\nTeams have only a name.")
-            && str_contains($prompt->prompt, "## Keep as it is\n\nDo not change these.")
-            && str_contains($prompt->prompt, '- People can still sign up.')
-            && str_contains($prompt->prompt, 'A team always has a name.')
-            && str_contains($prompt->prompt, '- Billing (possible): Each team is billed separately.')
-            && str_contains($prompt->prompt, '(capabilities/billing.md)')
-            && ! str_contains($prompt->prompt, 'Only owners see invoices.'));
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, "## What it does now\n\nTeams have only a name.")
+            && str_contains($prompt, "## Keep as it is\n\nDo not change these.")
+            && str_contains($prompt, '- People can still sign up.')
+            && str_contains($prompt, 'A team always has a name.')
+            && str_contains($prompt, '- Billing (possible): Each team is billed separately.')
+            && str_contains($prompt, '(capabilities/billing.md)')
+            && ! str_contains($prompt, 'Only owners see invoices.'));
 
         $this->passVerification($run, [['file' => 'tests/Feature/TeamTest.php', 'name' => 'teams have a nullable description', 'outcome' => 'passed']]);
 
@@ -584,7 +536,6 @@ class AgentDriverTest extends TestCase
     public function test_a_context_file_that_cannot_be_read_is_reported_and_does_not_stop_the_run()
     {
         FeaturePlanner::fake([[...$this->plan(), 'capabilities' => ['teams']]]);
-        FeatureCoder::fake(['Nothing to do.']);
 
         $run = app(StartRun::class)->handle($this->request([
             '.builder/capabilities/teams.md' => "---\ncapability: teams\npaths: [app/Models/Team.php]\n---\n# Teams\n",
@@ -596,6 +547,60 @@ class AgentDriverTest extends TestCase
         $this->assertCount(2, $run->context['problems']);
         $this->assertStringStartsWith('capabilities/broken.md:', $run->context['problems'][0]);
         $this->assertSame('capabilities/copy.md: another file already describes "teams".', $run->context['problems'][1]);
+    }
+
+    /**
+     * Script the coding agent's attempts, one per build or repair. Without
+     * any, the agent changes nothing.
+     *
+     * @param  Closure(Workspace): string  ...$attempts
+     */
+    protected function coder(Closure ...$attempts): void
+    {
+        $coder = $this->coder = new FakeCodingAgent('anthropic', function (Workspace $workspace) use (&$attempts) {
+            $summary = $attempts === [] ? 'Nothing to do.' : array_shift($attempts)($workspace);
+
+            return new AgentOutcome('claude', 'anthropic', null, AgentOutcomeStatus::Completed, $summary, turns: 2, inputTokens: 100, outputTokens: 50, costUsd: 0.01);
+        });
+
+        app(CodingAgentManager::class)->extend('claude', fn () => $coder);
+    }
+
+    /**
+     * An attempt that writes the given files, or deletes those set to null.
+     *
+     * @param  array<string, string|null>  $files
+     * @return Closure(Workspace): string
+     */
+    protected function writes(array $files, string $summary = 'Done.'): Closure
+    {
+        return function (Workspace $workspace) use ($files, $summary) {
+            foreach ($files as $path => $contents) {
+                $full = config('workspaces.drivers.local.root').DIRECTORY_SEPARATOR.$workspace->driver_id.DIRECTORY_SEPARATOR.$path;
+
+                if ($contents === null) {
+                    File::delete($full);
+                } else {
+                    File::ensureDirectoryExists(dirname($full));
+                    File::put($full, $contents);
+                }
+            }
+
+            return $summary;
+        };
+    }
+
+    /**
+     * Assert that one of the coding agent's tasks matches.
+     *
+     * @param  Closure(string): bool  $matches
+     */
+    protected function assertCoderPrompted(Closure $matches): void
+    {
+        $this->assertTrue(
+            collect($this->coder->tasks)->contains(fn (AgentTask $task) => $matches($task->prompt)),
+            'No task given to the coding agent matches.',
+        );
     }
 
     /**

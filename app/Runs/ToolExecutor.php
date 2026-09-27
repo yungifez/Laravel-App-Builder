@@ -80,16 +80,6 @@ class ToolExecutor
     }
 
     /**
-     * Get the names of the tools callers may use.
-     *
-     * @return list<string>
-     */
-    public function tools(): array
-    {
-        return array_keys($this->definitions());
-    }
-
-    /**
      * Journal the call under the run's row lock, or answer it without running
      * the tool (a replay or a refusal).
      *
