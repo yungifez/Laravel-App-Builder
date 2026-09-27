@@ -55,6 +55,23 @@ class LiveErrorFixTest extends TestCase
         $this->assertStringNotContainsString('last_at', $instructions);
     }
 
+    public function test_what_belongs_to_the_people_using_the_app_does_not_reach_the_builder()
+    {
+        $this->online->update(['live_errors' => [[
+            'class' => 'Illuminate\Database\QueryException',
+            'message' => "SQL: insert into users (name, email) values ('Jane Doe', 'jane@example.com') from 203.0.113.9 with key redactme123456789012345678",
+            'count' => 2,
+        ]]]);
+
+        $this->actingAs($this->project->owner)->post(route('live-error-fixes.store', $this->project));
+
+        $instructions = FeatureRequest::sole()->instructions();
+        $this->assertStringContainsString("values ('?', '?') from [ip] with key [secret] (2 times)", $instructions);
+        foreach (['Jane Doe', 'jane@example.com', '203.0.113.9', 'redactme'] as $private) {
+            $this->assertStringNotContainsString($private, $instructions);
+        }
+    }
+
     public function test_a_second_click_opens_the_fix_already_asked_for()
     {
         $this->actingAs($this->project->owner)->post(route('live-error-fixes.store', $this->project));

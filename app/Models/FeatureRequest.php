@@ -115,11 +115,26 @@ class FeatureRequest extends Model
     protected function liveErrorInstructions(array $errors): string
     {
         $lines = array_map(
-            fn (array $error) => '- '.trim(($error['class'] ?? '').': '.str($error['message'])->squish()->limit(300), ': ').' ('.($error['count'] === 1 ? 'once' : "{$error['count']} times").')',
+            fn (array $error) => '- '.trim(($error['class'] ?? '').': '.str($this->redact($error['message']))->squish()->limit(300), ': ').' ('.($error['count'] === 1 ? 'once' : "{$error['count']} times").')',
             $errors,
         );
 
         return "People using the published app ran into these errors since its current version went online, most frequent first. Find why each happens and fix the cause, with a test that fails without the fix:\n".implode("\n", $lines);
+    }
+
+    /**
+     * Remove what belongs to the people using the app before the message
+     * goes to the model: quoted values (SQL bindings, input), email and IP
+     * addresses, and anything that looks like a key or token.
+     */
+    protected function redact(string $message): string
+    {
+        return preg_replace([
+            "/'(?:[^'\\\\]|\\\\.)*'/",
+            '/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/',
+            '/\b\d{1,3}(?:\.\d{1,3}){3}\b/',
+            '/\b(?=[\w-]*\d)(?=[\w-]*[a-zA-Z])[\w-]{24,}\b/',
+        ], ["'?'", '[email]', '[ip]', '[secret]'], $message) ?? '';
     }
 
     /**
