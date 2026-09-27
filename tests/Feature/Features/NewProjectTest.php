@@ -42,7 +42,7 @@ class NewProjectTest extends TestCase
 
         // The owner's sentence is the first change, and they are taken to it.
         $first = $project->featureRequests()->sole();
-        $this->assertSame('Make the first version: Cleaners see their jobs for the day, and customers book a clean online.', $first->prompt);
+        $this->assertSame('Make the first version: Cleaners see their jobs for the day, and customers book a clean online. Give it its own front page in place of the starter welcome page.', $first->prompt);
         $this->assertTrue($first->user->is($owner));
         $response->assertRedirect(route('projects.show', ['project' => $project, 'change' => $first->id]));
         Queue::assertPushed(ExecuteRun::class);

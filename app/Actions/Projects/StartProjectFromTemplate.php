@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Projects\DesignDirection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class StartProjectFromTemplate
@@ -59,7 +60,11 @@ class StartProjectFromTemplate
             $this->updateProjectNotes->handle($project, 'introduction', $purpose, $this->notes->version($project));
 
             if (config('builder.projects.first_version')) {
-                $this->requestFeature->handle($project, $owner, __('Make the first version: :purpose', ['purpose' => $purpose]));
+                // Without the last sentence, the first build hides behind the
+                // login and the app still opens on the template's welcome page.
+                $this->requestFeature->handle($project, $owner, __('Make the first version: :purpose Give it its own front page in place of the starter welcome page.', [
+                    'purpose' => Str::finish(trim($purpose), '.'),
+                ]));
             }
 
             return $project;
