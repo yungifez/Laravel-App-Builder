@@ -118,7 +118,7 @@ class DescribeProof
             return [];
         }
 
-        return [['kind' => 'passed', 'text' => __('Its code was checked for common safety mistakes, such as showing unsafe text or building unsafe database lookups. None were found.')]];
+        return [['kind' => 'passed', 'text' => __('Its code was checked for common safety mistakes, such as unsafe text on a page or unsafe database lookups. None were found.')]];
     }
 
     /**

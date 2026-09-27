@@ -75,7 +75,7 @@ class ChangeProofTest extends TestCase
                 ['kind' => 'passed', 'text' => 'All 3 of the app\'s own tests still pass.'],
                 ['kind' => 'passed', 'text' => '2 more checks on the code passed.'],
                 ['kind' => 'passed', 'text' => 'Separate checks, written before the work began, pass too.'],
-                ['kind' => 'passed', 'text' => 'Its code was checked for common safety mistakes, such as showing unsafe text or building unsafe database lookups. None were found.'],
+                ['kind' => 'passed', 'text' => 'Its code was checked for common safety mistakes, such as unsafe text on a page or unsafe database lookups. None were found.'],
                 ['kind' => 'reach', 'text' => '3 of those tests run the code this change touched, in Billing and Teams.'],
                 // Gaps are said as plainly as passes.
                 ['kind' => 'gap', 'text' => 'Some of the new code is not run by any test yet.'],
