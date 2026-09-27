@@ -47,4 +47,12 @@ interface PublishingHost
      * @return list<array{class: string|null, message: string, at: string}>|null
      */
     public function errors(Deployment $deployment, CarbonImmutable $from, CarbonImmutable $to): ?array;
+
+    /**
+     * Get what the host charges us this billing period, in total and per
+     * app it serves, or null when it does not tell us.
+     *
+     * @return array{currency: string, total_cents: int, applications: list<array{application: string, cents: int}>}|null
+     */
+    public function spend(): ?array;
 }

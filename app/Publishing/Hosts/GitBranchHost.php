@@ -52,4 +52,10 @@ class GitBranchHost implements PublishingHost
         // The owner's own hosting keeps its logs to itself.
         return null;
     }
+
+    public function spend(): ?array
+    {
+        // The owner pays their own hosting.
+        return null;
+    }
 }

@@ -32,13 +32,16 @@ use Illuminate\Support\Str;
  */
 class FindAttentionItems
 {
-    public function __construct(private SummarizeSpend $summarizeSpend) {}
+    public function __construct(
+        private SummarizeSpend $summarizeSpend,
+        private SummarizeHostingSpend $summarizeHostingSpend,
+    ) {}
 
     /**
      * Collect everything that needs attention, with failures counted over the
      * last "days" days.
      *
-     * @return array{since: string, days: int, workers: list<array{queue: string, backlog: int|null, oldest_wait_seconds: int|null, alive: int, heard_from: bool, attention: bool, workers: list<array{worker: string, queues: string, last_seen_at: string, job: string|null, job_started_at: string|null, alive: bool}>}>, items: list<AttentionItem>, failures: list<array{stage: string, reason: string, count: int, href: string|null}>, rebuilds: array{edits: int, measured: int, median_seconds: float|null, p90_seconds: float|null, max_seconds: float|null, slow: int, not_seen: int}, waiting_on_owner: int, spend: array<string, mixed>}
+     * @return array{since: string, days: int, workers: list<array{queue: string, backlog: int|null, oldest_wait_seconds: int|null, alive: int, heard_from: bool, attention: bool, workers: list<array{worker: string, queues: string, last_seen_at: string, job: string|null, job_started_at: string|null, alive: bool}>}>, items: list<AttentionItem>, failures: list<array{stage: string, reason: string, count: int, href: string|null}>, rebuilds: array{edits: int, measured: int, median_seconds: float|null, p90_seconds: float|null, max_seconds: float|null, slow: int, not_seen: int}, waiting_on_owner: int, spend: array<string, mixed>, hosting: list<array{host: string, currency: string|null, total_cents: int|null, apps: list<array{project_id: int|null, name: string, cents: int}>, error: bool}>}
      */
     public function handle(int $days): array
     {
@@ -67,6 +70,7 @@ class FindAttentionItems
             'rebuilds' => $this->rebuildLatency($since),
             'waiting_on_owner' => Run::query()->where('status', RunStatus::NeedsUserDecision)->count(),
             'spend' => $this->summarizeSpend->handle($since),
+            'hosting' => $this->summarizeHostingSpend->handle(),
         ];
     }
 

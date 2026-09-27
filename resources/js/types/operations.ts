@@ -68,6 +68,16 @@ export type Attention = {
     };
     waiting_on_owner: number;
     spend: Spend;
+    hosting: HostingSpend[];
+};
+
+/** What one host bills us this billing period, from its own figures. */
+export type HostingSpend = {
+    host: string;
+    currency: string | null;
+    total_cents: number | null;
+    apps: { project_id: number | null; name: string; cents: number }[];
+    error: boolean;
 };
 
 export type ChangeRow = {

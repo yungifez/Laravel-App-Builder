@@ -128,6 +128,24 @@ class LaravelCloudHost implements PublishingHost
         return $errors;
     }
 
+    public function spend(): ?array
+    {
+        if (blank(config('builder.publishing.laravel_cloud.token'))) {
+            return null;
+        }
+
+        $usage = $this->cloud()->get('/usage')->throw();
+
+        return [
+            'currency' => (string) $usage->json('meta.currency', 'USD'),
+            'total_cents' => (int) $usage->json('data.summary.current_spend_cents'),
+            'applications' => array_values(array_map(fn (array $application) => [
+                'application' => (string) ($application['identifier'] ?? ''),
+                'cents' => (int) ($application['total_cost_cents'] ?? 0),
+            ], (array) $usage->json('data.application_totals.applications'))),
+        ];
+    }
+
     /**
      * Create the Cloud application from the app's repository, give it a
      * database, and record its address. Deploys happen only when we start

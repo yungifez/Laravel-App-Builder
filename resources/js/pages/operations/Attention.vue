@@ -8,6 +8,16 @@ import { index as projectsIndex } from '@/routes/projects';
 import { index as changesIndex } from '@/routes/operations/changes';
 import type { Attention } from '@/types';
 
+// Hosts bill in cents, in their own currency.
+function money(cents: number | null, currency: string | null): string {
+    return cents === null
+        ? 'Unknown'
+        : new Intl.NumberFormat(undefined, {
+              style: 'currency',
+              currency: currency ?? 'USD',
+          }).format(cents / 100);
+}
+
 const props = defineProps<{ attention: Attention }>();
 
 setLayoutProps({
@@ -398,6 +408,50 @@ const completeness = computed(
                 {{ attention.spend.undated_setup_calls }} older setup calls have
                 no date and are left out.
             </p>
+        </section>
+
+        <section
+            v-for="host in attention.hosting"
+            :key="host.host"
+            class="space-y-2"
+            :data-test="`hosting-${host.host}`"
+        >
+            <h2 class="flex flex-wrap items-baseline justify-between gap-2">
+                <span class="text-lg font-semibold"
+                    >Hosting spend ({{ words(host.host) }})</span
+                >
+                <span class="text-sm text-muted-foreground"
+                    >This billing period, from the host</span
+                >
+            </h2>
+            <p v-if="host.error" class="text-sm text-destructive">
+                The host did not answer, so its spend is unknown.
+            </p>
+            <dl v-else class="divide-y border-y text-sm">
+                <div class="flex justify-between py-2 font-medium">
+                    <dt>Total</dt>
+                    <dd class="tabular-nums" data-test="hosting-total">
+                        {{ money(host.total_cents, host.currency) }}
+                    </dd>
+                </div>
+                <div
+                    v-for="app in host.apps"
+                    :key="app.name"
+                    class="flex justify-between gap-4 py-2"
+                >
+                    <dt class="min-w-0 truncate">
+                        {{ app.name }}
+                        <span
+                            v-if="app.project_id === null"
+                            class="text-muted-foreground"
+                            >(not one of our projects)</span
+                        >
+                    </dt>
+                    <dd class="tabular-nums">
+                        {{ money(app.cents, host.currency) }}
+                    </dd>
+                </div>
+            </dl>
         </section>
     </div>
 </template>

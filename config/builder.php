@@ -146,6 +146,11 @@ return [
             'pages' => (int) env('BUILDER_PUBLISH_ERROR_PAGES', 5),
             'kinds' => (int) env('BUILDER_PUBLISH_ERROR_KINDS', 20),
         ],
+
+        // Hosts whose bills operators see on the Attention page: we pay for
+        // the apps we host. Figures are kept for "spend_cache_minutes".
+        'spend_hosts' => ['laravel_cloud'],
+        'spend_cache_minutes' => (int) env('BUILDER_HOSTING_SPEND_CACHE_MINUTES', 15),
     ],
 
     /*
