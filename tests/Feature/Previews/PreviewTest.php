@@ -7,6 +7,7 @@ use App\Jobs\StartPreview;
 use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\User;
+use App\Previews\PreviewGateway;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
@@ -239,7 +240,19 @@ class PreviewTest extends TestCase
         Http::fake(fn () => throw new ConnectionException('Connection refused'));
 
         $this->previewRequest('GET', "http://{$preview->host}.preview.test/", ['builder_preview' => 'secret-value'])
-            ->assertStatus(502);
+            ->assertStatus(502)
+            ->assertDontSee('type:"lost"', false);
+    }
+
+    public function test_an_editable_app_that_stopped_tells_the_builder_so_it_can_start_it_again()
+    {
+        $preview = $this->previewWithSession('secret-value');
+        $preview->update(['editable' => true]);
+        Http::fake(fn () => throw new ConnectionException('Connection refused'));
+
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/", ['builder_preview' => 'secret-value'])
+            ->assertStatus(502)
+            ->assertSee('parent.postMessage({builder:true,type:"lost"},"'.PreviewGateway::builderOrigin().'")', false);
     }
 
     public function test_the_owner_can_stop_a_preview_and_its_session_ends()

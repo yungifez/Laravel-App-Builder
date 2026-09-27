@@ -198,7 +198,7 @@ class PreviewGateway
         try {
             $upstream = $pending->send($request->getMethod(), rtrim((string) $preview->upstream_url, '/').$request->getRequestUri(), $options);
         } catch (ConnectionException) {
-            return $this->page(502, __('The preview is not responding. Start it again from the builder.'));
+            return $this->page(502, __('The preview is not responding. Start it again from the builder.'), tellBuilder: $preview->editable);
         }
 
         $response = new Response($upstream->body(), $upstream->status());
@@ -317,10 +317,16 @@ class PreviewGateway
     /**
      * Render a short plain page for the preview host.
      */
-    protected function page(int $status, string $message): Response
+    protected function page(int $status, string $message, bool $tellBuilder = false): Response
     {
+        // A builder showing the app hears that it stopped, so it can offer
+        // to start it again instead of showing this page.
+        $script = $tellBuilder
+            ? '<script>parent.postMessage({builder:true,type:"lost"},'.json_encode(self::builderOrigin(), JSON_UNESCAPED_SLASHES).')</script>'
+            : '';
+
         return new Response(
-            '<!doctype html><meta charset="utf-8"><title>Preview</title><p style="font-family:sans-serif;margin:3rem">'.e($message).'</p>',
+            '<!doctype html><meta charset="utf-8"><title>Preview</title><p style="font-family:sans-serif;margin:3rem">'.e($message).'</p>'.$script,
             $status,
             ['Content-Type' => 'text/html; charset=utf-8', 'X-Robots-Tag' => 'noindex, nofollow', 'Cache-Control' => 'no-store'],
         );

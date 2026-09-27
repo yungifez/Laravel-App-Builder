@@ -53,7 +53,9 @@ watch(scale, (value) => (props.state.zoom = value), { immediate: true });
              behind it until it takes its place. It stays drawn there
              rather than hidden, because a browser stops drawing a hidden
              page. -->
-        <template v-if="state.running && state.frames.length > 0">
+        <template
+            v-if="state.running && !state.lost && state.frames.length > 0"
+        >
             <iframe
                 v-for="(appFrame, index) in state.frames"
                 :key="appFrame.key"
@@ -97,6 +99,13 @@ watch(scale, (value) => (props.state.zoom = value), { immediate: true });
                     class="max-w-xs text-sm text-destructive"
                 >
                     {{ preview.error ?? 'Your app could not start.' }}
+                </p>
+                <p
+                    v-else-if="state.lost"
+                    class="max-w-xs text-sm text-muted-foreground"
+                    data-test="preview-lost"
+                >
+                    Your app stopped. Your work is safe.
                 </p>
                 <Form
                     v-bind="ProjectPreviewController.store.form(projectId)"

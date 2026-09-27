@@ -159,6 +159,13 @@ export function useAppPreview(source: Source) {
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const running = computed(() => source.preview()?.status === 'ready');
+    // The app stopped under a preview still marked as running, as when the
+    // machine restarts. The owner starts it again.
+    const lost = ref(false);
+    watch(
+        () => source.preview()?.id,
+        () => (lost.value = false),
+    );
     const busy = computed(
         () =>
             source.preview()?.status === 'starting' ||
@@ -475,6 +482,15 @@ export function useAppPreview(source: Source) {
         }
 
         const data = event.data;
+
+        if (
+            data.type === 'lost' &&
+            frames.value.some((item) => windowOf(item.key) === event.source)
+        ) {
+            lost.value = true;
+
+            return;
+        }
 
         // The next frame only says when it has drawn.
         if (
@@ -1153,6 +1169,7 @@ export function useAppPreview(source: Source) {
         path: framePath,
         device,
         running,
+        lost,
         selected,
         onlyThisOne,
         element,
