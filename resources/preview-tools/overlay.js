@@ -407,6 +407,61 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             );
         });
 
+        // A small part with no words is a shape; what it is made of is not
+        // listed.
+        const shape = (element) => {
+            const rect = element.getBoundingClientRect();
+
+            return (
+                rect.width <= 24 &&
+                rect.height <= 24 &&
+                element.innerText.trim() === ''
+            );
+        };
+
+        outlined = outlined.filter((element) => {
+            for (
+                let around = located(element.parentElement);
+                around;
+                around = located(around.parentElement)
+            ) {
+                if (shape(around)) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+
+        // A box that only wraps one part the same size looks just like it,
+        // so the list leaves it out. A link or button stays: it is what the
+        // owner clicks.
+        const inside = new Map();
+
+        for (const element of outlined) {
+            const around = located(element.parentElement);
+            inside.set(around, [...(inside.get(around) ?? []), element]);
+        }
+
+        const same = (a, b) =>
+            ['top', 'left', 'width', 'height'].every(
+                (side) =>
+                    Math.abs(
+                        a.getBoundingClientRect()[side] -
+                            b.getBoundingClientRect()[side],
+                    ) < 1,
+            );
+        outlined = outlined.filter((element) => {
+            const parts = inside.get(element) ?? [];
+
+            return !(
+                parts.length === 1 &&
+                !['a', 'button'].includes(element.tagName.toLowerCase()) &&
+                same(element, parts[0])
+            );
+        });
+        const listed = new Set(outlined);
+
         return outlined.slice(0, 300).map((element) => {
             const tag = element.tagName.toLowerCase();
             const words = plainWords(element);
@@ -417,7 +472,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                 around;
                 around = located(around.parentElement)
             ) {
-                depth++;
+                depth += listed.has(around) ? 1 : 0;
             }
 
             return {
@@ -426,9 +481,9 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                     KINDS[tag] ??
                     (words !== null
                         ? 'Text'
-                        : element.children.length > 0
-                          ? 'Box'
-                          : 'Shape'),
+                        : shape(element) || element.children.length === 0
+                          ? 'Shape'
+                          : 'Box'),
                 // Words tell parts apart. A box shows none: its words are
                 // its parts'.
                 words: (
