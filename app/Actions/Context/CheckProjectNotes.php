@@ -2,6 +2,7 @@
 
 namespace App\Actions\Context;
 
+use App\Features\UnsafeCode;
 use App\Models\Project;
 use App\Projects\ProjectRepository;
 use Illuminate\Support\Facades\Config;
@@ -23,6 +24,12 @@ class CheckProjectNotes
         $files = $this->repository->files($project, $this->repository->head($project));
         $context = $this->readProjectContext->current($project);
         $findings = [];
+        $secrets = UnsafeCode::secretFiles($files);
+
+        // The one safety fact a file list proves on its own, so it is said first.
+        if ($secrets !== []) {
+            $findings[] = ['title' => __('Secret settings are saved in the app\'s code, where anyone with the code can read them.'), 'details' => $secrets];
+        }
 
         if ($context->problems !== []) {
             $findings[] = ['title' => __('Some notes could not be read, so I cannot use them.'), 'details' => $context->problems];

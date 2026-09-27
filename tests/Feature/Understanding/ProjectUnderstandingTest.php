@@ -198,6 +198,19 @@ class ProjectUnderstandingTest extends TestCase
                 ])));
     }
 
+    public function test_the_quick_check_says_first_when_secret_settings_are_kept_in_the_app()
+    {
+        $this->repository->commitFiles($this->project, $this->repository->head($this->project), [
+            '.env' => "APP_KEY=base64:secret\n",
+            '.env.example' => "APP_KEY=\n",
+        ], 'Add settings', null);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('check', fn (Assert $page) => $page
+                ->where('check.0', ['title' => 'Secret settings are saved in the app\'s code, where anyone with the code can read them.', 'details' => ['.env']])));
+    }
+
     public function test_the_owner_changes_what_the_app_is_for_and_it_is_saved_outside_the_app()
     {
         $head = $this->repository->head($this->project);

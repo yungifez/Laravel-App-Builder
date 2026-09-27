@@ -130,6 +130,18 @@ class UnsafeCode
     }
 
     /**
+     * Get the files among the app's that keep secret settings (.env), which
+     * anyone with the code can read.
+     *
+     * @param  list<string>  $files
+     * @return list<string>
+     */
+    public static function secretFiles(array $files): array
+    {
+        return array_values(array_filter($files, fn (string $path) => preg_match(self::RULES['secret_settings']['files'], $path) === 1));
+    }
+
+    /**
      * Determine if the patch changes code the rules read, so a clean scan
      * says something.
      */
