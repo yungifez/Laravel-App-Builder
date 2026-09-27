@@ -185,20 +185,43 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                         data-test="unpublished"
                     >
                         <p class="text-muted-foreground">Going online next:</p>
-                        <ul class="space-y-1">
+                        <ul
+                            class="list-disc space-y-1 pl-5 marker:text-muted-foreground"
+                        >
                             <li
-                                v-for="item in publishing.unpublished?.added"
+                                v-for="item in publishing.unpublished?.added.slice(
+                                    0,
+                                    5,
+                                )"
                                 :key="`added-${item.id}`"
-                                class="line-clamp-2 break-words"
+                                class="break-words"
                             >
-                                {{ item.asked }}
+                                <span class="line-clamp-2">{{
+                                    item.asked
+                                }}</span>
                             </li>
                             <li
                                 v-for="item in publishing.unpublished?.undone"
                                 :key="`undone-${item.id}`"
-                                class="line-clamp-2 break-words text-muted-foreground"
+                                class="break-words text-muted-foreground"
                             >
-                                Takes back: {{ item.asked }}
+                                <span class="line-clamp-2"
+                                    >Takes back: {{ item.asked }}</span
+                                >
+                            </li>
+                            <li
+                                v-if="
+                                    (publishing.unpublished?.added.length ??
+                                        0) > 5
+                                "
+                                class="text-muted-foreground"
+                            >
+                                And
+                                {{
+                                    (publishing.unpublished?.added.length ??
+                                        0) - 5
+                                }}
+                                more you asked for
                             </li>
                             <li
                                 v-if="publishing.unpublished?.edits"
