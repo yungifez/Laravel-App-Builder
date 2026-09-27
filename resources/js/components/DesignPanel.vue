@@ -48,7 +48,12 @@ import Swatches from '@/components/design/Swatches.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import type { AppPreviewState } from '@/composables/useAppPreview';
-import { definition, properties, weights } from '@/lib/visualProperties';
+import {
+    definition,
+    describeValue,
+    properties,
+    weights,
+} from '@/lib/visualProperties';
 import type {
     EditorPreview,
     InspectedElement,
@@ -167,6 +172,56 @@ function describeEdit(edit: VisualEditSummary): string {
         )
         .join(', ');
 }
+
+// What a change set its one property to, in words, with the colour itself
+// when it is a colour.
+function describeResult(
+    edit: VisualEditSummary,
+): { words: string; color: string | null } | null {
+    const [property] = edit.properties;
+
+    if (edit.kind === 'move' || edit.properties.length !== 1) {
+        return null;
+    }
+
+    const value = edit.sides?.after.values[property];
+
+    if (value === null || value === undefined) {
+        return null;
+    }
+
+    const words = describeValue(definition(property), value);
+
+    const color =
+        definition(property).group === 'Colours' && value !== 'transparent'
+            ? (props.state.theme[String(value)] ?? `var(--${value})`)
+            : null;
+
+    return { words, color };
+}
+
+// The changes still in place, newest first. A part changed the same way
+// again shows once, as its latest change; undone changes leave the list,
+// and the redo button brings them back.
+const recent = computed(() => {
+    const seen = new Set<string>();
+
+    return props.edits.filter((edit) => {
+        if (props.state.isUndone(edit)) {
+            return false;
+        }
+
+        const key = `${edit.target}|${edit.kind}|${edit.properties.join(',')}`;
+
+        if (seen.has(key)) {
+            return false;
+        }
+
+        seen.add(key);
+
+        return true;
+    });
+});
 </script>
 
 <template>
@@ -239,7 +294,7 @@ function describeEdit(edit: VisualEditSummary): string {
                 </section>
 
                 <section
-                    v-if="edits.length > 0"
+                    v-if="recent.length > 0"
                     class="hidden px-4 pb-4 lg:block"
                     data-test="recent-edits"
                 >
@@ -248,32 +303,41 @@ function describeEdit(edit: VisualEditSummary): string {
                     </h3>
                     <ul class="text-sm">
                         <li
-                            v-for="edit in edits"
+                            v-for="edit in recent"
                             :key="edit.id"
-                            class="flex min-h-11 items-center justify-between gap-2 sm:min-h-9"
+                            class="flex min-h-11 items-center gap-2 sm:min-h-9"
                         >
+                            <span class="min-w-0 flex-1 truncate">{{
+                                describeEdit(edit)
+                            }}</span>
                             <span
-                                :class="[
-                                    'min-w-0 truncate',
-                                    edit.reverted_at &&
-                                        'text-muted-foreground line-through',
-                                ]"
-                                >{{ describeEdit(edit) }}</span
+                                v-if="describeResult(edit)"
+                                class="flex min-w-0 shrink items-center gap-1.5 text-xs text-muted-foreground"
                             >
+                                <span
+                                    v-if="describeResult(edit)?.color"
+                                    class="size-3 shrink-0 rounded-full border"
+                                    :style="{
+                                        background:
+                                            describeResult(edit)?.color ??
+                                            undefined,
+                                    }"
+                                />
+                                <span class="truncate">{{
+                                    describeResult(edit)?.words
+                                }}</span>
+                            </span>
                             <Button
                                 variant="ghost"
                                 size="icon"
                                 class="size-11 shrink-0 text-muted-foreground sm:size-7"
                                 :disabled="state.saving"
-                                :aria-label="`${edit.reverted_at ? 'Redo' : 'Undo'} ${describeEdit(edit)}`"
-                                :title="edit.reverted_at ? 'Redo' : 'Undo'"
-                                :data-test="`${edit.reverted_at ? 'redo' : 'undo'}-edit-${edit.id}`"
+                                :aria-label="`Undo ${describeEdit(edit)}`"
+                                title="Undo"
+                                :data-test="`undo-edit-${edit.id}`"
                                 @click="state.step(edit)"
                             >
-                                <component
-                                    :is="edit.reverted_at ? Redo2 : Undo2"
-                                    class="size-3.5"
-                                />
+                                <Undo2 class="size-3.5" />
                             </Button>
                         </li>
                     </ul>

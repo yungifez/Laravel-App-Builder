@@ -1175,6 +1175,7 @@ export function useAppPreview(source: Source) {
         valueOf,
         save,
         step,
+        isUndone,
         press,
         hide,
         undoable,
