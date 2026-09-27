@@ -927,55 +927,23 @@ const recent = computed(() => {
                                     :options="options('text_align')"
                                     @change="set('text_align', $event)"
                                 />
-                                <div class="flex items-center gap-3">
-                                    <span
-                                        class="w-14 shrink-0 text-xs text-muted-foreground"
-                                        aria-hidden="true"
-                                        >Weight</span
-                                    >
-                                    <div
-                                        class="flex min-w-0 flex-1 rounded-md bg-muted p-0.5"
-                                        role="group"
-                                        aria-label="Text weight"
-                                    >
-                                        <button
-                                            v-for="option in options(
-                                                'text_weight',
-                                            )"
-                                            :key="option.value"
-                                            type="button"
-                                            :aria-pressed="
-                                                state.valueOf('text_weight') ===
-                                                option.value
-                                            "
-                                            :aria-label="option.label"
-                                            :title="option.label"
-                                            :style="{
-                                                fontWeight:
-                                                    weights[option.value],
-                                            }"
-                                            :class="[
-                                                'min-h-11 min-w-0 flex-1 truncate rounded px-1 text-xs select-none sm:min-h-7',
-                                                state.valueOf('text_weight') ===
-                                                option.value
-                                                    ? 'bg-background shadow-sm'
-                                                    : 'text-muted-foreground hover:text-foreground',
-                                            ]"
-                                            @click="
-                                                set(
-                                                    'text_weight',
-                                                    state.valueOf(
-                                                        'text_weight',
-                                                    ) === option.value
-                                                        ? null
-                                                        : option.value,
-                                                )
-                                            "
-                                        >
-                                            {{ option.short ?? option.label }}
-                                        </button>
-                                    </div>
-                                </div>
+                                <Segmented
+                                    label="Text weight"
+                                    caption="Weight"
+                                    :value="state.valueOf('text_weight')"
+                                    :options="
+                                        options('text_weight').map(
+                                            (option) => ({
+                                                ...option,
+                                                style: {
+                                                    fontWeight:
+                                                        weights[option.value],
+                                                },
+                                            }),
+                                        )
+                                    "
+                                    @change="set('text_weight', $event)"
+                                />
                                 <Swatches
                                     label="Colour"
                                     name="Text colour"
