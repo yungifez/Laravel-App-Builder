@@ -19,6 +19,7 @@ use App\Features\Exceptions\CannotGenerateFeature;
 use App\Features\InventedColours;
 use App\Features\PatchSummary;
 use App\Features\TestChanges;
+use App\Features\UndescribedImages;
 use App\Features\UnsafeCode;
 use App\Models\FeatureRequest;
 use App\Models\Run;
@@ -361,6 +362,7 @@ class ConstructRun
 
         if ($driver->canRepair() && config('builder.verification.design_scan')) {
             $review = $review->withBlockingFindings(array_map(InventedColours::finding(...), InventedColours::found($featureRequest->patch)));
+            $review = $review->withBlockingFindings(array_map(UndescribedImages::finding(...), UndescribedImages::found($featureRequest->patch)));
         }
 
         $this->recordEvent($run, $lease, 'review', [

@@ -5,6 +5,7 @@ namespace App\Actions\Features;
 use App\Enums\VerificationStatus;
 use App\Features\InventedColours;
 use App\Features\PatchSummary;
+use App\Features\UndescribedImages;
 use App\Features\UnsafeCode;
 use App\Models\FeatureRequest;
 use App\Models\Run;
@@ -32,7 +33,7 @@ class DescribeProof
             return [];
         }
 
-        return [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest), ...$this->safety($featureRequest), ...$this->colours($featureRequest), ...$this->reach($featureRequest->latestRun)];
+        return [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest), ...$this->safety($featureRequest), ...$this->colours($featureRequest), ...$this->pictures($featureRequest), ...$this->reach($featureRequest->latestRun)];
     }
 
     /**
@@ -133,6 +134,21 @@ class DescribeProof
         }
 
         return [['kind' => 'passed', 'text' => __('Its screens take their colours from your app\'s theme. None were made up.')]];
+    }
+
+    /**
+     * Say that the pictures the change added describe what they show, when
+     * the scan is on and the change added any.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function pictures(FeatureRequest $featureRequest): array
+    {
+        if (! config('builder.verification.design_scan') || ! UndescribedImages::scans($featureRequest->patch) || UndescribedImages::found($featureRequest->patch) !== []) {
+            return [];
+        }
+
+        return [['kind' => 'passed', 'text' => __('The pictures it added say what they show, for people who cannot see the screen.')]];
     }
 
     /**

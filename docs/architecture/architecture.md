@@ -1312,7 +1312,11 @@ inline style. Theme references (`bg-[var(--brand)]`), sizes (`w-[73%]`) and
 the palette's own classes pass. Each file with one is a blocking finding. A
 comment that mentions the colour, on the line or the line above, lets it
 through. The owner sees the clean result as one line of the change's proof.
-`builder.verification.design_scan` turns it off.
+Pictures are checked the same way: an `<img>` tag a change adds (read across
+its lines) must have an `alt` description, or `alt=""` when it is only
+decoration. A tag with attributes spread in from elsewhere, or one that runs
+into lines the change did not add, is unknown and passes. Its clean result
+is a proof line too. `builder.verification.design_scan` turns both off.
 
 Depend on the idea of observed test dependencies, not on Pest's cache format:
 use affected-test output or a supported extension point.

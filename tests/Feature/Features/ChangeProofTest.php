@@ -138,6 +138,23 @@ class ChangeProofTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('proof', fn ($proof) => ! collect($proof)->contains('text', 'Its screens take their colours from your app\'s theme. None were made up.')));
     }
 
+    public function test_a_change_whose_pictures_are_described_says_so()
+    {
+        $request = FeatureRequest::factory()->generated()->create(['patch' => implode("\n", [
+            'diff --git a/resources/js/pages/Team.vue b/resources/js/pages/Team.vue',
+            '--- a/resources/js/pages/Team.vue',
+            '+++ b/resources/js/pages/Team.vue',
+            '@@ -1 +1,2 @@',
+            ' <template>',
+            '+    <img :src="team.logo" :alt="team.name" class="size-8" />',
+        ])]);
+        $this->checked($request);
+
+        $this->actingAs($request->project->owner)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page->where('proof.5', ['kind' => 'passed', 'text' => 'The pictures it added say what they show, for people who cannot see the screen.']));
+    }
+
     public function test_the_tests_a_change_added_are_named()
     {
         $request = FeatureRequest::factory()->generated()->create(['patch' => implode("\n", [

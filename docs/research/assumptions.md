@@ -29,3 +29,13 @@ them and correct any that are wrong.
   "safe" comment. Undo: change `REASON_COMMENT` in `InventedColours`.
 - **The 5-hour loop runs every 4 hours.** Cron cannot repeat every 5 hours
   evenly, so the loop was rounded to every 4 hours.
+- **Pictures without alt block a change.** An `<img>` a change adds to a
+  screen needs `alt`, or `alt=""` for decoration. Why: direction 26 lists
+  accessibility, and this is the part structure alone can decide. It shares
+  the `BUILDER_DESIGN_SCAN` switch with the colour check, so one switch
+  turns off all screen checks. Undo: give it its own setting, or make it a
+  note.
+- **Unknown pictures pass.** Tags with spread attributes (`v-bind="…"`,
+  `{...props}`) or tags that run into unchanged lines are not flagged. Why:
+  the description may be there, and a false send-back wastes a coding
+  round.
