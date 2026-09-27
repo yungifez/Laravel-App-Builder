@@ -163,3 +163,9 @@ them and correct any that are wrong.
   from the current project notes, not the notes at the time of the change.
   At most three rules show. They are never counted as evidence, because no
   check proves a rule held.
+- **No separate checks means a gap, even when its own tests pass.** A change
+  with no protected acceptance tests was shown as "Passed, but not proven"
+  in the header and as "Well checked" in the proof. The proof now adds the
+  gap "No check written apart from the change tried it", and the header
+  reads "Passed, with gaps". Tests written with the change still show as
+  evidence lines, but they cannot hide that gap.

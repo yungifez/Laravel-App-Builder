@@ -310,24 +310,13 @@ const previewLabels: Record<Preview['status'], string> = {
     stopped: 'Stopped',
 };
 
-// Every "done when" item has a test that the checks ran and that passed.
-// Those tests were written with the change, so they are never proof (§12).
-const ownTestsPass = computed(() => {
-    const verified = props.run?.review?.verified ?? [];
-
-    return (
-        verified.length > 0 &&
-        verified.every((item) => item.evidence === 'tested')
-    );
-});
-
 const verificationLabels: Record<Verification['status'], string> = {
     queued: 'Waiting to start',
     running: 'Running',
     passed: 'All passed',
     failed: 'Something failed',
     errored: 'Could not run',
-    unverified: 'Passed, but not proven',
+    unverified: 'Passed, with gaps',
 };
 
 const outcomeMarks: Record<
@@ -992,17 +981,6 @@ function lineClass(line: string): string {
                         <p class="text-sm text-muted-foreground">
                             <template v-if="verificationInProgress">
                                 Running the checks. This can take a few minutes…
-                            </template>
-                            <template
-                                v-else-if="
-                                    verification?.status === 'unverified'
-                                "
-                            >
-                                {{
-                                    ownTestsPass
-                                        ? 'Only tests written with this change check it. Nothing independent did.'
-                                        : 'None of them is about this change in particular.'
-                                }}
                             </template>
                             <template v-else-if="!verification">
                                 I try the change on a fresh copy of your app and

@@ -76,6 +76,10 @@ class DescribeProof
             $tests > 0 ? ['kind' => 'passed', 'text' => trans_choice('The app\'s own test still passes.|All :count of the app\'s own tests still pass.', $tests)] : null,
             $others > 0 ? ['kind' => 'passed', 'text' => trans_choice(':count more check on the code passed.|:count more checks on the code passed.', $others)] : null,
             $separate ? ['kind' => 'passed', 'text' => __('Separate checks, written before the work began, pass too.'), 'evidence' => true] : null,
+            // No separate checks were written for this change, so only its own
+            // tests, if any, try it. That is a gap, said here as the verdict
+            // above the lines would otherwise call the change well checked.
+            $verification->status === VerificationStatus::Unverified ? ['kind' => 'gap', 'text' => __('No check written apart from the change tried it.')] : null,
         ]));
     }
 

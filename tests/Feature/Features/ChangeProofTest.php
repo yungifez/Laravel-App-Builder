@@ -253,6 +253,22 @@ class ChangeProofTest extends TestCase
             ]));
     }
 
+    public function test_a_change_no_separate_check_tried_says_so_as_a_gap()
+    {
+        $request = FeatureRequest::factory()->generated()->create();
+        Verification::factory()->for($request)->create(['status' => VerificationStatus::Unverified, 'results' => [
+            ['name' => 'Tests', 'stage' => 'checks', 'outcome' => 'passed', 'exit_code' => 0, 'timed_out' => false, 'duration_ms' => 5, 'output' => '', 'tests' => [
+                ['file' => 'tests/Feature/TeamTest.php', 'name' => 'test_owners_rename_teams', 'outcome' => 'passed'],
+            ]],
+        ]]);
+
+        // Its own tests passing is not the same as a separate check trying
+        // it, so the owner's verdict shows a gap rather than "well checked".
+        $this->actingAs($request->project->owner)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page->where('proof.1', ['kind' => 'gap', 'text' => 'No check written apart from the change tried it.']));
+    }
+
     public function test_nothing_is_claimed_until_the_checks_pass()
     {
         $request = FeatureRequest::factory()->generated()->create();
