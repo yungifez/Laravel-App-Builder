@@ -97,6 +97,31 @@ const originWhen = computed(() => {
         : `on ${said}`;
 });
 
+// What else a change here may reach, said before the owner asks, with
+// whether tests check it: every change runs them all (direction 18 §3).
+const reach = computed(() => {
+    const affects = element.value?.area?.affects ?? [];
+
+    if (affects.length === 0) {
+        return '';
+    }
+
+    const untested = affects.filter((area) => !area.tested);
+
+    return [
+        `This may also affect ${listed(affects.map((area) => area.name))}.`,
+        untested.length === 0
+            ? 'I check those too.'
+            : `Nothing checks ${listed(untested.map((area) => area.name))} yet.`,
+    ].join(' ');
+});
+
+function listed(names: string[]): string {
+    return names.length < 2
+        ? (names[0] ?? '')
+        : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
 // Where the part lives in the code, and its Tailwind classes, only for
 // someone who chose to see how changes are built (§28.4).
 const page = usePage();
@@ -887,6 +912,13 @@ const recent = computed(() => {
                             placeholder="Show the price next to each item"
                         />
                         <InputError :message="errors.prompt" />
+                        <p
+                            v-if="reach"
+                            class="text-xs text-muted-foreground"
+                            data-test="element-reach"
+                        >
+                            {{ reach }}
+                        </p>
                         <Button
                             :disabled="processing"
                             class="h-11 w-full select-none sm:h-8"

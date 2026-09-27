@@ -391,6 +391,7 @@ export type InspectedElement = {
         summary: string | null;
         rules: string[];
         behaviors: string[];
+        affects: { name: string; tested: boolean }[];
     } | null;
     origin: {
         id: number;

@@ -126,3 +126,10 @@ them and correct any that are wrong.
   and hand edits are skipped. Only the part's opening line is followed, so
   a request that changed only its inner words is not named. Why: git
   already holds the answer, with no model call and no new table.
+- **"What happens if I change this?" uses the notes' Effects.** When the
+  owner opens "Ask me to change it" on a selected part, the panel names
+  the other areas that the part's area Effects point to. It says "I check
+  those too" when each one has tests, since every change runs the whole
+  suite. Otherwise it says "Nothing checks … yet". All Effect strengths are
+  shown. Hand edits to a part's look do not show it, because a colour or
+  spacing change does not reach other areas.

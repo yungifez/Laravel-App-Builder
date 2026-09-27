@@ -68,9 +68,12 @@ class InspectElement
     }
 
     /**
-     * Get the area of the app the file belongs to, from the project notes.
+     * Get the area of the app the file belongs to, from the project notes,
+     * with the other areas its Effects say a change here may also affect,
+     * so the owner sees the reach of a change before asking for it. Each
+     * says whether tests check it, since every change runs them all.
      *
-     * @return array{key: string, name: string, summary: string|null, rules: list<string>, behaviors: list<string>}|null
+     * @return array{key: string, name: string, summary: string|null, rules: list<string>, behaviors: list<string>, affects: list<array{name: string, tested: bool}>}|null
      */
     protected function area(Preview $preview, string $file): ?array
     {
@@ -79,12 +82,27 @@ class InspectElement
         /** @var Capability|null $capability */
         $capability = collect($context->capabilities)->first(fn (Capability $capability) => $capability->claims($file));
 
-        return $capability === null ? null : [
+        if ($capability === null) {
+            return null;
+        }
+
+        $affects = [];
+
+        foreach ($capability->effects as $effect) {
+            $other = $context->capabilities[$effect->to] ?? null;
+
+            if ($other !== null && $other->key !== $capability->key) {
+                $affects[$other->key] = ['name' => $other->name, 'tested' => $other->testFiles !== []];
+            }
+        }
+
+        return [
             'key' => $capability->key,
             'name' => $capability->name,
             'summary' => $capability->summary,
             'rules' => $capability->rules(),
             'behaviors' => array_column($capability->behaviors, 'name'),
+            'affects' => array_values($affects),
         ];
     }
 
