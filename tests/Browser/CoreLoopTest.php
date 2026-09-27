@@ -1,7 +1,9 @@
 <?php
 
 use App\Actions\Projects\CreateProject;
+use App\Models\FeatureRequest;
 use App\Models\Project;
+use App\Models\Run;
 use App\Models\User;
 use Tests\Concerns\BuildsInLocalWorkspaces;
 use Tests\Concerns\FakesWorkspaces;
@@ -60,12 +62,15 @@ it('builds a change the owner asks for, keeps it, then undoes it', function () {
     expect($change->refresh()->reverted_at)->not->toBeNull();
 });
 
-it('shows each level of detail on its own', function () {
+it('shows each level of detail on its own below desktop width', function () {
     $this->actingAs($this->owner);
 
     $page = askForInvitations($this->project);
 
-    $page->click('@detail-2')
+    // A desktop puts every level beside the chat, so the switch is for
+    // narrower screens.
+    $page->resize(1000, 900)
+        ->click('@detail-2')
         ->assertPresent('@detail-why')
         ->assertMissing('@detail-how')
         ->click('@detail-3')
@@ -130,6 +135,49 @@ it('sends a suggested next step with one tap', function () {
 
     $followUp = $this->project->featureRequests()->whereNotNull('parent_id')->sole();
     expect($followUp->prompt)->toBe('Remind people who have not answered their invitation.');
+});
+
+it('puts the plan and the code beside a full-screen chat on a desktop, and the other chats too when wider', function () {
+    $this->actingAs($this->owner);
+
+    askForInvitations($this->project)
+        ->resize(1440, 900)
+        ->assertVisible('@chat-list')
+        ->assertSeeIn('@chat-list', 'Let owners and admins invite people by email.')
+        ->assertVisible('@beside-plan-content')
+        ->assertMissing('@beside-code-content')
+        ->assertMissing('@detail-level')
+        ->click('@beside-code')
+        ->assertSeeIn('@beside-code-content', 'Checks I ran')
+        ->assertSeeIn('[data-test="beside-code-content"] [data-test="change-code"]', 'TeamPolicy.php')
+        ->assertVisible('@accept-change-button')
+        ->resize(1100, 900)
+        ->assertMissing('@chat-list')
+        ->assertVisible('@beside-panel')
+        ->assertSeeIn('[data-test="beside-code-content"] [data-test="change-code"]', 'TeamPolicy.php')
+        ->resize(1000, 900)
+        ->assertMissing('@beside-panel')
+        ->assertVisible('@detail-level')
+        ->resize(1440, 900)
+        ->assertSeeIn('[data-test="beside-code-content"] [data-test="change-code"]', 'TeamPolicy.php')
+        ->assertNoJavaScriptErrors();
+});
+
+it('keeps the three columns in place when the owner moves to a chat without a plan yet', function () {
+    $this->actingAs($this->owner);
+    $planning = Run::factory()->for(
+        FeatureRequest::factory()->for($this->project)->state(['prompt' => 'Show who was active last week.']),
+    )->create()->featureRequest;
+
+    askForInvitations($this->project)
+        ->resize(1440, 900)
+        ->assertMissing('@beside-waiting')
+        ->click('@chat-list-'.$planning->id)
+        ->assertSeeIn('@thread-title', 'Show who was active last week.')
+        ->assertVisible('@chat-list')
+        ->assertVisible('@beside-panel')
+        ->assertSeeIn('@beside-waiting', 'The plan shows here once I know what to build.')
+        ->assertNoJavaScriptErrors();
 });
 
 it('starts the chat full screen and gives the app half once it is open', function () {

@@ -2,7 +2,8 @@
 import { computed, ref } from 'vue';
 import type { ChangedFile } from '@/types';
 
-const props = defineProps<{ files: ChangedFile[] }>();
+// Narrow beside a chat, the file list gives its room to the code.
+const props = defineProps<{ files: ChangedFile[]; narrow?: boolean }>();
 
 type Row =
     | { kind: 'hunk'; text: string }
@@ -90,10 +91,14 @@ function open(path: string): void {
 
 <template>
     <div
-        class="grid min-h-0 grid-cols-[15rem_minmax(0,1fr)]"
+        :class="[
+            'grid min-h-0',
+            narrow ? 'grid-cols-1' : 'grid-cols-[15rem_minmax(0,1fr)]',
+        ]"
         data-test="change-code"
     >
         <nav
+            v-if="!narrow"
             class="min-h-0 space-y-0.5 overflow-y-auto border-r p-2"
             aria-label="Files"
         >

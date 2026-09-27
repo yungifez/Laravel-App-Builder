@@ -15,6 +15,7 @@ import {
     Sparkles,
     Undo2,
 } from '@lucide/vue';
+import { useMediaQuery } from '@vueuse/core';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import FeatureRequestAcceptanceController from '@/actions/App/Http/Controllers/FeatureRequestAcceptanceController';
 import FeatureRequestAnswerController from '@/actions/App/Http/Controllers/FeatureRequestAnswerController';
@@ -46,6 +47,8 @@ const props = defineProps<{ change: ChangeDetail; roomy?: boolean }>();
 const emit = defineEmits<{
     // Whether the change's code wants the whole screen.
     full: [on: boolean];
+    // Whether the chat has the plan and the code beside it.
+    sides: [on: boolean];
 }>();
 
 const request = computed(() => props.change.featureRequest);
@@ -110,8 +113,27 @@ function toggleFull(): void {
     }
 }
 
+// A chat on the whole of a desktop screen has room beside it: the page
+// puts the plan and the code on one side (and, when wider, the owner's
+// other chats on the other). The why, the how and the code move there, so every depth is in
+// view at once and the depth switch steps aside.
+const wide = useMediaQuery('(min-width: 1024px)');
+const spread = computed(() => !!props.roomy && wide.value);
+const sides = computed(
+    () => spread.value && !!run.value?.plan && !run.value.plan.answer,
+);
+
+// The chat is named after what the owner first asked, as in the chat list.
+const chatTitle = computed(
+    () => props.change.earlier[0]?.prompt ?? request.value.prompt,
+);
+
+watch(sides, (on) => emit('sides', on), { immediate: true });
+onBeforeUnmount(() => emit('sides', false));
+
 const full = computed(
     () =>
+        !sides.value &&
         wantsFull.value &&
         depth.value === 4 &&
         !!run.value?.plan &&
@@ -375,7 +397,16 @@ const checks = computed(() => {
 <template>
     <div class="flex min-h-0 flex-1 flex-col" data-test="change-thread">
         <div class="flex h-11 shrink-0 items-center gap-1 border-b px-2">
+            <h2
+                v-if="spread"
+                class="min-w-0 truncate px-2 text-sm font-medium"
+                :title="chatTitle"
+                data-test="thread-title"
+            >
+                {{ chatTitle }}
+            </h2>
             <Button
+                v-else
                 variant="ghost"
                 size="sm"
                 class="h-11 gap-1 px-2 text-muted-foreground select-none sm:h-8"
@@ -415,6 +446,7 @@ const checks = computed(() => {
             <div
                 :class="[
                     'min-h-0 flex-1 overflow-y-auto p-4',
+                    spread && 'px-[max(1rem,calc(50%-21rem))]',
                     roomy ? 'space-y-7 py-6 leading-relaxed' : 'space-y-4',
                     full && 'lg:border-r',
                 ]"
@@ -492,9 +524,13 @@ const checks = computed(() => {
                                 working ? liveWork.length > 0 : work.length > 0
                             "
                         >
-                            <ol
+                            <!-- Each step slides in as it happens -->
+                            <TransitionGroup
                                 v-if="working"
+                                tag="ol"
                                 class="space-y-1.5"
+                                enter-active-class="transition duration-300 ease-out"
+                                enter-from-class="opacity-0 translate-y-1"
                                 data-test="thread-work"
                             >
                                 <li
@@ -503,7 +539,7 @@ const checks = computed(() => {
                                 >
                                     <WorkStepLine :step="step" />
                                 </li>
-                            </ol>
+                            </TransitionGroup>
                             <Collapsible v-else>
                                 <CollapsibleTrigger
                                     class="group flex min-h-11 items-center gap-1 text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-6"
@@ -836,7 +872,7 @@ const checks = computed(() => {
 
                         <!-- Deeper answers, for whoever wants them -->
                         <div
-                            v-if="run?.plan && !run.plan.answer"
+                            v-if="run?.plan && !run.plan.answer && !sides"
                             class="flex items-center gap-1"
                         >
                             <div
@@ -888,192 +924,292 @@ const checks = computed(() => {
                             </Button>
                         </div>
 
-                        <div
-                            v-if="depth === 2 && run?.plan && !run.plan.answer"
-                            class="space-y-4"
-                            data-test="detail-why"
-                        >
-                            <section
-                                v-if="keptSame.length > 0"
-                                class="space-y-1.5"
-                            >
-                                <h3 class="text-xs text-muted-foreground">
-                                    I'll keep these the same
-                                </h3>
-                                <p
-                                    v-for="(item, index) in keptSame"
-                                    :key="index"
-                                    class="flex items-start gap-2"
-                                    :title="item.label"
-                                >
-                                    <component
-                                        :is="item.icon"
-                                        :class="[
-                                            'mt-0.5 size-4 shrink-0',
-                                            item.tone,
-                                        ]"
-                                        :aria-label="item.label"
-                                    />
-                                    <span class="min-w-0">{{ item.text }}</span>
-                                </p>
-                            </section>
-                            <section
-                                v-if="doneWhen.length > 0"
-                                class="space-y-1.5"
-                            >
-                                <h3 class="text-xs text-muted-foreground">
-                                    Done when
-                                </h3>
-                                <p
-                                    v-for="(item, index) in doneWhen"
-                                    :key="index"
-                                    class="flex items-start gap-2"
-                                    :title="item.label"
-                                >
-                                    <component
-                                        :is="item.icon"
-                                        :class="[
-                                            'mt-0.5 size-4 shrink-0',
-                                            item.tone,
-                                        ]"
-                                        :aria-label="item.label"
-                                    />
-                                    <span class="min-w-0">{{ item.text }}</span>
-                                </p>
-                            </section>
-                            <section
-                                v-if="alsoTouches.length > 0"
-                                class="space-y-1.5"
-                            >
-                                <h3 class="text-xs text-muted-foreground">
-                                    This may also touch
-                                </h3>
-                                <p class="flex flex-wrap gap-1.5">
-                                    <span
-                                        v-for="name in alsoTouches"
-                                        :key="name"
-                                        class="rounded-full bg-muted px-2 py-0.5 text-xs"
-                                        >{{ name }}</span
-                                    >
-                                </p>
-                            </section>
-                        </div>
-
-                        <div
-                            v-if="depth === 3 && run?.plan && !run.plan.answer"
-                            class="space-y-4"
-                            data-test="detail-how"
-                        >
-                            <section
-                                v-for="group in whereChanged"
-                                :key="group.name"
-                                class="space-y-1"
-                            >
-                                <h3 class="text-xs text-muted-foreground">
-                                    {{ group.name }}
-                                </h3>
-                                <p
-                                    v-for="file in group.files"
-                                    :key="file.path"
-                                    class="flex items-baseline gap-1.5 text-xs"
-                                    :title="file.path"
-                                >
-                                    <span class="shrink-0 font-mono">{{
-                                        file.name
-                                    }}</span>
-                                    <span
-                                        class="min-w-0 flex-1 truncate text-muted-foreground"
-                                        >{{ file.folder }}</span
-                                    >
-                                    <span
-                                        class="shrink-0 font-mono tabular-nums"
-                                    >
-                                        <span class="text-green-600"
-                                            >+{{ file.additions }}</span
-                                        >
-                                        <span class="text-red-600">
-                                            −{{ file.deletions }}</span
-                                        >
-                                    </span>
-                                </p>
-                            </section>
-                            <section
-                                v-if="testsAdded.length > 0"
-                                class="space-y-1"
-                            >
-                                <h3 class="text-xs text-muted-foreground">
-                                    Tests I wrote
-                                </h3>
-                                <p
-                                    v-for="path in testsAdded"
-                                    :key="path"
-                                    class="truncate font-mono text-xs"
-                                    :title="path"
-                                >
-                                    {{ path.split('/').pop() }}
-                                </p>
-                            </section>
-                            <section
-                                v-if="packagesAdded.length > 0"
-                                class="space-y-1"
-                            >
-                                <h3 class="text-xs text-muted-foreground">
-                                    Packages it adds
-                                </h3>
-                                <p
-                                    v-for="name in packagesAdded"
-                                    :key="name"
-                                    class="font-mono text-xs"
-                                >
-                                    {{ name }}
-                                </p>
-                            </section>
-                            <section
+                        <Teleport defer :to="'#beside-plan'" :disabled="!sides">
+                            <div
                                 v-if="
-                                    change.verification &&
-                                    change.verification.results.length > 0
+                                    (sides || depth === 2) &&
+                                    run?.plan &&
+                                    !run.plan.answer
                                 "
-                                class="space-y-1"
+                                class="space-y-6 leading-relaxed"
+                                data-test="detail-why"
                             >
-                                <h3 class="text-xs text-muted-foreground">
-                                    Checks I ran
-                                </h3>
-                                <p
-                                    v-for="(result, index) in change
-                                        .verification.results"
-                                    :key="index"
-                                    class="flex items-center gap-2"
+                                <section
+                                    v-if="
+                                        run.plan.current_behavior &&
+                                        run.plan.current_behavior !== 'New'
+                                    "
+                                    class="space-y-2"
                                 >
-                                    <component
-                                        :is="outcomes[result.outcome].icon"
-                                        :class="[
-                                            'size-4 shrink-0',
-                                            outcomes[result.outcome].tone,
-                                        ]"
-                                        :aria-label="result.outcome"
-                                    />
-                                    <span class="min-w-0 flex-1 truncate">{{
-                                        result.name
-                                    }}</span>
-                                    <span
-                                        class="shrink-0 text-xs text-muted-foreground tabular-nums"
-                                        >{{
-                                            (result.duration_ms / 1000).toFixed(
-                                                1,
-                                            )
-                                        }}
-                                        s</span
+                                    <h3
+                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
                                     >
-                                </p>
-                            </section>
-                        </div>
+                                        How it works now
+                                    </h3>
+                                    <p>{{ run.plan.current_behavior }}</p>
+                                </section>
+                                <section
+                                    v-if="sides && request.steps.length > 0"
+                                    class="space-y-2"
+                                >
+                                    <h3
+                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                    >
+                                        What I'm changing
+                                    </h3>
+                                    <p
+                                        v-for="step in request.steps"
+                                        :key="step.key"
+                                    >
+                                        <span class="font-medium">{{
+                                            step.label
+                                        }}</span>
+                                        <span
+                                            v-if="step.detail"
+                                            class="block text-muted-foreground"
+                                            >{{ step.detail }}</span
+                                        >
+                                    </p>
+                                </section>
+                                <section
+                                    v-if="
+                                        sides && run.plan.assumptions.length > 0
+                                    "
+                                    class="space-y-2"
+                                >
+                                    <h3
+                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                    >
+                                        What I decided for you
+                                    </h3>
+                                    <p
+                                        v-for="(assumption, index) in run.plan
+                                            .assumptions"
+                                        :key="index"
+                                    >
+                                        {{ assumption }}
+                                    </p>
+                                </section>
+                                <section
+                                    v-if="keptSame.length > 0"
+                                    class="space-y-2"
+                                >
+                                    <h3
+                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                    >
+                                        I'll keep these the same
+                                    </h3>
+                                    <p
+                                        v-for="(item, index) in keptSame"
+                                        :key="index"
+                                        class="flex items-start gap-2"
+                                        :title="item.label"
+                                    >
+                                        <component
+                                            :is="item.icon"
+                                            :class="[
+                                                'mt-0.5 size-4 shrink-0',
+                                                item.tone,
+                                            ]"
+                                            :aria-label="item.label"
+                                        />
+                                        <span class="min-w-0">{{
+                                            item.text
+                                        }}</span>
+                                    </p>
+                                </section>
+                                <section
+                                    v-if="doneWhen.length > 0"
+                                    class="space-y-2"
+                                >
+                                    <h3
+                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                    >
+                                        Done when
+                                    </h3>
+                                    <p
+                                        v-for="(item, index) in doneWhen"
+                                        :key="index"
+                                        class="flex items-start gap-2"
+                                        :title="item.label"
+                                    >
+                                        <component
+                                            :is="item.icon"
+                                            :class="[
+                                                'mt-0.5 size-4 shrink-0',
+                                                item.tone,
+                                            ]"
+                                            :aria-label="item.label"
+                                        />
+                                        <span class="min-w-0">{{
+                                            item.text
+                                        }}</span>
+                                    </p>
+                                </section>
+                                <section
+                                    v-if="alsoTouches.length > 0"
+                                    class="space-y-2"
+                                >
+                                    <h3
+                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                    >
+                                        This may also touch
+                                    </h3>
+                                    <p class="flex flex-wrap gap-1.5">
+                                        <span
+                                            v-for="name in alsoTouches"
+                                            :key="name"
+                                            class="rounded-full bg-muted px-2 py-0.5 text-xs"
+                                            >{{ name }}</span
+                                        >
+                                    </p>
+                                </section>
+                            </div>
+                        </Teleport>
+
+                        <Teleport defer :to="'#beside-code'" :disabled="!sides">
+                            <div
+                                v-if="
+                                    (sides || depth === 3) &&
+                                    run?.plan &&
+                                    !run.plan.answer
+                                "
+                                class="space-y-6"
+                                data-test="detail-how"
+                            >
+                                <section
+                                    v-for="group in whereChanged"
+                                    :key="group.name"
+                                    class="space-y-2"
+                                >
+                                    <h3
+                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                    >
+                                        {{ group.name }}
+                                    </h3>
+                                    <p
+                                        v-for="file in group.files"
+                                        :key="file.path"
+                                        class="flex items-baseline gap-1.5 text-xs"
+                                        :title="file.path"
+                                    >
+                                        <span class="shrink-0 font-mono">{{
+                                            file.name
+                                        }}</span>
+                                        <span
+                                            class="min-w-0 flex-1 truncate text-muted-foreground"
+                                            >{{ file.folder }}</span
+                                        >
+                                        <span
+                                            class="shrink-0 font-mono tabular-nums"
+                                        >
+                                            <span class="text-green-600"
+                                                >+{{ file.additions }}</span
+                                            >
+                                            <span class="text-red-600">
+                                                −{{ file.deletions }}</span
+                                            >
+                                        </span>
+                                    </p>
+                                </section>
+                                <section
+                                    v-if="testsAdded.length > 0"
+                                    class="space-y-2"
+                                >
+                                    <h3
+                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                    >
+                                        Tests I wrote
+                                    </h3>
+                                    <p
+                                        v-for="path in testsAdded"
+                                        :key="path"
+                                        class="truncate font-mono text-xs"
+                                        :title="path"
+                                    >
+                                        {{ path.split('/').pop() }}
+                                    </p>
+                                </section>
+                                <section
+                                    v-if="packagesAdded.length > 0"
+                                    class="space-y-2"
+                                >
+                                    <h3
+                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                    >
+                                        Packages it adds
+                                    </h3>
+                                    <p
+                                        v-for="name in packagesAdded"
+                                        :key="name"
+                                        class="font-mono text-xs"
+                                    >
+                                        {{ name }}
+                                    </p>
+                                </section>
+                                <section
+                                    v-if="
+                                        change.verification &&
+                                        change.verification.results.length > 0
+                                    "
+                                    class="space-y-2"
+                                >
+                                    <h3
+                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                    >
+                                        Checks I ran
+                                    </h3>
+                                    <p
+                                        v-for="(result, index) in change
+                                            .verification.results"
+                                        :key="index"
+                                        class="flex items-center gap-2"
+                                    >
+                                        <component
+                                            :is="outcomes[result.outcome].icon"
+                                            :class="[
+                                                'size-4 shrink-0',
+                                                outcomes[result.outcome].tone,
+                                            ]"
+                                            :aria-label="result.outcome"
+                                        />
+                                        <span class="min-w-0 flex-1 truncate">{{
+                                            result.name
+                                        }}</span>
+                                        <span
+                                            class="shrink-0 text-xs text-muted-foreground tabular-nums"
+                                            >{{
+                                                (
+                                                    result.duration_ms / 1000
+                                                ).toFixed(1)
+                                            }}
+                                            s</span
+                                        >
+                                    </p>
+                                </section>
+                                <ChangeCode
+                                    v-if="sides && request.files.length > 0"
+                                    narrow
+                                    class="-mx-5 border-t"
+                                    :files="request.files"
+                                />
+                            </div>
+                        </Teleport>
 
                         <div
-                            v-if="depth === 4 && request.files.length > 0"
+                            v-if="
+                                !sides &&
+                                depth === 4 &&
+                                request.files.length > 0
+                            "
                             :class="['space-y-1.5', full && 'lg:hidden']"
                             data-test="detail-code"
                         >
-                            <h3 class="text-xs text-muted-foreground">Files</h3>
+                            <h3
+                                class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                            >
+                                Files
+                            </h3>
                             <details
                                 v-for="file in request.files"
                                 :key="file.path"
@@ -1166,31 +1302,36 @@ const checks = computed(() => {
                 </div>
 
                 <!-- What to ask for next -->
-                <div
-                    v-if="nextIdeas.length > 0"
-                    class="flex flex-wrap gap-2 pl-9.5"
-                    data-test="thread-next"
+                <Transition
+                    enter-active-class="transition duration-300 ease-out"
+                    enter-from-class="opacity-0 translate-y-1"
                 >
-                    <Form
-                        v-for="idea in nextIdeas"
-                        :key="idea"
-                        v-bind="
-                            FeatureRequestFollowUpController.store.form(
-                                request.id,
-                            )
-                        "
-                        v-slot="{ processing }"
+                    <div
+                        v-if="nextIdeas.length > 0"
+                        class="flex flex-wrap gap-2 pl-9.5"
+                        data-test="thread-next"
                     >
-                        <input type="hidden" name="prompt" :value="idea" />
-                        <button
-                            :disabled="processing"
-                            class="min-h-11 rounded-full border px-3 text-left text-sm text-muted-foreground select-none hover:border-foreground/30 hover:text-foreground disabled:opacity-50 sm:min-h-8"
-                            data-test="next-idea"
+                        <Form
+                            v-for="idea in nextIdeas"
+                            :key="idea"
+                            v-bind="
+                                FeatureRequestFollowUpController.store.form(
+                                    request.id,
+                                )
+                            "
+                            v-slot="{ processing }"
                         >
-                            {{ idea }}
-                        </button>
-                    </Form>
-                </div>
+                            <input type="hidden" name="prompt" :value="idea" />
+                            <button
+                                :disabled="processing"
+                                class="min-h-11 rounded-full border px-3 text-left text-sm text-muted-foreground select-none hover:border-foreground/30 hover:text-foreground disabled:opacity-50 sm:min-h-8"
+                                data-test="next-idea"
+                            >
+                                {{ idea }}
+                            </button>
+                        </Form>
+                    </div>
+                </Transition>
 
                 <!-- What was asked after this, in the same chat -->
                 <div
@@ -1233,7 +1374,10 @@ const checks = computed(() => {
         <!-- The decision stays in reach at the bottom -->
         <div
             v-if="request.can_accept"
-            class="space-y-2 border-t p-3"
+            :class="[
+                'space-y-2 border-t p-3',
+                spread && 'px-[max(0.75rem,calc(50%-21rem))]',
+            ]"
             data-test="change-decision"
         >
             <p

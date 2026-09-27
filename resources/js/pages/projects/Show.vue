@@ -28,6 +28,7 @@ import {
     Smartphone,
     Tablet,
 } from '@lucide/vue';
+import { useMediaQuery } from '@vueuse/core';
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
 import FeatureRequestDismissalController from '@/actions/App/Http/Controllers/FeatureRequestDismissalController';
@@ -35,7 +36,9 @@ import FeatureRequestFollowUpController from '@/actions/App/Http/Controllers/Fea
 import ProjectExperimentController from '@/actions/App/Http/Controllers/ProjectExperimentController';
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
 import AppPreview from '@/components/AppPreview.vue';
+import BesidePanel from '@/components/BesidePanel.vue';
 import ChangeThread from '@/components/ChangeThread.vue';
+import ChatList from '@/components/ChatList.vue';
 import DesignPanel from '@/components/DesignPanel.vue';
 import IdeaMenu from '@/components/ideas/IdeaMenu.vue';
 import StartIdeaDialog from '@/components/ideas/StartIdeaDialog.vue';
@@ -137,6 +140,30 @@ const panelFull = computed(
 
 // A chat on the whole screen reads down the middle, not stretched across.
 const chatCentred = computed(() => panelFull.value && !codeOnScreen.value);
+
+// On a desktop an open change has its plan and code on its right, and on
+// a wide screen the owner's other chats on its left too. The columns stay
+// put while the owner moves between chats, so nothing jumps; a chat
+// without a plan yet says so on the right. The tabs above line up with the
+// chat.
+const SIDES = { left: '16rem', right: 'clamp(22rem, 28vw, 30rem)' };
+const desktop = useMediaQuery('(min-width: 1024px)');
+const wide = useMediaQuery('(min-width: 1280px)');
+const threadSides = ref(false);
+const panelOn = computed(
+    () => chatCentred.value && desktop.value && props.change !== null,
+);
+const listOn = computed(() => panelOn.value && wide.value);
+const besideChat = computed(() =>
+    panelOn.value
+        ? {
+              paddingLeft: listOn.value
+                  ? `calc(${SIDES.left} + 0.5rem)`
+                  : undefined,
+              paddingRight: `calc(${SIDES.right} + 0.5rem)`,
+          }
+        : undefined,
+);
 
 const app = useAppPreview({
     projectId: () => props.project.id,
@@ -723,11 +750,14 @@ function sendOnEnter(event: KeyboardEvent): void {
                 'relative min-h-0 flex-col lg:flex',
                 pane === 'panel' ? 'flex' : 'hidden',
                 panelFull ? '' : 'lg:border-r',
-                chatCentred && 'lg:px-[max(0px,calc(50%-21rem))]',
+                chatCentred && !panelOn && 'lg:px-[max(0px,calc(50%-21rem))]',
             ]"
             data-test="panel"
         >
-            <div class="hidden items-center gap-1 border-b p-2 lg:flex">
+            <div
+                class="hidden items-center gap-1 border-b p-2 lg:flex"
+                :style="besideChat"
+            >
                 <div
                     class="grid flex-1 grid-cols-2 rounded-md bg-muted p-0.5 text-sm"
                     role="tablist"
@@ -806,14 +836,41 @@ function sendOnEnter(event: KeyboardEvent): void {
 
             <section
                 v-else
-                class="flex min-h-0 flex-1 flex-col"
+                :class="
+                    panelOn
+                        ? 'grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto]'
+                        : 'flex min-h-0 flex-1 flex-col'
+                "
+                :style="
+                    panelOn
+                        ? {
+                              gridTemplateColumns: listOn
+                                  ? `${SIDES.left} minmax(0, 1fr) ${SIDES.right}`
+                                  : `minmax(0, 1fr) ${SIDES.right}`,
+                          }
+                        : undefined
+                "
                 data-test="conversation"
             >
+                <Transition
+                    enter-active-class="transition duration-300 ease-out"
+                    enter-from-class="opacity-0 -translate-x-2"
+                >
+                    <ChatList
+                        v-if="listOn"
+                        class="row-span-2"
+                        :project-id="project.id"
+                        :chats="changes"
+                        :current="change?.featureRequest.id ?? null"
+                    />
+                </Transition>
+
                 <ChangeThread
                     v-if="change"
                     :change="change"
                     :roomy="chatCentred"
                     @full="codeFull = $event"
+                    @sides="threadSides = $event"
                 />
 
                 <div v-else class="min-h-0 flex-1 overflow-y-auto p-4">
@@ -997,7 +1054,11 @@ function sendOnEnter(event: KeyboardEvent): void {
                 <Form
                     v-bind="composerForm"
                     :options="{ preserveState: true }"
-                    class="p-3"
+                    :class="[
+                        'p-3',
+                        panelOn && 'px-[max(0.75rem,calc(50%-21rem))]',
+                        listOn && 'col-start-2',
+                    ]"
                     reset-on-success
                     v-slot="{ errors, processing }"
                     @success="settleComposer"
@@ -1062,6 +1123,23 @@ function sendOnEnter(event: KeyboardEvent): void {
                     </div>
                     <InputError :message="errors.prompt" class="mt-1" />
                 </Form>
+
+                <!-- Always there with an open change, so its plan and code
+                     can move in as soon as the screen is wide enough -->
+                <Transition
+                    enter-active-class="transition duration-300 ease-out"
+                    enter-from-class="opacity-0 translate-x-2"
+                >
+                    <BesidePanel
+                        v-if="change"
+                        v-show="panelOn"
+                        :ready="threadSides"
+                        :class="[
+                            'row-span-2 row-start-1',
+                            listOn ? 'col-start-3' : 'col-start-2',
+                        ]"
+                    />
+                </Transition>
             </section>
             <div
                 role="separator"
