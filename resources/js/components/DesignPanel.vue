@@ -195,6 +195,36 @@ const inline = computed(() =>
 
 const sizes = options('text_size');
 
+// The widest a part gets, narrow to wide, so dragging the slider widens
+// it step by step. The named widths sit where they fall among the sizes.
+const widthNames: Record<string, string> = {
+    prose: 'Reading',
+    full: 'Its space',
+    none: 'No limit',
+};
+const widest = [
+    'xs',
+    'sm',
+    'md',
+    'lg',
+    'xl',
+    '2xl',
+    'prose',
+    '3xl',
+    '4xl',
+    '5xl',
+    '6xl',
+    '7xl',
+    'full',
+    'none',
+].map((value) => ({
+    value,
+    label:
+        widthNames[value] ??
+        options('max_width').find((option) => option.value === value)?.label ??
+        value,
+}));
+
 function set(property: VisualProperty, value: VisualValue | null): void {
     props.state.change(property, value);
 }
@@ -621,34 +651,14 @@ const recent = computed(() => {
                                 :options="words('height')"
                                 @change="set('height', $event)"
                             />
-                            <label
-                                class="flex items-center justify-between gap-2"
-                            >
-                                <span class="text-xs text-muted-foreground"
-                                    >Widest</span
-                                >
-                                <select
-                                    id="property-max_width"
-                                    :value="state.valueOf('max_width') ?? ''"
-                                    class="h-11 w-40 rounded-md bg-muted px-2 text-sm sm:h-7"
-                                    @change="
-                                        set(
-                                            'max_width',
-                                            ($event.target as HTMLSelectElement)
-                                                .value || null,
-                                        )
-                                    "
-                                >
-                                    <option value="">Not set</option>
-                                    <option
-                                        v-for="option in options('max_width')"
-                                        :key="option.value"
-                                        :value="option.value"
-                                    >
-                                        {{ option.label }}
-                                    </option>
-                                </select>
-                            </label>
+                            <StepSlider
+                                id="property-max_width"
+                                label="Widest"
+                                :value="state.valueOf('max_width')"
+                                :options="widest"
+                                :rest="widest.length - 1"
+                                @change="set('max_width', $event)"
+                            />
                         </section>
 
                         <section class="space-y-2">
