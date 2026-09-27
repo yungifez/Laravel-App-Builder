@@ -41,6 +41,7 @@ import type { Component } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
 import PageConsistencyController from '@/actions/App/Http/Controllers/PageConsistencyController';
 import MeasureField from '@/components/design/MeasureField.vue';
+import Reveal from '@/components/design/Reveal.vue';
 import Segmented from '@/components/design/Segmented.vue';
 import SpacingBox from '@/components/design/SpacingBox.vue';
 import StepSlider from '@/components/design/StepSlider.vue';
@@ -720,7 +721,7 @@ const recent = computed(() => {
                                     "
                                     @change="set('layout', $event)"
                                 />
-                                <div v-if="layout === 'flex'" class="space-y-2">
+                                <Reveal :open="layout === 'flex'">
                                     <Segmented
                                         label="Direction"
                                         caption="Direction"
@@ -735,9 +736,9 @@ const recent = computed(() => {
                                         :options="options('wrap')"
                                         @change="set('wrap', $event)"
                                     />
-                                </div>
-                                <template
-                                    v-if="
+                                </Reveal>
+                                <Reveal
+                                    :open="
                                         layout === 'flex' || layout === 'grid'
                                     "
                                 >
@@ -767,7 +768,7 @@ const recent = computed(() => {
                                             property="columns"
                                         />
                                     </div>
-                                </template>
+                                </Reveal>
                             </section>
 
                             <section class="space-y-2">
