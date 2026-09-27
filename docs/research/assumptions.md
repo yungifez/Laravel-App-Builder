@@ -257,3 +257,14 @@ them and correct any that are wrong.
 - **The new-app box takes pictures.** An owner can attach, drop or paste
   up to four sketches or screenshots with their first sentence. They go
   with the first version the same way pictures go with any change.
+- **Payments and email are the first ready-made services.** The project
+  menu has "Payments and email…". The owner picks one, pastes its keys and
+  presses "Add to my app". The keys are stored encrypted and the app is
+  changed to use them, as a normal change. I chose Stripe through Laravel
+  Cashier, and Resend through Laravel's mail, because both have first-party
+  Laravel support. Test and live Stripe keys are both accepted, because an
+  owner needs live keys to take real money. Previews get the keys but always
+  log email instead of sending it. Laravel Cloud gets the keys before each
+  release. They are appended, so Cloud's own variables stay. The app's tests
+  never get the keys. Stripe webhooks (for refunds and failed payments) are
+  not set up yet. Nothing here has been tried with real keys.

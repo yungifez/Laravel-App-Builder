@@ -56,6 +56,7 @@ class GatherPlanningContext
             mayAsk: count($run->answers ?? []) < $run->question_limit,
             parentAnswered: $parent?->status === FeatureRequestStatus::Answered,
             keepOldWorking: $keepOldWorking,
+            services: $featureRequest->project->connectedServices(),
         );
     }
 

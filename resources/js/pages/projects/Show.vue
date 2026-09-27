@@ -49,6 +49,7 @@ import ProjectDetails from '@/components/ProjectDetails.vue';
 import NotificationBell from '@/components/NotificationBell.vue';
 import PublishPanel from '@/components/PublishPanel.vue';
 import RenameAppDialog from '@/components/RenameAppDialog.vue';
+import ServicesDialog from '@/components/ServicesDialog.vue';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -84,6 +85,7 @@ import type {
     ProjectCommit,
     ProjectSummary,
     ProjectPublishing,
+    AppService,
     ProjectTelemetry,
     VisualEditSummary,
 } from '@/types';
@@ -100,6 +102,7 @@ const props = defineProps<{
     history: ProjectCommit[];
     telemetry: ProjectTelemetry;
     publishing: ProjectPublishing;
+    services: AppService[];
 }>();
 
 // The left panel talks about changes (Chat) or changes how the app looks
@@ -229,6 +232,7 @@ const behind = computed(() => {
 });
 const startingIdea = ref(false);
 const renaming = ref(false);
+const connecting = ref(false);
 const usingIdea = ref(false);
 
 function openIdea(idea: Idea): void {
@@ -675,6 +679,12 @@ function sendOnEnter(event: KeyboardEvent): void {
                     >
                 </DropdownMenuItem>
                 <DropdownMenuItem
+                    data-test="services-open"
+                    @select="connecting = true"
+                >
+                    Payments and email…
+                </DropdownMenuItem>
+                <DropdownMenuItem
                     data-test="app-rename"
                     @select="renaming = true"
                 >
@@ -831,6 +841,11 @@ function sendOnEnter(event: KeyboardEvent): void {
         v-model:open="renaming"
         :project-id="project.id"
         :name="project.name"
+    />
+    <ServicesDialog
+        v-model:open="connecting"
+        :project-id="project.id"
+        :services="services"
     />
     <UseIdeaDialog
         v-if="ideas.current"

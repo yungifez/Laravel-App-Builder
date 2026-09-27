@@ -88,6 +88,7 @@ class LaravelCloudPublishingTest extends TestCase
                 $path === '/api/applications' => Http::response(['data' => ['id' => 'app-1', 'relationships' => ['defaultEnvironment' => ['data' => ['id' => 'env-1']]]]], 201),
                 $path === '/api/databases/clusters/cluster-1/databases' => Http::response(['data' => ['id' => 'db-1']], 201),
                 $path === '/api/environments/env-1' => Http::response(['data' => ['id' => 'env-1', 'attributes' => ['vanity_domain' => 'acme-shop.laravel.cloud']]]),
+                $path === '/api/environments/env-1/variables' => Http::response(['data' => ['id' => 'env-1']]),
                 $path === '/api/environments/env-1/deployments' => Http::response(['data' => ['id' => 'release-'.Deployment::query()->count(), 'attributes' => ['status' => 'pending']]], 201),
                 str_starts_with($path, '/api/deployments/') => Http::response(['data' => ['attributes' => ['status' => array_shift($this->releaseStatuses) ?? 'deployment.succeeded']]]),
                 $request->url() === 'https://acme-shop.laravel.cloud/up', $request->url() === 'https://acme-shop.laravel.cloud/' => Http::response('', 200),
@@ -144,6 +145,24 @@ class LaravelCloudPublishingTest extends TestCase
         $this->assertSame(DeploymentStatus::Published, Deployment::query()->latest('id')->firstOrFail()->status);
         Http::assertSentCount(11 + 6);
         $this->assertCount(1, Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/api/applications')));
+    }
+
+    public function test_the_keys_of_the_apps_services_go_online_with_each_release()
+    {
+        $this->fakeHosts();
+        $this->project->forceFill(['service_keys' => ['email' => ['RESEND_API_KEY' => 're_c', 'MAIL_FROM_ADDRESS' => 'hi@example.com']]])->save();
+
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project))->assertSessionHasNoErrors();
+
+        $this->assertSame(DeploymentStatus::Published, Deployment::sole()->status);
+        $sent = Http::recorded()->map(fn (array $pair) => $pair[0]->url())->values()->all();
+        $variables = array_search('https://cloud.laravel.com/api/environments/env-1/variables', $sent, true);
+        $this->assertIsInt($variables);
+        // Before the release starts, and without replacing what Cloud keeps.
+        $this->assertLessThan(array_search('https://cloud.laravel.com/api/environments/env-1/deployments', $sent, true), $variables);
+        Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/variables')
+            && $request['method'] === 'append'
+            && $request['variables'] === [['key' => 'MAIL_MAILER', 'value' => 'resend'], ['key' => 'RESEND_API_KEY', 'value' => 're_c'], ['key' => 'MAIL_FROM_ADDRESS', 'value' => 'hi@example.com']]);
     }
 
     public function test_a_version_cloud_cannot_start_leaves_the_app_online_unchanged()

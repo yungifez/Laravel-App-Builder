@@ -600,3 +600,20 @@ export type Ideas = {
     /** The main branch's name, shown to power users. */
     main: string;
 };
+
+/** An outside service the app can be connected to, such as payments. */
+export type AppService = {
+    key: string;
+    name: string;
+    provider: string;
+    about: string;
+    /** Where the owner gets the keys. */
+    keys_at: string;
+    fields: {
+        name: string;
+        label: string;
+        hint: string | null;
+        secret: boolean;
+    }[];
+    connected: boolean;
+};

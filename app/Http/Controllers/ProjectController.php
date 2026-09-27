@@ -165,6 +165,7 @@ class ProjectController extends Controller
                     'created_at' => $edit->created_at?->toIso8601String(),
                     'reverted_at' => $edit->reverted_at?->toIso8601String(),
                 ]),
+            'services' => fn () => $this->services($project),
             // The idea the owner is working in (null for the main app) and
             // the ideas still open, to move between.
             'ideas' => [
@@ -221,5 +222,38 @@ class ProjectController extends Controller
             ->latest('id')
             ->first()
             ?->finished_at?->toIso8601String();
+    }
+
+    /**
+     * Get the outside services the app can use, and whether it does. The
+     * keys themselves never go to the page.
+     *
+     * @return list<array{key: string, name: string, provider: string, about: string, keys_at: string, fields: list<array{name: string, label: string, hint: string|null, secret: bool}>, connected: bool}>
+     */
+    protected function services(Project $project): array
+    {
+        /** @var array<string, array{name: string, provider: string, about: string, keys_at: string, fields: array<string, array{label: string, hint?: string, secret?: bool}>}> $catalogue */
+        $catalogue = config('builder.services', []);
+        $services = [];
+
+        foreach ($catalogue as $key => $service) {
+            $fields = [];
+
+            foreach ($service['fields'] as $name => $field) {
+                $fields[] = ['name' => $name, 'label' => $field['label'], 'hint' => $field['hint'] ?? null, 'secret' => $field['secret'] ?? false];
+            }
+
+            $services[] = [
+                'key' => $key,
+                'name' => $service['name'],
+                'provider' => $service['provider'],
+                'about' => $service['about'],
+                'keys_at' => $service['keys_at'],
+                'fields' => $fields,
+                'connected' => in_array($key, $project->connectedServices(), true),
+            ];
+        }
+
+        return $services;
     }
 }

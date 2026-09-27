@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 29.** This document consolidates the direction in [direction/](direction/)
+**Version 30.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -75,7 +75,9 @@ local check can judge. Version 29 ties compatibility to whether anyone uses the 
 ([direction 30](direction/30-backwards-compatibility.md), [§9](#compatibility-follows-the-apps-life)):
 an app that has never been online is changed in place, and a live app moves its
 data forward with a migration before it keeps an old way alongside the new one.
-The owner sees this as a switch and can set it either way.
+The owner sees this as a switch and can set it either way. Version 30 adds
+ready-made services ([§17](#outside-services-and-their-keys)): the owner pastes
+the keys for payments or email, and the app is changed to use them.
 When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
@@ -1632,6 +1634,30 @@ deployments, destructive migrations, secrets, payment configuration, outbound
 email or SMS, paid infrastructure, data deletion, domain and DNS changes,
 integrations with real consequences. The behaviour diff detects most of them
 deterministically (a new mail channel, a destructive migration, a new secret).
+
+### Outside services and their keys
+
+Payments and email are what make most business apps usable, so the owner can
+connect them without a developer.
+
+- **A fixed catalogue** in `config/builder.php` (`services`): payments through
+  Stripe with Laravel Cashier, and email through Resend with Laravel's mail.
+  Each entry names its fields and how to check them, fixed settings (for
+  example `MAIL_MAILER=resend`), the change the owner sees asked for, and the
+  agent's guidance.
+- **The owner pastes keys; nobody else sees them.** They are stored encrypted
+  with the project and never sent back to the page. The agent gets only their
+  names, in a section of every plan and build prompt, and is told to read them
+  through config and keep them out of the repository.
+- **The first connection is a normal change.** It goes through the plan,
+  checks, review and the owner's keep. New keys for a connected service change
+  only the keys.
+- **The keys follow the app wherever it runs.** A preview gets them as
+  environment variables, but the preview's own settings win, so a preview
+  never sends real email. A Laravel Cloud release appends them to the app's
+  environment variables before it deploys. An owner who publishes to their own
+  branch sets them where they host. The checks never get them: the app's tests
+  fake outside services.
 
 ## 18. Imported applications
 

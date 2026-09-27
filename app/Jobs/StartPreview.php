@@ -144,8 +144,10 @@ class StartPreview implements ShouldQueue
      */
     protected function serverCommand(int $port): array
     {
+        // The keys for the app's outside services come first, so the
+        // preview's own settings win: a preview never sends real email.
         /** @var array<string, string> $environment */
-        $environment = config('builder.preview.environment', []);
+        $environment = [...$this->preview->project->serviceEnvironment(), ...config('builder.preview.environment', [])];
         $environment['APP_URL'] = rtrim($this->preview->url(), '/');
         $environment['PHP_CLI_SERVER_WORKERS'] ??= '4';
 

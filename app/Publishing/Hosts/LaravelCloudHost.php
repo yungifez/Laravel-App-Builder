@@ -56,6 +56,16 @@ class LaravelCloudHost implements PublishingHost
                 $state = $this->createApplication($project, $state);
             }
 
+            // The keys for the app's outside services go with every release,
+            // so a key the owner changed is live with the next one. Append
+            // leaves the variables Cloud keeps for the app in place.
+            if (($variables = $project->serviceEnvironment()) !== []) {
+                $this->cloud()->post("/environments/{$state['environment']}/variables", [
+                    'method' => 'append',
+                    'variables' => array_map(fn (string $key, string $value) => ['key' => $key, 'value' => $value], array_keys($variables), $variables),
+                ])->throw();
+            }
+
             $release = $this->cloud()->post("/environments/{$state['environment']}/deployments")->throw();
 
             $deployment->update(['host_release_id' => (string) $release->json('data.id'), 'host_status' => (string) $release->json('data.attributes.status', 'pending')]);

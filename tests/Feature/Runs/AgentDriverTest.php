@@ -569,6 +569,22 @@ class AgentDriverTest extends TestCase
             && ! str_contains($task->prompt, '## No need to keep the old way working'))->count());
     }
 
+    public function test_the_agent_is_told_how_to_use_the_services_the_app_is_connected_to()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $request = $this->request();
+        $request->project->forceFill(['service_keys' => ['payments' => ['STRIPE_KEY' => 'pk_test_a', 'STRIPE_SECRET' => 'sk_test_b']]])->save();
+
+        app(StartRun::class)->handle($request);
+
+        FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, '## Outside services the app uses')
+            && str_contains($prompt->prompt, 'Laravel Cashier'));
+        // The names of the keys, never the keys.
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'STRIPE_SECRET environment variables')
+            && ! str_contains($prompt, 'sk_test_b')
+            && ! str_contains($prompt, 'Resend'));
+    }
+
     public function test_the_owners_choice_about_the_old_way_outranks_whether_the_app_is_used()
     {
         FeaturePlanner::fake([$this->plan()]);

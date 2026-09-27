@@ -17,6 +17,7 @@ final readonly class PlanningContext
      * @param  bool  $mayAsk  Whether the planner may still ask the owner a question
      * @param  bool  $parentAnswered  Whether the earlier request was a question that was answered, not a change
      * @param  bool  $keepOldWorking  Whether changes must carry the app's old data and links forward
+     * @param  list<string>  $services  The outside services the app is connected to
      */
     public function __construct(
         public string $request,
@@ -30,6 +31,7 @@ final readonly class PlanningContext
         public bool $mayAsk = false,
         public bool $parentAnswered = false,
         public bool $keepOldWorking = true,
+        public array $services = [],
     ) {}
 
     /**

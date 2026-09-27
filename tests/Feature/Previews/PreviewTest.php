@@ -74,6 +74,24 @@ class PreviewTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('preview.status', 'ready'));
     }
 
+    public function test_a_preview_gets_the_keys_of_the_apps_services_but_never_sends_real_email()
+    {
+        Http::fake(['*/up' => Http::response('ok')]);
+        $request = FeatureRequest::factory()->generated()->create();
+        $request->project->forceFill(['service_keys' => [
+            'payments' => ['STRIPE_KEY' => 'pk_test_a', 'STRIPE_SECRET' => 'sk_test_b'],
+            'email' => ['RESEND_API_KEY' => 're_c', 'MAIL_FROM_ADDRESS' => 'hi@example.com'],
+        ]])->save();
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $command = $this->driver->services[0]['command'];
+        $this->assertContains('STRIPE_SECRET=sk_test_b', $command);
+        $this->assertContains('RESEND_API_KEY=re_c', $command);
+        $this->assertContains('MAIL_MAILER=log', $command);
+        $this->assertNotContains('MAIL_MAILER=resend', $command);
+    }
+
     public function test_a_duplicate_start_leaves_a_running_preview_alone()
     {
         $preview = Preview::factory()->ready()->create();

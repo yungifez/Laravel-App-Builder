@@ -70,6 +70,49 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Services
+    |--------------------------------------------------------------------------
+    |
+    | Outside services an owner can connect their app to by pasting its keys.
+    | The keys are kept encrypted with the project and given to the app as
+    | environment variables: in its previews and where it is published.
+    | Each field's `rules` check what is pasted; `environment` adds fixed
+    | variables once connected. `request` is the change the owner sees
+    | asked for; `guidance` tells the agent how.
+    |
+    */
+
+    'services' => [
+        'payments' => [
+            'name' => 'Take payments',
+            'provider' => 'Stripe',
+            'about' => 'Customers pay by card. Money goes to your Stripe account.',
+            'keys_at' => 'https://dashboard.stripe.com/test/apikeys',
+            'fields' => [
+                'STRIPE_KEY' => ['label' => 'Publishable key', 'rules' => ['regex:/^pk_(test|live)_[A-Za-z0-9]+$/'], 'hint' => 'It starts with pk_test_'],
+                'STRIPE_SECRET' => ['label' => 'Secret key', 'rules' => ['regex:/^sk_(test|live)_[A-Za-z0-9]+$/'], 'hint' => 'It starts with sk_test_', 'secret' => true],
+            ],
+            'environment' => [],
+            'request' => 'Let customers pay online by card with Stripe.',
+            'guidance' => 'Payments: take them with Stripe through Laravel Cashier (laravel/cashier). Read the keys from the STRIPE_KEY and STRIPE_SECRET environment variables through config/cashier.php; never write key values into code, tests or .env.example (list the names there with empty values). In tests, never call Stripe: fake the parts that would.',
+        ],
+        'email' => [
+            'name' => 'Send email',
+            'provider' => 'Resend',
+            'about' => 'Your app sends email, such as receipts and reminders, from your own address.',
+            'keys_at' => 'https://resend.com/api-keys',
+            'fields' => [
+                'RESEND_API_KEY' => ['label' => 'API key', 'rules' => ['regex:/^re_[A-Za-z0-9_]+$/'], 'hint' => 'It starts with re_', 'secret' => true],
+                'MAIL_FROM_ADDRESS' => ['label' => 'Send from', 'rules' => ['email'], 'hint' => 'An address on a domain you added to Resend'],
+            ],
+            'environment' => ['MAIL_MAILER' => 'resend'],
+            'request' => 'Send the app\'s emails for real, through Resend.',
+            'guidance' => 'Email: send it with Laravel\'s mail through the resend mailer (install resend/resend-php, which the mailer needs). The key comes from the RESEND_API_KEY environment variable and MAIL_MAILER is set to resend where the app runs; never write the key into code, tests or .env.example. In tests, use Mail::fake().',
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Design
     |--------------------------------------------------------------------------
     |

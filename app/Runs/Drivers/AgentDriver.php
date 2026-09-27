@@ -161,6 +161,10 @@ abstract class AgentDriver implements ConstructionDriver
 
         $sections[] = self::compatibility($context->keepOldWorking);
 
+        if ($context->services !== []) {
+            $sections[] = self::services($context->services);
+        }
+
         $sections[] = "## Project files\n\n".implode("\n", $context->files);
 
         foreach ($context->contents as $path => $contents) {
@@ -214,6 +218,21 @@ abstract class AgentDriver implements ConstructionDriver
     }
 
     /**
+     * Say which outside services the app is connected to and how to use
+     * them. The owner's keys are in the environment wherever the app runs;
+     * the agent never sees them.
+     *
+     * @param  list<string>  $services
+     */
+    public static function services(array $services): string
+    {
+        return "## Outside services the app uses\n\nTheir keys are set as environment variables wherever the app runs. Use them through config, and keep them out of the code and the repository.\n\n".implode("\n", array_map(
+            fn (string $service) => '- '.config("builder.services.{$service}.guidance"),
+            $services,
+        ));
+    }
+
+    /**
      * The repository can belong to the customer and go anywhere, so what
      * the agent writes must read like the work of the app's own developer.
      * Nothing may reveal how the request reached it.
@@ -252,6 +271,11 @@ abstract class AgentDriver implements ConstructionDriver
 
         $sections[] = $this->observability();
         $sections[] = self::compatibility($run->featureRequest->project->keepsOldWorking());
+
+        if (($services = $run->featureRequest->project->connectedServices()) !== []) {
+            $sections[] = self::services($services);
+        }
+
         $sections[] = self::DISCRETION;
 
         if ($plan->preserve !== []) {

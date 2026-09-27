@@ -27,6 +27,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $live_url Where the hosting platform serves the app
  * @property string|null $deploy_branch
  * @property string|null $host Where the app is published, such as "git" or "laravel_cloud"; null is the platform's default
+ * @property array<string, array<string, string>>|null $service_keys What the owner pasted for each outside service the app uses, keyed by service then variable
  * @property array<string, string>|null $host_state What the host created for the app, such as its application and environment IDs
  * @property NotesDraftStatus|null $notes_draft_status
  * @property int|null $experiment_id The idea the owner is working in; null is the main app
@@ -38,7 +39,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  */
 #[Fillable(['name', 'source_path', 'experiment_id', 'deploy_remote', 'deploy_branch', 'live_url', 'host', 'host_state', 'notes_draft_status', 'notes_draft', 'notes_draft_error', 'setup_model_calls'])]
-#[Hidden(['deploy_remote'])]
+#[Hidden(['deploy_remote', 'service_keys'])]
 class Project extends Model
 {
     /** @use HasFactory<ProjectFactory> */
@@ -60,6 +61,7 @@ class Project extends Model
             'understanding_seen_at' => 'datetime',
             'started_here' => 'boolean',
             'keep_old_working' => 'boolean',
+            'service_keys' => 'encrypted:array',
         ];
     }
 
@@ -206,6 +208,36 @@ class Project extends Model
     public function keepsOldWorking(): bool
     {
         return $this->keep_old_working ?? $this->mayBeInUse();
+    }
+
+    /**
+     * Get the outside services the app is connected to, in catalogue order.
+     *
+     * @return list<string>
+     */
+    public function connectedServices(): array
+    {
+        /** @var array<string, mixed> $catalogue */
+        $catalogue = config('builder.services', []);
+
+        return array_values(array_filter(array_keys($catalogue), fn (string $service) => isset($this->service_keys[$service])));
+    }
+
+    /**
+     * Get the environment variables the app's connected services need: the
+     * keys the owner pasted and each service's fixed settings.
+     *
+     * @return array<string, string>
+     */
+    public function serviceEnvironment(): array
+    {
+        $environment = [];
+
+        foreach ($this->connectedServices() as $service) {
+            $environment = [...$environment, ...config("builder.services.{$service}.environment", []), ...$this->service_keys[$service]];
+        }
+
+        return $environment;
     }
 
     /**
