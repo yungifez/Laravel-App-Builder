@@ -118,3 +118,11 @@ them and correct any that are wrong.
   they see, and seeing their screen on a phone is the clearest proof that
   it was checked there. Old pictures are never deleted yet; clean-up can
   come with workspace clean-up. Undo: `BUILDER_SCREEN_SHOTS_MAX=0`.
+- **"Why is this here?" follows the line's git history.** When the owner
+  selects a part, `git log -L` follows its line back through later edits
+  and moves. If a kept request made the line, the panel says "Added when
+  you asked …". If the line came with the app, it names the latest kept
+  request that changed it ("Changed when you asked …"). Undone requests
+  and hand edits are skipped. Only the part's opening line is followed, so
+  a request that changed only its inner words is not named. Why: git
+  already holds the answer, with no model call and no new table.

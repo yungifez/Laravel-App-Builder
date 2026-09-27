@@ -4,11 +4,13 @@ namespace App\Actions\VisualEditing;
 
 use App\Actions\Context\ReadProjectContext;
 use App\Context\Capability;
+use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Projects\ProjectRepository;
 use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TailwindClasses;
 use App\VisualEditing\TemplateElement;
+use Illuminate\Support\Str;
 
 class InspectElement
 {
@@ -60,6 +62,7 @@ class InspectElement
             'classes' => $classes,
             'values' => TailwindClasses::effective($classes),
             'area' => $this->area($preview, $location->file),
+            'origin' => $followed === null ? null : $this->origin($preview, $head, $location->file, $followed->line),
             'revision' => $head,
         ];
     }
@@ -82,6 +85,54 @@ class InspectElement
             'summary' => $capability->summary,
             'rules' => $capability->rules(),
             'behaviors' => array_column($capability->behaviors, 'name'),
+        ];
+    }
+
+    /**
+     * Get the kept request behind the element's line, so the owner can see
+     * why a part is there in their own words. The line's history is
+     * followed back through later edits and moves. Requests later undone
+     * are skipped.
+     *
+     * @return array{id: int, how: 'added'|'changed', asked: string, at: string|null, decided: array{question: string, answer: string}|null}|null
+     */
+    protected function origin(Preview $preview, string $head, string $file, int $line): ?array
+    {
+        $result = $this->repository->git($preview->project, ['log', '-s', '--format=%H', '-L', "{$line},{$line}:{$file}", $head], throw: false, timeout: 10);
+        $commits = $result->successful() ? array_values(preg_grep('/^[0-9a-f]{40}$/', explode("\n", trim($result->output()))) ?: []) : [];
+
+        if ($commits === []) {
+            return null;
+        }
+
+        $kept = FeatureRequest::query()
+            ->whereBelongsTo($preview->project)
+            ->whereIn('commit_sha', $commits)
+            ->whereNotNull('accepted_at')
+            ->whereNull('reverted_at')
+            ->with('latestRun')
+            ->get()
+            ->keyBy('commit_sha');
+
+        // The oldest commit made the line. When a kept request made it, the
+        // part was added for that request; otherwise it came from elsewhere
+        // and the latest kept request that reworked it is named instead.
+        $made = $kept->get(end($commits));
+        $latest = collect($commits)->first(fn (string $commit) => $kept->has($commit));
+        $featureRequest = $made ?? ($latest === null ? null : $kept->get($latest));
+
+        if ($featureRequest === null) {
+            return null;
+        }
+
+        $decided = collect($featureRequest->latestRun->answers ?? [])->last(fn (array $answer) => $answer['decided_by'] === 'owner');
+
+        return [
+            'id' => $featureRequest->id,
+            'how' => $made === null ? 'changed' : 'added',
+            'asked' => Str::limit($featureRequest->prompt, 140),
+            'at' => $featureRequest->accepted_at?->toIso8601String(),
+            'decided' => $decided === null ? null : ['question' => $decided['question'], 'answer' => $decided['answer']],
         ];
     }
 

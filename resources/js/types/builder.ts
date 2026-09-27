@@ -392,6 +392,13 @@ export type InspectedElement = {
         rules: string[];
         behaviors: string[];
     } | null;
+    origin: {
+        id: number;
+        how: 'added' | 'changed';
+        asked: string;
+        at: string | null;
+        decided: { question: string; answer: string } | null;
+    } | null;
     revision: string;
 };
 

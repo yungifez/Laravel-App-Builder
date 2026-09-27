@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Form, usePage } from '@inertiajs/vue3';
+import { Form, Link, usePage } from '@inertiajs/vue3';
 import {
     AlignCenterVertical,
     AlignEndVertical,
@@ -48,6 +48,7 @@ import Swatches from '@/components/design/Swatches.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import type { AppPreviewState } from '@/composables/useAppPreview';
+import { when } from '@/lib/when';
 import {
     definition,
     describeValue,
@@ -86,6 +87,15 @@ function keepWords(): void {
 // Whether the owner is reading what making the page consistent does.
 const tidying = ref(false);
 const element = computed(() => props.state.element);
+
+// "today" and "yesterday" read on their own; a date needs "on".
+const originWhen = computed(() => {
+    const said = when(element.value?.origin?.at ?? null);
+
+    return said === '' || said === 'today' || said === 'yesterday'
+        ? said
+        : `on ${said}`;
+});
 
 // Where the part lives in the code, and its Tailwind classes, only for
 // someone who chose to see how changes are built (§28.4).
@@ -413,6 +423,30 @@ const recent = computed(() => {
                         data-test="element-area"
                     >
                         {{ element.area.summary }}
+                    </p>
+
+                    <p
+                        v-if="element.origin"
+                        class="text-xs text-muted-foreground"
+                        data-test="element-origin"
+                    >
+                        {{
+                            element.origin.how === 'added' ? 'Added' : 'Changed'
+                        }}
+                        {{ originWhen }} when you asked
+                        <Link
+                            :href="
+                                FeatureRequestController.show.url(
+                                    element.origin.id,
+                                )
+                            "
+                            class="text-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground"
+                            >“{{ element.origin.asked }}”</Link
+                        ><template v-if="element.origin.decided"
+                            >. You chose “{{
+                                element.origin.decided.answer
+                            }}”</template
+                        >.
                     </p>
 
                     <Segmented
