@@ -43,6 +43,10 @@ const props = defineProps<{
     changes: { id: number; summary: string; at: string | null }[];
     // All the changes kept; changes lists only the latest.
     kept: number;
+    // The owner's last look at this page, and how many changes were kept
+    // after it; null on a first look.
+    since: string | null;
+    fresh: number;
     looks: number;
     // Problems caught and fixed before the owner saw the kept changes.
     caught: number;
@@ -73,6 +77,15 @@ function onDay(at: string | null): string {
     return said === '' || said === 'today' || said === 'yesterday'
         ? said
         : `on ${said}`;
+}
+
+// Kept after the owner's last look at this page.
+function isNew(at: string | null): boolean {
+    return (
+        props.since !== null &&
+        at !== null &&
+        new Date(at).getTime() > new Date(props.since).getTime()
+    );
 }
 
 // What the owner asked for in a part, counted in one line: how many things,
@@ -721,6 +734,15 @@ watch(
                     <h2 class="mb-4 text-xl font-semibold tracking-[-0.02em]">
                         What changed
                     </h2>
+                    <p
+                        v-if="fresh > 0"
+                        class="-mt-2 mb-4 text-sm text-muted-foreground"
+                        data-test="changed-since"
+                    >
+                        {{ fresh }}
+                        {{ fresh === 1 ? 'change' : 'changes' }} since you last
+                        looked {{ onDay(since) }}.
+                    </p>
 
                     <ol
                         v-if="changes.length || looks > 0"
@@ -743,9 +765,15 @@ watch(
                                 "
                                 class="-mx-2 flex min-h-11 items-baseline justify-between gap-4 rounded-md px-2 py-2.5 transition-colors duration-150 hover:bg-muted/50"
                             >
-                                <span class="min-w-0">{{
-                                    change.summary
-                                }}</span>
+                                <span class="min-w-0"
+                                    >{{ change.summary
+                                    }}<span
+                                        v-if="isNew(change.at)"
+                                        class="ml-2 rounded-sm bg-foreground/10 px-1.5 py-0.5 text-xs font-medium text-foreground"
+                                        data-test="change-new"
+                                        >New</span
+                                    ></span
+                                >
                                 <span
                                     class="shrink-0 text-xs text-muted-foreground tabular-nums"
                                     >{{ when(change.at) }}</span

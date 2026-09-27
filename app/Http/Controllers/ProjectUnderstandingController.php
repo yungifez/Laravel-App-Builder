@@ -45,6 +45,10 @@ class ProjectUnderstandingController extends Controller
         // Which of the app's tests run each area's own code, as last seen.
         $map = $context === null ? null : TestObservation::latestFor($project)?->map();
         $askedFor = $context === null ? [] : $describeAskedFor->handle($project, $repository->head($project) ?: null);
+        $kept = $project->featureRequests()->whereNotNull('accepted_at')->whereNull('reverted_at');
+        // The owner's last look, before this one moves it on.
+        $since = $project->understanding_seen_at;
+        $project->forceFill(['understanding_seen_at' => now()])->saveQuietly();
 
         return Inertia::render('projects/Understanding', [
             'project' => $project->only('id', 'name'),
@@ -71,14 +75,17 @@ class ProjectUnderstandingController extends Controller
                 'file' => $capability->file,
             ], $context->capabilities ?? [])),
             'problems' => $context->problems ?? [],
-            'changes' => $project->featureRequests()->whereNotNull('accepted_at')->whereNull('reverted_at')->latest('accepted_at')->limit(10)->get()
+            'changes' => (clone $kept)->latest('accepted_at')->limit(10)->get()
                 ->map(fn (FeatureRequest $featureRequest) => [
                     'id' => $featureRequest->id,
                     'summary' => $featureRequest->summary ?? $featureRequest->prompt,
                     'at' => $featureRequest->accepted_at?->toIso8601String(),
                 ]),
             // All the changes kept, where the list above shows the latest.
-            'kept' => $project->featureRequests()->whereNotNull('accepted_at')->whereNull('reverted_at')->count(),
+            'kept' => (clone $kept)->count(),
+            // What changed while the owner was away: none on a first look.
+            'since' => $since?->toIso8601String(),
+            'fresh' => $since === null ? 0 : (clone $kept)->where('accepted_at', '>', $since)->count(),
             'looks' => $project->visualEdits()->count(),
             // Problems the checks or the second look caught in the changes
             // kept, each fixed before the owner saw the change.

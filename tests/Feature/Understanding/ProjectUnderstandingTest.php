@@ -198,6 +198,29 @@ class ProjectUnderstandingTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->has('decisions', 12)->where('decided', 15));
     }
 
+    public function test_the_owner_hears_what_changed_since_they_last_looked()
+    {
+        $this->travelTo(now()->subDays(3));
+        FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now()]);
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            // A first look has nothing to compare with.
+            ->assertInertia(fn (Assert $page) => $page->where('since', null)->where('fresh', 0));
+        $looked = now()->toIso8601String();
+        $this->travelBack();
+
+        FeatureRequest::factory()->generated()->count(2)->for($this->project)->create(['accepted_at' => now()]);
+        // An undone change is not something that changed.
+        FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now(), 'reverted_at' => now()]);
+
+        $this->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('since', $looked)->where('fresh', 2));
+
+        // This look is now the last one.
+        $this->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('fresh', 0));
+    }
+
     public function test_answers_kept_in_the_notes_show_once_among_the_decisions()
     {
         $kept = FeatureRequest::factory()->generated()->for($this->project)->create(['summary' => 'Count team members', 'accepted_at' => now()]);

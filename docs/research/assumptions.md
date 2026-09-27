@@ -193,3 +193,9 @@ them and correct any that are wrong.
   already made without asking (direction 18 §6); this makes that visible.
   Untagged questions (older runs) show no line. The change details page
   shows the same line.
+- **What changed while you were away (direction 18 §9).** The page that
+  explains the app remembers when the owner last opened it (one timestamp on
+  the project, since a project has one owner). On the next visit, "What
+  changed" says how many changes were kept since then and marks each one
+  "New". A first visit marks nothing. Undone changes do not count. Opening
+  the page is the "last checked" moment; the app workspace does not move it.

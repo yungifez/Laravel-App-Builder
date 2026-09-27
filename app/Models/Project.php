@@ -30,6 +30,7 @@ use Illuminate\Support\Carbon;
  * @property array{purpose: string, areas: list<array{key: string, name: string, summary: string, paths: list<string>, behaviors: list<array{key: string, name: string}>, rules: list<string>}>}|null $notes_draft Notes a model drafted from an imported app, waiting for the owner
  * @property string|null $notes_draft_error
  * @property list<array{role: string, provider: string|null, model: string|null, input_tokens: int, output_tokens: int, cost_usd: float|null, cost_source?: string|null, at?: string}>|null $setup_model_calls Model calls made to set the project up, outside any change
+ * @property Carbon|null $understanding_seen_at When the owner last read what their app is
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -53,6 +54,7 @@ class Project extends Model
             'notes_draft' => 'array',
             'setup_model_calls' => 'array',
             'host_state' => 'array',
+            'understanding_seen_at' => 'datetime',
         ];
     }
 
