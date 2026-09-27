@@ -28,6 +28,7 @@ import PreviewController from '@/actions/App/Http/Controllers/PreviewController'
 import RunCancellationController from '@/actions/App/Http/Controllers/RunCancellationController';
 import DetailLevelController from '@/actions/App/Http/Controllers/Settings/DetailLevelController';
 import ChangeCode from '@/components/ChangeCode.vue';
+import ChangeProof from '@/components/ChangeProof.vue';
 import InputError from '@/components/InputError.vue';
 import WorkStepLine from '@/components/WorkStepLine.vue';
 import { Button } from '@/components/ui/button';
@@ -869,6 +870,10 @@ const checks = computed(() => {
                                 </button>
                             </Form>
                         </div>
+                        <ChangeProof
+                            v-if="request.status === 'generated'"
+                            :proof="change.proof"
+                        />
 
                         <!-- Deeper answers, for whoever wants them -->
                         <div

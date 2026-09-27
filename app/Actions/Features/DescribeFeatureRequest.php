@@ -21,12 +21,13 @@ class DescribeFeatureRequest
     public function __construct(
         private DescribeRunProgress $describeRunProgress,
         private NarrateWork $narrateWork,
+        private DescribeProof $describeProof,
     ) {}
 
     /**
      * Describe a change for a page that shows it: the request, its latest
-     * run with its plan and review, the checks, the trial copy and the
-     * follow-ups. Only what the owner may see leaves here: how changes are
+     * run with its plan and review, the checks and what they prove, the
+     * trial copy and the follow-ups. Only what the owner may see leaves here: how changes are
      * made is ours and stays on the server (see OwnerWording).
      *
      * @return array<string, mixed>
@@ -61,6 +62,7 @@ class DescribeFeatureRequest
             'parent' => $parent?->only('id', 'prompt'),
             'earlier' => $this->earlier($featureRequest),
             'verification' => $this->latestVerification($featureRequest),
+            'proof' => $this->describeProof->handle($featureRequest),
             'run' => $this->latestRun($featureRequest),
             'preview' => $this->latestPreview($featureRequest),
             'followUps' => $featureRequest->followUps()->latest()->get()

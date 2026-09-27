@@ -15,6 +15,7 @@ use App\Http\Requests\ProjectStoreRequest;
 use App\Models\Deployment;
 use App\Models\Experiment;
 use App\Models\Project;
+use App\Models\TestObservation;
 use App\Models\VisualEdit;
 use App\Projects\DesignDirection;
 use App\Projects\ProjectRepository;
@@ -47,6 +48,8 @@ class ProjectController extends Controller
                     'changed_at' => $project->featureRequests()->whereNotNull('commit_sha')->whereNull('reverted_at')
                         ->latest('accepted_at')->first()?->accepted_at?->toIso8601String(),
                     'waiting' => $summarizeChanges->waiting($project),
+                    // How many of the app's own tests guard it, as last run.
+                    'tests' => TestObservation::latestFor($project)?->testCount(),
                 ]),
             'canStartNew' => StartProjectFromTemplate::template() !== null,
             'designs' => array_map(fn (DesignDirection $design) => $design->preview(), DesignDirection::all()),

@@ -6,12 +6,13 @@ use App\Actions\Context\CheckProjectNotes;
 use App\Actions\Context\ReadProjectContext;
 use App\Actions\Context\UpdateProjectNotes;
 use App\Context\Capability;
-use App\Context\Effect;
 use App\Context\NotesDocument;
 use App\Context\ProjectNotes;
+use App\Enums\EffectStrength;
 use App\Http\Requests\ProjectNotesUpdateRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
+use App\Models\TestObservation;
 use App\Projects\ProjectRepository;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
@@ -35,6 +36,8 @@ class ProjectUnderstandingController extends Controller
         $context = $revision === null ? null : $readProjectContext->current($project);
         $notes = NotesDocument::parse($context->project ?? '');
         $names = array_map(fn (Capability $capability) => $capability->name, $context->capabilities ?? []);
+        // Which of the app's tests run each area's own code, as last seen.
+        $map = $context === null ? null : TestObservation::latestFor($project)?->map();
 
         return Inertia::render('projects/Understanding', [
             'project' => $project->only('id', 'name'),
@@ -50,14 +53,11 @@ class ProjectUnderstandingController extends Controller
                 'summary' => $capability->summary,
                 'behaviors' => array_column($capability->behaviors, 'name'),
                 'rules' => $capability->rules(),
-                'connections' => array_map(fn (Effect $effect) => [
-                    'to' => $effect->to,
-                    'name' => $names[$effect->to] ?? Str::headline($effect->to),
-                    // Observed reasons name code files; the owner hears where it was seen.
-                    'reason' => $effect->source === 'tests' ? __('Seen when your app\'s tests ran.') : $effect->reason,
-                    'strength' => $effect->strength->value,
-                ], $capability->effects),
+                'connections' => $this->connections($capability, $names),
                 'tested' => $capability->testFiles !== [],
+                'checked_by' => $map === null ? null : count($map->testsForArea($capability)),
+                // What those tests check, in their authors' words.
+                'checks' => $map === null ? [] : array_values(array_unique(array_map($map->sentence(...), $map->testsForArea($capability)))),
                 'file' => $capability->file,
             ], $context->capabilities ?? [])),
             'problems' => $context->problems ?? [],
@@ -99,5 +99,39 @@ class ProjectUnderstandingController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Saved. I will use this from now on.')]);
 
         return back();
+    }
+
+    /**
+     * Get an area's connections for the owner, one per connected area. The
+     * notes, the tests and past changes can each link the same two areas;
+     * the owner sees the link once, at its strongest, with every reason.
+     * Observed reasons name code files, so the owner hears where it was seen.
+     *
+     * @param  array<string, string>  $names
+     * @return list<array{to: string, name: string, reason: string, strength: string}>
+     */
+    protected function connections(Capability $capability, array $names): array
+    {
+        $order = [EffectStrength::Strong, EffectStrength::Possible, EffectStrength::Historical];
+        $connections = [];
+
+        foreach ($capability->effects as $effect) {
+            $reason = $effect->source === 'tests' ? __('Seen when your app\'s tests ran.') : $effect->reason;
+            $known = $connections[$effect->to] ?? null;
+
+            $connections[$effect->to] = [
+                'to' => $effect->to,
+                'name' => $names[$effect->to] ?? Str::headline($effect->to),
+                'reasons' => array_values(array_unique([...$known['reasons'] ?? [], $reason])),
+                'strength' => $known === null || array_search($effect->strength, $order, true) < array_search($known['strength'], $order, true) ? $effect->strength : $known['strength'],
+            ];
+        }
+
+        return array_values(array_map(fn (array $connection) => [
+            'to' => $connection['to'],
+            'name' => $connection['name'],
+            'reason' => implode(' ', $connection['reasons']),
+            'strength' => $connection['strength']->value,
+        ], $connections));
     }
 }

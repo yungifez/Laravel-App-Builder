@@ -19,7 +19,10 @@ class ReportEffects extends Command
      * The test-impact experiment (direction 22, §18): for real changes, the
      * areas whose tests ran the changed code, against the areas the change
      * touched outside the ask. "Missed" areas were touched but no test ran
-     * into them; "unknown" is changed code no test ran. Then, per project,
+     * into them; "unknown" is changed code no test ran; "foundation" is
+     * changed code most tests run, which reaches everything; "narrowed by
+     * line" counts files whose reach came from the changed lines alone.
+     * Then, per project,
      * the behaviours no test proves: where the evidence is blind.
      */
     public function handle(ReadProjectContext $readProjectContext): int
@@ -52,13 +55,15 @@ class ReportEffects extends Command
                 implode(', ', $touched) ?: '-',
                 implode(', ', array_diff($touched, $reached)) ?: '-',
                 count($classification->observed['unmapped']),
+                count($classification->observed['foundation'] ?? []),
+                count($classification->observed['by_line'] ?? []),
             ];
         }
 
         if ($rows === []) {
             $this->components->info('No checked change has a test map yet.');
         } else {
-            $this->table(['Change', 'Asked about', 'Tests reached', 'Areas reached', 'Touched outside the ask', 'Missed', 'Unknown files'], $rows);
+            $this->table(['Change', 'Asked about', 'Tests reached', 'Areas reached', 'Touched outside the ask', 'Missed', 'Unknown files', 'Foundation files', 'Narrowed by line'], $rows);
         }
 
         $this->blindSpots($readProjectContext);
@@ -86,11 +91,13 @@ class ReportEffects extends Command
 
             $context = $readProjectContext->current($project);
             $proven = $map->provenBehaviors();
+            $foundation = $map->foundation();
             $rows = [];
 
             foreach ($context->capabilities as $capability) {
                 $unproven = array_values(array_diff(array_column($capability->behaviors, 'key'), $proven));
-                $reached = array_filter(array_keys($map->files), fn (string $path) => $capability->claims($path));
+                // Foundation code runs in almost every test, so it proves nothing about one area.
+                $reached = array_filter(array_diff(array_keys($map->files), $foundation), fn (string $path) => $capability->claims($path));
 
                 if ($unproven !== [] || $reached === []) {
                     $rows[] = [$capability->key, implode(', ', $unproven) ?: '-', $reached === [] ? 'no' : 'yes'];

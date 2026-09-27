@@ -1,0 +1,169 @@
+<?php
+
+namespace App\Actions\Features;
+
+use App\Enums\RunStatus;
+use App\Enums\VerificationStatus;
+use App\Features\PatchSummary;
+use App\Models\FeatureRequest;
+use App\Models\Run;
+use App\Models\RunEvent;
+use App\Models\Verification;
+
+class DescribeProof
+{
+    /**
+     * How many of the tests a change added are named; the rest are counted.
+     */
+    protected const TESTS_NAMED = 3;
+
+    /**
+     * Say, in the owner's words, how we know a change works: what the checks
+     * proved, how far the app's own tests reached into the change, and what
+     * nothing checks yet. A preview only shows that a change looks right;
+     * this shows why it can be trusted, which is what sets us apart.
+     *
+     * Only facts the checks recorded, never a promise: nothing is said
+     * until the checks pass, and gaps are said as plainly as passes.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    public function handle(FeatureRequest $featureRequest): array
+    {
+        $verification = $featureRequest->verifications()->latest('id')->first();
+
+        if (! in_array($verification?->status, [VerificationStatus::Passed, VerificationStatus::Unverified], true)) {
+            return [];
+        }
+
+        return [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest), ...$this->reach($featureRequest->latestRun)];
+    }
+
+    /**
+     * Describe the checks that passed: the app's own tests, the other checks
+     * on the code, and the separate checks written apart from the change.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function checks(Verification $verification): array
+    {
+        $tests = 0;
+        $others = 0;
+        $separate = false;
+
+        foreach ($verification->results ?? [] as $result) {
+            if ($result['outcome'] !== 'passed') {
+                continue;
+            }
+
+            if ($result['stage'] === 'acceptance') {
+                $separate = true;
+            } elseif ($result['stage'] === 'checks' && isset($result['tests'])) {
+                $tests += count(array_filter($result['tests'], fn (array $test) => $test['outcome'] === 'passed'));
+            } elseif ($result['stage'] === 'checks') {
+                $others++;
+            }
+        }
+
+        return array_values(array_filter([
+            $tests > 0 ? ['kind' => 'passed', 'text' => trans_choice('The app\'s own test still passes.|All :count of the app\'s own tests still pass.', $tests)] : null,
+            $others > 0 ? ['kind' => 'passed', 'text' => trans_choice(':count more check on the code passed.|:count more checks on the code passed.', $others)] : null,
+            $separate ? ['kind' => 'passed', 'text' => __('Separate checks, written before the work began, pass too.')] : null,
+        ]));
+    }
+
+    /**
+     * Describe the problems caught and fixed before the owner saw the change:
+     * each time failing checks or the second look sent the work back.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function caught(FeatureRequest $featureRequest): array
+    {
+        $reasons = RunEvent::query()
+            ->whereIn('run_id', $featureRequest->runs()->select('id'))
+            ->where('type', 'status')
+            ->where('data->to', RunStatus::Implementing->value)
+            ->whereIn('data->reason', ['verification_failed', 'review_findings'])
+            ->pluck('data')
+            ->countBy(fn (array $data) => $data['reason']);
+
+        return array_values(array_filter([
+            $reasons->has('verification_failed') ? ['kind' => 'caught', 'text' => trans_choice('The checks caught a problem along the way, and it was fixed before you saw the change.|The checks caught :count problems along the way, and they were fixed before you saw the change.', $reasons['verification_failed'])] : null,
+            $reasons->has('review_findings') ? ['kind' => 'caught', 'text' => trans_choice('A second look found something to fix, and it was fixed first.|A second look found something to fix :count times, and each was fixed first.', $reasons['review_findings'])] : null,
+        ]));
+    }
+
+    /**
+     * Name the tests the change added to the app, which keep what it does
+     * checked on every later change. A few are named; the rest are counted.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function added(FeatureRequest $featureRequest): array
+    {
+        $tests = PatchSummary::addedTests($featureRequest->patch);
+
+        if ($tests === []) {
+            return [];
+        }
+
+        $named = implode('; ', array_slice($tests, 0, self::TESTS_NAMED));
+        $rest = count($tests) - self::TESTS_NAMED;
+
+        return [['kind' => 'passed', 'text' => trans_choice('It added a test that keeps this checked from now on: :tests.|It added :count tests that keep this checked from now on: :tests.', count($tests), [
+            'tests' => $rest > 0 ? $named.'; '.trans_choice('and :count more|and :count more', $rest) : $named,
+        ])]];
+    }
+
+    /**
+     * Describe how far the app's own tests reached into the change, from
+     * the map of which tests run which code, and whether it was looked over.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function reach(?Run $run): array
+    {
+        $review = $run?->review;
+
+        if ($review === null) {
+            return [];
+        }
+
+        $observed = $review['classification']['observed'] ?? null;
+        $names = array_column($run->context['outline'] ?? [], 'name', 'key');
+        $lines = [];
+
+        if ($observed !== null && ($observed['foundation'] ?? []) !== []) {
+            $lines[] = ['kind' => 'reach', 'text' => __('It changed code the whole app shares, so every part of the app was tested.')];
+        } elseif ($observed !== null && $observed['tests'] > 0) {
+            $areas = array_map(fn (string $key) => $names[$key] ?? $key, array_keys($observed['areas']));
+
+            $lines[] = ['kind' => 'reach', 'text' => $areas === []
+                ? trans_choice(':count of those tests runs the code this change touched.|:count of those tests run the code this change touched.', $observed['tests'])
+                : trans_choice(':count of those tests runs the code this change touched, in :areas.|:count of those tests run the code this change touched, in :areas.', $observed['tests'], ['areas' => $this->join($areas)])];
+        }
+
+        if ($observed !== null && $observed['unmapped'] !== []) {
+            $lines[] = ['kind' => 'gap', 'text' => __('Some of the new code is not run by any test yet.')];
+        }
+
+        if ($review['approved']) {
+            $lines[] = ['kind' => 'passed', 'text' => __('The change was looked over a second time before it reached you.')];
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Join names as a sentence would: "A", "A and B", "A, B and C".
+     *
+     * @param  list<string>  $names
+     */
+    protected function join(array $names): string
+    {
+        $last = array_pop($names);
+
+        return $names === [] ? (string) $last : implode(', ', $names).' '.__('and').' '.$last;
+    }
+}

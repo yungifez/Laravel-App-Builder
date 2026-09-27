@@ -421,6 +421,14 @@ return [
             'app/Providers/*',
             'routes/console.php',
         ],
+
+        // Kept changes that were about one area and also changed another
+        // make a "history" Effect once this many agree, read from this many
+        // of the latest kept changes.
+        'history' => [
+            'min_changes' => (int) env('BUILDER_HISTORY_MIN_CHANGES', 2),
+            'window' => (int) env('BUILDER_HISTORY_WINDOW', 50),
+        ],
     ],
 
     /*
@@ -494,11 +502,19 @@ return [
                 'php -d pcov.enabled=1 artisan test --coverage-xml=storage/logs/test-map/coverage > /dev/null',
                 'test -f storage/logs/test-map/coverage/index.xml',
                 '(php artisan test --list-tests-xml=storage/logs/test-map/tests.xml > /dev/null || true)',
-                '{ pwd; grep -o \'<project source="[^"]*"\' storage/logs/test-map/coverage/index.xml; grep -rhoE \'<file name="[^"]*" path="[^"]*"|covered by="[^"]*"\' --include=\'*.php.xml\' storage/logs/test-map/coverage || true; } > storage/logs/test-map/covered.txt',
+                '{ pwd; grep -o \'<project source="[^"]*"\' storage/logs/test-map/coverage/index.xml; grep -rhoE \'<file name="[^"]*" path="[^"]*"|<line nr="[0-9]+"|covered by="[^"]*"\' --include=\'*.php.xml\' storage/logs/test-map/coverage || true; } > storage/logs/test-map/covered.txt',
             ])],
             'timeout' => 900,
             'report' => 'storage/logs/test-map/covered.txt',
             'listing' => 'storage/logs/test-map/tests.xml',
+
+            // Code most tests run (the user model, middleware, providers) is
+            // the app's foundation: it would tie every area to every other,
+            // so it makes no Effect, and changing it is a broad change. A
+            // file is foundation when more than this share of the tests run
+            // it, once the suite has at least "foundation_min_tests" tests.
+            'foundation_share' => (float) env('BUILDER_FOUNDATION_SHARE', 0.5),
+            'foundation_min_tests' => (int) env('BUILDER_FOUNDATION_MIN_TESTS', 10),
         ],
 
         'checks' => [

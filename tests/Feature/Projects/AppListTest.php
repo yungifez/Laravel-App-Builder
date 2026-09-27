@@ -4,6 +4,7 @@ namespace Tests\Feature\Projects;
 
 use App\Models\FeatureRequest;
 use App\Models\Project;
+use App\Models\TestObservation;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -27,5 +28,22 @@ class AppListTest extends TestCase
                 ->where('projects.0.name', 'Old')
                 ->where('projects.1.name', 'New')
                 ->where('projects.2.name', 'Untouched'));
+    }
+
+    public function test_each_app_says_how_many_of_its_own_tests_guard_it()
+    {
+        $owner = User::factory()->create();
+        $checked = Project::factory()->for($owner, 'owner')->create(['name' => 'Checked', 'created_at' => now()->subDay()]);
+        Project::factory()->for($owner, 'owner')->create(['name' => 'Unchecked', 'created_at' => now()->subDays(2)]);
+        TestObservation::create(['project_id' => $checked->id, 'tests' => [
+            ['id' => 'Tests\\Feature\\PlanTest::test_one', 'file' => 'tests/Feature/PlanTest.php', 'groups' => []],
+            ['id' => 'Tests\\Feature\\PlanTest::test_two', 'file' => 'tests/Feature/PlanTest.php', 'groups' => []],
+        ], 'files' => []]);
+
+        $this->actingAs($owner)
+            ->get(route('projects.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('projects.0.tests', 2)
+                ->where('projects.1.tests', null));
     }
 }

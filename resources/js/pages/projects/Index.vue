@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Form, Head, Link } from '@inertiajs/vue3';
+import { ShieldCheck } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import NewProjectController from '@/actions/App/Http/Controllers/NewProjectController';
 import ProjectController from '@/actions/App/Http/Controllers/ProjectController';
@@ -296,6 +297,7 @@ const textarea =
                         <th class="py-2 pr-4 font-normal">App</th>
                         <th class="py-2 pr-4 font-normal">Live</th>
                         <th class="py-2 pr-4 font-normal">Last change kept</th>
+                        <th class="py-2 pr-4 font-normal">Checked by</th>
                         <th class="py-2 text-right font-normal">
                             Waiting for you
                         </th>
@@ -334,6 +336,20 @@ const textarea =
                                 >None yet</span
                             >
                         </td>
+                        <td class="py-3 pr-4 tabular-nums">
+                            <span
+                                v-if="project.tests"
+                                class="flex items-center gap-1.5 whitespace-nowrap"
+                                data-test="app-tests"
+                            >
+                                <ShieldCheck class="size-3.5 text-green-600" />
+                                {{ project.tests }}
+                                {{ project.tests === 1 ? 'test' : 'tests' }}
+                            </span>
+                            <span v-else class="text-muted-foreground"
+                                >Not yet</span
+                            >
+                        </td>
                         <td class="py-3 text-right tabular-nums">
                             <span v-if="project.waiting > 0" class="font-medium"
                                 >{{ project.waiting }} to look at</span
@@ -364,6 +380,10 @@ const textarea =
                                     {{ when(project.published_at) }}</template
                                 >
                                 <template v-else>Not live yet</template>
+                                <template v-if="project.tests">
+                                    · Checked by {{ project.tests }}
+                                    {{ project.tests === 1 ? 'test' : 'tests' }}
+                                </template>
                             </span>
                         </span>
                         <span

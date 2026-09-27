@@ -287,6 +287,10 @@ abstract class AgentDriver implements ConstructionDriver
             $reached = array_map(fn (string $area, int $tests) => ($evidence->areaNames[$area] ?? $area)." ({$area}, {$tests})", array_keys($classification->observed['areas']), $classification->observed['areas']);
             $lines[] = "- Tests that ran the changed code: {$classification->observed['tests']}".($reached === [] ? '' : '; they belong to '.implode(', ', $reached));
 
+            if (($classification->observed['foundation'] ?? []) !== []) {
+                $lines[] = '- Changed shared code that most of the tests run, so it can reach the whole app: '.implode(', ', $classification->observed['foundation']);
+            }
+
             if ($classification->observed['unmapped'] !== []) {
                 $lines[] = '- Changed PHP files no test ran, so their reach is unknown: '.implode(', ', $classification->observed['unmapped']);
             }

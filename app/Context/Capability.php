@@ -21,10 +21,11 @@ final readonly class Capability
     /**
      * Where Effects may come from. "tests" is observed evidence: tests that
      * belong to the other area ran this area's code (direction 22).
+     * "history" is kept changes about this area that also changed the other.
      *
      * @var list<string>
      */
-    public const EFFECT_SOURCES = ['agent', 'package', 'analysis', 'owner', 'tests'];
+    public const EFFECT_SOURCES = ['agent', 'package', 'analysis', 'owner', 'tests', 'history'];
 
     /**
      * @param  list<string>  $paths  Glob patterns for the code that belongs to the area

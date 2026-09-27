@@ -2,8 +2,10 @@
 import { Head, Link, router, setLayoutProps } from '@inertiajs/vue3';
 import {
     Check,
+    ChevronRight,
     CircleAlert,
     CircleCheck,
+    CircleDashed,
     Link2,
     LoaderCircle,
     SearchCheck,
@@ -44,6 +46,9 @@ const props = defineProps<{
 }>();
 
 const checking = ref(false);
+
+// Enough of a part's checks to show what they cover, without a wall of text.
+const CHECKS_SHOWN = 8;
 
 // Notes are Markdown; the owner reads them as plain text. Lines wrapped
 // in the file are joined, and list markers become bullets.
@@ -308,15 +313,37 @@ watch(
                                     class="flex items-center gap-2 text-xl font-semibold tracking-tight break-words"
                                 >
                                     {{ area.name }}
+                                    <!-- Counted from what the app's tests ran, when known -->
                                     <span
-                                        v-if="area.tested"
+                                        v-if="
+                                            area.checked_by
+                                                ? true
+                                                : area.checked_by === null &&
+                                                  area.tested
+                                        "
                                         class="flex items-center gap-1 text-xs font-normal tracking-normal text-muted-foreground"
                                         title="Tests check this part"
+                                        data-test="part-checked"
                                     >
                                         <ShieldCheck
                                             class="size-3.5 text-green-600"
                                         />
-                                        Tested
+                                        {{
+                                            area.checked_by
+                                                ? `Checked by ${area.checked_by} ${area.checked_by === 1 ? 'test' : 'tests'}`
+                                                : 'Tested'
+                                        }}
+                                    </span>
+                                    <span
+                                        v-else-if="area.checked_by === 0"
+                                        class="flex items-center gap-1 text-xs font-normal tracking-normal text-muted-foreground"
+                                        title="No test runs this part yet"
+                                        data-test="part-unchecked"
+                                    >
+                                        <CircleDashed
+                                            class="size-3.5 text-amber-600"
+                                        />
+                                        Nothing checks this yet
                                     </span>
                                 </h3>
                                 <NotesPart
@@ -367,6 +394,52 @@ watch(
                                         {{ connection.name }}
                                     </button>
                                 </p>
+                                <!-- The proof behind the count, in the tests' own words -->
+                                <details
+                                    v-if="area.checks.length"
+                                    class="group text-sm"
+                                    data-test="part-checks"
+                                >
+                                    <summary
+                                        class="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-muted-foreground select-none hover:text-foreground sm:min-h-6"
+                                    >
+                                        <ChevronRight
+                                            class="size-3.5 transition-transform group-open:rotate-90"
+                                        />
+                                        What the tests check
+                                    </summary>
+                                    <ul
+                                        class="mt-2 space-y-1.5 pl-5 text-muted-foreground"
+                                    >
+                                        <li
+                                            v-for="check in area.checks.slice(
+                                                0,
+                                                CHECKS_SHOWN,
+                                            )"
+                                            :key="check"
+                                            class="flex gap-2"
+                                        >
+                                            <CircleCheck
+                                                class="mt-1 size-3 shrink-0 text-green-600"
+                                            />
+                                            {{ check }}
+                                        </li>
+                                        <li
+                                            v-if="
+                                                area.checks.length >
+                                                CHECKS_SHOWN
+                                            "
+                                            class="pl-5"
+                                        >
+                                            and
+                                            {{
+                                                area.checks.length -
+                                                CHECKS_SHOWN
+                                            }}
+                                            more
+                                        </li>
+                                    </ul>
+                                </details>
                             </div>
 
                             <NotesPart

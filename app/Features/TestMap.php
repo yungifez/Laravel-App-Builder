@@ -2,6 +2,7 @@
 
 namespace App\Features;
 
+use App\Context\Capability;
 use App\Context\ProjectContext;
 use Illuminate\Support\Str;
 use SimpleXMLElement;
@@ -24,12 +25,21 @@ final readonly class TestMap
     public const BEHAVIOR_GROUP = 'behavior:';
 
     /**
+     * Lines one test ran that are at most this far apart share a range: the
+     * lines between (blank lines, comments, braces) are not executable, so
+     * the coverage report leaves them out, but they belong to the same code.
+     */
+    protected const RANGE_GAP = 3;
+
+    /**
      * @param  list<array{id: string, file: string|null, groups: list<string>}>  $tests
      * @param  array<string, list<int>>  $files  Each code file, relative to the project, with the tests (indexes into $tests) that ran it
+     * @param  array<string, array<int, list<array{int, int}>>>  $lines  Each code file's line ranges (first and last line) per test that ran them; empty for maps kept before lines were
      */
     public function __construct(
         public array $tests = [],
         public array $files = [],
+        public array $lines = [],
     ) {}
 
     /**
@@ -37,8 +47,8 @@ final readonly class TestMap
      *
      * The coverage report is a list of lines: the directory the suite ran in,
      * the coverage report's `<project source="…">`, then, for each covered
-     * file, its `<file name="…" path="…">` followed by one `covered by="…"`
-     * per line a test ran.
+     * file, its `<file name="…" path="…">` followed, per line, by its
+     * `<line nr="…">` and one `covered by="…"` per test that ran it.
      */
     public static function parse(string $coverage, ?string $listing = null): self
     {
@@ -48,12 +58,21 @@ final readonly class TestMap
 
         [$tests, $index] = self::listed($listing, $root);
         $files = [];
+        $ranLines = [];
         $current = null;
+        $number = null;
 
         foreach ($lines as $line) {
             if (preg_match('/<file name="([^"]*)" path="([^"]*)"/', $line, $file) === 1) {
                 $absolute = $source.'/'.trim(self::decode($file[2]), '/').'/'.self::decode($file[1]);
                 $current = self::relative(str_replace('//', '/', $absolute), $root);
+                $number = null;
+
+                continue;
+            }
+
+            if (preg_match('/<line nr="(\d+)"/', $line, $nr) === 1) {
+                $number = (int) $nr[1];
 
                 continue;
             }
@@ -70,9 +89,17 @@ final readonly class TestMap
             }
 
             $files[$current][$index[$id]] = true;
+
+            if ($number !== null) {
+                $ranLines[$current][$index[$id]][$number] = true;
+            }
         }
 
-        return new self($tests, array_map(fn (array $set) => array_keys($set), $files));
+        return new self(
+            $tests,
+            array_map(fn (array $set) => array_keys($set), $files),
+            array_map(fn (array $perTest) => array_map(fn (array $numbers) => self::ranges(array_keys($numbers)), $perTest), $ranLines),
+        );
     }
 
     /**
@@ -80,10 +107,11 @@ final readonly class TestMap
      *
      * @param  list<array{id: string, file: string|null, groups: list<string>}>  $tests
      * @param  array<string, list<int>>  $files
+     * @param  array<string, array<int, list<array{int, int}>>>  $lines
      */
-    public static function fromArray(array $tests, array $files): self
+    public static function fromArray(array $tests, array $files, array $lines = []): self
     {
-        return new self($tests, $files);
+        return new self($tests, $files, $lines);
     }
 
     /**
@@ -92,6 +120,30 @@ final readonly class TestMap
     public function isEmpty(): bool
     {
         return $this->files === [];
+    }
+
+    /**
+     * Get the foundation: the code files more than the configured share of
+     * the tests ran. They tie every area to every other, so they say nothing
+     * about any one area; a change to them is broad. A small suite has none.
+     *
+     * @return list<string>
+     */
+    public function foundation(): array
+    {
+        return array_keys(array_filter($this->files, fn (array $ran) => $this->reachesMost(count($ran))));
+    }
+
+    /**
+     * Determine if this many tests are more than the configured share of a
+     * suite big enough to tell.
+     */
+    public function reachesMost(int $tests): bool
+    {
+        $suite = count($this->tests);
+
+        return $suite >= (int) config('builder.verification.test_map.foundation_min_tests')
+            && $tests > (float) config('builder.verification.test_map.foundation_share') * $suite;
     }
 
     /**
@@ -111,6 +163,73 @@ final readonly class TestMap
         }
 
         return array_keys($tests);
+    }
+
+    /**
+     * Get the tests that ran an area's own code: the code files it claims,
+     * leaving out tests and the foundation, which say nothing about it.
+     *
+     * @return list<int>
+     */
+    public function testsForArea(Capability $capability): array
+    {
+        $foundation = $this->foundation();
+
+        return $this->testsRunning(array_values(array_filter(
+            array_keys($this->files),
+            fn (string $path) => ! Capability::runBySuite($path) && ! in_array($path, $foundation, true) && $capability->claims($path),
+        )));
+    }
+
+    /**
+     * Say what a test checks, in the words its author gave it: the method
+     * name without its prefix ("test_owners_rename_teams" becomes "Owners
+     * rename teams"), or a Pest description, without its data set.
+     */
+    public function sentence(int $test): string
+    {
+        return self::describe(Str::afterLast($this->tests[$test]['id'] ?? '', '::'));
+    }
+
+    /**
+     * Say what a test checks from its name alone: a method name or a Pest
+     * description.
+     */
+    public static function describe(string $name): string
+    {
+        $name = (string) preg_replace('/ with data set .*$/', '', $name);
+        $name = (string) preg_replace('/^(__pest_evaluable_|test_?)/', '', $name);
+        $name = Str::squish(Str::snake(str_replace('_', ' ', $name), ' '));
+
+        return Str::ucfirst(Str::lower($name));
+    }
+
+    /**
+     * Get the tests that ran any of the given lines of a file, or null when
+     * the map cannot say: it kept no lines for the file, or no test ran any
+     * of them (a new method, a signature). The caller then goes by the whole
+     * file, which reaches more, never less.
+     *
+     * @param  list<int>  $numbers
+     * @return list<int>|null
+     */
+    public function testsRunningLines(string $path, array $numbers): ?array
+    {
+        $tests = [];
+
+        foreach ($this->lines[$path] ?? [] as $test => $ranges) {
+            foreach ($ranges as [$first, $last]) {
+                foreach ($numbers as $number) {
+                    if ($number >= $first && $number <= $last) {
+                        $tests[$test] = true;
+
+                        continue 3;
+                    }
+                }
+            }
+        }
+
+        return $tests === [] ? null : array_keys($tests);
     }
 
     /**
@@ -207,6 +326,30 @@ final readonly class TestMap
         }
 
         return [$tests, $index];
+    }
+
+    /**
+     * Collapse line numbers into ranges, bridging short gaps.
+     *
+     * @param  list<int>  $numbers
+     * @return list<array{int, int}>
+     */
+    protected static function ranges(array $numbers): array
+    {
+        sort($numbers);
+        $ranges = [];
+
+        foreach ($numbers as $number) {
+            $last = array_key_last($ranges);
+
+            if ($last !== null && $number - $ranges[$last][1] <= self::RANGE_GAP) {
+                $ranges[$last][1] = $number;
+            } else {
+                $ranges[] = [$number, $number];
+            }
+        }
+
+        return $ranges;
     }
 
     /**

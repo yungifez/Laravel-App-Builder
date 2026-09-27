@@ -224,6 +224,7 @@ class VerifyFeatureRequest implements ShouldQueue
                 'verification_id' => $this->verification->id,
                 'tests' => $map->tests ?? [],
                 'files' => $map->files ?? [],
+                'lines' => $map->lines ?? [],
                 'error' => match (true) {
                     $map === null => __('The tests could not run with code coverage.'),
                     $map->isEmpty() => __('The tests ran, but no code coverage was recorded.'),

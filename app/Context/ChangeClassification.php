@@ -15,9 +15,9 @@ final readonly class ChangeClassification
      * @param  list<string>  $unclaimed  Changed files no area claims
      * @param  list<string>  $contextUpdates  The notes the change rewrote
      * @param  list<string>  $targets  The areas the change is about
-     * @param  array{areas: array<string, int>, tests: int, unmapped: list<string>}|null  $observed  What the project's tests showed: the areas whose tests
-     *                                                                                               ran the changed code (with how many tests), all such tests, and changed PHP files no test ran;
-     *                                                                                               null without a test map
+     * @param  array{areas: array<string, int>, tests: int, unmapped: list<string>, foundation?: list<string>, by_line?: list<string>}|null  $observed  What the project's tests showed: the areas whose tests
+     *                                                                                                                                                  ran the changed code (with how many tests), all such tests, changed PHP files no test ran, and changed foundation code most tests run;
+     *                                                                                                                                                  null without a test map
      */
     public function __construct(
         public array $requested = [],
@@ -32,7 +32,7 @@ final readonly class ChangeClassification
     /**
      * Restore a classification from storage.
      *
-     * @param  array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>, observed?: array{areas: array<string, int>, tests: int, unmapped: list<string>}|null}  $data
+     * @param  array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>, observed?: array{areas: array<string, int>, tests: int, unmapped: list<string>, foundation?: list<string>, by_line?: list<string>}|null}  $data
      */
     public static function fromArray(array $data): self
     {
@@ -42,7 +42,7 @@ final readonly class ChangeClassification
     /**
      * Get the classification for storage.
      *
-     * @return array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>, observed: array{areas: array<string, int>, tests: int, unmapped: list<string>}|null}
+     * @return array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>, observed: array{areas: array<string, int>, tests: int, unmapped: list<string>, foundation?: list<string>, by_line?: list<string>}|null}
      */
     public function toArray(): array
     {

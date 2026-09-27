@@ -20,11 +20,12 @@ use Illuminate\Support\Carbon;
  * @property int|null $verification_id
  * @property list<array{id: string, file: string|null, groups: list<string>}> $tests
  * @property array<string, list<int>> $files
+ * @property array<string, array<int, list<array{int, int}>>>|null $lines Per code file, the line ranges each test (by index) ran; null when recorded before lines were kept
  * @property string|null $error Why nothing was observed, when nothing was
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['project_id', 'feature_request_id', 'verification_id', 'tests', 'files', 'error'])]
+#[Fillable(['project_id', 'feature_request_id', 'verification_id', 'tests', 'files', 'lines', 'error'])]
 class TestObservation extends Model
 {
     /**
@@ -37,6 +38,7 @@ class TestObservation extends Model
         return [
             'tests' => 'array',
             'files' => 'array',
+            'lines' => 'array',
         ];
     }
 
@@ -56,11 +58,19 @@ class TestObservation extends Model
     }
 
     /**
+     * Get how many of the project's tests ran.
+     */
+    public function testCount(): int
+    {
+        return count($this->tests);
+    }
+
+    /**
      * Get the observation as a map.
      */
     public function map(): TestMap
     {
-        return TestMap::fromArray($this->tests, $this->files);
+        return TestMap::fromArray($this->tests, $this->files, $this->lines ?? []);
     }
 
     /**

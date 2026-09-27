@@ -18,7 +18,6 @@ use App\Enums\RunStatus;
 use App\Features\Exceptions\CannotGenerateFeature;
 use App\Features\PatchSummary;
 use App\Features\TestChanges;
-use App\Features\TestMap;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\TestObservation;
@@ -280,16 +279,14 @@ class ConstructRun
     }
 
     /**
-     * Get the map of the project's tests to find the change's impact: the one
-     * made while this change was checked, which knows its new code, or else
-     * the latest one for the project.
+     * Get the observed map of the project's tests to find the change's
+     * impact: the one made while this change was checked, which knows its
+     * new code, or else the latest one for the project.
      */
-    protected function testMap(FeatureRequest $featureRequest, Verification $verification): ?TestMap
+    protected function testObservation(FeatureRequest $featureRequest, Verification $verification): ?TestObservation
     {
-        $observation = TestObservation::query()->where('verification_id', $verification->id)->whereNull('error')->first()
+        return TestObservation::query()->where('verification_id', $verification->id)->whereNull('error')->first()
             ?? TestObservation::latestFor($featureRequest->project);
-
-        return $observation?->map();
     }
 
     /**
@@ -304,7 +301,15 @@ class ConstructRun
         $plan = $this->planFor($run);
         $pack = $run->context !== null ? ContextPack::fromArray($run->context) : null;
         $projectContext = $pack?->projectContext() ?? new ProjectContext;
-        $classification = $this->classifyChange->handle($projectContext, $pack->targets ?? [], $featureRequest->patch, array_keys($featureRequest->note_changes ?? []), $this->testMap($featureRequest, $verification));
+        $observation = $this->testObservation($featureRequest, $verification);
+        $classification = $this->classifyChange->handle(
+            $projectContext,
+            $pack->targets ?? [],
+            $featureRequest->patch,
+            array_keys($featureRequest->note_changes ?? []),
+            $observation?->map(),
+            mapIncludesChange: $observation?->verification_id === $verification->id,
+        );
 
         $review = $driver->review($run, new ReviewEvidence(
             request: $featureRequest->instructions(),
@@ -397,7 +402,7 @@ class ConstructRun
      * Get a review as stored on the run, with each behaviour change placed in
      * its section by the area it belongs to.
      *
-     * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array{area: string|null, section: string, behavior: string, before: string, now: string}>, classification: array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>, observed?: array{areas: array<string, int>, tests: int, unmapped: list<string>}|null}}
+     * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array{area: string|null, section: string, behavior: string, before: string, now: string}>, classification: array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>, observed?: array{areas: array<string, int>, tests: int, unmapped: list<string>, foundation?: list<string>, by_line?: list<string>}|null}}
      */
     protected function storedReview(Review $review, ChangeClassification $classification): array
     {

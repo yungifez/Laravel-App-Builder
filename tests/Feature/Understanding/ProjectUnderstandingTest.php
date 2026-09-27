@@ -5,6 +5,7 @@ namespace Tests\Feature\Understanding;
 use App\Actions\Projects\CreateProject;
 use App\Context\ProjectNotes;
 use App\Models\Project;
+use App\Models\TestObservation;
 use App\Models\User;
 use App\Projects\ProjectRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -114,7 +115,47 @@ class ProjectUnderstandingTest extends TestCase
                 ->where('areas.0.connections.1.name', 'Invoices')
                 ->where('areas.0.tested', false)
                 ->where('areas.1.tested', true)
+                // No test run has been mapped yet, so nothing is counted.
+                ->where('areas.0.checked_by', null)
+                ->where('areas.0.checks', [])
                 ->missing('check'));
+    }
+
+    public function test_each_part_says_how_many_of_the_apps_tests_run_its_code()
+    {
+        // Two tests run the plan model; no test runs team code.
+        TestObservation::create(['project_id' => $this->project->id, 'tests' => [
+            ['id' => 'Tests\\Feature\\PlanTest::test_customers_pick_a_plan', 'file' => 'tests/Feature/PlanTest.php', 'groups' => []],
+            ['id' => 'Tests\\Feature\\PlanTest::test_plans_are_listed', 'file' => 'tests/Feature/PlanTest.php', 'groups' => []],
+        ], 'files' => ['app/Models/Plan.php' => [0, 1]]]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('areas.0.key', 'plans')
+                ->where('areas.0.checked_by', 2)
+                // What they check, in the tests' own words.
+                ->where('areas.0.checks', ['Customers pick a plan', 'Plans are listed'])
+                ->where('areas.1.key', 'teams')
+                ->where('areas.1.checked_by', 0)
+                ->where('areas.1.checks', []));
+    }
+
+    public function test_a_link_the_notes_and_the_tests_both_show_is_said_once_with_both_reasons()
+    {
+        // Two team tests run the plan model: the tests link plans to teams,
+        // as the notes already do.
+        TestObservation::create(['project_id' => $this->project->id, 'tests' => [
+            ['id' => 'Tests\\Feature\\TeamTest::test_teams_have_a_plan', 'file' => 'tests/Feature/TeamTest.php', 'groups' => []],
+            ['id' => 'Tests\\Feature\\TeamTest::test_teams_change_plan', 'file' => 'tests/Feature/TeamTest.php', 'groups' => []],
+        ], 'files' => ['app/Models/Plan.php' => [0, 1]]]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('areas.0.connections', 2)
+                ->where('areas.0.connections.0', ['to' => 'teams', 'name' => 'Teams', 'reason' => 'Each team has one plan. Seen when your app\'s tests ran.', 'strength' => 'strong'])
+                ->where('areas.0.connections.1.name', 'Invoices'));
     }
 
     public function test_the_quick_check_lists_the_gaps_between_the_notes_and_the_code()

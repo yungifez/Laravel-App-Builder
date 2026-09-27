@@ -19,6 +19,8 @@ export type ProjectListItem = {
     published_at: string | null;
     changed_at: string | null;
     waiting: number;
+    // How many of the app's own tests guard it; null before they first ran.
+    tests: number | null;
 };
 
 /** A look an owner can start a new app with, drawn from its own colours. */
@@ -297,6 +299,12 @@ export type Preview = {
     expires_at: string | null;
 };
 
+// One plain sentence on how we know a change works.
+export type ProofLine = {
+    kind: 'passed' | 'caught' | 'reach' | 'gap';
+    text: string;
+};
+
 // Everything about one change, as its page and the workspace chat show it.
 export type ChangeDetail = {
     project: { id: number; name: string };
@@ -310,6 +318,7 @@ export type ChangeDetail = {
     }[];
     followUps: FeatureRequestSummary[];
     verification: Verification | null;
+    proof: ProofLine[];
     run: Run | null;
     preview: Preview | null;
 };
@@ -430,6 +439,10 @@ export type UnderstandingArea = {
         strength: 'strong' | 'possible' | 'historical';
     }[];
     tested: boolean;
+    // How many of the app's tests run this part's own code; null before any test run was mapped.
+    checked_by: number | null;
+    // What those tests check, in their authors' words.
+    checks: string[];
     file: string | null;
 };
 

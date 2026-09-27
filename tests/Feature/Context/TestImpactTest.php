@@ -10,6 +10,7 @@ use App\Context\ProjectContext;
 use App\Enums\ContextMode;
 use App\Enums\EffectStrength;
 use App\Enums\VerificationStatus;
+use App\Features\PatchSummary;
 use App\Features\TestMap;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -39,6 +40,32 @@ class TestImpactTest extends TestCase
         covered by="Tests\Feature\BillingTest::test_seats_follow_members with data set &quot;two&quot;"
         covered by="Tests\Feature\BillingTest::test_invoices_list_seats"
         <file name="Invoice.php" path="/Models"
+        covered by="Tests\Feature\BillingTest::test_invoices_list_seats"
+        covered by="P\Tests\Feature\ReportsTest::__pest_evaluable_it_totals_invoices"
+        TXT;
+
+    /**
+     * The same report with line numbers: the team policy's rules (lines
+     * 10 to 12) run in three tests; its renaming (30 and 31) in one.
+     */
+    protected const LINE_COVERAGE = <<<'TXT'
+        /work/app-1
+        <project source="/work/app-1/app"
+        <file name="TeamPolicy.php" path="/Policies"
+        <line nr="10"
+        covered by="Tests\Feature\TeamTest::test_owners_rename_teams"
+        covered by="Tests\Feature\BillingTest::test_seats_follow_members"
+        covered by="Tests\Feature\BillingTest::test_invoices_list_seats"
+        <line nr="12"
+        covered by="Tests\Feature\TeamTest::test_owners_rename_teams"
+        covered by="Tests\Feature\BillingTest::test_seats_follow_members"
+        covered by="Tests\Feature\BillingTest::test_invoices_list_seats"
+        <line nr="30"
+        covered by="Tests\Feature\TeamTest::test_owners_rename_teams"
+        <line nr="31"
+        covered by="Tests\Feature\TeamTest::test_owners_rename_teams"
+        <file name="Invoice.php" path="/Models"
+        <line nr="5"
         covered by="Tests\Feature\BillingTest::test_invoices_list_seats"
         covered by="P\Tests\Feature\ReportsTest::__pest_evaluable_it_totals_invoices"
         TXT;
@@ -178,8 +205,100 @@ class TestImpactTest extends TestCase
 
         $classification = app(ClassifyChange::class)->handle($this->context(), ['teams'], $patch, map: TestMap::parse(self::COVERAGE, self::LISTING));
 
-        $this->assertSame(['areas' => ['billing' => 2, 'teams' => 1], 'tests' => 3, 'unmapped' => ['app/Support/Money.php']], $classification->observed);
+        $this->assertSame(['areas' => ['billing' => 2, 'teams' => 1], 'tests' => 3, 'unmapped' => ['app/Support/Money.php'], 'foundation' => [], 'by_line' => []], $classification->observed);
         $this->assertNull(app(ClassifyChange::class)->handle($this->context(), ['teams'], $patch)->observed);
+    }
+
+    public function test_code_most_tests_run_ties_no_areas_and_makes_a_change_to_it_broad()
+    {
+        // Three of the four tests run the team policy: it is foundation.
+        config(['builder.verification.test_map.foundation_min_tests' => 4]);
+        $project = Project::factory()->create();
+        $this->observe($project);
+
+        $context = app(ObserveEffects::class)->handle($project, $this->context());
+
+        $this->assertSame([], $context->capabilities['teams']->effects);
+        $this->assertSame([], $context->capabilities['teams']->reachedBy);
+        // Code only some tests run still ties its areas.
+        $this->assertSame(['reports'], array_map(fn ($effect) => $effect->to, $context->capabilities['billing']->effects));
+
+        $patch = implode("\n", [
+            'diff --git a/app/Policies/TeamPolicy.php b/app/Policies/TeamPolicy.php',
+            '--- a/app/Policies/TeamPolicy.php',
+            '+++ b/app/Policies/TeamPolicy.php',
+            '@@ -1 +1,2 @@',
+            ' <?php',
+            '+// changed',
+            '',
+        ]);
+
+        $classification = app(ClassifyChange::class)->handle($this->context(), ['teams'], $patch, map: TestMap::parse(self::COVERAGE, self::LISTING));
+
+        $this->assertSame(['areas' => [], 'tests' => 0, 'unmapped' => [], 'foundation' => ['app/Policies/TeamPolicy.php'], 'by_line' => []], $classification->observed);
+    }
+
+    public function test_a_small_suite_has_no_foundation()
+    {
+        $this->assertSame([], TestMap::parse(self::COVERAGE, self::LISTING)->foundation());
+    }
+
+    public function test_the_map_keeps_the_lines_each_test_ran_as_ranges()
+    {
+        $map = TestMap::parse(self::LINE_COVERAGE, self::LISTING);
+
+        // Lines a short gap apart (a blank line, a comment) share a range.
+        $this->assertSame([0 => [[10, 12], [30, 31]], 1 => [[10, 12]], 2 => [[10, 12]]], $map->lines['app/Policies/TeamPolicy.php']);
+        $this->assertSame([0], $map->testsRunningLines('app/Policies/TeamPolicy.php', [30]));
+        $this->assertSame([0, 1, 2], $map->testsRunningLines('app/Policies/TeamPolicy.php', [11]));
+        // Lines no test ran say nothing; the caller goes by the whole file.
+        $this->assertNull($map->testsRunningLines('app/Policies/TeamPolicy.php', [50]));
+        $this->assertNull(TestMap::parse(self::COVERAGE, self::LISTING)->testsRunningLines('app/Policies/TeamPolicy.php', [30]));
+    }
+
+    public function test_a_diff_names_the_lines_it_changed_on_either_side()
+    {
+        $added = implode("\n", ['@@ -29,2 +29,3 @@', ' a', '+b', ' c']);
+        $removed = implode("\n", ['@@ -5,3 +5,2 @@', ' a', '-b', ' c']);
+
+        $this->assertSame([30], PatchSummary::changedLines($added));
+        $this->assertSame([29, 30], PatchSummary::changedLines($added, after: false));
+        $this->assertSame([5, 6], PatchSummary::changedLines($removed));
+        $this->assertSame([6], PatchSummary::changedLines($removed, after: false));
+    }
+
+    public function test_a_change_reaches_the_tests_that_ran_its_lines_not_all_that_ran_its_file()
+    {
+        // The team policy is foundation as a whole file: three of four tests.
+        config(['builder.verification.test_map.foundation_min_tests' => 4]);
+        $patch = implode("\n", [
+            'diff --git a/app/Policies/TeamPolicy.php b/app/Policies/TeamPolicy.php',
+            '--- a/app/Policies/TeamPolicy.php',
+            '+++ b/app/Policies/TeamPolicy.php',
+            '@@ -29,2 +29,3 @@',
+            ' a',
+            '+b',
+            ' c',
+            'diff --git a/app/Models/Invoice.php b/app/Models/Invoice.php',
+            '--- a/app/Models/Invoice.php',
+            '+++ b/app/Models/Invoice.php',
+            '@@ -39,1 +39,2 @@',
+            ' a',
+            '+b',
+            '',
+        ]);
+
+        $classification = app(ClassifyChange::class)->handle($this->context(), ['teams'], $patch, map: TestMap::parse(self::LINE_COVERAGE, self::LISTING));
+
+        // The renaming lines ran in one test only, so the change is narrow.
+        // No test ran the new invoice line, so the whole file counts.
+        $this->assertSame([
+            'areas' => ['billing' => 1, 'reports' => 1, 'teams' => 1],
+            'tests' => 3,
+            'unmapped' => [],
+            'foundation' => [],
+            'by_line' => ['app/Policies/TeamPolicy.php'],
+        ], $classification->observed);
     }
 
     public function test_checking_a_change_keeps_the_map_its_passing_suite_showed_before_the_protected_tests_run()
@@ -240,8 +359,8 @@ class TestImpactTest extends TestCase
 
         $this->artisan('builder:effects')
             ->expectsTable(
-                ['Change', 'Asked about', 'Tests reached', 'Areas reached', 'Touched outside the ask', 'Missed', 'Unknown files'],
-                [["#{$change->id}", 'teams', 3, 'billing', 'settings', 'settings', 1]],
+                ['Change', 'Asked about', 'Tests reached', 'Areas reached', 'Touched outside the ask', 'Missed', 'Unknown files', 'Foundation files', 'Narrowed by line'],
+                [["#{$change->id}", 'teams', 3, 'billing', 'settings', 'settings', 1, 0, 0]],
             )
             ->assertSuccessful();
     }
@@ -282,5 +401,59 @@ class TestImpactTest extends TestCase
         };
 
         return $driver;
+    }
+
+    public function test_kept_changes_that_moved_two_areas_together_become_history_effects()
+    {
+        $project = Project::factory()->create();
+        $change = function (array $touched, array $state) use ($project) {
+            $featureRequest = FeatureRequest::factory()->for($project)->create($state);
+            Run::factory()->for($featureRequest)->create(['review' => ['approved' => true, 'summary' => '', 'findings' => [], 'changes' => [], 'classification' => [
+                'requested' => ['teams' => ['app/Policies/TeamPolicy.php']],
+                'may_also_affect' => [],
+                'unexpected' => array_fill_keys($touched, ['app/Models/Invoice.php']),
+                'unclaimed' => [],
+                'context_updates' => [],
+                'targets' => ['teams'],
+            ]]]);
+        };
+
+        $change(['billing'], ['accepted_at' => '2026-09-01 10:00:00']);
+        $change(['billing', 'reports'], ['accepted_at' => '2026-09-03 10:00:00']);
+        // Neither a change still waiting nor one undone is evidence.
+        $change(['reports'], []);
+        $change(['reports'], ['accepted_at' => now(), 'reverted_at' => now()]);
+
+        $context = app(ObserveEffects::class)->handle($project, $this->context());
+
+        [$billing] = $context->capabilities['teams']->effects;
+        $this->assertSame('billing', $billing->to);
+        $this->assertSame(EffectStrength::Historical, $billing->strength);
+        $this->assertSame('history', $billing->source);
+        $this->assertSame('2 kept changes to this area also changed Billing.', $billing->reason);
+        $this->assertSame('2026-09-03', $billing->observed);
+
+        // One kept change is not a pattern, and the link runs from the area
+        // the changes were about.
+        $this->assertCount(1, $context->capabilities['teams']->effects);
+        $this->assertSame([], $context->capabilities['billing']->effects);
+    }
+
+    public function test_a_test_says_what_it_checks_in_its_authors_words()
+    {
+        $map = TestMap::fromArray([
+            ['id' => 'Tests\\Feature\\TeamTest::test_owners_can_rename_teams', 'file' => 'tests/Feature/TeamTest.php', 'groups' => []],
+            ['id' => 'P\\Tests\\Feature\\PlanTest::__pest_evaluable_it_lists_plans_for_guests', 'file' => 'tests/Feature/PlanTest.php', 'groups' => []],
+            ['id' => 'P\\Tests\\Feature\\PlanTest::it charges by seat with data set "(3)"', 'file' => 'tests/Feature/PlanTest.php', 'groups' => []],
+            ['id' => 'Tests\\Unit\\MoneyTest::testRoundsHalfUp', 'file' => 'tests/Unit/MoneyTest.php', 'groups' => []],
+        ], []);
+
+        $this->assertSame([
+            'Owners can rename teams',
+            'It lists plans for guests',
+            // A data set is one more run of the same check.
+            'It charges by seat',
+            'Rounds half up',
+        ], array_map($map->sentence(...), [0, 1, 2, 3]));
     }
 }

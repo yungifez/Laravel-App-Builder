@@ -2049,7 +2049,7 @@ affect: Billing".
 
 - **Strength** is `strong`, `possible` or `historical`; never a percentage.
   Each Effect has a reason, a source (agent, package, analysis, owner,
-  `tests` from test impact analysis; later `history` from accepted changes, §6)
+  `tests` from test impact analysis, `history` from kept changes, §6)
   and when it was last observed; an Effect whose reason no longer holds is removed or
   downgraded, by the agent or the owner.
 - **Context:** Effects are listed as hints; the agent decides whether they
@@ -3123,9 +3123,10 @@ compiled packet, same model and code) tests it directly.
   changes to one app, measured at changes 1, 5, 10, 20, 35 and 50 for
   regressions, corrective prompts, cost and missed rules. This project is the
   first one.
-- **Learned relationships (later):** when Change Records show two areas
-  changing together repeatedly, propose the Effect to the owner ("Remember
-  this relationship?").
+- **Learned relationships:** when kept changes show two areas changing
+  together repeatedly, the relationship becomes a `history` Effect (see the
+  test-impact entry). Later: propose it to the owner ("Remember this
+  relationship?") so it is written into the notes.
 - **Test-impact prototype (running):** tag some tests with the
   behaviour they prove (a `behavior:<key>` group; Pest groups and PHPUnit's
   `#[Group]` both work). For real changes, map behaviour → tests → affected
@@ -3145,4 +3146,26 @@ compiled packet, same model and code) tests it directly.
   seen running its code (most tests first), then the ones it claims by path.
   The agent runs those while it works; the full suite still decides. First
   real map (the fixture, 2026-09-27): 92 tests over 32 code files; the
-  observed Effects matched the written ones. Not yet: `history` Effects.
+  observed Effects matched the written ones. History: kept changes (accepted,
+  not undone) about area A that also changed area B give A a `historical`
+  Effect on B with source `history`, once `builder.context.history.min_changes`
+  (2) of the latest `window` (50) kept changes agree. The date is the latest
+  such change's. Foundation: code more than `foundation_share` (half) of
+  the tests run, once the suite has `foundation_min_tests` (10), such as the
+  user model, middleware and providers (88–100% of the fixture's tests). It
+  would tie every area to every other, so it makes no `tests` or `history`
+  Effect and lists no tests for an area. A change to it is reported apart as
+  reaching the whole app: a broad change (§8). Lines: the map also keeps,
+  per file, the line ranges each test ran (short gaps bridged, since blank
+  lines and comments are not executable). A change reaches the tests that
+  ran its changed lines: numbered as in the new file when the map was made
+  with the change in place, else as in the old one. So a change to one
+  method of a large or foundation file is narrow when few tests run that
+  method. When no test ran any changed line (new code, a signature), the
+  whole file counts: unknown broadens, never narrows. Next: impact by
+  behaviour, as tests gain `behavior:` groups.
+  The owner sees this evidence in plain words. Each part says how many tests
+  run its code, and lists what they check, in the tests' own names. Each
+  change says how it is known to work: the checks that passed, the problems
+  caught and fixed before the owner saw it, the tests it added, how many
+  tests ran the changed code, and the code no test runs yet.
