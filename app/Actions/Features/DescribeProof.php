@@ -57,8 +57,19 @@ class DescribeProof
         $tests = 0;
         $others = 0;
         $separate = false;
+        $audited = false;
+        $warned = false;
 
         foreach ($verification->results ?? [] as $result) {
+            // Only a finished lookup says anything; one that could not run
+            // (no network, no lock file) is silent.
+            if ($result['stage'] === 'security') {
+                $audited = $audited || in_array($result['outcome'], ['passed', 'failed'], true);
+                $warned = $warned || $result['outcome'] === 'failed';
+
+                continue;
+            }
+
             if ($result['outcome'] !== 'passed') {
                 continue;
             }
@@ -80,6 +91,8 @@ class DescribeProof
             // tests, if any, try it. That is a gap, said here as the verdict
             // above the lines would otherwise call the change well checked.
             $verification->status === VerificationStatus::Unverified ? ['kind' => 'gap', 'text' => __('No check written apart from the change tried it.')] : null,
+            $audited && ! $warned ? ['kind' => 'passed', 'text' => __('No known security problems in the packages your app uses.')] : null,
+            $warned ? ['kind' => 'gap', 'text' => __('Some packages your app uses have known security problems. Ask me to update them.')] : null,
         ]));
     }
 

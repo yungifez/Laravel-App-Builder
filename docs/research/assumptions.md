@@ -217,3 +217,14 @@ them and correct any that are wrong.
   `DB::statement` counts as a rewrite. It warns and never blocks. Backups
   and going back to the previous live version are later steps; they need
   per-host research.
+- **Package security lookups are advice (SDLC gap: security).** Each
+  verification looks up known security problems in the app's PHP and
+  JavaScript packages (`composer audit`, `npm audit`), counting only high
+  and critical ones. The result is read from each tool's JSON report, not
+  its exit code, since a lookup that cannot reach the network also exits
+  non-zero. A lookup that could not run says nothing. It never fails a
+  change: a package problem is rarely the change's doing. The proof says
+  either "No known security problems in the packages your app uses." or
+  "Some packages your app uses have known security problems. Ask me to
+  update them." The result is not listed among the checks.
+  `BUILDER_SECURITY_AUDIT=false` turns it off.

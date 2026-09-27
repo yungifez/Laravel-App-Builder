@@ -43,7 +43,58 @@ class VerificationTest extends TestCase
                 ['name' => 'Tests', 'command' => ['php', 'artisan', 'test'], 'timeout' => 300],
                 ['name' => 'Lint', 'command' => ['pint', '--test'], 'timeout' => 60],
             ],
+            // Looked up in its own test below.
+            'builder.verification.security.enabled' => false,
         ]);
+    }
+
+    public function test_known_security_problems_in_packages_are_advice_that_never_fails_the_change()
+    {
+        $composer = ['composer', 'audit', '--format=json'];
+        $npm = ['npm', 'audit', '--json'];
+        config(['builder.verification.security' => ['enabled' => true, 'steps' => [
+            ['name' => 'PHP packages', 'report' => 'composer', 'command' => $composer, 'timeout' => 120],
+            ['name' => 'JavaScript packages', 'report' => 'npm', 'command' => $npm, 'timeout' => 120],
+        ]]]);
+        $reports = [
+            // One known problem, and a report exit code that says so.
+            'composer' => [1, '{"advisories":{"guzzlehttp/psr7":[{"severity":"high"}]},"abandoned":[]}'],
+            // The lookup itself failed: no report, so nothing is said.
+            'npm' => [1, 'npm ERR! network'],
+        ];
+        $this->driver->onExec = function (string $workspace, array $command) use ($composer, $npm, &$reports) {
+            [$exitCode, $output] = match ($command) {
+                $composer => $reports['composer'],
+                $npm => $reports['npm'],
+                default => [0, 'ok'],
+            };
+
+            return new CommandResult(exitCode: $exitCode, output: $output, errorOutput: '', durationMs: 5);
+        };
+
+        $request = FeatureRequest::factory()->generated()->create(['acceptance' => ['Invitations/ContractTest.php']]);
+        app(RequestVerification::class)->handle($request);
+
+        $verification = $request->verifications()->sole();
+        $this->assertSame(VerificationStatus::Passed, $verification->status);
+        $this->assertSame(['failed', 'errored'], array_column(array_values(array_filter($verification->results, fn (array $result) => $result['stage'] === 'security')), 'outcome'));
+
+        $this->actingAs($request->project->owner)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page
+                // Never listed as a check that failed.
+                ->where('verification.results', fn ($results) => collect($results)->every(fn (array $result) => $result['stage'] !== 'security'))
+                ->where('proof', fn ($proof) => collect($proof)->contains('text', 'Some packages your app uses have known security problems. Ask me to update them.')));
+
+        $reports['composer'] = [0, '{"advisories":[],"abandoned":[]}'];
+        $reports['npm'] = [0, '{"metadata":{"vulnerabilities":{"moderate":2,"high":0,"critical":0}}}'];
+        $clean = FeatureRequest::factory()->generated()->create(['acceptance' => ['Invitations/ContractTest.php']]);
+        app(RequestVerification::class)->handle($clean);
+
+        $this->actingAs($clean->project->owner)
+            ->get(route('feature-requests.show', $clean))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('proof', fn ($proof) => collect($proof)->contains('text', 'No known security problems in the packages your app uses.')));
     }
 
     public function test_a_follow_up_is_verified_with_its_lineage_applied_and_the_protected_suite_run_last()

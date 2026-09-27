@@ -576,6 +576,21 @@ return [
             ['name' => 'Frontend format and lint', 'command' => ['npx', 'vp', 'check'], 'timeout' => 300],
             ['name' => 'TypeScript', 'command' => ['npm', 'run', 'types:check'], 'timeout' => 300],
         ],
+
+        // Known security problems in the packages the app uses, looked up
+        // in the public advisory lists. Advice, never a check: a problem in
+        // a package is rarely the change's doing, so it never fails the
+        // change. The owner is told either way. A step that cannot run (no
+        // network, no lock file) says nothing. Each tool's JSON report is
+        // read, not its exit code, which is also non-zero when the lookup
+        // fails. Only high and critical problems count.
+        'security' => [
+            'enabled' => (bool) env('BUILDER_SECURITY_AUDIT', true),
+            'steps' => [
+                ['name' => 'PHP packages', 'report' => 'composer', 'command' => ['composer', 'audit', '--locked', '--no-interaction', '--format=json', '--abandoned=ignore', '--ignore-severity=low', '--ignore-severity=medium'], 'timeout' => 120],
+                ['name' => 'JavaScript packages', 'report' => 'npm', 'command' => ['npm', 'audit', '--package-lock-only', '--json'], 'timeout' => 120],
+            ],
+        ],
     ],
 
     /*

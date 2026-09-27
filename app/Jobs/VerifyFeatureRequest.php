@@ -126,6 +126,7 @@ class VerifyFeatureRequest implements ShouldQueue
             $workspaceFiles->sync($project, $workspace);
 
             $checksPassed = $this->runSteps($driver, $runWorkspaceCommand, $workspace, 'checks', stopOnFailure: false);
+            $this->auditPackages($runWorkspaceCommand, $workspace);
 
             // Before the protected acceptance tests are copied in, so the map
             // only ever holds the project's own tests.
@@ -201,6 +202,60 @@ class VerifyFeatureRequest implements ShouldQueue
         }
 
         return $allSucceeded;
+    }
+
+    /**
+     * Look up known security problems in the packages the app uses. Kept
+     * with the results under a stage of its own, which never decides the
+     * verification's outcome.
+     */
+    protected function auditPackages(RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace): void
+    {
+        /** @var array{enabled: bool, steps: list<array{name: string, report: string, command: list<string>, timeout: int}>} $config */
+        $config = config('builder.verification.security');
+
+        if (! $config['enabled']) {
+            return;
+        }
+
+        foreach ($config['steps'] as $step) {
+            $command = $runWorkspaceCommand->handle($workspace, $step['command'], $step['timeout']);
+            $problems = $command->timed_out ? null : self::knownProblems($step['report'], (string) $command->output);
+
+            $this->addResult(
+                $step['name'],
+                'security',
+                match (true) {
+                    $problems === null => self::OUTCOME_ERRORED,
+                    $problems > 0 => self::OUTCOME_FAILED,
+                    default => self::OUTCOME_PASSED,
+                },
+                exitCode: $command->exit_code,
+                timedOut: $command->timed_out,
+                durationMs: $command->duration_ms,
+                output: $this->withoutTerminalCodes($command->output."\n".$command->error_output),
+            );
+        }
+    }
+
+    /**
+     * Count the high and critical problems in an audit's JSON report, or
+     * null when the report cannot be read (the lookup failed).
+     */
+    public static function knownProblems(string $report, string $output): ?int
+    {
+        $data = json_decode($output, true);
+
+        if (! is_array($data)) {
+            return null;
+        }
+
+        return match ($report) {
+            // Composer leaves out the ignored severities itself.
+            'composer' => is_array($data['advisories'] ?? null) ? array_sum(array_map(fn ($advisories) => is_array($advisories) ? count($advisories) : 0, $data['advisories'])) : null,
+            'npm' => is_array($data['metadata']['vulnerabilities'] ?? null) ? (int) ($data['metadata']['vulnerabilities']['high'] ?? 0) + (int) ($data['metadata']['vulnerabilities']['critical'] ?? 0) : null,
+            default => null,
+        };
     }
 
     /**

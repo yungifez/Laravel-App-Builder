@@ -124,7 +124,8 @@ class DescribeFeatureRequest
         return $verification === null ? null : [
             'id' => $verification->id,
             'status' => $verification->status->value,
-            'results' => array_map($this->checkResult(...), $verification->results ?? []),
+            // Package advice is said in the proof, never listed as a check.
+            'results' => array_values(array_map($this->checkResult(...), array_filter($verification->results ?? [], fn (array $result) => $result['stage'] !== 'security'))),
             'error' => OwnerWording::message($verification->error),
             'started_at' => $verification->started_at?->toIso8601String(),
             'finished_at' => $verification->finished_at?->toIso8601String(),
