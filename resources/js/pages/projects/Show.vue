@@ -29,7 +29,7 @@ import {
     Smartphone,
     Tablet,
 } from '@lucide/vue';
-import { useMediaQuery } from '@vueuse/core';
+import { useMediaQuery, useResizeObserver } from '@vueuse/core';
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
 import FeatureRequestDismissalController from '@/actions/App/Http/Controllers/FeatureRequestDismissalController';
@@ -276,6 +276,40 @@ const filters = computed(() =>
         }))
         .filter(({ filter, count }) => filter === 'all' || count > 0),
 );
+
+// Filters that do not fit fade out at the edge that has more, so the
+// row reads as one that scrolls rather than one that is cut off.
+const filterRow = ref<HTMLElement | null>(null);
+const filterEdges = ref({ start: false, end: false });
+const filterFade = computed(() => {
+    const { start, end } = filterEdges.value;
+
+    if (start && end) {
+        return '[mask-image:linear-gradient(to_right,transparent,black_2rem,black_calc(100%-2rem),transparent)]';
+    }
+
+    if (end) {
+        return '[mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)]';
+    }
+
+    return start
+        ? '[mask-image:linear-gradient(to_right,transparent,black_2rem)]'
+        : '';
+});
+
+function measureFilters(): void {
+    const row = filterRow.value;
+
+    filterEdges.value = row
+        ? {
+              start: row.scrollLeft > 1,
+              end: row.scrollLeft + row.clientWidth < row.scrollWidth - 1,
+          }
+        : { start: false, end: false };
+}
+
+useResizeObserver(filterRow, measureFilters);
+watch(filters, () => nextTick(measureFilters));
 
 // A filter emptied by the owner's last action falls back to everything.
 watch(filters, (list) => {
@@ -983,32 +1017,41 @@ function sendOnEnter(event: KeyboardEvent): void {
                     >
                         <div
                             v-if="filters.length > 2"
-                            class="sticky -top-4 z-10 -mt-4 flex [scrollbar-width:none] gap-1.5 overflow-x-auto bg-background px-2 pt-4 pb-2"
-                            role="group"
-                            aria-label="Show"
-                            data-test="change-filters"
+                            class="sticky -top-4 z-10 -mt-4 bg-background pt-4 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-linear-to-b after:from-background after:to-transparent"
                         >
-                            <button
-                                v-for="pill in filters"
-                                :key="pill.filter"
-                                type="button"
-                                :aria-pressed="shown.filter === pill.filter"
+                            <div
+                                ref="filterRow"
                                 :class="[
-                                    'flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs select-none sm:min-h-7',
-                                    shown.filter === pill.filter
-                                        ? 'border-foreground bg-foreground text-background'
-                                        : 'text-muted-foreground hover:border-foreground/30 hover:text-foreground',
+                                    'flex [scrollbar-width:none] gap-1.5 overflow-x-auto px-2 pb-2',
+                                    filterFade,
                                 ]"
-                                :data-test="`change-filter-${pill.filter}`"
-                                @click="shown.filter = pill.filter"
+                                role="group"
+                                aria-label="Show"
+                                data-test="change-filters"
+                                @scroll.passive="measureFilters"
                             >
-                                {{ pill.label }}
-                                <span
-                                    v-if="pill.filter !== 'all'"
-                                    class="tabular-nums opacity-70"
-                                    >{{ pill.count }}</span
+                                <button
+                                    v-for="pill in filters"
+                                    :key="pill.filter"
+                                    type="button"
+                                    :aria-pressed="shown.filter === pill.filter"
+                                    :class="[
+                                        'flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs select-none sm:min-h-7',
+                                        shown.filter === pill.filter
+                                            ? 'border-foreground bg-foreground text-background'
+                                            : 'text-muted-foreground hover:border-foreground/30 hover:text-foreground',
+                                    ]"
+                                    :data-test="`change-filter-${pill.filter}`"
+                                    @click="shown.filter = pill.filter"
                                 >
-                            </button>
+                                    {{ pill.label }}
+                                    <span
+                                        v-if="pill.filter !== 'all'"
+                                        class="tabular-nums opacity-70"
+                                        >{{ pill.count }}</span
+                                    >
+                                </button>
+                            </div>
                         </div>
                         <section
                             v-for="(group, index) in thread"

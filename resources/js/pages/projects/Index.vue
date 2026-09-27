@@ -92,12 +92,12 @@ function submitOnShortcut(event: KeyboardEvent): void {
                             required
                             autocomplete="off"
                             placeholder="Name it"
-                            class="h-11 w-full rounded-lg bg-muted px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-9 sm:w-36"
+                            class="h-11 min-w-0 flex-1 rounded-lg bg-muted px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-9 sm:w-36 sm:flex-none"
                         />
 
                         <fieldset
                             v-if="designs.length > 0"
-                            class="flex flex-wrap items-center gap-1"
+                            class="order-last grid w-full grid-cols-4 gap-1 sm:order-none sm:flex sm:w-auto sm:flex-wrap sm:items-center"
                             data-test="looks"
                         >
                             <legend class="sr-only">Pick a look</legend>
@@ -105,7 +105,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
                                 v-for="(design, i) in designs"
                                 :key="design.key"
                                 :title="design.description"
-                                class="flex h-11 cursor-pointer items-center gap-2 rounded-lg px-2.5 text-sm text-muted-foreground select-none hover:text-foreground has-checked:bg-muted has-checked:text-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/50 sm:h-9"
+                                class="flex h-14 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg px-1 text-xs text-muted-foreground select-none hover:text-foreground has-checked:bg-muted has-checked:text-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/50 sm:h-9 sm:flex-row sm:justify-start sm:gap-2 sm:px-2.5 sm:text-sm"
                                 :data-test="`look-${design.key}`"
                             >
                                 <input
