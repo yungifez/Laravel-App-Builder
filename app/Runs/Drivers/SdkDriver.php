@@ -20,6 +20,7 @@ use App\Runs\Plan;
 use App\Runs\Review;
 use App\Runs\ReviewEvidence;
 use App\Runs\ToolSession;
+use Illuminate\Support\Facades\Config;
 
 /**
  * Plans and reviews like the agent driver, but builds with a coding agent
@@ -153,15 +154,36 @@ class SdkDriver extends AgentDriver
     protected function workingRules(): string
     {
         $notes = ProjectNotes::directory();
+        $selfChecks = $this->selfChecks();
 
         return <<<RULES
         ## How to work
 
-        You are working in the application's repository. Follow its AGENTS.md and Laravel's conventions. Add or update feature tests for the behaviour you build, run those tests and the existing tests listed for the areas you change (for example `php artisan test tests/Feature/TeamSettingsTest.php`), and fix failures. The whole test suite, static analysis and type checks run on their own after you finish, and formatting is fixed for you, so do not spend time running them. Never change tests/Acceptance, .env, vendor or .git: those changes are thrown away. Keep the notes in {$notes}/ up to date as described in AGENTS.md or, if it says nothing, by updating the notes of the areas you change.
+        You are working in the application's repository. Follow its AGENTS.md and Laravel's conventions. Add or update feature tests for the behaviour you build, run those tests and the existing tests listed for the areas you change (for example `php artisan test tests/Feature/TeamSettingsTest.php`), and fix failures. {$selfChecks}The whole test suite and the other checks run on their own after you finish, and formatting is fixed for you, so do not spend time running them. Never change tests/Acceptance, .env, vendor or .git: those changes are thrown away. Keep the notes in {$notes}/ up to date as described in AGENTS.md or, if it says nothing, by updating the notes of the areas you change.
 
         Before each group of steps, write one or two plain sentences on what you are about to do and why, for a reader who has never seen code: no file names, class names, commands or code. For example: "Only team owners should send invitations, so I am adding that check first."
 
         When you are done, reply with a short summary of what you changed. Your summary is not taken as proof: the change is verified and reviewed independently.
         RULES;
+    }
+
+    /**
+     * Ask the agent to run the quick checks itself before it finishes, so a
+     * failure costs seconds, not a repair pass. Each is named in
+     * construction.self_checks and run as verification.checks runs it.
+     */
+    protected function selfChecks(): string
+    {
+        $names = Config::array('builder.construction.self_checks');
+        $commands = array_map(
+            fn (array $check) => '`'.implode(' ', $check['command']).'`',
+            array_filter(Config::array('builder.verification.checks'), fn (array $check) => in_array($check['name'], $names, true)),
+        );
+
+        if ($commands === []) {
+            return '';
+        }
+
+        return 'Before you finish, run '.implode(' and ', $commands).', and fix anything reported. This takes seconds, and a failure found later sends the change back to you. ';
     }
 }

@@ -91,6 +91,35 @@ class SdkDriverTest extends TestCase
         ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => $prompt->provider->name() === 'openai' && $prompt->model === 'openai-reviewer');
     }
 
+    public function test_the_agent_runs_the_quick_checks_itself_before_it_finishes()
+    {
+        config([
+            'builder.verification.checks' => [
+                ['name' => 'Tests', 'command' => ['php', 'artisan', 'test'], 'timeout' => 600],
+                ['name' => 'Static analysis', 'command' => ['vendor/bin/phpstan', 'analyse'], 'timeout' => 600],
+            ],
+            'builder.construction.self_checks' => ['Static analysis'],
+        ]);
+        $this->agent('claude', 'anthropic', fn () => $this->outcome('claude', 'anthropic', AgentOutcomeStatus::Completed, summary: 'Done.'));
+
+        app(StartRun::class)->handle($this->request());
+
+        // A failure found after it finishes costs a whole repair pass.
+        $prompt = $this->agents['claude']->tasks[0]->prompt;
+        $this->assertStringContainsString('Before you finish, run `vendor/bin/phpstan analyse`, and fix anything reported.', $prompt);
+        $this->assertStringNotContainsString('`php artisan test`', $prompt);
+    }
+
+    public function test_the_agent_is_not_asked_to_run_a_check_the_app_does_not_have()
+    {
+        config(['builder.construction.self_checks' => ['Nothing like this']]);
+        $this->agent('claude', 'anthropic', fn () => $this->outcome('claude', 'anthropic', AgentOutcomeStatus::Completed, summary: 'Done.'));
+
+        app(StartRun::class)->handle($this->request());
+
+        $this->assertStringNotContainsString('Before you finish, run', $this->agents['claude']->tasks[0]->prompt);
+    }
+
     public function test_provider_trouble_resets_the_workspace_and_fails_over_to_the_other_agent()
     {
         $this->agent('claude', 'anthropic', function (Workspace $workspace) {

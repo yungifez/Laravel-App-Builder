@@ -268,3 +268,10 @@ them and correct any that are wrong.
   release. They are appended, so Cloud's own variables stay. The app's tests
   never get the keys. Stripe webhooks (for refunds and failed payments) are
   not set up yet. Nothing here has been tried with real keys.
+- **The coding agent runs static analysis itself before it finishes.**
+  The first build of "Studio Classes" took about 11 minutes. Two repair
+  passes of 2 to 4 minutes each were only for static analysis errors (37,
+  then 5), and the check takes 5 to 7 seconds. The agent was told not to
+  run it, to save time. Now it runs the checks named in
+  `BUILDER_CONSTRUCTION_SELF_CHECKS` (static analysis by default), and the
+  rest still run afterwards as before. Not measured yet on a real build.

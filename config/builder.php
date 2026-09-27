@@ -374,6 +374,12 @@ return [
             ['name' => 'Frontend', 'command' => ['npx', '--no-install', 'vp', 'fmt'], 'extensions' => ['ts', 'vue', 'js', 'mjs', 'css', 'json', 'md'], 'timeout' => 120],
         ],
 
+        // Checks the coding agent runs itself before it finishes, by name
+        // from verification.checks. Only quick ones: each failure found
+        // after the agent finishes costs a whole repair pass, while these
+        // take seconds. The rest still run on their own afterwards.
+        'self_checks' => json_decode((string) env('BUILDER_CONSTRUCTION_SELF_CHECKS', ''), true) ?: ['Static analysis'],
+
         // Commands callers may run by name through the "run_command" tool.
         'commands' => [
             'tests' => ['command' => ['php', 'artisan', 'test'], 'timeout' => 600],
