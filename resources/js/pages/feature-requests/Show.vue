@@ -6,6 +6,7 @@ import {
     ChevronRight,
     CircleDashed,
     ExternalLink,
+    Target,
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import FeatureRequestAcceptanceController from '@/actions/App/Http/Controllers/FeatureRequestAcceptanceController';
@@ -683,6 +684,18 @@ function lineClass(line: string): string {
                     </p>
                     <p v-else class="text-lg leading-relaxed">
                         {{ run.plan.summary }}
+                    </p>
+                    <!-- How the change serves the owner's goal -->
+                    <p
+                        v-if="run.plan.goal && !run.plan.answer"
+                        class="flex gap-1.5 text-muted-foreground"
+                        data-test="run-goal"
+                    >
+                        <Target
+                            class="mt-1 size-4 shrink-0"
+                            aria-label="Your goal"
+                        />
+                        {{ run.plan.goal }}
                     </p>
                     <p
                         v-if="

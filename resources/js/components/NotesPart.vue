@@ -54,7 +54,7 @@ const editing = ref(false);
                 :data-test="`edit-${part}`"
                 @click="editing = true"
             >
-                Change {{ label }}
+                {{ text.trim() === '' ? 'Add' : 'Change' }} {{ label }}
             </Button>
         </template>
 

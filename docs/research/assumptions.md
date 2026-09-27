@@ -199,3 +199,11 @@ them and correct any that are wrong.
   changed" says how many changes were kept since then and marks each one
   "New". A first visit marks nothing. Undone changes do not count. Opening
   the page is the "last checked" moment; the app workspace does not move it.
+- **Goal-aware changes (direction 18 §4).** The owner writes their app's main
+  goal on the page that explains it ("Goal", a section of the project notes,
+  shown under what the app is for). The planner then says, in one sentence,
+  how each change serves that goal. The change card and change page show
+  that sentence with a target icon. No goal, or a change that does not bear
+  on it, shows nothing: the planner is told never to stretch a change to fit.
+  Follow-up ideas prefer ones that serve the goal. Goal-driven suggestions
+  that the owner did not ask for are a later step.

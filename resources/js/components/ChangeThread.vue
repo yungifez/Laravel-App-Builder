@@ -13,6 +13,7 @@ import {
     Maximize2,
     Minimize2,
     Sparkles,
+    Target,
     Undo2,
 } from '@lucide/vue';
 import { useMediaQuery } from '@vueuse/core';
@@ -508,6 +509,18 @@ const checks = computed(() => {
                         </p>
                         <p v-else-if="run?.plan" class="leading-relaxed">
                             {{ run.plan.summary }}
+                        </p>
+                        <!-- How the change serves the owner's goal -->
+                        <p
+                            v-if="run?.plan?.goal && !run.plan.answer"
+                            class="flex gap-1.5 text-muted-foreground"
+                            data-test="thread-goal"
+                        >
+                            <Target
+                                class="mt-0.5 size-3.5 shrink-0"
+                                aria-label="Your goal"
+                            />
+                            {{ run.plan.goal }}
                         </p>
 
                         <!-- How it is being made, step by step -->

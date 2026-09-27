@@ -38,6 +38,8 @@ const props = defineProps<{
     revision: string | null;
     about: { introduction: string; sections: NotesSection[] };
     guidance: string | null;
+    // What the owner wants the app to achieve, in their words.
+    goal: string | null;
     areas: UnderstandingArea[];
     problems: string[];
     changes: { id: number; summary: string; at: string | null }[];
@@ -261,6 +263,28 @@ watch(
                         What is your app for?
                     </h1>
                 </NotesPart>
+
+                <div class="mt-4 max-w-3xl" data-test="goal">
+                    <NotesPart
+                        :project-id="project.id"
+                        :revision="revision"
+                        :part="`section:Goal`"
+                        :text="goal ?? ''"
+                        label="the goal"
+                        :rows="2"
+                        hint="For example: fewer phone calls to the front desk."
+                        :variant="goal ? 'icon' : 'text'"
+                    >
+                        <p v-if="goal" class="pr-10 text-lg">
+                            <span class="text-muted-foreground">Goal:</span>
+                            {{ plain(goal) }}
+                        </p>
+                        <p v-else class="text-sm text-muted-foreground">
+                            What should this app achieve? Tell me, and I will
+                            say how each change helps.
+                        </p>
+                    </NotesPart>
+                </div>
 
                 <div class="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3">
                     <p

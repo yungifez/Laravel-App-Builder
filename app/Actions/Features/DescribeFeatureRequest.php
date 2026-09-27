@@ -173,6 +173,8 @@ class DescribeFeatureRequest
                 'current_behavior' => $run->plan['current_behavior'] ?? null,
                 'preserve' => array_column(Plan::fromArray($run->plan)->preserve, 'statement'),
                 'next' => $this->next($run),
+                // How the change serves the owner's goal, when it does.
+                'goal' => $run->plan['goal'] ?? null,
             ],
             'review' => $this->review($run),
             'progress' => $this->describeRunProgress->handle($run),

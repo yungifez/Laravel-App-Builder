@@ -49,6 +49,25 @@ class ModelOutputTest extends TestCase
         $this->assertSame([], Plan::fromArray(array_diff_key($plan->toArray(), ['next' => true]))->next, 'A plan saved before ideas existed has none.');
     }
 
+    public function test_a_plan_says_how_the_change_serves_the_owners_goal()
+    {
+        $output = [
+            'summary' => 'Customers book online.',
+            'acceptance_criteria' => ['Customers can pick a free time.'],
+            'assumptions' => [],
+            'tasks' => ['Add a booking form.'],
+            'steps' => [['key' => 'form', 'kind' => 'interface', 'label' => 'Booking form', 'file' => 'resources/js/pages/Book.vue', 'symbol' => 'Book', 'detail' => 'Lists free times.']],
+        ];
+
+        $plan = Plan::fromModelOutput([...$output, 'goal' => ' Customers book without calling, so the front desk takes fewer calls. '], []);
+
+        $this->assertSame('Customers book without calling, so the front desk takes fewer calls.', $plan->goal);
+        $this->assertSame($plan->goal, Plan::fromArray($plan->toArray())->goal);
+        // No goal in the notes, or a change that does not bear on it.
+        $this->assertNull(Plan::fromModelOutput([...$output, 'goal' => ''], [])->goal);
+        $this->assertNull(Plan::fromArray(array_diff_key($plan->toArray(), ['goal' => true]))->goal, 'A plan saved before goals existed has none.');
+    }
+
     public function test_an_area_written_into_a_statement_is_moved_back_to_its_field()
     {
         $plan = Plan::fromModelOutput([

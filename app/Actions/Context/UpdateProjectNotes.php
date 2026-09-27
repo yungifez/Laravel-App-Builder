@@ -17,6 +17,12 @@ class UpdateProjectNotes
      */
     public const GUIDANCE_SECTION = 'Engineering direction';
 
+    /**
+     * The section holding what the owner wants the app to achieve. Plans
+     * say how a change serves it.
+     */
+    public const GOAL_SECTION = 'Goal';
+
     public function __construct(private ProjectNotes $notes, private ReadProjectContext $readProjectContext) {}
 
     /**

@@ -221,6 +221,8 @@ export type Run = {
         preserve: string[];
         /** What the owner might ask for next, sent with one tap. */
         next: string[];
+        /** How the change serves the goal the owner wrote down, if it does. */
+        goal: string | null;
     } | null;
     review: RunReview | null;
     /** What the change is doing right now, while it is being made. */

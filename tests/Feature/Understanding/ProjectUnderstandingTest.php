@@ -198,6 +198,25 @@ class ProjectUnderstandingTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->has('decisions', 12)->where('decided', 15));
     }
 
+    public function test_the_owners_goal_shows_on_its_own_and_can_be_written()
+    {
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('goal', null));
+
+        $this->put(route('projects.understanding.update', $this->project), [
+            'part' => 'section:Goal',
+            'body' => 'Fewer phone calls to the front desk.',
+            'revision' => app(ProjectNotes::class)->version($this->project),
+        ])->assertRedirect();
+
+        $this->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('goal', 'Fewer phone calls to the front desk.')
+                // It is not repeated among the other notes.
+                ->where('about.sections', [['heading' => 'People', 'body' => '- Customers buy plans.']]));
+    }
+
     public function test_the_owner_hears_what_changed_since_they_last_looked()
     {
         $this->travelTo(now()->subDays(3));

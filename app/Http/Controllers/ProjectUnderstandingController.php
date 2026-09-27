@@ -55,9 +55,10 @@ class ProjectUnderstandingController extends Controller
             'revision' => $revision,
             'about' => [
                 'introduction' => $notes->introduction,
-                // Guidance and decisions each show in a section of their own.
-                'sections' => array_values(array_filter($notes->sections, fn (array $section) => ! in_array(Str::lower($section['heading']), [Str::lower(UpdateProjectNotes::GUIDANCE_SECTION), Str::lower(RecordDecision::SECTION)], true))),
+                // Guidance, the goal and decisions each show in a place of their own.
+                'sections' => array_values(array_filter($notes->sections, fn (array $section) => ! in_array(Str::lower($section['heading']), [Str::lower(UpdateProjectNotes::GUIDANCE_SECTION), Str::lower(UpdateProjectNotes::GOAL_SECTION), Str::lower(RecordDecision::SECTION)], true))),
             ],
+            'goal' => $notes->section(UpdateProjectNotes::GOAL_SECTION),
             'guidance' => $notes->section(UpdateProjectNotes::GUIDANCE_SECTION),
             'areas' => array_values(array_map(fn (Capability $capability) => [
                 'key' => $capability->key,
