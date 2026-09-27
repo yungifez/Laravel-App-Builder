@@ -183,7 +183,20 @@ final readonly class Capability
      */
     public static function runBySuite(string $path): bool
     {
-        return Str::startsWith($path, (array) config('builder.verification.suite_paths'));
+        return Str::startsWith($path, (array) config('builder.verification.suite_paths'))
+            && Str::endsWith($path, (array) config('builder.verification.suite_suffixes'));
+    }
+
+    /**
+     * Describe where a test must live for the suite check to run it, such as
+     * "tests/, in a file whose name ends in Test.php".
+     */
+    public static function suiteLocation(): string
+    {
+        return __(':paths, in a file whose name ends in :suffixes', [
+            'paths' => implode(', ', (array) config('builder.verification.suite_paths')),
+            'suffixes' => implode(' or ', (array) config('builder.verification.suite_suffixes')),
+        ]);
     }
 
     /**

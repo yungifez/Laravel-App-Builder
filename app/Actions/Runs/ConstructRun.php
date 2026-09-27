@@ -223,7 +223,7 @@ class ConstructRun
         $skipped = $this->testsTheChecksSkip($patch);
 
         if ($skipped !== [] && $driver->canRepair() && $run->repairs < (int) config('builder.construction.budgets.repairs')) {
-            $paths = implode(', ', (array) config('builder.verification.suite_paths'));
+            $paths = Capability::suiteLocation();
 
             $this->transitionRun->handle($run, RunStatus::Implementing, $lease, [
                 'repairs' => $run->repairs + 1,
@@ -306,7 +306,7 @@ class ConstructRun
                         : __('The test for ":criterion" (:file) is not run by the test suite. Check it in a test under :paths.', [
                             'criterion' => $item['criterion'],
                             'file' => $item['test_file'],
-                            'paths' => implode(', ', (array) config('builder.verification.suite_paths')),
+                            'paths' => Capability::suiteLocation(),
                         ]),
                     default => null,
                 };

@@ -6,6 +6,7 @@ use App\Actions\Runs\RecordModelUsage;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeatureCoder;
 use App\Ai\Agents\FeaturePlanner;
+use App\Context\Capability;
 use App\Context\ProjectNotes;
 use App\Enums\ModelRole;
 use App\Features\AcceptanceSelector;
@@ -227,7 +228,7 @@ class AgentDriver implements ConstructionDriver
             $sections,
             "## Plan\n\n{$plan->summary}",
             "## Tasks\n\n".$this->list($plan->tasks),
-            "## Acceptance criteria\n\nAdd or update a test for each one: the change is only accepted when every criterion is checked by a test in the change. Only tests under ".implode(', ', (array) config('builder.verification.suite_paths'))." are run by the checks, so put them there.\n\n".$this->list($plan->acceptanceCriteria),
+            "## Acceptance criteria\n\nAdd or update a test for each one: the change is only accepted when every criterion is checked by a test in the change. Only tests under ".Capability::suiteLocation()." are run by the checks, so put them there.\n\n".$this->list($plan->acceptanceCriteria),
         );
 
         $sections[] = $this->observability();

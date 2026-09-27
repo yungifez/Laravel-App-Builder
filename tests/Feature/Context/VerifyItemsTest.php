@@ -56,7 +56,7 @@ class VerifyItemsTest extends TestCase
 
     public function test_the_suite_paths_are_configurable()
     {
-        config(['builder.verification.suite_paths' => ['tests/', 'resources/js/']]);
+        config(['builder.verification.suite_paths' => ['tests/', 'resources/js/'], 'builder.verification.suite_suffixes' => ['Test.php', '.test.ts']]);
         $plan = new Plan('Describe teams.', ['The page shows the field.']);
         $review = new Review(true, 'Fine.', verify: [
             ['criterion' => 1, 'test_file' => 'resources/js/pages/Team.test.ts', 'test_name' => 'shows the description field'],

@@ -415,10 +415,12 @@ return [
         // tested only when the test named for it is in that report, passed.
         'suite_check' => 'Tests',
 
-        // Where the tests that the suite check runs live. A test file
-        // elsewhere (a Vitest file, for example) is not evidence, because
+        // Where the tests that the suite check runs live, and how their
+        // file names end. A test file elsewhere, or named otherwise (a
+        // Vitest file under tests/, for example), is not evidence, because
         // no check runs it.
         'suite_paths' => json_decode((string) env('BUILDER_SUITE_PATHS', '["tests/"]'), true) ?: ['tests/'],
+        'suite_suffixes' => json_decode((string) env('BUILDER_SUITE_SUFFIXES', '["Test.php"]'), true) ?: ['Test.php'],
 
         // Whether a change built by a model must have a test for each of the
         // brief's verify items (its acceptance criteria). A missing test is a

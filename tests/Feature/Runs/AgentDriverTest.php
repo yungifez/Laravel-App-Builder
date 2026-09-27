@@ -433,6 +433,26 @@ class AgentDriverTest extends TestCase
         ChangeReviewer::assertNeverPrompted();
     }
 
+    public function test_a_script_test_under_the_test_folder_is_not_run_by_the_checks_either()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        FeatureCoder::fake([
+            new ToolCall('call-1', 'write_file', ['path' => 'app/Models/Team.php', 'contents' => self::TEAM_WITH_DESCRIPTION, 'expected_sha256' => hash('sha256', self::TEAM), 'expected_revision' => 0]),
+            new ToolCall('call-2', 'write_file', ['path' => 'tests/Frontend/Team.test.ts', 'contents' => "it('has a description', () => {});\n", 'expected_sha256' => null, 'expected_revision' => 1]),
+            'Done.',
+            new ToolCall('call-1', 'write_file', ['path' => 'tests/Feature/TeamDescriptionTest.php', 'contents' => self::DESCRIPTION_TEST, 'expected_sha256' => null, 'expected_revision' => 2]),
+            'Moved the test.',
+        ]);
+        ChangeReviewer::fake([]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(['tests/Frontend/Team.test.ts'], $run->events()->where('type', 'status')->where('data->reason', 'tests_not_run')->sole()->data['files']);
+        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'Only tests under tests/, in a file whose name ends in Test.php are run by the checks'));
+        FeatureCoder::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'The checks do not run tests/Frontend/Team.test.ts'));
+    }
+
     public function test_the_coder_is_asked_to_keep_what_the_app_does_easy_to_see()
     {
         FeaturePlanner::fake([$this->plan()]);
