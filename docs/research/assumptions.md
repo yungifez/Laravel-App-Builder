@@ -39,3 +39,8 @@ them and correct any that are wrong.
   `{...props}`) or tags that run into unchanged lines are not flagged. Why:
   the description may be there, and a false send-back wastes a coding
   round.
+- **Proof passes fold after the first.** "How I know it works" shows the
+  first pass, then "N more checks passed" (folded), then problems caught,
+  test reach and gaps. Why: eight lines on a typical change broke the
+  low-text rule, and the gaps and catches are what the owner must not
+  miss. Undo: in `ChangeProof.vue`, show `passes` in full.
