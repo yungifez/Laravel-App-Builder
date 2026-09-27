@@ -1105,6 +1105,28 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         if (message.type === 'clear') {
             choose(null, false);
         }
+
+        // The colours of the app's theme, as the app draws them now (light
+        // or dark), so the builder shows the owner the real ones. A colour
+        // the app does not have is left out.
+        if (message.type === 'theme') {
+            const probe = document.createElement('span');
+            probe.hidden = true;
+            document.body.appendChild(probe);
+            const colors = {};
+
+            for (const token of message.tokens || []) {
+                probe.style.color = `var(--color-${token}, var(--${token}, rgb(1, 2, 3)))`;
+                const color = getComputedStyle(probe).color;
+
+                if (color !== 'rgb(1, 2, 3)') {
+                    colors[token] = color;
+                }
+            }
+
+            probe.remove();
+            send({ type: 'theme', colors });
+        }
     });
 
     send({ type: 'ready', path: location.pathname });

@@ -12,6 +12,7 @@ import VisualEditController from '@/actions/App/Http/Controllers/VisualEditContr
 import VisualEditReversionController from '@/actions/App/Http/Controllers/VisualEditReversionController';
 import VisualMoveController from '@/actions/App/Http/Controllers/VisualMoveController';
 import {
+    colorTokens,
     definition,
     devices,
     inlineStyles,
@@ -126,6 +127,9 @@ export function useAppPreview(source: Source) {
     const known = ref<InspectedElement | null>(null);
     // Whether numbers are free instead of snapped to the scale.
     const fine = ref(typeof window !== 'undefined' && remembered(FINE_KEY));
+    // The app's own theme colours as it draws them, by token, so a swatch
+    // shows the colour the app will really get.
+    const theme = ref<Record<string, string>>({});
     // How much the app is drawn smaller than it is, so the handles in it
     // stay the same size on screen.
     const zoom = ref(1);
@@ -399,6 +403,7 @@ export function useAppPreview(source: Source) {
     // picked part and the changes it does not show yet.
     function setUp(to: Window | null): void {
         post({ type: 'mode', editing: source.designing.value }, to);
+        post({ type: 'theme', tokens: colorTokens }, to);
         post({ type: 'zoom', zoom: zoom.value }, to);
         post({ type: 'scroll', to: scrolled.get(framePath.value) ?? null }, to);
 
@@ -497,6 +502,10 @@ export function useAppPreview(source: Source) {
         // The page may draw its parts after it is ready.
         if (data.type === 'drawn') {
             setUp(frame.value?.contentWindow);
+        }
+
+        if (data.type === 'theme' && typeof data.colors === 'object') {
+            theme.value = data.colors as Record<string, string>;
         }
 
         if (data.type === 'holding') {
@@ -1154,6 +1163,7 @@ export function useAppPreview(source: Source) {
         nudge,
         hold,
         fine,
+        theme,
         zoom,
         dragging,
         pickNear,

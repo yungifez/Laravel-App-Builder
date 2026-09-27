@@ -43,6 +43,7 @@ import PageConsistencyController from '@/actions/App/Http/Controllers/PageConsis
 import MeasureField from '@/components/design/MeasureField.vue';
 import Segmented from '@/components/design/Segmented.vue';
 import SpacingBox from '@/components/design/SpacingBox.vue';
+import StepSlider from '@/components/design/StepSlider.vue';
 import Swatches from '@/components/design/Swatches.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
@@ -140,11 +141,6 @@ const inline = computed(() =>
 );
 
 const sizes = options('text_size');
-const sizeIndex = computed(() =>
-    sizes.findIndex(
-        (option) => option.value === props.state.valueOf('text_size'),
-    ),
-);
 
 function set(property: VisualProperty, value: VisualValue | null): void {
     props.state.change(property, value);
@@ -582,39 +578,14 @@ function describeEdit(edit: VisualEditSummary): string {
 
                         <section class="space-y-2">
                             <h3 class="text-xs font-medium">Text</h3>
-                            <label class="flex items-center gap-3">
-                                <span class="w-14 text-xs text-muted-foreground"
-                                    >Size</span
-                                >
-                                <input
-                                    id="property-text_size"
-                                    type="range"
-                                    min="0"
-                                    :max="sizes.length - 1"
-                                    :value="sizeIndex < 0 ? 2 : sizeIndex"
-                                    class="min-h-11 flex-1 accent-foreground sm:min-h-6"
-                                    @input="
-                                        set(
-                                            'text_size',
-                                            sizes[
-                                                Number(
-                                                    (
-                                                        $event.target as HTMLInputElement
-                                                    ).value,
-                                                )
-                                            ].value,
-                                        )
-                                    "
-                                />
-                                <span
-                                    class="w-20 truncate text-right text-xs"
-                                    >{{
-                                        sizeIndex < 0
-                                            ? 'Not set'
-                                            : sizes[sizeIndex].label
-                                    }}</span
-                                >
-                            </label>
+                            <StepSlider
+                                id="property-text_size"
+                                label="Size"
+                                :value="state.valueOf('text_size')"
+                                :options="sizes"
+                                :rest="2"
+                                @change="set('text_size', $event)"
+                            />
                             <Segmented
                                 label="Line up text"
                                 :value="state.valueOf('text_align')"
@@ -662,6 +633,7 @@ function describeEdit(edit: VisualEditSummary): string {
                             <Swatches
                                 label="Colour"
                                 kind="color"
+                                :colors="state.theme"
                                 :value="state.valueOf('text_color')"
                                 :options="options('text_color')"
                                 @change="set('text_color', $event)"
@@ -673,6 +645,7 @@ function describeEdit(edit: VisualEditSummary): string {
                             <Swatches
                                 label="Fill"
                                 kind="color"
+                                :colors="state.theme"
                                 :value="state.valueOf('background')"
                                 :options="options('background')"
                                 @change="set('background', $event)"
@@ -684,9 +657,9 @@ function describeEdit(edit: VisualEditSummary): string {
                                 :options="options('radius')"
                                 @change="set('radius', $event)"
                             />
-                            <Swatches
+                            <StepSlider
+                                id="property-shadow"
                                 label="Shadow"
-                                kind="shadow"
                                 :value="state.valueOf('shadow')"
                                 :options="options('shadow')"
                                 @change="set('shadow', $event)"

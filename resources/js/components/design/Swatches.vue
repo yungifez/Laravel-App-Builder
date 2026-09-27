@@ -1,18 +1,43 @@
 <script setup lang="ts">
 import { Check } from '@lucide/vue';
-import { radii, shadows } from '@/lib/visualProperties';
+import { computed } from 'vue';
+import { radii } from '@/lib/visualProperties';
 import type { VisualValue } from '@/types';
 
-defineProps<{
+const props = defineProps<{
     label: string;
-    kind: 'color' | 'radius' | 'shadow';
+    kind: 'color' | 'radius';
     value: VisualValue | null;
     options: { value: VisualValue; label: string }[];
+    /** The app's own colours by token, as it draws them. */
+    colors?: Record<string, string>;
 }>();
 
 const emit = defineEmits<{ change: [value: VisualValue | null] }>();
 
-// Each swatch shows the choice itself: the colour, the corner or the shadow.
+// Two theme colours the app draws the same are one choice to the owner:
+// the later one is left out, unless it is the one chosen.
+const shown = computed(() => {
+    if (props.kind !== 'color' || props.colors === undefined) {
+        return props.options;
+    }
+
+    const seen = new Set<string>();
+
+    return props.options.filter((option) => {
+        const drawn = props.colors?.[option.value] ?? String(option.value);
+
+        if (seen.has(drawn) && option.value !== props.value) {
+            return false;
+        }
+
+        seen.add(drawn);
+
+        return true;
+    });
+});
+
+// Each swatch shows the choice itself: the colour or the corner.
 function look(kind: string, option: VisualValue): Record<string, string> {
     switch (kind) {
         case 'color':
@@ -21,15 +46,12 @@ function look(kind: string, option: VisualValue): Record<string, string> {
                       background:
                           'repeating-linear-gradient(45deg, var(--muted) 0 3px, transparent 3px 6px)',
                   }
-                : { background: `var(--${option})` };
-        case 'radius':
-            return {
-                borderTopLeftRadius: radii[option] ?? '0',
-            };
+                : {
+                      background: props.colors?.[option] ?? `var(--${option})`,
+                  };
         default:
             return {
-                boxShadow:
-                    option === 'none' ? 'none' : (shadows[option] ?? 'none'),
+                borderTopLeftRadius: radii[option] ?? '0',
             };
     }
 }
@@ -46,7 +68,7 @@ function look(kind: string, option: VisualValue): Record<string, string> {
             :aria-label="label"
         >
             <button
-                v-for="option in options"
+                v-for="option in shown"
                 :key="option.value"
                 type="button"
                 :aria-pressed="value === option.value"
@@ -73,19 +95,10 @@ function look(kind: string, option: VisualValue): Record<string, string> {
                     />
                 </span>
                 <span
-                    v-else-if="kind === 'radius'"
+                    v-else
                     class="size-4 border-t-2 border-l-2 border-foreground/70"
                     :style="look(kind, option.value)"
                 />
-                <span
-                    v-else
-                    class="grid size-6 place-items-center rounded bg-zinc-100"
-                >
-                    <span
-                        class="size-3.5 rounded-sm bg-white"
-                        :style="look(kind, option.value)"
-                    />
-                </span>
             </button>
         </div>
     </div>
