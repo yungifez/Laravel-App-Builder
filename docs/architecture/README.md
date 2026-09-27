@@ -34,6 +34,7 @@
     27. [Workspace boxes, with no provider hard-coded](direction/27-workspace-boxes.md)
     28. [Publishing hosts, with Laravel Cloud for Grandma](direction/28-publishing-hosts.md)
     29. [Delegation](direction/29-delegation.md)
+    30. [Backwards compatibility](direction/30-backwards-compatibility.md)
 - **[source/](source/)**: the original planning documents.
     - [Implementation plan v1](source/implementation-plan-v1.md): gates G0–G6,
       the invitation contract and the pilot plan.

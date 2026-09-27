@@ -16,6 +16,7 @@ final readonly class PlanningContext
      * @param  list<array{question: string, answer: string, decided_by: string}>  $answers  What the owner answered for this request
      * @param  bool  $mayAsk  Whether the planner may still ask the owner a question
      * @param  bool  $parentAnswered  Whether the earlier request was a question that was answered, not a change
+     * @param  bool  $keepOldWorking  Whether changes must carry the app's old data and links forward
      */
     public function __construct(
         public string $request,
@@ -28,6 +29,7 @@ final readonly class PlanningContext
         public array $answers = [],
         public bool $mayAsk = false,
         public bool $parentAnswered = false,
+        public bool $keepOldWorking = true,
     ) {}
 
     /**

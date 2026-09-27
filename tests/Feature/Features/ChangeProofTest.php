@@ -83,6 +83,21 @@ class ChangeProofTest extends TestCase
             ]));
     }
 
+    public function test_a_change_says_whether_it_kept_the_old_way_working_and_why()
+    {
+        $request = FeatureRequest::factory()->generated()->create();
+        $this->checked($request);
+        $run = Run::factory()->for($request)->create();
+        $run->recordEvent('compatibility', ['keep_old_working' => false, 'chosen_by_owner' => false]);
+
+        $this->actingAs($request->project->owner)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page->where('proof', fn ($proof) => collect($proof)->contains([
+                'kind' => 'approach',
+                'text' => 'Nobody uses your app yet, so I changed it cleanly and kept nothing for the old way.',
+            ])));
+    }
+
     public function test_a_change_to_code_the_whole_app_shares_says_the_whole_app_was_tested()
     {
         $request = FeatureRequest::factory()->generated()->create();

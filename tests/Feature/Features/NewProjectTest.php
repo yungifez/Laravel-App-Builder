@@ -39,6 +39,8 @@ class NewProjectTest extends TestCase
 
         $project = $owner->projects()->sole();
         $this->assertNull($project->notes_draft_status);
+        $this->assertTrue($project->started_here);
+        $this->assertFalse($project->mayBeInUse());
 
         // The owner's sentence is the first change, and they are taken to it.
         $first = $project->featureRequests()->sole();

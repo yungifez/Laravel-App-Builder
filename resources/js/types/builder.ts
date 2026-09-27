@@ -313,7 +313,7 @@ export type RequestImage = { url: string; name: string };
 
 // One plain sentence on how we know a change works.
 export type ProofLine = {
-    kind: 'passed' | 'caught' | 'reach' | 'gap' | 'rule';
+    kind: 'passed' | 'caught' | 'reach' | 'gap' | 'rule' | 'approach';
     text: string;
     /** Pictures of a changed screen as a phone, a tablet and a computer show it. */
     pictures?: { url: string; label: string }[];

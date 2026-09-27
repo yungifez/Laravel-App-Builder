@@ -2,6 +2,7 @@
 import {
     CircleCheck,
     CircleDashed,
+    History,
     Lock,
     ScanSearch,
     ShieldCheck,
@@ -68,6 +69,8 @@ const icons = {
     reach: { icon: ScanSearch, tone: 'text-muted-foreground' },
     gap: { icon: CircleDashed, tone: 'text-amber-600' },
     rule: { icon: Lock, tone: 'text-muted-foreground' },
+    // Whether the old way was kept working, and why.
+    approach: { icon: History, tone: 'text-muted-foreground' },
 };
 </script>
 

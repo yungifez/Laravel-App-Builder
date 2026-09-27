@@ -43,7 +43,7 @@ class DescribeProof
             return [];
         }
 
-        return [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest), ...$this->safety($featureRequest), ...$this->colours($featureRequest), ...$this->pictures($featureRequest), ...$this->screens($featureRequest, $verification), ...$this->reach($featureRequest->latestRun), ...$this->rules($featureRequest)];
+        return [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest), ...$this->safety($featureRequest), ...$this->colours($featureRequest), ...$this->pictures($featureRequest), ...$this->screens($featureRequest, $verification), ...$this->reach($featureRequest->latestRun), ...$this->approach($featureRequest->latestRun), ...$this->rules($featureRequest)];
     }
 
     /**
@@ -237,6 +237,30 @@ class DescribeProof
                 'url' => route('verifications.shots.show', [$verification, $shot['index']]),
                 'label' => $labels[min($position, 2)],
             ])->all());
+    }
+
+    /**
+     * Say whether the change kept the app's old data and links working or
+     * changed things cleanly, and why, as recorded when it was planned.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function approach(?Run $run): array
+    {
+        $choice = $run?->events()->where('type', 'compatibility')->latest('id')->first()?->data;
+
+        if (! is_array($choice)) {
+            return [];
+        }
+
+        $text = match ([(bool) $choice['keep_old_working'], (bool) $choice['chosen_by_owner']]) {
+            [false, false] => __('Nobody uses your app yet, so I changed it cleanly and kept nothing for the old way.'),
+            [false, true] => __('You chose not to keep the old way working, so I changed it cleanly.'),
+            [true, false] => __('Your app may be in use, so I built this to keep the information and links it already has working.'),
+            [true, true] => __('As you chose, I built this to keep the information and links your app already has working.'),
+        };
+
+        return [['kind' => 'approach', 'text' => $text]];
     }
 
     /**

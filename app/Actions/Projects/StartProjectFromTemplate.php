@@ -54,6 +54,7 @@ class StartProjectFromTemplate
 
         return DB::transaction(function () use ($owner, $name, $purpose, $template, $design) {
             $project = $this->createProject->handle($owner, $name, $template, draftNotes: false);
+            $project->forceFill(['started_here' => true])->save();
 
             $this->nameApp($project, $owner, $name);
 

@@ -23,6 +23,7 @@ use App\Http\Controllers\Operations\AttentionController;
 use App\Http\Controllers\Operations\ChangeController as OperationsChangeController;
 use App\Http\Controllers\PageConsistencyController;
 use App\Http\Controllers\PreviewController;
+use App\Http\Controllers\ProjectCompatibilityController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectEditorController;
 use App\Http\Controllers\ProjectExperimentController;
@@ -54,6 +55,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/notes-draft', [ProjectNotesDraftController::class, 'store'])->name('projects.notes-draft.store');
     Route::delete('projects/{project}/notes-draft', [ProjectNotesDraftController::class, 'destroy'])->name('projects.notes-draft.destroy');
     Route::patch('projects/{project}/name', [ProjectNameController::class, 'update'])->name('projects.name.update');
+    Route::put('projects/{project}/compatibility', [ProjectCompatibilityController::class, 'update'])->name('projects.compatibility.update');
     Route::put('projects/{project}/publishing', [ProjectPublishingController::class, 'update'])->name('projects.publishing.update');
     Route::post('projects/{project}/deployments', [DeploymentController::class, 'store'])->name('deployments.store');
     Route::post('projects/{project}/live-error-fixes', [LiveErrorFixController::class, 'store'])->name('live-error-fixes.store');

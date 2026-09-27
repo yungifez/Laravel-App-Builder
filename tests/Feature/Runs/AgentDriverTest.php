@@ -8,11 +8,13 @@ use App\Actions\Runs\StartRun;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
 use App\Enums\AgentOutcomeStatus;
+use App\Enums\DeploymentStatus;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Enums\WorkspaceStatus;
 use App\Jobs\VerifyFeatureRequest;
+use App\Models\Deployment;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
@@ -537,6 +539,47 @@ class AgentDriverTest extends TestCase
 
         $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'Make it easy to see what the app does')
             && str_contains($prompt, 'never class, table or route names'));
+    }
+
+    public function test_an_app_nobody_uses_yet_is_changed_in_place_without_keeping_the_old_way()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $request = $this->request();
+        $request->project->forceFill(['started_here' => true])->save();
+
+        app(StartRun::class)->handle($request);
+
+        FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, '## No need to keep the old way working'));
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'Do not add fallbacks, aliases, old names or support for the old way.')
+            && ! str_contains($prompt, "## Keep the app's information and links working"));
+    }
+
+    public function test_a_published_or_imported_app_moves_its_data_forward_before_keeping_an_old_way()
+    {
+        FeaturePlanner::fake([$this->plan(), $this->plan()]);
+        $published = $this->request();
+        $published->project->forceFill(['started_here' => true])->save();
+        Deployment::factory()->for($published->project)->create(['status' => DeploymentStatus::Published, 'finished_at' => now()]);
+
+        app(StartRun::class)->handle($published);
+        // An app brought in from outside may already serve people.
+        app(StartRun::class)->handle($this->request());
+
+        $this->assertSame(2, collect($this->coder->tasks)->filter(fn (AgentTask $task) => str_contains($task->prompt, 'prefer a migration that carries the existing data to the new shape')
+            && ! str_contains($task->prompt, '## No need to keep the old way working'))->count());
+    }
+
+    public function test_the_owners_choice_about_the_old_way_outranks_whether_the_app_is_used()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $request = $this->request();
+        // Imported, so it may be in use, but the owner says nothing depends on it.
+        $request->project->forceFill(['keep_old_working' => false])->save();
+
+        $run = app(StartRun::class)->handle($request);
+
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, '## No need to keep the old way working'));
+        $this->assertSame(['keep_old_working' => false, 'chosen_by_owner' => true], $run->events()->where('type', 'compatibility')->sole()->data);
     }
 
     public function test_the_reviewer_sees_tests_the_change_deletes()

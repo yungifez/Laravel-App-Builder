@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 28.** This document consolidates the direction in [direction/](direction/)
+**Version 29.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -71,7 +71,12 @@ publish to Laravel Cloud by default. Version 28 adds delegation by certainty
 ([direction 29](direction/29-delegation.md), [§9](#delegation-by-certainty)): for reliability,
 the planner states the data shape once, deterministic scaffolds build the parts
 it fixes, one coding agent keeps every seam, and small models only repair what a
-local check can judge. When they disagree, the direction documents state intent
+local check can judge. Version 29 ties compatibility to whether anyone uses the app
+([direction 30](direction/30-backwards-compatibility.md), [§9](#compatibility-follows-the-apps-life)):
+an app that has never been online is changed in place, and a live app moves its
+data forward with a migration before it keeps an old way alongside the new one.
+The owner sees this as a switch and can set it either way.
+When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -1051,6 +1056,34 @@ operations:
 Deterministic operations run first, agent tasks run on the result, then
 normalization, then verification. Every operation shows its engine in the run
 log. The share of work done without a model is a tracked metric.
+
+### Compatibility follows the app's life
+
+Keeping old behaviour working costs code, tests and attention. It is worth it
+only when something real depends on the old behaviour. So every plan and every
+agent task says which of two stages the app is in:
+
+| Stage        | Known by                                            | What the agent does                                                                                                                                                                                         |
+| ------------ | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Never online | started here from the template, and never published | Changes things in place. Renames, reshapes and removes columns, routes and screens directly. Adds no fallbacks, aliases, old names or "legacy" paths.                                                       |
+| Online       | published at least once, or brought in from outside | Moves forward with a migration that carries the existing data to the new shape. Keeps an old way only when something outside the app depends on it (a saved link, another service calling it), and says so. |
+
+- An imported app counts as online. It may already serve people elsewhere, and
+  guessing wrong there loses data. Starting here is the only proof it has not.
+- Migrations stay additive in both stages: the agent adds a migration, it never
+  edits one that ran. Previews and workspaces have already run the old ones.
+- The stage is a fact the engine knows (the project and its deployments), not
+  a model judgement, so it is deterministic.
+- It is a feature the owner sees, not a hidden rule. "What I know" shows a
+  switch, "Keep old information and links working", with the reason for its
+  current state. The owner can set it either way, for example when nobody
+  uses an imported app yet, and "Decide for me" hands it back to the stage.
+- Every change says which way it was built, and why, next to how it was
+  checked. The choice is recorded on the run when it is planned, so a later
+  switch does not rewrite what an earlier change says.
+- Once published, the stored-data warning when publishing and this rule
+  work together: the migration moves the data, and the owner is told before it
+  runs on the live app.
 
 ### Delegation by certainty
 

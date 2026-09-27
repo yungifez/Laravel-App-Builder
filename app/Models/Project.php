@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\DeploymentStatus;
 use App\Enums\NotesDraftStatus;
 use App\Publishing\PublishingHostManager;
 use Database\Factories\ProjectFactory;
@@ -20,6 +21,8 @@ use Illuminate\Support\Carbon;
  * @property int $user_id
  * @property string $name
  * @property string $source_path
+ * @property bool $started_here Whether the app was started here from the template, not brought in
+ * @property bool|null $keep_old_working The owner's choice to keep old data and links working; null leaves it to mayBeInUse()
  * @property string|null $deploy_remote The Git remote the hosting platform deploys from, credentials included
  * @property string|null $live_url Where the hosting platform serves the app
  * @property string|null $deploy_branch
@@ -55,6 +58,8 @@ class Project extends Model
             'setup_model_calls' => 'array',
             'host_state' => 'array',
             'understanding_seen_at' => 'datetime',
+            'started_here' => 'boolean',
+            'keep_old_working' => 'boolean',
         ];
     }
 
@@ -182,6 +187,25 @@ class Project extends Model
     public function deployments(): HasMany
     {
         return $this->hasMany(Deployment::class);
+    }
+
+    /**
+     * Whether anyone may depend on the app as it is: it was published, or
+     * brought in from outside, where it may already serve people.
+     */
+    public function mayBeInUse(): bool
+    {
+        return ! $this->started_here || $this->deployments()->where('status', DeploymentStatus::Published)->exists();
+    }
+
+    /**
+     * Whether a change must keep the app's stored data and links working:
+     * the owner's choice when they made one, otherwise whether anyone may
+     * use the app.
+     */
+    public function keepsOldWorking(): bool
+    {
+        return $this->keep_old_working ?? $this->mayBeInUse();
     }
 
     /**

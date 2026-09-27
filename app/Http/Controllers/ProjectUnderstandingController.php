@@ -59,6 +59,13 @@ class ProjectUnderstandingController extends Controller
                 'sections' => array_values(array_filter($notes->sections, fn (array $section) => ! in_array(Str::lower($section['heading']), [Str::lower(UpdateProjectNotes::GUIDANCE_SECTION), Str::lower(UpdateProjectNotes::GOAL_SECTION), Str::lower(RecordDecision::SECTION)], true))),
             ],
             'goal' => $notes->section(UpdateProjectNotes::GOAL_SECTION),
+            // Whether changes keep the app's old data and links working, and
+            // whether that is the owner's choice or follows from its use.
+            'compatibility' => [
+                'keep' => $project->keepsOldWorking(),
+                'chosen' => $project->keep_old_working !== null,
+                'in_use' => $project->mayBeInUse(),
+            ],
             'guidance' => $notes->section(UpdateProjectNotes::GUIDANCE_SECTION),
             'areas' => array_values(array_map(fn (Capability $capability) => [
                 'key' => $capability->key,

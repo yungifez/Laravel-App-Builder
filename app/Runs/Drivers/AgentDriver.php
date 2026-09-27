@@ -159,6 +159,8 @@ abstract class AgentDriver implements ConstructionDriver
             $sections[] = "## Questions\n\nDo not ask the owner anything more for this request: return question as null and build on your recommendation.";
         }
 
+        $sections[] = self::compatibility($context->keepOldWorking);
+
         $sections[] = "## Project files\n\n".implode("\n", $context->files);
 
         foreach ($context->contents as $path => $contents) {
@@ -185,6 +187,29 @@ abstract class AgentDriver implements ConstructionDriver
         - Name each test as a plain business statement, for example "a manager can cancel a booking".
         - In the notes for each area you change, say in plain words: who can do the new thing, what it changes, whether it sends an email or message, charges money or calls another service, and what happens automatically. Use the owner's words for things (bookings, customers), never class, table or route names.
         - When something fails for a person using the app, tell them what happened and what to do next, in plain words.
+        TEXT;
+    }
+
+    /**
+     * Say how much of the old way to keep. Nobody depends on an app that
+     * has never been online, so it is changed in place; a live app moves
+     * its data forward before it keeps two ways side by side (§9). The
+     * owner can choose either for their app.
+     */
+    public static function compatibility(bool $keepOldWorking): string
+    {
+        if (! $keepOldWorking) {
+            return <<<'TEXT'
+            ## No need to keep the old way working
+
+            No stored data, saved link or other service needs the app to keep working the way it does now. Change things in place: rename, reshape or remove columns, routes, screens and settings directly, and delete the code for the old way. Do not add fallbacks, aliases, old names or support for the old way. Add a new migration for database changes; do not edit one that already exists.
+            TEXT;
+        }
+
+        return <<<'TEXT'
+        ## Keep the app's information and links working
+
+        Its stored data and links may matter to someone. When the shape of something changes, prefer a migration that carries the existing data to the new shape over keeping the old and new ways side by side. Keep an old way only when something outside the app depends on it, such as a link people saved or another service calling it, and say so in your summary.
         TEXT;
     }
 
@@ -226,6 +251,7 @@ abstract class AgentDriver implements ConstructionDriver
         );
 
         $sections[] = $this->observability();
+        $sections[] = self::compatibility($run->featureRequest->project->keepsOldWorking());
         $sections[] = self::DISCRETION;
 
         if ($plan->preserve !== []) {

@@ -40,6 +40,10 @@ class GatherPlanningContext
             $contextFiles[] = $targetStep['file'];
         }
 
+        // Recorded, so the change can say later which way it was built.
+        $keepOldWorking = $featureRequest->project->keepsOldWorking();
+        $run->recordEvent('compatibility', ['keep_old_working' => $keepOldWorking, 'chosen_by_owner' => $featureRequest->project->keep_old_working !== null]);
+
         return new PlanningContext(
             request: $featureRequest->instructions(),
             files: array_slice($files, 0, $limit),
@@ -51,6 +55,7 @@ class GatherPlanningContext
             answers: $run->answers ?? [],
             mayAsk: count($run->answers ?? []) < $run->question_limit,
             parentAnswered: $parent?->status === FeatureRequestStatus::Answered,
+            keepOldWorking: $keepOldWorking,
         );
     }
 

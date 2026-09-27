@@ -245,3 +245,12 @@ them and correct any that are wrong.
   waiting for the owner. It prefers the front page, at computer width. A
   change the owner turned down or undid is never used. Screen pictures
   are new, so older apps show their first letter until their next change.
+- **Backwards compatibility is a switch the owner sees.** On "What I know",
+  "Keep old information and links working" is off for an app started here
+  that was never published. It is on for a published or imported app,
+  because an imported app may already serve people elsewhere. The owner can
+  set it either way, and "Decide for me" hands it back. When it is off, the
+  agent changes things in place and keeps nothing for the old way. When it
+  is on, the agent prefers a migration that carries data forward over
+  keeping two ways side by side. Every change says which way it was built.
+  Migrations are always added, never edited.

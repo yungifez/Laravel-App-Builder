@@ -217,6 +217,29 @@ class ProjectUnderstandingTest extends TestCase
                 ->where('about.sections', [['heading' => 'People', 'body' => '- Customers buy plans.']]));
     }
 
+    public function test_the_owner_chooses_whether_changes_keep_old_information_and_links_working()
+    {
+        // An app brought in from outside may already serve people.
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('compatibility', ['keep' => true, 'chosen' => false, 'in_use' => true]));
+
+        $this->put(route('projects.compatibility.update', $this->project), ['keep_old_working' => false])->assertRedirect();
+
+        $this->assertFalse($this->project->refresh()->keepsOldWorking());
+        $this->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('compatibility', ['keep' => false, 'chosen' => true, 'in_use' => true]));
+
+        // "Decide for me" hands the choice back.
+        $this->put(route('projects.compatibility.update', $this->project), ['keep_old_working' => null])->assertRedirect();
+        $this->assertNull($this->project->refresh()->keep_old_working);
+        $this->assertTrue($this->project->keepsOldWorking());
+
+        $this->actingAs(User::factory()->create())
+            ->put(route('projects.compatibility.update', $this->project), ['keep_old_working' => false])
+            ->assertForbidden();
+    }
+
     public function test_the_owner_hears_what_changed_since_they_last_looked()
     {
         $this->travelTo(now()->subDays(3));

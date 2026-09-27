@@ -65,10 +65,10 @@ class RunLifecycleTest extends TestCase
             $run->operations()->orderBy('id')->get()->map(fn ($operation) => [$operation->operation_key, $operation->tool, $operation->status->value])->all(),
         );
         $this->assertSame(
-            ['created', 'lease_acquired', 'status', 'workspace_ready', 'context_compiled', 'status', 'operation', 'operation', 'build_finished', 'status'],
+            ['created', 'lease_acquired', 'status', 'workspace_ready', 'compatibility', 'context_compiled', 'status', 'operation', 'operation', 'build_finished', 'status'],
             $run->events()->pluck('type')->all(),
         );
-        $this->assertSame(range(1, 10), $run->events()->pluck('sequence')->all());
+        $this->assertSame(range(1, 11), $run->events()->pluck('sequence')->all());
         $this->assertSame('team-invitations', $run->plan['solution_key']);
 
         $featureRequest->refresh();

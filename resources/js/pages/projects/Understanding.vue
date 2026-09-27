@@ -17,6 +17,7 @@ import NotesDraftPanel from '@/components/NotesDraftPanel.vue';
 import NotesPart from '@/components/NotesPart.vue';
 import PartsMap from '@/components/PartsMap.vue';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Collapsible,
     CollapsibleContent,
@@ -24,6 +25,7 @@ import {
 } from '@/components/ui/collapsible';
 import { when } from '@/lib/when';
 import { index, show } from '@/routes/projects';
+import { update as updateCompatibility } from '@/routes/projects/compatibility';
 import { show as showUnderstanding } from '@/routes/projects/understanding';
 import type {
     CheckFinding,
@@ -40,6 +42,9 @@ const props = defineProps<{
     guidance: string | null;
     // What the owner wants the app to achieve, in their words.
     goal: string | null;
+    // Whether changes keep the app's old data and links working; chosen
+    // when the owner set it, otherwise it follows whether the app is used.
+    compatibility: { keep: boolean; chosen: boolean; in_use: boolean };
     areas: UnderstandingArea[];
     problems: string[];
     changes: { id: number; summary: string; at: string | null }[];
@@ -224,6 +229,30 @@ watch(
         }),
     { immediate: true },
 );
+// Why changes keep, or do not keep, the old way working, in the owner's
+// words. A new app nobody uses yet is changed cleanly; one in use carries
+// what it has forward. The owner can choose either.
+const compatibilityReason = computed(() => {
+    const { keep, chosen, in_use } = props.compatibility;
+
+    if (chosen) {
+        return keep
+            ? 'You chose this. Changes carry what your app already has forward.'
+            : 'You chose this. Changes are made cleanly, without keeping the old way working.';
+    }
+
+    return in_use
+        ? 'On, because people may use your app. Changes carry what it already has forward.'
+        : 'Off, because nobody uses your app yet. Changes are made cleanly, without keeping the old way working.';
+});
+
+function setCompatibility(keep: boolean | null): void {
+    router.put(
+        updateCompatibility(props.project.id).url,
+        { keep_old_working: keep },
+        { preserveScroll: true },
+    );
+}
 </script>
 
 <template>
@@ -284,6 +313,38 @@ watch(
                             say how each change helps.
                         </p>
                     </NotesPart>
+                </div>
+
+                <div
+                    class="mt-4 flex max-w-3xl items-start gap-3"
+                    data-test="compatibility"
+                >
+                    <Checkbox
+                        id="keep-old-working"
+                        class="mt-1"
+                        :model-value="compatibility.keep"
+                        @update:model-value="setCompatibility($event === true)"
+                    />
+                    <div class="min-w-0">
+                        <label for="keep-old-working" class="font-medium"
+                            >Keep old information and links working</label
+                        >
+                        <p
+                            class="text-sm text-muted-foreground"
+                            data-test="compatibility-reason"
+                        >
+                            {{ compatibilityReason }}
+                            <button
+                                v-if="compatibility.chosen"
+                                type="button"
+                                class="ml-1 underline underline-offset-2 hover:text-foreground"
+                                data-test="compatibility-automatic"
+                                @click="setCompatibility(null)"
+                            >
+                                Decide for me
+                            </button>
+                        </p>
+                    </div>
                 </div>
 
                 <div class="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3">
