@@ -143,7 +143,9 @@ class ProjectUnderstandingTest extends TestCase
 
         $this->actingAs($this->owner)
             ->get(route('projects.understanding.show', $this->project))
-            ->assertInertia(fn (Assert $page) => $page->where('caught', 3));
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('caught', 3)
+                ->where('kept', 2));
     }
 
     public function test_each_part_says_how_many_of_the_apps_tests_run_its_code()

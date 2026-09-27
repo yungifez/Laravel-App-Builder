@@ -69,6 +69,8 @@ class ProjectUnderstandingController extends Controller
                     'summary' => $featureRequest->summary ?? $featureRequest->prompt,
                     'at' => $featureRequest->accepted_at?->toIso8601String(),
                 ]),
+            // All the changes kept, where the list above shows the latest.
+            'kept' => $project->featureRequests()->whereNotNull('accepted_at')->whereNull('reverted_at')->count(),
             'looks' => $project->visualEdits()->count(),
             // Problems the checks or the second look caught in the changes
             // kept, each fixed before the owner saw the change.

@@ -40,6 +40,8 @@ const props = defineProps<{
     areas: UnderstandingArea[];
     problems: string[];
     changes: { id: number; summary: string; at: string | null }[];
+    // All the changes kept; changes lists only the latest.
+    kept: number;
     looks: number;
     // Problems caught and fixed before the owner saw the kept changes.
     caught: number;
@@ -112,7 +114,7 @@ const facts = computed(() =>
     [
         [props.areas.length, 'part', 'parts'],
         [rules.value, 'rule', 'rules'],
-        [props.changes.length + props.looks, 'change kept', 'changes kept'],
+        [props.kept + props.looks, 'change kept', 'changes kept'],
         [
             props.caught,
             'problem fixed before you saw it',
