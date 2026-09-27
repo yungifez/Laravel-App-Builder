@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 27.** This document consolidates the direction in [direction/](direction/)
+**Version 28.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -67,7 +67,11 @@ every workspace into its own disposable box from any provider behind the runtime
 and our instructions stay outside the box, and local development only stands in for it. Version 27 puts
 publishing behind the same kind of contract ([direction 28](direction/28-publishing-hosts.md),
 [§27.1](#271-what-proves-the-differentiation)): any host can serve a published app, and Grandma's apps
-publish to Laravel Cloud by default. When they disagree, the direction documents state intent
+publish to Laravel Cloud by default. Version 28 adds delegation by certainty
+([direction 29](direction/29-delegation.md), [§9](#delegation-by-certainty)): for reliability,
+the planner states the data shape once, deterministic scaffolds build the parts
+it fixes, one coding agent keeps every seam, and small models only repair what a
+local check can judge. When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -1048,6 +1052,61 @@ Deterministic operations run first, agent tasks run on the result, then
 normalization, then verification. Every operation shows its engine in the run
 log. The share of work done without a model is a tracked metric.
 
+### Delegation by certainty
+
+Work is split by how certain it is, not by file type. The goal is
+reliability: fewer mismatches between the parts of one change. Cost and speed
+follow from it, and are never traded against it.
+
+1. **The planner states the data shape once.** For a change that stores
+   something new, the plan carries a typed data shape: each record, its
+   fields with types and whether they are required, the fixed choices of an
+   enum, the relations, and who may create, change or remove it. The shape is
+   the single source for every part below, so a field cannot be `phone` in
+   the migration and `phone_number` in the form.
+2. **Deterministic scaffolds build what the shape fixes.** With no model,
+   the `scaffold` operation derives the migration, the model's casts and
+   relations, the factory, the form request's rules, the policy's methods,
+   the resource routes and the tests that guard access ("a guest cannot
+   create a booking"). Types map to rules and columns by a fixed table
+   (`string, required, max 255` → `required|string|max:255`, a `string`
+   column, a factory sentence). The mapping table is tested like any
+   deterministic engine ([§10](#10-deterministic-engines)).
+3. **One coding agent does behaviour and wiring on the result.** What
+   happens on confirm, emails, the screens and edge cases stay with one
+   agent, which reads the scaffold as ordinary code and may change it. It
+   keeps every seam in one head.
+4. **Small models only repair what a local check can judge.** One PHPStan
+   error on one line, a formatting failure, one failing test the model can
+   run again. The check decides whether the repair worked, so a cheap model
+   is safe there and a wrong answer costs one retry
+   ([§11](#execution-router)).
+
+**Rejected: sub-agents by file type.** "A small agent writes the request
+class" moves the risk to the hand-off. To brief it, the larger agent must
+already decide the fields, rules and permissions, which is the hard part; the
+small agent then adds a seam where names and rules drift. It also needs the
+same context the larger agent read, or it guesses. The coding agents we run
+already delegate inside their own harness, which we do not control.
+
+**Owners see the shape.** The data shape is shown in plain words before
+building ("For each booking I keep: who booked, when, and whether it is
+pending, confirmed or cancelled. Only you can confirm."). It is asked about
+only when it is hard to change later ([§7](#when-to-ask-the-decision-check));
+otherwise it is shown with the change, like any assumption.
+
+**Measured, not assumed.** Per change: which scaffolded files the coding
+agent later changed, and why; review findings about mismatches between
+parts; and repairs by small models that a check then refused. A scaffold
+that the agent keeps rewriting is a wrong mapping, fixed in the table, not
+worked around in prompts.
+
+**Status.** V1 plans carry steps (a kind, a file and a symbol), not a typed
+data shape, and there is no `scaffold` operation yet. The first slice: the
+planner returns the shape for data steps, the change card shows it, and a
+scaffold writes only the migration and the form request before the coding
+agent starts.
+
 ## 10. Deterministic engines
 
 ### Rector
@@ -1201,6 +1260,7 @@ grades its own work.
 | Classify, map to capabilities, name UI, annotate | cheap model                                                       | stronger model on low confidence                               |
 | Deterministic operations                         | no model                                                          | go semantic when unsure                                        |
 | Implement                                        | coding engine per task class                                      | after 2 failed repairs: stronger model or a different provider |
+| Repair that a local check can judge              | cheap model, one error at a time                                  | after 1 refused repair: back to the implementing agent         |
 | Independent review                               | only when triggered, on a different provider than the implementer | —                                                              |
 
 **Review triggers:** the behaviour diff touches permissions, money, deletion,
