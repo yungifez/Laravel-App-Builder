@@ -177,6 +177,7 @@ class ProjectUnderstandingTest extends TestCase
             ->get(route('projects.understanding.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page
                 ->has('decisions', 2)
+                ->where('decided', 2)
                 ->where('decisions.0.question', 'Should owners count as members?')
                 ->where('decisions.0.decision', 'Yes')
                 ->where('decisions.0.by', 'owner')
@@ -185,6 +186,16 @@ class ProjectUnderstandingTest extends TestCase
                 ->where('decisions.1.decision', 'Counts include people of every role.')
                 ->where('decisions.1.by', 'builder')
                 ->where('decisions.1.change', $kept->id));
+    }
+
+    public function test_all_decisions_are_counted_while_the_newest_are_listed()
+    {
+        $kept = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now()]);
+        Run::factory()->for($kept)->create(['plan' => ['summary' => '', 'acceptance_criteria' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null, 'assumptions' => array_map(fn (int $n) => "Choice {$n} is kept.", range(1, 15))]]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->has('decisions', 12)->where('decided', 15));
     }
 
     public function test_answers_kept_in_the_notes_show_once_among_the_decisions()

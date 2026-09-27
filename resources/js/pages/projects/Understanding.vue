@@ -58,6 +58,8 @@ const props = defineProps<{
         decision: string;
         by: 'owner' | 'builder';
     }[];
+    // How many decisions there are in all.
+    decided: number;
     draft: NotesDraft | null;
     check?: CheckFinding[];
 }>();
@@ -153,6 +155,7 @@ const facts = computed(() =>
         [props.areas.length, 'part', 'parts'],
         [rules.value, 'rule', 'rules'],
         [props.kept + props.looks, 'change kept', 'changes kept'],
+        [props.decided, 'decision', 'decisions'],
         [
             props.caught,
             'problem fixed before you saw it',
@@ -774,7 +777,7 @@ watch(
                     Decisions
                     <span
                         class="font-normal text-muted-foreground tabular-nums"
-                        >{{ decisions.length }}</span
+                        >{{ decided }}</span
                     >
                 </h2>
                 <p class="mb-4 max-w-prose text-sm text-muted-foreground">

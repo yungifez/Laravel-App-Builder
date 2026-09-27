@@ -22,11 +22,12 @@ class ListDecisions
      * The owner's answers are also written into the notes' decisions
      * section when given. An answer found there is shown once, with the
      * change it came from; answers only the notes hold (the change was not
-     * kept, or the owner wrote it there) follow, with no change.
+     * kept, or the owner wrote it there) follow, with no change. A null
+     * limit lists them all.
      *
      * @return list<array{change: int|null, summary: string|null, at: string|null, question: string|null, decision: string, by: 'owner'|'builder'}>
      */
-    public function handle(Project $project, ?string $recorded = null, int $limit = 12): array
+    public function handle(Project $project, ?string $recorded = null, ?int $limit = 12): array
     {
         $noted = $this->bullets($recorded);
         $decisions = [];
@@ -63,7 +64,7 @@ class ListDecisions
             ];
         }
 
-        return array_slice($decisions, 0, $limit);
+        return $limit === null ? $decisions : array_slice($decisions, 0, $limit);
     }
 
     /**

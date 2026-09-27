@@ -88,7 +88,9 @@ class ProjectUnderstandingController extends Controller
             ))->count(),
             // The tests the kept changes added, and their screens found to fit.
             'proven' => $tallyKeptProof->handle($project),
-            'decisions' => $listDecisions->handle($project, $notes->section(RecordDecision::SECTION)),
+            'decisions' => array_slice($decisions = $listDecisions->handle($project, $notes->section(RecordDecision::SECTION), limit: null), 0, 12),
+            // All of them, where the list shows the newest.
+            'decided' => count($decisions),
             'draft' => $project->notes_draft_status === null ? null : [
                 'status' => $project->notes_draft_status->value,
                 'purpose' => $project->notes_draft['purpose'] ?? null,
