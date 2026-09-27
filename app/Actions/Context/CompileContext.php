@@ -11,6 +11,11 @@ use App\Enums\ContextMode;
 class CompileContext
 {
     /**
+     * Test files listed for an area, at most.
+     */
+    protected const LISTED_TESTS = 8;
+
+    /**
      * Compile the project context for a change, deterministically.
      *
      * Selective (the product): the project notes, the files of the areas the
@@ -63,11 +68,19 @@ class CompileContext
     }
 
     /**
-     * Render one area: its notes and, when asked, what it may also affect.
+     * Render one area: its notes, its existing tests and, when asked, what
+     * it may also affect. Tests seen running the area's code come first,
+     * then the test files it claims by path.
      */
     protected function area(ProjectContext $context, Capability $capability, bool $withEffects): string
     {
         $text = "## {$capability->name} ({$capability->file})\n\n".($capability->notes !== '' ? $capability->notes : ($capability->summary ?? ''));
+
+        $tests = array_slice(array_values(array_unique([...$capability->reachedBy, ...$capability->testFiles])), 0, self::LISTED_TESTS);
+
+        if ($tests !== []) {
+            $text .= "\n\nExisting tests for this area, most relevant first:\n".implode("\n", array_map(fn (string $file) => "- {$file}", $tests));
+        }
 
         if ($withEffects && $capability->effects !== []) {
             $text .= "\n\nMay also affect (hints, not requirements; look only if they matter for this request):\n".implode("\n", array_map(

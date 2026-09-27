@@ -24,6 +24,9 @@ class ObserveEffects
      * the Effect strong; one makes it possible. They sit beside the Effects
      * written in the notes, each with its own source.
      *
+     * Each area also learns which test files ran its code: the tests an
+     * agent runs first while it works (§9). The whole suite still decides.
+     *
      * Only what tests ran is known. An area no test reaches gets no Effect,
      * which means "unknown", never "unaffected".
      */
@@ -40,10 +43,35 @@ class ObserveEffects
         $capabilities = [];
 
         foreach ($context->capabilities as $key => $capability) {
-            $capabilities[$key] = $capability->withEffects($this->effectsOf($capability, $context, $map, $observed));
+            $capabilities[$key] = $capability
+                ->withEffects($this->effectsOf($capability, $context, $map, $observed))
+                ->withReachedBy($this->testFilesRunning($capability, $map));
         }
 
         return new ProjectContext($context->project, $capabilities, $context->problems);
+    }
+
+    /**
+     * Get the test files whose tests ran the area's code, most tests first.
+     *
+     * @return list<string>
+     */
+    protected function testFilesRunning(Capability $capability, TestMap $map): array
+    {
+        $code = array_values(array_filter(array_keys($map->files), fn (string $path) => ! Capability::runBySuite($path) && $capability->claims($path)));
+        $counts = [];
+
+        foreach ($map->testsRunning($code) as $test) {
+            $file = $map->tests[$test]['file'] ?? null;
+
+            if ($file !== null && Capability::runBySuite($file)) {
+                $counts[$file] = ($counts[$file] ?? 0) + 1;
+            }
+        }
+
+        uksort($counts, fn (string $a, string $b) => [$counts[$b], $a] <=> [$counts[$a], $b]);
+
+        return array_keys($counts);
     }
 
     /**

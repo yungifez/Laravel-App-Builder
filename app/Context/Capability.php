@@ -31,6 +31,7 @@ final readonly class Capability
      * @param  list<array{key: string, name: string}>  $behaviors
      * @param  list<Effect>  $effects
      * @param  list<string>  $testFiles  The project's test files the area claims
+     * @param  list<string>  $reachedBy  The test files whose tests ran the area's code when last observed, most tests first
      */
     public function __construct(
         public string $key,
@@ -42,6 +43,7 @@ final readonly class Capability
         public ?string $file = null,
         public string $notes = '',
         public array $testFiles = [],
+        public array $reachedBy = [],
     ) {}
 
     /**
@@ -209,7 +211,7 @@ final readonly class Capability
     {
         $tests = array_values(array_filter($files, fn (string $path) => self::runBySuite($path) && $this->claims($path)));
 
-        return new self($this->key, $this->name, $this->summary, $this->paths, $this->behaviors, $this->effects, $this->file, $this->notes, $tests);
+        return new self($this->key, $this->name, $this->summary, $this->paths, $this->behaviors, $this->effects, $this->file, $this->notes, $tests, $this->reachedBy);
     }
 
     /**
@@ -219,7 +221,17 @@ final readonly class Capability
      */
     public function withEffects(array $effects): self
     {
-        return new self($this->key, $this->name, $this->summary, $this->paths, $this->behaviors, [...$this->effects, ...$effects], $this->file, $this->notes, $this->testFiles);
+        return new self($this->key, $this->name, $this->summary, $this->paths, $this->behaviors, [...$this->effects, ...$effects], $this->file, $this->notes, $this->testFiles, $this->reachedBy);
+    }
+
+    /**
+     * Get a copy that knows which test files ran the area's code.
+     *
+     * @param  list<string>  $files
+     */
+    public function withReachedBy(array $files): self
+    {
+        return new self($this->key, $this->name, $this->summary, $this->paths, $this->behaviors, $this->effects, $this->file, $this->notes, $this->testFiles, $files);
     }
 
     /**

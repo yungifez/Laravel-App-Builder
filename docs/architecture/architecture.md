@@ -3140,5 +3140,9 @@ compiled packet, same model and code) tests it directly.
   review gets the areas whose tests ran the changed code, and the changed PHP
   files no test ran. `php artisan builder:effects` compares, per change, the
   areas the tests reached with the areas touched outside the ask ("missed"),
-  and lists the behaviours no test proves. Not yet: selecting tests by
-  impact for the fast path, and `history` Effects.
+  and lists the behaviours no test proves. For the fast path, each requested
+  area in the coder's context lists its existing tests: first the test files
+  seen running its code (most tests first), then the ones it claims by path.
+  The agent runs those while it works; the full suite still decides. First
+  real map (the fixture, 2026-09-27): 92 tests over 32 code files; the
+  observed Effects matched the written ones. Not yet: `history` Effects.

@@ -3,9 +3,11 @@
 namespace Tests\Feature\Context;
 
 use App\Actions\Context\ClassifyChange;
+use App\Actions\Context\CompileContext;
 use App\Actions\Context\ObserveEffects;
 use App\Context\Capability;
 use App\Context\ProjectContext;
+use App\Enums\ContextMode;
 use App\Enums\EffectStrength;
 use App\Enums\VerificationStatus;
 use App\Features\TestMap;
@@ -118,6 +120,23 @@ class TestImpactTest extends TestCase
         // Reports claims no code; nothing is observed about it, and nobody
         // relates to itself.
         $this->assertSame([], $context->capabilities['reports']->effects);
+    }
+
+    public function test_the_agent_is_told_which_existing_tests_run_the_code_of_the_area_it_changes()
+    {
+        $project = Project::factory()->create();
+        $this->observe($project);
+
+        $context = app(ObserveEffects::class)->handle($project, $this->context());
+
+        // Most tests first; a tie goes by name.
+        $this->assertSame(['tests/Feature/BillingTest.php', 'tests/Feature/TeamTest.php'], $context->capabilities['teams']->reachedBy);
+        $this->assertSame(['tests/Feature/BillingTest.php', 'tests/Feature/ReportsTest.php'], $context->capabilities['billing']->reachedBy);
+        $this->assertSame([], $context->capabilities['reports']->reachedBy);
+
+        $pack = app(CompileContext::class)->handle($context, ['teams'], ContextMode::Selective);
+
+        $this->assertStringContainsString("Existing tests for this area, most relevant first:\n- tests/Feature/BillingTest.php\n- tests/Feature/TeamTest.php", $pack->text);
     }
 
     public function test_without_a_test_map_the_context_is_as_the_notes_say()
