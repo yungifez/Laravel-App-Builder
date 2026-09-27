@@ -69,6 +69,8 @@ class PrepareRunWorkspace
             $this->run($workspace, ['git', 'add', '--all'], __('The workspace could not be prepared.'));
             $this->run($workspace, ['git', ...$identity, 'commit', '--quiet', '--allow-empty', '--no-verify', '-m', 'Baseline'], __('The workspace could not be prepared.'));
             $workspace->update(['baseline_commit' => trim($this->run($workspace, ['git', 'rev-parse', 'HEAD'], __('The workspace could not be prepared.')))]);
+            // Inside .git, so the pictures are there to look at but never part of the change.
+            $this->workspaceFiles->placeImages($featureRequest, $workspace);
 
             /** @var list<array{name: string, command: list<string>, timeout: int}> $setup */
             $setup = config('builder.construction.setup', []);

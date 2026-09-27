@@ -44,3 +44,18 @@ them and correct any that are wrong.
   test reach and gaps. Why: eight lines on a typical change broke the
   low-text rule, and the gaps and catches are what the owner must not
   miss. Undo: in `ChangeProof.vue`, show `passes` in full.
+- **Pictures with requests, up to 4, each up to 5 MB.** PNG, JPEG, WebP and
+  GIF only. Why: this matches what Lovable accepts, and SVG can hold code.
+  Undo: `BUILDER_REQUEST_IMAGES_MAX` and `BUILDER_REQUEST_IMAGE_MAX_KB`.
+- **Only the coder sees the pictures.** The planner and the reviewer are
+  told that pictures were attached, but they do not see them. Why: the
+  coder works in the workspace and can open files; giving the planner the
+  pictures needs the model's attachment support and costs more per plan.
+  This is the next step if plans miss what a picture shows.
+- **Pictures stay inside `.git/attachments` in the workspace.** Why: they
+  must never become part of the owner's code, and `.git` already holds the
+  agent's task file and the change's diff.
+- **Kept pictures are never deleted.** A request that is refused after the
+  pictures were saved (for example, a follow-up on a change that cannot be
+  built on) leaves them on disk. Why: rare, and small. Clean-up can come
+  with the workspace clean-up work.

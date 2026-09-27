@@ -16,6 +16,7 @@ use App\Runs\Plan;
 use App\Runs\PlanningContext;
 use App\Runs\Review;
 use App\Runs\ReviewEvidence;
+use App\Workspaces\WorkspaceFiles;
 use Laravel\Ai\Responses\AgentResponse;
 use Laravel\Ai\Responses\StructuredAgentResponse;
 
@@ -200,6 +201,10 @@ abstract class AgentDriver implements ConstructionDriver
     protected function buildPrompt(Run $run, Plan $plan): string
     {
         $sections = ["## Owner's request\n\n{$run->featureRequest->instructions()}"];
+
+        if (($images = WorkspaceFiles::imagePaths($run->featureRequest)) !== []) {
+            $sections[] = "## Pictures the owner attached\n\nThe owner attached these to show what they mean. Look at each one before you start, and match what it shows unless the request says otherwise. They are only for you to look at: do not copy them into the app.\n\n".$this->list($images);
+        }
 
         if (filled($run->context['text'] ?? null)) {
             $sections[] = "## Project context\n\nWhat is known about the product for the areas this change touches.\n\n{$run->context['text']}";

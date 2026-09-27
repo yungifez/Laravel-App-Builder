@@ -7,6 +7,7 @@ use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Puts what a workspace needs besides the code into it, from our
@@ -16,6 +17,12 @@ use Illuminate\Support\Facades\Config;
  */
 class WorkspaceFiles
 {
+    /**
+     * Where the pictures an owner attached are put in a workspace: inside
+     * git's own folder, so they are never part of the app or its change.
+     */
+    public const IMAGES_DIRECTORY = '.git/attachments';
+
     public function __construct(private WorkspaceManager $workspaces, private ProjectNotes $notes) {}
 
     /**
@@ -65,5 +72,33 @@ class WorkspaceFiles
             ProjectNotes::assertPath($path);
             $driver->writeFile((string) $workspace->driver_id, ProjectNotes::directory().'/'.$path, $contents);
         }
+    }
+
+    /**
+     * Put the pictures the owner attached to a change into the workspace,
+     * where the coder can look at them.
+     */
+    public function placeImages(FeatureRequest $featureRequest, Workspace $workspace): void
+    {
+        $driver = $this->workspaces->driver($workspace->driver);
+        $disk = Storage::disk(Config::string('builder.construction.images.disk'));
+
+        foreach (self::imagePaths($featureRequest) as $index => $path) {
+            $driver->writeFile((string) $workspace->driver_id, $path, (string) $disk->get($featureRequest->images[$index]['path']));
+        }
+    }
+
+    /**
+     * Get where each picture the owner attached is in the workspace.
+     *
+     * @return list<string>
+     */
+    public static function imagePaths(FeatureRequest $featureRequest): array
+    {
+        return array_map(
+            fn (array $image, int $index) => self::IMAGES_DIRECTORY.'/'.($index + 1).'.'.pathinfo($image['path'], PATHINFO_EXTENSION),
+            $featureRequest->images ?? [],
+            array_keys($featureRequest->images ?? []),
+        );
     }
 }

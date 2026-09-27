@@ -21,6 +21,7 @@ import {
     X,
     ChevronDown,
     ExternalLink,
+    ImagePlus,
     MessageSquare,
     Monitor,
     MousePointerClick,
@@ -444,6 +445,57 @@ function suggest(idea: string): void {
     if (composer.value !== null) {
         composer.value.value = idea;
         composer.value.focus();
+    }
+}
+
+// Pictures that show what the owner means (a screenshot, a sketch). They
+// ride along in the form's file input, kept in step with the list shown.
+const imageInput = ref<HTMLInputElement | null>(null);
+const images = ref<{ file: File; url: string }[]>([]);
+const maxImages = 4;
+
+function syncImageInput(): void {
+    if (imageInput.value === null) {
+        return;
+    }
+
+    const files = new DataTransfer();
+    images.value.forEach((image) => files.items.add(image.file));
+    imageInput.value.files = files.files;
+}
+
+function addImages(files: Iterable<File>): void {
+    for (const file of files) {
+        if (file.type.startsWith('image/') && images.value.length < maxImages) {
+            images.value.push({ file, url: URL.createObjectURL(file) });
+        }
+    }
+
+    syncImageInput();
+    composerOpen.value = composerOpen.value || images.value.length > 0;
+}
+
+function removeImage(index: number): void {
+    URL.revokeObjectURL(images.value[index].url);
+    images.value.splice(index, 1);
+    syncImageInput();
+}
+
+function clearImages(): void {
+    images.value.forEach((image) => URL.revokeObjectURL(image.url));
+    images.value = [];
+    syncImageInput();
+}
+
+// A screenshot pasted into the box is attached, as in any chat.
+function pasteImages(event: ClipboardEvent): void {
+    const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
+        file.type.startsWith('image/'),
+    );
+
+    if (files.length > 0) {
+        event.preventDefault();
+        addImages(files);
     }
 }
 
@@ -1064,7 +1116,10 @@ function sendOnEnter(event: KeyboardEvent): void {
                     ]"
                     reset-on-success
                     v-slot="{ errors, processing }"
-                    @success="settleComposer"
+                    @success="
+                        clearImages();
+                        settleComposer();
+                    "
                 >
                     <div
                         class="rounded-xl border bg-background shadow-xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50"
@@ -1094,11 +1149,70 @@ function sendOnEnter(event: KeyboardEvent): void {
                             @keydown.enter.ctrl.prevent="send"
                             @focus="composerOpen = true"
                             @blur="settleComposer"
+                            @paste="pasteImages"
+                        />
+                        <ul
+                            v-if="images.length > 0"
+                            class="flex flex-wrap gap-2 px-3 pt-2"
+                            data-test="composer-images"
+                        >
+                            <li
+                                v-for="(image, index) in images"
+                                :key="image.url"
+                                class="relative"
+                            >
+                                <img
+                                    :src="image.url"
+                                    :alt="image.file.name"
+                                    class="size-14 rounded-md border object-cover"
+                                />
+                                <button
+                                    type="button"
+                                    class="absolute -top-1.5 -right-1.5 flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-xs after:absolute after:-inset-2.5 hover:text-foreground"
+                                    :aria-label="`Remove ${image.file.name}`"
+                                    @click="removeImage(index)"
+                                >
+                                    <X class="size-3.5" />
+                                </button>
+                            </li>
+                        </ul>
+                        <input
+                            ref="imageInput"
+                            type="file"
+                            name="images[]"
+                            multiple
+                            accept="image/png,image/jpeg,image/webp,image/gif"
+                            class="hidden"
+                            data-test="composer-image-input"
+                            @change="
+                                addImages(
+                                    Array.from(
+                                        ($event.target as HTMLInputElement)
+                                            .files ?? [],
+                                    ),
+                                )
+                            "
                         />
                         <div
-                            v-show="composerOpen || errors.prompt"
-                            class="flex items-center justify-between p-2"
+                            v-show="
+                                composerOpen || errors.prompt || images.length
+                            "
+                            class="flex items-center justify-between gap-1 p-2"
                         >
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                class="size-11 shrink-0 text-muted-foreground sm:size-8"
+                                aria-label="Attach a picture"
+                                title="Attach a picture"
+                                :disabled="images.length >= maxImages"
+                                data-test="composer-attach"
+                                @mousedown.prevent
+                                @click="imageInput?.click()"
+                            >
+                                <ImagePlus class="size-4" />
+                            </Button>
                             <span
                                 class="pl-1 text-xs text-muted-foreground"
                                 data-test="composer-hint"
@@ -1125,6 +1239,15 @@ function sendOnEnter(event: KeyboardEvent): void {
                         </div>
                     </div>
                     <InputError :message="errors.prompt" class="mt-1" />
+                    <InputError
+                        :message="
+                            errors.images ??
+                            Object.entries(errors).find(([key]) =>
+                                key.startsWith('images.'),
+                            )?.[1]
+                        "
+                        class="mt-1"
+                    />
                 </Form>
 
                 <!-- Always there with an open change, so its plan and code

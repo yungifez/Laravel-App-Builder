@@ -28,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $retry_of_id The stopped request this one tries again
  * @property string $prompt
  * @property array{file: string, line: int, column: int, tag: string, text: string|null, area: string|null}|null $selection The element the owner pointed at in the preview
+ * @property list<array{path: string, name: string}>|null $images Pictures the owner attached to show what they mean, on the request images disk
  * @property array{deployment_id: int, errors: list<array{class: string|null, message: string, count: int}>}|null $live_errors The errors the published app raised, when the ask is to fix them
  * @property string|null $target_step
  * @property FeatureRequestStatus $status
@@ -49,7 +50,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['experiment_id', 'project_id', 'user_id', 'parent_id', 'retry_of_id', 'prompt', 'selection', 'live_errors', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'note_changes', 'steps', 'acceptance', 'error', 'decision_model_calls', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at', 'dismissed_at'])]
+#[Fillable(['experiment_id', 'project_id', 'user_id', 'parent_id', 'retry_of_id', 'prompt', 'selection', 'images', 'live_errors', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'note_changes', 'steps', 'acceptance', 'error', 'decision_model_calls', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at', 'dismissed_at'])]
 class FeatureRequest extends Model
 {
     /**
@@ -75,6 +76,7 @@ class FeatureRequest extends Model
             'acceptance' => 'array',
             'decision_model_calls' => 'array',
             'selection' => 'array',
+            'images' => 'array',
             'live_errors' => 'array',
             'accepted_at' => 'datetime',
             'reverted_at' => 'datetime',
@@ -88,6 +90,18 @@ class FeatureRequest extends Model
      * they pointed at, or from errors online, what those errors were.
      */
     public function instructions(): string
+    {
+        $count = count($this->images ?? []);
+        $images = $count === 0 ? '' : "\n\nThe owner attached ".($count === 1 ? 'a picture' : "{$count} pictures").' that '.($count === 1 ? 'shows' : 'show').' what they mean. The coder is given '.($count === 1 ? 'it' : 'them').' to look at.';
+
+        return $this->describedPrompt().$images;
+    }
+
+    /**
+     * Get the owner's words with where they started from: the element they
+     * pointed at, or the errors online.
+     */
+    protected function describedPrompt(): string
     {
         $selection = $this->selection;
 

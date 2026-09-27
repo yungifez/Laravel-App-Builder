@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Features\DescribeFeatureRequest;
 use App\Actions\Features\RequestFeature;
+use App\Actions\Features\StoreRequestImages;
 use App\Http\Requests\FeatureRequestStoreRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -17,9 +18,15 @@ class FeatureRequestController extends Controller
     /**
      * Request a feature for the project.
      */
-    public function store(FeatureRequestStoreRequest $request, Project $project, RequestFeature $requestFeature): RedirectResponse
+    public function store(FeatureRequestStoreRequest $request, Project $project, RequestFeature $requestFeature, StoreRequestImages $storeRequestImages): RedirectResponse
     {
-        $featureRequest = $requestFeature->handle($project, $request->user(), $request->validated('prompt'), $request->validated('selection'));
+        $featureRequest = $requestFeature->handle(
+            $project,
+            $request->user(),
+            $request->validated('prompt'),
+            $request->validated('selection'),
+            images: $storeRequestImages->handle($project, $request->file('images', [])),
+        );
 
         return to_route('projects.show', ['project' => $project, 'change' => $featureRequest->id]);
     }

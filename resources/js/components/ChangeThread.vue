@@ -29,6 +29,7 @@ import RunCancellationController from '@/actions/App/Http/Controllers/RunCancell
 import DetailLevelController from '@/actions/App/Http/Controllers/Settings/DetailLevelController';
 import ChangeCode from '@/components/ChangeCode.vue';
 import ChangeProof from '@/components/ChangeProof.vue';
+import MessageImages from '@/components/MessageImages.vue';
 import InputError from '@/components/InputError.vue';
 import WorkStepLine from '@/components/WorkStepLine.vue';
 import { Button } from '@/components/ui/button';
@@ -454,7 +455,7 @@ const checks = computed(() => {
             >
                 <!-- What came before in this chat -->
                 <template v-for="earlier in change.earlier" :key="earlier.id">
-                    <div class="flex justify-end">
+                    <div class="flex flex-col items-end gap-1.5">
                         <p
                             :class="[
                                 'rounded-2xl rounded-br-md bg-muted px-3.5 py-2.5 text-sm break-words whitespace-pre-line',
@@ -463,6 +464,7 @@ const checks = computed(() => {
                         >
                             {{ earlier.prompt }}
                         </p>
+                        <MessageImages :images="earlier.images" />
                     </div>
                     <Link
                         :href="
@@ -488,7 +490,7 @@ const checks = computed(() => {
                 </template>
 
                 <!-- What you asked -->
-                <div class="flex justify-end">
+                <div class="flex flex-col items-end gap-1.5">
                     <p
                         :class="[
                             'rounded-2xl rounded-br-md bg-muted px-3.5 py-2.5 text-sm break-words whitespace-pre-line',
@@ -497,6 +499,7 @@ const checks = computed(() => {
                     >
                         {{ request.prompt }}
                     </p>
+                    <MessageImages :images="request.images" />
                 </div>
 
                 <!-- What the builder said and did -->

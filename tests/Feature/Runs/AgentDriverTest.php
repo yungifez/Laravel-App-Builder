@@ -24,6 +24,7 @@ use Closure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Ai\Exceptions\InsufficientCreditsException;
 use Laravel\Ai\Prompts\AgentPrompt;
@@ -347,6 +348,33 @@ class AgentDriverTest extends TestCase
         $run->refresh();
         $this->assertSame(RunStatus::Completed, $run->status);
         $this->assertSame('tested', $run->review['verified'][0]['evidence']);
+    }
+
+    public function test_the_coder_sees_the_pictures_the_owner_attached_and_they_never_enter_the_change()
+    {
+        Storage::fake('local');
+        Storage::disk('local')->put('request-images/1/sketch.png', 'png bytes');
+        FeaturePlanner::fake([$this->plan()]);
+        $seen = null;
+        $this->coder(function (Workspace $workspace) use (&$seen) {
+            $seen = File::get(config('workspaces.drivers.local.root')."/{$workspace->driver_id}/.git/attachments/1.png");
+
+            return $this->writes([
+                'app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION,
+                'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST,
+            ])($workspace);
+        });
+        ChangeReviewer::fake([['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => []]]);
+        $featureRequest = $this->request();
+        $featureRequest->update(['images' => [['path' => 'request-images/1/sketch.png', 'name' => 'Sketch.png']]]);
+
+        app(StartRun::class)->handle($featureRequest);
+
+        $this->assertSame('png bytes', $seen);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, "## Pictures the owner attached\n\nThe owner attached these to show what they mean.")
+            && str_contains($prompt, '- .git/attachments/1.png'));
+        FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'The owner attached a picture that shows what they mean.'));
+        $this->assertStringNotContainsString('attachments', (string) $featureRequest->refresh()->patch);
     }
 
     public function test_a_safety_mistake_the_change_adds_sends_it_back_even_when_the_reviewer_approves()

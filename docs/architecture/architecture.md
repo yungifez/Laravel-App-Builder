@@ -1220,6 +1220,17 @@ high-risk change.
 
 ### Runs
 
+**Pictures with a request.** An owner can attach up to four pictures (a
+screenshot, a sketch, a design) to a request or a follow-up, by the attach
+button or by pasting. PNG, JPEG, WebP and GIF are taken; SVG is not, since it
+can hold code. They are kept on the request images disk under the project,
+shown back only to people who may see the project, and served with a policy
+that runs nothing. The workspace gets them inside `.git/attachments`, so the
+coder can look at them but they never enter the change, and the coder's
+prompt lists them. The planner and reviewer read that pictures were
+attached; they do not see them yet. A retry keeps them.
+`builder.construction.images` sets the count, size and disk.
+
 The existing run model stays: states queued → planning → implementing →
 verifying → reviewing → completed, plus needs_user_decision, cancelling →
 cancelled and failed; a lease with a fencing token per run; budgets (operations,

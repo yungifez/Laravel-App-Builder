@@ -252,6 +252,15 @@ return [
     'construction' => [
         'driver' => env('BUILDER_CONSTRUCTION_DRIVER', 'scripted'),
 
+        // Pictures an owner can attach to a request (a screenshot, a sketch,
+        // a design), how large each may be, and the disk they are kept on.
+        // The coder is given them to look at; they never enter the app.
+        'images' => [
+            'max' => (int) env('BUILDER_REQUEST_IMAGES_MAX', 4),
+            'max_kilobytes' => (int) env('BUILDER_REQUEST_IMAGE_MAX_KB', 5120),
+            'disk' => env('BUILDER_REQUEST_IMAGES_DISK', 'local'),
+        ],
+
         'workspace_driver' => env('BUILDER_CONSTRUCTION_WORKSPACE_DRIVER', env('WORKSPACE_DRIVER', 'local')),
 
         'lease_seconds' => (int) env('BUILDER_RUN_LEASE_SECONDS', 300),

@@ -129,6 +129,7 @@ export type ChangedFile = {
 export type FeatureRequestDetail = {
     id: number;
     prompt: string;
+    images: RequestImage[];
     status: FeatureRequestStatus;
     summary: string | null;
     error: string | null;
@@ -299,6 +300,9 @@ export type Preview = {
     expires_at: string | null;
 };
 
+// A picture the owner attached to a message, to show what they mean.
+export type RequestImage = { url: string; name: string };
+
 // One plain sentence on how we know a change works.
 export type ProofLine = {
     kind: 'passed' | 'caught' | 'reach' | 'gap';
@@ -313,6 +317,7 @@ export type ChangeDetail = {
     earlier: {
         id: number;
         prompt: string;
+        images: RequestImage[];
         summary: string | null;
         status: FeatureRequestStatus;
     }[];

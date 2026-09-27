@@ -35,6 +35,9 @@ class FollowUpStoreRequest extends FormRequest
             'selection.tag' => ['required_with:selection', 'string', 'max:100'],
             'selection.text' => ['nullable', 'string', 'max:500'],
             'selection.area' => ['nullable', 'string', 'max:200'],
+            // Pictures that show what the owner means; never SVG, which can hold code.
+            'images' => ['nullable', 'list', 'max:'.config('builder.construction.images.max')],
+            'images.*' => ['image', 'mimes:png,jpg,jpeg,webp,gif', 'max:'.config('builder.construction.images.max_kilobytes')],
         ];
     }
 }

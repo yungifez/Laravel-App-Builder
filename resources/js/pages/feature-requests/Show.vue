@@ -18,6 +18,7 @@ import FeatureRequestVerificationController from '@/actions/App/Http/Controllers
 import PreviewController from '@/actions/App/Http/Controllers/PreviewController';
 import RunCancellationController from '@/actions/App/Http/Controllers/RunCancellationController';
 import ChangeProof from '@/components/ChangeProof.vue';
+import MessageImages from '@/components/MessageImages.vue';
 import InputError from '@/components/InputError.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -417,6 +418,7 @@ function lineClass(line: string): string {
             >
                 {{ featureRequest.prompt }}
             </h1>
+            <MessageImages :images="featureRequest.images" align="start" />
             <p
                 class="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground"
                 data-test="run-status"

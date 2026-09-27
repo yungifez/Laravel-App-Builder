@@ -34,10 +34,11 @@ class RequestFollowUp
      * over.
      *
      * @param  array{file: string, line: int, column: int, tag: string, text: string|null, area: string|null}|null  $selection  The element the owner pointed at
+     * @param  list<array{path: string, name: string}>  $images  Pictures the owner attached, already kept
      *
      * @throws ValidationException when there is nothing to build on.
      */
-    public function handle(FeatureRequest $parent, User $requester, string $prompt, ?string $stepKey = null, ?array $selection = null): FeatureRequest
+    public function handle(FeatureRequest $parent, User $requester, string $prompt, ?string $stepKey = null, ?array $selection = null, array $images = []): FeatureRequest
     {
         if (! self::continuable($parent)) {
             throw ValidationException::withMessages([
@@ -57,6 +58,7 @@ class RequestFollowUp
             'experiment_id' => $parent->experiment_id,
             'prompt' => $prompt,
             'selection' => $selection,
+            'images' => $images === [] ? null : $images,
             'target_step' => $stepKey,
             'status' => FeatureRequestStatus::Generating,
             'generator' => $parent->generator,

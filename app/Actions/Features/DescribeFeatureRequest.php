@@ -41,6 +41,7 @@ class DescribeFeatureRequest
             'featureRequest' => [
                 'id' => $featureRequest->id,
                 'prompt' => $featureRequest->prompt,
+                'images' => $this->images($featureRequest),
                 'status' => $featureRequest->status->value,
                 'summary' => $featureRequest->summary,
                 'error' => OwnerWording::message($featureRequest->error),
@@ -89,12 +90,26 @@ class DescribeFeatureRequest
             array_unshift($earlier, [
                 'id' => $request->id,
                 'prompt' => $request->prompt,
+                'images' => $this->images($request),
                 'summary' => $request->summary,
                 'status' => $request->status->value,
             ]);
         }
 
         return $earlier;
+    }
+
+    /**
+     * Get the pictures the owner attached to a request, to show them.
+     *
+     * @return list<array{url: string, name: string}>
+     */
+    protected function images(FeatureRequest $featureRequest): array
+    {
+        return array_map(fn (array $image, int $index) => [
+            'url' => route('feature-requests.images.show', [$featureRequest, $index]),
+            'name' => $image['name'],
+        ], $featureRequest->images ?? [], array_keys($featureRequest->images ?? []));
     }
 
     /**
