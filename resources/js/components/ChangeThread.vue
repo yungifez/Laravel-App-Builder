@@ -350,16 +350,6 @@ const unexpected = computed(() =>
     changes.value.filter((change) => change.section === 'unexpected'),
 );
 
-// Every "done when" item has a test that the checks ran and that passed.
-const ownTestsPass = computed(() => {
-    const verified = run.value?.review?.verified ?? [];
-
-    return (
-        verified.length > 0 &&
-        verified.every((item) => item.evidence === 'tested')
-    );
-});
-
 const checks = computed(() => {
     switch (props.change.verification?.status) {
         case 'passed':
@@ -369,14 +359,12 @@ const checks = computed(() => {
                 label: 'Checks passed',
             };
         // No protected tests apply, so the change is not proven (§12, §30.2).
-        // Tests the builder wrote itself are said as such, never as proof.
+        // The proof below names that gap; this only says there is one.
         case 'unverified':
             return {
                 icon: CircleMinus,
                 tone: 'text-muted-foreground',
-                label: ownTestsPass.value
-                    ? 'Checks passed, tested only by its own tests'
-                    : 'Checks passed, but nothing tests this change',
+                label: 'Checks passed, with gaps',
             };
         case 'failed':
             return {
