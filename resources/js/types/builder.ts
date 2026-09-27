@@ -202,6 +202,8 @@ export type Run = {
         why: string;
         options: string[];
         recommended: string | null;
+        /** Whether the owner could switch options later without loss; unset when not judged. */
+        reversible?: boolean;
     } | null;
     answers: {
         question: string;

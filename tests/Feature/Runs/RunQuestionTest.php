@@ -80,6 +80,8 @@ class RunQuestionTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('run.question.text', 'Can customers use more than one location?')
                 ->where('run.question.recommended', 'No')
+                // The page says it is asked because it is hard to change later.
+                ->where('run.question.reversible', false)
                 ->where('featureRequest.can_retry', false));
 
         $this->post(route('feature-requests.answers.store', $featureRequest), ['answer' => 'Yes'])

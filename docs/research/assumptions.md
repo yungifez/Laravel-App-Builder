@@ -187,3 +187,9 @@ them and correct any that are wrong.
   online version, plus the hand edits since then. It is the same count as
   the publish panel's "Going online next" list. Each card costs one git
   rev-list; fine for a handful of apps.
+- **A question says why it is asked.** When the planner marks a question
+  as hard to change later (`reversible: false`), the chat's question card
+  adds "This is hard to change later, so I am asking you." Easy choices are
+  already made without asking (direction 18 §6); this makes that visible.
+  Untagged questions (older runs) show no line. The details page does not
+  show it yet.

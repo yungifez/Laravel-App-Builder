@@ -607,6 +607,16 @@ const checks = computed(() => {
                                 >
                                     {{ run.question.why }}
                                 </p>
+                                <!-- Easy choices are made for the owner; say
+                                     why this one is not (direction 18 §6) -->
+                                <p
+                                    v-if="run.question.reversible === false"
+                                    class="mt-0.5 text-xs text-muted-foreground"
+                                    data-test="question-lasting"
+                                >
+                                    This is hard to change later, so I am asking
+                                    you.
+                                </p>
                             </div>
                             <div class="grid gap-1.5">
                                 <Form
