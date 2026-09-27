@@ -760,8 +760,7 @@ watch(
                     >
                 </h2>
                 <p class="mb-4 max-w-prose text-sm text-muted-foreground">
-                    Choices made along the way that your app now follows. To
-                    change one, open its change and ask.
+                    Choices made along the way that your app now follows.
                 </p>
                 <ul class="border-t">
                     <li
@@ -779,9 +778,24 @@ watch(
                         >
                             {{ item.question }}
                         </p>
-                        <p class="max-w-prose break-words">
-                            {{ item.decision }}
-                        </p>
+                        <div class="flex items-start justify-between gap-4">
+                            <p class="max-w-prose min-w-0 break-words">
+                                {{ item.decision }}
+                            </p>
+                            <Link
+                                :href="
+                                    show(project.id, {
+                                        query: {
+                                            ask: `Change this: “${item.decision}”\n\nInstead, `,
+                                        },
+                                    })
+                                "
+                                class="-my-2 inline-flex min-h-11 shrink-0 items-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline sm:min-h-0"
+                                data-test="change-decision"
+                            >
+                                Change
+                            </Link>
+                        </div>
                         <Link
                             v-if="decisions[index + 1]?.change !== item.change"
                             :href="

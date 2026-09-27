@@ -148,5 +148,6 @@ them and correct any that are wrong.
   treated as a developer choice and left out. This is a word list, so it
   can let some through or hide a real product choice. A decision that a
   later change replaced still shows, with its date, because it is history.
-  Changing a decision means opening its change and asking. There is no
-  one-click "change this rule" yet.
+  "Change" opens the workspace with a request drafted from the decision
+  ("Change this: "…" Instead, "), for the owner to finish and send. It
+  is never sent for them.

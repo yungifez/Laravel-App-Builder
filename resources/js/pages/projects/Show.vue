@@ -448,6 +448,27 @@ function suggest(idea: string): void {
     }
 }
 
+// A request started elsewhere, such as changing a decision from the
+// Understanding page, arrives as ?ask= and waits in the box to be finished.
+// It leaves the address, so a reload does not bring it back.
+onMounted(() => {
+    const url = new URL(window.location.href);
+    const ask = url.searchParams.get('ask');
+
+    if (ask === null || composer.value === null) {
+        return;
+    }
+
+    suggest(ask);
+    composerOpen.value = true;
+    composer.value.setSelectionRange(ask.length, ask.length);
+    url.searchParams.delete('ask');
+    // After Inertia records this visit in the history, or it puts it back.
+    setTimeout(() =>
+        window.history.replaceState(window.history.state, '', url),
+    );
+});
+
 // Pictures that show what the owner means (a screenshot, a sketch). They
 // ride along in the form's file input, kept in step with the list shown.
 const imageInput = ref<HTMLInputElement | null>(null);
