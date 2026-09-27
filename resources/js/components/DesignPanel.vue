@@ -109,7 +109,7 @@ const icons: Partial<Record<string, Component>> = {
 function options(
     property: VisualProperty,
     only?: VisualValue[],
-): { value: VisualValue; label: string; icon?: Component }[] {
+): { value: VisualValue; label: string; short?: string; icon?: Component }[] {
     const { input } = definition(property);
 
     if (input.kind !== 'choice') {
@@ -428,6 +428,7 @@ const recent = computed(() => {
                             <h3 class="text-xs font-medium">Layout</h3>
                             <Segmented
                                 label="Arrange contents"
+                                caption="Arrange"
                                 :value="inline ? null : state.valueOf('layout')"
                                 :options="
                                     options('layout', [
@@ -439,18 +440,17 @@ const recent = computed(() => {
                                 "
                                 @change="set('layout', $event)"
                             />
-                            <div
-                                v-if="layout === 'flex'"
-                                class="grid grid-cols-2 gap-2"
-                            >
+                            <div v-if="layout === 'flex'" class="space-y-2">
                                 <Segmented
                                     label="Direction"
+                                    caption="Direction"
                                     :value="state.valueOf('direction')"
                                     :options="options('direction')"
                                     @change="set('direction', $event)"
                                 />
                                 <Segmented
                                     label="When there is no room"
+                                    caption="If full"
                                     :value="state.valueOf('wrap')"
                                     :options="options('wrap')"
                                     @change="set('wrap', $event)"
@@ -461,12 +461,14 @@ const recent = computed(() => {
                             >
                                 <Segmented
                                     label="Line up"
+                                    caption="Line up"
                                     :value="state.valueOf('align')"
                                     :options="options('align')"
                                     @change="set('align', $event)"
                                 />
                                 <Segmented
                                     label="Spread"
+                                    caption="Spread"
                                     :value="state.valueOf('justify')"
                                     :options="options('justify')"
                                     @change="set('justify', $event)"
@@ -504,12 +506,14 @@ const recent = computed(() => {
                             </div>
                             <Segmented
                                 label="Width"
+                                caption="Width"
                                 :value="state.valueOf('width')"
                                 :options="words('width')"
                                 @change="set('width', $event)"
                             />
                             <Segmented
                                 label="Height"
+                                caption="Height"
                                 :value="state.valueOf('height')"
                                 :options="words('height')"
                                 @change="set('height', $event)"
@@ -652,47 +656,55 @@ const recent = computed(() => {
                             />
                             <Segmented
                                 label="Line up text"
+                                caption="Align"
                                 :value="state.valueOf('text_align')"
                                 :options="options('text_align')"
                                 @change="set('text_align', $event)"
                             />
-                            <div
-                                class="flex rounded-md bg-muted p-0.5"
-                                role="group"
-                                aria-label="Text weight"
-                            >
-                                <button
-                                    v-for="option in options('text_weight')"
-                                    :key="option.value"
-                                    type="button"
-                                    :aria-pressed="
-                                        state.valueOf('text_weight') ===
-                                        option.value
-                                    "
-                                    :aria-label="option.label"
-                                    :title="option.label"
-                                    :style="{
-                                        fontWeight: weights[option.value],
-                                    }"
-                                    :class="[
-                                        'min-h-11 flex-1 rounded text-sm select-none sm:min-h-7',
-                                        state.valueOf('text_weight') ===
-                                        option.value
-                                            ? 'bg-background shadow-sm'
-                                            : 'text-muted-foreground hover:text-foreground',
-                                    ]"
-                                    @click="
-                                        set(
-                                            'text_weight',
-                                            state.valueOf('text_weight') ===
-                                                option.value
-                                                ? null
-                                                : option.value,
-                                        )
-                                    "
+                            <div class="flex items-center gap-3">
+                                <span
+                                    class="w-14 shrink-0 text-xs text-muted-foreground"
+                                    aria-hidden="true"
+                                    >Weight</span
                                 >
-                                    Aa
-                                </button>
+                                <div
+                                    class="flex min-w-0 flex-1 rounded-md bg-muted p-0.5"
+                                    role="group"
+                                    aria-label="Text weight"
+                                >
+                                    <button
+                                        v-for="option in options('text_weight')"
+                                        :key="option.value"
+                                        type="button"
+                                        :aria-pressed="
+                                            state.valueOf('text_weight') ===
+                                            option.value
+                                        "
+                                        :aria-label="option.label"
+                                        :title="option.label"
+                                        :style="{
+                                            fontWeight: weights[option.value],
+                                        }"
+                                        :class="[
+                                            'min-h-11 min-w-0 flex-1 truncate rounded px-1 text-xs select-none sm:min-h-7',
+                                            state.valueOf('text_weight') ===
+                                            option.value
+                                                ? 'bg-background shadow-sm'
+                                                : 'text-muted-foreground hover:text-foreground',
+                                        ]"
+                                        @click="
+                                            set(
+                                                'text_weight',
+                                                state.valueOf('text_weight') ===
+                                                    option.value
+                                                    ? null
+                                                    : option.value,
+                                            )
+                                        "
+                                    >
+                                        {{ option.short ?? option.label }}
+                                    </button>
+                                </div>
                             </div>
                             <Swatches
                                 label="Colour"
@@ -728,7 +740,7 @@ const recent = computed(() => {
                                 :options="options('shadow')"
                                 @change="set('shadow', $event)"
                             />
-                            <div class="flex items-center gap-2">
+                            <div class="flex items-center gap-3">
                                 <span
                                     class="w-14 shrink-0 text-xs text-muted-foreground"
                                     >Border</span

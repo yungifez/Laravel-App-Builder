@@ -379,7 +379,7 @@ export const properties: PropertyDefinition[] = [
                 { value: 'light', label: 'Light' },
                 { value: 'normal', label: 'Normal' },
                 { value: 'medium', label: 'Medium' },
-                { value: 'semibold', label: 'Semi-bold' },
+                { value: 'semibold', label: 'Semi-bold', short: 'Semi' },
                 { value: 'bold', label: 'Bold' },
             ],
         },

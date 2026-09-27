@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { AlignHorizontalJustifyCenter } from '@lucide/vue';
 import MeasureField from '@/components/design/MeasureField.vue';
 import type { AppPreviewState } from '@/composables/useAppPreview';
 
@@ -15,6 +16,16 @@ defineProps<{ state: AppPreviewState }>();
     >
         <div class="flex items-center justify-between gap-2 pb-2">
             <span class="text-[11px] text-muted-foreground">Outside</span>
+            <button
+                type="button"
+                class="ml-auto flex size-11 items-center justify-center rounded text-muted-foreground select-none hover:bg-muted hover:text-foreground sm:size-7"
+                aria-label="Centre it"
+                title="Centre it"
+                data-test="centre-it"
+                @click="state.change('margin_x', 'auto')"
+            >
+                <AlignHorizontalJustifyCenter class="size-4" />
+            </button>
             <div class="grid w-40 grid-cols-2 gap-1">
                 <MeasureField :state="state" property="margin_x" mark="↔" />
                 <MeasureField :state="state" property="margin_y" mark="↕" />
@@ -37,12 +48,5 @@ defineProps<{ state: AppPreviewState }>();
                 </div>
             </div>
         </div>
-        <button
-            type="button"
-            class="mt-1 min-h-11 text-[11px] text-muted-foreground underline-offset-2 select-none hover:text-foreground hover:underline sm:min-h-6"
-            @click="state.change('margin_x', 'auto')"
-        >
-            Centre it
-        </button>
     </div>
 </template>

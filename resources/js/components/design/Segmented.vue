@@ -4,6 +4,8 @@ import type { VisualValue } from '@/types';
 
 defineProps<{
     label: string;
+    /** A word shown before the choices, for a row of the panel. */
+    caption?: string;
     value: VisualValue | null;
     options: { value: VisualValue; label: string; icon?: Component }[];
 }>();
@@ -14,30 +16,42 @@ const emit = defineEmits<{ change: [value: VisualValue | null] }>();
 <template>
     <!-- One choice out of a few, shown side by side. Choosing the chosen one
          again clears it. -->
-    <div
-        class="flex rounded-md bg-muted p-0.5"
-        role="group"
-        :aria-label="label"
-    >
-        <button
-            v-for="option in options"
-            :key="option.value"
-            type="button"
-            :aria-pressed="value === option.value"
-            :aria-label="option.label"
-            :title="option.label"
-            :class="[
-                'flex min-h-11 flex-1 items-center justify-center rounded px-1.5 text-xs select-none sm:min-h-7',
-                value === option.value
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground',
-            ]"
-            @click="
-                emit('change', value === option.value ? null : option.value)
-            "
+    <div :class="caption && 'flex items-center gap-3'">
+        <span
+            v-if="caption"
+            class="w-14 shrink-0 text-xs text-muted-foreground"
+            aria-hidden="true"
+            >{{ caption }}</span
         >
-            <component :is="option.icon" v-if="option.icon" class="size-4" />
-            <template v-else>{{ option.label }}</template>
-        </button>
+        <div
+            class="flex min-w-0 flex-1 rounded-md bg-muted p-0.5"
+            role="group"
+            :aria-label="label"
+        >
+            <button
+                v-for="option in options"
+                :key="option.value"
+                type="button"
+                :aria-pressed="value === option.value"
+                :aria-label="option.label"
+                :title="option.label"
+                :class="[
+                    'flex min-h-11 flex-1 items-center justify-center rounded px-1.5 text-xs select-none sm:min-h-7',
+                    value === option.value
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground',
+                ]"
+                @click="
+                    emit('change', value === option.value ? null : option.value)
+                "
+            >
+                <component
+                    :is="option.icon"
+                    v-if="option.icon"
+                    class="size-4"
+                />
+                <template v-else>{{ option.label }}</template>
+            </button>
+        </div>
     </div>
 </template>
