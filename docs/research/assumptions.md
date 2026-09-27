@@ -151,3 +151,10 @@ them and correct any that are wrong.
   "Change" opens the workspace with a request drafted from the decision
   ("Change this: "…" Instead, "), for the owner to finish and send. It
   is never sent for them.
+- **The proof verdict rests on evidence lines, never a percentage.** Each
+  change's proof opens with one verdict. "Checked, with gaps" shows when
+  any gap is listed. "Well checked" needs a line showing the change itself
+  was tried: separate checks, tests it added, app tests that ran its code,
+  or its screens opened at three widths. Otherwise it is "Lightly checked".
+  The app's own tests still passing counts as "nothing broke", not as
+  evidence that the new behaviour works.

@@ -22,9 +22,11 @@ class DescribeProof
      * this shows why it can be trusted, which is what sets us apart.
      *
      * Only facts the checks recorded, never a promise: nothing is said
-     * until the checks pass, and gaps are said as plainly as passes.
+     * until the checks pass, and gaps are said as plainly as passes. A line
+     * marked as evidence shows the change's own behaviour was tried (not
+     * only that the rest still works); the owner's verdict rests on it.
      *
-     * @return list<array{kind: string, text: string, pictures?: list<array{url: string, label: string}>}>
+     * @return list<array{kind: string, text: string, pictures?: list<array{url: string, label: string}>, evidence?: bool}>
      */
     public function handle(FeatureRequest $featureRequest): array
     {
@@ -41,7 +43,7 @@ class DescribeProof
      * Describe the checks that passed: the app's own tests, the other checks
      * on the code, and the separate checks written apart from the change.
      *
-     * @return list<array{kind: string, text: string}>
+     * @return list<array{kind: string, text: string, evidence?: bool}>
      */
     protected function checks(Verification $verification): array
     {
@@ -66,7 +68,7 @@ class DescribeProof
         return array_values(array_filter([
             $tests > 0 ? ['kind' => 'passed', 'text' => trans_choice('The app\'s own test still passes.|All :count of the app\'s own tests still pass.', $tests)] : null,
             $others > 0 ? ['kind' => 'passed', 'text' => trans_choice(':count more check on the code passed.|:count more checks on the code passed.', $others)] : null,
-            $separate ? ['kind' => 'passed', 'text' => __('Separate checks, written before the work began, pass too.')] : null,
+            $separate ? ['kind' => 'passed', 'text' => __('Separate checks, written before the work began, pass too.'), 'evidence' => true] : null,
         ]));
     }
 
@@ -74,7 +76,7 @@ class DescribeProof
      * Describe the problems caught and fixed before the owner saw the change:
      * each time failing checks or the second look sent the work back.
      *
-     * @return list<array{kind: string, text: string}>
+     * @return list<array{kind: string, text: string, evidence?: bool}>
      */
     protected function caught(FeatureRequest $featureRequest): array
     {
@@ -94,7 +96,7 @@ class DescribeProof
      * Name the tests the change added to the app, which keep what it does
      * checked on every later change. One is named, in its own words.
      *
-     * @return list<array{kind: string, text: string}>
+     * @return list<array{kind: string, text: string, evidence?: bool}>
      */
     protected function added(FeatureRequest $featureRequest): array
     {
@@ -104,14 +106,14 @@ class DescribeProof
             return [];
         }
 
-        return [['kind' => 'passed', 'text' => trans_choice('It added a test that keeps this checked from now on: ":test".|It added :count tests that keep this checked from now on, such as ":test".', count($tests), ['test' => $tests[0]])]];
+        return [['kind' => 'passed', 'text' => trans_choice('It added a test that keeps this checked from now on: ":test".|It added :count tests that keep this checked from now on, such as ":test".', count($tests), ['test' => $tests[0]]), 'evidence' => true]];
     }
 
     /**
      * Say that the change's code was scanned for common safety mistakes and
      * none were left, when the scan is on and the change has code it reads.
      *
-     * @return list<array{kind: string, text: string}>
+     * @return list<array{kind: string, text: string, evidence?: bool}>
      */
     protected function safety(FeatureRequest $featureRequest): array
     {
@@ -126,7 +128,7 @@ class DescribeProof
      * Say that the change's screens were checked for made-up colours and
      * none were left, when the scan is on and the change has screens.
      *
-     * @return list<array{kind: string, text: string}>
+     * @return list<array{kind: string, text: string, evidence?: bool}>
      */
     protected function colours(FeatureRequest $featureRequest): array
     {
@@ -141,7 +143,7 @@ class DescribeProof
      * Say that the pictures the change added describe what they show, when
      * the scan is on and the change added any.
      *
-     * @return list<array{kind: string, text: string}>
+     * @return list<array{kind: string, text: string, evidence?: bool}>
      */
     protected function pictures(FeatureRequest $featureRequest): array
     {
@@ -158,7 +160,7 @@ class DescribeProof
      * broken, when the screen check measured them. Words too faint to read
      * and controls that hide keyboard focus are named as gaps.
      *
-     * @return list<array{kind: string, text: string, pictures?: list<array{url: string, label: string}>}>
+     * @return list<array{kind: string, text: string, pictures?: list<array{url: string, label: string}>, evidence?: bool}>
      */
     protected function screens(FeatureRequest $featureRequest, Verification $verification): array
     {
@@ -173,6 +175,7 @@ class DescribeProof
             'kind' => 'passed',
             'text' => trans_choice('The screen it changed was opened on a phone, a tablet and a computer. Nothing was cut off, too small to tap or broken.|The :count screens it changed were opened on a phone, a tablet and a computer. Nothing was cut off, too small to tap or broken.', count($changed)),
             'pictures' => $this->screenPictures($verification),
+            'evidence' => true,
         ]];
 
         if ($faint !== []) {
@@ -216,7 +219,7 @@ class DescribeProof
      * Describe how far the app's own tests reached into the change, from
      * the map of which tests run which code, and whether it was looked over.
      *
-     * @return list<array{kind: string, text: string}>
+     * @return list<array{kind: string, text: string, evidence?: bool}>
      */
     protected function reach(?Run $run): array
     {
@@ -231,13 +234,13 @@ class DescribeProof
         $lines = [];
 
         if ($observed !== null && ($observed['foundation'] ?? []) !== []) {
-            $lines[] = ['kind' => 'reach', 'text' => __('It changed code the whole app shares, so every part of the app was tested.')];
+            $lines[] = ['kind' => 'reach', 'text' => __('It changed code the whole app shares, so every part of the app was tested.'), 'evidence' => true];
         } elseif ($observed !== null && $observed['tests'] > 0) {
             $areas = array_map(fn (string $key) => $names[$key] ?? $key, array_keys($observed['areas']));
 
             $lines[] = ['kind' => 'reach', 'text' => $areas === []
                 ? trans_choice(':count of those tests runs the code this change touched.|:count of those tests run the code this change touched.', $observed['tests'])
-                : trans_choice(':count of those tests runs the code this change touched, in :areas.|:count of those tests run the code this change touched, in :areas.', $observed['tests'], ['areas' => $this->join($areas)])];
+                : trans_choice(':count of those tests runs the code this change touched, in :areas.|:count of those tests run the code this change touched, in :areas.', $observed['tests'], ['areas' => $this->join($areas)]), 'evidence' => true];
         }
 
         if ($observed !== null && $observed['unmapped'] !== []) {

@@ -33,6 +33,34 @@ const pictures = computed(
     () => props.proof.find((line) => line.pictures?.length)?.pictures ?? [],
 );
 
+// One plain verdict above the lines, never a percentage (direction 18
+// §10): a gap outranks everything, and "well checked" needs a line that
+// shows the change itself was tried.
+const verdict = computed(() => {
+    const gaps = others.value.filter((line) => line.kind === 'gap').length;
+
+    if (gaps > 0) {
+        return {
+            title: 'Checked, with gaps',
+            tone: 'text-amber-600',
+            detail:
+                gaps === 1
+                    ? 'One thing below is not checked yet.'
+                    : `${gaps} things below are not checked yet.`,
+        };
+    }
+
+    if (props.proof.some((line) => line.evidence)) {
+        return { title: 'Well checked', tone: 'text-green-600', detail: null };
+    }
+
+    return {
+        title: 'Lightly checked',
+        tone: 'text-muted-foreground',
+        detail: 'Nothing broke, but I could not see a check try what it changed.',
+    };
+});
+
 const icons = {
     passed: { icon: CircleCheck, tone: 'text-green-600' },
     caught: { icon: ShieldCheck, tone: 'text-green-600' },
@@ -47,7 +75,15 @@ const icons = {
         class="space-y-1.5"
         data-test="change-proof"
     >
-        <h3 class="text-xs font-medium">How I know it works</h3>
+        <h3 class="text-xs font-medium">
+            How I know it works:
+            <span :class="verdict.tone" data-test="change-proof-verdict">{{
+                verdict.title
+            }}</span>
+        </h3>
+        <p v-if="verdict.detail" class="text-xs text-muted-foreground">
+            {{ verdict.detail }}
+        </p>
         <p
             v-if="passes.length > 0"
             class="flex items-start gap-2 text-xs text-muted-foreground"

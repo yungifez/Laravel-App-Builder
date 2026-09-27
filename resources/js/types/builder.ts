@@ -309,6 +309,8 @@ export type ProofLine = {
     text: string;
     /** Pictures of a changed screen as a phone, a tablet and a computer show it. */
     pictures?: { url: string; label: string }[];
+    /** Shows the change's own behaviour was tried, not only that the rest still works. */
+    evidence?: boolean;
 };
 
 // Everything about one change, as its page and the workspace chat show it.
