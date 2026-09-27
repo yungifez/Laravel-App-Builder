@@ -140,3 +140,13 @@ them and correct any that are wrong.
   undone in that window is left out, because it changes nothing online.
   Nothing is listed before the first publish, because then everything is
   new.
+- **Decisions come from kept changes, with how-it-is-built choices hidden.**
+  The Understanding page lists up to 12 decisions from the latest 30 kept
+  changes. These are the owner's answers to questions and the plan's
+  assumptions I made and they kept. An assumption that names code terms
+  (migration, table, column, props, a backticked name, and similar) is
+  treated as a developer choice and left out. This is a word list, so it
+  can let some through or hide a real product choice. A decision that a
+  later change replaced still shows, with its date, because it is history.
+  Changing a decision means opening its change and asking. There is no
+  one-click "change this rule" yet.

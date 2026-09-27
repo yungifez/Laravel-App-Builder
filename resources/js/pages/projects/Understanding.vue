@@ -48,11 +48,29 @@ const props = defineProps<{
     caught: number;
     // Across the kept changes: tests they added, and screens found to fit.
     proven: { tests: number; screens: number };
+    // The product decisions behind kept changes, newest change first.
+    decisions: {
+        change: number;
+        summary: string;
+        at: string | null;
+        question: string | null;
+        decision: string;
+        by: 'owner' | 'builder';
+    }[];
     draft: NotesDraft | null;
     check?: CheckFinding[];
 }>();
 
 const checking = ref(false);
+
+// "today" and "yesterday" read on their own; a date needs "on".
+function onDay(at: string | null): string {
+    const said = when(at);
+
+    return said === '' || said === 'today' || said === 'yesterday'
+        ? said
+        : `on ${said}`;
+}
 
 // What the owner asked for in a part, counted in one line: how many things,
 // and how many a test still checks, when the latest test run says.
@@ -730,6 +748,59 @@ watch(
                     </p>
                 </section>
             </div>
+
+            <section v-if="decisions.length" data-test="decisions">
+                <h2
+                    class="mb-1 flex items-baseline gap-2 text-xl font-semibold tracking-[-0.02em]"
+                >
+                    Decisions
+                    <span
+                        class="font-normal text-muted-foreground tabular-nums"
+                        >{{ decisions.length }}</span
+                    >
+                </h2>
+                <p class="mb-4 max-w-prose text-sm text-muted-foreground">
+                    Choices made along the way that your app now follows. To
+                    change one, open its change and ask.
+                </p>
+                <ul class="border-t">
+                    <li
+                        v-for="(item, index) in decisions"
+                        :key="`${item.change}-${index}`"
+                        :class="
+                            decisions[index + 1]?.change === item.change
+                                ? 'pt-3'
+                                : 'border-b py-3'
+                        "
+                    >
+                        <p
+                            v-if="item.question"
+                            class="text-sm text-muted-foreground"
+                        >
+                            {{ item.question }}
+                        </p>
+                        <p class="max-w-prose break-words">
+                            {{ item.decision }}
+                        </p>
+                        <Link
+                            v-if="decisions[index + 1]?.change !== item.change"
+                            :href="
+                                show(project.id, {
+                                    query: { change: item.change },
+                                })
+                            "
+                            class="mt-1 inline-flex min-h-11 items-center text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline sm:min-h-0"
+                        >
+                            {{
+                                item.by === 'owner'
+                                    ? 'You chose this'
+                                    : 'I chose this and you kept it'
+                            }}
+                            {{ onDay(item.at) }}
+                        </Link>
+                    </li>
+                </ul>
+            </section>
 
             <Collapsible v-if="problems.length">
                 <CollapsibleTrigger

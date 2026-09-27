@@ -158,6 +158,34 @@ class ProjectUnderstandingTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('proven', ['tests' => 4, 'screens' => 1]));
     }
 
+    public function test_the_owner_sees_the_product_decisions_behind_kept_changes_but_not_how_code_is_built()
+    {
+        $kept = FeatureRequest::factory()->generated()->for($this->project)->create(['summary' => 'Count team members', 'accepted_at' => now()]);
+        Run::factory()->for($kept)->create([
+            'answers' => [['question' => 'Should owners count as members?', 'answer' => 'Yes', 'decided_by' => 'owner']],
+            'plan' => ['summary' => '', 'acceptance_criteria' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null, 'assumptions' => [
+                'Counts include people of every role.',
+                'No database migration is needed.',
+                'The `members` relation is reused.',
+            ]],
+        ]);
+        $undone = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now(), 'reverted_at' => now()]);
+        Run::factory()->for($undone)->create(['answers' => [['question' => 'Which colour?', 'answer' => 'Red', 'decided_by' => 'owner']]]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('decisions', 2)
+                ->where('decisions.0.question', 'Should owners count as members?')
+                ->where('decisions.0.decision', 'Yes')
+                ->where('decisions.0.by', 'owner')
+                ->where('decisions.0.summary', 'Count team members')
+                ->where('decisions.1.question', null)
+                ->where('decisions.1.decision', 'Counts include people of every role.')
+                ->where('decisions.1.by', 'builder')
+                ->where('decisions.1.change', $kept->id));
+    }
+
     public function test_the_owner_sees_how_many_problems_were_fixed_before_they_saw_their_changes()
     {
         $sentBack = function (array $attributes, string ...$reasons) {
