@@ -20,6 +20,9 @@ class StartProjectRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'purpose' => ['required', 'string', 'max:2000'],
             'design' => ['nullable', 'string', Rule::in(array_map(fn (DesignDirection $design) => $design->key, DesignDirection::all()))],
+            // A sketch or screenshot of what the owner has in mind.
+            'images' => ['nullable', 'list', 'max:'.config('builder.construction.images.max')],
+            'images.*' => ['image', 'mimes:png,jpg,jpeg,webp,gif', 'max:'.config('builder.construction.images.max_kilobytes')],
         ];
     }
 

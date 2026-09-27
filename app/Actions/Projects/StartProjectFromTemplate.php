@@ -4,11 +4,13 @@ namespace App\Actions\Projects;
 
 use App\Actions\Context\UpdateProjectNotes;
 use App\Actions\Features\RequestFeature;
+use App\Actions\Features\StoreRequestImages;
 use App\Context\ProjectNotes;
 use App\Models\Project;
 use App\Models\User;
 use App\Projects\DesignDirection;
 use App\Projects\ProjectRepository;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -22,6 +24,7 @@ class StartProjectFromTemplate
         private ApplyDesignDirection $applyDesignDirection,
         private RequestFeature $requestFeature,
         private ProjectRepository $repository,
+        private StoreRequestImages $storeRequestImages,
     ) {}
 
     /**
@@ -41,10 +44,12 @@ class StartProjectFromTemplate
      * sentence is then the app's first change, so the owner's first sight
      * is their app, built, checked and waiting for them to keep it.
      *
+     * @param  UploadedFile|array<int, UploadedFile>|null  $images  Sketches or screenshots of what the owner has in mind, for the first version
+     *
      * @throws ValidationException when no template is configured or it
      *                             cannot be imported.
      */
-    public function handle(User $owner, string $name, string $purpose, ?DesignDirection $design = null): Project
+    public function handle(User $owner, string $name, string $purpose, ?DesignDirection $design = null, UploadedFile|array|null $images = []): Project
     {
         $template = self::template();
 
@@ -52,7 +57,7 @@ class StartProjectFromTemplate
             throw ValidationException::withMessages(['name' => __('Starting a new app is not set up here.')]);
         }
 
-        return DB::transaction(function () use ($owner, $name, $purpose, $template, $design) {
+        return DB::transaction(function () use ($owner, $name, $purpose, $template, $design, $images) {
             $project = $this->createProject->handle($owner, $name, $template, draftNotes: false);
             $project->forceFill(['started_here' => true])->save();
 
@@ -69,7 +74,7 @@ class StartProjectFromTemplate
                 // login and the app still opens on the template's welcome page.
                 $this->requestFeature->handle($project, $owner, __('Make the first version: :purpose Give it its own front page in place of the starter welcome page.', [
                     'purpose' => Str::finish(trim($purpose), '.'),
-                ]));
+                ]), images: $this->storeRequestImages->handle($project, $images));
             }
 
             return $project;

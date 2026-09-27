@@ -254,3 +254,6 @@ them and correct any that are wrong.
   is on, the agent prefers a migration that carries data forward over
   keeping two ways side by side. Every change says which way it was built.
   Migrations are always added, never edited.
+- **The new-app box takes pictures.** An owner can attach, drop or paste
+  up to four sketches or screenshots with their first sentence. They go
+  with the first version the same way pictures go with any change.

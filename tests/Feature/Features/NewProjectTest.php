@@ -8,8 +8,10 @@ use App\Models\User;
 use App\Projects\DesignDirection;
 use App\Projects\ProjectRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\PreparesRuns;
 use Tests\TestCase;
@@ -71,6 +73,26 @@ class NewProjectTest extends TestCase
         $project = $owner->projects()->sole();
         $this->assertSame("APP_NAME=\"Bright Cleaning\"\nAPP_ENV=local\n", $repository->show($project, $repository->head($project), '.env.example'));
         $this->assertSame('Name the app Bright Cleaning', $repository->log($project)[0]['subject']);
+    }
+
+    public function test_a_sketch_the_owner_attaches_goes_with_the_first_version()
+    {
+        Storage::fake(config('builder.construction.images.disk'));
+        config(['builder.projects.template' => $this->makeProjectSource($this->laravelApp())]);
+        $owner = User::factory()->create();
+
+        $this->actingAs($owner)->post(route('projects.new.store'), [
+            'name' => 'Corner Shop',
+            'purpose' => 'Customers order online and collect in store.',
+            'images' => [UploadedFile::fake()->image('sketch.png')],
+        ])->assertRedirect();
+
+        $images = $owner->projects()->sole()->featureRequests()->sole()->images;
+        $this->assertSame('sketch.png', $images[0]['name']);
+        Storage::disk(config('builder.construction.images.disk'))->assertExists($images[0]['path']);
+
+        $this->post(route('projects.new.store'), ['name' => 'Shop', 'purpose' => 'Sell things.', 'images' => [UploadedFile::fake()->create('notes.pdf')]])
+            ->assertSessionHasErrors('images.0');
     }
 
     public function test_the_first_version_can_be_left_to_the_owner()

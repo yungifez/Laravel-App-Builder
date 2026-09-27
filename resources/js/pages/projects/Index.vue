@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { Form, Head, Link } from '@inertiajs/vue3';
-import { ArrowUp, Search, ShieldCheck } from '@lucide/vue';
+import { ArrowUp, ImagePlus, Search, ShieldCheck, X } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import NewProjectController from '@/actions/App/Http/Controllers/NewProjectController';
 import BringInApp from '@/components/BringInApp.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
+import { useAttachedImages } from '@/composables/useAttachedImages';
 import { when } from '@/lib/when';
 import { index, show } from '@/routes/projects';
 import type { DesignOption, ProjectListItem } from '@/types';
@@ -46,6 +47,10 @@ const examples = [
 ];
 
 const purposeField = ref<HTMLTextAreaElement | null>(null);
+// A sketch or screenshot of what the owner has in mind, for the first
+// version to follow.
+const pictures = useAttachedImages();
+const pictureInput = pictures.input;
 const nameField = ref<HTMLInputElement | null>(null);
 
 function useExample(example: (typeof examples)[number]): void {
@@ -107,7 +112,14 @@ function submitOnShortcut(event: KeyboardEvent): void {
                 v-slot="{ errors, processing }"
             >
                 <div
-                    class="rounded-2xl border bg-card shadow-sm transition-shadow focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30"
+                    :class="[
+                        'rounded-2xl border bg-card shadow-sm transition-shadow focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30',
+                        pictures.dragging.value &&
+                            'border-ring ring-[3px] ring-ring/30',
+                    ]"
+                    @dragover.prevent="pictures.dragging.value = true"
+                    @dragleave.self="pictures.dragging.value = false"
+                    @drop.prevent="pictures.drop"
                 >
                     <label for="purpose" class="sr-only"
                         >What is your app for?</label
@@ -121,8 +133,66 @@ function submitOnShortcut(event: KeyboardEvent): void {
                         placeholder="My cleaners see their jobs for the day, and customers book a clean online."
                         class="block w-full resize-none bg-transparent px-5 pt-4 pb-2 text-base outline-none placeholder:text-muted-foreground"
                         @keydown="submitOnShortcut"
+                        @paste="pictures.paste"
+                    />
+                    <ul
+                        v-if="pictures.images.value.length > 0"
+                        class="flex flex-wrap gap-2 px-5 pb-2"
+                        data-test="start-images"
+                    >
+                        <li
+                            v-for="(image, index) in pictures.images.value"
+                            :key="image.url"
+                            class="relative"
+                        >
+                            <img
+                                :src="image.url"
+                                :alt="image.file.name"
+                                class="size-14 rounded-md border object-cover"
+                            />
+                            <button
+                                type="button"
+                                class="absolute -top-1.5 -right-1.5 flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-xs after:absolute after:-inset-2.5 hover:text-foreground"
+                                :aria-label="`Remove ${image.file.name}`"
+                                @click="pictures.remove(index)"
+                            >
+                                <X class="size-3.5" />
+                            </button>
+                        </li>
+                    </ul>
+                    <input
+                        ref="pictureInput"
+                        type="file"
+                        name="images[]"
+                        multiple
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        class="hidden"
+                        data-test="start-image-input"
+                        @change="
+                            pictures.add(
+                                Array.from(
+                                    ($event.target as HTMLInputElement).files ??
+                                        [],
+                                ),
+                            )
+                        "
                     />
                     <div class="flex flex-wrap items-center gap-2 px-3 pb-3">
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            class="size-11 shrink-0 text-muted-foreground sm:size-9"
+                            aria-label="Attach a picture"
+                            title="Attach a sketch or screenshot"
+                            :disabled="
+                                pictures.images.value.length >= pictures.max
+                            "
+                            data-test="start-attach"
+                            @click="pictureInput?.click()"
+                        >
+                            <ImagePlus class="size-4" />
+                        </Button>
                         <label for="new-name" class="sr-only">Name</label>
                         <input
                             id="new-name"
@@ -181,6 +251,10 @@ function submitOnShortcut(event: KeyboardEvent): void {
                 <InputError class="mt-2" :message="errors.purpose" />
                 <InputError class="mt-2" :message="errors.name" />
                 <InputError class="mt-2" :message="errors.design" />
+                <InputError
+                    class="mt-2"
+                    :message="errors.images ?? errors['images.0']"
+                />
 
                 <div
                     class="mt-3 flex flex-wrap justify-center gap-2"
