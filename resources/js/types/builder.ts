@@ -413,8 +413,9 @@ export type VisualEditSummary = {
     /** A change to how the part looks, a move among its siblings, or new words. */
     kind: 'look' | 'move' | 'text';
     properties: VisualProperty[];
-    /** The new words, for new words. */
+    /** The new words and the words they replaced, for new words. */
     words: string | null;
+    words_before: string | null;
     /** The part's classes and the app's version after this edit (or its undo). */
     classes: string;
     revision: string;

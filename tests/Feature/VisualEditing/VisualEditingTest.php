@@ -612,6 +612,7 @@ class VisualEditingTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('edits.0.kind', 'text')
                 ->where('edits.0.words', 'Plans & prices')
+                ->where('edits.0.words_before', 'Plans')
                 ->where('edits.0.properties', [])
                 ->where('edits.0.sides', null));
 

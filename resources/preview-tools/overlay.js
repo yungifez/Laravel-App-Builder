@@ -1113,18 +1113,26 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
 
         const message = event.data;
 
-        // The space around the selected part shows only while the owner
-        // works with it, so the part itself stays easy to see.
-        // Words typed in the builder's panel show at once.
-        if (
-            message.type === 'words' &&
-            selected &&
-            plainWords(selected) !== null
-        ) {
-            selected.textContent = String(message.text ?? '');
+        // Words typed in the builder's panel, or put back by undo and redo,
+        // show at once. Only parts that hold nothing but words change.
+        if (message.type === 'words') {
+            const parts = message.location
+                ? matching(message.location)
+                : selected
+                  ? [selected]
+                  : [];
+
+            for (const part of parts) {
+                if (plainWords(part) !== null) {
+                    part.textContent = String(message.text ?? '');
+                }
+            }
+
             placeFrame();
         }
 
+        // The space around the selected part shows only while the owner
+        // works with it, so the part itself stays easy to see.
         if (message.type === 'spacing') {
             layer.toggleAttribute('data-spacing', Boolean(message.on));
         }

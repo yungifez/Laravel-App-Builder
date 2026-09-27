@@ -103,6 +103,7 @@ class ProjectController extends Controller
                     'kind' => $edit->kind(),
                     'properties' => $edit->kind() === 'look' ? array_keys($edit->changes) : [],
                     'words' => $edit->changes[VisualEdit::TEXT]['after'] ?? null,
+                    'words_before' => $edit->changes[VisualEdit::TEXT]['before'] ?? null,
                     // What the element looks like after this edit, and the
                     // commit that made it, so the next automatic save can
                     // build on it without waiting for the rebuild.

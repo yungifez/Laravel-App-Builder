@@ -1039,6 +1039,17 @@ export function useAppPreview(source: Source) {
 
         claims.value.set(edit.id, { undone: key === 'undo', shown });
 
+        // New words show at once too, without waiting for the rebuild.
+        const words = key === 'undo' ? edit.words_before : edit.words;
+
+        if (edit.kind === 'text' && words !== null) {
+            post({
+                type: 'words',
+                location: { kind: 'any', value: edit.target },
+                text: words,
+            });
+        }
+
         if (shown !== null) {
             saved.value.push(shown);
             showUnshown();
