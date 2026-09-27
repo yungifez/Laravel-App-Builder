@@ -206,7 +206,9 @@ function toggleChatFull(): void {
 }
 
 function codeOnWholeScreen(full: boolean): void {
-    morph(() => (codeFull.value = full));
+    if (codeFull.value !== full) {
+        morph(() => (codeFull.value = full));
+    }
 }
 
 const detailsOpen = ref(false);
@@ -1010,203 +1012,219 @@ function sendOnEnter(event: KeyboardEvent): void {
                     />
                 </Transition>
 
-                <ChangeThread
-                    v-if="change"
-                    :change="change"
-                    :roomy="chatCentred"
-                    @full="codeOnWholeScreen"
-                    @sides="threadSides = $event"
-                />
+                <!-- A change and the list of changes arrive rather than cut in;
+                     the one leaving goes at once. -->
+                <Transition
+                    enter-active-class="transition duration-base ease-settle"
+                    enter-from-class="opacity-0 translate-y-1"
+                >
+                    <ChangeThread
+                        v-if="change"
+                        :change="change"
+                        :roomy="chatCentred"
+                        @full="codeOnWholeScreen"
+                        @sides="threadSides = $event"
+                    />
 
-                <div v-else class="min-h-0 flex-1 overflow-y-auto p-4">
-                    <div
-                        v-if="changes.length === 0"
-                        class="flex h-full flex-col justify-end gap-3 pb-2"
-                        data-test="chat-empty"
-                    >
-                        <p class="text-lg font-semibold tracking-tight">
-                            What should your app do next?
-                        </p>
-                        <div class="flex flex-wrap gap-2">
-                            <button
-                                v-for="suggestion in suggestions"
-                                :key="suggestion"
-                                type="button"
-                                class="min-h-11 rounded-full border px-3 text-sm text-muted-foreground select-none hover:border-foreground/30 hover:text-foreground sm:min-h-8"
-                                @click="suggest(suggestion)"
-                            >
-                                {{ suggestion }}
-                            </button>
-                        </div>
-                    </div>
-
-                    <div
-                        v-else
-                        class="-mx-2 space-y-4"
-                        data-test="project-changes"
-                    >
+                    <div v-else class="min-h-0 flex-1 overflow-y-auto p-4">
                         <div
-                            v-if="filters.length > 2"
-                            class="sticky -top-4 z-10 -mt-4 bg-background pt-4 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-linear-to-b after:from-background after:to-transparent"
+                            v-if="changes.length === 0"
+                            class="flex h-full flex-col justify-end gap-3 pb-2"
+                            data-test="chat-empty"
                         >
-                            <div
-                                ref="filterRow"
-                                :class="[
-                                    'flex [scrollbar-width:none] gap-1.5 overflow-x-auto px-2 pb-2',
-                                    filterFade,
-                                ]"
-                                role="group"
-                                aria-label="Show"
-                                data-test="change-filters"
-                                @scroll.passive="measureFilters"
-                            >
+                            <p class="text-lg font-semibold tracking-tight">
+                                What should your app do next?
+                            </p>
+                            <div class="flex flex-wrap gap-2">
                                 <button
-                                    v-for="pill in filters"
-                                    :key="pill.filter"
+                                    v-for="suggestion in suggestions"
+                                    :key="suggestion"
                                     type="button"
-                                    :aria-pressed="shown.filter === pill.filter"
-                                    :class="[
-                                        'flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs select-none sm:min-h-7',
-                                        shown.filter === pill.filter
-                                            ? 'border-foreground bg-foreground text-background'
-                                            : 'text-muted-foreground hover:border-foreground/30 hover:text-foreground',
-                                    ]"
-                                    :data-test="`change-filter-${pill.filter}`"
-                                    @click="shown.filter = pill.filter"
+                                    class="min-h-11 rounded-full border px-3 text-sm text-muted-foreground select-none hover:border-foreground/30 hover:text-foreground sm:min-h-8"
+                                    @click="suggest(suggestion)"
                                 >
-                                    {{ pill.label }}
-                                    <span
-                                        v-if="pill.filter !== 'all'"
-                                        class="tabular-nums opacity-70"
-                                        >{{ pill.count }}</span
-                                    >
+                                    {{ suggestion }}
                                 </button>
                             </div>
                         </div>
-                        <section
-                            v-for="(group, index) in thread"
-                            :key="`${index}-${group.label}`"
-                            :aria-label="group.label"
+
+                        <div
+                            v-else
+                            class="-mx-2 space-y-4"
+                            data-test="project-changes"
                         >
-                            <h3
-                                class="px-2 pb-1 text-xs font-medium text-muted-foreground"
+                            <div
+                                v-if="filters.length > 2"
+                                class="sticky -top-4 z-10 -mt-4 bg-background pt-4 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-linear-to-b after:from-background after:to-transparent"
                             >
-                                {{ group.label }}
-                            </h3>
-                            <ol>
-                                <li
-                                    v-for="item in group.items"
-                                    :key="item.id"
-                                    :data-test="`change-${item.state}`"
-                                    class="group relative flex items-start"
+                                <div
+                                    ref="filterRow"
+                                    :class="[
+                                        'flex [scrollbar-width:none] gap-1.5 overflow-x-auto px-2 pb-2',
+                                        filterFade,
+                                    ]"
+                                    role="group"
+                                    aria-label="Show"
+                                    data-test="change-filters"
+                                    @scroll.passive="measureFilters"
                                 >
-                                    <Link
-                                        :href="
-                                            showProject(project.id, {
-                                                query: { change: item.id },
-                                            })
+                                    <button
+                                        v-for="pill in filters"
+                                        :key="pill.filter"
+                                        type="button"
+                                        :aria-pressed="
+                                            shown.filter === pill.filter
                                         "
-                                        :only="['change']"
-                                        preserve-state
-                                        preserve-scroll
                                         :class="[
-                                            'flex min-h-11 min-w-0 flex-1 items-start gap-2.5 rounded-md px-2 select-none hover:bg-muted/60',
-                                            chatCentred ? 'py-4' : 'py-2',
-                                            item.dismissable && 'pr-11',
+                                            'flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs select-none sm:min-h-7',
+                                            shown.filter === pill.filter
+                                                ? 'border-foreground bg-foreground text-background'
+                                                : 'text-muted-foreground hover:border-foreground/30 hover:text-foreground',
                                         ]"
+                                        :data-test="`change-filter-${pill.filter}`"
+                                        @click="shown.filter = pill.filter"
                                     >
-                                        <component
-                                            :is="states[item.state].icon"
-                                            :class="[
-                                                'mt-0.5 size-4 shrink-0',
-                                                // The heading says these wait;
-                                                // one amber word per row is enough.
-                                                item.state === 'waiting'
-                                                    ? 'text-muted-foreground'
-                                                    : states[item.state].tone,
-                                            ]"
-                                            :aria-label="
-                                                states[item.state].label
+                                        {{ pill.label }}
+                                        <span
+                                            v-if="pill.filter !== 'all'"
+                                            class="tabular-nums opacity-70"
+                                            >{{ pill.count }}</span
+                                        >
+                                    </button>
+                                </div>
+                            </div>
+                            <section
+                                v-for="(group, index) in thread"
+                                :key="`${index}-${group.label}`"
+                                :aria-label="group.label"
+                            >
+                                <h3
+                                    class="px-2 pb-1 text-xs font-medium text-muted-foreground"
+                                >
+                                    {{ group.label }}
+                                </h3>
+                                <ol>
+                                    <li
+                                        v-for="item in group.items"
+                                        :key="item.id"
+                                        :data-test="`change-${item.state}`"
+                                        class="group relative flex items-start"
+                                    >
+                                        <Link
+                                            :href="
+                                                showProject(project.id, {
+                                                    query: { change: item.id },
+                                                })
                                             "
-                                        />
-                                        <span class="min-w-0 flex-1">
-                                            <span
+                                            :only="['change']"
+                                            preserve-state
+                                            preserve-scroll
+                                            :class="[
+                                                'flex min-h-11 min-w-0 flex-1 items-start gap-2.5 rounded-md px-2 select-none hover:bg-muted/60',
+                                                chatCentred ? 'py-4' : 'py-2',
+                                                item.dismissable && 'pr-11',
+                                            ]"
+                                        >
+                                            <component
+                                                :is="states[item.state].icon"
                                                 :class="[
-                                                    'line-clamp-2 text-sm break-words',
+                                                    'mt-0.5 size-4 shrink-0',
+                                                    // The heading says these wait;
+                                                    // one amber word per row is enough.
                                                     item.state === 'waiting'
-                                                        ? 'font-medium'
-                                                        : 'text-muted-foreground',
-                                                    item.state === 'undone' &&
-                                                        'line-through',
+                                                        ? 'text-muted-foreground'
+                                                        : states[item.state]
+                                                              .tone,
                                                 ]"
-                                                >{{ item.prompt }}</span
-                                            >
-                                            <!-- The question I am asking,
+                                                :aria-label="
+                                                    states[item.state].label
+                                                "
+                                            />
+                                            <span class="min-w-0 flex-1">
+                                                <span
+                                                    :class="[
+                                                        'line-clamp-2 text-sm break-words',
+                                                        item.state === 'waiting'
+                                                            ? 'font-medium'
+                                                            : 'text-muted-foreground',
+                                                        item.state ===
+                                                            'undone' &&
+                                                            'line-through',
+                                                    ]"
+                                                    >{{ item.prompt }}</span
+                                                >
+                                                <!-- The question I am asking,
                                                  so the owner can answer it
                                                  from here. A change to try
                                                  says so on the right. -->
+                                                <span
+                                                    v-if="
+                                                        item.state ===
+                                                            'waiting' &&
+                                                        item.asks
+                                                    "
+                                                    class="mt-0.5 line-clamp-2 text-xs break-words text-muted-foreground"
+                                                    data-test="change-next-step"
+                                                    >{{
+                                                        item.question ??
+                                                        'I have a question for you.'
+                                                    }}</span
+                                                >
+                                            </span>
                                             <span
-                                                v-if="
-                                                    item.state === 'waiting' &&
-                                                    item.asks
-                                                "
-                                                class="mt-0.5 line-clamp-2 text-xs break-words text-muted-foreground"
-                                                data-test="change-next-step"
+                                                v-if="item.state === 'waiting'"
+                                                class="mt-0.5 shrink-0 text-xs font-medium text-amber-600 dark:text-amber-400"
                                                 >{{
-                                                    item.question ??
-                                                    'I have a question for you.'
+                                                    item.asks
+                                                        ? 'Answer'
+                                                        : 'Review'
                                                 }}</span
                                             >
-                                        </span>
-                                        <span
-                                            v-if="item.state === 'waiting'"
-                                            class="mt-0.5 shrink-0 text-xs font-medium text-amber-600 dark:text-amber-400"
-                                            >{{
-                                                item.asks ? 'Answer' : 'Review'
-                                            }}</span
-                                        >
-                                    </Link>
-                                    <!-- On a pointer it shows on hover, so
+                                        </Link>
+                                        <!-- On a pointer it shows on hover, so
                                          15 rows are not 15 buttons; on touch
                                          it is always there. -->
-                                    <button
-                                        v-if="item.dismissable"
-                                        type="button"
-                                        :class="[
-                                            'absolute right-0 flex size-11 items-center justify-center rounded-md text-muted-foreground select-none hover:bg-muted hover:text-foreground sm:size-9',
-                                            chatCentred ? 'top-1.5' : 'top-0',
-                                            item.state === 'dismissed'
-                                                ? ''
-                                                : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100',
-                                        ]"
-                                        :aria-label="
-                                            item.state === 'dismissed'
-                                                ? 'Bring back'
-                                                : 'Not needed anymore'
-                                        "
-                                        :title="
-                                            item.state === 'dismissed'
-                                                ? 'Bring back'
-                                                : 'Not needed anymore'
-                                        "
-                                        :data-test="`change-dismiss-${item.id}`"
-                                        @click="dismiss(item)"
-                                    >
-                                        <component
-                                            :is="
+                                        <button
+                                            v-if="item.dismissable"
+                                            type="button"
+                                            :class="[
+                                                'absolute right-0 flex size-11 items-center justify-center rounded-md text-muted-foreground select-none hover:bg-muted hover:text-foreground sm:size-9',
+                                                chatCentred
+                                                    ? 'top-1.5'
+                                                    : 'top-0',
                                                 item.state === 'dismissed'
-                                                    ? Undo2
-                                                    : X
+                                                    ? ''
+                                                    : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100',
+                                            ]"
+                                            :aria-label="
+                                                item.state === 'dismissed'
+                                                    ? 'Bring back'
+                                                    : 'Not needed anymore'
                                             "
-                                            class="size-4"
-                                        />
-                                    </button>
-                                </li>
-                            </ol>
-                        </section>
+                                            :title="
+                                                item.state === 'dismissed'
+                                                    ? 'Bring back'
+                                                    : 'Not needed anymore'
+                                            "
+                                            :data-test="`change-dismiss-${item.id}`"
+                                            @click="dismiss(item)"
+                                        >
+                                            <component
+                                                :is="
+                                                    item.state === 'dismissed'
+                                                        ? Undo2
+                                                        : X
+                                                "
+                                                class="size-4"
+                                            />
+                                        </button>
+                                    </li>
+                                </ol>
+                            </section>
+                        </div>
+                        <div ref="threadEnd" />
                     </div>
-                    <div ref="threadEnd" />
-                </div>
+                </Transition>
 
                 <Form
                     v-bind="composerForm"
