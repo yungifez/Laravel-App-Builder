@@ -3,6 +3,7 @@ import { Form, usePoll } from '@inertiajs/vue3';
 import { CircleAlert, CircleCheck, CircleDot, LoaderCircle } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import DeploymentController from '@/actions/App/Http/Controllers/DeploymentController';
+import LiveErrorFixController from '@/actions/App/Http/Controllers/LiveErrorFixController';
 import ProjectPublishingController from '@/actions/App/Http/Controllers/ProjectPublishingController';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
@@ -52,6 +53,9 @@ const upToDate = computed(
         props.publishing.head !== null &&
         props.publishing.head === live.value.commit,
 );
+
+// Problems online: fixing them comes before anything else here.
+const troubled = computed(() => (live.value?.problems ?? 0) > 0);
 
 const times = (count: number) => (count === 1 ? 'once' : `${count} times`);
 
@@ -173,6 +177,21 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
             </div>
 
             <Form
+                v-if="troubled && !active"
+                v-bind="LiveErrorFixController.store.form(projectId)"
+                v-slot="{ errors, processing }"
+            >
+                <Button
+                    :disabled="processing"
+                    class="h-11 w-full select-none sm:h-9"
+                    data-test="fix-live-errors"
+                >
+                    Fix it
+                </Button>
+                <InputError class="mt-2" :message="errors.fix" />
+            </Form>
+
+            <Form
                 v-if="!active && !upToDate && !sentCurrent"
                 v-bind="DeploymentController.store.form(projectId)"
                 :options="{ preserveScroll: true }"
@@ -180,6 +199,7 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
             >
                 <Button
                     :disabled="processing"
+                    :variant="troubled ? 'outline' : 'default'"
                     class="h-11 w-full select-none sm:h-9"
                     data-test="publish-button"
                 >

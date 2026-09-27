@@ -13,6 +13,7 @@ use App\Http\Controllers\FeatureRequestRetryController;
 use App\Http\Controllers\FeatureRequestReversionController;
 use App\Http\Controllers\FeatureRequestStepChangeController;
 use App\Http\Controllers\FeatureRequestVerificationController;
+use App\Http\Controllers\LiveErrorFixController;
 use App\Http\Controllers\NewProjectController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\NotificationReadController;
@@ -48,6 +49,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('projects/{project}/notes-draft', [ProjectNotesDraftController::class, 'destroy'])->name('projects.notes-draft.destroy');
     Route::put('projects/{project}/publishing', [ProjectPublishingController::class, 'update'])->name('projects.publishing.update');
     Route::post('projects/{project}/deployments', [DeploymentController::class, 'store'])->name('deployments.store');
+    Route::post('projects/{project}/live-error-fixes', [LiveErrorFixController::class, 'store'])->name('live-error-fixes.store');
     Route::get('projects/{project}/editor', [ProjectEditorController::class, 'show'])->name('projects.editor.show');
     Route::post('projects/{project}/previews', [ProjectPreviewController::class, 'store'])->name('projects.previews.store');
     Route::post('projects/{project}/experiments', [ExperimentController::class, 'store'])->name('experiments.store');

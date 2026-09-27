@@ -28,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $retry_of_id The stopped request this one tries again
  * @property string $prompt
  * @property array{file: string, line: int, column: int, tag: string, text: string|null, area: string|null}|null $selection The element the owner pointed at in the preview
+ * @property array{deployment_id: int, errors: list<array{class: string|null, message: string, count: int}>}|null $live_errors The errors the published app raised, when the ask is to fix them
  * @property string|null $target_step
  * @property FeatureRequestStatus $status
  * @property string $generator
@@ -48,7 +49,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['experiment_id', 'project_id', 'user_id', 'parent_id', 'retry_of_id', 'prompt', 'selection', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'note_changes', 'steps', 'acceptance', 'error', 'decision_model_calls', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at', 'dismissed_at'])]
+#[Fillable(['experiment_id', 'project_id', 'user_id', 'parent_id', 'retry_of_id', 'prompt', 'selection', 'live_errors', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'note_changes', 'steps', 'acceptance', 'error', 'decision_model_calls', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at', 'dismissed_at'])]
 class FeatureRequest extends Model
 {
     /**
@@ -74,6 +75,7 @@ class FeatureRequest extends Model
             'acceptance' => 'array',
             'decision_model_calls' => 'array',
             'selection' => 'array',
+            'live_errors' => 'array',
             'accepted_at' => 'datetime',
             'reverted_at' => 'datetime',
             'dismissed_at' => 'datetime',
@@ -83,11 +85,15 @@ class FeatureRequest extends Model
     /**
      * Get the request as the planner, coder and reviewer read it: the
      * owner's words and, when they started from the preview, the element
-     * they pointed at.
+     * they pointed at, or from errors online, what those errors were.
      */
     public function instructions(): string
     {
         $selection = $this->selection;
+
+        if ($this->live_errors !== null) {
+            return $this->prompt."\n\n".$this->liveErrorInstructions($this->live_errors['errors']);
+        }
 
         if ($selection === null) {
             return $this->prompt;
@@ -98,6 +104,22 @@ class FeatureRequest extends Model
         $area = filled($selection['area'] ?? null) ? " It belongs to the area \"{$selection['area']}\"." : '';
 
         return "{$this->prompt}\n\nThe owner pointed at this element in the app: {$element}{$text}.{$area}";
+    }
+
+    /**
+     * Describe the errors people hit in the published app. The owner only
+     * saw that something went wrong; the details are for the builder.
+     *
+     * @param  list<array{class: string|null, message: string, count: int}>  $errors
+     */
+    protected function liveErrorInstructions(array $errors): string
+    {
+        $lines = array_map(
+            fn (array $error) => '- '.trim(($error['class'] ?? '').': '.str($error['message'])->squish()->limit(300), ': ').' ('.($error['count'] === 1 ? 'once' : "{$error['count']} times").')',
+            $errors,
+        );
+
+        return "People using the published app ran into these errors since its current version went online, most frequent first. Find why each happens and fix the cause, with a test that fails without the fix:\n".implode("\n", $lines);
     }
 
     /**
