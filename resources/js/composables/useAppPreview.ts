@@ -125,6 +125,8 @@ export function useAppPreview(source: Source) {
     const nextDrawn = ref(false);
     const holding = ref(false);
     const framePath = ref('/');
+    // The pages the owner has been to, oldest first, so Back can return.
+    const visited = ref<string[]>([]);
     // Start at the owner's own screen size: a phone edits the phone layout.
     const device = ref<Device>(
         typeof window !== 'undefined' &&
@@ -547,6 +549,11 @@ export function useAppPreview(source: Source) {
 
         if (data.type === 'ready') {
             framePath.value = String(data.path ?? '/');
+
+            if (visited.value.at(-1) !== framePath.value) {
+                visited.value = [...visited.value, framePath.value].slice(-20);
+            }
+
             holding.value = false;
             setUp(frame.value?.contentWindow);
         }
@@ -1106,6 +1113,22 @@ export function useAppPreview(source: Source) {
         );
     }
 
+    // Go back to the page before this one.
+    function back(): void {
+        const preview = source.preview();
+        const to = visited.value.at(-2);
+
+        if (preview === null || to === undefined) {
+            return;
+        }
+
+        visited.value = visited.value.slice(0, -1);
+        post({ type: 'go', href: preview.origin + to });
+        deselect();
+    }
+
+    const canGoBack = computed(() => visited.value.length > 1);
+
     // An address as the owner reads it: a page of the app by its path,
     // any other site in full.
     function addressOf(href: string): string {
@@ -1466,6 +1489,8 @@ export function useAppPreview(source: Source) {
         relink,
         follow,
         addressOf,
+        back,
+        canGoBack,
         press,
         hide,
         undoable,

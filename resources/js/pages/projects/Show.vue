@@ -701,6 +701,28 @@ function sendOnEnter(event: KeyboardEvent): void {
 
         <div class="ml-auto flex shrink-0 items-center gap-1">
             <template v-if="app.running && preview">
+                <!-- The page of the app on show, and the way back from it
+                     once the owner has gone somewhere, as a browser gives. -->
+                <div class="mr-1 hidden min-w-0 items-center md:flex">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        class="size-9"
+                        v-if="app.canGoBack"
+                        aria-label="Back"
+                        title="Back to the page before"
+                        data-test="preview-back"
+                        @click="app.back()"
+                    >
+                        <ArrowLeft class="size-4" />
+                    </Button>
+                    <span
+                        class="max-w-40 truncate text-xs text-muted-foreground"
+                        :title="app.path"
+                        data-test="preview-path"
+                        >{{ app.path === '/' ? 'Home' : app.path }}</span
+                    >
+                </div>
                 <div
                     class="hidden items-center rounded-md bg-muted p-0.5 md:flex"
                     role="group"
