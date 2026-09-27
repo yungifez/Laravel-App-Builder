@@ -108,6 +108,15 @@ function keepAddress(): void {
     props.state.relink(address.value);
 }
 
+// How many parts up the link this part sits in is, to pick it at once.
+const linkUp = computed(() => {
+    const at = (props.state.selected?.trail ?? []).findIndex(
+        (step) => step.kind === 'Link',
+    );
+
+    return at === -1 ? null : at + 1;
+});
+
 // Where "Go there" goes: the address being typed for a link the owner can
 // change, or else where the app sends the link now.
 const destination = computed(() =>
@@ -768,10 +777,22 @@ const recent = computed(() => {
                                     </p>
                                     <p
                                         v-else
-                                        class="text-xs text-muted-foreground"
+                                        class="flex items-center justify-between gap-2 text-xs text-muted-foreground"
                                     >
-                                        This sits in a link. Pick the link to
-                                        change where it goes.
+                                        This sits in a link.
+                                        <Button
+                                            v-if="linkUp !== null"
+                                            variant="secondary"
+                                            size="sm"
+                                            class="h-11 sm:h-7"
+                                            data-test="pick-link"
+                                            @click="state.pickUp(linkUp)"
+                                            >Pick the link</Button
+                                        >
+                                        <template v-else
+                                            >Pick the link to change where it
+                                            goes.</template
+                                        >
                                     </p>
                                 </template>
                             </section>
