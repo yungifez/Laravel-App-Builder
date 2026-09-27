@@ -81,6 +81,10 @@ class ScreenCheckTest extends TestCase
             ScreenCheck::finding(ScreenCheck::found($screens, $patch)[0]),
         );
         $this->assertCount(1, ScreenCheck::changed($screens, $patch));
+        // Nor are controls that hide keyboard focus.
+        $unfocused = ['pages' => [$this->page('/about', 'About', [1280 => ['no_focus' => 1, 'unfocused' => [['text' => 'Menu']]]])]];
+        $this->assertSame([], ScreenCheck::found($unfocused, $patch));
+        $this->assertSame([['path' => '/about', 'file' => 'resources/js/pages/About.vue', 'text' => 'Menu']], ScreenCheck::unfocused($unfocused, $patch));
         // Faint words are never a send-back.
         $this->assertSame([], ScreenCheck::found(['pages' => [$this->page('/about', 'About', [390 => ['faint' => [['text' => 'Warning', 'ratio' => 4.36, 'needed' => 4.5]]]])]], $patch));
         $this->assertSame(

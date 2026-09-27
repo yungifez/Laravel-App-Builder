@@ -155,8 +155,8 @@ class DescribeProof
     /**
      * Say that the screens the change touched were opened on a phone, a
      * tablet and a computer and nothing was cut off, too small to tap or
-     * broken, when the screen check measured them, and name words too
-     * faint to read as a gap.
+     * broken, when the screen check measured them. Words too faint to read
+     * and controls that hide keyboard focus are named as gaps.
      *
      * @return list<array{kind: string, text: string}>
      */
@@ -173,6 +173,12 @@ class DescribeProof
 
         if ($faint !== []) {
             $lines[] = ['kind' => 'gap', 'text' => trans_choice('Some words on it are hard to read against their background: ":text".|Some words on it are hard to read against their background, such as ":text".', count($faint), ['text' => $faint[0]['text']])];
+        }
+
+        $unfocused = ScreenCheck::unfocused($verification->screens, $featureRequest->patch);
+
+        if ($unfocused !== []) {
+            $lines[] = ['kind' => 'gap', 'text' => trans_choice('Someone using a keyboard cannot see when ":text" is selected.|Someone using a keyboard cannot see when some controls on it are selected, such as ":text".', count($unfocused), ['text' => $unfocused[0]['text']])];
         }
 
         return $lines;

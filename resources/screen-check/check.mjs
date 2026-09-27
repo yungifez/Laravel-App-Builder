@@ -592,9 +592,19 @@ async function measure(browser, path, cookies) {
 
             result.screen ??= measured.screen;
             delete measured.screen;
+            const unfocused =
+                width === widths[widths.length - 1]
+                    ? await focusless(page)
+                    : null;
             result.widths.push({
                 width,
                 ...measured,
+                ...(unfocused === null
+                    ? {}
+                    : {
+                          no_focus: unfocused.length,
+                          unfocused: unfocused.slice(0, MAX_LISTED),
+                      }),
                 errors: errors.slice(0, MAX_LISTED),
             });
         } catch (error) {
@@ -608,4 +618,91 @@ async function measure(browser, path, cookies) {
     }
 
     return result;
+}
+
+// Press Tab through the first controls, as a keyboard user would, and name
+// those that look the same focused as not (WCAG 2.2 AA 2.4.7). Outline,
+// ring, border, background, colour and underline all count as showing it.
+async function focusless(page) {
+    const look = () => {
+        const element = document.activeElement;
+
+        if (!element || element === document.body) {
+            return null;
+        }
+
+        const style = getComputedStyle(element);
+        const box = element.getBoundingClientRect();
+
+        return {
+            id: (element.dataset.screenCheck ??= String(Math.random())),
+            text: (
+                element.getAttribute('aria-label') ||
+                element.textContent ||
+                element.getAttribute('name') ||
+                element.tagName
+            )
+                .trim()
+                .replace(/\s+/g, ' ')
+                .slice(0, 60),
+            visible:
+                box.width > 1 &&
+                box.height > 1 &&
+                style.visibility !== 'hidden',
+            look: [
+                style.outlineStyle === 'none'
+                    ? 'none'
+                    : `${style.outlineStyle} ${style.outlineWidth} ${style.outlineColor}`,
+                style.boxShadow,
+                style.borderColor,
+                style.backgroundColor,
+                style.color,
+                style.textDecorationLine,
+            ].join('|'),
+        };
+    };
+    const unfocused = [];
+    const seen = new Set();
+
+    for (let press = 0; press < 20; press++) {
+        await page.keyboard.press('Tab');
+        const focused = await page.evaluate(look);
+
+        if (focused === null || seen.has(focused.id)) {
+            break;
+        }
+
+        seen.add(focused.id);
+
+        if (!focused.visible) {
+            continue;
+        }
+
+        const resting = await page.evaluate((id) => {
+            const element = document.querySelector(
+                `[data-screen-check="${id}"]`,
+            );
+            element.blur();
+            const style = getComputedStyle(element);
+            const value = [
+                style.outlineStyle === 'none'
+                    ? 'none'
+                    : `${style.outlineStyle} ${style.outlineWidth} ${style.outlineColor}`,
+                style.boxShadow,
+                style.borderColor,
+                style.backgroundColor,
+                style.color,
+                style.textDecorationLine,
+            ].join('|');
+            element.focus();
+
+            return value;
+        }, focused.id);
+
+        if (resting === focused.look) {
+            unfocused.push({ text: focused.text });
+        }
+    }
+
+    return unfocused;
 }

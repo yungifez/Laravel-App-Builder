@@ -153,6 +153,30 @@ class ScreenCheck
     }
 
     /**
+     * Get the controls that do not show when the keyboard reaches them
+     * (WCAG 2.2 AA 2.4.7) on the pages the change touched, once each. Like
+     * faint words, they are a gap, never a send-back: focus styles usually
+     * come from the app's shared components.
+     *
+     * @param  array{pages: list<array<string, mixed>>, signed_in?: bool}|null  $screens
+     * @return list<array{path: string, file: string, text: string}>
+     */
+    public static function unfocused(?array $screens, ?string $patch): array
+    {
+        $unfocused = [];
+
+        foreach (self::changed($screens, $patch) as ['page' => $page, 'file' => $file]) {
+            foreach (is_array($page['widths'] ?? null) ? $page['widths'] : [] as $measured) {
+                foreach (is_array($measured['unfocused'] ?? null) ? $measured['unfocused'] : [] as $control) {
+                    $unfocused[$control['text']] ??= ['path' => (string) $page['path'], 'file' => $file, 'text' => (string) $control['text']];
+                }
+            }
+        }
+
+        return array_values($unfocused);
+    }
+
+    /**
      * Say what is wrong on a page and how to fix it, for the coder that
      * must fix it.
      *

@@ -97,7 +97,11 @@ them and correct any that are wrong.
   the starter kit, the only failures were theme colours (white on red-500
   at 3.76 to 1, muted tab text at 4.35 to 1). A change to one screen should
   not rewrite the theme. Undo: return faint words from `ScreenCheck::found`.
-- **Visible focus is not checked yet.** It is next for this check.
+- **Hidden keyboard focus is a gap, not a send-back.** At 1280 px the check
+  presses Tab through the first 20 controls. A control whose outline, ring,
+  border, background, colour and underline do not change on focus is named
+  in the proof. Why: focus styles live in shared components, and the
+  starter kit passes. Undo: return them from `ScreenCheck::found`.
 - **"What I know" adds up kept proof.** The overview line now adds "N tests
   added" (test functions in kept, not undone changes) and "N screens checked
   on a phone" (touched screens the latest passing verification found to
