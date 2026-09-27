@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, router, setLayoutProps } from '@inertiajs/vue3';
+import { Form, Head, Link, router, setLayoutProps } from '@inertiajs/vue3';
 import {
     Check,
     ChevronRight,
@@ -12,6 +12,7 @@ import {
     ShieldCheck,
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
+import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
 import NotesDraftPanel from '@/components/NotesDraftPanel.vue';
 import NotesPart from '@/components/NotesPart.vue';
 import PartsMap from '@/components/PartsMap.vue';
@@ -449,6 +450,31 @@ watch(
                                         </li>
                                     </ul>
                                 </details>
+                                <!-- A part nothing checks: one tap asks for its tests -->
+                                <Form
+                                    v-else-if="area.checked_by === 0"
+                                    v-bind="
+                                        FeatureRequestController.store.form(
+                                            project.id,
+                                        )
+                                    "
+                                    v-slot="{ processing }"
+                                >
+                                    <input
+                                        type="hidden"
+                                        name="prompt"
+                                        :value="`Add tests that check ${area.name} works as described`"
+                                    />
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        class="h-11 select-none sm:h-8"
+                                        :disabled="processing"
+                                        data-test="part-ask-tests"
+                                    >
+                                        Ask for tests
+                                    </Button>
+                                </Form>
                             </div>
 
                             <NotesPart
