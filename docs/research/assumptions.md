@@ -169,3 +169,9 @@ them and correct any that are wrong.
   gap "No check written apart from the change tried it", and the header
   reads "Passed, with gaps". Tests written with the change still show as
   evidence lines, but they cannot hide that gap.
+- **One decisions list, not two.** The notes' "Decisions" section (every
+  owner answer, written when given) no longer shows as its own section on
+  "What I know". Its answers join the Decisions list. An answer that also
+  came from a kept change shows once, with that change. Answers only the
+  notes hold follow, marked "You chose this" with no link. A noted answer is
+  split into question and answer at its last "? ".

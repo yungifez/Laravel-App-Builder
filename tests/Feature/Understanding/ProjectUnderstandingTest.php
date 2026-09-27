@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Understanding;
 
+use App\Actions\Context\RecordDecision;
 use App\Actions\Projects\CreateProject;
 use App\Context\ChangeClassification;
 use App\Context\ProjectNotes;
@@ -184,6 +185,24 @@ class ProjectUnderstandingTest extends TestCase
                 ->where('decisions.1.decision', 'Counts include people of every role.')
                 ->where('decisions.1.by', 'builder')
                 ->where('decisions.1.change', $kept->id));
+    }
+
+    public function test_answers_kept_in_the_notes_show_once_among_the_decisions()
+    {
+        $kept = FeatureRequest::factory()->generated()->for($this->project)->create(['summary' => 'Count team members', 'accepted_at' => now()]);
+        Run::factory()->for($kept)->create(['answers' => [['question' => 'Should owners count as members?', 'answer' => 'Yes', 'decided_by' => 'owner']]]);
+        // Every answer is written into the notes when given, kept or not.
+        app(RecordDecision::class)->handle($this->project, 'Should owners count as members?', 'Yes');
+        app(RecordDecision::class)->handle($this->project, 'Which colour?', 'Red');
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('about.sections', [['heading' => 'People', 'body' => '- Customers buy plans.']])
+                ->where('decisions', [
+                    ['change' => $kept->id, 'summary' => 'Count team members', 'at' => $kept->accepted_at?->toIso8601String(), 'question' => 'Should owners count as members?', 'decision' => 'Yes', 'by' => 'owner'],
+                    ['change' => null, 'summary' => null, 'at' => null, 'question' => 'Which colour?', 'decision' => 'Red', 'by' => 'owner'],
+                ]));
     }
 
     public function test_the_owner_sees_how_many_problems_were_fixed_before_they_saw_their_changes()

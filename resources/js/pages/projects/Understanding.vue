@@ -48,10 +48,11 @@ const props = defineProps<{
     caught: number;
     // Across the kept changes: tests they added, and screens found to fit.
     proven: { tests: number; screens: number };
-    // The product decisions behind kept changes, newest change first.
+    // The product decisions behind kept changes, newest change first, then
+    // answers only the notes hold (no change).
     decisions: {
-        change: number;
-        summary: string;
+        change: number | null;
+        summary: string | null;
         at: string | null;
         question: string | null;
         decision: string;
@@ -796,8 +797,19 @@ watch(
                                 Change
                             </Link>
                         </div>
+                        <p
+                            v-if="
+                                item.change === null &&
+                                decisions[index + 1]?.change !== item.change
+                            "
+                            class="mt-1 text-xs text-muted-foreground"
+                        >
+                            You chose this
+                        </p>
                         <Link
-                            v-if="decisions[index + 1]?.change !== item.change"
+                            v-else-if="
+                                decisions[index + 1]?.change !== item.change
+                            "
                             :href="
                                 show(project.id, {
                                     query: { change: item.change },

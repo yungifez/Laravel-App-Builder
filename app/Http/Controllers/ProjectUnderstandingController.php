@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Context\CheckProjectNotes;
 use App\Actions\Context\ReadProjectContext;
+use App\Actions\Context\RecordDecision;
 use App\Actions\Context\UpdateProjectNotes;
 use App\Actions\Features\DescribeAskedFor;
 use App\Actions\Features\ListDecisions;
@@ -50,7 +51,8 @@ class ProjectUnderstandingController extends Controller
             'revision' => $revision,
             'about' => [
                 'introduction' => $notes->introduction,
-                'sections' => array_values(array_filter($notes->sections, fn (array $section) => Str::lower($section['heading']) !== Str::lower(UpdateProjectNotes::GUIDANCE_SECTION))),
+                // Guidance and decisions each show in a section of their own.
+                'sections' => array_values(array_filter($notes->sections, fn (array $section) => ! in_array(Str::lower($section['heading']), [Str::lower(UpdateProjectNotes::GUIDANCE_SECTION), Str::lower(RecordDecision::SECTION)], true))),
             ],
             'guidance' => $notes->section(UpdateProjectNotes::GUIDANCE_SECTION),
             'areas' => array_values(array_map(fn (Capability $capability) => [
@@ -86,7 +88,7 @@ class ProjectUnderstandingController extends Controller
             ))->count(),
             // The tests the kept changes added, and their screens found to fit.
             'proven' => $tallyKeptProof->handle($project),
-            'decisions' => $listDecisions->handle($project),
+            'decisions' => $listDecisions->handle($project, $notes->section(RecordDecision::SECTION)),
             'draft' => $project->notes_draft_status === null ? null : [
                 'status' => $project->notes_draft_status->value,
                 'purpose' => $project->notes_draft['purpose'] ?? null,
