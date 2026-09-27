@@ -1143,13 +1143,23 @@ export function useAppPreview(source: Source) {
     // The server follows, one step at a time.
     function claim(edit: VisualEditSummary, key: Step): void {
         const side = edit.sides?.[key === 'undo' ? 'before' : 'after'];
+        const other = edit.sides?.[key === 'undo' ? 'after' : 'before'];
         const shown: Batch | null =
             side === undefined
                 ? null
                 : {
                       target: { value: edit.target, instance: null },
                       device: edit.device,
-                      values: side.values,
+                      // A side names only what it sets, so what the other
+                      // side set is cleared, or the panel keeps showing it.
+                      values: {
+                          ...Object.fromEntries(
+                              Object.keys(other?.values ?? {}).map(
+                                  (property) => [property, null],
+                              ),
+                          ),
+                          ...side.values,
+                      },
                       classes: side.classes,
                       revision: edit.revision,
                       shows: side.classes,
