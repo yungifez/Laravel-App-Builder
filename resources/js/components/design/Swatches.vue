@@ -41,10 +41,31 @@ const shown = computed(() => {
     });
 });
 
+// With nothing chosen, the swatch the part is drawn in now is marked
+// quietly, so the owner sees where they start from.
+const current = computed(() => {
+    if (props.kind !== 'color' || props.value != null || !props.own) {
+        return null;
+    }
+
+    return (
+        shown.value.find(
+            (option) =>
+                (option.value === 'transparent'
+                    ? 'rgba(0, 0, 0, 0)'
+                    : props.colors?.[option.value]) === props.own,
+        )?.value ?? null
+    );
+});
+
 // A colour of its own is none of the choices, so it is shown first, as
-// the part draws it, and marked as the one in use.
+// the part draws it: marked as the one in use when it was set, or
+// quietly as where the owner starts from when nothing is chosen.
 const ownColor = computed(() =>
-    props.kind === 'color' && props.value === 'custom' && props.own
+    props.kind === 'color' &&
+    props.own &&
+    (props.value === 'custom' ||
+        (props.value == null && current.value === null))
         ? props.own
         : null,
 );
@@ -82,10 +103,24 @@ function look(kind: string, option: VisualValue): Record<string, string> {
             <span
                 v-if="ownColor"
                 role="img"
-                aria-label="Its own colour, in use"
-                title="Its own colour"
-                class="grid size-11 place-items-center rounded-md ring-2 ring-foreground ring-offset-1 ring-offset-background select-none sm:size-7"
+                :aria-label="
+                    value === 'custom'
+                        ? 'Its own colour, in use'
+                        : 'Its own colour, as it is now'
+                "
+                :title="
+                    value === 'custom'
+                        ? 'Its own colour'
+                        : 'Its own colour (as it is now)'
+                "
+                :class="[
+                    'grid size-11 place-items-center rounded-md ring-offset-1 ring-offset-background select-none sm:size-7',
+                    value === 'custom'
+                        ? 'ring-2 ring-foreground'
+                        : 'ring-1 ring-muted-foreground/60',
+                ]"
                 data-test="own-colour"
+                :data-current="value !== 'custom' || undefined"
             >
                 <span
                     class="grid size-5 place-items-center rounded-full border shadow-xs"
@@ -93,7 +128,10 @@ function look(kind: string, option: VisualValue): Record<string, string> {
                         background: `linear-gradient(${ownColor}, ${ownColor}), repeating-linear-gradient(45deg, var(--muted) 0 3px, transparent 3px 6px)`,
                     }"
                 >
-                    <Check class="size-3 text-white mix-blend-difference" />
+                    <Check
+                        v-if="value === 'custom'"
+                        class="size-3 text-white mix-blend-difference"
+                    />
                 </span>
             </span>
             <button
@@ -101,13 +139,24 @@ function look(kind: string, option: VisualValue): Record<string, string> {
                 :key="option.value"
                 type="button"
                 :aria-pressed="value === option.value"
-                :aria-label="option.label"
-                :title="option.label"
+                :aria-label="
+                    current === option.value
+                        ? `${option.label}, as it is now`
+                        : option.label
+                "
+                :title="
+                    current === option.value
+                        ? `${option.label} (as it is now)`
+                        : option.label
+                "
+                :data-current="current === option.value || undefined"
                 :class="[
                     'grid size-11 place-items-center rounded-md select-none sm:size-7',
                     value === option.value
                         ? 'ring-2 ring-foreground ring-offset-1 ring-offset-background'
-                        : 'hover:bg-muted',
+                        : current === option.value
+                          ? 'ring-1 ring-muted-foreground/60 ring-offset-1 ring-offset-background hover:bg-muted'
+                          : 'hover:bg-muted',
                 ]"
                 @click="
                     emit('change', value === option.value ? null : option.value)
