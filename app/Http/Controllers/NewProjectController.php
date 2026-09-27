@@ -19,6 +19,7 @@ class NewProjectController extends Controller
             $request->validated('purpose'),
             $request->design(),
             $request->file('images', []),
+            $request->includes(),
         );
 
         // The first version is being built: open its conversation.

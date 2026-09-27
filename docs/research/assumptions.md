@@ -275,3 +275,14 @@ them and correct any that are wrong.
   run it, to save time. Now it runs the checks named in
   `BUILDER_CONSTRUCTION_SELF_CHECKS` (static analysis by default), and the
   rest still run afterwards as before. Not measured yet on a real build.
+- **Templates are starting points the owner can see into.** The three
+  example chips on the new-app page are now five starters, one JSON file
+  each in `resources/starters` (`BUILDER_STARTERS_PATH`), so they can be
+  changed without code. Picking one fills in the name and sentence, picks
+  its look, and lists what the first version includes. The owner can untick
+  any item. The kept items go into the first change's request, and the
+  app's notes keep only the owner's sentence. Unlike Lovable's templates,
+  these do not copy a finished app. They give a fuller first request, so
+  the first version is still built, checked and proved like any change.
+  The starters are Bright Cleaning, Studio Classes, Corner Shop, Care
+  Clinic and Local Events.

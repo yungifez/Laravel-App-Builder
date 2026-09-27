@@ -45,11 +45,12 @@ class StartProjectFromTemplate
      * is their app, built, checked and waiting for them to keep it.
      *
      * @param  UploadedFile|array<int, UploadedFile>|null  $images  Sketches or screenshots of what the owner has in mind, for the first version
+     * @param  list<string>  $includes  What the first version includes, from a starter the owner kept
      *
      * @throws ValidationException when no template is configured or it
      *                             cannot be imported.
      */
-    public function handle(User $owner, string $name, string $purpose, ?DesignDirection $design = null, UploadedFile|array|null $images = []): Project
+    public function handle(User $owner, string $name, string $purpose, ?DesignDirection $design = null, UploadedFile|array|null $images = [], array $includes = []): Project
     {
         $template = self::template();
 
@@ -57,7 +58,7 @@ class StartProjectFromTemplate
             throw ValidationException::withMessages(['name' => __('Starting a new app is not set up here.')]);
         }
 
-        return DB::transaction(function () use ($owner, $name, $purpose, $template, $design, $images) {
+        return DB::transaction(function () use ($owner, $name, $purpose, $template, $design, $images, $includes) {
             $project = $this->createProject->handle($owner, $name, $template, draftNotes: false);
             $project->forceFill(['started_here' => true])->save();
 
@@ -72,9 +73,15 @@ class StartProjectFromTemplate
             if (config('builder.projects.first_version')) {
                 // Without the last sentence, the first build hides behind the
                 // login and the app still opens on the template's welcome page.
-                $this->requestFeature->handle($project, $owner, __('Make the first version: :purpose Give it its own front page in place of the starter welcome page.', [
+                $prompt = __('Make the first version: :purpose Give it its own front page in place of the starter welcome page.', [
                     'purpose' => Str::finish(trim($purpose), '.'),
-                ]), images: $this->storeRequestImages->handle($project, $images));
+                ]);
+
+                if ($includes !== []) {
+                    $prompt .= "\n\n".__('It includes:')."\n".implode("\n", array_map(fn (string $item) => '- '.$item, $includes));
+                }
+
+                $this->requestFeature->handle($project, $owner, $prompt, images: $this->storeRequestImages->handle($project, $images));
             }
 
             return $project;

@@ -57,6 +57,10 @@ return [
         // file each (colours, font, corner radius and feel), plus
         // contract.md, the design contract every new app starts with.
         'designs' => env('BUILDER_DESIGNS_PATH', resource_path('designs')),
+        // Ready-made ideas an owner can start a new app from: one JSON file
+        // each (name, purpose, look, and what the first version includes).
+        // The owner sees and can untick every item before starting.
+        'starters' => env('BUILDER_STARTERS_PATH', resource_path('starters')),
         'committer' => [
             'name' => env('BUILDER_COMMITTER_NAME'),
             'email' => env('BUILDER_COMMITTER_EMAIL'),

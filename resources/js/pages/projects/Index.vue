@@ -9,12 +9,13 @@ import { Button } from '@/components/ui/button';
 import { useAttachedImages } from '@/composables/useAttachedImages';
 import { when } from '@/lib/when';
 import { index, show } from '@/routes/projects';
-import type { DesignOption, ProjectListItem } from '@/types';
+import type { DesignOption, ProjectListItem, Starter } from '@/types';
 
 const props = defineProps<{
     projects: ProjectListItem[];
     canStartNew: boolean;
     designs: DesignOption[];
+    starters: Starter[];
 }>();
 
 defineOptions({
@@ -26,26 +27,6 @@ defineOptions({
 // A filter helps only once the list no longer fits at a glance.
 const searchable = computed(() => props.projects.length > 6);
 
-// Ideas to start from, one tap each: the owner sees what a sentence can
-// ask for, and can still change every word before starting.
-const examples = [
-    {
-        name: 'Bright Cleaning',
-        purpose:
-            'My cleaners see their jobs for the day, and customers book a clean online.',
-    },
-    {
-        name: 'Studio Classes',
-        purpose:
-            'Members book a place in a class, and trainers see who is coming.',
-    },
-    {
-        name: 'Corner Shop',
-        purpose:
-            'Customers order for pickup, and I see what to pack each morning.',
-    },
-];
-
 const purposeField = ref<HTMLTextAreaElement | null>(null);
 // A sketch or screenshot of what the owner has in mind, for the first
 // version to follow.
@@ -53,19 +34,38 @@ const pictures = useAttachedImages();
 const pictureInput = pictures.input;
 const nameField = ref<HTMLInputElement | null>(null);
 
-function useExample(example: (typeof examples)[number]): void {
+// A ready-made idea to start from, one tap each. It fills in the box and
+// picks its look, and the owner sees what the first version includes,
+// unticks what they do not want, and can still change every word.
+const starter = ref<Starter | null>(null);
+const looksField = ref<HTMLFieldSetElement | null>(null);
+
+function useStarter(picked: Starter): void {
     if (purposeField.value === null || nameField.value === null) {
         return;
     }
 
-    purposeField.value.value = example.purpose;
+    const name = nameField.value.value.trim();
 
-    if (nameField.value.value.trim() === '') {
-        nameField.value.value = example.name;
+    // A name the owner typed is theirs; one a starter filled in is not.
+    if (name === '' || props.starters.some((s) => s.name === name)) {
+        nameField.value.value = picked.name;
+    }
+
+    purposeField.value.value = picked.purpose;
+    starter.value = picked;
+
+    const look = looksField.value?.querySelector<HTMLInputElement>(
+        `input[name="design"][value="${picked.design}"]`,
+    );
+
+    if (look) {
+        look.checked = true;
     }
 
     purposeField.value.focus();
 }
+
 const query = ref('');
 const shown = computed(() => {
     const words = query.value.trim().toLowerCase();
@@ -206,6 +206,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
 
                         <fieldset
                             v-if="designs.length > 0"
+                            ref="looksField"
                             class="order-last grid w-full grid-cols-4 gap-1 sm:order-none sm:flex sm:w-auto sm:flex-wrap sm:items-center"
                             data-test="looks"
                         >
@@ -257,17 +258,55 @@ function submitOnShortcut(event: KeyboardEvent): void {
                 />
 
                 <div
+                    v-if="starter"
+                    class="mt-4 px-1"
+                    data-test="starter-includes"
+                >
+                    <div class="flex items-baseline justify-between gap-3">
+                        <p class="text-sm font-medium">
+                            Your first version includes
+                        </p>
+                        <button
+                            type="button"
+                            class="min-h-11 text-sm text-muted-foreground underline-offset-4 select-none hover:text-foreground hover:underline sm:min-h-0"
+                            data-test="starter-clear"
+                            @click="starter = null"
+                        >
+                            Start from something else
+                        </button>
+                    </div>
+                    <ul class="mt-2 space-y-1">
+                        <li v-for="item in starter.includes" :key="item">
+                            <label
+                                class="flex min-h-11 cursor-pointer items-start gap-2.5 text-sm sm:min-h-0 sm:py-1"
+                            >
+                                <input
+                                    type="checkbox"
+                                    name="includes[]"
+                                    :value="item"
+                                    checked
+                                    class="mt-0.5 size-4 shrink-0 accent-primary"
+                                />
+                                {{ item }}
+                            </label>
+                        </li>
+                    </ul>
+                </div>
+
+                <div
+                    v-else-if="starters.length > 0"
                     class="mt-3 flex flex-wrap justify-center gap-2"
-                    data-test="examples"
+                    data-test="starters"
                 >
                     <button
-                        v-for="example in examples"
-                        :key="example.name"
+                        v-for="item in starters"
+                        :key="item.key"
                         type="button"
                         class="min-h-11 rounded-full border px-3 text-sm text-muted-foreground transition-colors duration-quick select-none hover:bg-muted hover:text-foreground sm:min-h-8"
-                        @click="useExample(example)"
+                        :data-test="`starter-${item.key}`"
+                        @click="useStarter(item)"
                     >
-                        {{ example.name }}
+                        {{ item.name }}
                     </button>
                 </div>
             </Form>

@@ -617,3 +617,14 @@ export type AppService = {
     }[];
     connected: boolean;
 };
+
+/** A ready-made idea to start a new app from. */
+export type Starter = {
+    key: string;
+    name: string;
+    purpose: string;
+    /** The look it starts with, by key. */
+    design: string | null;
+    /** What the first version includes, in the owner's words. */
+    includes: string[];
+};

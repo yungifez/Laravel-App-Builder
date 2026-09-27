@@ -1,0 +1,12 @@
+{
+    "name": "Studio Classes",
+    "purpose": "Members book a place in a class, and trainers see who is coming.",
+    "design": "bold",
+    "includes": [
+        "A timetable of upcoming classes with the places left in each",
+        "Members book a place and can cancel it up to a set time before",
+        "A class that is full takes names for a waiting list",
+        "Trainers see who is booked into each of their classes"
+    ],
+    "order": 2
+}

@@ -7,6 +7,7 @@ use App\Jobs\ExecuteRun;
 use App\Models\User;
 use App\Projects\DesignDirection;
 use App\Projects\ProjectRepository;
+use App\Projects\Starter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
@@ -73,6 +74,57 @@ class NewProjectTest extends TestCase
         $project = $owner->projects()->sole();
         $this->assertSame("APP_NAME=\"Bright Cleaning\"\nAPP_ENV=local\n", $repository->show($project, $repository->head($project), '.env.example'));
         $this->assertSame('Name the app Bright Cleaning', $repository->log($project)[0]['subject']);
+    }
+
+    public function test_what_the_owner_kept_from_a_starter_goes_with_the_first_version()
+    {
+        config(['builder.projects.template' => $this->makeProjectSource($this->laravelApp())]);
+        $owner = User::factory()->create();
+
+        $this->actingAs($owner)->post(route('projects.new.store'), [
+            'name' => 'Studio Classes',
+            'purpose' => 'Members book a place in a class.',
+            'includes' => ['A timetable of upcoming classes', ' ', 'Trainers see who is booked'],
+        ])->assertRedirect();
+
+        $this->assertSame(
+            "Make the first version: Members book a place in a class. Give it its own front page in place of the starter welcome page.\n\nIt includes:\n- A timetable of upcoming classes\n- Trainers see who is booked",
+            $owner->projects()->sole()->featureRequests()->sole()->prompt,
+        );
+        // What the app is for stays the owner's sentence.
+        $this->assertStringNotContainsString('timetable', app(ProjectNotes::class)->files($owner->projects()->sole())['project.md']);
+    }
+
+    public function test_the_owner_is_offered_starters_each_with_a_look_that_exists()
+    {
+        config(['builder.projects.template' => $this->makeProjectSource($this->laravelApp())]);
+
+        $this->actingAs(User::factory()->create())
+            ->get(route('projects.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('starters.0.key', 'cleaning')
+                ->where('starters.0.name', 'Bright Cleaning')
+                ->has('starters.0.includes', 4));
+
+        $looks = array_map(fn (DesignDirection $look) => $look->key, DesignDirection::all());
+
+        foreach (Starter::all() as $starter) {
+            $this->assertContains($starter->design, $looks, $starter->key);
+            $this->assertNotEmpty($starter->includes, $starter->key);
+        }
+    }
+
+    public function test_a_starter_file_that_is_not_complete_is_skipped()
+    {
+        $folder = sys_get_temp_dir().'/builder-starters-'.uniqid();
+        File::ensureDirectoryExists($folder);
+        $this->beforeApplicationDestroyed(fn () => File::deleteDirectory($folder));
+        File::put("{$folder}/broken.json", '{"name": "Broken"');
+        File::put("{$folder}/partial.json", '{"name": "Partial"}');
+        File::put("{$folder}/good.json", '{"name": "Good", "purpose": "Do good.", "includes": ["One thing", 3]}');
+        config(['builder.projects.starters' => $folder]);
+
+        $this->assertSame([['key' => 'good', 'name' => 'Good', 'purpose' => 'Do good.', 'design' => null, 'includes' => ['One thing']]], array_map(fn (Starter $starter) => $starter->toArray(), Starter::all()));
     }
 
     public function test_a_sketch_the_owner_attaches_goes_with_the_first_version()

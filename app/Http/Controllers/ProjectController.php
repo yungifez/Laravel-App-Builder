@@ -22,6 +22,7 @@ use App\Models\Verification;
 use App\Models\VisualEdit;
 use App\Projects\DesignDirection;
 use App\Projects\ProjectRepository;
+use App\Projects\Starter;
 use App\VisualEditing\TailwindClasses;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -59,6 +60,7 @@ class ProjectController extends Controller
                 ]),
             'canStartNew' => StartProjectFromTemplate::template() !== null,
             'designs' => array_map(fn (DesignDirection $design) => $design->preview(), DesignDirection::all()),
+            'starters' => array_map(fn (Starter $starter) => $starter->toArray(), Starter::all()),
         ]);
     }
 
