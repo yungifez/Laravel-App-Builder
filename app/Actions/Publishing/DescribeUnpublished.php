@@ -15,15 +15,17 @@ use App\Projects\ProjectRepository;
  */
 class DescribeUnpublished
 {
-    public function __construct(private ProjectRepository $repository) {}
+    public function __construct(private ProjectRepository $repository, private FindStoredDataRisks $findStoredDataRisks) {}
 
     /**
      * Describe what is kept but not online yet, or null when nothing is
-     * online, the newest version is, or the history cannot tell.
+     * online, the newest version is, or the history cannot tell. With
+     * $risks, each added request also says how it would touch information
+     * the live app keeps; the owner decides with that in front of them.
      *
-     * @return array{added: list<array{id: int, asked: string}>, undone: list<array{id: int, asked: string}>, edits: int}|null
+     * @return array{added: list<array{id: int, asked: string, data?: list<string>}>, undone: list<array{id: int, asked: string}>, edits: int}|null
      */
-    public function handle(Project $project, ?string $head): ?array
+    public function handle(Project $project, ?string $head, bool $risks = false): ?array
     {
         $live = $project->deployments()->where('status', DeploymentStatus::Published)->latest('id')->value('commit_sha');
 
@@ -47,7 +49,9 @@ class DescribeUnpublished
         $asked = fn (FeatureRequest $featureRequest) => ['id' => $featureRequest->id, 'asked' => $featureRequest->prompt];
 
         return [
-            'added' => array_values($added->map($asked)->all()),
+            'added' => array_values($added->map(fn (FeatureRequest $featureRequest) => $risks
+                ? [...$asked($featureRequest), 'data' => $this->findStoredDataRisks->handle($project, (string) $featureRequest->commit_sha)]
+                : $asked($featureRequest))->all()),
             'undone' => array_values($undone->map($asked)->all()),
             'edits' => $project->visualEdits()->whereIn('commit_sha', $commits)->whereNull('reverted_at')->count(),
         ];

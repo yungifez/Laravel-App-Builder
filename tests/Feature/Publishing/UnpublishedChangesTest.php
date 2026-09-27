@@ -53,7 +53,7 @@ class UnpublishedChangesTest extends TestCase
         $this->actingAs($this->owner)
             ->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->where('publishing.unpublished', [
-                'added' => [['id' => $added->id, 'asked' => 'Show prices next to each item']],
+                'added' => [['id' => $added->id, 'asked' => 'Show prices next to each item', 'data' => []]],
                 'undone' => [['id' => $taken->id, 'asked' => 'Show the opening hours']],
                 'edits' => 1,
             ]));
@@ -78,6 +78,35 @@ class UnpublishedChangesTest extends TestCase
         $this->actingAs($this->owner)
             ->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->where('publishing.unpublished', null));
+    }
+
+    public function test_going_online_says_which_changes_touch_information_the_app_keeps()
+    {
+        Deployment::factory()->create(['project_id' => $this->project->id, 'user_id' => $this->owner->id, 'commit_sha' => $this->repository->head($this->project), 'status' => DeploymentStatus::Published]);
+        $migration = fn (string $up, string $down) => "<?php\n\nuse Illuminate\\Database\\Migrations\\Migration;\n\nreturn new class extends Migration\n{\n    public function up(): void\n    {\n        {$up}\n    }\n\n    public function down(): void\n    {\n        {$down}\n    }\n};\n";
+
+        // Removing a column only when undone is not a risk going forward.
+        $adds = $this->kept($this->commit('database/migrations/2026_01_01_000000_add_phone.php', 'Add phone', $migration(
+            "Schema::table('people', fn (Blueprint \$table) => \$table->string('phone')->nullable());",
+            "Schema::table('people', fn (Blueprint \$table) => \$table->dropColumn('phone'));",
+        )), 'Ask for a phone number');
+        // Where the migration lives does not matter; what it is does.
+        $drops = $this->kept($this->commit('db/2026_01_02_000000_drop_nickname.php', 'Drop nickname', $migration(
+            "Schema::table('people', fn (Blueprint \$table) => \$table->dropColumn('nickname')); DB::table('people')->update(['active' => true]);",
+            '',
+        )), 'Stop asking for a nickname');
+        $renames = $this->kept($this->commit('database/migrations/2026_01_03_000000_rename.php', 'Rename', $migration(
+            "Schema::table('people', fn (Blueprint \$table) => \$table->renameColumn('name', 'full_name'));",
+            "Schema::table('people', fn (Blueprint \$table) => \$table->renameColumn('full_name', 'name'));",
+        )), 'Call it full name');
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('publishing.unpublished.added', [
+                ['id' => $adds->id, 'asked' => 'Ask for a phone number', 'data' => []],
+                ['id' => $drops->id, 'asked' => 'Stop asking for a nickname', 'data' => ['deletes', 'rewrites']],
+                ['id' => $renames->id, 'asked' => 'Call it full name', 'data' => ['renames']],
+            ]));
     }
 
     protected function commit(string $file, string $message, ?string $contents = "x\n"): string

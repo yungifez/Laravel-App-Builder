@@ -207,3 +207,13 @@ them and correct any that are wrong.
   on it, shows nothing: the planner is told never to stretch a change to fit.
   Follow-up ideas prefer ones that serve the goal. Goal-driven suggestions
   that the owner did not ask for are a later step.
+- **Warn before publishing changes to stored data (SDLC gap: data safety).**
+  When a change waiting to go online adds a database migration whose `up()`
+  deletes, renames, reshapes (`->change()`) or rewrites stored data, the
+  publish panel lists that change first with a plain warning, such as
+  "Deletes information your app already keeps". A migration is recognised
+  by `extends Migration`, not by its folder. `down()` is ignored, because
+  it only runs on undo. It is a pattern match, not a proof: raw SQL in a
+  `DB::statement` counts as a rewrite. It warns and never blocks. Backups
+  and going back to the previous live version are later steps; they need
+  per-host research.

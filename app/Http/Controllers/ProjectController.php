@@ -161,7 +161,7 @@ class ProjectController extends Controller
                 // so the owner can see whether what they kept is online.
                 'head' => $head = $repository->exists($project) ? ($repository->head($project, Experiment::mainBranch()) ?: null) : null,
                 // What going online would change, in the owner's words.
-                'unpublished' => $describeUnpublished->handle($project, $head),
+                'unpublished' => $describeUnpublished->handle($project, $head, risks: true),
                 'deployments' => $project->deployments()->latest('id')->limit(5)->get()
                     ->map(fn (Deployment $deployment) => [
                         'id' => $deployment->id,

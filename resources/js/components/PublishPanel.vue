@@ -70,6 +70,25 @@ const waiting = computed(() => {
     );
 });
 
+// What going online does to information the app already keeps, in the
+// owner's words. Changes that touch it come first, so none is hidden
+// behind "And more".
+const dataWords = {
+    deletes: 'Deletes information your app already keeps',
+    renames: 'Renames information your app keeps',
+    reshapes: 'Changes how your app keeps some information',
+    rewrites: 'Rewrites information your app already keeps',
+} as const;
+
+const goingOnline = computed(() => {
+    const added = props.publishing.unpublished?.added ?? [];
+
+    return [
+        ...added.filter((item) => (item.data ?? []).length > 0),
+        ...added.filter((item) => (item.data ?? []).length === 0),
+    ];
+});
+
 // Problems online: fixing them comes before anything else here.
 const troubled = computed(() => (live.value?.problems ?? 0) > 0);
 
@@ -189,16 +208,22 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                             class="list-disc space-y-1 pl-5 marker:text-muted-foreground"
                         >
                             <li
-                                v-for="item in publishing.unpublished?.added.slice(
-                                    0,
-                                    5,
-                                )"
+                                v-for="item in goingOnline.slice(0, 5)"
                                 :key="`added-${item.id}`"
                                 class="break-words"
                             >
                                 <span class="line-clamp-2">{{
                                     item.asked
                                 }}</span>
+                                <span
+                                    v-for="kind in item.data ?? []"
+                                    :key="kind"
+                                    class="flex items-center gap-1.5 text-amber-500"
+                                    data-test="unpublished-data"
+                                >
+                                    <CircleAlert class="size-3.5 shrink-0" />
+                                    {{ dataWords[kind] }}
+                                </span>
                             </li>
                             <li
                                 v-for="item in publishing.unpublished?.undone"

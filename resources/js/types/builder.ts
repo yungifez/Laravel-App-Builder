@@ -539,7 +539,12 @@ export type ProjectPublishing = {
     address: string | null;
     head: string | null;
     unpublished: {
-        added: { id: number; asked: string }[];
+        // data: how the change would touch information the live app keeps.
+        added: {
+            id: number;
+            asked: string;
+            data?: ('deletes' | 'renames' | 'reshapes' | 'rewrites')[];
+        }[];
         undone: { id: number; asked: string }[];
         edits: number;
     } | null;
