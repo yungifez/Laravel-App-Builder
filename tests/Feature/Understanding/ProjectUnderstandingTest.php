@@ -3,6 +3,7 @@
 namespace Tests\Feature\Understanding;
 
 use App\Actions\Projects\CreateProject;
+use App\Context\ChangeClassification;
 use App\Context\ProjectNotes;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -91,7 +92,7 @@ class ProjectUnderstandingTest extends TestCase
             'app/Models/Plan.php' => "<?php\n",
             'app/Http/Controllers/PlanController.php' => "<?php\n",
             'app/Providers/AppServiceProvider.php' => "<?php\n",
-            'tests/Feature/TeamTest.php' => "<?php\n",
+            'tests/Feature/TeamTest.php' => "<?php\n\nit('lists the members of a team', function () {});\n",
         ]));
         $this->repository->import($this->project);
     }
@@ -146,6 +147,38 @@ class ProjectUnderstandingTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('caught', 3)
                 ->where('kept', 2));
+    }
+
+    public function test_each_part_lists_what_the_owner_asked_for_and_whether_its_test_is_still_there()
+    {
+        $kept = function (array $attributes, array $verified) {
+            Run::factory()->for(FeatureRequest::factory()->generated()->for($this->project)->create($attributes))->create([
+                'review' => ['approved' => true, 'summary' => '', 'findings' => [], 'changes' => [], 'verified' => $verified, 'classification' => (new ChangeClassification(targets: ['teams']))->toArray()],
+            ]);
+        };
+        $kept(['accepted_at' => now()->subDay()], [
+            ['criterion' => 'A team lists its members.', 'evidence' => 'tested', 'test_file' => 'tests/Feature/TeamTest.php', 'test_name' => 'lists the members of a team'],
+            // Its test was renamed or removed by a later change.
+            ['criterion' => 'A team shows its plan.', 'evidence' => 'tested', 'test_file' => 'tests/Feature/TeamTest.php', 'test_name' => 'test_a_team_shows_its_plan'],
+            // Only criteria a test proved are listed.
+            ['criterion' => 'The page looks tidy.', 'evidence' => 'no_test', 'test_file' => null, 'test_name' => null],
+        ]);
+        // Changes no longer in the app, or never kept, are not listed.
+        $kept(['accepted_at' => now(), 'reverted_at' => now()], [
+            ['criterion' => 'Teams can be archived.', 'evidence' => 'tested', 'test_file' => 'tests/Feature/TeamTest.php', 'test_name' => 'teams can be archived'],
+        ]);
+        $kept([], [
+            ['criterion' => 'Teams can be renamed.', 'evidence' => 'tested', 'test_file' => 'tests/Feature/TeamTest.php', 'test_name' => 'teams can be renamed'],
+        ]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('areas.0.asked_for', [])
+            ->where('areas.1.asked_for', [
+                ['text' => 'A team lists its members.', 'checked' => true],
+                ['text' => 'A team shows its plan.', 'checked' => false],
+            ]));
     }
 
     public function test_each_part_says_how_many_of_the_apps_tests_run_its_code()

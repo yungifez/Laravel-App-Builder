@@ -443,6 +443,8 @@ export type UnderstandingArea = {
     checked_by: number | null;
     // What those tests check, in their authors' words.
     checks: string[];
+    // What the owner asked for here, each proved by a test when kept; checked says whether that test is still in the app (null when unknown).
+    asked_for: { text: string; checked: boolean | null }[];
     file: string | null;
 };
 

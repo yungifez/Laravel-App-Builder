@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Actions\Context\CheckProjectNotes;
 use App\Actions\Context\ReadProjectContext;
 use App\Actions\Context\UpdateProjectNotes;
+use App\Actions\Features\DescribeAskedFor;
 use App\Context\Capability;
 use App\Context\NotesDocument;
 use App\Context\ProjectNotes;
@@ -29,7 +30,7 @@ class ProjectUnderstandingController extends Controller
      * for, how things work, what must always be true, what is connected, and
      * what changed. The quick check runs on request.
      */
-    public function show(Project $project, ProjectRepository $repository, ProjectNotes $projectNotes, ReadProjectContext $readProjectContext, CheckProjectNotes $checkProjectNotes): Response
+    public function show(Project $project, ProjectRepository $repository, ProjectNotes $projectNotes, ReadProjectContext $readProjectContext, CheckProjectNotes $checkProjectNotes, DescribeAskedFor $describeAskedFor): Response
     {
         Gate::authorize('view', $project);
 
@@ -40,6 +41,7 @@ class ProjectUnderstandingController extends Controller
         $names = array_map(fn (Capability $capability) => $capability->name, $context->capabilities ?? []);
         // Which of the app's tests run each area's own code, as last seen.
         $map = $context === null ? null : TestObservation::latestFor($project)?->map();
+        $askedFor = $context === null ? [] : $describeAskedFor->handle($project, $repository->head($project) ?: null);
 
         return Inertia::render('projects/Understanding', [
             'project' => $project->only('id', 'name'),
@@ -60,6 +62,8 @@ class ProjectUnderstandingController extends Controller
                 'checked_by' => $map === null ? null : count($map->testsForArea($capability)),
                 // What those tests check, in their authors' words.
                 'checks' => $map === null ? [] : array_values(array_unique(array_map($map->sentence(...), $map->testsForArea($capability)))),
+                // What the owner asked for here, each proved by a test when kept.
+                'asked_for' => $askedFor[$capability->key] ?? [],
                 'file' => $capability->file,
             ], $context->capabilities ?? [])),
             'problems' => $context->problems ?? [],

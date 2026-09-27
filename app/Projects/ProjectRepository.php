@@ -308,6 +308,28 @@ class ProjectRepository
     }
 
     /**
+     * Get which of the given test names appear, as whole words, in the
+     * project's test files at a revision.
+     *
+     * @param  list<string>  $names
+     * @return list<string>
+     */
+    public function testNames(Project $project, string $revision, array $names): array
+    {
+        if ($names === []) {
+            return [];
+        }
+
+        $patterns = array_merge(...array_map(fn (string $name) => ['-e', $name], $names));
+        $result = $this->git($project, [
+            'grep', '-F', '-w', '-o', '-h', ...$patterns, $revision, '--',
+            ':(glob)**/tests/**', ':(glob)**/*.test.*', ':(glob)**/*.spec.*',
+        ], throw: false);
+
+        return array_values(array_intersect($names, explode("\n", $result->output())));
+    }
+
+    /**
      * Get the project's files at a revision.
      *
      * @return list<string>

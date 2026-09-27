@@ -52,6 +52,22 @@ const props = defineProps<{
 
 const checking = ref(false);
 
+// What the owner asked for in a part, counted in one line: how many things,
+// and how many a test still checks, when the latest test run says.
+function askedForSummary(area: UnderstandingArea): string {
+    const count = area.asked_for.length;
+    const lost = area.asked_for.filter((item) => item.checked === false).length;
+    const things = `${count} ${count === 1 ? 'thing' : 'things'} you asked for`;
+
+    if (lost > 0) {
+        return `${things}, ${lost} whose test has changed since`;
+    }
+
+    return area.asked_for.some((item) => item.checked === null)
+        ? `${things}, each proved by a test`
+        : `${things}, each still checked by a test`;
+}
+
 // Enough of a part's checks to show what they cover, without a wall of text.
 const CHECKS_SHOWN = 8;
 
@@ -477,42 +493,90 @@ watch(
                                 </Form>
                             </div>
 
-                            <NotesPart
-                                :project-id="project.id"
-                                :revision="revision"
-                                :part="`rules:${area.key}`"
-                                :text="area.rules.join('\n')"
-                                :label="`the rules for ${area.name}`"
-                                :rows="Math.max(3, area.rules.length + 1)"
-                                hint="One rule per line."
-                                variant="icon"
-                            >
-                                <p
-                                    class="mb-3 text-sm font-medium text-muted-foreground"
+                            <div class="min-w-0 space-y-6">
+                                <NotesPart
+                                    :project-id="project.id"
+                                    :revision="revision"
+                                    :part="`rules:${area.key}`"
+                                    :text="area.rules.join('\n')"
+                                    :label="`the rules for ${area.name}`"
+                                    :rows="Math.max(3, area.rules.length + 1)"
+                                    hint="One rule per line."
+                                    variant="icon"
                                 >
-                                    Always true
-                                </p>
-                                <ul
-                                    v-if="area.rules.length"
-                                    class="space-y-2.5 pr-8"
-                                >
-                                    <li
-                                        v-for="rule in area.rules"
-                                        :key="rule"
-                                        class="flex gap-2.5"
+                                    <p
+                                        class="mb-3 text-sm font-medium text-muted-foreground"
                                     >
-                                        <Check
-                                            class="mt-1 size-3.5 shrink-0 text-muted-foreground"
+                                        Always true
+                                    </p>
+                                    <ul
+                                        v-if="area.rules.length"
+                                        class="space-y-2.5 pr-8"
+                                    >
+                                        <li
+                                            v-for="rule in area.rules"
+                                            :key="rule"
+                                            class="flex gap-2.5"
+                                        >
+                                            <Check
+                                                class="mt-1 size-3.5 shrink-0 text-muted-foreground"
+                                            />
+                                            <span class="min-w-0">{{
+                                                plain(rule)
+                                            }}</span>
+                                        </li>
+                                    </ul>
+                                    <p
+                                        v-else
+                                        class="text-sm text-muted-foreground"
+                                    >
+                                        No rules yet.
+                                    </p>
+                                </NotesPart>
+                                <!-- The owner's own requests, each proved by a test when kept -->
+                                <details
+                                    v-if="area.asked_for.length"
+                                    class="group text-sm"
+                                    data-test="part-asked-for"
+                                >
+                                    <summary
+                                        class="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-muted-foreground select-none hover:text-foreground sm:min-h-6"
+                                    >
+                                        <ChevronRight
+                                            class="size-3.5 transition-transform group-open:rotate-90"
                                         />
-                                        <span class="min-w-0">{{
-                                            plain(rule)
-                                        }}</span>
-                                    </li>
-                                </ul>
-                                <p v-else class="text-sm text-muted-foreground">
-                                    No rules yet.
-                                </p>
-                            </NotesPart>
+                                        {{ askedForSummary(area) }}
+                                    </summary>
+                                    <ul class="mt-3 space-y-2.5 pl-5">
+                                        <li
+                                            v-for="item in area.asked_for"
+                                            :key="item.text"
+                                            class="flex gap-2.5"
+                                        >
+                                            <CircleDashed
+                                                v-if="item.checked === false"
+                                                class="mt-1 size-3.5 shrink-0 text-amber-600"
+                                            />
+                                            <ShieldCheck
+                                                v-else
+                                                class="mt-1 size-3.5 shrink-0 text-green-600"
+                                            />
+                                            <span class="min-w-0">
+                                                {{ item.text }}
+                                                <span
+                                                    v-if="
+                                                        item.checked === false
+                                                    "
+                                                    class="text-amber-700 dark:text-amber-500"
+                                                    data-test="asked-for-unchecked"
+                                                    >The test that proved this
+                                                    has changed or gone.</span
+                                                >
+                                            </span>
+                                        </li>
+                                    </ul>
+                                </details>
+                            </div>
                         </li>
                     </ul>
                 </template>
