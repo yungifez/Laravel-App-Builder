@@ -50,6 +50,12 @@ class VisualEdit extends Model
     public const TEXT = 'text';
 
     /**
+     * The key in "changes" of a new address for a link: the address before
+     * and after.
+     */
+    public const LINK = 'link';
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -83,14 +89,32 @@ class VisualEdit extends Model
     }
 
     /**
+     * Determine whether the edit changed where a link goes.
+     */
+    public function relinks(): bool
+    {
+        return isset($this->getAttribute('changes')[self::LINK]);
+    }
+
+    /**
+     * Determine whether undoing or redoing the edit puts back the whole
+     * file, rather than only the element's classes.
+     */
+    public function rewritesFile(): bool
+    {
+        return $this->moves() || $this->rewords() || $this->relinks();
+    }
+
+    /**
      * Get what kind of edit this is: a change to how the element looks, a
-     * move, or new words.
+     * move, new words, or a new address for a link.
      */
     public function kind(): string
     {
         return match (true) {
             $this->moves() => 'move',
             $this->rewords() => 'text',
+            $this->relinks() => 'link',
             default => 'look',
         };
     }

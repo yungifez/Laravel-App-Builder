@@ -10,6 +10,7 @@ use App\Projects\ProjectRepository;
 use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TailwindClasses;
 use App\VisualEditing\TemplateElement;
+use App\VisualEditing\TemplateLink;
 use Illuminate\Support\Str;
 
 class InspectElement
@@ -59,6 +60,9 @@ class InspectElement
                 ! $element->editable() => 'dynamic',
                 default => null,
             },
+            // Where a link goes, when it is written plainly and so can be
+            // changed here; null when the app decides it.
+            'link' => $element?->tag === 'a' ? ['href' => TemplateLink::in((string) $contents, $element)['value'] ?? null] : null,
             'classes' => $classes,
             'values' => TailwindClasses::effective($classes),
             'area' => $this->area($preview, $location->file),

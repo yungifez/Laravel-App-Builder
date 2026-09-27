@@ -25,14 +25,18 @@ class RedoVisualEdit
             throw ValidationException::withMessages(['edit' => __('This change is already in place.')]);
         }
 
-        // A move or new words put back the whole file; a new look puts back
-        // only the element's classes.
-        $sha = $edit->moves() || $edit->rewords()
+        // A move, new words or a new link address put back the whole file;
+        // a new look puts back only the element's classes.
+        $sha = $edit->rewritesFile()
             ? $this->swapMovedElement->handle(
                 $edit,
                 (string) $edit->revert_sha,
                 $edit->commit_sha,
-                ($edit->moves() ? "Redo moving <{$edit->tag}>" : "Redo new words in <{$edit->tag}>")."\n\nThis makes commit {$edit->commit_sha} again.",
+                match ($edit->kind()) {
+                    'move' => "Redo moving <{$edit->tag}>",
+                    'link' => "Redo where <{$edit->tag}> goes",
+                    default => "Redo new words in <{$edit->tag}>",
+                }."\n\nThis makes commit {$edit->commit_sha} again.",
                 $owner,
             )
             : $this->swapElementClasses->handle(

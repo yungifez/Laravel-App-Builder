@@ -10,6 +10,7 @@ import {
 import type { Ref } from 'vue';
 import VisualEditController from '@/actions/App/Http/Controllers/VisualEditController';
 import VisualEditReversionController from '@/actions/App/Http/Controllers/VisualEditReversionController';
+import VisualLinkController from '@/actions/App/Http/Controllers/VisualLinkController';
 import VisualMoveController from '@/actions/App/Http/Controllers/VisualMoveController';
 import VisualTextController from '@/actions/App/Http/Controllers/VisualTextController';
 import {
@@ -1014,6 +1015,65 @@ export function useAppPreview(source: Source) {
         );
     }
 
+    // Send a link to a new address. Nothing shows in the app, so the new
+    // address is written, and the app rebuilds with it.
+    function relink(href: string): void {
+        const preview = source.preview();
+        const part = selected.value;
+        const address = href.trim();
+        const was = element.value?.link?.href ?? null;
+        const at = part?.instance ?? part?.source;
+
+        if (
+            preview === null ||
+            part === null ||
+            !at ||
+            was === null ||
+            address === '' ||
+            address === was
+        ) {
+            return;
+        }
+
+        if (sending.value !== null || queue.value.length > 0 || moving.value) {
+            save();
+            setTimeout(() => relink(href), 200);
+
+            return;
+        }
+
+        moving.value = true;
+        saveError.value = null;
+
+        router.post(
+            VisualLinkController.store.url(source.projectId()),
+            {
+                preview: preview.id,
+                target: at,
+                instance: Boolean(part.instance),
+                before: was,
+                href: address,
+                revision: head.value ?? element.value?.revision,
+            },
+            {
+                only: ['edits', 'preview'],
+                async: true,
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => {
+                    last.value = null;
+                    head.value = null;
+                    known.value = null;
+                    inspect();
+                },
+                onError: (errors) => {
+                    saveError.value = Object.values(errors)[0] ?? null;
+                },
+                onFinish: () => (moving.value = false),
+            },
+        );
+    }
+
     // Whether an edit is undone, counting undo and redo the server has not
     // done yet.
     function isUndone(edit: VisualEditSummary): boolean {
@@ -1311,6 +1371,7 @@ export function useAppPreview(source: Source) {
         isUndone,
         showSpacing,
         reword,
+        relink,
         press,
         hide,
         undoable,

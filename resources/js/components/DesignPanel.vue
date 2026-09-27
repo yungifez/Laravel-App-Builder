@@ -84,6 +84,18 @@ watch(
 function keepWords(): void {
     props.state.reword(draft.value);
 }
+
+// Where the selected link goes, as the owner types it. Saved like words.
+const address = ref('');
+watch(
+    () => props.state.element?.link?.href,
+    (href) => (address.value = href ?? ''),
+    { immediate: true },
+);
+
+function keepAddress(): void {
+    props.state.relink(address.value);
+}
 // Whether the owner is reading what making the page consistent does.
 const tidying = ref(false);
 const element = computed(() => props.state.element);
@@ -246,6 +258,10 @@ function describeEdit(edit: VisualEditSummary): string {
         return 'Words';
     }
 
+    if (edit.kind === 'link') {
+        return 'Link';
+    }
+
     return edit.properties
         .map(
             (key) =>
@@ -264,6 +280,10 @@ function describeResult(
 
     if (edit.kind === 'text' && edit.words) {
         return { words: `“${edit.words}”`, color: null };
+    }
+
+    if (edit.kind === 'link' && edit.link) {
+        return { words: edit.link, color: null };
     }
 
     if (edit.kind === 'move' || edit.properties.length !== 1) {
@@ -596,6 +616,36 @@ const recent = computed(() => {
                             />
                             <p class="text-xs text-muted-foreground">
                                 Or double-click the words in your app.
+                            </p>
+                        </section>
+
+                        <section
+                            v-if="element.link"
+                            class="space-y-2"
+                            data-test="link"
+                        >
+                            <h3 class="text-xs font-medium">Goes to</h3>
+                            <input
+                                v-if="element.link.href !== null"
+                                id="property-link"
+                                v-model="address"
+                                type="text"
+                                inputmode="url"
+                                autocomplete="off"
+                                spellcheck="false"
+                                aria-label="Goes to"
+                                placeholder="/page or https://…"
+                                class="block h-11 w-full rounded-md bg-muted px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-9"
+                                data-test="link-address"
+                                @blur="keepAddress"
+                                @keydown.enter.prevent="keepAddress"
+                                @keydown.escape="
+                                    address = element.link.href ?? ''
+                                "
+                            />
+                            <p v-else class="text-xs text-muted-foreground">
+                                Your app decides where this link goes. Ask me to
+                                change it.
                             </p>
                         </section>
 

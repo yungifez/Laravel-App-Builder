@@ -649,6 +649,85 @@ class VisualEditingTest extends TestCase
         $this->assertStringContainsString('<Button>Start</Button>', (string) $this->repository->show($this->project, $this->repository->head($this->project), 'resources/js/pages/Home.vue'));
     }
 
+    protected const NAV = <<<'VUE'
+    <template>
+        <nav>
+            <a href="/plans" class="underline">Plans</a>
+            <a :href="route('home')">Home</a>
+        </nav>
+    </template>
+
+    VUE;
+
+    public function test_the_owner_changes_where_a_link_goes_and_can_undo_and_redo_it()
+    {
+        Queue::fake();
+        $file = 'resources/js/pages/Nav.vue';
+        $this->repository->commitFiles($this->project, $this->repository->head($this->project), [$file => self::NAV], 'Add links', ['name' => 'Ada Owner', 'email' => 'ada@example.com']);
+        $preview = $this->runningPreview();
+        $relinked = str_replace('href="/plans"', 'href="https://example.com/?a=1&amp;b=2"', self::NAV);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', ['project' => $this->project, 'target' => "{$file}:3:9"]))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('element', fn (Assert $page) => $page
+                ->where('element.link', ['href' => '/plans'])));
+
+        $this->post(route('visual-links.store', $this->project), [
+            'preview' => $preview->id,
+            'target' => "{$file}:3:9",
+            'before' => '/plans',
+            'href' => ' https://example.com/?a=1&b=2 ',
+            'revision' => $preview->revision,
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame($relinked, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+
+        $edit = $this->project->visualEdits()->sole();
+        $this->assertTrue($edit->relinks());
+
+        $this->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('edits.0.kind', 'link')
+                ->where('edits.0.link', 'https://example.com/?a=1&b=2')
+                ->where('edits.0.sides', null));
+
+        $this->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
+        $this->assertSame(self::NAV, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+
+        $this->delete(route('visual-edits.reversion.destroy', $edit))->assertSessionHasNoErrors();
+        $this->assertSame($relinked, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+    }
+
+    public function test_a_link_the_app_decides_or_an_unsafe_address_is_not_changed_in_place()
+    {
+        Queue::fake();
+        $file = 'resources/js/pages/Nav.vue';
+        $this->repository->commitFiles($this->project, $this->repository->head($this->project), [$file => self::NAV], 'Add links', ['name' => 'Ada Owner', 'email' => 'ada@example.com']);
+        $preview = $this->runningPreview();
+        $relink = fn (array $data) => $this->actingAs($this->owner)->post(route('visual-links.store', $this->project), $data + [
+            'preview' => $preview->id,
+            'target' => "{$file}:3:9",
+            'before' => '/plans',
+            'href' => '/prices',
+            'revision' => $preview->revision,
+        ]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', ['project' => $this->project, 'target' => "{$file}:4:9"]))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('element', fn (Assert $page) => $page
+                ->where('element.link', ['href' => null])));
+
+        $relink(['target' => "{$file}:4:9", 'before' => '/'])
+            ->assertSessionHasErrors(['edit' => 'Your app decides where this link goes, so I can\'t change it here. Ask me to change it instead.']);
+        $relink(['before' => '/pricing'])->assertSessionHasErrors(['edit' => 'This link was changed since. Look again and try once more.']);
+
+        foreach (['javascript:alert(1)', '//evil.test', 'plans', '/a" onclick="x', '/{{ page }}'] as $address) {
+            $relink(['href' => $address])->assertSessionHasErrors('href');
+        }
+
+        $this->assertSame($preview->revision, $this->repository->head($this->project));
+    }
+
     public function test_moves_between_files_or_across_parents_are_refused_and_undo_keeps_later_changes()
     {
         Queue::fake();

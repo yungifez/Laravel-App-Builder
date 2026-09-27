@@ -387,6 +387,9 @@ export type InspectedElement = {
     shared: { name: string; uses: number } | null;
     editable: boolean;
     reason: 'updating' | 'behind' | 'not_found' | 'dynamic' | null;
+    /** Where a link goes: null for a part that is no link, and an href of
+     * null when the app decides it. */
+    link: { href: string | null } | null;
     classes: string;
     values: Record<
         Device,
@@ -438,12 +441,15 @@ export type VisualEditSummary = {
     id: number;
     tag: string;
     device: Device;
-    /** A change to how the part looks, a move among its siblings, or new words. */
-    kind: 'look' | 'move' | 'text';
+    /** A change to how the part looks, a move among its siblings, new
+     * words, or a new address for a link. */
+    kind: 'look' | 'move' | 'text' | 'link';
     properties: VisualProperty[];
     /** The new words and the words they replaced, for new words. */
     words: string | null;
     words_before: string | null;
+    /** Where a link goes after a new address. */
+    link: string | null;
     /** The part's classes and the app's version after this edit (or its undo). */
     classes: string;
     revision: string;
