@@ -331,3 +331,43 @@
         transition-duration: 0.01ms !important;
     }
 }
+
+/*
+  One screen changing layout (a tab, the chat on the whole screen)
+  crossfades like a page change, and the app slides to or from its side
+  so the owner sees where it went. The mark counts only while a morph
+  runs; see resources/js/lib/morph.ts.
+*/
+.morphing [data-morph='app'] {
+    view-transition-name: app;
+}
+
+::view-transition-group(app) {
+    animation-duration: var(--transition-duration-base);
+    animation-timing-function: var(--ease-snap);
+}
+
+/* Leaving is as quick as the old view fading, so the app never sits over
+   the chat; arriving can take its time. */
+::view-transition-old(app):only-child {
+    animation: morph-out-right 90ms var(--ease-settle) both;
+}
+
+::view-transition-new(app):only-child {
+    animation: morph-in-right var(--transition-duration-base) var(--ease-settle)
+        both;
+}
+
+@keyframes morph-out-right {
+    to {
+        opacity: 0;
+        translate: 1.5rem 0;
+    }
+}
+
+@keyframes morph-in-right {
+    from {
+        opacity: 0;
+        translate: 1.5rem 0;
+    }
+}

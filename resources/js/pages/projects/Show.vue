@@ -67,6 +67,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { useAppPreview } from '@/composables/useAppPreview';
 import { usePanelWidth } from '@/composables/usePanelWidth';
+import { morph } from '@/lib/morph';
 import { when } from '@/lib/when';
 import { show as showPreview } from '@/routes/previews';
 import { index, show as showProject } from '@/routes/projects';
@@ -190,6 +191,23 @@ const phoneView = computed<'chat' | 'design' | 'app'>({
         panel.value = view === 'design' ? 'design' : 'chat';
     },
 });
+
+// Switching what the screen shows morphs from one layout to the next.
+function show(to: 'chat' | 'design'): void {
+    morph(() => (panel.value = to));
+}
+
+function showPhone(view: 'chat' | 'design' | 'app'): void {
+    morph(() => (phoneView.value = view));
+}
+
+function toggleChatFull(): void {
+    morph(() => (chat.full = !chatFull.value));
+}
+
+function codeOnWholeScreen(full: boolean): void {
+    morph(() => (codeFull.value = full));
+}
 
 const detailsOpen = ref(false);
 const publishOpen = ref(false);
@@ -835,7 +853,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                     : 'text-muted-foreground',
             ]"
             :data-test="`view-${option.key}`"
-            @click="phoneView = option.key"
+            @click="showPhone(option.key)"
         >
             <component :is="option.icon" class="size-4" />
             {{ option.label }}
@@ -874,22 +892,28 @@ function sendOnEnter(event: KeyboardEvent): void {
                 :style="besideChat"
             >
                 <div
-                    class="grid flex-1 grid-cols-2 rounded-md bg-muted p-0.5 text-sm"
+                    class="relative grid flex-1 grid-cols-2 rounded-md bg-muted p-0.5 text-sm"
                     role="tablist"
                     aria-label="Panel"
                 >
+                    <!-- One pill slides to the chosen tab. -->
+                    <span
+                        aria-hidden="true"
+                        class="absolute inset-y-0.5 left-0.5 w-[calc(50%-0.125rem)] rounded bg-background shadow-sm transition-transform duration-base ease-snap"
+                        :class="panel === 'design' && 'translate-x-full'"
+                    />
                     <button
                         type="button"
                         role="tab"
                         :aria-selected="panel === 'chat'"
                         :class="[
-                            'flex min-h-11 items-center justify-center gap-2 rounded select-none sm:min-h-8',
+                            'relative flex min-h-11 items-center justify-center gap-2 rounded transition-colors duration-quick select-none sm:min-h-8',
                             panel === 'chat'
-                                ? 'bg-background font-medium shadow-sm'
-                                : 'text-muted-foreground',
+                                ? 'font-medium'
+                                : 'text-muted-foreground hover:text-foreground',
                         ]"
                         data-test="panel-chat"
-                        @click="panel = 'chat'"
+                        @click="show('chat')"
                     >
                         <MessageSquare class="size-4" /> Chat
                         <span
@@ -903,13 +927,13 @@ function sendOnEnter(event: KeyboardEvent): void {
                         role="tab"
                         :aria-selected="panel === 'design'"
                         :class="[
-                            'flex min-h-11 items-center justify-center gap-2 rounded select-none sm:min-h-8',
+                            'relative flex min-h-11 items-center justify-center gap-2 rounded transition-colors duration-quick select-none sm:min-h-8',
                             panel === 'design'
-                                ? 'bg-background font-medium shadow-sm'
-                                : 'text-muted-foreground',
+                                ? 'font-medium'
+                                : 'text-muted-foreground hover:text-foreground',
                         ]"
                         data-test="panel-design"
-                        @click="panel = 'design'"
+                        @click="show('design')"
                     >
                         <MousePointerClick class="size-4" /> Design
                     </button>
@@ -931,7 +955,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                             : 'Chat on the whole screen'
                     "
                     data-test="chat-full"
-                    @click="chat.full = !chatFull"
+                    @click="toggleChatFull"
                 >
                     <component
                         :is="chatFull ? Minimize2 : Maximize2"
@@ -984,7 +1008,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                     v-if="change"
                     :change="change"
                     :roomy="chatCentred"
-                    @full="codeFull = $event"
+                    @full="codeOnWholeScreen"
                     @sides="threadSides = $event"
                 />
 
@@ -1374,6 +1398,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                 panelFull ? 'lg:hidden' : 'lg:flex',
             ]"
             data-test="app-pane"
+            data-morph="app"
         >
             <!-- The designer shows each change as it is made. -->
             <p
