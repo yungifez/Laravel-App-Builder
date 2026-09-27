@@ -93,6 +93,24 @@ it('continues the open chat when the owner asks for more', function () {
     expect($followUp->solution_key)->toBe('invitation-reminders');
 });
 
+it('sends a suggested next step with one tap', function () {
+    $this->actingAs($this->owner);
+
+    askForInvitations($this->project);
+
+    $run = $this->project->featureRequests()->sole()->latestRun;
+    $run->update(['plan' => [...$run->plan, 'next' => ['Remind people who have not answered their invitation.']]]);
+
+    visit(route('projects.show', ['project' => $this->project, 'change' => $run->feature_request_id]))
+        ->click('@next-idea')
+        ->assertSee('People are reminded of invitations they have not answered.')
+        ->assertMissing('@thread-next')
+        ->assertNoJavaScriptErrors();
+
+    $followUp = $this->project->featureRequests()->whereNotNull('parent_id')->sole();
+    expect($followUp->prompt)->toBe('Remind people who have not answered their invitation.');
+});
+
 it('starts the chat full screen and gives the app half once it is open', function () {
     $this->actingAs($this->owner);
 

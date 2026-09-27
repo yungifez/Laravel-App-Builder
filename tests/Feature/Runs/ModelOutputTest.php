@@ -26,6 +26,29 @@ class ModelOutputTest extends TestCase
         $this->assertEquals($plan, Plan::fromArray($plan->toArray()));
     }
 
+    public function test_follow_up_ideas_are_short_distinct_and_at_most_three()
+    {
+        $plan = Plan::fromModelOutput([
+            'summary' => 'Invite people.',
+            'acceptance_criteria' => ['Owners can invite.'],
+            'assumptions' => [],
+            'tasks' => ['Add an invitation model.'],
+            'steps' => [['key' => 'permission', 'kind' => 'permission', 'label' => 'Who may invite', 'file' => 'app/Policies/TeamPolicy.php', 'symbol' => 'TeamPolicy::invite', 'detail' => 'Owners only.']],
+            'next' => [
+                '  Remind   people who have not answered ',
+                'Remind people who have not answered',
+                '',
+                str_repeat('Too long ', 20),
+                'Let people leave a team',
+                'Show who invited whom',
+                'Limit invitations per day',
+            ],
+        ], []);
+
+        $this->assertSame(['Remind people who have not answered', 'Let people leave a team', 'Show who invited whom'], $plan->next);
+        $this->assertSame([], Plan::fromArray(array_diff_key($plan->toArray(), ['next' => true]))->next, 'A plan saved before ideas existed has none.');
+    }
+
     public function test_an_area_written_into_a_statement_is_moved_back_to_its_field()
     {
         $plan = Plan::fromModelOutput([

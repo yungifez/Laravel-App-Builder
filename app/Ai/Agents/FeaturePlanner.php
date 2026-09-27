@@ -37,6 +37,7 @@ class FeaturePlanner implements Agent, HasStructuredOutput
         - tasks: concrete, ordered instructions for a developer who will make the change with file tools. Name the files and Laravel features to use (migrations, models, policies, form requests, actions, notifications, Inertia pages, tests).
         - preserve: what must stay as it is, each with the key of the area it belongs to (or null). Take them from the rules and behaviours in the project notes for the areas the change is about and the areas they may also affect, for example "Owners can still refund any amount". List only what a careless change could plausibly break.
         - capabilities: the keys of the areas of the application (listed under "Areas of the application") that this change is about. Leave it empty when there is no list or none fits. The developer receives those areas' notes.
+        - next: up to three short things the owner might ask for next, once this is done, in their words, for example "Remind people who have not answered their invitation". Each builds on this change and is under 80 characters. Leave it empty when nothing natural follows.
         - steps: the parts of the change the owner may want to adjust later, such as a permission check, a validation rule, an email or a button. Each has a short kebab-case key, a kind (permission, validation, notification, interface, data or behaviour), a plain label, the file and symbol that implement it, and a one-sentence detail. Every change has at least one step.
 
         - answer: null when the owner wants something built or changed. When they only ask about the app as it is ("Who can see invoices?", "What happens when a payment fails?", "How does sign-up work?") and want nothing changed, answer them here instead: a few plain sentences from the project notes and files, in the owner's words, without code or file names. Then summary repeats the answer in one sentence, understood_as is "Question", commit_subject is "", and acceptance_criteria, tasks, steps and preserve are empty. If you are not sure whether they want a change, plan the change.
@@ -66,6 +67,7 @@ class FeaturePlanner implements Agent, HasStructuredOutput
                 'area' => $schema->string()->nullable()->required(),
             ])->withoutAdditionalProperties())->required(),
             'capabilities' => $schema->array()->items($schema->string())->required(),
+            'next' => $schema->array()->items($schema->string())->required(),
             'question' => $schema->object([
                 'text' => $schema->string()->required(),
                 'why' => $schema->string()->required(),

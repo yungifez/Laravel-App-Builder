@@ -212,6 +212,8 @@ export type Run = {
         understood_as: string | null;
         current_behavior: string | null;
         preserve: string[];
+        /** What the owner might ask for next, sent with one tap. */
+        next: string[];
     } | null;
     review: RunReview | null;
     /** What the change is doing right now, while it is being made. */

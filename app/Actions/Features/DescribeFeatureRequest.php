@@ -133,6 +133,7 @@ class DescribeFeatureRequest
                 'understood_as' => $run->plan['understood_as'] ?? null,
                 'current_behavior' => $run->plan['current_behavior'] ?? null,
                 'preserve' => array_column(Plan::fromArray($run->plan)->preserve, 'statement'),
+                'next' => $run->plan['next'] ?? [],
             ],
             'review' => $this->review($run),
             'progress' => $this->describeRunProgress->handle($run),

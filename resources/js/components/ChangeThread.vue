@@ -18,6 +18,7 @@ import {
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import FeatureRequestAcceptanceController from '@/actions/App/Http/Controllers/FeatureRequestAcceptanceController';
 import FeatureRequestAnswerController from '@/actions/App/Http/Controllers/FeatureRequestAnswerController';
+import FeatureRequestFollowUpController from '@/actions/App/Http/Controllers/FeatureRequestFollowUpController';
 import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
 import FeatureRequestRetryController from '@/actions/App/Http/Controllers/FeatureRequestRetryController';
 import FeatureRequestReversionController from '@/actions/App/Http/Controllers/FeatureRequestReversionController';
@@ -49,6 +50,14 @@ const emit = defineEmits<{
 const request = computed(() => props.change.featureRequest);
 const run = computed(() => props.change.run);
 const moreQuestions = ref(false);
+
+// What the owner might ask for next, one tap each, as in any chat. Offered
+// only while the chat can go on and nothing has been asked after this yet.
+const nextIdeas = computed(() =>
+    request.value.can_continue && props.change.followUps.length === 0
+        ? (run.value?.plan?.next ?? [])
+        : [],
+);
 
 // The same change at four depths (§28.3). The depth is remembered for the
 // person, so a power user keeps seeing the detail they asked for.
@@ -1094,6 +1103,33 @@ const checks = computed(() => {
                             </template>
                         </div>
                     </div>
+                </div>
+
+                <!-- What to ask for next -->
+                <div
+                    v-if="nextIdeas.length > 0"
+                    class="flex flex-wrap gap-2 pl-9.5"
+                    data-test="thread-next"
+                >
+                    <Form
+                        v-for="idea in nextIdeas"
+                        :key="idea"
+                        v-bind="
+                            FeatureRequestFollowUpController.store.form(
+                                request.id,
+                            )
+                        "
+                        v-slot="{ processing }"
+                    >
+                        <input type="hidden" name="prompt" :value="idea" />
+                        <button
+                            :disabled="processing"
+                            class="min-h-11 rounded-full border px-3 text-left text-sm text-muted-foreground select-none hover:border-foreground/30 hover:text-foreground disabled:opacity-50 sm:min-h-8"
+                            data-test="next-idea"
+                        >
+                            {{ idea }}
+                        </button>
+                    </Form>
                 </div>
 
                 <!-- What was asked after this, in the same chat -->
