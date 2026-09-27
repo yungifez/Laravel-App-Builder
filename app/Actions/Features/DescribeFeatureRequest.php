@@ -117,6 +117,24 @@ class DescribeFeatureRequest
     }
 
     /**
+     * Get what the owner might ask for next: the planner's ideas, after
+     * closing the gap the checks found when some of the new code is run by
+     * no test, since that one keeps the change safe to build on.
+     *
+     * @return list<string>
+     */
+    protected function next(Run $run): array
+    {
+        $ideas = $run->plan['next'] ?? [];
+
+        if (($run->review['classification']['observed']['unmapped'] ?? []) !== []) {
+            $ideas = [__('Add tests for the new code nothing checks yet'), ...$ideas];
+        }
+
+        return array_slice($ideas, 0, 3);
+    }
+
+    /**
      * Get the latest construction run and its log for the page.
      *
      * @return array<string, mixed>|null
@@ -139,7 +157,7 @@ class DescribeFeatureRequest
                 'understood_as' => $run->plan['understood_as'] ?? null,
                 'current_behavior' => $run->plan['current_behavior'] ?? null,
                 'preserve' => array_column(Plan::fromArray($run->plan)->preserve, 'statement'),
-                'next' => $run->plan['next'] ?? [],
+                'next' => $this->next($run),
             ],
             'review' => $this->review($run),
             'progress' => $this->describeRunProgress->handle($run),

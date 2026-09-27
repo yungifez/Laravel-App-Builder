@@ -6,6 +6,7 @@ use App\Enums\VerificationStatus;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\Verification;
+use App\Runs\Plan;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -137,6 +138,23 @@ class ChangeProofTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('proof.3', [
                 'kind' => 'passed',
                 'text' => 'It added 4 tests that keep this checked from now on, such as "Owners can archive teams".',
+            ]));
+    }
+
+    public function test_new_code_no_test_runs_is_offered_first_as_the_next_thing_to_ask_for()
+    {
+        $request = FeatureRequest::factory()->generated()->create();
+        $this->checked($request);
+        $this->reviewed($request, ['areas' => ['teams' => 1], 'tests' => 1, 'unmapped' => ['app/Support/Money.php'], 'foundation' => [], 'by_line' => []]);
+        $run = $request->runs()->sole();
+        $run->update(['plan' => (new Plan('Archive teams.', next: ['Let owners archive teams', 'Show archived teams', 'Email the owner']))->toArray()]);
+
+        $this->actingAs($request->project->owner)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page->where('run.plan.next', [
+                'Add tests for the new code nothing checks yet',
+                'Let owners archive teams',
+                'Show archived teams',
             ]));
     }
 
