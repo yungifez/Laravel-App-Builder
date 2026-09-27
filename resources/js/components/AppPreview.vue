@@ -46,7 +46,11 @@ watch(scale, (value) => (props.state.zoom = value), { immediate: true });
 <template>
     <div
         ref="pane"
-        class="relative h-full overflow-hidden rounded-lg border bg-muted/40"
+        :class="[
+            'relative h-full overflow-hidden rounded-lg border bg-muted/40',
+            // Breathes softly while the app draws itself.
+            state.frames.length > 0 && !state.drawn && 'animate-pulse',
+        ]"
         data-test="app-preview"
     >
         <!-- The app on show, and after a rebuild the new app loading
@@ -71,8 +75,9 @@ watch(scale, (value) => (props.state.zoom = value), { immediate: true });
                 :aria-hidden="index > 0"
                 :tabindex="index > 0 ? -1 : undefined"
                 :class="[
-                    'absolute top-0 left-1/2 origin-top bg-background',
+                    'absolute top-0 left-1/2 origin-top bg-background transition-opacity duration-base',
                     index > 0 ? 'pointer-events-none z-0' : 'z-10',
+                    index === 0 && !state.drawn && 'opacity-0',
                 ]"
                 :style="{
                     width: `${drawnWidth}px`,

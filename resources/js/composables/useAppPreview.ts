@@ -98,6 +98,26 @@ export function useAppPreview(source: Source) {
     // never goes blank and nothing the owner is doing is cut off. "shows"
     // counts the saved changes the new app includes.
     const frames = ref<{ key: number; src: string; shows: number }[]>([]);
+
+    // The app shows only once it has drawn, so opening it never flashes a
+    // blank page. A page that never says so still shows after a while.
+    const drawnKey = ref<number | null>(null);
+    const drawn = computed(
+        () =>
+            frames.value[0] !== undefined &&
+            drawnKey.value === frames.value[0].key,
+    );
+
+    watch(
+        () => frames.value[0]?.key,
+        (key) =>
+            key !== undefined &&
+            setTimeout(() => {
+                if (frames.value[0]?.key === key) {
+                    drawnKey.value = key;
+                }
+            }, 4000),
+    );
     const elements = new Map<number, HTMLIFrameElement>();
     let frameKeys = 0;
     // Whether the next frame has drawn, and whether the owner is dragging
@@ -474,6 +494,7 @@ export function useAppPreview(source: Source) {
                     document.activeElement === frame.value;
 
                 frames.value = [next];
+                drawnKey.value = next.key;
                 inspect();
 
                 if (focused) {
@@ -532,6 +553,7 @@ export function useAppPreview(source: Source) {
 
         // The page may draw its parts after it is ready.
         if (data.type === 'drawn') {
+            drawnKey.value = frames.value[0]?.key ?? null;
             setUp(frame.value?.contentWindow);
         }
 
@@ -1346,6 +1368,7 @@ export function useAppPreview(source: Source) {
     return reactive({
         frame,
         frames,
+        drawn,
         bind,
         frameWidth,
         // The address of the app page on show, as in "/login".
