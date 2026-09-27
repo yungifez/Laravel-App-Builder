@@ -41,6 +41,8 @@ const props = defineProps<{
     problems: string[];
     changes: { id: number; summary: string; at: string | null }[];
     looks: number;
+    // Problems caught and fixed before the owner saw the kept changes.
+    caught: number;
     draft: NotesDraft | null;
     check?: CheckFinding[];
 }>();
@@ -111,6 +113,11 @@ const facts = computed(() =>
         [props.areas.length, 'part', 'parts'],
         [rules.value, 'rule', 'rules'],
         [props.changes.length + props.looks, 'change kept', 'changes kept'],
+        [
+            props.caught,
+            'problem fixed before you saw it',
+            'problems fixed before you saw them',
+        ],
     ]
         // Zeros say nothing the empty sections below don't already say.
         .filter(([count]) => count !== 0)

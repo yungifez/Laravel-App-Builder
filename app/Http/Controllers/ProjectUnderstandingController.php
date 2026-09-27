@@ -12,6 +12,8 @@ use App\Enums\EffectStrength;
 use App\Http\Requests\ProjectNotesUpdateRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
+use App\Models\Run;
+use App\Models\RunEvent;
 use App\Models\TestObservation;
 use App\Projects\ProjectRepository;
 use Illuminate\Http\RedirectResponse;
@@ -68,6 +70,12 @@ class ProjectUnderstandingController extends Controller
                     'at' => $featureRequest->accepted_at?->toIso8601String(),
                 ]),
             'looks' => $project->visualEdits()->count(),
+            // Problems the checks or the second look caught in the changes
+            // kept, each fixed before the owner saw the change.
+            'caught' => RunEvent::query()->sentBack()->whereIn('run_id', Run::query()->select('id')->whereIn(
+                'feature_request_id',
+                $project->featureRequests()->select('id')->whereNotNull('accepted_at')->whereNull('reverted_at'),
+            ))->count(),
             'draft' => $project->notes_draft_status === null ? null : [
                 'status' => $project->notes_draft_status->value,
                 'purpose' => $project->notes_draft['purpose'] ?? null,

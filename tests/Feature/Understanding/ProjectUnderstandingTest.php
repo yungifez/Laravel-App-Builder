@@ -4,7 +4,9 @@ namespace Tests\Feature\Understanding;
 
 use App\Actions\Projects\CreateProject;
 use App\Context\ProjectNotes;
+use App\Models\FeatureRequest;
 use App\Models\Project;
+use App\Models\Run;
 use App\Models\TestObservation;
 use App\Models\User;
 use App\Projects\ProjectRepository;
@@ -119,6 +121,29 @@ class ProjectUnderstandingTest extends TestCase
                 ->where('areas.0.checked_by', null)
                 ->where('areas.0.checks', [])
                 ->missing('check'));
+    }
+
+    public function test_the_owner_sees_how_many_problems_were_fixed_before_they_saw_their_changes()
+    {
+        $sentBack = function (array $attributes, string ...$reasons) {
+            $run = Run::factory()->for(FeatureRequest::factory()->generated()->for($this->project)->create($attributes))->create();
+
+            foreach ($reasons as $reason) {
+                $run->recordEvent('status', ['from' => 'verifying', 'to' => 'implementing', 'reason' => $reason]);
+            }
+
+            // Moving forward is not a problem caught.
+            $run->recordEvent('status', ['from' => 'implementing', 'to' => 'verifying']);
+        };
+        $sentBack(['accepted_at' => now()], 'verification_failed', 'review_findings');
+        $sentBack(['accepted_at' => now()], 'verification_failed');
+        // Only changes still in the app count.
+        $sentBack(['accepted_at' => now(), 'reverted_at' => now()], 'verification_failed');
+        $sentBack([], 'review_findings');
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('caught', 3));
     }
 
     public function test_each_part_says_how_many_of_the_apps_tests_run_its_code()

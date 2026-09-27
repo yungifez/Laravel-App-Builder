@@ -2,7 +2,6 @@
 
 namespace App\Actions\Features;
 
-use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Features\PatchSummary;
 use App\Models\FeatureRequest;
@@ -76,10 +75,8 @@ class DescribeProof
     protected function caught(FeatureRequest $featureRequest): array
     {
         $reasons = RunEvent::query()
+            ->sentBack()
             ->whereIn('run_id', $featureRequest->runs()->select('id'))
-            ->where('type', 'status')
-            ->where('data->to', RunStatus::Implementing->value)
-            ->whereIn('data->reason', ['verification_failed', 'review_findings'])
             ->pluck('data')
             ->countBy(fn (array $data) => $data['reason']);
 
