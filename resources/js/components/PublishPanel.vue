@@ -149,6 +149,16 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                     >
                         {{ status.detail }}
                     </p>
+                    <a
+                        v-if="live && publishing.address"
+                        :href="publishing.address"
+                        target="_blank"
+                        rel="noopener"
+                        class="mt-1 inline-flex min-h-11 items-center text-sm font-medium break-all underline-offset-4 hover:underline sm:min-h-0"
+                        data-test="live-address"
+                    >
+                        {{ publishing.address.replace(/^https?:\/\//, '') }}
+                    </a>
                 </div>
             </div>
 
@@ -182,7 +192,15 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                     Where it goes
                 </CollapsibleTrigger>
                 <CollapsibleContent class="mt-2 space-y-3 text-xs">
-                    <p class="break-all text-muted-foreground">
+                    <p
+                        v-if="publishing.managed"
+                        class="break-all text-muted-foreground"
+                    >
+                        Goes online at
+                        {{ publishing.address ?? 'its own web address' }}
+                        after the full checks pass on that exact version.
+                    </p>
+                    <p v-else class="break-all text-muted-foreground">
                         Pushes to
                         <span class="font-mono">{{ publishing.branch }}</span>
                         of
@@ -218,7 +236,11 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                         class="-ml-3 h-11 font-normal text-muted-foreground sm:h-8"
                         @click="changing = true"
                     >
-                        Change where to publish
+                        {{
+                            publishing.managed
+                                ? 'Use my own hosting instead'
+                                : 'Change where to publish'
+                        }}
                     </Button>
                 </CollapsibleContent>
             </Collapsible>

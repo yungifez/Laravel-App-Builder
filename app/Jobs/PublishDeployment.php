@@ -10,6 +10,8 @@ use App\Models\Deployment;
 use App\Models\Workspace;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
+use App\Publishing\Exceptions\PublishingFailed;
+use App\Publishing\PublishingHostManager;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -37,8 +39,9 @@ class PublishDeployment implements ShouldQueue
 
     /**
      * Run the verification setup and every check on the exact commit being
-     * published, in a fresh workspace, and push the commit only when all of
-     * them pass. Then the app's address is checked (ConfirmDeployment). Publishing is the integration boundary, so the full checks
+     * published, in a fresh workspace, and hand the commit to the host only
+     * when all of them pass. Then the host's progress and the app's address
+     * are checked (ConfirmDeployment). Publishing is the integration boundary, so the full checks
      * run however the commit was made (a kept change, a visual edit or a
      * notes edit).
      */
@@ -48,6 +51,7 @@ class PublishDeployment implements ShouldQueue
         RunWorkspaceCommand $runWorkspaceCommand,
         DestroyWorkspace $destroyWorkspace,
         ProjectRepository $repository,
+        PublishingHostManager $hosts,
     ): void {
         if ($this->deployment->fresh()?->status !== DeploymentStatus::Checking) {
             return;
@@ -69,10 +73,11 @@ class PublishDeployment implements ShouldQueue
 
             $this->deployment->update(['status' => DeploymentStatus::Pushing]);
 
-            $repository->push($project, $this->deployment->commit_sha, (string) $project->deploy_remote, $this->deployment->branch);
+            $hosts->driver($this->deployment->host ?? $project->publishingHost())->release($project, $this->deployment);
+            $project->refresh();
 
-            // The hosting platform takes it from here; it is online only
-            // once its address answers.
+            // The host takes it from here; it is online only once the host
+            // says so (when it reports at all) and its address answers.
             if ($project->live_url === null) {
                 $this->deployment->update(['pushed_at' => now()]);
                 $this->finish(DeploymentStatus::Sent);
@@ -83,7 +88,7 @@ class PublishDeployment implements ShouldQueue
             $this->deployment->update(['status' => DeploymentStatus::Confirming, 'pushed_at' => now()]);
 
             ConfirmDeployment::dispatch($this->deployment)->delay((int) config('builder.publishing.confirm.settle_seconds'));
-        } catch (RepositoryConflict $exception) {
+        } catch (RepositoryConflict|PublishingFailed $exception) {
             $this->finish(DeploymentStatus::Failed, $exception->getMessage());
         } catch (Throwable $exception) {
             report($exception);

@@ -10,16 +10,20 @@ use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\User;
 use App\Projects\ProjectRepository;
+use App\Publishing\PublishingHostManager;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class PublishProject
 {
-    public function __construct(private ProjectRepository $repository) {}
+    public function __construct(
+        private ProjectRepository $repository,
+        private PublishingHostManager $hosts,
+    ) {}
 
     /**
-     * Publish the project as it is now: check the current commit, then push
-     * it. One publish runs at a time.
+     * Publish the project as it is now: check the current commit, then hand
+     * it to the project's host. One publish runs at a time.
      *
      * @throws ValidationException when the project cannot be published now.
      */
@@ -46,7 +50,8 @@ class PublishProject
                 'user_id' => $owner->id,
                 // Only the main app is published, never an idea.
                 'commit_sha' => $this->repository->head($project, Experiment::mainBranch()),
-                'branch' => (string) $project->deploy_branch,
+                'branch' => $this->hosts->driver($project->publishingHost())->branch($project),
+                'host' => $project->publishingHost(),
                 'status' => DeploymentStatus::Checking,
             ]);
 

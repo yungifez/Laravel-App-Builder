@@ -128,6 +128,8 @@ class ProjectController extends Controller
             'telemetry' => $summarizeTelemetry->handle($project),
             'publishing' => [
                 'connected' => $project->publishable(),
+                // We host it: the owner never chose a branch.
+                'managed' => $project->publishingHost() !== 'git',
                 'target' => $project->publishTarget(),
                 'branch' => $project->deploy_branch,
                 'address' => $project->live_url,

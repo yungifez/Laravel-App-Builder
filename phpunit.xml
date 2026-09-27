@@ -36,6 +36,8 @@
         <env name="BUILDER_CONSTRUCTION_DRIVER" value="scripted" force="true"/>
         <env name="BUILDER_DECISION_PROVIDERS" value="[]" force="true"/>
         <env name="BUILDER_PREVIEW_AUTOMATIC" value="false" force="true"/>
+        <env name="LARAVEL_CLOUD_API_TOKEN" value="" force="true"/>
+        <env name="BUILDER_GITHUB_TOKEN" value="" force="true"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>

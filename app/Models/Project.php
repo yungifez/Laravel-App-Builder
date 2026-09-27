@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\NotesDraftStatus;
+use App\Publishing\PublishingHostManager;
 use Database\Factories\ProjectFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -22,6 +23,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $deploy_remote The Git remote the hosting platform deploys from, credentials included
  * @property string|null $live_url Where the hosting platform serves the app
  * @property string|null $deploy_branch
+ * @property string|null $host Where the app is published, such as "git" or "laravel_cloud"; null is the platform's default
+ * @property array<string, string>|null $host_state What the host created for the app, such as its application and environment IDs
  * @property NotesDraftStatus|null $notes_draft_status
  * @property int|null $experiment_id The idea the owner is working in; null is the main app
  * @property array{purpose: string, areas: list<array{key: string, name: string, summary: string, paths: list<string>, behaviors: list<array{key: string, name: string}>, rules: list<string>}>}|null $notes_draft Notes a model drafted from an imported app, waiting for the owner
@@ -30,7 +33,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'source_path', 'experiment_id', 'deploy_remote', 'deploy_branch', 'live_url', 'notes_draft_status', 'notes_draft', 'notes_draft_error', 'setup_model_calls'])]
+#[Fillable(['name', 'source_path', 'experiment_id', 'deploy_remote', 'deploy_branch', 'live_url', 'host', 'host_state', 'notes_draft_status', 'notes_draft', 'notes_draft_error', 'setup_model_calls'])]
 #[Hidden(['deploy_remote'])]
 class Project extends Model
 {
@@ -49,15 +52,26 @@ class Project extends Model
             'notes_draft_status' => NotesDraftStatus::class,
             'notes_draft' => 'array',
             'setup_model_calls' => 'array',
+            'host_state' => 'array',
         ];
     }
 
     /**
-     * Determine if the project is connected to a place to publish to.
+     * Get the host the project publishes to. An owner who chose a branch to
+     * publish to keeps it; everyone else gets the platform's default host.
+     */
+    public function publishingHost(): string
+    {
+        return $this->host ?? ($this->deploy_remote !== null ? 'git' : (string) config('builder.publishing.host'));
+    }
+
+    /**
+     * Determine if the project can be published without asking the owner
+     * where to first.
      */
     public function publishable(): bool
     {
-        return $this->deploy_remote !== null && $this->deploy_branch !== null;
+        return app(PublishingHostManager::class)->driver($this->publishingHost())->ready($this);
     }
 
     /**

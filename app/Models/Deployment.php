@@ -21,6 +21,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property int $user_id
  * @property string $commit_sha
  * @property string $branch
+ * @property string|null $host The host it was published to
+ * @property string|null $host_release_id The host's own ID for this release, when it has one
+ * @property string|null $host_status The host's last word on the release, for operators
  * @property DeploymentStatus $status
  * @property list<array{name: string, passed: bool}>|null $checks
  * @property string|null $error
@@ -31,7 +34,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['user_id', 'commit_sha', 'branch', 'status', 'checks', 'error', 'pushed_at', 'confirmed_at', 'health', 'finished_at'])]
+#[Fillable(['user_id', 'commit_sha', 'branch', 'host', 'host_release_id', 'host_status', 'status', 'checks', 'error', 'pushed_at', 'confirmed_at', 'health', 'finished_at'])]
 class Deployment extends Model
 {
     /** @use HasFactory<DeploymentFactory> */

@@ -432,6 +432,7 @@ export type DeploymentSummary = {
 
 export type ProjectPublishing = {
     connected: boolean;
+    managed: boolean;
     target: string | null;
     branch: string | null;
     address: string | null;

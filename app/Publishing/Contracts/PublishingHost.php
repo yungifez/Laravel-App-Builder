@@ -1,0 +1,41 @@
+<?php
+
+namespace App\Publishing\Contracts;
+
+use App\Models\Deployment;
+use App\Models\Project;
+use App\Projects\Exceptions\RepositoryConflict;
+use App\Publishing\Exceptions\PublishingFailed;
+use App\Publishing\ReleaseProgress;
+
+/**
+ * A place that serves published apps. A host takes a checked commit and puts
+ * it online; the checks before and after are the same for every host.
+ */
+interface PublishingHost
+{
+    /**
+     * Determine if the project can be published without asking the owner
+     * where to first.
+     */
+    public function ready(Project $project): bool;
+
+    /**
+     * Get the branch a release of the project goes to.
+     */
+    public function branch(Project $project): string;
+
+    /**
+     * Put the deployment's commit on the host and start taking it online,
+     * setting the project's address when the host gives one.
+     *
+     * @throws PublishingFailed with a reason the owner can read.
+     * @throws RepositoryConflict when the host has commits the project does not.
+     */
+    public function release(Project $project, Deployment $deployment): void;
+
+    /**
+     * Get how far the host is with taking the deployment online.
+     */
+    public function progress(Deployment $deployment): ReleaseProgress;
+}

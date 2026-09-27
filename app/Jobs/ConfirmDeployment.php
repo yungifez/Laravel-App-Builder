@@ -4,6 +4,8 @@ namespace App\Jobs;
 
 use App\Enums\DeploymentStatus;
 use App\Models\Deployment;
+use App\Publishing\PublishingHostManager;
+use App\Publishing\ReleaseProgress;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Http\Client\ConnectionException;
@@ -25,11 +27,11 @@ class ConfirmDeployment implements ShouldQueue
     public function __construct(public Deployment $deployment) {}
 
     /**
-     * Check that the app answers at its address after the push. The
-     * hosting platform can still fail to build, migrate or start it, so a
-     * push alone never counts as online.
+     * Check that the host has the new version live and that the app answers
+     * at its address. The host can still fail to build, migrate or start
+     * it, so handing it over never counts as online.
      */
-    public function handle(): void
+    public function handle(PublishingHostManager $hosts): void
     {
         $deployment = $this->deployment->fresh();
         $address = rtrim((string) $deployment?->project->live_url, '/');
@@ -38,16 +40,32 @@ class ConfirmDeployment implements ShouldQueue
             return;
         }
 
-        $health = array_map(fn (string $path) => $this->check($address, $path), (array) config('builder.publishing.confirm.paths'));
+        $progress = $hosts->driver($deployment->host ?? $deployment->project->publishingHost())->progress($deployment);
 
-        if (! in_array(false, array_column($health, 'passed'), true)) {
+        if ($progress === ReleaseProgress::Failed) {
+            $deployment->update([
+                'status' => DeploymentStatus::Failed,
+                'error' => __('Your hosting could not start the new version, so your app online has not changed.'),
+                'finished_at' => now(),
+            ]);
+
+            return;
+        }
+
+        // The old version still answers while the host builds the new one,
+        // so the address says nothing until the host is done.
+        $health = $progress === ReleaseProgress::Pending ? [] : array_map(fn (string $path) => $this->check($address, $path), (array) config('builder.publishing.confirm.paths'));
+
+        if ($health !== [] && ! in_array(false, array_column($health, 'passed'), true)) {
             $deployment->update(['status' => DeploymentStatus::Published, 'health' => $health, 'confirmed_at' => now(), 'finished_at' => now()]);
 
             return;
         }
 
         if ($deployment->pushed_at?->addSeconds((int) config('builder.publishing.confirm.confirm_seconds'))->isFuture()) {
-            $deployment->update(['health' => $health]);
+            if ($health !== []) {
+                $deployment->update(['health' => $health]);
+            }
 
             self::dispatch($deployment)->delay((int) config('builder.publishing.confirm.interval_seconds'));
 
@@ -56,8 +74,10 @@ class ConfirmDeployment implements ShouldQueue
 
         $deployment->update([
             'status' => DeploymentStatus::NeedsAttention,
-            'health' => $health,
-            'error' => __('Your hosting has the new version, but the app is not answering properly at :address.', ['address' => $address]),
+            'health' => $health ?: $deployment->health,
+            'error' => $progress === ReleaseProgress::Pending
+                ? __('Your hosting is taking longer than usual to start the new version.')
+                : __('Your hosting has the new version, but the app is not answering properly at :address.', ['address' => $address]),
             'finished_at' => now(),
         ]);
     }

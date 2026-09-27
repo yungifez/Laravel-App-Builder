@@ -83,17 +83,45 @@ return [
     | Publishing
     |--------------------------------------------------------------------------
     |
-    | Publishing pushes one commit to the branch the hosting platform (for
-    | example Laravel Cloud) deploys from, after the verification setup and
-    | checks pass on that exact commit. The push never forces: when the
-    | branch has commits the project does not, publishing stops. The app
-    | counts as online only once it answers at its address afterwards;
+    | Publishing hands one commit to a host after the verification setup
+    | and checks pass on that exact commit. The default host is Laravel
+    | Cloud in our organization: the first publish creates the app's
+    | private repository in our GitHub organization and its Cloud
+    | application, so the owner publishes with one click. Until its token
+    | and organization are set, and for owners who choose their own branch,
+    | the "git" host pushes to the branch their hosting deploys from.
+    |
+    | A push never forces: when the branch has commits the project does not,
+    | publishing stops. The app counts as online only once the host reports
+    | it live (when it reports at all) and it answers at its address;
     | without an address a publish is only "sent". Local paths as remotes,
     | and local addresses, are for development and tests only.
     |
     */
 
     'publishing' => [
+        'host' => env('BUILDER_PUBLISH_HOST', 'laravel_cloud'),
+
+        // Laravel Cloud, in our organization. Each app gets a database in
+        // "database_cluster" when one is named (create it once in Cloud).
+        'laravel_cloud' => [
+            'url' => env('LARAVEL_CLOUD_URL', 'https://cloud.laravel.com'),
+            'token' => env('LARAVEL_CLOUD_API_TOKEN'),
+            'region' => env('LARAVEL_CLOUD_REGION', 'us-east-2'),
+            'database_cluster' => env('LARAVEL_CLOUD_DATABASE_CLUSTER'),
+            'timeout' => 30,
+        ],
+
+        // Our GitHub organization, where a managed host deploys each app's
+        // private repository from. The token needs to create repositories
+        // and push to them; Cloud's GitHub app must see the organization.
+        'github' => [
+            'url' => env('BUILDER_GITHUB_API_URL', 'https://api.github.com'),
+            'git_host' => env('BUILDER_GITHUB_GIT_HOST', 'github.com'),
+            'organization' => env('BUILDER_GITHUB_ORGANIZATION'),
+            'token' => env('BUILDER_GITHUB_TOKEN'),
+        ],
+
         'allow_local_remotes' => (bool) env('BUILDER_PUBLISH_ALLOW_LOCAL_REMOTES', false),
         'push_timeout' => (int) env('BUILDER_PUBLISH_PUSH_TIMEOUT', 300),
 
