@@ -70,6 +70,7 @@ import {
 import type { AppPreviewState, Way } from '@/composables/useAppPreview';
 import { kindOfTag, newParts } from '@/lib/partKinds';
 import type { NewPartKind } from '@/lib/partKinds';
+import { themeColorLabel } from '@/lib/themeColors';
 import { when } from '@/lib/when';
 import {
     definition,
@@ -571,6 +572,14 @@ function describeResult(
 
     if (edit.kind === 'link' && edit.link) {
         return { words: edit.link, color: null };
+    }
+
+    // A change to the app's colours names the colour and shows it.
+    if (edit.kind === 'theme' && edit.theme) {
+        return {
+            words: themeColorLabel(edit.theme.token) ?? 'A colour',
+            color: edit.theme.after,
+        };
     }
 
     // A move, copy, removal or new part names the part it was.

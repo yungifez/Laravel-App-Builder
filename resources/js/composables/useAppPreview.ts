@@ -211,10 +211,16 @@ export function useAppPreview(source: Source) {
     const themeDark = ref(false);
     // Theme colours chosen but not yet built into the app on show, by
     // token, so a newer frame shows them too; with the version that has
-    // them once saved.
+    // them once saved. A colour shown by an undo or redo names its change
+    // and the version the change was at, since the version that has it is
+    // known only once the step is saved.
     const recolored = new Map<
         string,
-        { value: string; revision: string | null }
+        {
+            value: string;
+            revision: string | null;
+            step?: { edit: number; from: string };
+        }
     >();
     // The parts on the page on show, in page order, for the parts list.
     const parts = ref<PagePart[]>([]);
@@ -1720,10 +1726,18 @@ export function useAppPreview(source: Source) {
     // Once the app on show is built with a saved colour, it no longer needs
     // showing on top.
     watch(
-        () => source.preview()?.revision,
-        (revision) => {
-            for (const [token, { revision: at }] of recolored) {
-                if (at !== null && at === revision) {
+        () => [source.preview()?.revision, source.edits()] as const,
+        ([revision, edits]) => {
+            for (const [token, { revision: at, step }] of recolored) {
+                const stepped = edits.find((edit) => edit.id === step?.edit);
+                const built =
+                    step === undefined
+                        ? at
+                        : stepped?.revision !== step.from
+                          ? stepped?.revision
+                          : null;
+
+                if (built != null && built === revision) {
                     recolored.delete(token);
                 }
             }
@@ -2074,10 +2088,24 @@ export function useAppPreview(source: Source) {
         // app is the version the picture is at its place in.
         const picture = key === 'undo' ? edit.picture_before : edit.picture;
 
-        // A theme colour undone or redone shows once the app is rebuilt;
-        // the one chosen on top must not hide it.
+        // A theme colour undone or redone shows at once, in the look it
+        // was changed for; in the other look it shows once the app is
+        // rebuilt, and the colour chosen on top must not hide it.
         if (edit.kind === 'theme') {
             forgetColors();
+
+            const theme = edit.theme;
+
+            if (theme !== null && (theme.mode === 'dark') === themeDark.value) {
+                const value = key === 'undo' ? theme.before : theme.after;
+
+                recolored.set(theme.token, {
+                    value,
+                    revision: null,
+                    step: { edit: edit.id, from: edit.revision },
+                });
+                post({ type: 'recolor', token: theme.token, value });
+            }
         }
 
         if (edit.kind === 'picture') {
@@ -2267,6 +2295,7 @@ export function useAppPreview(source: Source) {
                     (batch) => !shown.includes(batch),
                 );
                 claims.value.clear();
+                forgetColors();
                 showUnshown();
             },
             onFinish: () => {

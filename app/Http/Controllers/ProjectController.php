@@ -174,6 +174,9 @@ class ProjectController extends Controller
                     'link' => $edit->changes[VisualEdit::LINK]['after'] ?? null,
                     'picture' => $edit->changes[VisualEdit::PICTURE]['after'] ?? null,
                     'picture_before' => $edit->changes[VisualEdit::PICTURE]['before'] ?? null,
+                    // Which of the app's colours changed, for which look, and
+                    // its value on each side, so undo and redo show at once.
+                    'theme' => $edit->changes[VisualEdit::THEME] ?? null,
                     // What the element looks like after this edit, and the
                     // commit that made it, so the next automatic save can
                     // build on it without waiting for the rebuild.

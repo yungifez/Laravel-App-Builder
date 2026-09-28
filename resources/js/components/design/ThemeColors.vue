@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { themeColors } from '@/lib/themeColors';
 
 const props = defineProps<{
     /** The app's own theme colours as it draws them now, by token. */
@@ -15,22 +16,9 @@ const emit = defineEmits<{
     change: [token: string, value: string];
 }>();
 
-// The colours that make up the app, named as the colour choices are, the
-// main ones first. A colour the app does not have is left out.
-const choices = [
-    { token: 'primary', label: 'Main colour' },
-    { token: 'primary-foreground', label: 'Text on the main colour' },
-    { token: 'background', label: 'Page' },
-    { token: 'foreground', label: 'Normal text' },
-    { token: 'muted-foreground', label: 'Quiet text' },
-    { token: 'secondary', label: 'Second colour' },
-    { token: 'accent', label: 'Highlight' },
-    { token: 'border', label: 'Edge' },
-    { token: 'destructive', label: 'Warning' },
-];
-
+// A colour the app does not have is left out.
 const shown = computed(() =>
-    choices.filter((choice) => props.colors[choice.token] !== undefined),
+    themeColors.filter((choice) => props.colors[choice.token] !== undefined),
 );
 
 // A colour picker takes "#rrggbb"; the app may write its colours any way

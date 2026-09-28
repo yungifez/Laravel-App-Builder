@@ -551,6 +551,14 @@ export type VisualEditSummary = {
     /** Which file a picture shows after a new picture, and before it. */
     picture: string | null;
     picture_before: string | null;
+    /** Which of the app's colours changed, for which look, and its value
+     * before and after, for a change to the app's colours. */
+    theme: {
+        mode: 'light' | 'dark';
+        token: string;
+        before: string;
+        after: string;
+    } | null;
     /** The part's classes and the app's version after this edit (or its undo). */
     classes: string;
     revision: string;

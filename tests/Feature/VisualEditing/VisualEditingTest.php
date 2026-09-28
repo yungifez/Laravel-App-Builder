@@ -749,7 +749,9 @@ class VisualEditingTest extends TestCase
         $this->assertSame(['mode' => 'dark', 'token' => 'primary', 'before' => 'hsl(0 0% 98%)', 'after' => '#2563eb'], $edit->changes['theme']);
 
         $this->get(route('projects.show', $this->project))
-            ->assertInertia(fn (Assert $page) => $page->where('edits.0.kind', 'theme'));
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('edits.0.kind', 'theme')
+                ->where('edits.0.theme', ['mode' => 'dark', 'token' => 'primary', 'before' => 'hsl(0 0% 98%)', 'after' => '#2563eb']));
 
         $this->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
         $this->assertSame(self::THEME, $this->repository->show($this->project, $this->repository->head($this->project), $file));
