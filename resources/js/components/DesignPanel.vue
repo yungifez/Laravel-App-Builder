@@ -111,16 +111,15 @@ function keepWords(): void {
     props.state.reword(draft.value);
 }
 
-// The three parts nearest around the selected one, outermost first.
-// The two nearest parts around it: more would not fit beside the part's
-// buttons without cutting every name short.
+// The three parts nearest around the selected one, outermost first: as
+// many as fit the panel's width on their own line.
 const trail = computed(() =>
     (props.state.selected?.trail ?? [])
-        .slice(0, 2)
+        .slice(0, 3)
         .map((step, index) => ({ ...step, up: index + 1 }))
         .reverse(),
 );
-const trailCut = computed(() => (props.state.selected?.trail?.length ?? 0) > 2);
+const trailCut = computed(() => (props.state.selected?.trail?.length ?? 0) > 3);
 
 // Where the selected link goes, as the owner types it. Saved like words.
 const address = ref('');
@@ -813,40 +812,42 @@ const recent = computed(() => {
                 <header
                     class="sticky top-0 z-10 flex flex-wrap items-center gap-x-0.5 border-b bg-background px-4 py-2 sm:gap-x-2"
                 >
-                    <div class="min-w-0 flex-1 basis-full sm:basis-0">
-                        <!-- The parts it sits in, outermost first, so the
-                             owner sees where it is and can step out. -->
-                        <nav
-                            v-if="trail.length > 0"
-                            aria-label="Where it is"
-                            class="flex min-w-0 items-center text-xs text-muted-foreground"
-                            data-test="part-trail"
+                    <!-- The parts it sits in, outermost first, so the
+                         owner sees where it is and can step out. It takes
+                         its own line, so the buttons beside the name do
+                         not squeeze it. -->
+                    <nav
+                        v-if="trail.length > 0"
+                        aria-label="Where it is"
+                        class="flex min-w-0 basis-full items-center text-xs text-muted-foreground"
+                        data-test="part-trail"
+                    >
+                        <span v-if="trailCut" aria-hidden="true"
+                            >…&nbsp;›&nbsp;</span
                         >
-                            <span v-if="trailCut" aria-hidden="true"
-                                >…&nbsp;›&nbsp;</span
+                        <template v-for="step in trail" :key="step.up">
+                            <button
+                                type="button"
+                                class="min-h-11 max-w-28 shrink truncate select-none hover:text-foreground sm:min-h-0"
+                                :title="
+                                    step.words
+                                        ? `${step.kind}: ${step.words}`
+                                        : step.kind
+                                "
+                                @mouseenter="state.glanceUp(step.up)"
+                                @focus="state.glanceUp(step.up)"
+                                @mouseleave="state.glanceUp(null)"
+                                @blur="state.glanceUp(null)"
+                                @click="state.pickUp(step.up)"
                             >
-                            <template v-for="step in trail" :key="step.up">
-                                <button
-                                    type="button"
-                                    class="min-h-11 max-w-28 shrink truncate select-none hover:text-foreground sm:min-h-0"
-                                    :title="
-                                        step.words
-                                            ? `${step.kind}: ${step.words}`
-                                            : step.kind
-                                    "
-                                    @mouseenter="state.glanceUp(step.up)"
-                                    @focus="state.glanceUp(step.up)"
-                                    @mouseleave="state.glanceUp(null)"
-                                    @blur="state.glanceUp(null)"
-                                    @click="state.pickUp(step.up)"
-                                >
-                                    {{ step.kind }}
-                                </button>
-                                <span aria-hidden="true" class="shrink-0"
-                                    >&nbsp;›&nbsp;</span
-                                >
-                            </template>
-                        </nav>
+                                {{ step.kind }}
+                            </button>
+                            <span aria-hidden="true" class="shrink-0"
+                                >&nbsp;›&nbsp;</span
+                            >
+                        </template>
+                    </nav>
+                    <div class="min-w-0 flex-1 basis-full sm:basis-0">
                         <!-- Named as the parts list names it: its kind, then
                              its own words, so a box is not named after all
                              the words inside it. -->
