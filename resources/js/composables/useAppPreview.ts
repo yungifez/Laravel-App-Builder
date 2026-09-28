@@ -11,6 +11,7 @@ import type { Ref } from 'vue';
 import NewPartController from '@/actions/App/Http/Controllers/NewPartController';
 import VisualEditController from '@/actions/App/Http/Controllers/VisualEditController';
 import VisualEditReversionController from '@/actions/App/Http/Controllers/VisualEditReversionController';
+import ThemeColorController from '@/actions/App/Http/Controllers/ThemeColorController';
 import VisualLinkController from '@/actions/App/Http/Controllers/VisualLinkController';
 import VisualPictureController from '@/actions/App/Http/Controllers/VisualPictureController';
 import VisualMoveController from '@/actions/App/Http/Controllers/VisualMoveController';
@@ -206,6 +207,15 @@ export function useAppPreview(source: Source) {
     // The app's own theme colours as it draws them, by token, so a swatch
     // shows the colour the app will really get.
     const theme = ref<Record<string, string>>({});
+    // Whether the app shows its dark look, whose colours are written apart.
+    const themeDark = ref(false);
+    // Theme colours chosen but not yet built into the app on show, by
+    // token, so a newer frame shows them too; with the version that has
+    // them once saved.
+    const recolored = new Map<
+        string,
+        { value: string; revision: string | null }
+    >();
     // The parts on the page on show, in page order, for the parts list.
     const parts = ref<PagePart[]>([]);
     // How much the app is drawn smaller than it is, so the handles in it
@@ -596,6 +606,10 @@ export function useAppPreview(source: Source) {
     function setUp(to: Window | null): void {
         post({ type: 'mode', editing: source.designing.value }, to);
         post({ type: 'theme', tokens: colorTokens }, to);
+
+        for (const [token, { value }] of recolored) {
+            post({ type: 'recolor', token, value }, to);
+        }
         post({ type: 'zoom', zoom: zoom.value }, to);
         post({ type: 'scroll', to: scrolled.get(framePath.value) ?? null }, to);
 
@@ -809,6 +823,7 @@ export function useAppPreview(source: Source) {
 
         if (data.type === 'theme' && typeof data.colors === 'object') {
             theme.value = data.colors as Record<string, string>;
+            themeDark.value = data.dark === true;
         }
 
         if (data.type === 'holding') {
@@ -1622,6 +1637,99 @@ export function useAppPreview(source: Source) {
         );
     }
 
+    // Show a theme colour on every part drawn in it, before it is saved.
+    function recolor(token: string, value: string): void {
+        recolored.set(token, { value, revision: null });
+        post({ type: 'recolor', token, value });
+    }
+
+    // Show the app's own theme colours again.
+    function forgetColors(): void {
+        for (const token of recolored.keys()) {
+            post({ type: 'recolor', token, value: null });
+        }
+
+        recolored.clear();
+    }
+
+    // Save a theme colour for the look the app shows now. Changes waiting
+    // to be saved go first, so the colour builds on them.
+    function saveColor(token: string, value: string): void {
+        const preview = source.preview();
+
+        if (preview === null) {
+            return;
+        }
+
+        recolor(token, value);
+
+        if (sending.value !== null || queue.value.length > 0 || moving.value) {
+            save();
+            setTimeout(() => saveColor(token, value), 200);
+
+            return;
+        }
+
+        const newest = source.edits()[0]?.id ?? 0;
+        moving.value = true;
+        saveError.value = null;
+
+        router.post(
+            ThemeColorController.store.url(source.projectId()),
+            {
+                preview: preview.id,
+                mode: themeDark.value ? 'dark' : 'light',
+                token,
+                color: value,
+                revision:
+                    head.value ?? element.value?.revision ?? preview.revision,
+            },
+            {
+                only: ['edits', 'preview'],
+                async: true,
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => {
+                    const edit = source.edits()[0];
+
+                    if (
+                        edit !== undefined &&
+                        edit.id > newest &&
+                        recolored.get(token)?.value === value
+                    ) {
+                        recolored.set(token, {
+                            value,
+                            revision: edit.revision,
+                        });
+                    }
+
+                    last.value = null;
+                    head.value = null;
+                    known.value = null;
+                    inspect();
+                },
+                onError: (errors) => {
+                    saveError.value = Object.values(errors)[0] ?? null;
+                    forgetColors();
+                },
+                onFinish: () => (moving.value = false),
+            },
+        );
+    }
+
+    // Once the app on show is built with a saved colour, it no longer needs
+    // showing on top.
+    watch(
+        () => source.preview()?.revision,
+        (revision) => {
+            for (const [token, { revision: at }] of recolored) {
+                if (at !== null && at === revision) {
+                    recolored.delete(token);
+                }
+            }
+        },
+    );
+
     watch(element, (now) => {
         if (
             dropped === null ||
@@ -1966,6 +2074,12 @@ export function useAppPreview(source: Source) {
         // app is the version the picture is at its place in.
         const picture = key === 'undo' ? edit.picture_before : edit.picture;
 
+        // A theme colour undone or redone shows once the app is rebuilt;
+        // the one chosen on top must not hide it.
+        if (edit.kind === 'theme') {
+            forgetColors();
+        }
+
         if (edit.kind === 'picture') {
             chosen = null;
         }
@@ -2309,6 +2423,10 @@ export function useAppPreview(source: Source) {
         copyLook,
         pasteLook,
         copiedLook,
+        saveColor,
+        recolor,
+        forgetColors,
+        themeDark,
         undoable,
         redoable,
         canUndo,

@@ -538,6 +538,7 @@ export type VisualEditSummary = {
         | 'text'
         | 'link'
         | 'picture'
+        | 'theme'
         | 'duplicate'
         | 'add'
         | 'remove';

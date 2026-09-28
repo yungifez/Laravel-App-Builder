@@ -57,6 +57,7 @@ import Segmented from '@/components/design/Segmented.vue';
 import SpacingBox from '@/components/design/SpacingBox.vue';
 import StepSlider from '@/components/design/StepSlider.vue';
 import Swatches from '@/components/design/Swatches.vue';
+import ThemeColors from '@/components/design/ThemeColors.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -532,6 +533,10 @@ function describeEdit(edit: VisualEditSummary): string {
         return 'Picture';
     }
 
+    if (edit.kind === 'theme') {
+        return "Your app's colours";
+    }
+
     if (edit.kind === 'duplicate') {
         return 'Copied';
     }
@@ -685,6 +690,13 @@ const recent = computed(() => {
                         </div>
                     </Form>
                 </section>
+
+                <ThemeColors
+                    :colors="state.theme"
+                    :dark="state.themeDark"
+                    @preview="state.recolor"
+                    @change="state.saveColor"
+                />
 
                 <section
                     v-if="recent.length > 0"

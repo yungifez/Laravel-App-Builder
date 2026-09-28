@@ -38,6 +38,7 @@ class RevertVisualEdit
                     'move' => "Undo moving <{$edit->tag}>",
                     'link' => "Undo where <{$edit->tag}> goes",
                     'picture' => "Undo the new picture in <{$edit->tag}>",
+                    'theme' => "Undo a change to the app's colours",
                     'duplicate' => "Undo copying <{$edit->tag}>",
                     'add' => "Undo adding <{$edit->tag}>",
                     'remove' => "Undo removing <{$edit->tag}>",

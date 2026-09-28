@@ -81,6 +81,13 @@ class VisualEdit extends Model
     public const PICTURE = 'picture';
 
     /**
+     * The key in "changes" of a new theme colour for the whole app: which
+     * look (light or dark), which colour, and its value before and after.
+     * The file, line and look's selector are where it is written.
+     */
+    public const THEME = 'theme';
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -130,6 +137,14 @@ class VisualEdit extends Model
     }
 
     /**
+     * Determine whether the edit changed one of the app's theme colours.
+     */
+    public function rethemes(): bool
+    {
+        return isset($this->getAttribute('changes')[self::THEME]);
+    }
+
+    /**
      * Determine whether the edit copied the element, added a part after it,
      * or took it out.
      */
@@ -146,7 +161,7 @@ class VisualEdit extends Model
      */
     public function rewritesFile(): bool
     {
-        return $this->moves() || $this->rewords() || $this->relinks() || $this->repictures() || $this->reshapes();
+        return $this->moves() || $this->rewords() || $this->relinks() || $this->repictures() || $this->rethemes() || $this->reshapes();
     }
 
     /**
@@ -161,6 +176,7 @@ class VisualEdit extends Model
             $this->rewords() => 'text',
             $this->relinks() => 'link',
             $this->repictures() => 'picture',
+            $this->rethemes() => 'theme',
             isset($this->getAttribute('changes')[self::DUPLICATE]) => 'duplicate',
             isset($this->getAttribute('changes')[self::ADD]) => 'add',
             isset($this->getAttribute('changes')[self::REMOVE]) => 'remove',

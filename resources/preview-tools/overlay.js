@@ -2021,24 +2021,54 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         // or dark), so the builder shows the owner the real ones. A colour
         // the app does not have is left out.
         if (message.type === 'theme') {
-            const probe = document.createElement('span');
-            probe.hidden = true;
-            document.body.appendChild(probe);
-            const colors = {};
+            themeTokens = message.tokens || [];
+            sendTheme();
+        }
 
-            for (const token of message.tokens || []) {
-                probe.style.color = `var(--color-${token}, var(--${token}, rgb(1, 2, 3)))`;
-                const color = getComputedStyle(probe).color;
-
-                if (color !== 'rgb(1, 2, 3)') {
-                    colors[token] = color;
-                }
+        // A theme colour the owner is choosing shows on every part drawn in
+        // it at once, before it is saved; null shows the app's own again.
+        if (message.type === 'recolor' && /^[a-z-]+$/.test(message.token)) {
+            if (message.value) {
+                document.documentElement.style.setProperty(
+                    `--${message.token}`,
+                    message.value,
+                );
+            } else {
+                document.documentElement.style.removeProperty(
+                    `--${message.token}`,
+                );
             }
 
-            probe.remove();
-            send({ type: 'theme', colors });
+            sendTheme();
         }
     });
+
+    // The theme colours the builder asked for, as the app draws them now,
+    // and whether it shows its dark look, whose colours are written apart.
+    let themeTokens = [];
+
+    const sendTheme = () => {
+        const probe = document.createElement('span');
+        probe.hidden = true;
+        document.body.appendChild(probe);
+        const colors = {};
+
+        for (const token of themeTokens) {
+            probe.style.color = `var(--color-${token}, var(--${token}, rgb(1, 2, 3)))`;
+            const color = getComputedStyle(probe).color;
+
+            if (color !== 'rgb(1, 2, 3)') {
+                colors[token] = color;
+            }
+        }
+
+        probe.remove();
+        send({
+            type: 'theme',
+            colors,
+            dark: document.documentElement.classList.contains('dark'),
+        });
+    };
 
     send({ type: 'ready', path: location.pathname });
 

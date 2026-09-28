@@ -710,6 +710,74 @@ class VisualEditingTest extends TestCase
         $this->assertSame($relinked, $this->repository->show($this->project, $this->repository->head($this->project), $file));
     }
 
+    protected const THEME = <<<'CSS'
+    @custom-variant dark (&:is(.dark *));
+
+    :root {
+        --background: hsl(0 0% 100%);
+        --primary: hsl(0 0% 9%);
+    }
+
+    .dark {
+        --background: hsl(0 0% 3.9%);
+        --primary: hsl(0 0% 98%);
+    }
+
+    CSS;
+
+    public function test_the_owner_changes_a_theme_colour_of_one_look_and_can_undo_and_redo_it()
+    {
+        Queue::fake();
+        $file = 'resources/styles/brand.css';
+        $this->repository->commitFiles($this->project, $this->repository->head($this->project), [$file => self::THEME], 'Add a theme', ['name' => 'Ada Owner', 'email' => 'ada@example.com']);
+        $preview = $this->runningPreview();
+        $changed = str_replace('--primary: hsl(0 0% 98%);', '--primary: #2563eb;', self::THEME);
+
+        $this->actingAs($this->owner)->post(route('theme-colors.store', $this->project), [
+            'preview' => $preview->id,
+            'mode' => 'dark',
+            'token' => 'primary',
+            'color' => '#2563EB',
+            'revision' => $preview->revision,
+        ])->assertSessionHasNoErrors();
+
+        // Only the dark look's colour changes, wherever the stylesheet is.
+        $this->assertSame($changed, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+
+        $edit = $this->project->visualEdits()->sole();
+        $this->assertSame('theme', $edit->kind());
+        $this->assertSame(['mode' => 'dark', 'token' => 'primary', 'before' => 'hsl(0 0% 98%)', 'after' => '#2563eb'], $edit->changes['theme']);
+
+        $this->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('edits.0.kind', 'theme'));
+
+        $this->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
+        $this->assertSame(self::THEME, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+
+        $this->delete(route('visual-edits.reversion.destroy', $edit))->assertSessionHasNoErrors();
+        $this->assertSame($changed, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+    }
+
+    public function test_a_theme_colour_the_app_does_not_write_or_a_value_that_is_not_a_colour_is_refused()
+    {
+        Queue::fake();
+        $preview = $this->runningPreview();
+        $recolor = fn (array $data) => $this->actingAs($this->owner)->post(route('theme-colors.store', $this->project), $data + [
+            'preview' => $preview->id,
+            'mode' => 'light',
+            'token' => 'primary',
+            'color' => '#2563eb',
+            'revision' => $preview->revision,
+        ]);
+
+        $recolor(['color' => 'red; } body { display: none'])->assertSessionHasErrors('color');
+        $recolor(['token' => 'sidebar-ring'])->assertSessionHasErrors('token');
+        $recolor(['mode' => 'sepia'])->assertSessionHasErrors('mode');
+        $recolor([])->assertSessionHasErrors(['edit' => 'Your app keeps this colour some other way, so I can\'t change it here. Ask me to change it instead.']);
+        $this->assertSame($preview->revision, $this->repository->head($this->project));
+        $this->assertSame(0, $this->project->visualEdits()->count());
+    }
+
     public function test_a_link_the_app_decides_or_an_unsafe_address_is_not_changed_in_place()
     {
         Queue::fake();

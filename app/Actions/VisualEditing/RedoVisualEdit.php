@@ -37,6 +37,7 @@ class RedoVisualEdit
                     'move' => "Redo moving <{$edit->tag}>",
                     'link' => "Redo where <{$edit->tag}> goes",
                     'picture' => "Redo the new picture in <{$edit->tag}>",
+                    'theme' => "Redo a change to the app's colours",
                     'duplicate' => "Redo copying <{$edit->tag}>",
                     'add' => "Redo adding <{$edit->tag}>",
                     'remove' => "Redo removing <{$edit->tag}>",
