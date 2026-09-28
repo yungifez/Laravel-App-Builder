@@ -343,6 +343,9 @@ const failed = computed(
         (run.value === null && request.value.status === 'failed'),
 );
 
+// Why the change could not be finished, as the run or the request says.
+const reason = computed(() => run.value?.error ?? request.value.error ?? null);
+
 const changes = computed(() => run.value?.review?.changes ?? []);
 const asked = computed(() =>
     changes.value.filter((change) => change.section !== 'unexpected'),
@@ -727,7 +730,19 @@ const checks = computed(() => {
                                 <CircleAlert class="size-4 text-red-600" />
                                 I couldn't finish this
                             </p>
-                            <p class="text-xs text-muted-foreground">
+                            <!-- Why, when I know, so the owner is not left
+                                 guessing; the app is never changed. -->
+                            <p
+                                v-if="reason"
+                                class="text-sm"
+                                data-test="thread-failed-reason"
+                            >
+                                {{ reason }}
+                            </p>
+                            <p
+                                v-if="!reason?.includes('Nothing in your app')"
+                                class="text-xs text-muted-foreground"
+                            >
                                 Nothing in your app changed.
                             </p>
                             <Form

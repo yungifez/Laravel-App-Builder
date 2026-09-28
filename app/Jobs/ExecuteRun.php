@@ -78,6 +78,6 @@ class ExecuteRun implements ShouldQueue
             return;
         }
 
-        app(FailRun::class)->handle($run, __('The run stopped unexpectedly.'), cause: 'worker_stopped');
+        app(FailRun::class)->handle($run, __('This is our fault: something on our side stopped while I worked on this. Nothing in your app changed. Try again.'), cause: 'worker_stopped');
     }
 }

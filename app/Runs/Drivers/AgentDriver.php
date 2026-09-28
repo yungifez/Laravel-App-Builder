@@ -13,6 +13,7 @@ use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Runs\Contracts\ConstructionDriver;
 use App\Runs\Exceptions\ConstructionFailed;
+use App\Runs\Exceptions\ProvidersUnavailable;
 use App\Runs\Plan;
 use App\Runs\PlanningContext;
 use App\Runs\Review;
@@ -20,6 +21,7 @@ use App\Runs\ReviewEvidence;
 use App\Workspaces\WorkspaceFiles;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
+use Laravel\Ai\Exceptions\FailoverableException;
 use Laravel\Ai\Files\Image;
 use Laravel\Ai\Files\StoredImage;
 use Laravel\Ai\Responses\AgentResponse;
@@ -54,7 +56,7 @@ abstract class AgentDriver implements ConstructionDriver
         $prompt = $this->planningPrompt($context);
 
         for ($attempt = 1; ; $attempt++) {
-            $response = FeaturePlanner::make()->prompt($prompt, $this->pictures($run->featureRequest), provider: ModelRole::Planner->providers());
+            $response = $this->ask(fn () => FeaturePlanner::make()->prompt($prompt, $this->pictures($run->featureRequest), provider: ModelRole::Planner->providers()));
 
             $this->recordModelUsage->handle($run, ModelRole::Planner, $response);
 
@@ -85,7 +87,7 @@ abstract class AgentDriver implements ConstructionDriver
      */
     protected function reviewWith(Run $run, ReviewEvidence $evidence, array $providers): Review
     {
-        $response = ChangeReviewer::make()->prompt($this->reviewPrompt($evidence), $this->pictures($run->featureRequest), provider: $providers);
+        $response = $this->ask(fn () => ChangeReviewer::make()->prompt($this->reviewPrompt($evidence), $this->pictures($run->featureRequest), provider: $providers));
 
         $this->recordModelUsage->handle($run, ModelRole::Reviewer, $response);
 
@@ -96,6 +98,24 @@ abstract class AgentDriver implements ConstructionDriver
         }
 
         return Review::fromModelOutput($this->structured($response, 'reviewer'));
+    }
+
+    /**
+     * Ask an agent. When every AI service turns the request away, the run
+     * stops and tells the owner why, instead of being retried as if it had
+     * crashed.
+     *
+     * @param  callable(): AgentResponse  $prompt
+     *
+     * @throws ProvidersUnavailable
+     */
+    protected function ask(callable $prompt): AgentResponse
+    {
+        try {
+            return $prompt();
+        } catch (FailoverableException $exception) {
+            throw ProvidersUnavailable::because($exception);
+        }
     }
 
     public function canRepair(): bool

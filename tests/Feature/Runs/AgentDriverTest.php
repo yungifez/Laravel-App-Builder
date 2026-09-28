@@ -29,6 +29,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Ai\Exceptions\InsufficientCreditsException;
+use Laravel\Ai\Exceptions\RateLimitedException;
 use Laravel\Ai\Files\StoredImage;
 use Laravel\Ai\Prompts\AgentPrompt;
 use Laravel\Ai\Providers\Provider;
@@ -88,6 +89,19 @@ class AgentDriverTest extends TestCase
 
         $this->assertSame('Teams get an optional description.', $run->plan['summary']);
         $this->assertSame('openai', $run->events()->where('type', 'model_call')->where('data->role', 'planner')->sole()->data['provider']);
+    }
+
+    public function test_a_planner_that_turns_every_request_away_stops_the_run_and_says_why()
+    {
+        FeaturePlanner::fake(fn () => throw RateLimitedException::forProvider('anthropic', 429));
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        // The owner reads why and decides; the job is not retried as if it
+        // had crashed, and nothing is built.
+        $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
+        $this->assertSame('This is our fault: the AI service we use is turning requests away because we sent too many. Nothing in your app changed. Try again in a few minutes.', $run->error);
+        $this->assertSame([], $this->coder->tasks);
     }
 
     public function test_the_planner_is_told_each_address_and_the_code_that_handles_it()
