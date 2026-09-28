@@ -119,12 +119,79 @@ class PreviewProblemsTest extends TestCase
         $this->assertSame(0, FeatureRequest::count());
     }
 
+    public function test_a_problem_leaves_the_list_once_fixed_or_cleared_and_comes_back_if_it_happens_again()
+    {
+        $this->writeLog(fn () => Log::error('Payment gateway timed out'));
+        $id = $this->problems()[0]['id'];
+        $this->assertSame(['new', null], $this->stand());
+
+        // Asking for a fix: it is being fixed.
+        $this->actingAs($this->owner)->post(route('preview-problem-fixes.store', $this->project), ['problem' => $id]);
+        $fix = FeatureRequest::sole();
+        $this->assertSame(['fixing', $fix->id], $this->stand());
+
+        // Keeping the fix: it is fixed, until the app runs into it again.
+        $this->travel(1)->minute();
+        $fix->update(['status' => FeatureRequestStatus::Generated, 'accepted_at' => now()]);
+        $this->assertSame(['fixed', $fix->id], $this->stand());
+
+        $this->travel(1)->minute();
+        $this->happensAgain('Payment gateway timed out');
+        $this->assertSame(['back', $fix->id], $this->stand());
+
+        // A fix that did not hold is asked for again, not reopened.
+        $this->post(route('preview-problem-fixes.store', $this->project), ['problem' => $id]);
+        $again = FeatureRequest::latest('id')->first();
+        $this->assertNotSame($fix->id, $again->id);
+        $this->assertSame(['fixing', $again->id], $this->stand());
+        $again->update(['dismissed_at' => now()]);
+
+        // Cleared by the owner: gone until it happens again.
+        $this->travel(1)->minute();
+        $fix->update(['accepted_at' => null, 'dismissed_at' => now()]);
+        $this->post(route('cleared-problems.store', $this->project), ['problem' => $id])->assertSessionHasNoErrors();
+        $this->assertSame(['cleared', null], $this->stand());
+
+        $this->travel(1)->minute();
+        $this->happensAgain('Payment gateway timed out');
+        $this->assertSame(['back', null], $this->stand());
+
+        // Put back by the owner.
+        $this->delete(route('cleared-problems.destroy', [$this->project, $id]))->assertSessionHasNoErrors();
+        $this->assertSame(['new', null], $this->stand());
+
+        $this->actingAs(User::factory()->create())->post(route('cleared-problems.store', $this->project), ['problem' => $id])->assertForbidden();
+    }
+
+    /**
+     * Where the first problem stands, and the change fixing it.
+     *
+     * @return array{string, int|null}
+     */
+    protected function stand(): array
+    {
+        // The log is read at most every few seconds.
+        $this->travel(3)->seconds();
+        $problem = $this->problems()[0];
+
+        return [$problem['state'], $problem['change']];
+    }
+
     /**
      * @return list<array{id: string}>
      */
     protected function problems(): array
     {
         return app(ReadPreviewProblems::class)->handle($this->project);
+    }
+
+    /**
+     * Log the problem again at the test's time, which the logger itself
+     * does not follow.
+     */
+    protected function happensAgain(string $message): void
+    {
+        $this->driver->files["{$this->workspace->driver_id}:storage/logs/laravel.log"] .= '['.now()->format('Y-m-d H:i:s')."] testing.ERROR: {$message}\n";
     }
 
     /**

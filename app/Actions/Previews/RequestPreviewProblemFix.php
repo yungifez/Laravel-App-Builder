@@ -28,6 +28,8 @@ class RequestPreviewProblemFix
     {
         $asked = $project->featureRequests()
             ->where('live_errors->problem', $problemId)
+            // A kept fix that did not hold is not the answer: ask again.
+            ->whereNull('accepted_at')
             ->whereNull('dismissed_at')
             ->whereNotIn('status', [FeatureRequestStatus::Failed, FeatureRequestStatus::Cancelled])
             ->latest('id')

@@ -76,9 +76,10 @@ class LoggedProblems
         if (preg_match('/\[object\] \((.+?)\(code: [^)]*\): ((?:(?!\n\[stacktrace\]).)*) at ([^\n]+?):(\d+)\)\n\[stacktrace\]\n(.*)/s', $entry, $match) === 1) {
             preg_match_all('/^#\d+ (\S+?)\((\d+)\):/m', $match[5], $frames, PREG_SET_ORDER);
 
+            $place = $relative($match[3]).':'.$match[4];
             $trace = array_values(collect($frames)
                 ->map(fn (array $frame) => $relative($frame[1]).':'.$frame[2])
-                ->reject(fn (string $place) => str_starts_with($place, 'vendor/') || str_contains($place, '/vendor/'))
+                ->reject(fn (string $at) => $at === $place || str_starts_with($at, 'vendor/') || str_contains($at, '/vendor/'))
                 ->unique()
                 ->take(5)
                 ->all());
@@ -86,7 +87,7 @@ class LoggedProblems
             return [
                 'class' => str_replace('\\\\', '\\', $match[1]),
                 'message' => stripcslashes(trim($match[2])),
-                'place' => $relative($match[3]).':'.$match[4],
+                'place' => $place,
                 'trace' => $trace,
             ];
         }

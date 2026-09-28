@@ -343,3 +343,10 @@ them and correct any that are wrong.
   mail or log settings in code, not in the environment, may write email
   elsewhere, and the tab then stays empty. "Problems" and "Saved data" tabs
   are planned in the architecture (§15).
+- 2026-09-27 — A problem in the "Problems" tab counts as fixed when the
+  change asked for it is kept and the app has not run into it since. Kept
+  means accepted and not reverted. The owner can also clear a problem, and
+  show it again. A fixed or cleared problem that happens again returns as
+  "came back", and asking again starts a new change. A problem is known by
+  its kind of error, its message with numbers left out, and its place in
+  the code, so a change of line number counts as a new problem.

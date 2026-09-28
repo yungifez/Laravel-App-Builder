@@ -153,6 +153,16 @@ class Project extends Model
     }
 
     /**
+     * Get the problems the owner cleared from the app's list of problems.
+     *
+     * @return HasMany<ClearedProblem, $this>
+     */
+    public function clearedProblems(): HasMany
+    {
+        return $this->hasMany(ClearedProblem::class);
+    }
+
+    /**
      * Get what we know about the product, for every line of work.
      *
      * @return HasMany<ProjectNote, $this>

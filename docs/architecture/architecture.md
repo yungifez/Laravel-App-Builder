@@ -1610,10 +1610,14 @@ reads the preview's workspace, so the app itself does not change.
   reader sees it, in a sandboxed frame without scripts. A link to the app
   opens that page in the app on show, so sign-up, password reset and
   verify-email flows can be tried to the end.
-- **Problems** (next). The same log file holds the app's errors and
-  warnings. The tab lists them in plain words, newest first, with the page
-  that caused them. The details for a developer stay folded. Each problem
-  offers "Ask me to fix this", which starts a normal change.
+- **Problems** (built). The same log file holds the app's errors. The
+  tab lists them in plain words, newest first, with the place in the code
+  that caused them. The same fault met again is counted, not listed again.
+  The details for a developer stay folded. Each problem offers "Ask me to
+  fix this", which starts a normal change. A problem leaves the list when
+  its fix is kept, or when the owner clears it. It returns, marked "came
+  back", if the app runs into it again after that. The log itself is never
+  changed; the builder keeps only which problems the owner cleared.
 - **Saved data** (after that). The preview's tables, read only at first:
   what a sign-up or an order saved. Rows are read through the app's own
   database connection inside the workspace, never from the control plane's

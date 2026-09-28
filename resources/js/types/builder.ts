@@ -406,6 +406,10 @@ export type AppProblem = {
     count: number;
     first_at: string | null;
     last_at: string | null;
+    /** New, being fixed, fixed, cleared by the owner, or back after either. */
+    state: 'new' | 'fixing' | 'fixed' | 'cleared' | 'back';
+    /** The change that fixes it, or fixed it. */
+    change: number | null;
 };
 
 export type InspectedElement = {

@@ -245,7 +245,9 @@ const unseenEmails = computed(() => {
 const unseenProblems = computed(
     () =>
         (props.problems ?? []).filter(
-            (problem) => (problem.last_at ?? '') > (seenProblem.value ?? ''),
+            (problem) =>
+                ['new', 'back'].includes(problem.state) &&
+                (problem.last_at ?? '') > (seenProblem.value ?? ''),
         ).length,
 );
 
