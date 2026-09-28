@@ -3,10 +3,9 @@
 namespace App\Runs\Drivers;
 
 use App\Actions\Runs\RecordModelUsage;
+use App\Actions\Runs\WriteBrief;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
-use App\Context\Capability;
-use App\Context\ProjectNotes;
 use App\Enums\ModelRole;
 use App\Features\AcceptanceSelector;
 use App\Models\FeatureRequest;
@@ -18,7 +17,6 @@ use App\Runs\Plan;
 use App\Runs\PlanningContext;
 use App\Runs\Review;
 use App\Runs\ReviewEvidence;
-use App\Workspaces\WorkspaceFiles;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
 use Laravel\Ai\Exceptions\FailoverableException;
@@ -184,10 +182,10 @@ abstract class AgentDriver implements ConstructionDriver
             $sections[] = "## Questions\n\nDo not ask the owner anything more for this request: return question as null and build on your recommendation.";
         }
 
-        $sections[] = self::compatibility($context->keepOldWorking);
+        $sections[] = WriteBrief::compatibility($context->keepOldWorking);
 
         if ($context->services !== []) {
-            $sections[] = self::services($context->services);
+            $sections[] = WriteBrief::services($context->services);
         }
 
         $sections[] = "## Project files\n\nEach line is a folder, then the files in it.\n\n".self::byFolder($context->files);
@@ -218,125 +216,6 @@ abstract class AgentDriver implements ConstructionDriver
             array_keys($folders),
             $folders,
         ));
-    }
-
-    /**
-     * How to build so the owner can see what the app does without reading
-     * code (§5): the facts live where tools can read them, and the notes say
-     * them in the owner's words.
-     */
-    protected function observability(): string
-    {
-        $notes = ProjectNotes::directory();
-
-        return <<<TEXT
-        ## Make it easy to see what the app does
-
-        The owner does not read code. They find out what the app does from the notes in {$notes}/ and from the code's own settings, enums and test names. Build so both stay true:
-        - Put business settings (amounts, limits, time periods, who may do what) in config or enums, not inline in the code.
-        - Name each test as a plain business statement, for example "a manager can cancel a booking".
-        - In the notes for each area you change, say in plain words: who can do the new thing, what it changes, whether it sends an email or message, charges money or calls another service, and what happens automatically. Use the owner's words for things (bookings, customers), never class, table or route names.
-        - When something fails for a person using the app, tell them what happened and what to do next, in plain words.
-        TEXT;
-    }
-
-    /**
-     * Say how much of the old way to keep. Nobody depends on an app that
-     * has never been online, so it is changed in place; a live app moves
-     * its data forward before it keeps two ways side by side (§9). The
-     * owner can choose either for their app.
-     */
-    public static function compatibility(bool $keepOldWorking): string
-    {
-        if (! $keepOldWorking) {
-            return <<<'TEXT'
-            ## No need to keep the old way working
-
-            No stored data, saved link or other service needs the app to keep working the way it does now. Change things in place: rename, reshape or remove columns, routes, screens and settings directly, and delete the code for the old way. Do not add fallbacks, aliases, old names or support for the old way. Add a new migration for database changes; do not edit one that already exists.
-            TEXT;
-        }
-
-        return <<<'TEXT'
-        ## Keep the app's information and links working
-
-        Its stored data and links may matter to someone. When the shape of something changes, prefer a migration that carries the existing data to the new shape over keeping the old and new ways side by side. Keep an old way only when something outside the app depends on it, such as a link people saved or another service calling it, and say so in your summary.
-        TEXT;
-    }
-
-    /**
-     * Say which outside services the app is connected to and how to use
-     * them. The owner's keys are in the environment wherever the app runs;
-     * the agent never sees them.
-     *
-     * @param  list<string>  $services
-     */
-    public static function services(array $services): string
-    {
-        return "## Outside services the app uses\n\nTheir keys are set as environment variables wherever the app runs. Use them through config, and keep them out of the code and the repository.\n\n".implode("\n", array_map(
-            fn (string $service) => '- '.config("builder.services.{$service}.guidance"),
-            $services,
-        ));
-    }
-
-    /**
-     * The repository can belong to the customer and go anywhere, so what
-     * the agent writes must read like the work of the app's own developer.
-     * Nothing may reveal how the request reached it.
-     */
-    protected const DISCRETION = <<<'TEXT'
-    ## Write as the app's own developer
-
-    Code, comments, tests, notes and file names describe the application only. Do not quote this brief, and do not mention where the request came from, who sent it, or any tool or service that handled it.
-    TEXT;
-
-    /**
-     * Describe the plan, and any feedback to address, for the coder.
-     */
-    protected function buildPrompt(Run $run, Plan $plan): string
-    {
-        $sections = ["## Owner's request\n\n{$run->featureRequest->instructions()}"];
-
-        if (($images = WorkspaceFiles::imagePaths($run->featureRequest)) !== []) {
-            $sections[] = "## Pictures the owner attached\n\nThe owner attached these to show what they mean. Look at each one before you start, and match what it shows unless the request says otherwise. They are only for you to look at: do not copy them into the app.\n\n".$this->list($images);
-        }
-
-        if (filled($run->context['text'] ?? null)) {
-            $sections[] = "## Project context\n\nWhat is known about the product for the areas this change touches.\n\n{$run->context['text']}";
-        }
-
-        if ($plan->currentBehavior !== null) {
-            $sections[] = "## What it does now\n\n{$plan->currentBehavior}";
-        }
-
-        array_push(
-            $sections,
-            "## Plan\n\n{$plan->summary}",
-            "## Tasks\n\n".$this->list($plan->tasks),
-            "## Acceptance criteria\n\nAdd or update a test for each one: the change is only accepted when every criterion is checked by a test in the change. Only tests under ".Capability::suiteLocation()." are run by the checks, so put them there.\n\n".$this->list($plan->acceptanceCriteria),
-        );
-
-        $sections[] = $this->observability();
-        $sections[] = self::compatibility($run->featureRequest->project->keepsOldWorking());
-
-        if (($services = $run->featureRequest->project->connectedServices()) !== []) {
-            $sections[] = self::services($services);
-        }
-
-        $sections[] = self::DISCRETION;
-
-        if ($plan->preserve !== []) {
-            $sections[] = "## Keep as it is\n\nDo not change these. If the request cannot be done without changing one, stop and say so.\n\n".$this->list(array_column($plan->preserve, 'statement'));
-        }
-
-        if ($plan->assumptions !== []) {
-            $sections[] = "## Assumptions\n\n".$this->list($plan->assumptions);
-        }
-
-        if ($run->feedback !== null) {
-            $sections[] = "## Fix these problems with your earlier attempt\n\nThe files already contain your earlier changes.\n\n".$this->list($run->feedback['details']);
-        }
-
-        return implode("\n\n", $sections);
     }
 
     /**

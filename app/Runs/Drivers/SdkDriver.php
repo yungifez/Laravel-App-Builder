@@ -5,8 +5,8 @@ namespace App\Runs\Drivers;
 use App\Actions\Runs\ExtractCandidateChange;
 use App\Actions\Runs\RecordModelUsage;
 use App\Actions\Runs\RunCodingAgent;
+use App\Actions\Runs\WriteBrief;
 use App\Actions\Workspaces\RunWorkspaceCommand;
-use App\Context\ProjectNotes;
 use App\Enums\AgentOutcomeStatus;
 use App\Enums\ModelRole;
 use App\Features\AcceptanceSelector;
@@ -20,7 +20,6 @@ use App\Runs\Plan;
 use App\Runs\Review;
 use App\Runs\ReviewEvidence;
 use App\Runs\ToolSession;
-use Illuminate\Support\Facades\Config;
 
 /**
  * Plans and reviews like the agent driver, but builds with a coding agent
@@ -44,6 +43,7 @@ class SdkDriver extends AgentDriver
         protected CodingAgentManager $agents,
         protected RunWorkspaceCommand $runWorkspaceCommand,
         protected ExtractCandidateChange $extractCandidateChange,
+        protected WriteBrief $writeBrief,
     ) {
         parent::__construct($acceptanceSelector, $recordModelUsage);
     }
@@ -56,7 +56,7 @@ class SdkDriver extends AgentDriver
         $light = ($run->featureRequest->tidy['tier'] ?? null) === 'light';
 
         $outcome = $this->runCodingAgent->handle($run, $tools->lease(), $workspace, new AgentTask(
-            prompt: $this->buildPrompt($run, $plan)."\n\n".$this->workingRules(),
+            prompt: $this->writeBrief->handle($run, $plan),
             maxTurns: (int) config('builder.agents.max_turns'),
             maxBudgetUsd: (float) ($light ? config('builder.verification.shortcuts.tidy.max_budget_usd') : config('builder.agents.max_budget_usd')),
             timeoutSeconds: (int) config('builder.construction.budgets.minutes') * 60,
@@ -92,17 +92,13 @@ class SdkDriver extends AgentDriver
         }
 
         $data = $this->lastBuild($run)->data ?? [];
+        $followUp = $this->writeBrief->followUp($run);
 
-        if (! is_string($data['adapter'] ?? null) || ! is_string($data['session'] ?? null)) {
+        if (! is_string($data['adapter'] ?? null) || ! is_string($data['session'] ?? null) || $followUp === null) {
             return null;
         }
 
-        return [
-            'adapter' => $data['adapter'],
-            'session' => $data['session'],
-            'prompt' => "## Fix these problems with your earlier attempt\n\nThe files already contain your earlier changes.\n\n".$this->list($run->feedback['details'])
-                ."\n\n".trim($this->selfChecks().'When you are done, reply with a short summary of what you changed.'),
-        ];
+        return ['adapter' => $data['adapter'], 'session' => $data['session'], 'prompt' => $followUp];
     }
 
     /**
@@ -185,44 +181,5 @@ class SdkDriver extends AgentDriver
             $this->runWorkspaceCommand->handle($workspace, ['git', 'checkout', '-q', $baseline, '--', $path], 60);
             $this->runWorkspaceCommand->handle($workspace, ['git', 'clean', '-fdq', '--', $path], 60);
         }
-    }
-
-    /**
-     * How an SDK agent should work, besides the brief.
-     */
-    protected function workingRules(): string
-    {
-        $notes = ProjectNotes::directory();
-        $selfChecks = $this->selfChecks();
-
-        return <<<RULES
-        ## How to work
-
-        You are working in the application's repository. Follow its AGENTS.md and Laravel's conventions. Add or update feature tests for the behaviour you build, run those tests and the existing tests listed for the areas you change (for example `php artisan test tests/Feature/TeamSettingsTest.php`), and fix failures. {$selfChecks}The whole test suite and the other checks run on their own after you finish, and formatting is fixed for you, so do not spend time running them. Never change tests/Acceptance, .env, vendor or .git: those changes are thrown away. Keep the notes in {$notes}/ up to date as described in AGENTS.md or, if it says nothing, by updating the notes of the areas you change.
-
-        Before each group of steps, write one or two plain sentences on what you are about to do and why, for a reader who has never seen code: no file names, class names, commands or code. For example: "Only team owners should send invitations, so I am adding that check first."
-
-        When you are done, reply with a short summary of what you changed. Your summary is not taken as proof: the change is verified and reviewed independently.
-        RULES;
-    }
-
-    /**
-     * Ask the agent to run the quick checks itself before it finishes, so a
-     * failure costs seconds, not a repair pass. Each is named in
-     * construction.self_checks and run as verification.checks runs it.
-     */
-    protected function selfChecks(): string
-    {
-        $names = Config::array('builder.construction.self_checks');
-        $commands = array_map(
-            fn (array $check) => '`'.implode(' ', $check['command']).'`',
-            array_filter(Config::array('builder.verification.checks'), fn (array $check) => in_array($check['name'], $names, true)),
-        );
-
-        if ($commands === []) {
-            return '';
-        }
-
-        return 'Before you finish, run '.implode(' and ', $commands).', and fix anything reported. This takes seconds, and a failure found later sends the change back to you. ';
     }
 }

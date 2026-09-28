@@ -6,6 +6,7 @@ use App\Actions\Runs\AcquireRunLease;
 use App\Actions\Runs\CancelRun;
 use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Runs\StartRun;
+use App\Actions\Runs\WriteBrief;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
 use App\Enums\AgentOutcomeStatus;
@@ -480,6 +481,23 @@ class SdkDriverTest extends TestCase
         $outcome = $agent->run($workspace, new AgentTask('Whole prompt', resume: ['adapter' => 'claude', 'session' => 'other', 'prompt' => 'Only this']));
         $this->assertFalse($outcome->resumed);
         $this->assertSame('Whole prompt', File::get($this->path($workspace, 'agent-output.txt')));
+    }
+
+    public function test_the_brief_holds_nothing_of_ours_that_would_do_harm_when_read()
+    {
+        config(['builder.models.planner' => ['provider' => 'anthropic', 'model' => 'planner-model-7'], 'builder.agents.adapters.claude.model' => 'coder-model-7']);
+        $this->agent('claude', 'anthropic', $this->writes('claude', 'anthropic', 'app/Team.php', "<?php\n"));
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->failVerification($run, 'Expected description to be fillable.');
+
+        // Whoever runs the worker can read all of it (architecture §11).
+        foreach ([$this->agents['claude']->tasks[1]->prompt, (string) app(WriteBrief::class)->followUp($run->refresh()->forceFill(['feedback' => ['reason' => 'verification_failed', 'details' => ['A problem.']]]))] as $brief) {
+            $this->assertDoesNotMatchRegularExpression('/\b(builder|platform|control plane|confidence|probabilit\w*|scores?|capabilit\w*|context compiler|planner|anthropic|openai)\b/i', $brief);
+            $this->assertDoesNotMatchRegularExpression('/\bEffects?\b/', $brief);
+            $this->assertStringNotContainsString('planner-model-7', $brief);
+            $this->assertStringNotContainsString('coder-model-7', $brief);
+        }
     }
 
     public function test_the_codex_agent_gets_its_configured_sandbox()
