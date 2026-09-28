@@ -69,7 +69,9 @@ return [
             'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
             'queue' => env('REDIS_QUEUE', 'default'),
             'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
-            'block_for' => null,
+            // Seconds an idle worker waits on Redis for a job, so it takes a
+            // new job at once instead of after its sleep. Null does not wait.
+            'block_for' => env('REDIS_QUEUE_BLOCK_FOR') === null ? null : (int) env('REDIS_QUEUE_BLOCK_FOR'),
             'after_commit' => false,
         ],
 
