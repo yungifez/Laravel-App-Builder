@@ -1795,7 +1795,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         ) {
             if (message.location) {
                 whenDrawn(message.location, (elements) =>
-                    choose(elements[0], false),
+                    choose(elements[0], Boolean(message.tell)),
                 );
             } else {
                 const element = near(message.direction);
@@ -1859,11 +1859,20 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             requestAnimationFrame(placeFrame);
         }
 
-        // A copy of the selected part, or the part taken out, shown at once;
+        // A copy of the selected part, a new part after it, or the part
+        // taken out, shown at once;
         // the rebuilt app replaces the page.
         if (message.type === 'reshape' && selected) {
             if (message.how === 'duplicate') {
                 selected.after(selected.cloneNode(true));
+            } else if (message.how === 'add' && message.markup) {
+                const holder = document.createElement('template');
+                holder.innerHTML = message.markup;
+
+                if (holder.content.firstElementChild) {
+                    selected.after(holder.content.firstElementChild);
+                    placeFrame();
+                }
             } else if (message.how === 'remove') {
                 const gone = selected;
 

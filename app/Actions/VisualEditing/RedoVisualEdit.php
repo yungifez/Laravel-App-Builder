@@ -38,6 +38,7 @@ class RedoVisualEdit
                     'link' => "Redo where <{$edit->tag}> goes",
                     'picture' => "Redo the new picture in <{$edit->tag}>",
                     'duplicate' => "Redo copying <{$edit->tag}>",
+                    'add' => "Redo adding <{$edit->tag}>",
                     'remove' => "Redo removing <{$edit->tag}>",
                     default => "Redo new words in <{$edit->tag}>",
                 }."\n\nThis makes commit {$edit->commit_sha} again.",

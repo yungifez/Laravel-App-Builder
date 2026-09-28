@@ -68,6 +68,13 @@ class VisualEdit extends Model
     public const REMOVE = 'remove';
 
     /**
+     * The key in "changes" of a new part put right after an element: where
+     * that element was, and what kind of part (see NewPart). The line and
+     * column are the new part's.
+     */
+    public const ADD = 'add';
+
+    /**
      * The key in "changes" of a new picture: the file shown before and
      * after, as the app serves them.
      */
@@ -123,11 +130,14 @@ class VisualEdit extends Model
     }
 
     /**
-     * Determine whether the edit copied the element or took it out.
+     * Determine whether the edit copied the element, added a part after it,
+     * or took it out.
      */
     public function reshapes(): bool
     {
-        return isset($this->getAttribute('changes')[self::DUPLICATE]) || isset($this->getAttribute('changes')[self::REMOVE]);
+        return isset($this->getAttribute('changes')[self::DUPLICATE])
+            || isset($this->getAttribute('changes')[self::ADD])
+            || isset($this->getAttribute('changes')[self::REMOVE]);
     }
 
     /**
@@ -141,8 +151,8 @@ class VisualEdit extends Model
 
     /**
      * Get what kind of edit this is: a change to how the element looks, a
-     * move, new words, a new address for a link, a new picture, a copy, or
-     * taking it out.
+     * move, new words, a new address for a link, a new picture, a copy, a
+     * new part, or taking it out.
      */
     public function kind(): string
     {
@@ -152,6 +162,7 @@ class VisualEdit extends Model
             $this->relinks() => 'link',
             $this->repictures() => 'picture',
             isset($this->getAttribute('changes')[self::DUPLICATE]) => 'duplicate',
+            isset($this->getAttribute('changes')[self::ADD]) => 'add',
             isset($this->getAttribute('changes')[self::REMOVE]) => 'remove',
             default => 'look',
         };

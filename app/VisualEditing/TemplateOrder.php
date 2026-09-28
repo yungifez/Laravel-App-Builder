@@ -118,6 +118,47 @@ class TemplateOrder
     }
 
     /**
+     * Put new markup right after the element whose "<" is at an offset: on
+     * a line of its own with the same indent when the element has its own
+     * lines, or else after it on the same line.
+     *
+     * @return array{contents: string, offset: int} The new contents, and where the new markup starts
+     *
+     * @throws InvalidArgumentException when a part put there would break the template.
+     */
+    public static function insertAfter(string $contents, int $offset, string $markup): array
+    {
+        $elements = self::elements($contents);
+        $index = self::find($elements, $offset);
+
+        if ($elements[$index]['parent'] === null) {
+            throw new InvalidArgumentException('Nothing can go beside the template itself.');
+        }
+
+        self::guard($elements, $index);
+
+        [$from, $to] = self::extent($contents, $elements[$index]);
+        $start = $elements[$index]['start'];
+
+        if ($from === $start) {
+            return [
+                'contents' => substr($contents, 0, $to).' '.$markup.substr($contents, $to),
+                'offset' => $to + 1,
+            ];
+        }
+
+        $lineStart = strrpos(substr($contents, 0, $start), "\n");
+        $lineStart = $lineStart === false ? 0 : $lineStart + 1;
+        $indent = substr($contents, $lineStart, $start - $lineStart);
+        $ending = str_ends_with(substr($contents, 0, $to), "\n") ? '' : "\n";
+
+        return [
+            'contents' => substr($contents, 0, $to).$ending.$indent.$markup."\n".substr($contents, $to),
+            'offset' => $to + strlen($ending) + strlen($indent),
+        ];
+    }
+
+    /**
      * Take the element whose "<" is at an offset out of the template, with
      * its own lines when nothing else is on them.
      *

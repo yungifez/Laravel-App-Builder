@@ -32,6 +32,7 @@ import {
     LoaderCircle,
     MessageSquare,
     MousePointerClick,
+    Plus,
     Redo2,
     Rows3,
     Sparkles,
@@ -53,8 +54,16 @@ import StepSlider from '@/components/design/StepSlider.vue';
 import Swatches from '@/components/design/Swatches.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { AppPreviewState, Way } from '@/composables/useAppPreview';
-import { kindOfTag } from '@/lib/partKinds';
+import { kindOfTag, newParts } from '@/lib/partKinds';
+import type { NewPartKind } from '@/lib/partKinds';
 import { when } from '@/lib/when';
 import {
     definition,
@@ -463,6 +472,10 @@ function describeEdit(edit: VisualEditSummary): string {
         return 'Removed';
     }
 
+    if (edit.kind === 'add') {
+        return 'Added';
+    }
+
     return edit.properties
         .map(
             (key) =>
@@ -487,8 +500,8 @@ function describeResult(
         return { words: edit.link, color: null };
     }
 
-    // A move, copy or removal names the part it was.
-    if (['move', 'duplicate', 'remove'].includes(edit.kind)) {
+    // A move, copy, removal or new part names the part it was.
+    if (['move', 'duplicate', 'remove', 'add'].includes(edit.kind)) {
         return { words: kindOfTag(edit.tag), color: null };
     }
 
@@ -702,7 +715,7 @@ const recent = computed(() => {
                 <!-- On a phone the part's name takes its own line: its
                      buttons are finger-sized and leave it no room. -->
                 <header
-                    class="sticky top-0 z-10 flex flex-wrap items-center gap-x-2 border-b bg-background px-4 py-2"
+                    class="sticky top-0 z-10 flex flex-wrap items-center gap-x-0.5 border-b bg-background px-4 py-2 sm:gap-x-2"
                 >
                     <div class="min-w-0 flex-1 basis-full sm:basis-0">
                         <!-- The parts it sits in, outermost first, so the
@@ -785,6 +798,38 @@ const recent = computed(() => {
                     >
                         <Copy class="size-4" />
                     </Button>
+                    <DropdownMenu v-if="element?.editable">
+                        <DropdownMenuTrigger as-child>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                class="size-11 shrink-0 text-muted-foreground sm:size-7"
+                                aria-label="Add a part after it"
+                                title="Add a part after it"
+                                data-test="part-add"
+                                :disabled="state.saving"
+                            >
+                                <Plus class="size-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" class="min-w-36">
+                            <DropdownMenuLabel
+                                class="text-xs font-normal text-muted-foreground"
+                            >
+                                Add after it
+                            </DropdownMenuLabel>
+                            <DropdownMenuItem
+                                v-for="(part, kind) in newParts"
+                                :key="kind"
+                                :data-test="`part-add-${kind}`"
+                                @select="
+                                    state.reshape('add', kind as NewPartKind)
+                                "
+                            >
+                                {{ part.label }}
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                     <Button
                         v-if="element?.editable"
                         variant="ghost"

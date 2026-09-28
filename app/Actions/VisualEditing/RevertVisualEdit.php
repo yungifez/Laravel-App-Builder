@@ -39,6 +39,7 @@ class RevertVisualEdit
                     'link' => "Undo where <{$edit->tag}> goes",
                     'picture' => "Undo the new picture in <{$edit->tag}>",
                     'duplicate' => "Undo copying <{$edit->tag}>",
+                    'add' => "Undo adding <{$edit->tag}>",
                     'remove' => "Undo removing <{$edit->tag}>",
                     default => "Undo new words in <{$edit->tag}>",
                 }."\n\nThis undoes commit {$edit->commit_sha}.",

@@ -177,6 +177,26 @@ class TemplateOrderTest extends TestCase
         $this->assertSame('<a href="/help">', substr($copied['contents'], $copied['offset'], 16));
     }
 
+    public function test_a_new_part_goes_on_its_own_line_after_the_element_with_its_indent()
+    {
+        $added = TemplateOrder::insertAfter(self::TEMPLATE, $this->offset(8, 9), '<p>New text</p>');
+
+        $this->assertStringContainsString(<<<'VUE'
+                    >Save</Button>
+                    <p>New text</p>
+                </section>
+            VUE, $added['contents']);
+        $this->assertSame([12, 9], TemplateOrder::position($added['contents'], $added['offset']));
+    }
+
+    public function test_a_new_part_on_a_shared_line_goes_after_the_element_on_that_line()
+    {
+        $added = TemplateOrder::insertAfter(self::TEMPLATE, $this->offset(13, 34), '<p>New text</p>');
+
+        $this->assertStringContainsString('<a href="/help">Help</a> <p>New text</p></footer>', $added['contents']);
+        $this->assertSame('<p>New text</p>', substr($added['contents'], $added['offset'], 15));
+    }
+
     public function test_a_removed_element_takes_its_lines_and_leaves_its_parent_selected()
     {
         $removed = TemplateOrder::remove(self::TEMPLATE, $this->offset(8, 9));

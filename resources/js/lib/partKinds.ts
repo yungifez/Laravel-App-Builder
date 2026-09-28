@@ -35,3 +35,20 @@ const kinds: Record<string, string> = {
 export function kindOfTag(tag: string): string {
     return kinds[tag.toLowerCase()] ?? 'Box';
 }
+
+// The parts an owner can add after a picked part, as the markup each starts
+// as. The server writes the same markup (app/VisualEditing/NewPart.php); the
+// app shows it at once from here.
+export const newParts = {
+    text: { label: 'Text', markup: '<p>New text</p>' },
+    heading: {
+        label: 'Heading',
+        markup: '<h2 class="text-lg font-semibold">New heading</h2>',
+    },
+    button: {
+        label: 'Button',
+        markup: '<button type="button" class="rounded-md border px-4 py-2 text-sm font-medium">Button</button>',
+    },
+} as const;
+
+export type NewPartKind = keyof typeof newParts;

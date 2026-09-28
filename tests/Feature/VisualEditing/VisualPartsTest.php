@@ -103,6 +103,42 @@ class VisualPartsTest extends TestCase
         $this->assertSame(self::CARD, $this->file());
     }
 
+    public function test_the_owner_adds_a_new_part_after_a_part_and_the_new_part_is_picked_and_can_be_undone()
+    {
+        $added = str_replace("<h1 class=\"text-xl\">Plans</h1>\n", "<h1 class=\"text-xl\">Plans</h1>\n        <button type=\"button\" class=\"rounded-md border px-4 py-2 text-sm font-medium\">Button</button>\n", self::CARD);
+
+        $this->actingAs($this->owner)
+            ->post(route('new-parts.store', $this->project), [...$this->part('3:9'), 'part' => 'button'])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame($added, $this->file());
+
+        $edit = $this->project->visualEdits()->sole();
+        $this->assertSame('add', $edit->kind());
+        $this->assertSame('button', $edit->tag);
+        $this->assertSame([4, 9], [$edit->line, $edit->column]);
+
+        $this->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->hasFlash('moved', ['target' => self::FILE.':4:9', 'instance' => false])
+                ->where('edits.0.kind', 'add'));
+
+        $this->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
+        $this->assertSame(self::CARD, $this->file());
+
+        $this->delete(route('visual-edits.reversion.destroy', $edit))->assertSessionHasNoErrors();
+        $this->assertSame($added, $this->file());
+    }
+
+    public function test_only_the_offered_kinds_of_part_can_be_added()
+    {
+        $this->actingAs($this->owner)
+            ->post(route('new-parts.store', $this->project), [...$this->part('3:9'), 'part' => 'script'])
+            ->assertSessionHasErrors('part');
+
+        $this->assertSame(self::CARD, $this->file());
+    }
+
     public function test_a_part_shown_in_turn_with_another_is_neither_copied_nor_removed()
     {
         $this->actingAs($this->owner)
@@ -111,6 +147,9 @@ class VisualPartsTest extends TestCase
 
         $this->delete(route('visual-parts.destroy', $this->project), $this->part('5:9'))
             ->assertSessionHasErrors(['edit' => 'This part cannot be removed here. Ask me to remove it instead.']);
+
+        $this->post(route('new-parts.store', $this->project), [...$this->part('4:9'), 'part' => 'text'])
+            ->assertSessionHasErrors(['edit' => 'Nothing can be added after this part here. Ask me to add it instead.']);
 
         $this->assertSame(self::CARD, $this->file());
         $this->assertSame(0, $this->project->visualEdits()->count());

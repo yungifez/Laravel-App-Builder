@@ -8,6 +8,7 @@ import {
     watch,
 } from 'vue';
 import type { Ref } from 'vue';
+import NewPartController from '@/actions/App/Http/Controllers/NewPartController';
 import VisualEditController from '@/actions/App/Http/Controllers/VisualEditController';
 import VisualEditReversionController from '@/actions/App/Http/Controllers/VisualEditReversionController';
 import VisualLinkController from '@/actions/App/Http/Controllers/VisualLinkController';
@@ -24,6 +25,8 @@ import {
     stepFrom,
     withUnit,
 } from '@/lib/visualProperties';
+import { newParts } from '@/lib/partKinds';
+import type { NewPartKind } from '@/lib/partKinds';
 import { show as showPreview } from '@/routes/previews';
 import type {
     Device,
@@ -66,6 +69,9 @@ type Step = 'undo' | 'redo';
 
 // A part the app took out, and where it was: after the part before it, or
 // first in the part around it.
+// What the builder does to the picked part as a whole.
+type Reshape = 'duplicate' | 'remove' | 'add';
+
 type Spot = {
     html: string;
     after: { kind: string; value: string } | null;
@@ -551,11 +557,12 @@ export function useAppPreview(source: Source) {
         // part by its new place.
         saved.value = saved.value.slice(next.shows);
 
-        if (
+        const moved =
             movedTo.value !== null &&
             next.revision !== null &&
-            next.revision !== movedFrom
-        ) {
+            next.revision !== movedFrom;
+
+        if (moved) {
             selected.value = movedTo.value;
             movedTo.value = null;
         }
@@ -578,6 +585,16 @@ export function useAppPreview(source: Source) {
                 // It listed its parts before it showed; ask again now.
                 if (source.designing.value) {
                     post({ type: 'outline' }, windowOf(next.key));
+                }
+
+                // A part picked by its new place (a copy, a new part or a
+                // moved part) is told back now the app is on show, so the
+                // panel names it as it is.
+                if (moved && location() !== null) {
+                    post(
+                        { type: 'pick', location: location(), tell: true },
+                        windowOf(next.key),
+                    );
                 }
 
                 if (focused) {
@@ -1157,10 +1174,13 @@ export function useAppPreview(source: Source) {
         );
     }
 
-    // Put a copy of the selected part right after it, or take it out of
-    // the page. The app shows it at once; changes waiting to be saved go
-    // first, so this builds on them. A copy is picked once it is saved.
-    function reshape(how: 'duplicate' | 'remove'): void {
+    // Put a copy of the selected part right after it, a new part after it,
+    // or take it out of the page. The app shows it at once; changes waiting
+    // to be saved go first, so this builds on them. A copy or a new part is
+    // picked once it is saved.
+    function reshape(how: 'duplicate' | 'remove'): void;
+    function reshape(how: 'add', kind: NewPartKind): void;
+    function reshape(how: Reshape, kind?: NewPartKind): void {
         const preview = source.preview();
         const part = selected.value;
         // A shared piece is copied or taken out where it is used.
@@ -1173,7 +1193,11 @@ export function useAppPreview(source: Source) {
         // Show it at once, even when an earlier change is still saving:
         // a second Ctrl+D is a second copy, not a lost key press.
         saveError.value = null;
-        post({ type: 'reshape', how });
+        post({
+            type: 'reshape',
+            how,
+            markup: kind === undefined ? undefined : newParts[kind].markup,
+        });
 
         // What the app takes out can be put back on undo, when the app on
         // show is the saved one, so its places are the ones written.
@@ -1188,16 +1212,24 @@ export function useAppPreview(source: Source) {
             frames.value[0]?.revision === preview.revision &&
             (head.value === null || head.value === preview.revision);
 
-        saveReshape(how, part, at, preview.revision, fair ? removal : null);
+        saveReshape(
+            how,
+            part,
+            at,
+            preview.revision,
+            fair ? removal : null,
+            kind,
+        );
     }
 
     // Save a copy or a removal once the changes before it are saved.
     function saveReshape(
-        how: 'duplicate' | 'remove',
+        how: Reshape,
         part: SelectedElement,
         at: string,
         seen: string | null,
         removal: { spot: Spot | null } | null = null,
+        kind?: NewPartKind,
     ): void {
         const preview = source.preview();
 
@@ -1215,7 +1247,10 @@ export function useAppPreview(source: Source) {
 
         if (moving.value || sending.value !== null || queue.value.length > 0) {
             save();
-            setTimeout(() => saveReshape(how, part, at, seen, removal), 200);
+            setTimeout(
+                () => saveReshape(how, part, at, seen, removal, kind),
+                200,
+            );
 
             return;
         }
@@ -1240,7 +1275,7 @@ export function useAppPreview(source: Source) {
                     | { target: string; instance: boolean }
                     | undefined;
 
-                if (copy !== undefined && how === 'duplicate') {
+                if (copy !== undefined && how !== 'remove') {
                     onlyThisOne.value = true;
                     movedTo.value = copy.instance
                         ? { ...part, instance: copy.target }
@@ -1267,7 +1302,7 @@ export function useAppPreview(source: Source) {
                     taken.set(edit.id, removal.spot);
                 }
 
-                if (how === 'duplicate') {
+                if (how !== 'remove') {
                     inspect();
                 }
             },
@@ -1279,7 +1314,13 @@ export function useAppPreview(source: Source) {
             onFinish: () => (moving.value = false),
         };
 
-        if (how === 'duplicate') {
+        if (how === 'add') {
+            router.post(
+                NewPartController.store.url(source.projectId()),
+                { ...data, part: kind },
+                options,
+            );
+        } else if (how === 'duplicate') {
             router.post(
                 VisualPartController.store.url(source.projectId()),
                 data,
@@ -1288,7 +1329,10 @@ export function useAppPreview(source: Source) {
         } else {
             router.delete(
                 VisualPartController.destroy.url(source.projectId()),
-                { ...options, data },
+                {
+                    ...options,
+                    data,
+                },
             );
         }
     }
@@ -1642,7 +1686,8 @@ export function useAppPreview(source: Source) {
         // A copy undone, or a part removed again, goes at once while the app
         // is the version right after it, where the part is still at its place.
         if (
-            ((key === 'undo' && edit.kind === 'duplicate') ||
+            ((key === 'undo' &&
+                (edit.kind === 'duplicate' || edit.kind === 'add')) ||
                 (key === 'redo' && edit.kind === 'remove')) &&
             frames.value[0]?.revision === edit.revision
         ) {
@@ -1697,7 +1742,8 @@ export function useAppPreview(source: Source) {
 
         if (
             ((key === 'undo' && edit.kind === 'remove') ||
-                (key === 'redo' && edit.kind === 'duplicate')) &&
+                (key === 'redo' &&
+                    (edit.kind === 'duplicate' || edit.kind === 'add'))) &&
             spot != null &&
             frames.value[0]?.revision === edit.revision
         ) {
@@ -1827,7 +1873,7 @@ export function useAppPreview(source: Source) {
         // Undo takes a copy away: the copy can no longer stay picked.
         if (
             next.key === 'undo' &&
-            edit.kind === 'duplicate' &&
+            (edit.kind === 'duplicate' || edit.kind === 'add') &&
             selected.value?.source === edit.target
         ) {
             deselect();

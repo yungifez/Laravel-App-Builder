@@ -17,6 +17,7 @@ use App\Http\Controllers\FeatureRequestReversionController;
 use App\Http\Controllers\FeatureRequestStepChangeController;
 use App\Http\Controllers\FeatureRequestVerificationController;
 use App\Http\Controllers\LiveErrorFixController;
+use App\Http\Controllers\NewPartController;
 use App\Http\Controllers\NewProjectController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\NotificationReadController;
@@ -87,6 +88,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/visual-pictures', [VisualPictureController::class, 'store'])->name('visual-pictures.store');
     Route::post('projects/{project}/visual-parts', [VisualPartController::class, 'store'])->name('visual-parts.store');
     Route::delete('projects/{project}/visual-parts', [VisualPartController::class, 'destroy'])->name('visual-parts.destroy');
+    Route::post('projects/{project}/new-parts', [NewPartController::class, 'store'])->name('new-parts.store');
     Route::post('projects/{project}/page-consistency', [PageConsistencyController::class, 'store'])->name('page-consistency.store');
     Route::post('visual-edits/{visualEdit}/reversion', [VisualEditReversionController::class, 'store'])->name('visual-edits.reversion.store');
     Route::delete('visual-edits/{visualEdit}/reversion', [VisualEditReversionController::class, 'destroy'])->name('visual-edits.reversion.destroy');

@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\VisualEdit;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\NewPart;
 use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TemplateElement;
 use App\VisualEditing\TemplateOrder;
@@ -21,16 +22,18 @@ class ReshapeVisualElement
     ) {}
 
     /**
-     * Put a copy of one element right after it, or take it out of the page,
-     * and commit the file; the commit rebuilds the preview. No model is
-     * involved: the element's lines are copied or taken out as they are.
+     * Put a copy of one element right after it, a new part right after it,
+     * or take it out of the page, and commit the file; the commit rebuilds
+     * the preview. No model is involved: the element's lines are copied or
+     * taken out as they are, and a new part starts as plain markup.
      *
-     * @param  string  $change  VisualEdit::DUPLICATE or VisualEdit::REMOVE
-     * @return array{edit: VisualEdit, location: SourceLocation} The saved change, and the copy or the element that held the removed one
+     * @param  string  $change  VisualEdit::DUPLICATE, VisualEdit::ADD or VisualEdit::REMOVE
+     * @param  string|null  $part  The kind of new part, for VisualEdit::ADD (see NewPart)
+     * @return array{edit: VisualEdit, location: SourceLocation} The saved change, and the copy, the new part, or the element that held the removed one
      *
      * @throws ValidationException when the change cannot be made in place.
      */
-    public function handle(Preview $preview, User $owner, SourceLocation $location, string $change, string $revision): array
+    public function handle(Preview $preview, User $owner, SourceLocation $location, string $change, string $revision, ?string $part = null): array
     {
         $project = $preview->project;
 
@@ -48,9 +51,11 @@ class ReshapeVisualElement
             }
         }
 
-        $refused = $change === VisualEdit::DUPLICATE
-            ? __('This part cannot be copied here. Ask me to copy it instead.')
-            : __('This part cannot be removed here. Ask me to remove it instead.');
+        $refused = match ($change) {
+            VisualEdit::DUPLICATE => __('This part cannot be copied here. Ask me to copy it instead.'),
+            VisualEdit::ADD => __('Nothing can be added after this part here. Ask me to add it instead.'),
+            default => __('This part cannot be removed here. Ask me to remove it instead.'),
+        };
         $contents = $this->repository->show($project, $revision, $location->file);
         $offset = $contents === null ? null : TemplateElement::offset($contents, $location->line, $location->column);
         $element = $offset === null ? null : TemplateElement::atOffset((string) $contents, $offset);
@@ -60,29 +65,38 @@ class ReshapeVisualElement
         }
 
         try {
-            $changed = $change === VisualEdit::DUPLICATE
-                ? TemplateOrder::duplicate($contents, $offset)
-                : TemplateOrder::remove($contents, $offset);
+            $changed = match ($change) {
+                VisualEdit::DUPLICATE => TemplateOrder::duplicate($contents, $offset),
+                VisualEdit::ADD => TemplateOrder::insertAfter($contents, $offset, NewPart::markup((string) $part)),
+                default => TemplateOrder::remove($contents, $offset),
+            };
         } catch (InvalidArgumentException) {
             throw ValidationException::withMessages(['edit' => $refused]);
         }
 
         [$line, $column] = TemplateOrder::position($changed['contents'], $changed['offset']);
-        $now = new SourceLocation($location->file, $line, $column, $change === VisualEdit::DUPLICATE ? $location->instance : false);
+        $now = new SourceLocation($location->file, $line, $column, $change === VisualEdit::REMOVE ? false : $location->instance);
+        $tag = $change === VisualEdit::ADD ? NewPart::tag((string) $part) : $element->tag;
 
         try {
             $sha = $this->repository->commitFiles(
                 $project,
                 $revision,
                 [$location->file => $changed['contents']],
-                ($change === VisualEdit::DUPLICATE ? "Copy <{$element->tag}>" : "Remove <{$element->tag}>")."\n\nIn {$location}.",
+                match ($change) {
+                    VisualEdit::DUPLICATE => "Copy <{$element->tag}>",
+                    VisualEdit::ADD => "Add <{$tag}> after <{$element->tag}>",
+                    default => "Remove <{$element->tag}>",
+                }."\n\nIn {$location}.",
                 ['name' => $owner->name, 'email' => $owner->email],
             );
         } catch (RepositoryConflict $exception) {
             throw ValidationException::withMessages(['edit' => $exception->getMessage()]);
         }
 
-        $classes = $element->classes['value'] ?? '';
+        $classes = $change === VisualEdit::ADD
+            ? (TemplateElement::atOffset($changed['contents'], $changed['offset'])->classes['value'] ?? '')
+            : ($element->classes['value'] ?? '');
 
         // The new commit rebuilds the editable preview (ProjectCommitted).
         $edit = $project->visualEdits()->create([
@@ -91,9 +105,9 @@ class ReshapeVisualElement
             'file' => $location->file,
             'line' => $line,
             'column' => $column,
-            'tag' => $element->tag,
+            'tag' => $tag,
             'device' => 'base',
-            'changes' => [$change => ['from' => (string) $location]],
+            'changes' => [$change => array_filter(['from' => (string) $location, 'part' => $part])],
             'classes_before' => $classes,
             'classes_after' => $classes,
             'base_revision' => $revision,
