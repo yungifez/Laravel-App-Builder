@@ -546,6 +546,21 @@ export const properties: PropertyDefinition[] = [
             ],
         },
     },
+    {
+        key: 'aspect_ratio',
+        label: 'Picture shape',
+        group: 'Picture',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'auto', label: 'As it is', short: 'Free' },
+                { value: 'square', label: 'Square' },
+                { value: 'video', label: 'Wide (16:9)', short: 'Wide' },
+                { value: '4/3', label: 'Photo (4:3)', short: 'Photo' },
+                { value: '3/4', label: 'Tall (3:4)', short: 'Tall' },
+            ],
+        },
+    },
 ];
 
 /** Find a property's definition. */
@@ -563,6 +578,8 @@ const pairs: { keys: [VisualProperty, VisualProperty]; label: string }[] = [
     { keys: ['padding_x', 'padding_y'], label: 'Space inside' },
     { keys: ['margin_x', 'margin_y'], label: 'Space outside' },
     { keys: ['translate_x', 'translate_y'], label: 'Place on the page' },
+    // A shape frees the picture's height, as part of the same change.
+    { keys: ['aspect_ratio', 'height'], label: 'Picture shape' },
 ];
 
 // What a change to several properties changed, in a few words: one or two
@@ -1005,6 +1022,12 @@ export function inlineStyles(
                 break;
             case 'object_fit':
                 styles.objectFit = String(value);
+                break;
+            case 'aspect_ratio':
+                styles.aspectRatio =
+                    value === 'video'
+                        ? '16 / 9'
+                        : String(value).replace('square', '1');
                 break;
             case 'letter_spacing':
                 styles.letterSpacing = `var(--tracking-${value}, ${trackings[value] ?? 'normal'})`;

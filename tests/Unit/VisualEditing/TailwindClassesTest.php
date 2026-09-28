@@ -148,6 +148,14 @@ class TailwindClassesTest extends TestCase
         $this->assertSame('object-top size-10', TailwindClasses::write('object-cover object-top size-10', 'base', ['object_fit' => null]));
     }
 
+    public function test_picture_shape_is_read_and_written_as_an_aspect_utility()
+    {
+        $this->assertSame(['aspect_ratio' => '4/3'], TailwindClasses::read('aspect-4/3 object-center')['base']);
+        $this->assertSame(['aspect_ratio' => 'square'], TailwindClasses::read('lg:aspect-square')['lg']);
+        $this->assertSame('aspect-video w-full', TailwindClasses::write('aspect-4/3 w-full', 'base', ['aspect_ratio' => 'video']));
+        $this->assertSame('w-full', TailwindClasses::write('aspect-3/4 w-full', 'base', ['aspect_ratio' => null]));
+    }
+
     public function test_letter_spacing_is_read_and_written_and_spacing_off_the_steps_is_replaced()
     {
         $this->assertSame(['letter_spacing' => 'wide'], TailwindClasses::read('tracking-wide')['base']);

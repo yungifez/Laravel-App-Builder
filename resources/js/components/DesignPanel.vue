@@ -422,6 +422,18 @@ function set(property: VisualProperty, value: VisualValue | null): void {
     props.state.change(property, value);
 }
 
+// A set height would keep the picture from taking its new shape, so a
+// shape frees the height in the same change, and one undo takes both back.
+function shape(value: VisualValue | null): void {
+    set('aspect_ratio', value);
+
+    const height = props.state.valueOf('height');
+
+    if (value !== 'auto' && height != null && height !== 'auto') {
+        set('height', 'auto');
+    }
+}
+
 // A mark on the words is on when it is set, or, with nothing set, when
 // the words are drawn with it now. Turning off a mark the part set
 // clears it; turning off one it gets from around it sets the opposite.
@@ -582,7 +594,11 @@ function describeEdit(edit: VisualEditSummary): string {
 function describeResult(
     edit: VisualEditSummary,
 ): { words: string; color: string | null } | null {
-    const [property] = edit.properties;
+    // A shape comes with its freed height, which is not worth naming.
+    const properties = edit.properties.includes('aspect_ratio')
+        ? (['aspect_ratio'] as const)
+        : edit.properties;
+    const [property] = properties;
 
     if (edit.kind === 'text' && edit.words) {
         return { words: `“${edit.words}”`, color: null };
@@ -611,8 +627,8 @@ function describeResult(
 
     // Two sizes or places changed at once, as a part dragged by its
     // corner, show both, in the order the change is named.
-    if (edit.properties.length === 2) {
-        const both = edit.properties.map((one) => {
+    if (properties.length === 2) {
+        const both = properties.map((one) => {
             const after = edit.sides?.after.values[one];
 
             return after === null ||
@@ -629,7 +645,7 @@ function describeResult(
         // Two lengths read as one: "80 × 80 px" for a size, "2, 14 px"
         // for a place or space.
         const [first, second] = both as string[];
-        const between = edit.properties.includes('width') ? ' × ' : ', ';
+        const between = properties.includes('width') ? ' × ' : ', ';
 
         return {
             words:
@@ -640,7 +656,7 @@ function describeResult(
         };
     }
 
-    if (edit.properties.length !== 1) {
+    if (properties.length !== 1) {
         return null;
     }
 
@@ -1298,6 +1314,15 @@ const recent = computed(() => {
                                 >
                                     Or drop a picture on it in your app.
                                 </p>
+                                <Segmented
+                                    label="Picture shape"
+                                    caption="Shape"
+                                    :value="
+                                        state.valueOf('aspect_ratio') ?? 'auto'
+                                    "
+                                    :options="options('aspect_ratio')"
+                                    @change="shape"
+                                />
                                 <!-- With no fit chosen, the browser stretches
                                      the picture, so that shows as chosen. -->
                                 <Segmented
