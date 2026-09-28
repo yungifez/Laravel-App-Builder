@@ -2266,13 +2266,28 @@ const recent = computed(() => {
                 <LoaderCircle class="size-3.5 animate-spin" />
                 Saving
             </p>
+            <!-- Saved into the app's own code, then the app is rebuilt with
+                 it: the owner sees their change is real, not a mock-up. -->
             <p
-                v-else-if="edits.length > 0"
+                v-else-if="edits.length > 0 && state.updating"
                 class="ml-auto flex items-center gap-1.5 px-2 text-xs text-muted-foreground"
                 data-test="saved"
             >
+                <LoaderCircle class="size-3.5 animate-spin" />
+                Saved · updating your app
+            </p>
+            <p
+                v-else-if="edits.length > 0"
+                class="ml-auto flex items-center gap-1.5 px-2 text-xs text-muted-foreground"
+                :title="
+                    state.upToDate
+                        ? 'Your app was rebuilt with your changes, and it runs.'
+                        : undefined
+                "
+                data-test="saved"
+            >
                 <Check class="size-3.5" />
-                Saved
+                {{ state.upToDate ? 'Saved · in your app' : 'Saved' }}
             </p>
         </footer>
     </div>

@@ -309,10 +309,17 @@ export function useAppPreview(source: Source) {
         () => source.preview()?.id,
         () => (lost.value = false),
     );
-    const busy = computed(
+    // The running app does not have the latest saved version yet.
+    const updating = computed(() => source.preview()?.updating === true);
+    // The running app was rebuilt with the latest saved version.
+    const upToDate = computed(
         () =>
-            source.preview()?.status === 'starting' ||
-            source.preview()?.updating === true,
+            source.preview()?.status === 'ready' &&
+            source.preview()?.error == null &&
+            !updating.value,
+    );
+    const busy = computed(
+        () => source.preview()?.status === 'starting' || updating.value,
     );
     const frameWidth = computed(
         () =>
@@ -2466,6 +2473,8 @@ export function useAppPreview(source: Source) {
         onlyThisOne,
         element,
         saving,
+        updating,
+        upToDate,
         saveError,
         target,
         change,
