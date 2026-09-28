@@ -19,13 +19,16 @@ class SummarizeChanges
      * owner. Otherwise a kept request wins, so a kept follow-up does not
      * leave its parent "waiting" for ever.
      *
-     * @return list<array{id: string, prompt: string, summary: string|null, state: string, asks: bool, question: string|null, dismissable: bool, updated_at: string|null}>
+     * @return list<array{id: string, prompt: string, background: bool, summary: string|null, state: string, asks: bool, question: string|null, dismissable: bool, updated_at: string|null}>
      */
     public function handle(Project $project): array
     {
         $requests = $project->featureRequests()->inLine($project)->latest('id')->get();
 
         return array_values($requests->whereNull('parent_id')
+            // A tidy-up set aside in the background never reached the app,
+            // so there is nothing to tell the owner.
+            ->reject(fn (FeatureRequest $root) => $root->tidy !== null && $root->dismissed_at !== null)
             ->map(function (FeatureRequest $root) use ($requests) {
                 $thread = $this->thread($root, $requests)->sortByDesc('id')->values();
                 [$state, $shown] = $this->state($thread);
@@ -36,9 +39,17 @@ class SummarizeChanges
                     $state = ChangeState::Dismissed;
                 }
 
+                // A tidy-up is kept on its own, so until then the builder is
+                // still at it and the owner has nothing to look at.
+                if ($root->tidy !== null && $state === ChangeState::Waiting) {
+                    $state = ChangeState::Working;
+                }
+
                 return [
                     'id' => $shown->uuid,
-                    'prompt' => $root->prompt,
+                    'prompt' => $root->background() ?? $root->prompt,
+                    // Made by the builder on its own, not asked for.
+                    'background' => $root->tidy !== null,
                     'summary' => $shown->summary,
                     'state' => $state->value,
                     // Waiting on an answer rather than on a look at the result.

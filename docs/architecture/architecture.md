@@ -1614,7 +1614,12 @@ checks again later, for a day. It is built by the coding agents'
 `light_model` on `shortcuts.tidy.max_budget_usd`. When its run completes and
 its patch removed each flagged line or added a comment saying why it stays,
 `KeepTidy` keeps it through `AcceptChange`, in the owner's name, and the owner
-is not notified; the owner can undo it like any kept change. When the light
+is not notified; the owner can undo it like any kept change. The chat list
+and the chat name it by what it does, not by the words it was asked in:
+"Tidying up 2 things in your app's code in the background.", then "I tidied
+up 2 things…" once kept (`FeatureRequest::background()`). Until kept it reads
+as being built, never as waiting for the owner. A tidy-up put aside is not
+shown. When the light
 model fails or leaves a shortcut, the usual model tries once; when that fails
 too, the tidy-up is put aside (`tidy_put_aside`) and the app stays as it was.
 A tidy-up built on an app that changed since is built again on the new one.

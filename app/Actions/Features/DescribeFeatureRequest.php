@@ -41,6 +41,9 @@ class DescribeFeatureRequest
             'featureRequest' => [
                 'id' => $featureRequest->uuid,
                 'prompt' => $featureRequest->prompt,
+                // What a change made in the background does, said in place
+                // of the words the owner never wrote.
+                'background' => $featureRequest->background(),
                 'images' => $this->images($featureRequest),
                 'status' => $featureRequest->status->value,
                 'summary' => $featureRequest->summary,

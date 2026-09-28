@@ -351,6 +351,21 @@ class FeatureRequest extends Model
     }
 
     /**
+     * Say what a change made in the background does, in place of words the
+     * owner never wrote. Null for a change the owner asked for.
+     */
+    public function background(): ?string
+    {
+        if ($this->tidy === null) {
+            return null;
+        }
+
+        return trans_choice($this->commit_sha !== null
+            ? "I tidied up one thing in your app's code in the background.|I tidied up :count things in your app's code in the background."
+            : "Tidying up one thing in your app's code in the background.|Tidying up :count things in your app's code in the background.", count($this->tidy['shortcuts']));
+    }
+
+    /**
      * Find one of the generated change's steps by key.
      *
      * @return array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}|null

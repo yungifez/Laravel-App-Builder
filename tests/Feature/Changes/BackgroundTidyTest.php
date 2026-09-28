@@ -2,8 +2,10 @@
 
 namespace Tests\Feature\Changes;
 
+use App\Actions\Features\DescribeFeatureRequest;
 use App\Actions\Features\RequestFeature;
 use App\Actions\Projects\CreateProject;
+use App\Actions\Projects\SummarizeChanges;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Events\RunStatusChanged;
@@ -135,6 +137,37 @@ class BackgroundTidyTest extends TestCase
         $this->assertNull($tidy->refresh()->commit_sha);
         $this->assertSame('undone', $tidy->latestRun->events()->where('type', 'tidy_put_aside')->sole()->data['reason']);
         Queue::assertNotPushed(TidyShortcuts::class);
+    }
+
+    public function test_the_owner_sees_a_tidy_up_as_the_builders_own_work_not_as_words_they_wrote()
+    {
+        $tidy = $this->tidy(self::REMOVE_ALL_TEAMS, 'light');
+
+        $chat = collect(app(SummarizeChanges::class)->handle($this->project))->firstWhere('id', $tidy->uuid);
+        $this->assertSame("Tidying up one thing in your app's code in the background.", $chat['prompt']);
+        $this->assertTrue($chat['background']);
+        $this->assertSame('working', $chat['state']);
+        $this->assertSame(0, app(SummarizeChanges::class)->waiting($this->project));
+
+        $this->finish($tidy, RunStatus::Completed);
+
+        $chat = collect(app(SummarizeChanges::class)->handle($this->project))->firstWhere('id', $tidy->uuid);
+        $this->assertSame("I tidied up one thing in your app's code in the background.", $chat['prompt']);
+        $this->assertSame('kept', $chat['state']);
+        $this->assertFalse(collect(app(SummarizeChanges::class)->handle($this->project))->firstWhere('id', $this->kept->uuid)['background']);
+        $this->assertSame("I tidied up one thing in your app's code in the background.", app(DescribeFeatureRequest::class)->handle($tidy->refresh())['featureRequest']['background']);
+        $this->assertNull(app(DescribeFeatureRequest::class)->handle($this->kept)['featureRequest']['background']);
+    }
+
+    public function test_a_tidy_up_put_aside_in_the_background_is_not_shown_to_the_owner()
+    {
+        $tidy = $this->tidy(self::LEAVE_ALL_TEAMS, 'full');
+        Queue::fake([TidyShortcuts::class]);
+
+        $this->finish($tidy, RunStatus::Completed);
+
+        $this->assertNotNull($tidy->refresh()->dismissed_at);
+        $this->assertNull(collect(app(SummarizeChanges::class)->handle($this->project))->firstWhere('id', $tidy->uuid));
     }
 
     /**

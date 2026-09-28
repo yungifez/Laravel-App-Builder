@@ -128,7 +128,10 @@ const sides = computed(
 
 // The chat is named after what the owner first asked, as in the chat list.
 const chatTitle = computed(
-    () => props.change.earlier[0]?.prompt ?? request.value.prompt,
+    () =>
+        props.change.earlier[0]?.prompt ??
+        request.value.background ??
+        request.value.prompt,
 );
 
 watch(sides, (on) => emit('sides', on), { immediate: true });
@@ -481,8 +484,19 @@ const checks = computed(() => {
                     </Link>
                 </template>
 
+                <!-- A change made in the background: nobody asked, so no
+                     words are put in the owner's mouth. -->
+                <p
+                    v-if="request.background"
+                    class="flex items-center gap-2 text-xs text-muted-foreground"
+                    data-test="thread-background"
+                >
+                    <Sparkles class="size-3.5 shrink-0" />
+                    {{ request.background }}
+                </p>
+
                 <!-- What you asked -->
-                <div class="flex flex-col items-end gap-1.5">
+                <div v-else class="flex flex-col items-end gap-1.5">
                     <p
                         :class="[
                             'rounded-2xl rounded-br-md bg-muted px-3.5 py-2.5 text-sm break-words whitespace-pre-line',

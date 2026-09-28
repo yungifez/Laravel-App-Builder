@@ -60,7 +60,10 @@ export type ChangeState =
 /** One ask the owner made, with its follow-ups folded in. */
 export type ChangeItem = {
     id: string;
+    /** What the owner asked, or what a background change does. */
     prompt: string;
+    /** Made by the builder on its own, not asked for. */
+    background: boolean;
     summary: string | null;
     state: ChangeState;
     /** Waiting on the owner's answer to a question. */
@@ -133,6 +136,9 @@ export type ChangedFile = {
 export type FeatureRequestDetail = {
     id: string;
     prompt: string;
+    /** What a change made in the background does, in place of the owner's
+     * words; null for a change the owner asked for. */
+    background: string | null;
     images: RequestImage[];
     status: FeatureRequestStatus;
     summary: string | null;

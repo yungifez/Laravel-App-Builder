@@ -416,7 +416,7 @@ function lineClass(line: string): string {
 }
 </script>
 <template>
-    <Head :title="featureRequest.prompt" />
+    <Head :title="featureRequest.background ?? featureRequest.prompt" />
 
     <div
         class="mx-auto flex max-w-6xl flex-col gap-12 px-4 pt-10 pb-16 sm:px-8"
@@ -425,7 +425,7 @@ function lineClass(line: string): string {
             <h1
                 class="text-2xl leading-snug font-semibold tracking-[-0.025em] break-words"
             >
-                {{ featureRequest.prompt }}
+                {{ featureRequest.background ?? featureRequest.prompt }}
             </h1>
             <MessageImages :images="featureRequest.images" align="start" />
             <p
