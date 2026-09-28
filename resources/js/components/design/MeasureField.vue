@@ -29,6 +29,10 @@ const value = computed(() => props.state.valueOf(props.property));
 
 // Sides set apart have no one unit, and the word needs the room.
 const mixed = computed(() => value.value === 'mixed');
+// The unit belongs to a number: "Fill px" or "Mixed px" reads wrong.
+const numeric = computed(
+    () => value.value === null || typeof value.value === 'number',
+);
 
 const shown = computed(() =>
     typeof value.value === 'number' ? String(value.value) : '',
@@ -165,7 +169,7 @@ function scrubEnd(): void {
             @keydown="key"
         />
         <span
-            v-if="unit && !mixed"
+            v-if="unit && numeric"
             class="shrink-0 cursor-ew-resize touch-none text-xs text-muted-foreground select-none"
             aria-hidden="true"
             @pointerdown="scrubStart"
