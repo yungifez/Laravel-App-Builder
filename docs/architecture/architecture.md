@@ -1991,6 +1991,9 @@ shows it honestly; normalization improves it over time.
     - The workspace box holds nothing of ours either: no control-plane code,
       keys or prompts ([§11](#adapters)).
     - The project notes are never committed to the repository (§26.3).
+- **The code is the owner's to take.** "Download your app" in the app menu
+  sends the main branch's files as a zip (`git archive`), in a folder named
+  after the app. The history and the notes stay with us.
 - **Workers see compiled text, never our machinery.** What stays on the
   server, what a brief may carry and what is open on purpose are listed in
   [§11](#workers-one-boundary-for-ours-and-theirs). A brief lint enforces it.

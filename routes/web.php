@@ -31,6 +31,7 @@ use App\Http\Controllers\PreviewProblemFixController;
 use App\Http\Controllers\PreviewScheduledTaskRunController;
 use App\Http\Controllers\ProjectCompatibilityController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\ProjectDownloadController;
 use App\Http\Controllers\ProjectEditorController;
 use App\Http\Controllers\ProjectExperimentController;
 use App\Http\Controllers\ProjectNameController;
@@ -60,6 +61,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects', [ProjectController::class, 'store'])->name('projects.store');
     Route::post('projects/new', [NewProjectController::class, 'store'])->name('projects.new.store');
     Route::get('projects/{project}', [ProjectController::class, 'show'])->name('projects.show');
+    Route::get('projects/{project}/download', ProjectDownloadController::class)->name('projects.download');
     Route::get('projects/{project}/understanding', [ProjectUnderstandingController::class, 'show'])->name('projects.understanding.show');
     Route::put('projects/{project}/understanding', [ProjectUnderstandingController::class, 'update'])->name('projects.understanding.update');
     Route::post('projects/{project}/notes-draft', [ProjectNotesDraftController::class, 'store'])->name('projects.notes-draft.store');

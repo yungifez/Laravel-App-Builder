@@ -81,7 +81,7 @@ import { usePanelWidth } from '@/composables/usePanelWidth';
 import { morph } from '@/lib/morph';
 import { when } from '@/lib/when';
 import { show as showPreview } from '@/routes/previews';
-import { index, show as showProject } from '@/routes/projects';
+import { download, index, show as showProject } from '@/routes/projects';
 import { show as showUnderstanding } from '@/routes/projects/understanding';
 import type {
     ChangeDetail,
@@ -948,6 +948,16 @@ function sendOnEnter(event: KeyboardEvent): void {
                     @select="detailsOpen = true"
                 >
                     Details for your developer
+                </DropdownMenuItem>
+                <!-- The code is the owner's to take to any developer. -->
+                <DropdownMenuItem as-child>
+                    <a
+                        :href="download(project.id).url"
+                        download
+                        title="All its code, for you or any developer"
+                        data-test="app-download"
+                        >Download your app</a
+                    >
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem as-child>
