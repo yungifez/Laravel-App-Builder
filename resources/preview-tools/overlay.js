@@ -1302,6 +1302,30 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         true,
     );
 
+    // The arrow keys, as steps across and down.
+    const arrows = {
+        arrowleft: [-1, 0],
+        arrowright: [1, 0],
+        arrowup: [0, -1],
+        arrowdown: [0, 1],
+    };
+
+    // Move the selected part towards the neighbour an arrow key points at,
+    // so it goes the way the owner pressed, even in a reversed row;
+    // otherwise left and up mean earlier.
+    const toward = (key) => {
+        const [x, y] = arrows[key];
+        const pointed = key.slice('arrow'.length);
+
+        if (way(selected, neighbour(selected, -1)) === pointed) {
+            shift(-1);
+        } else if (way(selected, neighbour(selected, 1)) === pointed) {
+            shift(1);
+        } else {
+            shift(x + y);
+        }
+    };
+
     // Keys go to the app while it has focus; the builder handles the ones
     // that belong to editing. Arrow keys move the selected part.
     document.addEventListener(
@@ -1326,12 +1350,6 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             }
 
             const key = event.key.toLowerCase();
-            const arrows = {
-                arrowleft: [-1, 0],
-                arrowright: [1, 0],
-                arrowup: [0, -1],
-                arrowdown: [0, 1],
-            };
 
             if (key === 'escape' && reorder) {
                 endReorder();
@@ -1381,19 +1399,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                 // Alt and an arrow move the part before or after the one
                 // next to it.
                 event.preventDefault();
-                const [x, y] = arrows[key];
-                const pointed = key.slice('arrow'.length);
-
-                // Move towards the neighbour the arrow points at, so the
-                // part goes the way the owner pressed, even in a reversed
-                // row; otherwise left and up mean earlier.
-                if (way(selected, neighbour(selected, -1)) === pointed) {
-                    shift(-1);
-                } else if (way(selected, neighbour(selected, 1)) === pointed) {
-                    shift(1);
-                } else {
-                    shift(x + y);
-                }
+                toward(key);
             } else if (arrows[key] && selected && handlesOn) {
                 event.preventDefault();
                 const [x, y] = arrows[key];
@@ -1599,6 +1605,17 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         // the one around or inside the selected part.
         if (message.type === 'shift') {
             shift(message.direction);
+        }
+
+        // An arrow the owner pressed with Alt in the builder, outside the
+        // app: the same move as pressing it in the app.
+        if (
+            message.type === 'toward' &&
+            selected &&
+            handlesOn &&
+            Object.hasOwn(arrows, message.key)
+        ) {
+            toward(message.key);
         }
 
         // The builder lists the page's parts; the owner points at one to

@@ -724,11 +724,10 @@ export function useAppPreview(source: Source) {
               };
     }
 
-    // Move the selected part one place earlier or later on the page.
+    // Move the selected part one place earlier or later on the page. The
+    // app moves it at once; saving waits for the changes before it.
     function shift(direction: -1 | 1): void {
-        if (!saving.value) {
-            post({ type: 'shift', direction });
-        }
+        post({ type: 'shift', direction });
     }
 
     // Show a part from the parts list in the app, or show none.
@@ -1689,6 +1688,15 @@ export function useAppPreview(source: Source) {
         if (mod && (key === 'z' || key === 'y')) {
             event.preventDefault();
             press(key === 'y' || event.shiftKey ? 'redo' : 'undo');
+        } else if (
+            event.altKey &&
+            key.startsWith('arrow') &&
+            selected.value !== null &&
+            !inside
+        ) {
+            // As in the app: move the part the way the arrow points.
+            event.preventDefault();
+            post({ type: 'toward', key });
         } else if (mod && key === 'd' && selected.value !== null && !inside) {
             event.preventDefault();
             reshape('duplicate');
