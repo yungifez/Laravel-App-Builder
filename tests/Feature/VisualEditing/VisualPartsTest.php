@@ -130,6 +130,16 @@ class VisualPartsTest extends TestCase
         $this->assertSame($added, $this->file());
     }
 
+    public function test_a_new_link_goes_home_until_the_owner_points_it_elsewhere()
+    {
+        $this->actingAs($this->owner)
+            ->post(route('new-parts.store', $this->project), [...$this->part('3:9'), 'part' => 'link'])
+            ->assertSessionHasNoErrors();
+
+        $this->assertStringContainsString("<h1 class=\"text-xl\">Plans</h1>\n        <a href=\"/\" class=\"underline underline-offset-4\">New link</a>\n", $this->file());
+        $this->assertSame('a', $this->project->visualEdits()->sole()->tag);
+    }
+
     public function test_only_the_offered_kinds_of_part_can_be_added()
     {
         $this->actingAs($this->owner)

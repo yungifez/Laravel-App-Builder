@@ -49,6 +49,10 @@ export const newParts = {
         label: 'Button',
         markup: '<button type="button" class="rounded-md border px-4 py-2 text-sm font-medium">Button</button>',
     },
+    link: {
+        label: 'Link',
+        markup: '<a href="/" class="underline underline-offset-4">New link</a>',
+    },
 } as const;
 
 export type NewPartKind = keyof typeof newParts;

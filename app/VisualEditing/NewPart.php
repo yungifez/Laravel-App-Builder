@@ -16,6 +16,7 @@ class NewPart
         'text' => '<p>New text</p>',
         'heading' => '<h2 class="text-lg font-semibold">New heading</h2>',
         'button' => '<button type="button" class="rounded-md border px-4 py-2 text-sm font-medium">Button</button>',
+        'link' => '<a href="/" class="underline underline-offset-4">New link</a>',
     ];
 
     /**
