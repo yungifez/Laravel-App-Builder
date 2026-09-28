@@ -19,6 +19,7 @@ use App\Runs\Review;
 use App\Runs\ReviewEvidence;
 use App\Workspaces\WorkspaceFiles;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Str;
 use Laravel\Ai\Files\Image;
 use Laravel\Ai\Files\StoredImage;
 use Laravel\Ai\Responses\AgentResponse;
@@ -146,6 +147,10 @@ abstract class AgentDriver implements ConstructionDriver
             ));
         }
 
+        if ($context->routes !== []) {
+            $sections[] = "## Addresses in the app\n\nEach address and the code that handles it.\n\n".implode("\n", array_map(fn (string $route) => "- {$route}", $context->routes));
+        }
+
         if ($context->answers !== []) {
             $sections[] = "## The owner's answers\n\nThe owner settled these for this request. Plan with them and do not ask about them again.\n\n".implode("\n", array_map(
                 fn (array $answer) => $answer['decided_by'] === 'owner'
@@ -165,13 +170,34 @@ abstract class AgentDriver implements ConstructionDriver
             $sections[] = self::services($context->services);
         }
 
-        $sections[] = "## Project files\n\n".implode("\n", $context->files);
+        $sections[] = "## Project files\n\nEach line is a folder, then the files in it.\n\n".self::byFolder($context->files);
 
         foreach ($context->contents as $path => $contents) {
             $sections[] = "## {$path}\n\n```\n{$contents}\n```";
         }
 
         return implode("\n\n", $sections);
+    }
+
+    /**
+     * List files by folder, so each folder is named once. It says the same
+     * as one path per line in about half the words.
+     *
+     * @param  list<string>  $files
+     */
+    public static function byFolder(array $files): string
+    {
+        $folders = [];
+
+        foreach ($files as $file) {
+            $folders[Str::contains($file, '/') ? Str::beforeLast($file, '/').'/' : ''][] = Str::afterLast($file, '/');
+        }
+
+        return implode("\n", array_map(
+            fn (string $folder, array $names) => ($folder === '' ? '' : "{$folder}: ").implode(', ', $names),
+            array_keys($folders),
+            $folders,
+        ));
     }
 
     /**

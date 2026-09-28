@@ -18,6 +18,7 @@ final readonly class PlanningContext
      * @param  bool  $parentAnswered  Whether the earlier request was a question that was answered, not a change
      * @param  bool  $keepOldWorking  Whether changes must carry the app's old data and links forward
      * @param  list<string>  $services  The outside services the app is connected to
+     * @param  list<string>  $routes  The app's addresses and the code that handles each
      */
     public function __construct(
         public string $request,
@@ -32,6 +33,7 @@ final readonly class PlanningContext
         public bool $parentAnswered = false,
         public bool $keepOldWorking = true,
         public array $services = [],
+        public array $routes = [],
     ) {}
 
     /**

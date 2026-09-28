@@ -2221,6 +2221,14 @@ of its change, including Effects it discovered ("accepting an invitation changes
 the seat count"); they are kept with the change and listed in the review. Owners
 edit the notes on the Understanding page. An edit made on an old copy is refused.
 
+**The planner's view of the code** is also deterministic, and kept small because
+every planning call pays for it. The file list is grouped by folder, so each
+folder is named once; this halves its size. The app's addresses come from
+`route:list --json`, run in the workspace, as one line each: method, path, the
+code that handles it and its name. With this map, the planner can name the right
+files in its tasks, and the coding agent searches less. It is left out when the
+app cannot list its routes.
+
 **Progression.** V0 is stage 3 of: one `PROJECT.md` → plus capability files →
 frontmatter and behaviour notes → indexed retrieval → the richer compiler with
 `context_entries` (§7). Each later stage is built only when the one before it

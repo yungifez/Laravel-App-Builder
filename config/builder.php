@@ -328,9 +328,13 @@ return [
         ],
 
         // What the planner sees besides the request: the file list (up to
-        // "max_files") and these files when the project has them.
+        // "max_files"), the app's addresses and the code that handles each
+        // (up to "max_routes"), and these files when the project has them.
+        // The addresses let the planner name the right files, so the
+        // coding agent spends less time searching for them.
         'planning' => [
             'max_files' => 800,
+            'max_routes' => 300,
             'context_files' => ['AGENTS.md', 'CLAUDE.md', 'composer.json', 'routes/web.php'],
         ],
 

@@ -90,6 +90,31 @@ class AgentDriverTest extends TestCase
         $this->assertSame('openai', $run->events()->where('type', 'model_call')->where('data->role', 'planner')->sole()->data['provider']);
     }
 
+    public function test_the_planner_is_told_each_address_and_the_code_that_handles_it()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $routes = json_encode([
+            ['method' => 'GET|HEAD', 'uri' => 'teams/{team}', 'name' => 'teams.show', 'action' => 'App\\Http\\Controllers\\TeamController@show', 'middleware' => ['web']],
+            ['method' => 'POST', 'uri' => '/', 'name' => null, 'action' => 'Closure', 'middleware' => []],
+        ]);
+
+        $routes = base64_encode((string) $routes);
+
+        app(StartRun::class)->handle($this->request(['artisan' => "<?php\n\necho base64_decode('{$routes}');\n"]));
+
+        FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, "## Addresses in the app\n\nEach address and the code that handles it.\n\n- GET /teams/{team} → TeamController@show (teams.show)\n- POST / → Closure\n"));
+    }
+
+    public function test_the_planner_gets_no_addresses_from_an_app_that_cannot_list_them()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+
+        app(StartRun::class)->handle($this->request(['artisan' => "<?php\n\nexit(1);\n"]));
+
+        FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, '## Project files')
+            && ! str_contains($prompt->prompt, '## Addresses in the app'));
+    }
+
     public function test_the_planner_coder_and_reviewer_build_and_accept_a_verified_change()
     {
         FeaturePlanner::fake([$this->plan()]);
@@ -114,7 +139,7 @@ class AgentDriverTest extends TestCase
         $this->assertSame('description-field', $featureRequest->steps[0]['key']);
 
         FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'Give teams a description')
-            && str_contains($prompt->prompt, 'app/Models/Team.php')
+            && str_contains($prompt->prompt, 'app/Models/: Team.php')
             && $prompt->model === 'planner-model');
         $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'Add a nullable description property.')
             && str_contains($prompt, "## Write as the app's own developer")

@@ -9,6 +9,7 @@ use App\Models\Run;
 use App\Models\Workspace;
 use App\Runs\PlanningContext;
 use App\Workspaces\WorkspaceManager;
+use Illuminate\Support\Str;
 
 class GatherPlanningContext
 {
@@ -57,7 +58,41 @@ class GatherPlanningContext
             parentAnswered: $parent?->status === FeatureRequestStatus::Answered,
             keepOldWorking: $keepOldWorking,
             services: $featureRequest->project->connectedServices(),
+            routes: in_array('artisan', $files, true) ? $this->routes($workspace) : [],
         );
+    }
+
+    /**
+     * The app's addresses and the code that handles each, as Laravel lists
+     * them, so the planner can name the right files instead of the coding
+     * agent searching for them. Left out when the app cannot list them.
+     *
+     * @return list<string>
+     */
+    protected function routes(Workspace $workspace): array
+    {
+        $listing = rescue(fn () => $this->runWorkspaceCommand->handle($workspace, ['php', 'artisan', 'route:list', '--json', '--except-vendor', '--no-ansi'], 60), null, report: false);
+        $routes = $listing?->exit_code === 0 ? json_decode($listing->output, true) : null;
+
+        if (! is_array($routes)) {
+            return [];
+        }
+
+        $lines = [];
+
+        foreach ($routes as $route) {
+            if (! is_array($route) || ! is_string($route['uri'] ?? null)) {
+                continue;
+            }
+
+            $method = Str::before((string) ($route['method'] ?? ''), '|HEAD');
+            $action = Str::after((string) ($route['action'] ?? ''), 'App\\Http\\Controllers\\');
+            $name = is_string($route['name'] ?? null) ? " ({$route['name']})" : '';
+
+            $lines[] = "{$method} /".ltrim($route['uri'], '/')." → {$action}{$name}";
+        }
+
+        return array_slice($lines, 0, (int) config('builder.construction.planning.max_routes'));
     }
 
     /**
