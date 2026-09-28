@@ -941,7 +941,8 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
     // and ask the builder to save it. The rebuilt app replaces the page,
     // so moving the element here only shows the result sooner.
     const moveTo = (target, placement) => {
-        send({ type: 'move', to: describe(target), placement });
+        const parent = selected.parentElement;
+        const from = [...parent.children].indexOf(selected);
 
         if (placement === 'before') {
             target.before(selected);
@@ -949,6 +950,14 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             target.after(selected);
         }
 
+        // How many places it went among the parts beside it, so undo can
+        // put it back at once.
+        const by =
+            selected.parentElement === parent
+                ? [...parent.children].indexOf(selected) - from
+                : null;
+
+        send({ type: 'move', to: describe(target), placement, by });
         choose(selected, false);
     };
 
@@ -1787,6 +1796,30 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             }
 
             placeFrame();
+        }
+
+        // A part the builder moves back at once among the parts beside it:
+        // a move undone. The rebuilt app replaces the page.
+        if (message.type === 'budge' && Number.isInteger(message.by)) {
+            const [part, ...more] = matching(message.location);
+            const siblings = part ? [...part.parentElement.children] : [];
+            const to = siblings.indexOf(part) + message.by;
+
+            if (part && more.length === 0 && to >= 0 && to < siblings.length) {
+                const other = siblings[to];
+
+                if (message.by < 0) {
+                    other.before(part);
+                } else {
+                    other.after(part);
+                }
+
+                if (selected === part) {
+                    choose(part, false);
+                }
+
+                placeFrame();
+            }
         }
 
         // A part the builder puts back at once where it was: a removal

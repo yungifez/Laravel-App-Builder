@@ -238,6 +238,9 @@ export function useAppPreview(source: Source) {
     // saved yet wait in order for theirs; a null one cannot be put back.
     const taken = new Map<number, Spot>();
     const taking: { spot: Spot | null }[] = [];
+    // How many places each saved move took its part among the parts beside
+    // it, by edit, so undoing it moves the part back at once.
+    const shifted = new Map<number, number>();
     // Where the owner had scrolled each page to, so a rebuild keeps it.
     const scrolled = new Map<string, { x: number; y: number }>();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -728,6 +731,7 @@ export function useAppPreview(source: Source) {
             move(
                 data.to as SelectedElement,
                 data.placement === 'before' ? 'before' : 'after',
+                typeof data.by === 'number' ? data.by : null,
             );
         }
 
@@ -1031,11 +1035,21 @@ export function useAppPreview(source: Source) {
     // Put the selected part just before or after another part next to it,
     // where the owner dropped it. Changes waiting to be saved go first, so
     // the move builds on them.
-    function move(to: SelectedElement, placement: 'before' | 'after'): void {
+    function move(
+        to: SelectedElement,
+        placement: 'before' | 'after',
+        by: number | null = null,
+    ): void {
         const part = selected.value;
+        const seen = source.preview()?.revision ?? null;
+        // Undo can move it back at once only when the app on show is the
+        // saved one, so it counts the places as they are written.
+        const fair =
+            frames.value[0]?.revision === seen &&
+            (head.value === null || head.value === seen);
 
         if (part !== null) {
-            saveMove(part, to, placement, source.preview()?.revision ?? null);
+            saveMove(part, to, placement, seen, fair ? by : null);
         }
     }
 
@@ -1046,6 +1060,7 @@ export function useAppPreview(source: Source) {
         to: SelectedElement,
         placement: 'before' | 'after',
         seen: string | null,
+        by: number | null = null,
     ): void {
         const preview = source.preview();
         // A part moves where it is placed on the page: the one use of a
@@ -1066,7 +1081,7 @@ export function useAppPreview(source: Source) {
 
         if (moving.value || sending.value !== null || queue.value.length > 0) {
             save();
-            setTimeout(() => saveMove(part, to, placement, seen), 200);
+            setTimeout(() => saveMove(part, to, placement, seen, by), 200);
 
             return;
         }
@@ -1115,6 +1130,11 @@ export function useAppPreview(source: Source) {
                             ? edit.revision
                             : null;
                     known.value = null;
+
+                    if (edit !== undefined && edit.id > newest && by) {
+                        shifted.set(edit.id, by);
+                    }
+
                     inspect();
                 },
                 onError: (errors) => {
@@ -1549,6 +1569,23 @@ export function useAppPreview(source: Source) {
             } else {
                 post({ type: 'outline' });
             }
+        }
+
+        // A part moved goes back at once, by as many places.
+        const by = shifted.get(edit.id);
+
+        if (
+            key === 'undo' &&
+            edit.kind === 'move' &&
+            by !== undefined &&
+            frames.value[0]?.revision === edit.revision
+        ) {
+            post({
+                type: 'budge',
+                location: { kind: 'any', value: edit.target },
+                by: -by,
+            });
+            post({ type: 'outline' });
         }
 
         // A part taken out comes back at once the same way.
