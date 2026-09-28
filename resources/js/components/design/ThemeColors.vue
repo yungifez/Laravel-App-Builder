@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { themeColors } from '@/lib/themeColors';
+import { computed, ref } from 'vue';
+import { themeColorLabel, themeColors } from '@/lib/themeColors';
 
 const props = defineProps<{
     /** The app's own theme colours as it draws them now, by token. */
@@ -20,6 +20,10 @@ const emit = defineEmits<{
 const shown = computed(() =>
     themeColors.filter((choice) => props.colors[choice.token] !== undefined),
 );
+
+// The colour the owner points at or is on, named in the heading, since a
+// phone has no hover to show a swatch's name.
+const pointed = ref<string | null>(null);
 
 // A colour picker takes "#rrggbb"; the app may write its colours any way
 // CSS allows, so the browser draws one and reads it back.
@@ -57,18 +61,25 @@ function picked(event: Event): string {
          shows now, so the owner sets the app's colours in one place. -->
     <section v-if="shown.length > 0" class="px-4 pb-4" data-test="app-colours">
         <h3 class="pb-1 text-xs font-medium text-muted-foreground">
-            Your app's colours<span v-if="dark"> in the dark</span>
+            {{
+                pointed === null
+                    ? "Your app's colours"
+                    : themeColorLabel(pointed)
+            }}<span v-if="dark"> in the dark</span>
         </h3>
         <div
-            class="flex flex-wrap gap-0.5"
+            class="grid grid-cols-9"
             role="group"
             aria-label="Your app's colours"
         >
             <label
                 v-for="choice in shown"
                 :key="choice.token"
-                :title="`${choice.label}: changes it everywhere`"
-                class="relative grid size-11 cursor-pointer place-items-center rounded-md select-none focus-within:ring-2 focus-within:ring-foreground hover:bg-muted sm:size-8"
+                class="relative grid aspect-square max-h-11 cursor-pointer place-items-center rounded-md select-none focus-within:ring-2 focus-within:ring-foreground hover:bg-muted"
+                @pointerenter="pointed = choice.token"
+                @pointerleave="pointed = null"
+                @focusin="pointed = choice.token"
+                @focusout="pointed = null"
             >
                 <span
                     class="size-5 rounded-full border shadow-xs"
