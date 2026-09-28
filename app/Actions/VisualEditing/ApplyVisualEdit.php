@@ -19,6 +19,7 @@ class ApplyVisualEdit
         private ProjectRepository $repository,
         private FollowLocation $followLocation,
         private ReadAppColors $readAppColors,
+        private ReadAppTheme $readAppTheme,
     ) {}
 
     /**
@@ -67,7 +68,7 @@ class ApplyVisualEdit
         }
 
         try {
-            $after = TailwindClasses::write($before, $device, $changes, $this->readAppColors->names($project));
+            $after = TailwindClasses::write($before, $device, $changes, $this->readAppColors->names($project), $this->readAppTheme->handle($project));
         } catch (InvalidArgumentException) {
             throw ValidationException::withMessages(['edit' => __('That value cannot be used here.')]);
         }

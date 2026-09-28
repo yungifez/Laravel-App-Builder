@@ -26,10 +26,7 @@ class ReadAppColors
 
         $head = $this->repository->head($project);
 
-        return Cache::remember("projects:{$project->id}:app-colors:{$head}", now()->addDay(), fn () => ThemeColors::discover(array_values(array_map(
-            fn (string $file) => (string) $this->repository->show($project, $head, $file),
-            array_filter($this->repository->files($project, $head), fn (string $file) => str_ends_with($file, '.css')),
-        ))));
+        return Cache::remember("projects:{$project->id}:app-colors:{$head}", now()->addDay(), fn () => ThemeColors::discover($this->repository->stylesheets($project, $head)));
     }
 
     /**

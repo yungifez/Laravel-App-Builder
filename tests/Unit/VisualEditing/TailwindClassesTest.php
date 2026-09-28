@@ -83,10 +83,30 @@ class TailwindClassesTest extends TestCase
         );
     }
 
-    public function test_a_text_class_named_by_the_app_is_kept_since_it_may_be_a_size()
+    public function test_a_text_size_the_app_names_is_judged_by_the_apps_theme()
+    {
+        $theme = ['text' => ['hero']];
+
+        $this->assertSame('text-lg text-primary', TailwindClasses::write('text-hero text-primary', 'base', ['text_size' => 'lg'], ['primary'], $theme));
+        $this->assertSame('text-hero text-accent', TailwindClasses::write('text-hero text-primary', 'base', ['text_color' => 'accent'], ['primary', 'accent'], $theme));
+        $this->assertSame('md:text-hero text-lg', TailwindClasses::write('md:text-hero', 'base', ['text_size' => 'lg'], [], $theme));
+    }
+
+    public function test_a_text_class_the_app_does_not_name_is_kept_since_it_may_be_a_size_or_a_colour()
     {
         $this->assertSame('text-hero text-primary', TailwindClasses::write('text-hero', 'base', ['text_color' => 'primary'], ['primary']));
         $this->assertSame('text-hero text-lg', TailwindClasses::write('text-hero', 'base', ['text_size' => 'lg'], ['primary']));
+    }
+
+    public function test_a_colour_while_pointed_at_on_a_device_is_one_class_whatever_the_order()
+    {
+        $colors = ['primary', 'accent'];
+
+        $this->assertSame(
+            'lg:hover:bg-primary hover:bg-accent bg-accent',
+            TailwindClasses::write('hover:lg:bg-[#123] hover:bg-accent bg-accent', 'lg', ['hover_background' => 'primary'], $colors),
+        );
+        $this->assertSame('hover:bg-primary', TailwindClasses::write('hover:bg-accent/50', 'base', ['hover_background' => 'primary'], $colors));
     }
 
     public function test_one_side_set_apart_is_kept_until_the_whole_axis_is_set()

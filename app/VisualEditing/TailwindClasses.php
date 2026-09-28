@@ -12,9 +12,9 @@ use TalesFromADev\TailwindMerge\TailwindMerge;
  *
  * Devices are Tailwind's own breakpoints: "base" (every screen, so phones),
  * "md" (tablets and up) and "lg" (desktops). A class with any other variant
- * (sm:, dark:) is never touched. A class this adapter does not read goes
- * only when Tailwind would apply the new class in its place (`size-8` when
- * a width is set), as tailwind-merge decides.
+ * (sm:, dark:) is never touched. Any other class goes only when Tailwind
+ * would apply the new class in its place (`w-[calc(100%-2rem)]` when a
+ * width is set), as tailwind-merge decides with the app's own theme.
  *
  * Spacing is written with theme-relative utilities where Tailwind v4 has one
  * (15px is `p-3.75`), and as an arbitrary value otherwise (12.5px is
@@ -117,6 +117,11 @@ class TailwindClasses
 
     protected static ?TailwindMerge $merger = null;
 
+    /**
+     * @var array<string, list<string>>
+     */
+    protected static array $mergerTheme = [];
+
     protected const SIDE_PREFIXES = [
         '' => ['top', 'right', 'bottom', 'left'],
         'x' => ['right', 'left'],
@@ -192,10 +197,11 @@ class TailwindClasses
      *
      * @param  array<string, int|float|string|null>  $changes
      * @param  list<string>  $colors  the names of the app's colours
+     * @param  array<string, list<string>>  $theme  the names the app's `@theme` gives each scale (see TailwindTheme)
      *
      * @throws InvalidArgumentException for an unknown device, property or value.
      */
-    public static function write(string $classes, string $device, array $changes, array $colors = []): string
+    public static function write(string $classes, string $device, array $changes, array $colors = [], array $theme = []): string
     {
         if (! in_array($device, self::DEVICES, true)) {
             throw new InvalidArgumentException("Unknown device [{$device}].");
@@ -213,7 +219,7 @@ class TailwindClasses
         }
 
         foreach ($groups as $group => $groupChanges) {
-            $tokens = self::writeGroup($tokens, $device, $group, $groupChanges, $colors);
+            $tokens = self::writeGroup($tokens, $device, $group, $groupChanges, $colors, $theme);
         }
 
         // A theme colour already changes in dark mode. The part's own
@@ -407,15 +413,17 @@ class TailwindClasses
     }
 
     /**
-     * Replace one group's classes at the device. The new classes go where
-     * the first old one was, or at the end.
+     * Replace one group's classes at the device, and any class Tailwind
+     * would apply the new ones in place of. The new classes go where the
+     * first old one was, or at the end.
      *
      * @param  list<string>  $tokens
      * @param  array<string, int|float|string|null>  $changes
      * @param  list<string>  $colors
+     * @param  array<string, list<string>>  $theme
      * @return list<string>
      */
-    protected static function writeGroup(array $tokens, string $device, string $group, array $changes, array $colors): array
+    protected static function writeGroup(array $tokens, string $device, string $group, array $changes, array $colors, array $theme): array
     {
         $sides = [];
         $replaced = [];
@@ -449,7 +457,7 @@ class TailwindClasses
         $new = array_map(fn (string $utility) => $prefix.$utility, $new);
 
         foreach ($tokens as $index => $token) {
-            if (! isset($replaced[$index]) && self::clashes($token, $new, $colors)) {
+            if (! isset($replaced[$index]) && self::clashes($token, $new, $colors, $theme)) {
                 $replaced[$index] = true;
             }
         }
@@ -464,27 +472,46 @@ class TailwindClasses
 
     /**
      * Whether Tailwind would apply one of the new classes in place of a
-     * class this adapter does not read, such as `size-8` against `w-60`.
+     * class, such as `size-8` or `w-[calc(100%-2rem)]` against `w-60`, as
+     * tailwind-merge decides with the app's own theme.
      *
      * @param  list<string>  $new
      * @param  list<string>  $colors
+     * @param  array<string, list<string>>  $theme
      */
-    protected static function clashes(string $token, array $new, array $colors): bool
+    protected static function clashes(string $token, array $new, array $colors, array $theme): bool
     {
-        if ($new === [] || self::parse($token, $colors) !== null) {
+        if ($new === []) {
             return false;
         }
 
-        // `text-` and a name is a size or a colour, and only the app's
-        // stylesheet says which: tailwind-merge takes `text-hero` for a
-        // colour, so it would go when the owner picks a text colour.
-        if (preg_match('/^(?:[^:]+:)*text-[a-z][a-z0-9-]*$/', $token) === 1) {
+        // `text-` and a name the app's theme does not give, as a plugin's
+        // `text-hero`, may be a size or a colour. tailwind-merge would take
+        // it for a colour, so it stays.
+        if (preg_match('/^(?:[^:]+:)*text-([a-z][a-z0-9-]*)$/', $token, $match) === 1
+            && self::parse($token, $colors) === null
+            && ! in_array($match[1], $theme['text'] ?? [], true)) {
             return false;
         }
 
-        self::$merger ??= new TailwindMerge;
+        return ! in_array($token, explode(' ', self::merger($theme)->merge($token, ...$new)), true);
+    }
 
-        return ! in_array($token, explode(' ', self::$merger->merge($token, ...$new)), true);
+    /**
+     * Get a tailwind-merge that knows the app's theme. Its settings are
+     * shared by the whole process, so one is kept for the latest theme.
+     *
+     * @param  array<string, list<string>>  $theme
+     */
+    protected static function merger(array $theme): TailwindMerge
+    {
+        if (self::$merger === null || self::$mergerTheme !== $theme) {
+            // An empty theme would replace tailwind-merge's own, not add to it.
+            self::$merger = new TailwindMerge($theme === [] ? [] : ['theme' => $theme]);
+            self::$mergerTheme = $theme;
+        }
+
+        return self::$merger;
     }
 
     /**

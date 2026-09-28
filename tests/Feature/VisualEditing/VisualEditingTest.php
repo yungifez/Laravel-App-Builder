@@ -865,6 +865,30 @@ class VisualEditingTest extends TestCase
         );
     }
 
+    public function test_a_text_size_the_apps_theme_names_is_replaced_by_the_size_the_owner_picks()
+    {
+        Queue::fake();
+        $this->repository->commitFiles($this->project, $this->repository->head($this->project), [
+            'resources/css/app.css' => "@theme {\n    --text-hero: 4.5rem;\n}\n",
+            'resources/js/pages/Hero.vue' => "<template>\n    <h1 class=\"text-hero font-bold\">Plans</h1>\n</template>\n",
+        ], 'Add a hero', ['name' => 'Ada Owner', 'email' => 'ada@example.com']);
+        $preview = $this->runningPreview();
+
+        $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
+            'preview' => $preview->uuid,
+            'target' => 'resources/js/pages/Hero.vue:2:5',
+            'revision' => $preview->revision,
+            'expected' => 'text-hero font-bold',
+            'device' => 'base',
+            'changes' => ['text_size' => '4xl'],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertStringContainsString(
+            '<h1 class="text-4xl font-bold">',
+            (string) $this->repository->show($this->project, $this->repository->head($this->project), 'resources/js/pages/Hero.vue'),
+        );
+    }
+
     public function test_a_theme_colour_the_app_does_not_write_or_a_value_that_is_not_a_colour_is_refused()
     {
         Queue::fake();

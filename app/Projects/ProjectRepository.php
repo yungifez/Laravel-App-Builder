@@ -340,6 +340,19 @@ class ProjectRepository
     }
 
     /**
+     * Get the contents of the project's stylesheets at a revision.
+     *
+     * @return list<string>
+     */
+    public function stylesheets(Project $project, string $revision): array
+    {
+        return array_values(array_map(
+            fn (string $file) => (string) $this->show($project, $revision, $file),
+            array_filter($this->files($project, $revision), fn (string $file) => str_ends_with($file, '.css')),
+        ));
+    }
+
+    /**
      * Get the files that differ between two revisions, with whether each
      * was deleted.
      *
