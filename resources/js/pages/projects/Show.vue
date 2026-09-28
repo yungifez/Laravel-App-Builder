@@ -9,6 +9,7 @@ import {
 } from '@inertiajs/vue3';
 import {
     ArrowLeft,
+    ArrowRight,
     ArrowUp,
     CircleCheck,
     CircleDot,
@@ -836,31 +837,6 @@ function sendOnEnter(event: KeyboardEvent): void {
 
         <div class="ml-auto flex shrink-0 items-center gap-1">
             <template v-if="app.running && !app.lost && preview">
-                <!-- The page of the app on show, and the way back from it
-                     once the owner has gone somewhere, as a browser gives. -->
-                <div class="mr-1 hidden min-w-0 items-center md:flex">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        class="size-9"
-                        v-if="app.canGoBack"
-                        aria-label="Back"
-                        title="Back to the page before"
-                        data-test="preview-back"
-                        @click="
-                            showing = 'app';
-                            app.back();
-                        "
-                    >
-                        <ArrowLeft class="size-4" />
-                    </Button>
-                    <span
-                        class="max-w-40 truncate text-xs text-muted-foreground"
-                        :title="app.path"
-                        data-test="preview-path"
-                        >{{ app.path === '/' ? 'Home' : app.path }}</span
-                    >
-                </div>
                 <div
                     class="hidden items-center rounded-md bg-muted p-0.5 md:flex"
                     role="group"
@@ -888,19 +864,6 @@ function sendOnEnter(event: KeyboardEvent): void {
                         <component :is="screen.icon" class="size-4" />
                     </button>
                 </div>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    class="hidden size-9 md:inline-flex"
-                    aria-label="Reload"
-                    title="Reload"
-                    @click="
-                        showing = 'app';
-                        app.reload();
-                    "
-                >
-                    <RotateCw class="size-4" />
-                </Button>
                 <Button
                     variant="ghost"
                     size="icon"
@@ -1597,38 +1560,100 @@ function sendOnEnter(event: KeyboardEvent): void {
         >
             <!-- The app, and what it does behind the page. -->
             <nav
-                v-if="app.running && !app.lost && preview && !changeCopy"
-                class="-mb-1 flex shrink-0 items-center gap-1 overflow-x-auto"
+                v-if="app.running && !app.lost && preview"
+                class="-mb-1 flex shrink-0 items-center gap-1"
                 aria-label="What to show"
             >
-                <button
-                    v-for="tab in showingTabs"
-                    :key="tab.key"
-                    type="button"
-                    :aria-pressed="showing === tab.key"
-                    :class="[
-                        'flex min-h-9 shrink-0 items-center gap-1.5 border-b-2 px-2 text-xs select-none',
-                        showing === tab.key
-                            ? 'border-foreground text-foreground'
-                            : 'border-transparent text-muted-foreground hover:text-foreground',
-                    ]"
-                    :data-test="`showing-${tab.key}`"
-                    @click="showing = tab.key"
+                <!-- Moving between the app's pages, as a browser does. It
+                     stays in place and only greys out, so nothing jumps. -->
+                <div
+                    class="flex min-w-0 shrink items-center"
+                    data-test="preview-browse"
                 >
-                    {{ tab.label }}
-                    <span
-                        v-if="tab.count > 0"
-                        :class="[
-                            'min-w-4 rounded-full px-1 text-center text-[10px] leading-4 tabular-nums',
-                            tab.key === 'problems'
-                                ? 'bg-destructive text-white'
-                                : 'bg-primary text-primary-foreground',
-                        ]"
-                        :aria-label="`${tab.count} new`"
-                        :data-test="`${tab.key}-new`"
-                        >{{ tab.count }}</span
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        class="size-9"
+                        :disabled="!app.canGoBack"
+                        aria-label="Back"
+                        title="Back"
+                        data-test="preview-back"
+                        @click="
+                            showing = 'app';
+                            app.back();
+                        "
                     >
-                </button>
+                        <ArrowLeft class="size-4" />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        class="size-9"
+                        :disabled="!app.canGoForward"
+                        aria-label="Forward"
+                        title="Forward"
+                        data-test="preview-forward"
+                        @click="
+                            showing = 'app';
+                            app.forward();
+                        "
+                    >
+                        <ArrowRight class="size-4" />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        class="size-9"
+                        aria-label="Reload"
+                        title="Reload"
+                        data-test="preview-reload"
+                        @click="
+                            showing = 'app';
+                            app.reload();
+                        "
+                    >
+                        <RotateCw class="size-4" />
+                    </Button>
+                    <span
+                        class="ml-1 max-w-48 truncate text-xs text-muted-foreground"
+                        :title="app.path"
+                        data-test="preview-path"
+                        >{{ app.path === '/' ? 'Home' : app.path }}</span
+                    >
+                </div>
+                <div
+                    v-if="!changeCopy"
+                    class="ml-auto flex shrink-0 items-center gap-1 overflow-x-auto"
+                >
+                    <button
+                        v-for="tab in showingTabs"
+                        :key="tab.key"
+                        type="button"
+                        :aria-pressed="showing === tab.key"
+                        :class="[
+                            'flex min-h-9 shrink-0 items-center gap-1.5 border-b-2 px-2 text-xs select-none',
+                            showing === tab.key
+                                ? 'border-foreground text-foreground'
+                                : 'border-transparent text-muted-foreground hover:text-foreground',
+                        ]"
+                        :data-test="`showing-${tab.key}`"
+                        @click="showing = tab.key"
+                    >
+                        {{ tab.label }}
+                        <span
+                            v-if="tab.count > 0"
+                            :class="[
+                                'min-w-4 rounded-full px-1 text-center text-[10px] leading-4 tabular-nums',
+                                tab.key === 'problems'
+                                    ? 'bg-destructive text-white'
+                                    : 'bg-primary text-primary-foreground',
+                            ]"
+                            :aria-label="`${tab.count} new`"
+                            :data-test="`${tab.key}-new`"
+                            >{{ tab.count }}</span
+                        >
+                    </button>
+                </div>
             </nav>
             <template v-if="decidingOn">
                 <p

@@ -159,8 +159,10 @@ export function useAppPreview(source: Source) {
             // Only a convenience.
         }
     }
-    // The pages the owner has been to, oldest first, so Back can return.
+    // The pages the owner has been to, oldest first, and the one on show,
+    // so Back and Forward move through them as a browser does.
     const visited = ref<string[]>([]);
+    const visitedAt = ref(-1);
     // Start at the owner's own screen size: a phone edits the phone layout.
     const device = ref<Device>(
         typeof window !== 'undefined' &&
@@ -621,8 +623,14 @@ export function useAppPreview(source: Source) {
             framePath.value = String(data.path ?? '/');
             savePath(framePath.value);
 
-            if (visited.value.at(-1) !== framePath.value) {
-                visited.value = [...visited.value, framePath.value].slice(-20);
+            // A new page drops the pages ahead, as a browser does. Back and
+            // Forward move first, so the page they open is already there.
+            if (visited.value[visitedAt.value] !== framePath.value) {
+                visited.value = [
+                    ...visited.value.slice(0, visitedAt.value + 1),
+                    framePath.value,
+                ].slice(-20);
+                visitedAt.value = visited.value.length - 1;
             }
         }
 
@@ -1340,21 +1348,27 @@ export function useAppPreview(source: Source) {
         );
     }
 
-    // Go back to the page before this one.
-    function back(): void {
+    // Go back to the page before this one, or forward again. The frame's
+    // own history is not used: at its first page it would move the builder.
+    function browse(by: -1 | 1): void {
         const preview = source.preview();
-        const to = visited.value.at(-2);
+        const to = visited.value[visitedAt.value + by];
 
         if (preview === null || to === undefined) {
             return;
         }
 
-        visited.value = visited.value.slice(0, -1);
+        visitedAt.value += by;
         post({ type: 'go', href: preview.origin + to });
         deselect();
     }
 
-    const canGoBack = computed(() => visited.value.length > 1);
+    const back = () => browse(-1);
+    const forward = () => browse(1);
+    const canGoBack = computed(() => visitedAt.value > 0);
+    const canGoForward = computed(
+        () => visitedAt.value < visited.value.length - 1,
+    );
 
     // Open a page of the app, as a link in an email the app sent does.
     function visit(href: string): void {
@@ -1475,26 +1489,6 @@ export function useAppPreview(source: Source) {
                   };
 
         claims.value.set(edit.id, { undone: key === 'undo', shown });
-
-        // A copy undone, or a part removed again, goes at once while the app
-        // is the version right after it, where the part is still at its place.
-        if (
-            ((key === 'undo' && edit.kind === 'duplicate') ||
-                (key === 'redo' && edit.kind === 'remove')) &&
-            frames.value[0]?.revision === edit.revision
-        ) {
-            post({
-                type: 'take',
-                location: { kind: 'any', value: edit.target },
-            });
-
-            if (selected.value?.source === edit.target) {
-                deselect();
-            } else {
-                post({ type: 'outline' });
-            }
-        }
-
 
         // New words show at once too, without waiting for the rebuild.
         const words = key === 'undo' ? edit.words_before : edit.words;
@@ -1781,6 +1775,8 @@ export function useAppPreview(source: Source) {
         addressOf,
         back,
         canGoBack,
+        forward,
+        canGoForward,
         visit,
         press,
         hide,
