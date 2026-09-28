@@ -12,11 +12,15 @@ use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
 use App\Models\User;
+use App\Models\Verification;
 use App\Projects\ProjectRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
+use Laravel\Ai\Classification;
+use Laravel\Ai\Prompts\ClassificationPrompt;
+use Laravel\Ai\Responses\Data\BooleanAnswer;
 use Tests\Concerns\PreparesRuns;
 use Tests\TestCase;
 
@@ -28,6 +32,10 @@ class ChangeAcceptanceTest extends TestCase
     protected const ADD_COMMENT = "diff --git a/app/A.php b/app/A.php\n--- a/app/A.php\n+++ b/app/A.php\n@@ -1 +1,2 @@\n <?php\n+// added\n";
 
     protected const ADD_TEAMS_COMMENT = "diff --git a/config/teams.php b/config/teams.php\n--- a/config/teams.php\n+++ b/config/teams.php\n@@ -1,3 +1,4 @@\n <?php\n \n+// teams\n return [\n";
+
+    protected const ADD_SHORTCUTS = "diff --git a/app/A.php b/app/A.php\n--- a/app/A.php\n+++ b/app/A.php\n@@ -1 +1,3 @@\n <?php\n+\$teams = Team::all();\n+try { go(); } catch (Exception \$e) {}\n";
+
+    protected const REMOVE_ALL_TEAMS = "diff --git a/app/A.php b/app/A.php\n--- a/app/A.php\n+++ b/app/A.php\n@@ -1,3 +1,3 @@\n <?php\n-\$teams = Team::all();\n+\$teams = Team::query()->take(10)->get();\n try { go(); } catch (Exception \$e) {}\n";
 
     protected const ADD_SECOND_COMMENT = "diff --git a/app/A.php b/app/A.php\n--- a/app/A.php\n+++ b/app/A.php\n@@ -1,2 +1,3 @@\n <?php\n // added\n+// second\n";
 
@@ -118,6 +126,53 @@ class ChangeAcceptanceTest extends TestCase
         $this->assertSame(2, count($this->repository->log($this->project)));
         $this->assertSame($followUp->refresh()->commit_sha, $parent->refresh()->commit_sha);
         $this->assertSame("<?php\n// added\n// second\n", File::get($this->repository->path($this->project).'/app/A.php'));
+    }
+
+    public function test_once_a_change_is_kept_each_shortcut_it_added_is_weighed_with_the_whole_file()
+    {
+        config(['ai.providers.typesafe.key' => 'test-key', 'builder.decisions.providers' => ['typesafe']]);
+        Classification::fake([['real' => new BooleanAnswer(0.92)], ['real' => new BooleanAnswer(0.1)]]);
+        $request = $this->completedChange(self::ADD_SHORTCUTS);
+        Verification::factory()->for($request)->create(['shortcuts' => [
+            ['rule' => 'SL210', 'path' => 'app/A.php', 'line' => 2],
+            ['rule' => 'SL107', 'path' => 'app/A.php', 'line' => 3],
+        ]]);
+
+        $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $request))->assertSessionHasNoErrors();
+
+        Classification::assertClassified(fn (ClassificationPrompt $prompt) => $prompt->state['file'] === "<?php\n\$teams = Team::all();\ntry { go(); } catch (Exception \$e) {}\n" && $prompt->state['line'] === 2 && str_contains($prompt->state['concern'], 'every row'));
+        $triaged = $request->latestRun->events()->where('type', 'shortcuts_triaged')->sole()->data;
+        $this->assertSame($request->refresh()->commit_sha, $triaged['commit']);
+        $this->assertSame(['real', 'not_real'], array_column($triaged['shortcuts'], 'verdict'));
+        $this->assertSame(2, $request->latestRun->events()->where('type', 'model_call')->where('data->role', 'triage')->count());
+    }
+
+    public function test_a_shortcut_a_follow_up_took_out_is_not_weighed()
+    {
+        config(['ai.providers.typesafe.key' => 'test-key', 'builder.decisions.providers' => ['typesafe']]);
+        Classification::fake()->preventStrayClassifications();
+        $parent = $this->completedChange(self::ADD_SHORTCUTS);
+        Verification::factory()->for($parent)->create(['shortcuts' => [['rule' => 'SL210', 'path' => 'app/A.php', 'line' => 2]]]);
+        $followUp = $this->completedChange(self::REMOVE_ALL_TEAMS, ['parent_id' => $parent->id, 'target_step' => 'permission']);
+
+        $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $followUp))->assertSessionHasNoErrors();
+
+        Classification::assertNothingClassified();
+        $triaged = $parent->latestRun->events()->where('type', 'shortcuts_triaged')->sole()->data;
+        $this->assertSame([['rule' => 'SL210', 'path' => 'app/A.php', 'line' => 2, 'verdict' => 'gone']], $triaged['shortcuts']);
+    }
+
+    public function test_shortcuts_are_not_weighed_without_a_decision_model()
+    {
+        config(['builder.decisions.providers' => []]);
+        Classification::fake()->preventStrayClassifications();
+        $request = $this->completedChange(self::ADD_SHORTCUTS);
+        Verification::factory()->for($request)->create(['shortcuts' => [['rule' => 'SL210', 'path' => 'app/A.php', 'line' => 2]]]);
+
+        $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $request))->assertSessionHasNoErrors();
+
+        Classification::assertNothingClassified();
+        $this->assertFalse($request->latestRun->events()->where('type', 'shortcuts_triaged')->exists());
     }
 
     public function test_a_change_checked_on_an_older_app_is_built_again_instead_of_merged()

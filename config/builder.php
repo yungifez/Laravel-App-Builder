@@ -579,6 +579,12 @@ return [
         // holds the change back: the owner is not kept waiting for it.
         // Where the analyser is not installed, nothing is read and nothing
         // is said. The changed files are added as --path options.
+        //
+        // After the owner keeps a change, "triage" asks the decision model
+        // (see "decisions"), in the background, whether each shortcut found
+        // is a real problem, with the whole file to read. It waits
+        // "delay_minutes" so it does not compete with the owner's next
+        // change. A "yes" at or above "threshold" counts as a real problem.
         'shortcuts' => [
             'enabled' => (bool) env('BUILDER_SHORTCUT_SCAN', true),
             'command' => ['sh', '-c', implode(' ', [
@@ -591,6 +597,12 @@ return [
             ]), 'shortcuts'],
             'timeout' => 120,
             'report' => 'storage/logs/shortcuts.json',
+            'triage' => [
+                'enabled' => (bool) env('BUILDER_SHORTCUT_TRIAGE', true),
+                'delay_minutes' => (int) env('BUILDER_SHORTCUT_TRIAGE_DELAY_MINUTES', 10),
+                'threshold' => (float) env('BUILDER_SHORTCUT_TRIAGE_THRESHOLD', 0.5),
+                'timeout' => (int) env('BUILDER_SHORTCUT_TRIAGE_TIMEOUT', 30),
+            ],
         ],
 
         // Screens on phones, tablets and computers (direction 26). When the

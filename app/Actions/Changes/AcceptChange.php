@@ -6,6 +6,8 @@ use App\Actions\Features\RetryFeatureRequest;
 use App\Context\ProjectNotes;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Features\CodeShortcuts;
+use App\Jobs\TriageShortcuts;
 use App\Models\FeatureRequest;
 use App\Models\User;
 use App\Projects\Exceptions\RepositoryConflict;
@@ -95,6 +97,13 @@ class AcceptChange
                 'feature_request_id' => $featureRequest->id,
             ]);
         });
+
+        // Nothing waits on the answer, so it runs after the owner has moved on.
+        foreach ($pending as $request) {
+            if (config('builder.verification.shortcuts.triage.enabled') && CodeShortcuts::scans($request->patch)) {
+                TriageShortcuts::dispatch($request)->delay(now()->addMinutes((int) config('builder.verification.shortcuts.triage.delay_minutes')));
+            }
+        }
 
         return $featureRequest->refresh();
     }

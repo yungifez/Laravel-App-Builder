@@ -1420,8 +1420,15 @@ and ignored (SL107), a relation read once per item in a loop (SL203), a query
 inside a loop (SL204) and `Model::all()` (SL210). Its size and structure rules
 are too noisy on real code to send a change back for, so they are not run.
 Shortcuts on lines the change added are kept on the verification. They never
-hold the change back, so the owner is not kept waiting for them; they are for
-a later pass that fixes them in the background (not built yet). A comment on
+hold the change back, so the owner is not kept waiting for them. After the
+owner keeps the change, a queued job (`TriageShortcuts`, after
+`shortcuts.triage.delay_minutes`) asks the decision model (Jev through the
+AI SDK's classification) whether each one is a real problem, with the whole
+kept file to read. A shortcut whose line a change kept with it rewrote is
+logged as gone and not asked about. The answers are logged on the run as
+`shortcuts_triaged`, and each call as a `model_call` with the role `triage`.
+Fixing the real ones in the background is the next step (not built yet). A
+comment on
 the line, the line above or the line below lets one through. Where the
 analyser is missing, nothing is read or said. The owner sees the clean result
 as one line of the change's proof.

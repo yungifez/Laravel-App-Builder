@@ -87,6 +87,8 @@ class CodeShortcutsTest extends TestCase
             ['rule' => 'SL203', 'path' => 'app/Http/Controllers/TeamController.php', 'line' => 4],
             ['rule' => 'SL107', 'path' => 'app/Http/Controllers/TeamController.php', 'line' => 8],
         ], CodeShortcuts::found($shortcuts, $patch));
+        $this->assertSame('} catch (Exception $e) {', CodeShortcuts::code(['rule' => 'SL107', 'path' => 'app/Http/Controllers/TeamController.php', 'line' => 8], $patch));
+        $this->assertNull(CodeShortcuts::code(['rule' => 'SL204', 'path' => 'app/Http/Controllers/TeamController.php', 'line' => 1], $patch));
         $this->assertSame(
             'Line 8 of app/Http/Controllers/TeamController.php catches an error and carries on without a trace, so when it goes wrong nobody can tell. Let it fail, or record it with report() before going on. If it is right as it is, say why in a comment on the line below.',
             CodeShortcuts::finding(['rule' => 'SL107', 'path' => 'app/Http/Controllers/TeamController.php', 'line' => 8]),

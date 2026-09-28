@@ -144,6 +144,37 @@ class CodeShortcuts
     }
 
     /**
+     * Get the code the patch added on the shortcut's line, or null when the
+     * patch did not add that line.
+     *
+     * @param  array{rule: string, path: string, line: int}  $found
+     */
+    public static function code(array $found, ?string $patch): ?string
+    {
+        foreach (PatchSummary::files($patch) as $file) {
+            if ($file['path'] !== $found['path']) {
+                continue;
+            }
+
+            foreach (PatchSummary::addedLines($file['diff']) as $line) {
+                if ($line['line'] === $found['line']) {
+                    return $line['text'];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Say what a shortcut costs the owner, as a statement about its line.
+     */
+    public static function concern(string $rule): string
+    {
+        return 'This line '.self::RULES[$rule]['problem'].'.';
+    }
+
+    /**
      * Say what the shortcut costs and how to avoid it, for the coder that
      * must fix it.
      *
