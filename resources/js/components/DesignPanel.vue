@@ -840,21 +840,20 @@ const recent = computed(() => {
             </template>
 
             <template v-else>
-                <!-- On a phone the part's buttons take their own line: they
-                     are finger-sized and leave the name no room. The name
-                     follows the trail there, so the header keeps to two
+                <!-- The part's buttons take their own line: beside the name
+                     they leave it no room, even at the panel's full width.
+                     The name follows the trail, so the header keeps to two
                      lines and leaves the controls room. -->
                 <header
                     class="sticky top-0 z-10 flex flex-wrap items-center gap-x-0.5 border-b bg-background px-4 py-2 sm:gap-x-2"
                 >
                     <!-- The parts it sits in, outermost first, so the
-                         owner sees where it is and can step out. It takes
-                         its own line, so the buttons beside the name do
-                         not squeeze it. -->
+                         owner sees where it is and can step out. It gives
+                         way to the name past half the line. -->
                     <nav
                         v-if="trail.length > 0"
                         aria-label="Where it is"
-                        class="flex max-w-1/2 min-w-0 shrink-0 items-center text-xs text-muted-foreground sm:max-w-none sm:basis-full"
+                        class="flex max-w-1/2 min-w-0 shrink-0 items-center text-xs text-muted-foreground"
                         data-test="part-trail"
                     >
                         <span v-if="trailCut" aria-hidden="true"
@@ -902,7 +901,7 @@ const recent = computed(() => {
                             >
                         </p>
                     </div>
-                    <span class="basis-full sm:hidden" aria-hidden="true" />
+                    <span class="basis-full" aria-hidden="true" />
                     <Button
                         variant="ghost"
                         size="icon"
@@ -1012,7 +1011,7 @@ const recent = computed(() => {
                     <Button
                         variant="ghost"
                         size="icon"
-                        class="size-11 shrink-0 sm:size-7"
+                        class="ml-auto size-11 shrink-0 sm:size-7"
                         aria-label="Stop changing this part"
                         @click="state.deselect()"
                     >
