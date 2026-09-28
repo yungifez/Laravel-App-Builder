@@ -605,7 +605,42 @@ function describeResult(
         return { words: kindOfTag(edit.tag), color: null };
     }
 
-    if (edit.kind !== 'look' || edit.properties.length !== 1) {
+    if (edit.kind !== 'look') {
+        return null;
+    }
+
+    // Two sizes or places changed at once, as a part dragged by its
+    // corner, show both, in the order the change is named.
+    if (edit.properties.length === 2) {
+        const both = edit.properties.map((one) => {
+            const after = edit.sides?.after.values[one];
+
+            return after === null ||
+                after === undefined ||
+                definition(one).group === 'Colours'
+                ? null
+                : describeValue(definition(one), after);
+        });
+
+        if (!both.every((words) => words)) {
+            return null;
+        }
+
+        // Two lengths read as one: "80 × 80 px" for a size, "2, 14 px"
+        // for a place or space.
+        const [first, second] = both as string[];
+        const between = edit.properties.includes('width') ? ' × ' : ', ';
+
+        return {
+            words:
+                first.endsWith(' px') && second.endsWith(' px')
+                    ? `${first.slice(0, -3)}${between}${second}`
+                    : `${first} · ${second}`,
+            color: null,
+        };
+    }
+
+    if (edit.properties.length !== 1) {
         return null;
     }
 
