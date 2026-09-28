@@ -242,6 +242,9 @@ export function useAppPreview(source: Source) {
     // How many places each saved move took its part among the parts beside
     // it, by edit, so undoing it moves the part back at once.
     const shifted = new Map<number, number>();
+    // A picture file dropped on a picture in the app, waiting for that
+    // picture's details.
+    let dropped: File | null = null;
     // Where the owner had scrolled each page to, so a rebuild keeps it.
     const scrolled = new Map<string, { x: number; y: number }>();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -712,6 +715,12 @@ export function useAppPreview(source: Source) {
 
         if (data.type === 'neighbours') {
             takeNeighbours(data);
+        }
+
+        // A picture file the owner dropped on a picture in the app: it goes
+        // in once the builder knows whether that picture can change here.
+        if (data.type === 'dropped' && data.picture instanceof Blob) {
+            dropped = data.picture as File;
         }
 
         if (data.type === 'taken') {
@@ -1409,6 +1418,29 @@ export function useAppPreview(source: Source) {
             },
         );
     }
+
+    watch(element, (now) => {
+        if (
+            dropped === null ||
+            !now ||
+            now.target !== target.value?.value ||
+            now.reason === 'updating'
+        ) {
+            return;
+        }
+
+        const picture = dropped;
+        dropped = null;
+
+        if (now.picture?.src != null) {
+            repicture(picture);
+        } else {
+            saveError.value =
+                'Your app decides which picture shows here. Ask me to change it.';
+            // The app shows the dropped file already: take it back.
+            reload();
+        }
+    });
 
     // Put a new picture in the picked one. The app shows it at once from
     // the owner's own file; the file is kept in the app, which rebuilds

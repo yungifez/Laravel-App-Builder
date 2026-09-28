@@ -1337,6 +1337,57 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         true,
     );
 
+    // A picture file dragged from the owner's computer onto a picture in
+    // the app goes in its place: it shows at once, and the builder keeps
+    // it. Dropped anywhere else, it does nothing, instead of the browser
+    // opening the file in place of the app.
+    const carriesFiles = (event) =>
+        editing && [...(event.dataTransfer?.types ?? [])].includes('Files');
+    const pictureUnder = (event) => {
+        const image = event.target.closest?.('img');
+
+        return image && located(image) === image ? image : null;
+    };
+
+    document.addEventListener(
+        'dragover',
+        (event) => {
+            if (carriesFiles(event)) {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = pictureUnder(event)
+                    ? 'copy'
+                    : 'none';
+            }
+        },
+        true,
+    );
+
+    document.addEventListener(
+        'drop',
+        (event) => {
+            if (!carriesFiles(event)) {
+                return;
+            }
+
+            event.preventDefault();
+            const image = pictureUnder(event);
+            const picture = event.dataTransfer.files[0];
+
+            if (!image || !picture?.type.startsWith('image/')) {
+                return;
+            }
+
+            if (image !== selected) {
+                choose(image, true);
+            }
+
+            image.removeAttribute('srcset');
+            image.src = URL.createObjectURL(picture);
+            send({ type: 'dropped', picture });
+        },
+        true,
+    );
+
     // The arrow keys, as steps across and down.
     const arrows = {
         arrowleft: [-1, 0],

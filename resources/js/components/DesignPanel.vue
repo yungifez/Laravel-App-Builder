@@ -125,6 +125,19 @@ watch(
     () => (chosenPicture.value = null),
 );
 
+// A picture file dropped on the Picture section goes in as if chosen.
+function dropPicture(event: DragEvent): void {
+    const picture = event.dataTransfer?.files[0];
+
+    if (
+        picture?.type.startsWith('image/') &&
+        props.state.element?.picture?.src != null
+    ) {
+        chosenPicture.value = URL.createObjectURL(picture);
+        props.state.repicture(picture);
+    }
+}
+
 function choosePicture(event: Event): void {
     const input = event.target as HTMLInputElement;
     const picture = input.files?.[0];
@@ -1006,6 +1019,8 @@ const recent = computed(() => {
                                 v-if="element.picture"
                                 class="space-y-2"
                                 data-test="picture"
+                                @dragover.prevent
+                                @drop.prevent="dropPicture"
                             >
                                 <h3 class="text-xs font-medium">Picture</h3>
                                 <div class="flex items-center gap-3">
@@ -1052,6 +1067,12 @@ const recent = computed(() => {
                                         here. Ask me to change it.
                                     </p>
                                 </div>
+                                <p
+                                    v-if="element.picture.src != null"
+                                    class="text-xs text-muted-foreground"
+                                >
+                                    Or drop a picture on it in your app.
+                                </p>
                             </section>
 
                             <section v-if="arranges" class="space-y-2">
