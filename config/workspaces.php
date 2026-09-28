@@ -121,6 +121,7 @@ return [
             'answer_seconds' => (int) env('WORKSPACE_RUNNER_ANSWER_SECONDS', 60),
             'grace_seconds' => 30,
             'file_seconds' => 60,
+            // The longest wait between two looks at whether a command ended.
             'poll_ms' => 200,
         ],
 

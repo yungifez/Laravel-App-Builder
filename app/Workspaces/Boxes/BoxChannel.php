@@ -59,6 +59,13 @@ class BoxChannel
         $answerBy = Date::now()->addSeconds((int) config('workspaces.drivers.runner.answer_seconds'));
         $finishBy = Date::now()->addSeconds($command->timeout_seconds + (int) config('workspaces.drivers.runner.grace_seconds'));
 
+        // Most commands end within a few hundredths of a second, and each
+        // rebuild after an edit runs several; look again soon at first, then
+        // less often up to "poll_ms", so a long build does not load the
+        // database.
+        $pollMs = (int) config('workspaces.drivers.runner.poll_ms');
+        $waitMs = min(20, $pollMs);
+
         while (true) {
             $command->refresh();
 
@@ -86,7 +93,8 @@ class BoxChannel
                 return $this->lose($command, 'The runner did not finish the command in time.');
             }
 
-            usleep((int) config('workspaces.drivers.runner.poll_ms') * 1000);
+            usleep($waitMs * 1000);
+            $waitMs = min($waitMs * 2, $pollMs);
         }
     }
 
