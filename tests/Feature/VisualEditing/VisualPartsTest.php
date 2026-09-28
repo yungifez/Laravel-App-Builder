@@ -187,7 +187,7 @@ class VisualPartsTest extends TestCase
     protected function part(string $at): array
     {
         return [
-            'preview' => $this->preview->id,
+            'preview' => $this->preview->uuid,
             'target' => self::FILE.':'.$at,
             'revision' => $this->preview->revision,
         ];

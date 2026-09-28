@@ -19,7 +19,7 @@ class SummarizeChanges
      * owner. Otherwise a kept request wins, so a kept follow-up does not
      * leave its parent "waiting" for ever.
      *
-     * @return list<array{id: int, prompt: string, summary: string|null, state: string, asks: bool, question: string|null, dismissable: bool, updated_at: string|null}>
+     * @return list<array{id: string, prompt: string, summary: string|null, state: string, asks: bool, question: string|null, dismissable: bool, updated_at: string|null}>
      */
     public function handle(Project $project): array
     {
@@ -37,7 +37,7 @@ class SummarizeChanges
                 }
 
                 return [
-                    'id' => $shown->id,
+                    'id' => $shown->uuid,
                     'prompt' => $root->prompt,
                     'summary' => $shown->summary,
                     'state' => $state->value,

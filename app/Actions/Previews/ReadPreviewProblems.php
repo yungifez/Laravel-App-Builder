@@ -18,7 +18,7 @@ class ReadPreviewProblems
      * the most recent first, each with where it stands: new, being fixed,
      * fixed, cleared by the owner, or back after either.
      *
-     * @return list<array{id: string, words: string, class: string|null, message: string, place: string|null, trace: list<string>, count: int, first_at: string|null, last_at: string|null, state: string, change: int|null}>
+     * @return list<array{id: string, words: string, class: string|null, message: string, place: string|null, trace: list<string>, count: int, first_at: string|null, last_at: string|null, state: string, change: string|null}>
      */
     public function handle(Project $project): array
     {
@@ -52,7 +52,7 @@ class ReadPreviewProblems
      * Say where a problem stands. A kept fix or a clearance holds until the
      * app runs into the problem again.
      *
-     * @return array{state: string, change: int|null}
+     * @return array{state: string, change: string|null}
      */
     protected function stand(?string $lastAt, ?FeatureRequest $fix, ?ClearedProblem $clearance): array
     {
@@ -60,11 +60,11 @@ class ReadPreviewProblems
         $since = fn (CarbonImmutable $at) => $last !== null && $last->greaterThan($at);
 
         if ($fix !== null && $fix->accepted_at !== null && $fix->reverted_at === null) {
-            return ['state' => $since(CarbonImmutable::instance($fix->accepted_at)) ? 'back' : 'fixed', 'change' => $fix->id];
+            return ['state' => $since(CarbonImmutable::instance($fix->accepted_at)) ? 'back' : 'fixed', 'change' => $fix->uuid];
         }
 
         if ($fix !== null && $fix->accepted_at === null) {
-            return ['state' => 'fixing', 'change' => $fix->id];
+            return ['state' => 'fixing', 'change' => $fix->uuid];
         }
 
         if ($clearance !== null) {

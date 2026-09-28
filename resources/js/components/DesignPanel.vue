@@ -96,7 +96,7 @@ import type {
 } from '@/types';
 
 const props = defineProps<{
-    projectId: number;
+    projectId: string;
     preview: EditorPreview | null;
     edits: VisualEditSummary[];
     state: AppPreviewState;

@@ -19,6 +19,6 @@ class ExperimentMergeController extends Controller
 
         $mergeExperiment->handle($experiment, $request->user());
 
-        return to_route('projects.show', $experiment->project_id);
+        return to_route('projects.show', $experiment->project);
     }
 }

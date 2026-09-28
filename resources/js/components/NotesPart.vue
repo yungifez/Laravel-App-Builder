@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 
 const props = withDefaults(
     defineProps<{
-        projectId: number;
+        projectId: string;
         revision: string;
         part: string;
         text: string;

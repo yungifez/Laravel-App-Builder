@@ -59,9 +59,9 @@ class ChangeAcceptanceTest extends TestCase
         $request = $this->completedChange(self::ADD_COMMENT);
 
         $this->actingAs($this->owner)
-            ->from(route('projects.show', ['project' => $request->project_id, 'change' => $request->id]))
+            ->from(route('projects.show', ['project' => $request->project, 'change' => $request->uuid]))
             ->post(route('feature-requests.acceptance.store', $request))
-            ->assertRedirect(route('projects.show', ['project' => $request->project_id, 'change' => $request->id]));
+            ->assertRedirect(route('projects.show', ['project' => $request->project, 'change' => $request->uuid]));
 
         $request->refresh();
         $this->assertNotNull($request->accepted_at);
@@ -188,7 +188,7 @@ class ChangeAcceptanceTest extends TestCase
 
         // The two were never checked together, so the second is not merged.
         $rebuild = $this->project->featureRequests()->latest('id')->firstOrFail();
-        $response->assertRedirect(route('projects.show', ['project' => $this->project->id, 'change' => $rebuild->id]));
+        $response->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $rebuild->uuid]));
         $this->assertSame($second->id, $rebuild->retry_of_id);
         $this->assertSame('Note the teams config.', $rebuild->prompt);
         $this->assertNull($second->refresh()->commit_sha);
@@ -320,7 +320,7 @@ class ChangeAcceptanceTest extends TestCase
         $this->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page
                 ->has('history', 2)
-                ->where('changes.0.id', $request->id)
+                ->where('changes.0.id', $request->uuid)
                 ->where('history.0.sha', $request->commit_sha)
                 ->where('changes.0.state', 'kept'));
     }

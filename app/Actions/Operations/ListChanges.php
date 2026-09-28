@@ -25,13 +25,13 @@ class ListChanges
     /**
      * Get a page of changes matching the filters.
      *
-     * @param  array{project?: int, from?: string, to?: string, outcome?: string, verification?: string, driver?: string, provider?: string, model?: string, reason?: string}  $filters
+     * @param  array{project?: string, from?: string, to?: string, outcome?: string, verification?: string, driver?: string, provider?: string, model?: string, reason?: string}  $filters
      * @return LengthAwarePaginator<int, array<string, mixed>>
      */
     public function handle(array $filters, int $perPage = 25): LengthAwarePaginator
     {
         $query = FeatureRequest::query()
-            ->with(['project:id,name', 'latestRun'])
+            ->with(['project:id,uuid,name', 'latestRun'])
             ->withExists([
                 'runs as completed' => fn (Builder $runs) => $runs->where('status', RunStatus::Completed),
                 'deployments as pushed' => fn (Builder $deployments) => $deployments->whereNotNull('pushed_at'),
@@ -56,12 +56,12 @@ class ListChanges
 
     /**
      * @param  Builder<FeatureRequest>  $query
-     * @param  array{project?: int, from?: string, to?: string, outcome?: string, verification?: string, driver?: string, provider?: string, model?: string, reason?: string}  $filters
+     * @param  array{project?: string, from?: string, to?: string, outcome?: string, verification?: string, driver?: string, provider?: string, model?: string, reason?: string}  $filters
      */
     protected function filter(Builder $query, array $filters): void
     {
         if (isset($filters['project'])) {
-            $query->where('project_id', $filters['project']);
+            $query->whereRelation('project', 'uuid', $filters['project']);
         }
 
         if (isset($filters['from'])) {
@@ -146,8 +146,8 @@ class ListChanges
         $project = $change->project;
 
         return [
-            'id' => $change->id,
-            'project' => ['id' => $project->id, 'name' => $project->name],
+            'id' => $change->uuid,
+            'project' => ['id' => $project->uuid, 'name' => $project->name],
             'created_at' => $change->created_at?->toIso8601String(),
             'outcome' => ChangeOutcome::of($change)->value,
             'completed' => (bool) $change->getAttribute('completed'),
@@ -168,14 +168,14 @@ class ListChanges
     /**
      * Get the choices each filter offers, from what has been recorded.
      *
-     * @return array{projects: list<array{id: int, name: string}>, drivers: list<string>, providers: list<string>, models: list<string>, reasons: list<string>, outcomes: list<array{value: string, label: string}>}
+     * @return array{projects: list<array{id: string, name: string}>, drivers: list<string>, providers: list<string>, models: list<string>, reasons: list<string>, outcomes: list<array{value: string, label: string}>}
      */
     public function options(): array
     {
         $calls = RunEvent::query()->where('type', 'model_call');
 
         return [
-            'projects' => array_values(Project::query()->orderBy('name')->limit(500)->get(['id', 'name'])->map(fn (Project $project) => ['id' => $project->id, 'name' => $project->name])->all()),
+            'projects' => array_values(Project::query()->orderBy('name')->limit(500)->get(['uuid', 'name'])->map(fn (Project $project) => ['id' => $project->uuid, 'name' => $project->name])->all()),
             'drivers' => $this->strings(Run::query()->distinct()->orderBy('driver')->pluck('driver')->all()),
             'providers' => $this->strings((clone $calls)->toBase()->distinct()->selectRaw("data->>'provider' as value")->orderBy('value')->pluck('value')->all()),
             'models' => $this->strings((clone $calls)->toBase()->distinct()->selectRaw("data->>'model' as value")->orderBy('value')->pluck('value')->all()),

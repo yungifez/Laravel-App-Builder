@@ -213,7 +213,7 @@ class AgentDriverTest extends TestCase
         $this->assertSame('I answered your question', $featureRequest->user->notifications()->sole()->data['title']);
 
         $this->actingAs($featureRequest->user)
-            ->get(route('projects.show', ['project' => $featureRequest->project_id, 'change' => $featureRequest->id]))
+            ->get(route('projects.show', ['project' => $featureRequest->project, 'change' => $featureRequest->uuid]))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('changes.0.state', 'answered')
                 ->where('change.run.plan.answer', "Only a team's owner can invite people. Members cannot.")

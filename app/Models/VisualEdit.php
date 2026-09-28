@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasPublicId;
 use Carbon\CarbonImmutable;
 use Database\Factories\VisualEditFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -14,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * made in the inspector and committed without a model call.
  *
  * @property int $id
+ * @property string $uuid Names the row in links and requests
  * @property int $project_id
  * @property int|null $experiment_id The idea it was made in; null is the main app
  * @property int $user_id
@@ -37,6 +39,8 @@ class VisualEdit extends Model
 {
     /** @use HasFactory<VisualEditFactory> */
     use HasFactory;
+
+    use HasPublicId;
 
     /**
      * The key in "changes" of a move: where the element went, relative to

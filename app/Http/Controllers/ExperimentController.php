@@ -31,6 +31,6 @@ class ExperimentController extends Controller
 
         $discardExperiment->handle($experiment);
 
-        return to_route('projects.show', $experiment->project_id);
+        return to_route('projects.show', $experiment->project);
     }
 }

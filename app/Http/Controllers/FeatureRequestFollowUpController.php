@@ -23,6 +23,6 @@ class FeatureRequestFollowUpController extends Controller
             images: $storeRequestImages->handle($featureRequest->project, $request->file('images', [])),
         );
 
-        return to_route('projects.show', ['project' => $followUp->project_id, 'change' => $followUp->id]);
+        return to_route('projects.show', ['project' => $followUp->project, 'change' => $followUp->uuid]);
     }
 }

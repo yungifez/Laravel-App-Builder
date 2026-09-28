@@ -242,7 +242,7 @@ const select =
                             :href="show(change.id).url"
                             class="font-medium"
                             @click.stop
-                            >#{{ change.id }}</Link
+                            >#{{ change.id.slice(-8) }}</Link
                         >
                         <div class="text-xs text-muted-foreground tabular-nums">
                             {{ stamp(change.created_at) }}
@@ -303,7 +303,8 @@ const select =
                 >
                     <span class="flex justify-between gap-3">
                         <span class="min-w-0 truncate font-medium"
-                            >#{{ change.id }} · {{ change.project.name }}</span
+                            >#{{ change.id.slice(-8) }} ·
+                            {{ change.project.name }}</span
                         >
                         <span class="shrink-0 tabular-nums">{{
                             usd(change.cost_usd)

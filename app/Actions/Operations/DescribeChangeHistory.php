@@ -40,7 +40,7 @@ class DescribeChangeHistory
      */
     public function handle(FeatureRequest $change): array
     {
-        $change->loadMissing(['project:id,name', 'user:id,email', 'latestRun']);
+        $change->loadMissing(['project:id,uuid,name', 'user:id,email', 'latestRun']);
         $runs = $change->runs()->orderBy('id')->get();
         $verifications = $change->verifications()->orderBy('id')->get();
         $now = CarbonImmutable::now();
@@ -64,8 +64,8 @@ class DescribeChangeHistory
 
         return [
             'change' => [
-                'id' => $change->id,
-                'project' => ['id' => $change->project->id, 'name' => $change->project->name],
+                'id' => $change->uuid,
+                'project' => ['id' => $change->project->uuid, 'name' => $change->project->name],
                 'owner' => $owner->email,
                 'request' => Str::limit($change->prompt, 500),
                 'target_step' => $change->target_step,
@@ -88,10 +88,10 @@ class DescribeChangeHistory
             ],
             'milestones' => $this->milestones($change, array_values($runs->all()), $verifications->last()),
             'related' => [
-                'parent' => $change->parent_id,
-                'retry_of' => $change->retry_of_id,
-                'retries' => FeatureRequest::query()->where('retry_of_id', $change->id)->orderBy('id')->pluck('id')->all(),
-                'follow_ups' => $change->followUps()->whereNull('retry_of_id')->orderBy('id')->pluck('id')->all(),
+                'parent' => $change->parent?->uuid,
+                'retry_of' => $change->retry_of_id === null ? null : FeatureRequest::query()->whereKey($change->retry_of_id)->value('uuid'),
+                'retries' => FeatureRequest::query()->where('retry_of_id', $change->id)->orderBy('id')->pluck('uuid')->all(),
+                'follow_ups' => $change->followUps()->whereNull('retry_of_id')->orderBy('id')->pluck('uuid')->all(),
             ],
             'time' => [
                 ...$totals,
@@ -111,7 +111,7 @@ class DescribeChangeHistory
             // Checks run without a run, such as a rerun the owner asked for.
             'verifications' => array_values(array_map(fn (Verification $verification) => $this->verification($verification), $verifications->whereNull('run_id')->values()->all())),
             'previews' => array_values($change->previews()->orderBy('id')->get()->map(fn (Preview $preview) => [
-                'id' => $preview->id,
+                'id' => $preview->uuid,
                 'status' => $preview->status->value,
                 'created_at' => $preview->created_at?->toIso8601String(),
                 'ready_at' => $preview->ready_at?->toIso8601String(),
@@ -178,7 +178,7 @@ class DescribeChangeHistory
         }
 
         return [
-            'id' => $run->id,
+            'id' => $run->uuid,
             'attempt' => $attempt,
             'driver' => $run->driver,
             'config_version' => $run->config_version,
@@ -310,7 +310,7 @@ class DescribeChangeHistory
     protected function verification(Verification $verification): array
     {
         return [
-            'id' => $verification->id,
+            'id' => $verification->uuid,
             'status' => $verification->status->value,
             'meaning' => match ($verification->status) {
                 VerificationStatus::Passed => 'Every check passed, including tests for this change.',

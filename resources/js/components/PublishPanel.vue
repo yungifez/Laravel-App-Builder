@@ -19,7 +19,7 @@ import { when } from '@/lib/when';
 import type { ProjectPublishing } from '@/types';
 
 const props = defineProps<{
-    projectId: number;
+    projectId: string;
     publishing: ProjectPublishing;
 }>();
 

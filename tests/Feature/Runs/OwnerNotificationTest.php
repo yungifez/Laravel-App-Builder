@@ -53,11 +53,15 @@ class OwnerNotificationTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('notifications.unread', 1)
                 ->where('notifications.items.0.title', 'Your change did not work')
-                ->where('notifications.items.0.read', false));
+                ->where('notifications.items.0.read', false)
+                // The numbers the notification keeps stay on the server.
+                ->missing('notifications.items.0.feature_request_id')
+                ->missing('notifications.items.0.project_id')
+                ->missing('notifications.items.0.url'));
 
         $this->actingAs($owner)
             ->get(route('notifications.show', $notification->id))
-            ->assertRedirect(route('projects.show', ['project' => $run->featureRequest->project_id, 'change' => $run->feature_request_id]));
+            ->assertRedirect(route('projects.show', ['project' => $run->featureRequest->project, 'change' => $run->featureRequest->uuid]));
 
         $this->assertNotNull($notification->fresh()->read_at);
     }
@@ -70,7 +74,7 @@ class OwnerNotificationTest extends TestCase
         app(TransitionRun::class)->handle($first, RunStatus::Failed);
         app(TransitionRun::class)->handle($second, RunStatus::Failed);
 
-        $this->actingAs($owner)->get(route('projects.show', ['project' => $first->featureRequest->project_id, 'change' => $first->feature_request_id]));
+        $this->actingAs($owner)->get(route('projects.show', ['project' => $first->featureRequest->project, 'change' => $first->featureRequest->uuid]));
         $this->assertSame(1, $owner->unreadNotifications()->count());
 
         $this->actingAs($owner)->post(route('notifications.read'))->assertRedirect();

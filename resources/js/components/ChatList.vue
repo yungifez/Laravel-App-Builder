@@ -7,9 +7,9 @@ import type { ChangeItem, ChangeState } from '@/types';
 // The owner's other chats beside the open one, newest first, so moving
 // between them is one click. A dot says where each one stands.
 defineProps<{
-    projectId: number;
+    projectId: string;
     chats: ChangeItem[];
-    current: number | null;
+    current: string | null;
 }>();
 
 const dots: Record<ChangeState, string> = {

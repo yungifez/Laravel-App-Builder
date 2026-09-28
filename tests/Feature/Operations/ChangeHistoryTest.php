@@ -86,7 +86,7 @@ class ChangeHistoryTest extends TestCase
             ->get(route('operations.changes.index', ['verification' => 'passed']))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('changes.total', 1)
-                ->where('changes.data.0.id', $passed->id)
+                ->where('changes.data.0.id', $passed->uuid)
                 ->where('changes.data.0.verification', 'passed'));
 
         $history = app(DescribeChangeHistory::class)->handle($unverified);
@@ -109,7 +109,7 @@ class ChangeHistoryTest extends TestCase
             ->recordEvent('model_call', ['provider' => 'openai', 'model' => 'coder-2', 'cost_usd' => 0.1]);
 
         $filters = [
-            ['project' => $project->id],
+            ['project' => $project->uuid],
             ['from' => now()->subDays(3)->toDateString(), 'to' => now()->toDateString()],
             ['outcome' => 'built'],
             ['driver' => 'agent'],
@@ -124,18 +124,18 @@ class ChangeHistoryTest extends TestCase
                 ->assertOk()
                 ->assertInertia(fn (Assert $page) => $page
                     ->where('changes.total', 1)
-                    ->where('changes.data.0.id', $match->id));
+                    ->where('changes.data.0.id', $match->uuid));
         }
 
         $this->actingAs($this->operator)
             ->get(route('operations.changes.index', ['reason' => 'construction_failed']))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('changes.total', 1)
-                ->where('changes.data.0.id', $other->id)
+                ->where('changes.data.0.id', $other->uuid)
                 ->where('changes.data.0.outcome', 'failed'));
 
         $this->actingAs($this->operator)
-            ->get(route('operations.changes.index', ['project' => $project->id]))
+            ->get(route('operations.changes.index', ['project' => $project->uuid]))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('changes.data.0.calls', 3)
                 ->where('changes.data.0.unpriced_calls', 1)
@@ -194,7 +194,7 @@ class ChangeHistoryTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('operations/Change')
-                ->where('history.related.retries', [$retry->id])
+                ->where('history.related.retries', [$retry->uuid])
                 ->where('history.related.follow_ups', [])
                 ->where('history.change.request', fn (string $request) => mb_strlen($request) <= 503)
                 ->where('history.milestones.healthy', null)

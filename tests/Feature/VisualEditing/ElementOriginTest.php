@@ -59,7 +59,7 @@ class ElementOriginTest extends TestCase
         $this->repository->commitFiles($this->project, $added, ['resources/js/pages/Plans.vue' => str_replace('mt-2', 'mt-4', self::WITH_SAVINGS)], 'Edit the look', null);
 
         $this->inspect('resources/js/pages/Plans.vue:4:9', fn (Assert $page) => $page
-            ->where('element.origin.id', $featureRequest->id)
+            ->where('element.origin.id', $featureRequest->uuid)
             ->where('element.origin.how', 'added')
             ->where('element.origin.asked', 'Show how much people save on yearly plans')
             ->where('element.origin.decided', ['question' => 'How much do yearly plans save?', 'answer' => '20%']));
@@ -73,7 +73,7 @@ class ElementOriginTest extends TestCase
         $latest = $this->kept($second, 'Call the page Pick a plan');
 
         $this->inspect('resources/js/pages/Plans.vue:3:9', fn (Assert $page) => $page
-            ->where('element.origin.id', $latest->id)
+            ->where('element.origin.id', $latest->uuid)
             ->where('element.origin.how', 'changed')
             ->where('element.origin.decided', null));
     }

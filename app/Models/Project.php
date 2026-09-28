@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\DeploymentStatus;
 use App\Enums\NotesDraftStatus;
+use App\Models\Concerns\HasPublicId;
 use App\Publishing\PublishingHostManager;
 use Database\Factories\ProjectFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -18,6 +19,7 @@ use Illuminate\Support\Carbon;
  * A customer application the builder generates features for.
  *
  * @property int $id
+ * @property string $uuid Names the row in links and requests
  * @property int $user_id
  * @property string $name
  * @property string $source_path
@@ -44,6 +46,8 @@ class Project extends Model
 {
     /** @use HasFactory<ProjectFactory> */
     use HasFactory;
+
+    use HasPublicId;
 
     /**
      * Get the attributes that should be cast.

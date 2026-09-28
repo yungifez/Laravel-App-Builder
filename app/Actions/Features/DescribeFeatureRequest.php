@@ -37,9 +37,9 @@ class DescribeFeatureRequest
         $parent = $featureRequest->parent;
 
         return [
-            'project' => $featureRequest->project->only('id', 'name'),
+            'project' => ['id' => $featureRequest->project->uuid, 'name' => $featureRequest->project->name],
             'featureRequest' => [
-                'id' => $featureRequest->id,
+                'id' => $featureRequest->uuid,
                 'prompt' => $featureRequest->prompt,
                 'images' => $this->images($featureRequest),
                 'status' => $featureRequest->status->value,
@@ -62,7 +62,7 @@ class DescribeFeatureRequest
                 'can_retry' => RetryFeatureRequest::retryable($featureRequest),
                 'can_continue' => RequestFollowUp::continuable($featureRequest),
             ],
-            'parent' => $parent?->only('id', 'prompt'),
+            'parent' => $parent === null ? null : ['id' => $parent->uuid, 'prompt' => $parent->prompt],
             'earlier' => $this->earlier($featureRequest),
             'verification' => $this->latestVerification($featureRequest),
             'proof' => $this->describeProof->handle($featureRequest),
@@ -70,7 +70,7 @@ class DescribeFeatureRequest
             'preview' => $this->latestPreview($featureRequest),
             'followUps' => $featureRequest->followUps()->latest()->get()
                 ->map(fn (FeatureRequest $followUp) => [
-                    'id' => $followUp->id,
+                    'id' => $followUp->uuid,
                     'prompt' => $followUp->prompt,
                     'status' => $followUp->status->value,
                     'target_step' => $followUp->target_step,
@@ -82,7 +82,7 @@ class DescribeFeatureRequest
      * Get the messages this change follows up on, oldest first, so the chat
      * reads as one conversation.
      *
-     * @return list<array{id: int, prompt: string, summary: string|null, status: string}>
+     * @return list<array{id: string, prompt: string, summary: string|null, status: string}>
      */
     protected function earlier(FeatureRequest $featureRequest): array
     {
@@ -90,7 +90,7 @@ class DescribeFeatureRequest
 
         for ($request = $featureRequest->parent; $request !== null; $request = $request->parent) {
             array_unshift($earlier, [
-                'id' => $request->id,
+                'id' => $request->uuid,
                 'prompt' => $request->prompt,
                 'images' => $this->images($request),
                 'summary' => $request->summary,
@@ -124,7 +124,7 @@ class DescribeFeatureRequest
         $verification = $featureRequest->verifications()->latest('id')->first();
 
         return $verification === null ? null : [
-            'id' => $verification->id,
+            'id' => $verification->uuid,
             'status' => $verification->status->value,
             // Package advice is said in the proof, never listed as a check.
             'results' => array_values(array_map($this->checkResult(...), array_filter($verification->results ?? [], fn (array $result) => $result['stage'] !== 'security'))),
@@ -162,7 +162,7 @@ class DescribeFeatureRequest
         $run = $featureRequest->latestRun;
 
         return $run === null ? null : [
-            'id' => $run->id,
+            'id' => $run->uuid,
             'status' => $run->status->value,
             // A stop the owner did not ask for is ours, and says so.
             'error' => in_array($run->status, [RunStatus::Failed, RunStatus::NeedsUserDecision], true)
@@ -281,7 +281,7 @@ class DescribeFeatureRequest
         $preview = $featureRequest->previews()->latest('id')->first();
 
         return $preview === null ? null : [
-            'id' => $preview->id,
+            'id' => $preview->uuid,
             'status' => $preview->status->value,
             'error' => OwnerWording::message($preview->error),
             'url' => $preview->url(),

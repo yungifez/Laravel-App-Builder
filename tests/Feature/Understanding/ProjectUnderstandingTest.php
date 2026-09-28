@@ -185,7 +185,7 @@ class ProjectUnderstandingTest extends TestCase
                 ->where('decisions.1.question', null)
                 ->where('decisions.1.decision', 'Counts include people of every role.')
                 ->where('decisions.1.by', 'builder')
-                ->where('decisions.1.change', $kept->id));
+                ->where('decisions.1.change', $kept->uuid));
     }
 
     public function test_all_decisions_are_counted_while_the_newest_are_listed()
@@ -276,7 +276,7 @@ class ProjectUnderstandingTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('about.sections', [['heading' => 'People', 'body' => '- Customers buy plans.']])
                 ->where('decisions', [
-                    ['change' => $kept->id, 'summary' => 'Count team members', 'at' => $kept->accepted_at?->toIso8601String(), 'question' => 'Should owners count as members?', 'decision' => 'Yes', 'by' => 'owner'],
+                    ['change' => $kept->uuid, 'summary' => 'Count team members', 'at' => $kept->accepted_at?->toIso8601String(), 'question' => 'Should owners count as members?', 'decision' => 'Yes', 'by' => 'owner'],
                     ['change' => null, 'summary' => null, 'at' => null, 'question' => 'Which colour?', 'decision' => 'Red', 'by' => 'owner'],
                 ]));
     }

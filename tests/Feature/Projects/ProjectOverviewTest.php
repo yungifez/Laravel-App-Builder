@@ -38,18 +38,18 @@ class ProjectOverviewTest extends TestCase
             ->get(route('projects.show', $project))
             ->assertInertia(fn (Assert $page) => $page
                 ->has('changes', 5)
-                ->where('changes.0.id', $keptChild->id)
+                ->where('changes.0.id', $keptChild->uuid)
                 ->where('changes.0.state', 'kept')
                 ->where('changes.0.prompt', $parent->prompt)
-                ->where('changes.1.id', $undone->id)
+                ->where('changes.1.id', $undone->uuid)
                 ->where('changes.1.state', 'undone')
-                ->where('changes.2.id', $waiting->id)
+                ->where('changes.2.id', $waiting->uuid)
                 ->where('changes.2.state', 'waiting')
                 ->where('changes.2.asks', false)
                 ->where('changes.2.question', null)
-                ->where('changes.3.id', $working->id)
+                ->where('changes.3.id', $working->uuid)
                 ->where('changes.3.state', 'working')
-                ->where('changes.4.id', $stopped->id)
+                ->where('changes.4.id', $stopped->uuid)
                 ->where('changes.4.state', 'stopped'));
     }
 
@@ -85,7 +85,7 @@ class ProjectOverviewTest extends TestCase
         $this->actingAs($project->owner)
             ->get(route('projects.show', $project))
             ->assertInertia(fn (Assert $page) => $page
-                ->where('preview.id', $running->id)
+                ->where('preview.id', $running->uuid)
                 ->where('preview.status', 'ready')
                 ->where('preview.updating', false));
     }

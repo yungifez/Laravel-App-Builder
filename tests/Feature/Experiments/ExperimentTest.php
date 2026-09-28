@@ -64,7 +64,7 @@ class ExperimentTest extends TestCase
             ->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('ideas.current.name', 'A bigger booking form')
-                ->where('ideas.open.0.id', $experiment->id)
+                ->where('ideas.open.0.id', $experiment->uuid)
                 ->where('ideas.main', 'main'));
     }
 
@@ -104,7 +104,7 @@ class ExperimentTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('ideas.current', null)
                 ->has('changes', 1)
-                ->where('changes.0.id', $mainChange->id)
+                ->where('changes.0.id', $mainChange->uuid)
                 ->where('history.0.sha', $main));
     }
 
@@ -132,7 +132,7 @@ class ExperimentTest extends TestCase
         // Its change now belongs to the main app, and can be undone there.
         $this->actingAs($this->owner)
             ->get(route('projects.show', $this->project))
-            ->assertInertia(fn (Assert $page) => $page->where('changes.0.id', $change->id)->where('changes.0.state', 'kept'));
+            ->assertInertia(fn (Assert $page) => $page->where('changes.0.id', $change->uuid)->where('changes.0.state', 'kept'));
         $this->actingAs($this->owner)->post(route('feature-requests.reversion.store', $change))->assertSessionHasNoErrors();
         $this->assertSame("<?php\n", $this->repository->show($this->project, $this->repository->head($this->project, 'main'), 'app/A.php'));
     }

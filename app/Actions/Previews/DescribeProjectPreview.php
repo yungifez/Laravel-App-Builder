@@ -15,7 +15,7 @@ class DescribeProjectPreview
      * state, where it is served, and whether a newer kept change is still
      * being put in place.
      *
-     * @return array{id: int, status: string, error: string|null, origin: string, revision: string|null, updating: bool}|null
+     * @return array{id: string, status: string, error: string|null, origin: string, revision: string|null, updating: bool}|null
      */
     public function handle(Project $project): ?array
     {
@@ -26,7 +26,7 @@ class DescribeProjectPreview
         }
 
         return [
-            'id' => $preview->id,
+            'id' => $preview->uuid,
             'status' => $preview->status->value,
             'error' => $preview->error,
             'origin' => rtrim($preview->url(), '/'),

@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import type { ScheduledTask } from '@/types';
 
 defineProps<{
-    projectId: number;
+    projectId: string;
     schedule: ScheduledTask[] | null | undefined;
 }>();
 

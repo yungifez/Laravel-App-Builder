@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Support\Arr;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -49,7 +50,8 @@ class HandleInertiaRequests extends Middleware
                 'items' => $request->user()->notifications()->latest()->limit(8)->get()
                     ->map(fn (DatabaseNotification $notification) => [
                         'id' => $notification->id,
-                        ...$notification->data,
+                        // What it says only: the numbers it keeps stay here.
+                        ...Arr::only($notification->data, ['kind', 'title', 'body']),
                         'read' => $notification->read_at !== null,
                         'created_at' => $notification->created_at?->toIso8601String(),
                     ]),

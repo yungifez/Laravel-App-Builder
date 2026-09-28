@@ -31,7 +31,7 @@ class FeatureRequestFlowTest extends TestCase
             ->post(route('feature-requests.store', $project), ['prompt' => 'Let owners and admins invite people by email.']);
 
         $request = $project->featureRequests()->sole();
-        $response->assertRedirect(route('projects.show', ['project' => $project, 'change' => $request->id]));
+        $response->assertRedirect(route('projects.show', ['project' => $project, 'change' => $request->uuid]));
         $this->assertSame(FeatureRequestStatus::Generated, $request->status);
         $this->assertSame(['Invitations/ContractTest.php'], $request->acceptance);
         $this->assertSame(RunStatus::Verifying, $request->latestRun->status);
@@ -55,13 +55,13 @@ class FeatureRequestFlowTest extends TestCase
         ]);
 
         $followUp = $request->followUps()->sole();
-        $response->assertRedirect(route('projects.show', ['project' => $followUp->project_id, 'change' => $followUp->id]));
+        $response->assertRedirect(route('projects.show', ['project' => $followUp->project, 'change' => $followUp->uuid]));
         $this->assertSame(FeatureRequestStatus::Generated, $followUp->status);
         $this->assertSame('owner-only-invitations', $followUp->solution_key);
 
         $this->get(route('feature-requests.show', $followUp))
             ->assertInertia(fn (Assert $page) => $page
-                ->where('parent.id', $request->id)
+                ->where('parent.id', $request->uuid)
                 ->where('featureRequest.target_step.label', 'Who may invite people')
                 ->where('featureRequest.files.0.deletions', 1));
 
@@ -117,11 +117,11 @@ class FeatureRequestFlowTest extends TestCase
         $request = FeatureRequest::factory()->generated()->create(['summary' => 'Owners can invite people.']);
 
         $this->actingAs($request->project->owner)
-            ->get(route('projects.show', ['project' => $request->project, 'change' => $request->id]))
+            ->get(route('projects.show', ['project' => $request->project, 'change' => $request->uuid]))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('projects/Show')
-                ->where('change.featureRequest.id', $request->id)
+                ->where('change.featureRequest.id', $request->uuid)
                 ->where('change.featureRequest.summary', 'Owners can invite people.'));
 
         $this->get(route('projects.show', $request->project))
@@ -134,7 +134,7 @@ class FeatureRequestFlowTest extends TestCase
         $project = Project::factory()->for($request->project->owner, 'owner')->create();
 
         $this->actingAs($project->owner)
-            ->get(route('projects.show', ['project' => $project, 'change' => $request->id]))
+            ->get(route('projects.show', ['project' => $project, 'change' => $request->uuid]))
             ->assertNotFound();
     }
 }

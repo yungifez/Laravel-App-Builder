@@ -16,6 +16,6 @@ class PreviewProblemFixController extends Controller
     {
         $fix = $requestPreviewProblemFix->handle($project, $request->user(), $request->string('problem')->toString());
 
-        return to_route('projects.show', ['project' => $project, 'change' => $fix->id]);
+        return to_route('projects.show', ['project' => $project, 'change' => $fix->uuid]);
     }
 }

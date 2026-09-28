@@ -161,7 +161,7 @@ class WordsWhereWrittenTest extends TestCase
     protected function reword(array $data): TestResponse
     {
         return $this->actingAs($this->owner)->post(route('visual-texts.store', $this->project), $data + [
-            'preview' => $this->preview->id,
+            'preview' => $this->preview->uuid,
             'revision' => $this->preview->revision,
         ]);
     }

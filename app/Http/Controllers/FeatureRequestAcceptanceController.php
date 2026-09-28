@@ -23,6 +23,6 @@ class FeatureRequestAcceptanceController extends Controller
         // A change checked on an older app is built again instead.
         return $accepted->is($featureRequest)
             ? back()
-            : to_route('projects.show', ['project' => $accepted->project_id, 'change' => $accepted->id]);
+            : to_route('projects.show', ['project' => $accepted->project, 'change' => $accepted->uuid]);
     }
 }

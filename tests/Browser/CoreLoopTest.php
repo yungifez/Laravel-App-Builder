@@ -110,7 +110,7 @@ it('tells the owner how the change was made, in plain words', function () {
         ['kind' => 'testing'],
     ]]);
 
-    visit(route('projects.show', ['project' => $this->project, 'change' => $run->feature_request_id]))
+    visit(route('projects.show', ['project' => $this->project, 'change' => $run->featureRequest->uuid]))
         ->assertMissing('@thread-work')
         ->click('@thread-work-toggle')
         ->assertSeeIn('@thread-work', 'Only team owners should send invitations, so I am adding that check first.')
@@ -127,7 +127,7 @@ it('sends a suggested next step with one tap', function () {
     $run = $this->project->featureRequests()->sole()->latestRun;
     $run->update(['plan' => [...$run->plan, 'next' => ['Remind people who have not answered their invitation.']]]);
 
-    visit(route('projects.show', ['project' => $this->project, 'change' => $run->feature_request_id]))
+    visit(route('projects.show', ['project' => $this->project, 'change' => $run->featureRequest->uuid]))
         ->click('@next-idea')
         ->assertSee('People are reminded of invitations they have not answered.')
         ->assertMissing('@thread-next')
@@ -172,7 +172,7 @@ it('keeps the three columns in place when the owner moves to a chat without a pl
     askForInvitations($this->project)
         ->resize(1440, 900)
         ->assertMissing('@beside-waiting')
-        ->click('@chat-list-'.$planning->id)
+        ->click('@chat-list-'.$planning->uuid)
         ->assertSeeIn('@thread-title', 'Show who was active last week.')
         ->assertVisible('@chat-list')
         ->assertVisible('@beside-panel')

@@ -53,8 +53,8 @@ class UnpublishedChangesTest extends TestCase
         $this->actingAs($this->owner)
             ->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->where('publishing.unpublished', [
-                'added' => [['id' => $added->id, 'asked' => 'Show prices next to each item', 'data' => []]],
-                'undone' => [['id' => $taken->id, 'asked' => 'Show the opening hours']],
+                'added' => [['id' => $added->uuid, 'asked' => 'Show prices next to each item', 'data' => []]],
+                'undone' => [['id' => $taken->uuid, 'asked' => 'Show the opening hours']],
                 'edits' => 1,
             ]));
 
@@ -103,9 +103,9 @@ class UnpublishedChangesTest extends TestCase
         $this->actingAs($this->owner)
             ->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->where('publishing.unpublished.added', [
-                ['id' => $adds->id, 'asked' => 'Ask for a phone number', 'data' => []],
-                ['id' => $drops->id, 'asked' => 'Stop asking for a nickname', 'data' => ['deletes', 'rewrites']],
-                ['id' => $renames->id, 'asked' => 'Call it full name', 'data' => ['renames']],
+                ['id' => $adds->uuid, 'asked' => 'Ask for a phone number', 'data' => []],
+                ['id' => $drops->uuid, 'asked' => 'Stop asking for a nickname', 'data' => ['deletes', 'rewrites']],
+                ['id' => $renames->uuid, 'asked' => 'Call it full name', 'data' => ['renames']],
             ]));
     }
 

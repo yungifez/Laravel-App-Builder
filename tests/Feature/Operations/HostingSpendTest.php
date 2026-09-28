@@ -52,8 +52,8 @@ class HostingSpendTest extends TestCase
         $this->assertSame(1234, $cloud['total_cents']);
         $this->assertSame('USD', $cloud['currency']);
         $this->assertSame([
-            ['project_id' => $blog->id, 'name' => 'Blog', 'cents' => 800],
-            ['project_id' => $shop->id, 'name' => 'Acme Shop', 'cents' => 300],
+            ['project_id' => $blog->uuid, 'name' => 'Blog', 'cents' => 800],
+            ['project_id' => $shop->uuid, 'name' => 'Acme Shop', 'cents' => 300],
             ['project_id' => null, 'name' => 'someone-elses-app', 'cents' => 134],
         ], $cloud['apps']);
         Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer cloud-token'));

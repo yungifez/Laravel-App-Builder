@@ -25,7 +25,7 @@ class ListDecisions
      * kept, or the owner wrote it there) follow, with no change. A null
      * limit lists them all.
      *
-     * @return list<array{change: int|null, summary: string|null, at: string|null, question: string|null, decision: string, by: 'owner'|'builder'}>
+     * @return list<array{change: string|null, summary: string|null, at: string|null, question: string|null, decision: string, by: 'owner'|'builder'}>
      */
     public function handle(Project $project, ?string $recorded = null, ?int $limit = 12): array
     {
@@ -91,13 +91,13 @@ class ListDecisions
      * Get one kept change's decisions: the owner's answers first, then the
      * ones I made about how the app behaves.
      *
-     * @return list<array{change: int|null, summary: string|null, at: string|null, question: string|null, decision: string, by: 'owner'|'builder'}>
+     * @return list<array{change: string|null, summary: string|null, at: string|null, question: string|null, decision: string, by: 'owner'|'builder'}>
      */
     protected function decisionsOf(FeatureRequest $featureRequest): array
     {
         $run = $featureRequest->latestRun;
         $change = [
-            'change' => $featureRequest->id,
+            'change' => $featureRequest->uuid,
             'summary' => $featureRequest->summary ?? $featureRequest->prompt,
             'at' => $featureRequest->accepted_at?->toIso8601String(),
         ];

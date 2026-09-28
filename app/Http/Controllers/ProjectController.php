@@ -36,6 +36,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -54,7 +55,7 @@ class ProjectController extends Controller
                 ->sortByDesc(fn (Project $project) => (string) ($project->getAttribute('feature_requests_max_created_at') ?? $project->created_at?->toDateTimeString()))
                 ->values()
                 ->map(fn (Project $project) => [
-                    'id' => $project->id,
+                    'id' => $project->uuid,
                     'name' => $project->name,
                     'published_at' => $this->publishedAt($project),
                     'changed_at' => $project->featureRequests()->whereNotNull('commit_sha')->whereNull('reverted_at')
@@ -103,7 +104,7 @@ class ProjectController extends Controller
      * Count the changes waiting to go online: requests kept or undone since
      * the online version, and edits made by hand.
      *
-     * @param  array{added: list<array{id: int, asked: string}>, undone: list<array{id: int, asked: string}>, edits: int}|null  $unpublished
+     * @param  array{added: list<array{id: string, asked: string}>, undone: list<array{id: string, asked: string}>, edits: int}|null  $unpublished
      */
     protected function offline(?array $unpublished): int
     {
@@ -136,10 +137,20 @@ class ProjectController extends Controller
     {
         Gate::authorize('view', $project);
 
-        // Opening a change is reading what the owner was told about it.
+        // One of this app's changes, by its UUID. Anything else is not found:
+        // the database refuses to compare a UUID with other text.
+        $change = null;
+
         if ($request->filled('change')) {
+            $id = $request->string('change')->toString();
+            abort_unless(Str::isUuid($id), 404);
+            $change = $project->featureRequests()->where('uuid', $id)->firstOrFail();
+        }
+
+        // Opening a change is reading what the owner was told about it.
+        if ($change !== null) {
             $request->user()->unreadNotifications()->get()
-                ->filter(fn (DatabaseNotification $notification) => ($notification->data['feature_request_id'] ?? null) === $request->integer('change'))
+                ->filter(fn (DatabaseNotification $notification) => ($notification->data['feature_request_id'] ?? null) === $change->id)
                 ->each->markAsRead();
         }
 
@@ -167,12 +178,10 @@ class ProjectController extends Controller
             'colors' => Inertia::defer(fn () => $readAppColors->handle($project)),
             // And the rows of one table, when the owner opens it.
             'rows' => Inertia::optional(fn () => $request->filled('table') ? $readPreviewRows->handle($project, $request->string('table')->toString()) : null),
-            'change' => fn () => $request->filled('change')
-                ? $describeFeatureRequest->handle($project->featureRequests()->findOrFail($request->integer('change')))
-                : null,
+            'change' => fn () => $change === null ? null : $describeFeatureRequest->handle($change),
             'edits' => $project->visualEdits()->where('experiment_id', $project->experiment_id)->latest('id')->limit(10)->get()
                 ->map(fn (VisualEdit $edit) => [
-                    'id' => $edit->id,
+                    'id' => $edit->uuid,
                     'tag' => $edit->tag,
                     'device' => $edit->device,
                     'kind' => $edit->kind(),
@@ -212,12 +221,13 @@ class ProjectController extends Controller
             // The idea the owner is working in (null for the main app) and
             // the ideas still open, to move between.
             'ideas' => [
-                'current' => $project->experiment?->only('id', 'name', 'branch'),
-                'open' => $project->experiments()->where('status', ExperimentStatus::Open)->latest('id')->get(['id', 'name', 'branch']),
+                'current' => $project->experiment === null ? null : ['id' => $project->experiment->uuid, ...$project->experiment->only('name', 'branch')],
+                'open' => $project->experiments()->where('status', ExperimentStatus::Open)->latest('id')->get()->map(fn (Experiment $experiment) => ['id' => $experiment->uuid, ...$experiment->only('name', 'branch')]),
                 'main' => Experiment::mainBranch(),
             ],
             'project' => [
-                ...$project->only('id', 'name', 'source_path'),
+                'id' => $project->uuid,
+                ...$project->only('name', 'source_path'),
                 'published_at' => $this->publishedAt($project),
             ],
             'changes' => $summarizeChanges->handle($project),

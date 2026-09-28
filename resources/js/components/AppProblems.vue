@@ -11,7 +11,7 @@ import { show as showProject } from '@/routes/projects';
 import type { AppProblem } from '@/types';
 
 const props = defineProps<{
-    projectId: number;
+    projectId: string;
     problems: AppProblem[] | undefined;
 }>();
 

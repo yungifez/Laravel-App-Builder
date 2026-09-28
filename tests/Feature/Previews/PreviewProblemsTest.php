@@ -87,7 +87,7 @@ class PreviewProblemsTest extends TestCase
         $response = $this->actingAs($this->owner)->post(route('preview-problem-fixes.store', $this->project), ['problem' => $problem['id']]);
 
         $fix = FeatureRequest::sole();
-        $response->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $fix->id]));
+        $response->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $fix->uuid]));
         $this->assertSame('Fix this problem I ran into while trying my app: The app used something that was not there.', $fix->prompt);
         $this->assertSame(FeatureRequestStatus::Generating, $fix->status);
 
@@ -98,7 +98,7 @@ class PreviewProblemsTest extends TestCase
         $this->assertStringNotContainsString('jane@example.com', $instructions);
 
         $this->post(route('preview-problem-fixes.store', $this->project), ['problem' => $problem['id']])
-            ->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $fix->id]));
+            ->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $fix->uuid]));
         $this->assertSame(1, FeatureRequest::count());
     }
 
@@ -128,22 +128,22 @@ class PreviewProblemsTest extends TestCase
         // Asking for a fix: it is being fixed.
         $this->actingAs($this->owner)->post(route('preview-problem-fixes.store', $this->project), ['problem' => $id]);
         $fix = FeatureRequest::sole();
-        $this->assertSame(['fixing', $fix->id], $this->stand());
+        $this->assertSame(['fixing', $fix->uuid], $this->stand());
 
         // Keeping the fix: it is fixed, until the app runs into it again.
         $this->travel(1)->minute();
         $fix->update(['status' => FeatureRequestStatus::Generated, 'accepted_at' => now()]);
-        $this->assertSame(['fixed', $fix->id], $this->stand());
+        $this->assertSame(['fixed', $fix->uuid], $this->stand());
 
         $this->travel(1)->minute();
         $this->happensAgain('Payment gateway timed out');
-        $this->assertSame(['back', $fix->id], $this->stand());
+        $this->assertSame(['back', $fix->uuid], $this->stand());
 
         // A fix that did not hold is asked for again, not reopened.
         $this->post(route('preview-problem-fixes.store', $this->project), ['problem' => $id]);
         $again = FeatureRequest::latest('id')->first();
         $this->assertNotSame($fix->id, $again->id);
-        $this->assertSame(['fixing', $again->id], $this->stand());
+        $this->assertSame(['fixing', $again->uuid], $this->stand());
         $again->update(['dismissed_at' => now()]);
 
         // Cleared by the owner: gone until it happens again.

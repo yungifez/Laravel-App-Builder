@@ -167,7 +167,7 @@ class VisualEditingTest extends TestCase
         $this->actingAs($this->owner)
             ->from(route('projects.editor.show', $this->project))
             ->post(route('visual-edits.store', $this->project), [
-                'preview' => $preview->id,
+                'preview' => $preview->uuid,
                 'target' => 'resources/js/pages/Plans.vue:2:5',
                 'revision' => $preview->revision,
                 'expected' => 'flex gap-4 p-4 text-sm',
@@ -212,7 +212,7 @@ class VisualEditingTest extends TestCase
 
         $this->actingAs($this->owner)
             ->post(route('visual-edits.store', $this->project), [
-                'preview' => $preview->id,
+                'preview' => $preview->uuid,
                 'target' => 'resources/js/pages/Plans.vue:2:5',
                 'revision' => $old,
                 'expected' => 'flex gap-4 p-4 text-sm',
@@ -233,7 +233,7 @@ class VisualEditingTest extends TestCase
         $before = $this->repository->show($this->project, $preview->revision, 'resources/js/pages/Plans.vue');
 
         $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => 'resources/js/pages/Plans.vue:2:5',
             'revision' => $preview->revision,
             'expected' => 'flex gap-4 p-4 text-sm',
@@ -274,7 +274,7 @@ class VisualEditingTest extends TestCase
         $preview = $this->runningPreview();
 
         $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => 'resources/js/pages/Plans.vue:2:5',
             'revision' => $preview->revision,
             'expected' => 'flex gap-2 p-4 text-sm',
@@ -291,7 +291,7 @@ class VisualEditingTest extends TestCase
         Queue::fake();
         $preview = $this->runningPreview();
         $save = fn (string $revision, string $expected, array $changes) => $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => 'resources/js/pages/Plans.vue:2:5',
             'revision' => $revision,
             'expected' => $expected,
@@ -319,7 +319,7 @@ class VisualEditingTest extends TestCase
         $preview = $this->runningPreview();
 
         $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => 'resources/js/pages/Plans.vue:2:5',
             'revision' => $preview->revision,
             'expected' => 'flex gap-4 p-4 text-sm',
@@ -352,7 +352,7 @@ class VisualEditingTest extends TestCase
         $preview = $this->runningPreview();
 
         $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => 'resources/js/pages/Plans.vue:2:5',
             'revision' => $preview->revision,
             'expected' => 'flex gap-4 p-4 text-sm',
@@ -379,7 +379,7 @@ class VisualEditingTest extends TestCase
     {
         $preview = $this->runningPreview();
         $edit = fn (array $data) => $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), $data + [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => 'resources/js/pages/Plans.vue:2:5',
             'revision' => $preview->revision,
             'expected' => 'flex gap-4 p-4 text-sm',
@@ -405,7 +405,7 @@ class VisualEditingTest extends TestCase
         $this->actingAs($stranger)->get(route('projects.show', $this->project))->assertForbidden();
         $this->actingAs($stranger)->post(route('projects.previews.store', $this->project))->assertForbidden();
         $this->actingAs($stranger)->post(route('visual-edits.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => 'resources/js/pages/Plans.vue:2:5',
             'revision' => $preview->revision,
             'expected' => 'flex gap-4 p-4 text-sm',
@@ -420,7 +420,7 @@ class VisualEditingTest extends TestCase
         $other = Preview::factory()->editable('abc')->ready()->create();
 
         $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
-            'preview' => $other->id,
+            'preview' => $other->uuid,
             'target' => 'resources/js/pages/Plans.vue:2:5',
             'revision' => $this->repository->head($this->project),
             'expected' => 'flex gap-4 p-4 text-sm',
@@ -650,7 +650,7 @@ class VisualEditingTest extends TestCase
         $moved = "<template>\n    <div class=\"flex gap-4 p-4 text-sm\">\n        <p :class=\"{ 'font-bold': active }\">Pick one</p>\n        <h1 class=\"text-xl\">Plans</h1>\n    </div>\n</template>\n";
 
         $this->actingAs($this->owner)->post(route('visual-moves.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => "{$file}:3:9",
             'to' => "{$file}:4:9",
             'placement' => 'after',
@@ -686,7 +686,7 @@ class VisualEditingTest extends TestCase
         $reworded = str_replace('>Plans</h1>', '>Plans &amp; prices</h1>', self::CARD);
 
         $this->actingAs($this->owner)->post(route('visual-texts.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => "{$file}:3:9",
             'before' => 'Plans',
             'text' => ' Plans & prices ',
@@ -718,7 +718,7 @@ class VisualEditingTest extends TestCase
         Queue::fake();
         $preview = $this->runningPreview();
         $reword = fn (array $data) => $this->actingAs($this->owner)->post(route('visual-texts.store', $this->project), $data + [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => 'resources/js/pages/Plans.vue:3:9',
             'before' => 'Plans',
             'text' => 'Prices',
@@ -763,7 +763,7 @@ class VisualEditingTest extends TestCase
                 ->where('element.link', ['href' => '/plans'])));
 
         $this->post(route('visual-links.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => "{$file}:3:9",
             'before' => '/plans',
             'href' => ' https://example.com/?a=1&b=2 ',
@@ -812,7 +812,7 @@ class VisualEditingTest extends TestCase
         $changed = str_replace('--primary: hsl(0 0% 98%);', '--primary: #2563eb;', self::THEME);
 
         $this->actingAs($this->owner)->post(route('theme-colors.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'mode' => 'dark',
             'token' => 'primary',
             'color' => '#2563EB',
@@ -852,7 +852,7 @@ class VisualEditingTest extends TestCase
                 ->where('colors', [['name' => 'brand-500', 'variable' => 'color-brand-500', 'classes' => true]])));
 
         $this->post(route('theme-colors.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'mode' => 'light',
             'token' => 'color-brand-500',
             'color' => '#7c3aed',
@@ -870,7 +870,7 @@ class VisualEditingTest extends TestCase
         Queue::fake();
         $preview = $this->runningPreview();
         $recolor = fn (array $data) => $this->actingAs($this->owner)->post(route('theme-colors.store', $this->project), $data + [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'mode' => 'light',
             'token' => 'primary',
             'color' => '#2563eb',
@@ -892,7 +892,7 @@ class VisualEditingTest extends TestCase
         $this->repository->commitFiles($this->project, $this->repository->head($this->project), [$file => self::NAV], 'Add links', ['name' => 'Ada Owner', 'email' => 'ada@example.com']);
         $preview = $this->runningPreview();
         $relink = fn (array $data) => $this->actingAs($this->owner)->post(route('visual-links.store', $this->project), $data + [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => "{$file}:3:9",
             'before' => '/plans',
             'href' => '/prices',
@@ -920,7 +920,7 @@ class VisualEditingTest extends TestCase
         Queue::fake();
         $preview = $this->runningPreview();
         $move = fn (array $data) => $this->actingAs($this->owner)->post(route('visual-moves.store', $this->project), $data + [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => 'resources/js/pages/Plans.vue:3:9',
             'to' => 'resources/js/pages/Plans.vue:4:9',
             'placement' => 'before',
@@ -953,7 +953,7 @@ class VisualEditingTest extends TestCase
         $file = 'resources/js/pages/Plans.vue';
 
         $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => "{$file}:2:5",
             'revision' => $preview->revision,
             'expected' => 'flex gap-4 p-4 text-sm',
@@ -974,7 +974,7 @@ class VisualEditingTest extends TestCase
                     ->where('element.classes', 'text-xl')));
 
         $this->post(route('visual-edits.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => "{$file}:3:9",
             'revision' => $this->repository->head($this->project),
             'expected' => 'text-xl',
@@ -997,7 +997,7 @@ class VisualEditingTest extends TestCase
         ], 'Add a line', null));
 
         $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => "{$file}:3:9",
             'revision' => $this->repository->head($this->project),
             'expected' => 'text-xl',
@@ -1016,7 +1016,7 @@ class VisualEditingTest extends TestCase
         $preview = $this->runningPreview();
         $file = 'resources/js/pages/Plans.vue';
         $move = fn (string $placement) => $this->actingAs($this->owner)->post(route('visual-moves.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             // Both places are where the running preview still shows them.
             'target' => "{$file}:3:9",
             'to' => "{$file}:4:9",
@@ -1057,7 +1057,7 @@ class VisualEditingTest extends TestCase
         // A diff lines up the two items' matching lines, so following the
         // first item's lines would find the second one.
         $move = fn (string $placement) => $this->actingAs($this->owner)->post(route('visual-moves.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => "{$file}:3:9",
             'to' => "{$file}:8:9",
             'placement' => $placement,
@@ -1077,7 +1077,7 @@ class VisualEditingTest extends TestCase
         $file = 'resources/js/pages/Plans.vue';
 
         $this->actingAs($this->owner)->post(route('visual-moves.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => "{$file}:3:9",
             'to' => "{$file}:4:9",
             'placement' => 'after',
@@ -1085,7 +1085,7 @@ class VisualEditingTest extends TestCase
         ])->assertSessionHasNoErrors();
 
         $this->post(route('visual-edits.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => "{$file}:3:9",
             'revision' => $this->repository->head($this->project),
             'expected' => 'text-xl',
@@ -1111,7 +1111,7 @@ class VisualEditingTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->reloadOnly('element', fn (Assert $page) => $page->where('element.reason', 'updating')));
 
         $this->post(route('visual-edits.store', $this->project), [
-            'preview' => $preview->id,
+            'preview' => $preview->uuid,
             'target' => "{$file}:3:9",
             'revision' => $this->repository->head($this->project),
             'expected' => 'text-xl',

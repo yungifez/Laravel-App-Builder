@@ -19,7 +19,7 @@ it('says why the checks could not run', function () {
 
     $this->actingAs($change->user);
 
-    visit(route('projects.show', ['project' => $change->project, 'change' => $change->id]))
+    visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))
         ->assertSee('Checks could not run')
         ->assertSeeIn('@verification-error', 'The change does not apply to the project.')
         ->assertSee('Check again')

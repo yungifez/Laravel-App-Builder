@@ -10,7 +10,7 @@ import { when } from '@/lib/when';
 import type { SavedRows, SavedTable, StoredFile } from '@/types';
 
 const props = defineProps<{
-    projectId: number;
+    projectId: string;
     data: SavedTable[] | null | undefined;
     rows: SavedRows | null | undefined;
     files: StoredFile[] | null | undefined;

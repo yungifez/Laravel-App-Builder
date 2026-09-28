@@ -6,7 +6,7 @@ export type FeatureRequestStatus =
     | 'cancelled';
 
 export type ProjectSummary = {
-    id: number;
+    id: string;
     name: string;
     source_path: string;
     published_at: string | null;
@@ -14,7 +14,7 @@ export type ProjectSummary = {
 
 /** One app on the owner's apps list. */
 export type ProjectListItem = {
-    id: number;
+    id: string;
     name: string;
     published_at: string | null;
     changed_at: string | null;
@@ -59,7 +59,7 @@ export type ChangeState =
 
 /** One ask the owner made, with its follow-ups folded in. */
 export type ChangeItem = {
-    id: number;
+    id: string;
     prompt: string;
     summary: string | null;
     state: ChangeState;
@@ -73,7 +73,7 @@ export type ChangeItem = {
 };
 
 export type FeatureRequestSummary = {
-    id: number;
+    id: string;
     prompt: string;
     status: FeatureRequestStatus;
     created_at?: string | null;
@@ -131,7 +131,7 @@ export type ChangedFile = {
 };
 
 export type FeatureRequestDetail = {
-    id: number;
+    id: string;
     prompt: string;
     images: RequestImage[];
     status: FeatureRequestStatus;
@@ -175,7 +175,7 @@ export type VerificationResult = {
 };
 
 export type Verification = {
-    id: number;
+    id: string;
     status: VerificationStatus;
     results: VerificationResult[];
     error: string | null;
@@ -196,7 +196,7 @@ export type RunStatus =
     | 'failed';
 
 export type Run = {
-    id: number;
+    id: string;
     status: RunStatus;
     error: string | null;
     question: {
@@ -301,7 +301,7 @@ export type RunReview = {
 export type PreviewStatus = 'starting' | 'ready' | 'failed' | 'stopped';
 
 export type Preview = {
-    id: number;
+    id: string;
     status: PreviewStatus;
     error: string | null;
     url: string;
@@ -325,11 +325,11 @@ export type ProofLine = {
 
 // Everything about one change, as its page and the workspace chat show it.
 export type ChangeDetail = {
-    project: { id: number; name: string };
+    project: { id: string; name: string };
     featureRequest: FeatureRequestDetail;
-    parent: { id: number; prompt: string } | null;
+    parent: { id: string; prompt: string } | null;
     earlier: {
-        id: number;
+        id: string;
         prompt: string;
         images: RequestImage[];
         summary: string | null;
@@ -386,7 +386,7 @@ export type VisualProperty =
 export type VisualValue = number | string;
 
 export type EditorPreview = {
-    id: number;
+    id: string;
     status: PreviewStatus;
     error: string | null;
     origin: string;
@@ -419,7 +419,7 @@ export type AppProblem = {
     /** New, being fixed, fixed, cleared by the owner, or back after either. */
     state: 'new' | 'fixing' | 'fixed' | 'cleared' | 'back';
     /** The change that fixes it, or fixed it. */
-    change: number | null;
+    change: string | null;
 };
 
 export type InspectedElement = {
@@ -451,7 +451,7 @@ export type InspectedElement = {
         affects: { name: string; tested: boolean }[];
     } | null;
     origin: {
-        id: number;
+        id: string;
         how: 'added' | 'changed';
         asked: string;
         at: string | null;
@@ -544,7 +544,7 @@ export type AppColor = {
 };
 
 export type VisualEditSummary = {
-    id: number;
+    id: string;
     tag: string;
     device: Device;
     /** A change to how the part looks, a move among its siblings, new
@@ -667,11 +667,11 @@ export type ProjectPublishing = {
     unpublished: {
         // data: how the change would touch information the live app keeps.
         added: {
-            id: number;
+            id: string;
             asked: string;
             data?: ('deletes' | 'renames' | 'reshapes' | 'rewrites')[];
         }[];
-        undone: { id: number; asked: string }[];
+        undone: { id: string; asked: string }[];
         edits: number;
     } | null;
     deployments: DeploymentSummary[];
@@ -696,9 +696,6 @@ export type OwnerNotification = {
     kind: 'ready' | 'answered' | 'question' | 'failed';
     title: string;
     body: string;
-    project_id: number;
-    feature_request_id: number;
-    url: string;
     read: boolean;
     created_at: string | null;
 };
@@ -710,7 +707,7 @@ export type Notifications = {
 
 /** An idea the owner tries apart from their app, on its own branch. */
 export type Idea = {
-    id: number;
+    id: string;
     name: string;
     branch: string;
 };

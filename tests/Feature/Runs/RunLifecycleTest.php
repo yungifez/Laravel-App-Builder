@@ -98,7 +98,7 @@ class RunLifecycleTest extends TestCase
         $this->assertSame(PreviewStatus::Starting, $featureRequest->previews()->sole()->status);
         Queue::assertPushedOn('previews', StartPreview::class);
 
-        $this->actingAs($featureRequest->project->owner)->get(route('projects.show', ['project' => $featureRequest->project_id, 'change' => $featureRequest->id]))
+        $this->actingAs($featureRequest->project->owner)->get(route('projects.show', ['project' => $featureRequest->project, 'change' => $featureRequest->uuid]))
             ->assertInertia(fn (Assert $page) => $page->where('change.preview.status', 'starting')->where('change.featureRequest.can_accept', false));
     }
 
@@ -175,9 +175,9 @@ class RunLifecycleTest extends TestCase
         $run = Run::factory()->for($featureRequest)->create();
 
         $this->actingAs($featureRequest->project->owner)
-            ->from(route('projects.show', ['project' => $featureRequest->project_id, 'change' => $featureRequest->id]))
+            ->from(route('projects.show', ['project' => $featureRequest->project, 'change' => $featureRequest->uuid]))
             ->post(route('runs.cancellation.store', $run))
-            ->assertRedirect(route('projects.show', ['project' => $featureRequest->project_id, 'change' => $featureRequest->id]));
+            ->assertRedirect(route('projects.show', ['project' => $featureRequest->project, 'change' => $featureRequest->uuid]));
 
         $this->assertSame(RunStatus::Cancelled, $run->refresh()->status);
         $this->assertSame(FeatureRequestStatus::Cancelled, $featureRequest->refresh()->status);

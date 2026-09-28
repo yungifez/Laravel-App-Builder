@@ -76,13 +76,13 @@ export type HostingSpend = {
     host: string;
     currency: string | null;
     total_cents: number | null;
-    apps: { project_id: number | null; name: string; cents: number }[];
+    apps: { project_id: string | null; name: string; cents: number }[];
     error: boolean;
 };
 
 export type ChangeRow = {
-    id: number;
-    project: { id: number; name: string };
+    id: string;
+    project: { id: string; name: string };
     created_at: string | null;
     outcome: string;
     completed: boolean;
@@ -100,7 +100,7 @@ export type ChangeRow = {
 };
 
 export type ChangeFilters = {
-    project?: number;
+    project?: string;
     from?: string;
     to?: string;
     outcome?: string;
@@ -112,7 +112,7 @@ export type ChangeFilters = {
 };
 
 export type ChangeFilterOptions = {
-    projects: { id: number; name: string }[];
+    projects: { id: string; name: string }[];
     drivers: string[];
     providers: string[];
     models: string[];
@@ -136,7 +136,7 @@ export type TimeSplit = {
 };
 
 export type HistoryVerification = {
-    id: number;
+    id: string;
     status: string;
     meaning: string;
     created_at: string | null;
@@ -157,7 +157,7 @@ export type HistoryVerification = {
 };
 
 export type HistoryRun = {
-    id: number;
+    id: string;
     attempt: number;
     driver: string;
     config_version: string | null;
@@ -210,8 +210,8 @@ export type HistoryRun = {
 
 export type ChangeHistory = {
     change: {
-        id: number;
-        project: { id: number; name: string };
+        id: string;
+        project: { id: string; name: string };
         owner: string;
         request: string;
         target_step: string | null;
@@ -238,10 +238,10 @@ export type ChangeHistory = {
         healthy: null;
     };
     related: {
-        parent: number | null;
-        retry_of: number | null;
-        retries: number[];
-        follow_ups: number[];
+        parent: string | null;
+        retry_of: string | null;
+        retries: string[];
+        follow_ups: string[];
     };
     time: {
         queue_seconds: number;
@@ -261,7 +261,7 @@ export type ChangeHistory = {
     runs: HistoryRun[];
     verifications: HistoryVerification[];
     previews: {
-        id: number;
+        id: string;
         status: string;
         created_at: string | null;
         ready_at: string | null;

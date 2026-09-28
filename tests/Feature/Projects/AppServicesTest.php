@@ -34,7 +34,7 @@ class AppServicesTest extends TestCase
         $change = $project->featureRequests()->sole();
         $this->assertSame('Let customers pay online by card with Stripe.', $change->prompt);
         $this->assertTrue($change->user->is($project->owner));
-        $response->assertRedirect(route('projects.show', ['project' => $project, 'change' => $change->id]));
+        $response->assertRedirect(route('projects.show', ['project' => $project, 'change' => $change->uuid]));
         Queue::assertPushed(ExecuteRun::class);
 
         $project->refresh();
@@ -87,7 +87,7 @@ class AppServicesTest extends TestCase
             ->assertForbidden();
 
         $this->actingAs($project->owner)
-            ->post("/projects/{$project->id}/services/sms", ['keys' => []])
+            ->post("/projects/{$project->uuid}/services/sms", ['keys' => []])
             ->assertNotFound();
 
         $this->assertNull($project->refresh()->service_keys);

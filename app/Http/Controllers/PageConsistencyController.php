@@ -20,6 +20,6 @@ class PageConsistencyController extends Controller
 
         $featureRequest = $requestFeature->handle($project, $request->user(), $prompt);
 
-        return to_route('projects.show', ['project' => $project, 'change' => $featureRequest->id]);
+        return to_route('projects.show', ['project' => $project, 'change' => $featureRequest->uuid]);
     }
 }

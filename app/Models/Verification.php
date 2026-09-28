@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\VerificationStatus;
+use App\Models\Concerns\HasPublicId;
 use Database\Factories\VerificationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,6 +16,7 @@ use Illuminate\Support\Carbon;
  * on top of every change it follows up on.
  *
  * @property int $id
+ * @property string $uuid Names the row in links and requests
  * @property int $feature_request_id
  * @property int|null $run_id
  * @property int|null $workspace_id
@@ -33,6 +35,8 @@ class Verification extends Model
 {
     /** @use HasFactory<VerificationFactory> */
     use HasFactory;
+
+    use HasPublicId;
 
     /**
      * Get the attributes that should be cast.

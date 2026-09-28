@@ -121,7 +121,7 @@ class InspectElement
      * followed back through later edits and moves. Requests later undone
      * are skipped.
      *
-     * @return array{id: int, how: 'added'|'changed', asked: string, at: string|null, decided: array{question: string, answer: string}|null}|null
+     * @return array{id: string, how: 'added'|'changed', asked: string, at: string|null, decided: array{question: string, answer: string}|null}|null
      */
     protected function origin(Preview $preview, string $head, string $file, int $line): ?array
     {
@@ -155,7 +155,7 @@ class InspectElement
         $decided = collect($featureRequest->latestRun->answers ?? [])->last(fn (array $answer) => $answer['decided_by'] === 'owner');
 
         return [
-            'id' => $featureRequest->id,
+            'id' => $featureRequest->uuid,
             'how' => $made === null ? 'changed' : 'added',
             'asked' => Str::limit($featureRequest->prompt, 140),
             'at' => $featureRequest->accepted_at?->toIso8601String(),

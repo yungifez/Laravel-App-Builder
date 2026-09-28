@@ -10,7 +10,7 @@ import type { AppPreviewState } from '@/composables/useAppPreview';
 import type { EditorPreview } from '@/types';
 
 const props = defineProps<{
-    projectId: number;
+    projectId: string;
     preview: EditorPreview | null;
     state: AppPreviewState;
 }>();

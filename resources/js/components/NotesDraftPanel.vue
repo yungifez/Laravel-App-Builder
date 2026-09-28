@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import type { NotesDraft } from '@/types';
 
 const props = defineProps<{
-    projectId: number;
+    projectId: string;
     draft: NotesDraft;
 }>();
 

@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\ExperimentStatus;
 use App\Enums\FeatureRequestStatus;
 use App\Features\CodeShortcuts;
+use App\Models\Concerns\HasPublicId;
 use Database\Factories\FeatureRequestFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -22,6 +23,7 @@ use Illuminate\Support\Carbon;
  * generated earlier (a follow-up with a parent and a target step).
  *
  * @property int $id
+ * @property string $uuid Names the row in links and requests
  * @property int $project_id
  * @property int|null $experiment_id The idea it was made in; null is the main app
  * @property int $user_id
@@ -63,6 +65,8 @@ class FeatureRequest extends Model
 
     /** @use HasFactory<FeatureRequestFactory> */
     use HasFactory;
+
+    use HasPublicId;
 
     /**
      * Get the attributes that should be cast.

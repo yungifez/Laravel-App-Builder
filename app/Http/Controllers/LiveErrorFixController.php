@@ -19,6 +19,6 @@ class LiveErrorFixController extends Controller
 
         $fix = $requestLiveErrorFix->handle($project, $request->user());
 
-        return to_route('projects.show', ['project' => $project, 'change' => $fix->id]);
+        return to_route('projects.show', ['project' => $project, 'change' => $fix->uuid]);
     }
 }

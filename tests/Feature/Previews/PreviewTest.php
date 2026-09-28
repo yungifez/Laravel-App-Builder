@@ -299,7 +299,7 @@ class PreviewTest extends TestCase
             ->assertForbidden()
             ->assertSee('Open this preview from the builder.');
 
-        $this->get("http://{$preview->host}.preview.test/previews/{$preview->id}")->assertForbidden();
+        $this->get("http://{$preview->host}.preview.test/previews/{$preview->uuid}")->assertForbidden();
         $this->get('http://unknown.preview.test/')->assertNotFound();
         $this->get('http://p-evil.preview.test/')->assertNotFound();
 

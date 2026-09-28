@@ -154,7 +154,7 @@ class VisualPicturesTest extends TestCase
     protected function picture(string $at, UploadedFile $picture, string $before = '/images/ada.jpg'): array
     {
         return [
-            'preview' => $this->preview->id,
+            'preview' => $this->preview->uuid,
             'target' => self::FILE.':'.$at,
             'before' => $before,
             'picture' => $picture,

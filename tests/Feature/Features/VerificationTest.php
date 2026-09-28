@@ -108,9 +108,9 @@ class VerificationTest extends TestCase
         ]);
 
         $this->actingAs($parent->project->owner)
-            ->from(route('projects.show', ['project' => $followUp->project_id, 'change' => $followUp->id]))
+            ->from(route('projects.show', ['project' => $followUp->project, 'change' => $followUp->uuid]))
             ->post(route('feature-requests.verifications.store', $followUp))
-            ->assertRedirect(route('projects.show', ['project' => $followUp->project_id, 'change' => $followUp->id]));
+            ->assertRedirect(route('projects.show', ['project' => $followUp->project, 'change' => $followUp->uuid]));
 
         $verification = $followUp->verifications()->sole();
         $this->assertSame(VerificationStatus::Passed, $verification->status);

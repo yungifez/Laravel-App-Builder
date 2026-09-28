@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 
-defineProps<{ projectId: number; name: string }>();
+defineProps<{ projectId: string; name: string }>();
 
 const open = defineModel<boolean>('open', { required: true });
 </script>

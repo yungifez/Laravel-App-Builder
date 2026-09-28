@@ -32,15 +32,15 @@ class FollowUpTest extends TestCase
             ->post(route('feature-requests.follow-ups.store', $parent), ['prompt' => 'Also let admins invite people.']);
 
         $followUp = $parent->followUps()->sole();
-        $response->assertRedirect(route('projects.show', ['project' => $parent->project_id, 'change' => $followUp->id]));
+        $response->assertRedirect(route('projects.show', ['project' => $parent->project, 'change' => $followUp->uuid]));
         $this->assertSame('Also let admins invite people.', $followUp->prompt);
         $this->assertNull($followUp->target_step);
         $this->assertSame(FeatureRequestStatus::Generating, $followUp->status);
         $this->assertSame($parent->base_revision, $followUp->base_revision);
 
-        $this->get(route('projects.show', ['project' => $parent->project, 'change' => $followUp->id]))
+        $this->get(route('projects.show', ['project' => $parent->project, 'change' => $followUp->uuid]))
             ->assertInertia(fn (Assert $page) => $page
-                ->where('change.earlier.0.id', $parent->id)
+                ->where('change.earlier.0.id', $parent->uuid)
                 ->where('change.earlier.0.summary', 'Owners can invite people.')
                 ->where('change.featureRequest.can_continue', false)
                 ->has('changes', 1));

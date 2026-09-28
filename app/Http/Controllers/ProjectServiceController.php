@@ -24,6 +24,6 @@ class ProjectServiceController extends Controller
             return back();
         }
 
-        return to_route('projects.show', ['project' => $project, 'change' => $featureRequest->id]);
+        return to_route('projects.show', ['project' => $project, 'change' => $featureRequest->uuid]);
     }
 }

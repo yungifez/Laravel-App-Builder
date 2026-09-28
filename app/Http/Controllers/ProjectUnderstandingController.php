@@ -51,7 +51,7 @@ class ProjectUnderstandingController extends Controller
         $project->forceFill(['understanding_seen_at' => now()])->saveQuietly();
 
         return Inertia::render('projects/Understanding', [
-            'project' => $project->only('id', 'name'),
+            'project' => ['id' => $project->uuid, 'name' => $project->name],
             'revision' => $revision,
             'about' => [
                 'introduction' => $notes->introduction,
@@ -85,7 +85,7 @@ class ProjectUnderstandingController extends Controller
             'problems' => $context->problems ?? [],
             'changes' => (clone $kept)->latest('accepted_at')->limit(10)->get()
                 ->map(fn (FeatureRequest $featureRequest) => [
-                    'id' => $featureRequest->id,
+                    'id' => $featureRequest->uuid,
                     'summary' => $featureRequest->summary ?? $featureRequest->prompt,
                     'at' => $featureRequest->accepted_at?->toIso8601String(),
                 ]),

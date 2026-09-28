@@ -24,7 +24,7 @@ class PageConsistencyTest extends TestCase
         $response = $this->actingAs($owner)->post(route('page-consistency.store', $project), ['path' => '/login']);
 
         $request = $project->featureRequests()->sole();
-        $response->assertRedirect(route('projects.show', ['project' => $project, 'change' => $request->id]));
+        $response->assertRedirect(route('projects.show', ['project' => $project, 'change' => $request->uuid]));
         $this->assertSame('Tidy up /login.', $request->prompt);
         $this->assertSame($owner->id, $request->user_id);
         $this->assertNotNull($request->latestRun);

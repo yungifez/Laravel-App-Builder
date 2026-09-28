@@ -23,7 +23,7 @@ class NewProjectController extends Controller
         );
 
         // The first version is being built: open its conversation.
-        $first = $project->featureRequests()->value('id');
+        $first = $project->featureRequests()->value('uuid');
 
         return to_route('projects.show', $first === null ? $project : ['project' => $project, 'change' => $first]);
     }

@@ -43,7 +43,7 @@ class LiveErrorFixTest extends TestCase
         $response = $this->actingAs($this->project->owner)->post(route('live-error-fixes.store', $this->project));
 
         $fix = FeatureRequest::sole();
-        $response->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $fix->id]));
+        $response->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $fix->uuid]));
         $this->assertSame('Fix the problems people ran into in my app online.', $fix->prompt);
         $this->assertSame(FeatureRequestStatus::Generating, $fix->status);
         $this->assertNull($fix->experiment_id);
@@ -79,7 +79,7 @@ class LiveErrorFixTest extends TestCase
 
         $this->actingAs($this->project->owner)
             ->post(route('live-error-fixes.store', $this->project))
-            ->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $first->id]));
+            ->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $first->uuid]));
 
         $this->assertSame(1, FeatureRequest::count());
     }

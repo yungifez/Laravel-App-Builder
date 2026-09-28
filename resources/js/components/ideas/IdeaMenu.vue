@@ -22,7 +22,7 @@ import {
 import type { Idea, Ideas } from '@/types';
 
 const props = defineProps<{
-    projectId: number;
+    projectId: string;
     ideas: Ideas & { current: Idea };
 }>();
 

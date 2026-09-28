@@ -47,9 +47,9 @@ import type {
 } from '@/types';
 
 const props = defineProps<{
-    project: { id: number; name: string };
+    project: { id: string; name: string };
     featureRequest: FeatureRequestDetail;
-    parent: { id: number; prompt: string } | null;
+    parent: { id: string; prompt: string } | null;
     followUps: FeatureRequestSummary[];
     verification: Verification | null;
     proof: ProofLine[];

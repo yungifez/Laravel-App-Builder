@@ -58,7 +58,6 @@ class ChangeNeedsYou extends Notification
             'body' => str($this->featureRequest->prompt)->squish()->limit(120)->toString(),
             'project_id' => $this->featureRequest->project_id,
             'feature_request_id' => $this->featureRequest->id,
-            'url' => $this->url(),
         ];
     }
 
@@ -87,6 +86,6 @@ class ChangeNeedsYou extends Notification
      */
     protected function url(): string
     {
-        return route('projects.show', ['project' => $this->featureRequest->project_id, 'change' => $this->featureRequest->id]);
+        return route('projects.show', ['project' => $this->featureRequest->project, 'change' => $this->featureRequest->uuid]);
     }
 }

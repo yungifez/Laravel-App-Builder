@@ -23,7 +23,7 @@ class DescribeUnpublished
      * $risks, each added request also says how it would touch information
      * the live app keeps; the owner decides with that in front of them.
      *
-     * @return array{added: list<array{id: int, asked: string, data?: list<string>}>, undone: list<array{id: int, asked: string}>, edits: int}|null
+     * @return array{added: list<array{id: string, asked: string, data?: list<string>}>, undone: list<array{id: string, asked: string}>, edits: int}|null
      */
     public function handle(Project $project, ?string $head, bool $risks = false): ?array
     {
@@ -46,7 +46,7 @@ class DescribeUnpublished
         $added = $project->featureRequests()->whereIn('commit_sha', $commits)->whereNull('reverted_at')->orderBy('accepted_at')->get();
         $undone = $project->featureRequests()->whereIn('revert_sha', $commits)->whereNotIn('commit_sha', $commits)->orderBy('reverted_at')->get();
 
-        $asked = fn (FeatureRequest $featureRequest) => ['id' => $featureRequest->id, 'asked' => $featureRequest->prompt];
+        $asked = fn (FeatureRequest $featureRequest) => ['id' => $featureRequest->uuid, 'asked' => $featureRequest->prompt];
 
         return [
             'added' => array_values($added->map(fn (FeatureRequest $featureRequest) => $risks

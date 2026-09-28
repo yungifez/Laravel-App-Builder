@@ -41,7 +41,7 @@ import type {
 } from '@/types';
 
 type Source = {
-    projectId: () => number;
+    projectId: () => string;
     preview: () => EditorPreview | null;
     element: () => InspectedElement | null | undefined;
     edits: () => VisualEditSummary[];
@@ -226,7 +226,7 @@ export function useAppPreview(source: Source) {
         {
             value: string;
             revision: string | null;
-            step?: { edit: number; from: string };
+            step?: { edit: string; from: string };
         }
     >();
     // The parts on the page on show, in page order, for the parts list.
@@ -252,7 +252,7 @@ export function useAppPreview(source: Source) {
     // Edits undone or redone in the app ahead of the server, by id, with
     // how the app shows them meanwhile.
     const claims = ref(
-        new Map<number, { undone: boolean; shown: Batch | null }>(),
+        new Map<string, { undone: boolean; shown: Batch | null }>(),
     );
     const stepping = ref(false);
     // Changes taken back before they were saved, for redo.
@@ -281,11 +281,11 @@ export function useAppPreview(source: Source) {
     // Parts the app took out, by the edit that took them, so undoing a
     // removal or redoing a copy puts them back at once. Removals not
     // saved yet wait in order for theirs; a null one cannot be put back.
-    const taken = new Map<number, Spot>();
+    const taken = new Map<string, Spot>();
     const taking: { spot: Spot | null }[] = [];
     // How many places each saved move took its part among the parts beside
     // it, by edit, so undoing it moves the part back at once.
-    const shifted = new Map<number, number>();
+    const shifted = new Map<string, number>();
     // A picture file dropped on a picture in the app, waiting for that
     // picture's details.
     let dropped: File | null = null;
@@ -921,7 +921,7 @@ export function useAppPreview(source: Source) {
         if (data.type === 'taken') {
             const spot = (data.spot ?? null) as Spot | null;
 
-            if (typeof data.edit === 'number') {
+            if (typeof data.edit === 'string') {
                 taken.set(data.edit, spot as Spot);
             } else if (taking.length > 0) {
                 (taking.shift() as { spot: Spot | null }).spot = spot;

@@ -35,7 +35,7 @@ class VisualPartRequest extends FormRequest
         $project = $this->route('project');
 
         return [
-            'preview' => ['required', 'integer', Rule::exists('previews', 'id')->where('project_id', $project->id)->where('editable', true)],
+            'preview' => ['bail', 'required', 'uuid', Rule::exists('previews', 'uuid')->where('project_id', $project->id)->where('editable', true)],
             'target' => ['required', 'string', 'max:600'],
             'instance' => ['boolean'],
             'revision' => ['required', 'string', 'regex:/^[0-9a-f]{40,64}$/'],
@@ -65,7 +65,7 @@ class VisualPartRequest extends FormRequest
      */
     public function preview(): Preview
     {
-        return Preview::query()->whereKey($this->validated('preview'))->firstOrFail();
+        return Preview::query()->where('uuid', $this->validated('preview'))->firstOrFail();
     }
 
     /**

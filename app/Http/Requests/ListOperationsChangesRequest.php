@@ -26,7 +26,7 @@ class ListOperationsChangesRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'project' => ['nullable', 'integer'],
+            'project' => ['nullable', 'uuid'],
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date', 'after_or_equal:from'],
             'outcome' => ['nullable', Rule::enum(ChangeOutcome::class)],
@@ -41,11 +41,11 @@ class ListOperationsChangesRequest extends FormRequest
     /**
      * Get the filters that were given.
      *
-     * @return array{project?: int, from?: string, to?: string, outcome?: string, verification?: string, driver?: string, provider?: string, model?: string, reason?: string}
+     * @return array{project?: string, from?: string, to?: string, outcome?: string, verification?: string, driver?: string, provider?: string, model?: string, reason?: string}
      */
     public function filters(): array
     {
-        /** @var array{project?: int, from?: string, to?: string, outcome?: string, verification?: string, driver?: string, provider?: string, model?: string, reason?: string} */
+        /** @var array{project?: string, from?: string, to?: string, outcome?: string, verification?: string, driver?: string, provider?: string, model?: string, reason?: string} */
         return array_filter($this->validated(), fn (mixed $value) => $value !== null && $value !== '');
     }
 }

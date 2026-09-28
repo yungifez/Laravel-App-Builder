@@ -49,7 +49,7 @@ class NewProjectTest extends TestCase
         $first = $project->featureRequests()->sole();
         $this->assertSame('Make the first version: Cleaners see their jobs for the day, and customers book a clean online. Give it its own front page in place of the starter welcome page.', $first->prompt);
         $this->assertTrue($first->user->is($owner));
-        $response->assertRedirect(route('projects.show', ['project' => $project, 'change' => $first->id]));
+        $response->assertRedirect(route('projects.show', ['project' => $project, 'change' => $first->uuid]));
         Queue::assertPushed(ExecuteRun::class);
 
         $repository = app(ProjectRepository::class);

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\PreviewStatus;
+use App\Models\Concerns\HasPublicId;
 use Carbon\CarbonImmutable;
 use Database\Factories\PreviewFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -20,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * session cookie scoped to the preview host.
  *
  * @property int $id
+ * @property string $uuid Names the row in links and requests
  * @property int $project_id
  * @property int|null $feature_request_id
  * @property int|null $workspace_id
@@ -48,6 +50,8 @@ class Preview extends Model
 {
     /** @use HasFactory<PreviewFactory> */
     use HasFactory;
+
+    use HasPublicId;
 
     /**
      * Get the attributes that should be cast.

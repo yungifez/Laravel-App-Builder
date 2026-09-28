@@ -172,27 +172,27 @@ function part(split: TimeSplit, key: keyof TimeSplit): number {
                     v-if="history.related.parent"
                     :href="show(history.related.parent).url"
                     class="text-primary"
-                    >Follows up on #{{ history.related.parent }}</Link
+                    >Follows up on #{{ history.related.parent.slice(-8) }}</Link
                 >
                 <Link
                     v-if="history.related.retry_of"
                     :href="show(history.related.retry_of).url"
                     class="text-primary"
-                    >Retry of #{{ history.related.retry_of }}</Link
+                    >Retry of #{{ history.related.retry_of.slice(-8) }}</Link
                 >
                 <Link
                     v-for="id in history.related.retries"
                     :key="`retry-${id}`"
                     :href="show(id).url"
                     class="text-primary"
-                    >Retried as #{{ id }}</Link
+                    >Retried as #{{ id.slice(-8) }}</Link
                 >
                 <Link
                     v-for="id in history.related.follow_ups"
                     :key="`follow-${id}`"
                     :href="show(id).url"
                     class="text-primary"
-                    >Followed up by #{{ id }}</Link
+                    >Followed up by #{{ id.slice(-8) }}</Link
                 >
             </p>
         </section>

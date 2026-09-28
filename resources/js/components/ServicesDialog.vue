@@ -22,7 +22,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { AppService } from '@/types';
 
-const props = defineProps<{ projectId: number; services: AppService[] }>();
+const props = defineProps<{ projectId: string; services: AppService[] }>();
 
 const open = defineModel<boolean>('open', { required: true });
 

@@ -92,7 +92,7 @@ class WorkStoryTest extends TestCase
         Cache::flush();
 
         $this->actingAs($run->featureRequest->project->owner)
-            ->get(route('projects.show', ['project' => $run->featureRequest->project_id, 'change' => $run->featureRequest->id]))
+            ->get(route('projects.show', ['project' => $run->featureRequest->project, 'change' => $run->featureRequest->uuid]))
             ->assertInertia(fn (Assert $page) => $page->where('change.run.work', [
                 ['kind' => 'thought', 'text' => 'First I want to understand how teams work today.'],
                 ['kind' => 'read', 'text' => 'Looked around your app'],

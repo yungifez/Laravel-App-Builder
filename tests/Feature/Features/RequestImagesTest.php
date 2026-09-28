@@ -43,7 +43,7 @@ class RequestImagesTest extends TestCase
         $this->assertStringStartsWith("request-images/{$this->project->id}/", $request->images[0]['path']);
         Storage::disk('local')->assertExists([$request->images[0]['path'], $request->images[1]['path']]);
 
-        $this->get(route('projects.show', ['project' => $this->project, 'change' => $request->id]))
+        $this->get(route('projects.show', ['project' => $this->project, 'change' => $request->uuid]))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('change.featureRequest.images.0.name', 'Header design.png')
                 ->where('change.featureRequest.images.0.url', route('feature-requests.images.show', [$request, 0])));

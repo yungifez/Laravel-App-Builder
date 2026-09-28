@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\ExperimentStatus;
+use App\Models\Concerns\HasPublicId;
 use Carbon\CarbonImmutable;
 use Database\Factories\ExperimentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -17,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * (a merge into the main branch) or throws it away (the branch is deleted).
  *
  * @property int $id
+ * @property string $uuid Names the row in links and requests
  * @property int $project_id
  * @property int $user_id
  * @property string $name
@@ -33,6 +35,8 @@ class Experiment extends Model
 {
     /** @use HasFactory<ExperimentFactory> */
     use HasFactory;
+
+    use HasPublicId;
 
     /**
      * Get the attributes that should be cast.

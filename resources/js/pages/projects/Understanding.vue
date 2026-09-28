@@ -47,7 +47,7 @@ const props = defineProps<{
     compatibility: { keep: boolean; chosen: boolean; in_use: boolean };
     areas: UnderstandingArea[];
     problems: string[];
-    changes: { id: number; summary: string; at: string | null }[];
+    changes: { id: string; summary: string; at: string | null }[];
     // All the changes kept; changes lists only the latest.
     kept: number;
     // The owner's last look at this page, and how many changes were kept
@@ -62,7 +62,7 @@ const props = defineProps<{
     // The product decisions behind kept changes, newest change first, then
     // answers only the notes hold (no change).
     decisions: {
-        change: number | null;
+        change: string | null;
         summary: string | null;
         at: string | null;
         question: string | null;

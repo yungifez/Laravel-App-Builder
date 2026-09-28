@@ -40,7 +40,7 @@ class RunProgressTest extends TestCase
         $this->assertSame('Trying it out', $this->progress($run)['text']);
 
         $this->actingAs($run->featureRequest->project->owner)
-            ->get(route('projects.show', ['project' => $run->featureRequest->project_id, 'change' => $run->featureRequest->id]))
+            ->get(route('projects.show', ['project' => $run->featureRequest->project, 'change' => $run->featureRequest->uuid]))
             ->assertInertia(fn (Assert $page) => $page->where('change.run.progress.text', 'Trying it out'));
     }
 

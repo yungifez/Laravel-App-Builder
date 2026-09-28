@@ -28,7 +28,7 @@ class FeatureRequestController extends Controller
             images: $storeRequestImages->handle($project, $request->file('images', [])),
         );
 
-        return to_route('projects.show', ['project' => $project, 'change' => $featureRequest->id]);
+        return to_route('projects.show', ['project' => $project, 'change' => $featureRequest->uuid]);
     }
 
     /**

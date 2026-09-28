@@ -21,7 +21,7 @@ class SummarizeHostingSpend
      * Get the hosting spend per host, with each app matched to its project
      * where we know it. A host that did not answer is listed as unknown.
      *
-     * @return list<array{host: string, currency: string|null, total_cents: int|null, apps: list<array{project_id: int|null, name: string, cents: int}>, error: bool}>
+     * @return list<array{host: string, currency: string|null, total_cents: int|null, apps: list<array{project_id: string|null, name: string, cents: int}>, error: bool}>
      */
     public function handle(): array
     {
@@ -58,7 +58,7 @@ class SummarizeHostingSpend
      * Match the host's apps to our projects, costliest first.
      *
      * @param  list<array{application: string, cents: int}>  $applications
-     * @return list<array{project_id: int|null, name: string, cents: int}>
+     * @return list<array{project_id: string|null, name: string, cents: int}>
      */
     protected function apps(string $host, array $applications): array
     {
@@ -75,7 +75,7 @@ class SummarizeHostingSpend
             $project = $projects[$application['application']] ?? null;
 
             return [
-                'project_id' => $project?->id,
+                'project_id' => $project?->uuid,
                 'name' => $project === null ? $application['application'] : $project->name,
                 'cents' => $application['cents'],
             ];
