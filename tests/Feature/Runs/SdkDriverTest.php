@@ -389,6 +389,29 @@ class SdkDriverTest extends TestCase
         $this->assertSame([null, null], $cost());
     }
 
+    public function test_input_the_agent_read_from_the_providers_cache_is_priced_as_cached()
+    {
+        config(['builder.agents.order' => ['codex'], 'builder.prices' => ['codex-model' => ['input' => 2, 'output' => 8]]]);
+        $this->agent('codex', 'openai', function (Workspace $workspace) {
+            File::put($this->path($workspace, 'app/Codex.php'), "<?php\n");
+
+            return new AgentOutcome('codex', 'openai', 'codex-model', AgentOutcomeStatus::Completed, 'Done.', turns: 1, inputTokens: 1_000_000, outputTokens: 100_000, cachedInputTokens: 900_000);
+        });
+        $cost = function () {
+            FeaturePlanner::fake([$this->plan()]);
+
+            return app(StartRun::class)->handle($this->request())->refresh()->events()->where('type', 'model_call')->where('data->role', 'coder')->sole()->data;
+        };
+
+        // Without a cached price, cached input costs as much as fresh input.
+        $this->assertSame(2.8, $cost()['cost_usd']);
+
+        config(['builder.prices.codex-model.cached_input' => 0.2]);
+        $call = $cost();
+        $this->assertSame(1.18, $call['cost_usd']);
+        $this->assertSame(900_000, $call['cached_input_tokens']);
+    }
+
     public function test_a_background_tidy_up_goes_to_the_light_model_and_other_changes_to_the_usual_one()
     {
         config([

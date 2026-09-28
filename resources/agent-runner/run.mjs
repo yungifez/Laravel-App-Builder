@@ -268,6 +268,8 @@ async function runCodex(task) {
     const counts = {
         turns: 1,
         input_tokens: usage?.input_tokens ?? 0,
+        // Part of input_tokens, read back from OpenAI's cache at a lower price.
+        cached_input_tokens: usage?.cached_input_tokens ?? 0,
         output_tokens:
             (usage?.output_tokens ?? 0) + (usage?.reasoning_output_tokens ?? 0),
         cost_usd: null,

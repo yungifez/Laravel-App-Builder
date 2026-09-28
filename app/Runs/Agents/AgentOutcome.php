@@ -26,6 +26,7 @@ final readonly class AgentOutcome
         public int $outputTokens = 0,
         public ?float $costUsd = null,
         public array $story = [],
+        public int $cachedInputTokens = 0,
     ) {}
 
     /**
@@ -67,6 +68,7 @@ final readonly class AgentOutcome
             outputTokens: (int) ($result['output_tokens'] ?? 0),
             costUsd: isset($result['cost_usd']) ? (float) $result['cost_usd'] : null,
             story: self::story($result['story'] ?? []),
+            cachedInputTokens: (int) ($result['cached_input_tokens'] ?? 0),
         );
     }
 
@@ -109,6 +111,7 @@ final readonly class AgentOutcome
             'error' => $this->error,
             'turns' => $this->turns,
             'input_tokens' => $this->inputTokens,
+            'cached_input_tokens' => $this->cachedInputTokens,
             'output_tokens' => $this->outputTokens,
             'cost_usd' => $this->costUsd,
         ];

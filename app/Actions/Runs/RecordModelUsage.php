@@ -45,8 +45,11 @@ class RecordModelUsage
 
     /**
      * Price a call from the configured prices, or null when the model has none.
+     * Cached input is part of the input and costs "cached_input" when the
+     * model has that price; without one it is priced as fresh input, so the
+     * cost is never under-counted.
      */
-    public static function cost(string $model, int $inputTokens, int $outputTokens): ?float
+    public static function cost(string $model, int $inputTokens, int $outputTokens, int $cachedInputTokens = 0): ?float
     {
         $price = ((array) config('builder.prices'))[$model] ?? null;
 
@@ -54,6 +57,9 @@ class RecordModelUsage
             return null;
         }
 
-        return round(($inputTokens * (float) $price['input'] + $outputTokens * (float) $price['output']) / 1_000_000, 6);
+        $cached = min(max($cachedInputTokens, 0), $inputTokens);
+        $cachedPrice = is_numeric($price['cached_input'] ?? null) ? (float) $price['cached_input'] : (float) $price['input'];
+
+        return round((($inputTokens - $cached) * (float) $price['input'] + $cached * $cachedPrice + $outputTokens * (float) $price['output']) / 1_000_000, 6);
     }
 }

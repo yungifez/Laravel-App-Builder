@@ -245,8 +245,11 @@ return [
     |
     | Prices in US dollars per million tokens, keyed by model ID, used to put
     | a cost on planner and reviewer calls: {"model": {"input": 3, "output":
-    | 15}}. Coding agents report their own cost. A call to a model without a
-    | price has no cost, and telemetry counts it as unpriced.
+    | 15}}. Add "cached_input" for input the provider reads back from its
+    | cache at a lower price; without it, cached input costs as much as
+    | fresh input. Claude's coding agent reports its own cost; Codex's is
+    | priced here. A call to a model without a price has no cost, and
+    | telemetry counts it as unpriced.
     |
     */
 

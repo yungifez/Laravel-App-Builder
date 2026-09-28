@@ -68,7 +68,7 @@ class RunCodingAgent
             // Claude's SDK reports what the session cost. Codex's does not, so
             // its tokens are priced from config when the model is known.
             $estimate = $outcome->costUsd === null && $outcome->model !== null
-                ? RecordModelUsage::cost($outcome->model, $outcome->inputTokens, $outcome->outputTokens)
+                ? RecordModelUsage::cost($outcome->model, $outcome->inputTokens, $outcome->outputTokens, $outcome->cachedInputTokens)
                 : null;
 
             $this->recordEvent($run, $lease, 'model_call', [
