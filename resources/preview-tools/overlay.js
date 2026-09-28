@@ -26,6 +26,11 @@
 
     let editing = false;
     let selected = null;
+    // What the owner last clicked, which may be inside the part chosen.
+    let clickedOn = null;
+    // Whether a change reaches only uses of the part at this place (the
+    // builder's "Only this one"), or everywhere the part is written.
+    let reachInstance = true;
     let handlesOn = false;
     let drag = null;
     let hint = null;
@@ -36,6 +41,7 @@
 [data-builder-overlay]{position:fixed;inset:0;pointer-events:none;z-index:2147483647;--bz:1}
 [data-builder-overlay] *{box-sizing:border-box}
 [data-builder-overlay] [data-part=hover]{position:fixed;display:none;border:calc(1.5px*var(--bz)) solid #60a5fa;border-radius:2px}
+[data-builder-overlay] [data-part=twin]{position:fixed;border:calc(1px*var(--bz)) dashed ${ACCENT};border-radius:2px;opacity:.6}
 [data-builder-overlay] [data-part=frame]{position:fixed;display:none;outline:calc(2px*var(--bz)) solid ${ACCENT};transform-origin:50% 50%}
 [data-builder-overlay] [data-part=inside]{position:absolute;border-style:solid;border-color:${INSIDE}}
 [data-builder-overlay] [data-part=outside]{position:absolute;border-style:solid;border-color:${OUTSIDE}}
@@ -101,6 +107,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
     document.documentElement.appendChild(layer);
 
     const hoverBox = part('hover', layer);
+    const twins = part('twins', layer);
     const outside = part('outside', layer);
     const frame = part('frame', layer);
     const inside = part('inside', frame);
@@ -231,6 +238,8 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
     // Draw the selected element's frame, turned as the element is, with its
     // space inside (green) and outside (orange).
     const placeFrame = () => {
+        placeTwins();
+
         // A hidden part has nowhere to draw the frame.
         if (
             !selected ||
@@ -323,9 +332,95 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             : null;
     };
 
+    // The parts a change to this one also changes: each item of the same
+    // list, or each use of the same piece on the page.
+    const twinsOf = (element) => {
+        const kind =
+            reachInstance && element.getAttribute('data-builder-instance')
+                ? 'instance'
+                : 'source';
+
+        return matching({
+            kind,
+            value: element.getAttribute(`data-builder-${kind}`),
+        }).filter((twin) => twin !== element);
+    };
+
+    // Outline the parts a change here also changes, so the owner sees its
+    // reach before making it.
+    const placeTwins = () => {
+        const shown =
+            selected && selected.isConnected
+                ? twinsOf(selected)
+                      .filter((twin) => twin.getClientRects().length > 0)
+                      .slice(0, 60)
+                : [];
+
+        while (twins.children.length > shown.length) {
+            twins.lastChild.remove();
+        }
+
+        shown.forEach((twin, index) => {
+            const box = twins.children[index] ?? part('twin', twins);
+            const rect = twin.getBoundingClientRect();
+
+            Object.assign(box.style, {
+                left: `${rect.left}px`,
+                top: `${rect.top}px`,
+                width: `${rect.width}px`,
+                height: `${rect.height}px`,
+            });
+        });
+    };
+
+    // Whether the owner clicked something inside the part that the app's
+    // own templates do not draw: a chart's canvas, a map, a library's
+    // insides or HTML the app fills in. It shows here but is drawn by code,
+    // so the owner can change the part around it, not what it draws.
+    const drawnByCode = (element) => {
+        const at = clickedOn;
+
+        if (
+            !(at instanceof Element) ||
+            at === element ||
+            !element.contains(at) ||
+            located(at) !== element
+        ) {
+            return null;
+        }
+
+        const svg = at.closest('svg');
+
+        // The insides of an icon or drawing written in the app are its own.
+        if (
+            svg &&
+            (svg.hasAttribute('data-builder-source') ||
+                svg.hasAttribute('data-builder-instance'))
+        ) {
+            return null;
+        }
+
+        return (svg ?? at).tagName.toLowerCase();
+    };
+
     const describe = (element) => ({
         source: element.getAttribute('data-builder-source'),
         instance: element.getAttribute('data-builder-instance'),
+        // How many are drawn on the page from the same place, this one
+        // included, by where the part is written and where it is used.
+        copies: {
+            source: matching({
+                kind: 'source',
+                value: element.getAttribute('data-builder-source'),
+            }).length,
+            instance: matching({
+                kind: 'instance',
+                value: element.getAttribute('data-builder-instance'),
+            }).length,
+        },
+        loop: element.hasAttribute('data-builder-loop'),
+        when: element.getAttribute('data-builder-when'),
+        drawnBy: drawnByCode(element),
         tag: element.tagName.toLowerCase(),
         text: (element.innerText || element.getAttribute('aria-label') || '')
             .replace(/\s+/g, ' ')
@@ -579,6 +674,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
     const choose = (element, tell) => {
         resized?.disconnect();
         selected = element;
+        reachInstance = true;
         hoverBox.style.display = 'none';
 
         if (element) {
@@ -1152,6 +1248,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             }
 
             const element = located(event.target);
+            clickedOn = event.target;
 
             // Clicking the selected part again, as a double-click does,
             // keeps the panel as it is instead of loading the part again.
@@ -1526,6 +1623,11 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                     choose(element, true);
                 }
             }
+        }
+
+        if (message.type === 'reach') {
+            reachInstance = message.instance === true;
+            placeTwins();
         }
 
         // Show an edit before it is saved: set inline styles on every element

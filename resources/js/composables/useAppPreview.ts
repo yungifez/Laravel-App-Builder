@@ -773,9 +773,10 @@ export function useAppPreview(source: Source) {
         }
     });
 
-    watch(onlyThisOne, () => {
+    watch(onlyThisOne, (value) => {
         save();
         known.value = null;
+        post({ type: 'reach', instance: value });
         inspect();
     });
 

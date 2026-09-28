@@ -305,3 +305,17 @@ them and correct any that are wrong.
   last page for each app in this browser (local storage), and the preview
   link opens that page. Only a path on the preview host is accepted. The
   page is kept per browser, not per account, because it is a convenience.
+- **The designer says when a change reaches more than the part picked.**
+  The preview's stamping step now also marks a part drawn once per list
+  item (`v-for`) and a part shown only at times (`v-if`, `v-else-if`,
+  `v-else`, `v-show`, or on a `<template>` around it). The panel then says
+  "One of 12 in a list on this page. A change here changes all 12.", and
+  the preview outlines the others. A part shown at times says so. Only a
+  condition on the part itself (or its `<template>`) counts, not one on a
+  part around it, so a page wrapped in one `v-if` does not mark everything.
+  When the owner clicks something the app's templates do not draw (a
+  chart's canvas, a library's insides, HTML the app fills in), the panel
+  says the app makes it as it runs: the part around it can be changed
+  here, and the thing itself through a request. Editing one item of a list
+  on its own is not offered: that needs a condition in the code, so it
+  goes through a request. Only Vue templates are read; Blade views are not.

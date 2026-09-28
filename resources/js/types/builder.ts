@@ -447,6 +447,17 @@ export type SelectedElement = {
     colors?: Partial<Record<VisualProperty, string>>;
     /** The sizes the part is drawn at now, so a slider starts there. */
     drawn?: Drawn;
+    /** How many the page draws from the same place, this one included:
+     * by where the part is written, and by where this one is used. */
+    copies?: { source: number; instance: number };
+    /** Whether it is drawn once for each item of a list. */
+    loop?: boolean;
+    /** Whether it shows only at times: on its own ("if"), in turn with
+     * something else ("either"), or hidden at times ("show"). */
+    when?: 'if' | 'either' | 'show' | null;
+    /** The tag of what the owner clicked inside it that code draws, not
+     * the app's templates, as "canvas"; null when there is none. */
+    drawnBy?: string | null;
 };
 
 /** How a part is drawn now, as the preview measures it. */

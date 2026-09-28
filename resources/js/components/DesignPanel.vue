@@ -342,6 +342,54 @@ const reasons: Record<NonNullable<InspectedElement['reason']>, string> = {
     dynamic: 'This part changes while the app runs. Ask me instead.',
 };
 
+// What a change to the selected part reaches, and why it may not always
+// look as it does now, one short line each.
+const notes = computed(() => {
+    const part = props.state.selected;
+
+    if (part === null) {
+        return [];
+    }
+
+    const copies =
+        (props.state.onlyThisOne && part.instance
+            ? part.copies?.instance
+            : part.copies?.source) ?? 1;
+    const lines: string[] = [];
+
+    if (copies > 1) {
+        lines.push(
+            `One of ${copies} ${part.loop ? 'in a list' : 'like it'} on this page. A change here changes all ${copies}.`,
+        );
+    } else if (part.loop) {
+        lines.push('One item of a list. A change here changes every item.');
+    }
+
+    if (part.when === 'either') {
+        lines.push('Shows only at times. Something else shows here otherwise.');
+    } else if (part.when === 'if') {
+        lines.push('Shows only at times.');
+    } else if (part.when === 'show') {
+        lines.push('Hidden at times, for example until someone opens it.');
+    }
+
+    if (part.drawnBy) {
+        const what =
+            {
+                canvas: 'chart or drawing',
+                svg: 'drawing',
+                iframe: 'page',
+                video: 'video',
+            }[part.drawnBy] ?? 'content';
+
+        lines.push(
+            `This ${what} is made by your app as it runs. You can change the part around it here. To change the ${what} itself, ask me.`,
+        );
+    }
+
+    return lines;
+});
+
 // What a saved edit changed, in a few words.
 function describeEdit(edit: VisualEditSummary): string {
     if (edit.kind === 'move') {
@@ -735,6 +783,15 @@ const recent = computed(() => {
                                     element.origin.decided.answer
                                 }}”</template
                             >.
+                        </p>
+
+                        <p
+                            v-for="note in notes"
+                            :key="note"
+                            class="text-xs text-foreground"
+                            data-test="element-note"
+                        >
+                            {{ note }}
                         </p>
 
                         <Segmented

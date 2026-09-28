@@ -12,6 +12,12 @@
 // passes it through to the element the component renders, so a selected
 // button knows both where the button is defined and where this one is used.
 //
+// An element drawn once for each item of a list (in or under a `v-for`) also
+// gets `data-builder-loop`, and one drawn only at times (`v-if`, `v-else-if`,
+// `v-else`, `v-show`, itself or on a `<template>` around it) gets
+// `data-builder-when` ("if", "either" or "show"), so the designer can say a change reaches every item,
+// or that the part is not always there.
+//
 // Usage: node locate-sources.mjs [directory ...]  (default: resources/js)
 
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -20,7 +26,10 @@ import { join, relative, sep } from 'node:path';
 
 const ATTRIBUTE = 'data-builder-source';
 const INSTANCE_ATTRIBUTE = 'data-builder-instance';
+const LOOP_ATTRIBUTE = 'data-builder-loop';
+const WHEN_ATTRIBUTE = 'data-builder-when';
 const ELEMENT = 1;
+const DIRECTIVE = 7;
 const PLAIN_ELEMENT = 0;
 const COMPONENT = 1;
 
@@ -113,7 +122,7 @@ function stamp(file) {
     const name = relative(root, file).split(sep).join('/');
     const insertions = [];
 
-    walk(descriptor.template.ast.children, (node) => {
+    walk(descriptor.template.ast.children, (node, around, next) => {
         if (node.type !== ELEMENT) {
             return;
         }
@@ -137,9 +146,16 @@ function stamp(file) {
             return;
         }
 
+        const when = shownAt(node, next) ?? around.when;
+
         insertions.push({
             at: offset + 1 + node.tag.length,
-            text: ` ${attribute}="${name}:${line}:${column}"`,
+            text:
+                ` ${attribute}="${name}:${line}:${column}"` +
+                (around.loop || directive(node, 'for')
+                    ? ` ${LOOP_ATTRIBUTE}`
+                    : '') +
+                (when ? ` ${WHEN_ATTRIBUTE}="${when}"` : ''),
         });
     });
 
@@ -158,13 +174,51 @@ function stamp(file) {
     return insertions.length;
 }
 
-function walk(nodes, visit) {
+// Visit each node with what it sits in: whether a list repeats it, and when
+// a <template> around it is shown (a <template> draws no element of its own,
+// so its condition belongs to what it holds).
+function walk(nodes, visit, around = { loop: false, when: null }) {
+    const elements = (nodes ?? []).filter((node) => node.type === ELEMENT);
+
     for (const node of nodes ?? []) {
-        visit(node);
-        walk(node.children, visit);
+        const next = elements[elements.indexOf(node) + 1] ?? null;
+        visit(node, around, next);
+
+        const within = {
+            loop: around.loop || directive(node, 'for'),
+            when:
+                node.type === ELEMENT && node.tag === 'template'
+                    ? (shownAt(node, next) ?? around.when)
+                    : null,
+        };
+
+        walk(node.children, visit, within);
 
         for (const branch of node.branches ?? []) {
-            walk(branch.children, visit);
+            walk(branch.children, visit, within);
         }
     }
+}
+
+function directive(node, name) {
+    return (node.props ?? []).some(
+        (prop) => prop.type === DIRECTIVE && prop.name === name,
+    );
+}
+
+// "either" for one of several shown in turn (a v-if with a v-else after it,
+// a v-else-if or a v-else), "if" for a v-if alone, "show" for v-show (hidden,
+// not removed), or null. The next element says whether a v-if has an else.
+function shownAt(node, next) {
+    if (directive(node, 'else-if') || directive(node, 'else')) {
+        return 'either';
+    }
+
+    if (directive(node, 'if')) {
+        return next && (directive(next, 'else-if') || directive(next, 'else'))
+            ? 'either'
+            : 'if';
+    }
+
+    return directive(node, 'show') ? 'show' : null;
 }
