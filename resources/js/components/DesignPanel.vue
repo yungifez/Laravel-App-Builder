@@ -1298,6 +1298,19 @@ const recent = computed(() => {
                                 >
                                     Or drop a picture on it in your app.
                                 </p>
+                                <!-- With no fit chosen, the browser stretches
+                                     the picture, so that shows as chosen. -->
+                                <Segmented
+                                    label="Picture fit"
+                                    caption="Fit"
+                                    :value="
+                                        state.valueOf('object_fit') ??
+                                        state.selected?.drawn?.object_fit ??
+                                        null
+                                    "
+                                    :options="options('object_fit')"
+                                    @change="set('object_fit', $event)"
+                                />
                             </section>
 
                             <section v-if="arranges" class="space-y-2">

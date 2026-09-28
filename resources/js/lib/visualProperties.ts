@@ -533,6 +533,19 @@ export const properties: PropertyDefinition[] = [
             ],
         },
     },
+    {
+        key: 'object_fit',
+        label: 'Picture fit',
+        group: 'Picture',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'cover', label: 'Fill the box', short: 'Fill' },
+                { value: 'contain', label: 'Show it whole', short: 'Whole' },
+                { value: 'fill', label: 'Stretch it', short: 'Stretch' },
+            ],
+        },
+    },
 ];
 
 /** Find a property's definition. */
@@ -989,6 +1002,9 @@ export function inlineStyles(
                 break;
             case 'text_case':
                 styles.textTransform = String(value);
+                break;
+            case 'object_fit':
+                styles.objectFit = String(value);
                 break;
             case 'letter_spacing':
                 styles.letterSpacing = `var(--tracking-${value}, ${trackings[value] ?? 'normal'})`;

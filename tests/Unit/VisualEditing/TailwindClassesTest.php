@@ -140,6 +140,14 @@ class TailwindClassesTest extends TestCase
         $this->assertSame('tracking-wide', TailwindClasses::write('uppercase tracking-wide', 'base', ['text_case' => null]));
     }
 
+    public function test_picture_fit_is_read_and_written_and_leaves_the_focus_alone()
+    {
+        $this->assertSame(['object_fit' => 'cover'], TailwindClasses::read('object-cover object-center')['base']);
+        $this->assertSame(['object_fit' => 'contain'], TailwindClasses::read('md:object-contain')['md']);
+        $this->assertSame('object-contain object-top size-10', TailwindClasses::write('object-cover object-top size-10', 'base', ['object_fit' => 'contain']));
+        $this->assertSame('object-top size-10', TailwindClasses::write('object-cover object-top size-10', 'base', ['object_fit' => null]));
+    }
+
     public function test_letter_spacing_is_read_and_written_and_spacing_off_the_steps_is_replaced()
     {
         $this->assertSame(['letter_spacing' => 'wide'], TailwindClasses::read('tracking-wide')['base']);

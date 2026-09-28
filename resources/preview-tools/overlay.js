@@ -541,6 +541,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                           parseFloat(computed.fontSize),
                 font_style: computed.fontStyle,
                 text_decoration: computed.textDecorationLine,
+                object_fit: computed.objectFit,
                 max_width: computed.maxWidth,
                 rem: parseFloat(
                     getComputedStyle(document.documentElement).fontSize,

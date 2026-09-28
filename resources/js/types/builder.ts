@@ -372,6 +372,7 @@ export type VisualProperty =
     | 'font_style'
     | 'text_decoration'
     | 'text_case'
+    | 'object_fit'
     | 'line_height'
     | 'letter_spacing'
     | 'text_color'
@@ -521,6 +522,8 @@ export type Drawn = {
     font_style?: string;
     /** The lines drawn on its words, as "underline". */
     text_decoration?: string;
+    /** How a picture fills its box, as "cover"; "fill" stretches it. */
+    object_fit?: string;
     /** The widest it may get, as the browser works it out. */
     max_width: string;
     /** The size of one rem in the app, in pixels. */
