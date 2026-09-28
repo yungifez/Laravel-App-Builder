@@ -100,18 +100,19 @@ class PreviewGateway
             'session_expires_at' => now()->addMinutes($minutes),
         ]);
 
-        // An editable preview is shown inside the builder, where the preview
-        // host is a third party, so its cookie is partitioned to the builder.
+        // Every preview can show inside the builder (the app, and a change
+        // waiting for the owner), where the preview host is a third party,
+        // so its cookie is partitioned to the site that shows it.
         $response = new RedirectResponse('/');
         $response->headers->setCookie(Cookie::create(
             name: (string) config('builder.preview.cookie'),
             value: $secret,
             expire: now()->addMinutes($minutes),
             path: '/',
-            secure: $preview->editable || config('builder.preview.scheme') === 'https',
+            secure: true,
             httpOnly: true,
-            sameSite: $preview->editable ? Cookie::SAMESITE_NONE : Cookie::SAMESITE_LAX,
-            partitioned: $preview->editable,
+            sameSite: Cookie::SAMESITE_NONE,
+            partitioned: true,
         ));
 
         return $response;

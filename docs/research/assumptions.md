@@ -286,3 +286,13 @@ them and correct any that are wrong.
   the first version is still built, checked and proved like any change.
   The starters are Bright Cleaning, Studio Classes, Corner Shop, Care
   Clinic and Local Events.
+- **A change waiting for the owner shows in the app pane.** Before, the
+  pane kept showing the app without the change, and "Try it" opened a new
+  tab. So a new app's owner saw the starter welcome page beside "your app
+  is built". Now, while a change waits, the pane shows the app with it,
+  marked "Not kept yet", with "Show it without". When its copy has stopped,
+  "Show it with the change" starts it again. The design panel still shows
+  the app itself. To let the copy show in a frame, every preview's cookie
+  is now SameSite=None, Secure and partitioned, as the app's own preview
+  already was. Browsers accept a Secure cookie on localhost. A preview
+  domain served over plain HTTP elsewhere would need HTTPS.

@@ -34,6 +34,8 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
 import FeatureRequestDismissalController from '@/actions/App/Http/Controllers/FeatureRequestDismissalController';
 import FeatureRequestFollowUpController from '@/actions/App/Http/Controllers/FeatureRequestFollowUpController';
+import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
+import PreviewController from '@/actions/App/Http/Controllers/PreviewController';
 import ProjectExperimentController from '@/actions/App/Http/Controllers/ProjectExperimentController';
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
 import AppPreview from '@/components/AppPreview.vue';
@@ -176,6 +178,29 @@ const app = useAppPreview({
     element: () => props.element,
     edits: () => props.edits,
     designing,
+});
+
+// A change waiting for the owner shows in the app pane, so they see what
+// they are deciding on without opening anything. They can look at their
+// app without it, and its copy can be started again once it has stopped.
+const decidingOn = computed(() =>
+    props.change?.featureRequest.can_accept && !designing.value
+        ? props.change
+        : null,
+);
+const withoutChange = ref(false);
+watch(
+    () => props.change?.featureRequest.id,
+    () => (withoutChange.value = false),
+);
+const changeCopy = computed(() => {
+    const copy = decidingOn.value?.preview;
+
+    return copy &&
+        !withoutChange.value &&
+        (copy.status === 'ready' || copy.status === 'starting')
+        ? copy
+        : null;
 });
 
 // A phone shows one thing at a time: the chat, the app with the design
@@ -1461,16 +1486,98 @@ function sendOnEnter(event: KeyboardEvent): void {
             data-test="app-pane"
             data-morph="app"
         >
+            <template v-if="decidingOn">
+                <p
+                    v-if="changeCopy"
+                    class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
+                    data-test="change-copy-bar"
+                >
+                    Your app with this change. Not kept yet.
+                    <button
+                        type="button"
+                        class="min-h-11 underline underline-offset-2 select-none hover:text-foreground sm:min-h-0"
+                        data-test="change-copy-hide"
+                        @click="withoutChange = true"
+                    >
+                        Show it without
+                    </button>
+                </p>
+                <div
+                    v-else
+                    class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
+                    data-test="change-copy-off"
+                >
+                    Your app without this change.
+                    <button
+                        v-if="
+                            decidingOn.preview?.status === 'ready' ||
+                            decidingOn.preview?.status === 'starting'
+                        "
+                        type="button"
+                        class="min-h-11 underline underline-offset-2 select-none hover:text-foreground sm:min-h-0"
+                        data-test="change-copy-show"
+                        @click="withoutChange = false"
+                    >
+                        Show it with the change
+                    </button>
+                    <Form
+                        v-else
+                        v-bind="
+                            FeatureRequestPreviewController.store.form(
+                                decidingOn.featureRequest.id,
+                            )
+                        "
+                        :options="{ preserveScroll: true, preserveState: true }"
+                        v-slot="{ processing }"
+                        @success="withoutChange = false"
+                    >
+                        <button
+                            class="min-h-11 underline underline-offset-2 select-none hover:text-foreground disabled:opacity-50 sm:min-h-0"
+                            :disabled="processing"
+                            data-test="change-copy-start"
+                        >
+                            Show it with the change
+                        </button>
+                    </Form>
+                </div>
+            </template>
+            <div
+                v-if="changeCopy"
+                class="relative min-h-0 flex-1 overflow-hidden rounded-lg border bg-muted/40"
+                data-test="change-copy"
+            >
+                <iframe
+                    v-if="changeCopy.status === 'ready'"
+                    :key="changeCopy.id"
+                    :src="PreviewController.show.url(changeCopy.id)"
+                    title="Your app with this change"
+                    class="size-full bg-background"
+                    data-test="change-copy-frame"
+                />
+                <div
+                    v-else
+                    class="flex h-full flex-col items-center justify-center gap-3 p-6 text-center"
+                >
+                    <LoaderCircle
+                        class="size-6 animate-spin text-muted-foreground"
+                    />
+                    <p class="text-sm text-muted-foreground">
+                        Getting your app ready with this change…
+                    </p>
+                </div>
+            </div>
             <!-- The designer shows each change as it is made. -->
             <p
-                v-if="preview?.updating && !designing"
+                v-if="preview?.updating && !designing && !changeCopy"
                 class="text-center text-xs text-muted-foreground"
                 data-test="preview-updating"
             >
                 Putting your change in place…
             </p>
             <Form
-                v-else-if="preview?.status === 'ready' && preview.error"
+                v-else-if="
+                    preview?.status === 'ready' && preview.error && !changeCopy
+                "
                 v-bind="ProjectPreviewController.store.form(project.id)"
                 :options="{ preserveScroll: true, preserveState: true }"
                 v-slot="{ processing }"
@@ -1486,7 +1593,9 @@ function sendOnEnter(event: KeyboardEvent): void {
                     >Start again</Button
                 >
             </Form>
-            <div class="min-h-0 flex-1">
+            <!-- Hidden, not removed, while a change shows, so the app does
+                 not reload. -->
+            <div v-show="!changeCopy" class="min-h-0 flex-1">
                 <AppPreview
                     :project-id="project.id"
                     :preview="preview"

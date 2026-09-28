@@ -150,7 +150,10 @@ class PreviewTest extends TestCase
         $cookie = collect($exchange->headers->getCookies())->firstWhere(fn ($cookie) => $cookie->getName() === 'builder_preview');
         $this->assertNotNull($cookie);
         $this->assertTrue($cookie->isHttpOnly());
-        $this->assertSame('lax', $cookie->getSameSite());
+        // A change's copy shows inside the builder, so the cookie must work
+        // in a frame there, kept apart for each site that shows it.
+        $this->assertSame('none', $cookie->getSameSite());
+        $this->assertTrue($cookie->isPartitioned());
         $this->assertNull($cookie->getDomain(), 'The session cookie must stay on the preview host.');
 
         // The grant cannot be used twice.
