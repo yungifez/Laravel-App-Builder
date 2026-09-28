@@ -45,6 +45,18 @@ function askForInvitations(Project $project)
         ->assertSee('Owners and admins can invite people.');
 }
 
+it('tells a new owner that each change is checked and can be undone', function () {
+    $this->actingAs($this->owner);
+
+    visit(route('projects.show', $this->project))
+        ->assertSeeIn('@chat-promise', 'I check each change in your app before you see it. You keep it, or undo it any time.')
+        ->fill('prompt', 'Let owners and admins invite people by email.')
+        ->click('@request-feature-button')
+        ->assertSee('Owners and admins can invite people.')
+        ->assertMissing('@chat-promise')
+        ->assertNoJavaScriptErrors();
+});
+
 it('builds a change the owner asks for, keeps it, then undoes it', function () {
     $this->actingAs($this->owner);
 

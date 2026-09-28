@@ -1296,6 +1296,16 @@ function sendOnEnter(event: KeyboardEvent): void {
                             <p class="text-lg font-semibold tracking-tight">
                                 What should your app do next?
                             </p>
+                            <!-- What sets this apart, said once, before the
+                                 first change: nothing reaches the app
+                                 unchecked, and nothing stays unless kept. -->
+                            <p
+                                class="-mt-2 text-sm text-muted-foreground"
+                                data-test="chat-promise"
+                            >
+                                I check each change in your app before you see
+                                it. You keep it, or undo it any time.
+                            </p>
                             <div class="flex flex-wrap gap-2">
                                 <button
                                     v-for="suggestion in suggestions"
