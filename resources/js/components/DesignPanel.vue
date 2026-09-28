@@ -54,6 +54,7 @@ import Swatches from '@/components/design/Swatches.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import type { AppPreviewState, Way } from '@/composables/useAppPreview';
+import { kindOfTag } from '@/lib/partKinds';
 import { when } from '@/lib/when';
 import {
     definition,
@@ -446,6 +447,11 @@ function describeResult(
 
     if (edit.kind === 'link' && edit.link) {
         return { words: edit.link, color: null };
+    }
+
+    // A move, copy or removal names the part it was.
+    if (['move', 'duplicate', 'remove'].includes(edit.kind)) {
+        return { words: kindOfTag(edit.tag), color: null };
     }
 
     if (edit.kind !== 'look' || edit.properties.length !== 1) {
