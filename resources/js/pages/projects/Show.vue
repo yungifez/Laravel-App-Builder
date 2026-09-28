@@ -32,6 +32,7 @@ import {
 } from '@lucide/vue';
 import { useMediaQuery, useResizeObserver } from '@vueuse/core';
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { toast } from 'vue-sonner';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
 import FeatureRequestDismissalController from '@/actions/App/Http/Controllers/FeatureRequestDismissalController';
 import FeatureRequestFollowUpController from '@/actions/App/Http/Controllers/FeatureRequestFollowUpController';
@@ -288,6 +289,74 @@ watch(
 
         if (value === 'problems' && newestProblem?.last_at) {
             seenProblem.value = newestProblem.last_at;
+        }
+    },
+);
+
+// What the app does behind the page is told as it happens, so the owner
+// sees an email go out or a problem come up while they try the app, not
+// only when they think to open a tab. What was there when the page opened
+// is not news.
+watch(
+    () => props.emails,
+    (emails, before) => {
+        if (
+            !emails?.length ||
+            before === undefined ||
+            showing.value === 'emails'
+        ) {
+            return;
+        }
+
+        const known = emails.findIndex((email) => email.id === before[0]?.id);
+        const fresh =
+            known === -1 ? (before.length ? emails.length : 0) : known;
+
+        if (fresh > 0) {
+            toast(
+                fresh === 1
+                    ? 'Your app sent an email'
+                    : `Your app sent ${fresh} emails`,
+                {
+                    description: emails[0].subject || undefined,
+                    duration: 10000,
+                    action: {
+                        label: 'Read',
+                        onClick: () => (showing.value = 'emails'),
+                    },
+                },
+            );
+        }
+    },
+);
+
+watch(
+    () => props.problems,
+    (problems, before) => {
+        if (before === undefined || showing.value === 'problems') {
+            return;
+        }
+
+        const latest = before.reduce(
+            (at, problem) =>
+                (problem.last_at ?? '') > at ? (problem.last_at ?? '') : at,
+            '',
+        );
+        const fresh = (problems ?? []).find(
+            (problem) =>
+                ['new', 'back'].includes(problem.state) &&
+                (problem.last_at ?? '') > latest,
+        );
+
+        if (fresh) {
+            toast.error('Your app ran into a problem', {
+                description: fresh.words,
+                duration: 10000,
+                action: {
+                    label: 'See it',
+                    onClick: () => (showing.value = 'problems'),
+                },
+            });
         }
     },
 );
