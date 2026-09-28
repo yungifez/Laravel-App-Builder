@@ -1263,6 +1263,7 @@ function sendOnEnter(event: KeyboardEvent): void {
             <DesignPanel
                 v-if="designing"
                 class="flex-1"
+                :project-id="project.id"
                 :preview="preview"
                 :edits="edits"
                 :state="app"
@@ -1982,17 +1983,20 @@ function sendOnEnter(event: KeyboardEvent): void {
             <AppProblems
                 v-if="showing === 'problems' && !changeCopy"
                 class="min-h-0 flex-1"
+                :project-id="project.id"
                 :problems="problems"
             />
             <AppSchedule
                 v-if="showing === 'schedule' && !changeCopy"
                 class="min-h-0 flex-1"
+                :project-id="project.id"
                 :schedule="schedule"
                 @ran="router.reload({ only: ['emails', 'problems'] })"
             />
             <AppData
                 v-if="showing === 'data' && !changeCopy"
                 class="min-h-0 flex-1"
+                :project-id="project.id"
                 :data="data"
                 :rows="rows"
                 :files="files"
@@ -2001,6 +2005,7 @@ function sendOnEnter(event: KeyboardEvent): void {
             <AppEmails
                 v-if="showing === 'emails' && !changeCopy"
                 class="min-h-0 flex-1"
+                :project-id="project.id"
                 :emails="emails"
                 :origin="preview?.origin ?? null"
                 @open="openFromEmail"
@@ -2018,6 +2023,7 @@ function sendOnEnter(event: KeyboardEvent): void {
             <DesignPanel
                 v-if="designing && pane === 'app'"
                 class="h-[45svh] shrink-0 rounded-lg border lg:hidden"
+                :project-id="project.id"
                 :preview="preview"
                 :edits="edits"
                 :state="app"

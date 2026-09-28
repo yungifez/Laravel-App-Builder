@@ -26,6 +26,7 @@ use App\Http\Controllers\Operations\ChangeController as OperationsChangeControll
 use App\Http\Controllers\PageConsistencyController;
 use App\Http\Controllers\PreviewController;
 use App\Http\Controllers\PreviewDataController;
+use App\Http\Controllers\PreviewEmailController;
 use App\Http\Controllers\PreviewFileController;
 use App\Http\Controllers\PreviewProblemFixController;
 use App\Http\Controllers\PreviewScheduledTaskRunController;
@@ -73,6 +74,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/deployments', [DeploymentController::class, 'store'])->name('deployments.store');
     Route::post('projects/{project}/live-error-fixes', [LiveErrorFixController::class, 'store'])->name('live-error-fixes.store');
     Route::post('projects/{project}/preview-problem-fixes', [PreviewProblemFixController::class, 'store'])->name('preview-problem-fixes.store');
+    Route::delete('projects/{project}/preview-emails', [PreviewEmailController::class, 'destroy'])->name('preview-emails.destroy');
     Route::post('projects/{project}/cleared-problems', [ClearedProblemController::class, 'store'])->name('cleared-problems.store');
     Route::delete('projects/{project}/cleared-problems/{problem}', [ClearedProblemController::class, 'destroy'])->name('cleared-problems.destroy');
     Route::put('projects/{project}/preview-data', [PreviewDataController::class, 'update'])->name('preview-data.update');

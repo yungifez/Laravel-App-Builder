@@ -13,21 +13,42 @@ use Throwable;
 class LoggedEmails
 {
     /**
-     * Find the emails in a log, newest first.
+     * The start of the entry that marks emails as deleted. The log keeps
+     * each email; the list leaves out those a later entry marks.
+     */
+    public const DELETED = 'Emails deleted: ';
+
+    /**
+     * Find the emails in a log, newest first, leaving out deleted ones.
      *
      * @return list<array{id: string, sent_at: string|null, from: string, to: string, subject: string, html: string|null, text: string|null}>
      */
     public static function in(string $log, int $limit = 50): array
     {
         $emails = [];
+        $deleted = [];
 
         foreach (LogEntries::in($log) as $entry) {
             if ($entry['level'] === 'DEBUG' && ($email = self::read($entry['message'], $entry['time'])) !== null) {
                 $emails[] = $email;
+            } elseif ($entry['level'] === 'INFO' && str_starts_with($entry['message'], self::DELETED)) {
+                $deleted += array_fill_keys(explode(' ', substr($entry['message'], strlen(self::DELETED))), true);
             }
         }
 
+        $emails = array_filter($emails, fn (array $email) => ! isset($deleted[$email['id']]));
+
         return array_slice(array_reverse($emails), 0, $limit);
+    }
+
+    /**
+     * Write the log entry that marks emails as deleted.
+     *
+     * @param  list<string>  $ids
+     */
+    public static function deletion(array $ids, CarbonImmutable $at): string
+    {
+        return '['.$at->format('Y-m-d H:i:s').'] local.INFO: '.self::DELETED.implode(' ', $ids).PHP_EOL;
     }
 
     /**

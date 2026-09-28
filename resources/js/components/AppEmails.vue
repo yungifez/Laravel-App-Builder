@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { ArrowLeft, Mail } from '@lucide/vue';
+import { router } from '@inertiajs/vue3';
+import { ArrowLeft, Mail, Trash2 } from '@lucide/vue';
 import { useMediaQuery } from '@vueuse/core';
 import { computed, ref } from 'vue';
+import { toast } from 'vue-sonner';
+import PreviewEmailController from '@/actions/App/Http/Controllers/PreviewEmailController';
 import { when } from '@/lib/when';
 import type { SentEmail } from '@/types';
 
 const props = defineProps<{
+    projectId: string;
     emails: SentEmail[] | undefined;
     // Where the app on show is served. A link there opens in the app.
     origin: string | null;
@@ -16,12 +20,42 @@ const emit = defineEmits<{ open: [href: string] }>();
 const wide = useMediaQuery('(min-width: 768px)');
 const chosenId = ref<string | null>(null);
 
+// Deleted emails leave the list at once; they come back only if the app
+// could not mark them.
+const deleting = ref<Set<string>>(new Set());
+const emails = computed(() =>
+    props.emails?.filter((email) => !deleting.value.has(email.id)),
+);
+
+function remove(ids: string[]): void {
+    deleting.value = new Set([...deleting.value, ...ids]);
+
+    if (chosenId.value !== null && ids.includes(chosenId.value)) {
+        chosenId.value = null;
+    }
+
+    router.delete(PreviewEmailController.destroy.url(props.projectId), {
+        data: { emails: ids },
+        only: ['emails'],
+        preserveScroll: true,
+        preserveState: true,
+        onError: (errors) => {
+            deleting.value = new Set(
+                [...deleting.value].filter((id) => !ids.includes(id)),
+            );
+            toast.error(
+                errors.app ?? 'The emails could not be deleted. Try again.',
+            );
+        },
+    });
+}
+
 // A wide screen shows the list and an email side by side, the newest
 // until the owner picks another. A phone shows one at a time.
 const chosen = computed(
     () =>
-        props.emails?.find((email) => email.id === chosenId.value) ??
-        (wide.value ? (props.emails?.[0] ?? null) : null),
+        emails.value?.find((email) => email.id === chosenId.value) ??
+        (wide.value ? (emails.value?.[0] ?? null) : null),
 );
 
 function sentAt(iso: string | null): string {
@@ -102,40 +136,60 @@ const pieces = computed(() =>
             </p>
         </div>
 
-        <template v-else>
-            <ul
+        <template v-else-if="emails">
+            <div
                 v-show="wide || chosen === null"
-                class="min-h-0 w-full shrink-0 overflow-y-auto border-r md:w-72"
-                aria-label="Emails your app sent"
+                class="flex min-h-0 w-full shrink-0 flex-col border-r md:w-72"
             >
-                <li v-for="email in emails" :key="email.id">
+                <div
+                    class="flex min-h-11 items-center justify-between gap-2 border-b px-3 text-xs text-muted-foreground"
+                >
+                    <span class="tabular-nums"
+                        >{{ emails.length }}
+                        {{ emails.length === 1 ? 'email' : 'emails' }}</span
+                    >
                     <button
                         type="button"
-                        :aria-current="chosen?.id === email.id"
-                        :class="[
-                            'flex min-h-11 w-full flex-col gap-0.5 border-b px-3 py-2 text-left',
-                            chosen?.id === email.id
-                                ? 'bg-muted'
-                                : 'hover:bg-muted/50',
-                        ]"
-                        :data-test="`app-email-${email.id}`"
-                        @click="chosenId = email.id"
+                        class="min-h-11 select-none hover:text-foreground sm:min-h-8"
+                        data-test="app-emails-delete-all"
+                        @click="remove(emails.map((email) => email.id))"
                     >
-                        <span class="flex items-baseline gap-2">
-                            <span class="min-w-0 flex-1 truncate text-sm">{{
-                                email.subject || 'No subject'
-                            }}</span>
-                            <span
-                                class="shrink-0 text-xs text-muted-foreground"
-                                >{{ sentAt(email.sent_at) }}</span
-                            >
-                        </span>
-                        <span class="truncate text-xs text-muted-foreground"
-                            >To {{ email.to }}</span
-                        >
+                        Delete all
                     </button>
-                </li>
-            </ul>
+                </div>
+                <ul
+                    class="min-h-0 flex-1 overflow-y-auto"
+                    aria-label="Emails your app sent"
+                >
+                    <li v-for="email in emails" :key="email.id">
+                        <button
+                            type="button"
+                            :aria-current="chosen?.id === email.id"
+                            :class="[
+                                'flex min-h-11 w-full flex-col gap-0.5 border-b px-3 py-2 text-left',
+                                chosen?.id === email.id
+                                    ? 'bg-muted'
+                                    : 'hover:bg-muted/50',
+                            ]"
+                            :data-test="`app-email-${email.id}`"
+                            @click="chosenId = email.id"
+                        >
+                            <span class="flex items-baseline gap-2">
+                                <span class="min-w-0 flex-1 truncate text-sm">{{
+                                    email.subject || 'No subject'
+                                }}</span>
+                                <span
+                                    class="shrink-0 text-xs text-muted-foreground"
+                                    >{{ sentAt(email.sent_at) }}</span
+                                >
+                            </span>
+                            <span class="truncate text-xs text-muted-foreground"
+                                >To {{ email.to }}</span
+                            >
+                        </button>
+                    </li>
+                </ul>
+            </div>
 
             <article
                 v-if="chosen"
@@ -152,7 +206,7 @@ const pieces = computed(() =>
                     >
                         <ArrowLeft class="size-4" />
                     </button>
-                    <div class="min-w-0">
+                    <div class="min-w-0 flex-1">
                         <h2 class="truncate text-base font-medium">
                             {{ chosen.subject || 'No subject' }}
                         </h2>
@@ -160,6 +214,16 @@ const pieces = computed(() =>
                             To {{ chosen.to }} · From {{ chosen.from }}
                         </p>
                     </div>
+                    <button
+                        type="button"
+                        class="-mr-1 grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground sm:size-8"
+                        aria-label="Delete this email"
+                        title="Delete this email"
+                        data-test="app-email-delete"
+                        @click="remove([chosen.id])"
+                    >
+                        <Trash2 class="size-4" />
+                    </button>
                 </header>
                 <!-- Drawn as its reader sees it, on white as most email
                      is, without its scripts. -->

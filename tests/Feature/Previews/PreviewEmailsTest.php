@@ -2,17 +2,20 @@
 
 namespace Tests\Feature\Previews;
 
+use App\Actions\Previews\ReadPreviewEmails;
 use App\Actions\Projects\CreateProject;
 use App\Models\Preview;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Projects\ProjectRepository;
+use App\Workspaces\CommandResult;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Process;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\FakesWorkspaces;
 use Tests\Concerns\PreparesRuns;
@@ -81,6 +84,55 @@ class PreviewEmailsTest extends TestCase
 
         $this->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->reloadOnly('emails', fn (Assert $page) => $page->where('emails', [])));
+    }
+
+    public function test_the_owner_deletes_one_email_or_all_of_them_with_a_mark_in_the_app_log()
+    {
+        $workspace = Workspace::factory()->create(['user_id' => $this->owner->id]);
+        Preview::factory()->editable()->ready()->create(['project_id' => $this->project->id, 'workspace_id' => $workspace->id]);
+        $log = "{$workspace->driver_id}:storage/logs/laravel.log";
+        $this->driver->files[$log] = $this->logOf(function () {
+            Mail::mailer('log')->raw('Welcome.', fn ($message) => $message->to('ada@example.test')->subject('Welcome'));
+            Mail::mailer('log')->raw('Booked.', fn ($message) => $message->to('grace@example.test')->subject('Booked'));
+        });
+        // Run the command for real on a copy of the log, as the workspace would.
+        $this->driver->onExec = function (string $workspaceId, array $command) use ($log) {
+            $file = tempnam(sys_get_temp_dir(), 'log-');
+            File::put($file, $this->driver->files[$log]);
+            $result = Process::run([...array_slice($command, 0, 3), $file, ...array_slice($command, 4)]);
+            $this->driver->files[$log] = File::get($file);
+            File::delete($file);
+
+            return new CommandResult(exitCode: $result->exitCode() ?? 1, output: '', errorOutput: $result->errorOutput(), durationMs: 5);
+        };
+        $emails = fn () => $this->get(route('projects.show', $this->project));
+        $ids = array_column(app(ReadPreviewEmails::class)->handle($this->project), 'id');
+
+        $this->actingAs($this->owner)->delete(route('preview-emails.destroy', $this->project), ['emails' => [$ids[0]]])->assertSessionHasNoErrors();
+
+        $emails()->assertInertia(fn (Assert $page) => $page->reloadOnly('emails', fn (Assert $page) => $page
+            ->count('emails', 1)
+            ->where('emails.0.subject', 'Welcome')));
+        $this->assertStringContainsString('Emails deleted: '.$ids[0], $this->driver->files[$log]);
+
+        $this->delete(route('preview-emails.destroy', $this->project), ['emails' => $ids])->assertSessionHasNoErrors();
+
+        $emails()->assertInertia(fn (Assert $page) => $page->reloadOnly('emails', fn (Assert $page) => $page->where('emails', [])));
+    }
+
+    public function test_only_people_who_can_change_the_app_delete_its_email()
+    {
+        $this->actingAs(User::factory()->create())
+            ->delete(route('preview-emails.destroy', $this->project), ['emails' => [str_repeat('a', 40)]])
+            ->assertForbidden();
+
+        $this->actingAs($this->owner)
+            ->delete(route('preview-emails.destroy', $this->project), ['emails' => ['not-an-email']])
+            ->assertSessionHasErrors('emails.0');
+
+        // Nothing runs, so there is nothing to delete from.
+        $this->delete(route('preview-emails.destroy', $this->project), ['emails' => [str_repeat('a', 40)]])
+            ->assertSessionHasErrors('app');
     }
 
     public function test_only_people_who_can_see_the_app_read_its_email()
