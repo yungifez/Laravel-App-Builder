@@ -6,6 +6,7 @@ use App\Actions\Features\DescribeFeatureRequest;
 use App\Actions\Previews\DescribeProjectPreview;
 use App\Actions\Previews\ReadPreviewData;
 use App\Actions\Previews\ReadPreviewEmails;
+use App\Actions\Previews\ReadPreviewFiles;
 use App\Actions\Previews\ReadPreviewProblems;
 use App\Actions\Previews\ReadPreviewRows;
 use App\Actions\Previews\ReadPreviewSchedule;
@@ -129,7 +130,7 @@ class ProjectController extends Controller
      * app running beside it, and the design panel for changing how it looks.
      * The element the owner selected is loaded on request.
      */
-    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails, ReadPreviewProblems $readPreviewProblems, ReadPreviewData $readPreviewData, ReadPreviewRows $readPreviewRows, ReadPreviewSchedule $readPreviewSchedule): Response
+    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails, ReadPreviewProblems $readPreviewProblems, ReadPreviewData $readPreviewData, ReadPreviewRows $readPreviewRows, ReadPreviewSchedule $readPreviewSchedule, ReadPreviewFiles $readPreviewFiles): Response
     {
         Gate::authorize('view', $project);
 
@@ -149,6 +150,8 @@ class ProjectController extends Controller
             'problems' => Inertia::optional(fn () => $readPreviewProblems->handle($project)),
             // And what it has saved.
             'data' => Inertia::optional(fn () => $readPreviewData->handle($project)),
+            // And the files it stored, such as uploads.
+            'files' => Inertia::optional(fn () => $readPreviewFiles->handle($project)),
             // And the tasks it runs on its own.
             'schedule' => Inertia::optional(fn () => $readPreviewSchedule->handle($project)),
             // And the rows of one table, when the owner opens it.

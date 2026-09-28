@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { Form, router } from '@inertiajs/vue3';
-import { ArrowLeft, ChevronRight, Database } from '@lucide/vue';
+import { ArrowLeft, ChevronRight, Database, File } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import PreviewDataController from '@/actions/App/Http/Controllers/PreviewDataController';
+import PreviewFileController from '@/actions/App/Http/Controllers/PreviewFileController';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
-import type { SavedRows, SavedTable } from '@/types';
+import { when } from '@/lib/when';
+import type { SavedRows, SavedTable, StoredFile } from '@/types';
 
 const props = defineProps<{
     projectId: number;
     data: SavedTable[] | null | undefined;
     rows: SavedRows | null | undefined;
+    files: StoredFile[] | null | undefined;
 }>();
 
 const emit = defineEmits<{ restarted: [] }>();
@@ -47,6 +50,22 @@ function open(table: SavedTable): void {
 }
 
 watch(() => openedTable.value?.rows, readRows);
+
+function fileUrl(file: StoredFile): string {
+    return PreviewFileController.show.url(props.projectId, {
+        query: { path: file.path },
+    });
+}
+
+function size(bytes: number): string {
+    if (bytes < 1000) {
+        return `${bytes} bytes`;
+    }
+
+    return bytes < 1_000_000
+        ? `${Math.round(bytes / 1000)} KB`
+        : `${(bytes / 1_000_000).toFixed(1)} MB`;
+}
 
 function rows(table: SavedTable): string {
     if (table.rows === null) {
@@ -150,39 +169,89 @@ function rows(table: SavedTable): string {
                 </div>
             </div>
             <div
-                v-else-if="own.length === 0"
+                v-else-if="own.length === 0 && !files?.length"
                 class="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center"
                 data-test="app-data-empty"
             >
                 <Database class="size-6 text-muted-foreground" />
                 <p class="text-lg font-medium">Nothing saved yet</p>
                 <p class="max-w-xs text-sm text-muted-foreground">
-                    What your app saves while you try it, such as sign-ups,
-                    shows here.
+                    What your app saves while you try it, such as sign-ups and
+                    uploaded pictures, shows here.
                 </p>
             </div>
 
-            <ul v-else-if="!openedTable" class="min-h-0 flex-1 overflow-y-auto">
-                <li v-for="table in own" :key="table.name" class="border-b">
-                    <button
-                        type="button"
-                        class="flex min-h-11 w-full items-center gap-3 px-3 text-left hover:bg-muted/50"
-                        :data-test="`app-data-${table.name}`"
-                        @click="open(table)"
-                    >
-                        <span class="min-w-0 flex-1 truncate text-sm">{{
-                            table.words
-                        }}</span>
-                        <span
-                            class="shrink-0 text-xs text-muted-foreground tabular-nums"
-                            >{{ rows(table) }}</span
+            <div
+                v-else-if="!openedTable"
+                class="min-h-0 flex-1 overflow-y-auto"
+            >
+                <ul>
+                    <li v-for="table in own" :key="table.name" class="border-b">
+                        <button
+                            type="button"
+                            class="flex min-h-11 w-full items-center gap-3 px-3 text-left hover:bg-muted/50"
+                            :data-test="`app-data-${table.name}`"
+                            @click="open(table)"
                         >
-                        <ChevronRight
-                            class="size-4 shrink-0 text-muted-foreground"
-                        />
-                    </button>
-                </li>
-            </ul>
+                            <span class="min-w-0 flex-1 truncate text-sm">{{
+                                table.words
+                            }}</span>
+                            <span
+                                class="shrink-0 text-xs text-muted-foreground tabular-nums"
+                                >{{ rows(table) }}</span
+                            >
+                            <ChevronRight
+                                class="size-4 shrink-0 text-muted-foreground"
+                            />
+                        </button>
+                    </li>
+                </ul>
+
+                <!-- Files the app stored, such as uploads: a picture shows,
+                 anything else downloads. -->
+                <section v-if="files?.length" data-test="app-data-files">
+                    <h3 class="px-3 pt-4 pb-1 text-xs text-muted-foreground">
+                        Files ({{ files.length }})
+                    </h3>
+                    <ul>
+                        <li
+                            v-for="file in files"
+                            :key="file.path"
+                            class="border-b"
+                        >
+                            <a
+                                :href="fileUrl(file)"
+                                target="_blank"
+                                rel="noopener"
+                                class="flex min-h-11 items-center gap-3 px-3 py-1.5 hover:bg-muted/50"
+                                :data-test="`app-file-${file.path}`"
+                            >
+                                <img
+                                    v-if="file.picture"
+                                    :src="fileUrl(file)"
+                                    alt=""
+                                    loading="lazy"
+                                    class="size-8 shrink-0 rounded bg-muted object-cover"
+                                />
+                                <File
+                                    v-else
+                                    class="size-8 shrink-0 p-1.5 text-muted-foreground"
+                                />
+                                <span class="min-w-0 flex-1">
+                                    <span class="block truncate text-sm">{{
+                                        file.name
+                                    }}</span>
+                                    <span
+                                        class="block truncate text-xs text-muted-foreground"
+                                        >{{ size(file.size) }} ·
+                                        {{ when(file.stored_at) }}</span
+                                    >
+                                </span>
+                            </a>
+                        </li>
+                    </ul>
+                </section>
+            </div>
 
             <details
                 v-if="laravel.length > 0 && !openedTable"

@@ -1625,7 +1625,9 @@ reads the preview's workspace, so the app itself does not change.
   owner can start the data again, with the app's example data
   (`migrate:fresh --seed`) or empty, after a second click; only the copy
   they try changes. A table opens to its newest 50 rows, with what
-  visitors sign in with hidden. Changing rows comes later, with an undo.
+  visitors sign in with hidden. Below the tables are the files the app
+  stored, such as uploads, newest first: a picture shows, anything else
+  downloads. Changing rows comes later, with an undo.
 - **Schedule** (built). The tasks the app runs on its own
   (`schedule:list`), each with when it runs in plain words and how long
   until it runs next. "Run it now" runs one at once (`schedule:test`), so

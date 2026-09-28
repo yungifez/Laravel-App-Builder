@@ -371,3 +371,10 @@ them and correct any that are wrong.
   runs `schedule:test --name=…` with the name Laravel knows the task by,
   and only for tasks the app lists. Two tasks written as functions without
   a description cannot be told apart, so the owner is asked to name them.
+- 2026-09-27 — "Saved data" lists the newest 200 files under the app's
+  `storage/app` folder, where Laravel's local and public disks keep them.
+  An app that stores files elsewhere, such as on S3, shows none. The
+  builder hands a file over only if it is listed and under 20 MB. Only
+  PNG, JPEG, GIF, WebP and AVIF pictures show inline; every other file,
+  SVG and HTML among them, is a download, sent sandboxed and with
+  `nosniff`, so nothing an app stored runs on the builder's pages.

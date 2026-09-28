@@ -734,3 +734,15 @@ export type ScheduledTask = {
     expression: string;
     command: string;
 };
+
+/** A file the app on show stored, such as an upload. */
+export type StoredFile = {
+    /** The path from the app's storage folder. */
+    path: string;
+    name: string;
+    folder: string;
+    size: number;
+    stored_at: string;
+    /** True for pictures the builder may show. */
+    picture: boolean;
+};

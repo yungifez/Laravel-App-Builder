@@ -98,6 +98,7 @@ import type {
     AppProblem,
     SavedRows,
     ScheduledTask,
+    StoredFile,
     SavedTable,
     VisualEditSummary,
 } from '@/types';
@@ -120,6 +121,7 @@ const props = defineProps<{
     data?: SavedTable[] | null;
     rows?: SavedRows | null;
     schedule?: ScheduledTask[] | null;
+    files?: StoredFile[] | null;
 }>();
 
 // The left panel talks about changes (Chat) or changes how the app looks
@@ -213,10 +215,19 @@ watch(
     (running) => (running ? behindPoll.start() : behindPoll.stop()),
     { immediate: true },
 );
-watch(showing, (value) => value !== 'app' && router.reload({ only: [value] }));
+watch(
+    showing,
+    (value) =>
+        value !== 'app' &&
+        router.reload({ only: value === 'data' ? ['data', 'files'] : [value] }),
+);
 
 // Saved data is read by running the app, so only while the owner looks.
-const dataPoll = usePoll(5000, { only: ['data'] }, { autoStart: false });
+const dataPoll = usePoll(
+    5000,
+    { only: ['data', 'files'] },
+    { autoStart: false },
+);
 
 watch(
     () => showing.value === 'data' && app.running && !app.lost,
@@ -1801,6 +1812,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                 :project-id="project.id"
                 :data="data"
                 :rows="rows"
+                :files="files"
                 @restarted="app.reload()"
             />
             <AppEmails
