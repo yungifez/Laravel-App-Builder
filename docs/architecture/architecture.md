@@ -1626,6 +1626,11 @@ reads the preview's workspace, so the app itself does not change.
   (`migrate:fresh --seed`) or empty, after a second click; only the copy
   they try changes. A table opens to its newest 50 rows, with what
   visitors sign in with hidden. Changing rows comes later, with an undo.
+- **Schedule** (built). The tasks the app runs on its own
+  (`schedule:list`), each with when it runs in plain words and how long
+  until it runs next. "Run it now" runs one at once (`schedule:test`), so
+  a daily reminder email can be tried without waiting a day. What it sent
+  or ran into shows in the other tabs.
 - **Jobs** need no tab while previews run queued work at once
   (`QUEUE_CONNECTION=sync`).
 

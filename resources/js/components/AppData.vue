@@ -212,7 +212,11 @@ function rows(table: SavedTable): string {
             <Form
                 v-bind="PreviewDataController.update.form(projectId)"
                 :transform="() => ({ with: asking })"
-                :options="{ preserveScroll: true, preserveState: true }"
+                :options="{
+                    preserveScroll: true,
+                    preserveState: true,
+                    only: ['data'],
+                }"
                 class="flex shrink-0 flex-wrap items-center gap-2 border-t p-2"
                 v-slot="{ processing, errors }"
                 @success="

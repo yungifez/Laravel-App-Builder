@@ -523,6 +523,7 @@ export type VisualEditSummary = {
         | 'link'
         | 'picture'
         | 'duplicate'
+        | 'add'
         | 'remove';
     properties: VisualProperty[];
     /** The new words and the words they replaced, for new words. */
@@ -720,4 +721,16 @@ export type SavedRows = {
     rows: (string | null)[][];
     /** True when the table holds more rows than are shown. */
     more: boolean;
+};
+
+/** A task the app on show runs on its own, and when. */
+export type ScheduledTask = {
+    /** The name the task is run by. */
+    name: string;
+    words: string;
+    /** When it runs, in plain words. */
+    when: string;
+    next: string | null;
+    expression: string;
+    command: string;
 };

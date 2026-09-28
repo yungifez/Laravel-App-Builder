@@ -42,6 +42,7 @@ import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPrev
 import AppData from '@/components/AppData.vue';
 import AppEmails from '@/components/AppEmails.vue';
 import AppProblems from '@/components/AppProblems.vue';
+import AppSchedule from '@/components/AppSchedule.vue';
 import AppPreview from '@/components/AppPreview.vue';
 import BesidePanel from '@/components/BesidePanel.vue';
 import ChangeThread from '@/components/ChangeThread.vue';
@@ -96,6 +97,7 @@ import type {
     SentEmail,
     AppProblem,
     SavedRows,
+    ScheduledTask,
     SavedTable,
     VisualEditSummary,
 } from '@/types';
@@ -117,6 +119,7 @@ const props = defineProps<{
     problems?: AppProblem[];
     data?: SavedTable[] | null;
     rows?: SavedRows | null;
+    schedule?: ScheduledTask[] | null;
 }>();
 
 // The left panel talks about changes (Chat) or changes how the app looks
@@ -193,8 +196,8 @@ const app = useAppPreview({
 });
 
 // Beside the app, what it does behind the page: the emails it sent, the
-// problems it ran into and the data it saved.
-type Behind = 'app' | 'emails' | 'problems' | 'data';
+// problems it ran into, the data it saved and what it runs on its own.
+type Behind = 'app' | 'emails' | 'problems' | 'data' | 'schedule';
 const showing = ref<Behind>('app');
 
 // Looked for every few seconds while the app runs, so what is new is
@@ -287,6 +290,7 @@ const showingTabs = computed(() => [
         count: unseenProblems.value,
     },
     { key: 'data' as const, label: 'Saved data', count: 0 },
+    { key: 'schedule' as const, label: 'Schedule', count: 0 },
 ]);
 
 // A link in an email opens its page in the app.
@@ -1783,6 +1787,13 @@ function sendOnEnter(event: KeyboardEvent): void {
                 class="min-h-0 flex-1"
                 :project-id="project.id"
                 :problems="problems"
+            />
+            <AppSchedule
+                v-if="showing === 'schedule' && !changeCopy"
+                class="min-h-0 flex-1"
+                :project-id="project.id"
+                :schedule="schedule"
+                @ran="router.reload({ only: ['emails', 'problems'] })"
             />
             <AppData
                 v-if="showing === 'data' && !changeCopy"

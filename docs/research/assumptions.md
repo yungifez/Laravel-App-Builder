@@ -364,3 +364,10 @@ them and correct any that are wrong.
   argument, and only names `db:show` listed are read. Values of columns
   named like password, token, secret, remember, two_factor or a key are
   hidden. Long values are cut to 200 characters.
+- 2026-09-27 — The "Schedule" tab reads `php artisan schedule:list --json`
+  in the preview's workspace, at most every 20 seconds, and names common
+  timetables in words. A set time is shown in the app's time zone, with
+  the zone named; the next run is shown as time from now. "Run it now"
+  runs `schedule:test --name=…` with the name Laravel knows the task by,
+  and only for tasks the app lists. Two tasks written as functions without
+  a description cannot be told apart, so the owner is asked to name them.
