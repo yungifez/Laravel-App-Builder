@@ -1596,7 +1596,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                 <!-- Moving between the app's pages, as a browser does. It
                      stays in place and only greys out, so nothing jumps. -->
                 <div
-                    class="flex min-w-0 shrink items-center"
+                    class="flex shrink-0 items-center"
                     data-test="preview-browse"
                 >
                     <Button
@@ -1652,7 +1652,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                 </div>
                 <div
                     v-if="!changeCopy"
-                    class="ml-auto flex shrink-0 items-center gap-1 overflow-x-auto"
+                    class="ml-auto flex min-w-0 [scrollbar-width:none] items-center gap-1 overflow-x-auto"
                 >
                     <button
                         v-for="tab in showingTabs"
