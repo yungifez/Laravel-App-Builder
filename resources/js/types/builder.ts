@@ -464,8 +464,8 @@ export type VisualEditSummary = {
     tag: string;
     device: Device;
     /** A change to how the part looks, a move among its siblings, new
-     * words, or a new address for a link. */
-    kind: 'look' | 'move' | 'text' | 'link';
+     * words, a new address for a link, a copy, or a removal. */
+    kind: 'look' | 'move' | 'text' | 'link' | 'duplicate' | 'remove';
     properties: VisualProperty[];
     /** The new words and the words they replaced, for new words. */
     words: string | null;

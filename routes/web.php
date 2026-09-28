@@ -39,6 +39,7 @@ use App\Http\Controllers\VisualEditController;
 use App\Http\Controllers\VisualEditReversionController;
 use App\Http\Controllers\VisualLinkController;
 use App\Http\Controllers\VisualMoveController;
+use App\Http\Controllers\VisualPartController;
 use App\Http\Controllers\VisualTextController;
 use Illuminate\Support\Facades\Route;
 
@@ -71,6 +72,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/visual-moves', [VisualMoveController::class, 'store'])->name('visual-moves.store');
     Route::post('projects/{project}/visual-texts', [VisualTextController::class, 'store'])->name('visual-texts.store');
     Route::post('projects/{project}/visual-links', [VisualLinkController::class, 'store'])->name('visual-links.store');
+    Route::post('projects/{project}/visual-parts', [VisualPartController::class, 'store'])->name('visual-parts.store');
+    Route::delete('projects/{project}/visual-parts', [VisualPartController::class, 'destroy'])->name('visual-parts.destroy');
     Route::post('projects/{project}/page-consistency', [PageConsistencyController::class, 'store'])->name('page-consistency.store');
     Route::post('visual-edits/{visualEdit}/reversion', [VisualEditReversionController::class, 'store'])->name('visual-edits.reversion.store');
     Route::delete('visual-edits/{visualEdit}/reversion', [VisualEditReversionController::class, 'destroy'])->name('visual-edits.reversion.destroy');

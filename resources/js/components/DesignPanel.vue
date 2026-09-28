@@ -26,6 +26,7 @@ import {
     ArrowUpRight,
     Baseline,
     Columns3,
+    Copy,
     EyeOff,
     LayoutGrid,
     LoaderCircle,
@@ -36,6 +37,7 @@ import {
     Sparkles,
     StretchVertical,
     TextWrap,
+    Trash2,
     Undo2,
     X,
 } from '@lucide/vue';
@@ -354,6 +356,14 @@ function describeEdit(edit: VisualEditSummary): string {
         return 'Link';
     }
 
+    if (edit.kind === 'duplicate') {
+        return 'Copied';
+    }
+
+    if (edit.kind === 'remove') {
+        return 'Removed';
+    }
+
     return edit.properties
         .map(
             (key) =>
@@ -378,7 +388,7 @@ function describeResult(
         return { words: edit.link, color: null };
     }
 
-    if (edit.kind === 'move' || edit.properties.length !== 1) {
+    if (edit.kind !== 'look' || edit.properties.length !== 1) {
         return null;
     }
 
@@ -651,6 +661,33 @@ const recent = computed(() => {
                         @click="state.pickNear('child')"
                     >
                         <ChevronDown class="size-4" />
+                    </Button>
+                    <Button
+                        v-if="element?.editable"
+                        variant="ghost"
+                        size="icon"
+                        class="size-11 shrink-0 text-muted-foreground sm:size-7"
+                        aria-label="Copy it"
+                        aria-keyshortcuts="Control+D"
+                        title="Copy it (Ctrl+D)"
+                        data-test="part-copy"
+                        :disabled="state.saving"
+                        @click="state.reshape('duplicate')"
+                    >
+                        <Copy class="size-4" />
+                    </Button>
+                    <Button
+                        v-if="element?.editable"
+                        variant="ghost"
+                        size="icon"
+                        class="size-11 shrink-0 text-muted-foreground hover:text-destructive sm:size-7"
+                        aria-label="Remove it"
+                        title="Remove it (Undo puts it back)"
+                        data-test="part-remove"
+                        :disabled="state.saving"
+                        @click="state.reshape('remove')"
+                    >
+                        <Trash2 class="size-4" />
                     </Button>
                     <Button
                         variant="ghost"

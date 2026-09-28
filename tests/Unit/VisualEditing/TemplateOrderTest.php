@@ -154,6 +154,56 @@ class TemplateOrderTest extends TestCase
         }
     }
 
+    public function test_a_copy_goes_on_its_own_lines_right_after_the_element()
+    {
+        $copied = TemplateOrder::duplicate(self::TEMPLATE, $this->offset(8, 9));
+
+        $this->assertStringContainsString(<<<'VUE'
+                    >Save</Button>
+                    <Button
+                        class="w-full"
+                        @click="save"
+                    >Save</Button>
+                </section>
+            VUE, $copied['contents']);
+        $this->assertSame([12, 9], TemplateOrder::position($copied['contents'], $copied['offset']));
+    }
+
+    public function test_a_copy_on_a_shared_line_keeps_the_space_before_it()
+    {
+        $copied = TemplateOrder::duplicate(self::TEMPLATE, $this->offset(13, 34));
+
+        $this->assertStringContainsString('<a href="/">Home</a> <a href="/help">Help</a> <a href="/help">Help</a></footer>', $copied['contents']);
+        $this->assertSame('<a href="/help">', substr($copied['contents'], $copied['offset'], 16));
+    }
+
+    public function test_a_removed_element_takes_its_lines_and_leaves_its_parent_selected()
+    {
+        $removed = TemplateOrder::remove(self::TEMPLATE, $this->offset(8, 9));
+
+        $this->assertStringContainsString("<img src=\"/a.png\">\n    </section>", $removed['contents']);
+        $this->assertStringNotContainsString('Save', $removed['contents']);
+        $this->assertSame([3, 5], TemplateOrder::position($removed['contents'], $removed['offset']));
+    }
+
+    public function test_copies_and_removals_that_would_break_a_v_if_or_the_template_are_refused()
+    {
+        foreach ([
+            fn () => TemplateOrder::duplicate(self::TEMPLATE, $this->offset(5, 9)),
+            fn () => TemplateOrder::duplicate(self::TEMPLATE, $this->offset(6, 9)),
+            fn () => TemplateOrder::remove(self::TEMPLATE, $this->offset(5, 9)),
+            fn () => TemplateOrder::remove(self::TEMPLATE, $this->offset(6, 9)),
+            fn () => TemplateOrder::remove(self::TEMPLATE, $this->offset(1, 1)),
+        ] as $index => $change) {
+            try {
+                $change();
+                $this->fail("Change {$index} was not refused.");
+            } catch (InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
     protected function offset(int $line, int $column): int
     {
         return (int) TemplateElement::offset(self::TEMPLATE, $line, $column);

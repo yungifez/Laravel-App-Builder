@@ -1205,6 +1205,15 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                 event.preventDefault();
                 send({ type: 'key', key: 'redo' });
             } else if (
+                (event.metaKey || event.ctrlKey) &&
+                key === 'd' &&
+                selected &&
+                handlesOn
+            ) {
+                // A copy right after it, as in design tools.
+                event.preventDefault();
+                send({ type: 'key', key: 'duplicate' });
+            } else if (
                 (key === 'delete' || key === 'backspace') &&
                 selected &&
                 handlesOn
@@ -1565,6 +1574,19 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             }
 
             requestAnimationFrame(placeFrame);
+        }
+
+        // A copy of the selected part, or the part taken out, shown at once;
+        // the rebuilt app replaces the page.
+        if (message.type === 'reshape' && selected) {
+            if (message.how === 'duplicate') {
+                selected.after(selected.cloneNode(true));
+            } else if (message.how === 'remove') {
+                const gone = selected;
+
+                choose(null, false);
+                gone.remove();
+            }
         }
 
         if (message.type === 'clear') {

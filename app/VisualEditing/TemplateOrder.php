@@ -81,6 +81,93 @@ class TemplateOrder
     }
 
     /**
+     * Put a copy of the element whose "<" is at an offset right after it:
+     * on its own lines when it was, or else after it on the same line with
+     * the same space before it.
+     *
+     * @return array{contents: string, offset: int} The new contents, and where the copy starts
+     *
+     * @throws InvalidArgumentException when the copy would break the template.
+     */
+    public static function duplicate(string $contents, int $offset): array
+    {
+        $elements = self::elements($contents);
+        $index = self::find($elements, $offset);
+
+        self::guard($elements, $index);
+
+        [$from, $to] = self::extent($contents, $elements[$index]);
+
+        if ($from !== $elements[$index]['start']) {
+            $chunk = substr($contents, $from, $to - $from);
+
+            return [
+                'contents' => substr($contents, 0, $to).$chunk.substr($contents, $to),
+                'offset' => $to + ($elements[$index]['start'] - $from),
+            ];
+        }
+
+        // On a shared line, the copy keeps the same space before it.
+        $space = preg_match('/[ \t]*$/', substr($contents, 0, $from), $match) === 1 ? $match[0] : '';
+        $chunk = $space.substr($contents, $from, $to - $from);
+
+        return [
+            'contents' => substr($contents, 0, $to).$chunk.substr($contents, $to),
+            'offset' => $to + strlen($space),
+        ];
+    }
+
+    /**
+     * Take the element whose "<" is at an offset out of the template, with
+     * its own lines when nothing else is on them.
+     *
+     * @return array{contents: string, offset: int} The new contents, and where the element around it starts
+     *
+     * @throws InvalidArgumentException when taking it out would break the template.
+     */
+    public static function remove(string $contents, int $offset): array
+    {
+        $elements = self::elements($contents);
+        $index = self::find($elements, $offset);
+        $parent = $elements[$index]['parent'];
+
+        if ($parent === null) {
+            throw new InvalidArgumentException('The template itself cannot be taken out.');
+        }
+
+        self::guard($elements, $index);
+
+        [$from, $to] = self::extent($contents, $elements[$index]);
+
+        return [
+            'contents' => substr($contents, 0, $from).substr($contents, $to),
+            'offset' => $elements[$parent]['start'],
+        ];
+    }
+
+    /**
+     * Refuse to copy or take out an element whose extent is not known, or
+     * one shown in turn with another: a v-if followed by its v-else, or a
+     * v-else, which only works right after its v-if.
+     *
+     * @param  list<array{start: int, end: int, parent: int|null, head: string}>  $elements
+     *
+     * @throws InvalidArgumentException
+     */
+    protected static function guard(array $elements, int $index): void
+    {
+        if (! self::closed($elements[$index])) {
+            throw new InvalidArgumentException('The element\'s end could not be found.');
+        }
+
+        $conditional = fn (?int $at) => $at !== null && preg_match('/\sv-else(?:-if)?\b/', $elements[$at]['head']) === 1;
+
+        if ($conditional($index) || $conditional(self::next($elements, $index))) {
+            throw new InvalidArgumentException('The element is shown in turn with another one.');
+        }
+    }
+
+    /**
      * Get the line and column (both from 1) of an offset.
      *
      * @return array{0: int, 1: int}

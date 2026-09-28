@@ -12,6 +12,7 @@ import VisualEditController from '@/actions/App/Http/Controllers/VisualEditContr
 import VisualEditReversionController from '@/actions/App/Http/Controllers/VisualEditReversionController';
 import VisualLinkController from '@/actions/App/Http/Controllers/VisualLinkController';
 import VisualMoveController from '@/actions/App/Http/Controllers/VisualMoveController';
+import VisualPartController from '@/actions/App/Http/Controllers/VisualPartController';
 import VisualTextController from '@/actions/App/Http/Controllers/VisualTextController';
 import {
     colorTokens,
@@ -102,7 +103,9 @@ export function useAppPreview(source: Source) {
     // loads hidden behind it and takes its place once drawn, so the app
     // never goes blank and nothing the owner is doing is cut off. "shows"
     // counts the saved changes the new app includes.
-    const frames = ref<{ key: number; src: string; shows: number }[]>([]);
+    const frames = ref<
+        { key: number; src: string; shows: number; revision: string | null }[]
+    >([]);
 
     // The app shows only once it has drawn, so opening it never flashes a
     // blank page. A page that never says so still shows after a while.
@@ -217,6 +220,9 @@ export function useAppPreview(source: Source) {
     // Where a part the owner moved is written now. The running app still
     // names its old place until it is rebuilt.
     const movedTo = ref<SelectedElement | null>(null);
+    // The version of the app the part was moved or copied in; the new
+    // place is picked once a newer version is on show.
+    let movedFrom: string | null = null;
     // Where the owner had scrolled each page to, so a rebuild keeps it.
     const scrolled = new Map<string, { x: number; y: number }>();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -460,6 +466,7 @@ export function useAppPreview(source: Source) {
             key: ++frameKeys,
             src: preview.origin + framePath.value,
             shows: preview.updating ? 0 : saved.value.length,
+            revision: preview.updating ? null : preview.revision,
         };
 
         frames.value =
@@ -473,6 +480,13 @@ export function useAppPreview(source: Source) {
                 swap();
             }
         }, 15000);
+    }
+
+    function takeNeighbours(data: Record<string, unknown>): void {
+        neighbours.value = {
+            earlier: ways.includes(data.earlier) ? (data.earlier as Way) : null,
+            later: ways.includes(data.later) ? (data.later as Way) : null,
+        };
     }
 
     // Tell a frame's app how to show: designing or not, the scroll, the
@@ -515,7 +529,11 @@ export function useAppPreview(source: Source) {
         // part by its new place.
         saved.value = saved.value.slice(next.shows);
 
-        if (next.shows > 0 && movedTo.value !== null) {
+        if (
+            movedTo.value !== null &&
+            next.revision !== null &&
+            next.revision !== movedFrom
+        ) {
             selected.value = movedTo.value;
             movedTo.value = null;
         }
@@ -534,6 +552,11 @@ export function useAppPreview(source: Source) {
                 frames.value = [next];
                 drawnKey.value = next.key;
                 inspect();
+
+                // It listed its parts before it showed; ask again now.
+                if (source.designing.value) {
+                    post({ type: 'outline' }, windowOf(next.key));
+                }
 
                 if (focused) {
                     elements.get(next.key)?.focus();
@@ -566,11 +589,16 @@ export function useAppPreview(source: Source) {
             return;
         }
 
-        // The next frame only says when it has drawn.
+        // The next frame only says when it has drawn, and what is next to
+        // the part picked in it: it shows the picked part at its new place.
         if (
             event.source !== null &&
             event.source === windowOf(frames.value[1]?.key)
         ) {
+            if (data.type === 'neighbours') {
+                takeNeighbours(data);
+            }
+
             if (data.type === 'drawn') {
                 nextDrawn.value = true;
                 swap();
@@ -658,12 +686,7 @@ export function useAppPreview(source: Source) {
         }
 
         if (data.type === 'neighbours') {
-            neighbours.value = {
-                earlier: ways.includes(data.earlier)
-                    ? (data.earlier as Way)
-                    : null,
-                later: ways.includes(data.later) ? (data.later as Way) : null,
-            };
+            takeNeighbours(data);
         }
 
         if (data.type === 'words' && typeof data.text === 'string') {
@@ -685,6 +708,8 @@ export function useAppPreview(source: Source) {
                 press(data.key);
             } else if (data.key === 'hide') {
                 hide();
+            } else if (data.key === 'duplicate') {
+                reshape('duplicate');
             }
         }
     }
@@ -861,6 +886,7 @@ export function useAppPreview(source: Source) {
                             query: { to: savedPath() },
                         }).url,
                         shows: 0,
+                        revision: preview.revision,
                     },
                 ];
             } else if (previous?.[1] !== preview.revision) {
@@ -991,6 +1017,7 @@ export function useAppPreview(source: Source) {
         }
 
         moving.value = true;
+        movedFrom = preview.revision;
         saveError.value = null;
 
         router.post(
@@ -1035,6 +1062,89 @@ export function useAppPreview(source: Source) {
                 onFinish: () => (moving.value = false),
             },
         );
+    }
+
+    // Put a copy of the selected part right after it, or take it out of
+    // the page. The app shows it at once; changes waiting to be saved go
+    // first, so this builds on them. A copy is picked once it is saved.
+    function reshape(how: 'duplicate' | 'remove'): void {
+        const preview = source.preview();
+        const part = selected.value;
+        // A shared piece is copied or taken out where it is used.
+        const at = part?.instance ?? part?.source;
+
+        if (preview === null || part === null || !at || moving.value) {
+            return;
+        }
+
+        if (sending.value !== null || queue.value.length > 0) {
+            save();
+            setTimeout(() => reshape(how), 200);
+
+            return;
+        }
+
+        moving.value = true;
+        movedFrom = preview.revision;
+        saveError.value = null;
+        post({ type: 'reshape', how });
+
+        if (how === 'remove') {
+            deselect();
+        }
+
+        const data = {
+            preview: preview.id,
+            target: at,
+            instance: Boolean(part.instance),
+            revision: head.value ?? element.value?.revision,
+        };
+        const options = {
+            only: ['edits', 'preview'],
+            async: true,
+            preserveScroll: true,
+            preserveState: true,
+            onFlash: (flash: Record<string, unknown>) => {
+                const copy = flash.moved as
+                    | { target: string; instance: boolean }
+                    | undefined;
+
+                if (copy !== undefined && how === 'duplicate') {
+                    onlyThisOne.value = true;
+                    movedTo.value = copy.instance
+                        ? { ...part, instance: copy.target }
+                        : { ...part, source: copy.target };
+                }
+            },
+            onSuccess: () => {
+                last.value = null;
+                head.value = null;
+                known.value = null;
+
+                if (how === 'duplicate') {
+                    inspect();
+                }
+            },
+            onError: (errors: Record<string, string>) => {
+                saveError.value = Object.values(errors)[0] ?? null;
+                // The app changed already: show it as it is saved.
+                reload();
+            },
+            onFinish: () => (moving.value = false),
+        };
+
+        if (how === 'duplicate') {
+            router.post(
+                VisualPartController.store.url(source.projectId()),
+                data,
+                options,
+            );
+        } else {
+            router.delete(
+                VisualPartController.destroy.url(source.projectId()),
+                { ...options, data },
+            );
+        }
     }
 
     // Put new words in the selected part, typed over it in the app or in
@@ -1395,6 +1505,15 @@ export function useAppPreview(source: Source) {
 
         stepping.value = true;
 
+        // Undo takes a copy away: the copy can no longer stay picked.
+        if (
+            next.key === 'undo' &&
+            edit.kind === 'duplicate' &&
+            selected.value?.source === edit.target
+        ) {
+            deselect();
+        }
+
         const options = {
             only: ['edits', 'preview'],
             async: true,
@@ -1479,6 +1598,9 @@ export function useAppPreview(source: Source) {
         if (mod && (key === 'z' || key === 'y')) {
             event.preventDefault();
             press(key === 'y' || event.shiftKey ? 'redo' : 'undo');
+        } else if (mod && key === 'd' && selected.value !== null && !inside) {
+            event.preventDefault();
+            reshape('duplicate');
         } else if (key === 'escape' && selected.value !== null && !inside) {
             deselect();
         } else if (
@@ -1542,6 +1664,7 @@ export function useAppPreview(source: Source) {
         canGoBack,
         press,
         hide,
+        reshape,
         undoable,
         redoable,
         canUndo,

@@ -56,6 +56,18 @@ class VisualEdit extends Model
     public const LINK = 'link';
 
     /**
+     * The key in "changes" of a copy of the element put right after it:
+     * where the original was. The line and column are the copy's.
+     */
+    public const DUPLICATE = 'duplicate';
+
+    /**
+     * The key in "changes" of an element taken out of the page: where it
+     * was. The line and column are the element that held it.
+     */
+    public const REMOVE = 'remove';
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -97,17 +109,25 @@ class VisualEdit extends Model
     }
 
     /**
+     * Determine whether the edit copied the element or took it out.
+     */
+    public function reshapes(): bool
+    {
+        return isset($this->getAttribute('changes')[self::DUPLICATE]) || isset($this->getAttribute('changes')[self::REMOVE]);
+    }
+
+    /**
      * Determine whether undoing or redoing the edit puts back the whole
      * file, rather than only the element's classes.
      */
     public function rewritesFile(): bool
     {
-        return $this->moves() || $this->rewords() || $this->relinks();
+        return $this->moves() || $this->rewords() || $this->relinks() || $this->reshapes();
     }
 
     /**
      * Get what kind of edit this is: a change to how the element looks, a
-     * move, new words, or a new address for a link.
+     * move, new words, a new address for a link, a copy, or taking it out.
      */
     public function kind(): string
     {
@@ -115,6 +135,8 @@ class VisualEdit extends Model
             $this->moves() => 'move',
             $this->rewords() => 'text',
             $this->relinks() => 'link',
+            isset($this->getAttribute('changes')[self::DUPLICATE]) => 'duplicate',
+            isset($this->getAttribute('changes')[self::REMOVE]) => 'remove',
             default => 'look',
         };
     }

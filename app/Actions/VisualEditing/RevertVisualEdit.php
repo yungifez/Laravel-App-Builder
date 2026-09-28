@@ -26,8 +26,9 @@ class RevertVisualEdit
             throw ValidationException::withMessages(['edit' => __('This change was already undone.')]);
         }
 
-        // A move, new words or a new link address put back the whole file;
-        // a new look puts back only the element's classes.
+        // A move, new words, a new link address, a copy or a removal put
+        // back the whole file; a new look puts back only the element's
+        // classes.
         $sha = $edit->rewritesFile()
             ? $this->swapMovedElement->handle(
                 $edit,
@@ -36,6 +37,8 @@ class RevertVisualEdit
                 match ($edit->kind()) {
                     'move' => "Undo moving <{$edit->tag}>",
                     'link' => "Undo where <{$edit->tag}> goes",
+                    'duplicate' => "Undo copying <{$edit->tag}>",
+                    'remove' => "Undo removing <{$edit->tag}>",
                     default => "Undo new words in <{$edit->tag}>",
                 }."\n\nThis undoes commit {$edit->commit_sha}.",
                 $owner,
