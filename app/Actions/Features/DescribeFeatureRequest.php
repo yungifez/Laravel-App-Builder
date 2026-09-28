@@ -44,7 +44,9 @@ class DescribeFeatureRequest
                 'images' => $this->images($featureRequest),
                 'status' => $featureRequest->status->value,
                 'summary' => $featureRequest->summary,
-                'error' => OwnerWording::message($featureRequest->error),
+                'error' => $featureRequest->status === FeatureRequestStatus::Failed
+                    ? OwnerWording::failure($featureRequest->error)
+                    : OwnerWording::message($featureRequest->error),
                 'target_step' => $parent === null || $featureRequest->target_step === null
                     ? null
                     : $parent->step($featureRequest->target_step),
@@ -162,7 +164,10 @@ class DescribeFeatureRequest
         return $run === null ? null : [
             'id' => $run->id,
             'status' => $run->status->value,
-            'error' => OwnerWording::message($run->error),
+            // A stop the owner did not ask for is ours, and says so.
+            'error' => in_array($run->status, [RunStatus::Failed, RunStatus::NeedsUserDecision], true)
+                ? OwnerWording::failure($run->error)
+                : OwnerWording::message($run->error),
             'question' => $run->status === RunStatus::NeedsUserDecision ? $run->question : null,
             'answers' => $run->answers ?? [],
             'plan' => $run->plan === null ? null : [

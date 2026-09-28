@@ -35,6 +35,22 @@ class OwnerWording
     }
 
     /**
+     * Say why a change failed. The owner's own request never fails a change
+     * (an unclear one is asked about), so a failure is ours and says so.
+     * What went wrong in detail stays with the run for operators.
+     */
+    public static function failure(?string $message): ?string
+    {
+        if ($message === null || trim($message) === '') {
+            return null;
+        }
+
+        return str_starts_with($message, __('This is our fault'))
+            ? $message
+            : __('This is our fault: something went wrong on our side while I worked on this. Nothing in your app changed. Try again.');
+    }
+
+    /**
      * Describe one entry of a run's log, or null when it is about how the
      * change is made rather than what happened to it.
      */
