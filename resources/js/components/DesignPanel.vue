@@ -810,8 +810,10 @@ const recent = computed(() => {
             </template>
 
             <template v-else>
-                <!-- On a phone the part's name takes its own line: its
-                     buttons are finger-sized and leave it no room. -->
+                <!-- On a phone the part's buttons take their own line: they
+                     are finger-sized and leave the name no room. The name
+                     follows the trail there, so the header keeps to two
+                     lines and leaves the controls room. -->
                 <header
                     class="sticky top-0 z-10 flex flex-wrap items-center gap-x-0.5 border-b bg-background px-4 py-2 sm:gap-x-2"
                 >
@@ -822,7 +824,7 @@ const recent = computed(() => {
                     <nav
                         v-if="trail.length > 0"
                         aria-label="Where it is"
-                        class="flex min-w-0 basis-full items-center text-xs text-muted-foreground"
+                        class="flex max-w-1/2 min-w-0 shrink-0 items-center text-xs text-muted-foreground sm:max-w-none sm:basis-full"
                         data-test="part-trail"
                     >
                         <span v-if="trailCut" aria-hidden="true"
@@ -850,7 +852,7 @@ const recent = computed(() => {
                             >
                         </template>
                     </nav>
-                    <div class="min-w-0 flex-1 basis-full sm:basis-0">
+                    <div class="min-w-0 flex-1 basis-0">
                         <!-- Named as the parts list names it: its kind, then
                              its own words, so a box is not named after all
                              the words inside it. -->
@@ -870,6 +872,7 @@ const recent = computed(() => {
                             >
                         </p>
                     </div>
+                    <span class="basis-full sm:hidden" aria-hidden="true" />
                     <Button
                         variant="ghost"
                         size="icon"
