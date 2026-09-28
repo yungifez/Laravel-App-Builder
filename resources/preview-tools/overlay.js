@@ -526,11 +526,16 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         // can be shown to the owner as it is.
         colors: (() => {
             const computed = getComputedStyle(element);
+            // A drawing without insides or lines paints them "none".
+            const paint = (value) =>
+                value === 'none' ? 'rgba(0, 0, 0, 0)' : value;
 
             return {
                 text_color: computed.color,
                 background: computed.backgroundColor,
                 border_color: computed.borderTopColor,
+                fill_color: paint(computed.fill),
+                stroke_color: paint(computed.stroke),
             };
         })(),
         // The sizes the part is drawn at now, so a slider with nothing

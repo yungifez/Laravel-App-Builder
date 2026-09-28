@@ -561,6 +561,40 @@ export const properties: PropertyDefinition[] = [
             ],
         },
     },
+    // A drawing (an SVG) paints its insides and its lines apart. Which one
+    // shows depends on how it was drawn, so the panel lets the owner try.
+    {
+        key: 'fill_color',
+        label: 'Inside colour',
+        group: 'Colours',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'transparent', label: 'None' },
+                { value: 'foreground', label: 'Text' },
+                { value: 'muted-foreground', label: 'Quiet text' },
+                { value: 'primary', label: 'Main colour' },
+                { value: 'accent', label: 'Highlight' },
+                { value: 'destructive', label: 'Warning' },
+            ],
+        },
+    },
+    {
+        key: 'stroke_color',
+        label: 'Line colour',
+        group: 'Colours',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'transparent', label: 'None' },
+                { value: 'foreground', label: 'Text' },
+                { value: 'muted-foreground', label: 'Quiet text' },
+                { value: 'primary', label: 'Main colour' },
+                { value: 'accent', label: 'Highlight' },
+                { value: 'destructive', label: 'Warning' },
+            ],
+        },
+    },
     {
         key: 'object_fit',
         label: 'Picture fit',
@@ -1171,6 +1205,14 @@ export function inlineStyles(
             case 'hover_background':
             case 'background':
                 styles.backgroundColor =
+                    value === 'transparent' ? 'transparent' : color(value);
+                break;
+            case 'fill_color':
+                styles.fill =
+                    value === 'transparent' ? 'transparent' : color(value);
+                break;
+            case 'stroke_color':
+                styles.stroke =
                     value === 'transparent' ? 'transparent' : color(value);
                 break;
         }

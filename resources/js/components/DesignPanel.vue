@@ -354,6 +354,21 @@ const arranges = computed(
         ['flex', 'grid'].includes(layout.value),
 );
 const hasWords = computed(() => props.state.selected?.holds?.words ?? true);
+// A drawing (an SVG, or a shape in one) is coloured inside and along its
+// lines apart from what is behind it.
+const drawing = computed(() =>
+    [
+        'svg',
+        'path',
+        'g',
+        'circle',
+        'ellipse',
+        'rect',
+        'line',
+        'polyline',
+        'polygon',
+    ].includes(props.state.selected?.tag ?? ''),
+);
 const hidden = computed(() => layout.value === 'hidden');
 
 // The sections this kind of part is usually changed with come first; the
@@ -1882,8 +1897,40 @@ const recent = computed(() => {
                                 :changed="setIn.has('fill')"
                                 @toggle="toggle('fill')"
                             >
+                                <!-- Which colour shows depends on how the
+                                     drawing was made, so the owner tries. -->
+                                <template v-if="drawing">
+                                    <p class="text-xs text-muted-foreground">
+                                        Drawings are coloured inside, along
+                                        their lines, or both. Try each.
+                                    </p>
+                                    <Swatches
+                                        label="Inside"
+                                        name="Inside colour"
+                                        kind="color"
+                                        :colors="drawnColors"
+                                        :value="state.valueOf('fill_color')"
+                                        :own="
+                                            state.selected?.colors?.fill_color
+                                        "
+                                        :options="options('fill_color')"
+                                        @change="set('fill_color', $event)"
+                                    />
+                                    <Swatches
+                                        label="Lines"
+                                        name="Line colour"
+                                        kind="color"
+                                        :colors="drawnColors"
+                                        :value="state.valueOf('stroke_color')"
+                                        :own="
+                                            state.selected?.colors?.stroke_color
+                                        "
+                                        :options="options('stroke_color')"
+                                        @change="set('stroke_color', $event)"
+                                    />
+                                </template>
                                 <Swatches
-                                    label="Fill"
+                                    :label="drawing ? 'Behind' : 'Fill'"
                                     kind="color"
                                     :colors="drawnColors"
                                     :value="state.valueOf('background')"

@@ -321,6 +321,17 @@ class TailwindClassesTest extends TestCase
         TailwindClasses::write('', 'base', ['text_color' => 'red-500'], self::SHADCN);
     }
 
+    public function test_a_drawings_inside_and_lines_take_the_apps_colours_apart_from_the_line_width()
+    {
+        $colors = ['primary', 'accent'];
+
+        $this->assertSame(['fill_color' => 'primary', 'stroke_color' => 'transparent'], TailwindClasses::read('size-4 stroke-2 fill-primary stroke-transparent', $colors)['base']);
+        $this->assertSame(['fill_color' => 'custom'], TailwindClasses::read('fill-red-500', $colors)['base']);
+        $this->assertSame('size-4 stroke-2 fill-accent', TailwindClasses::write('size-4 stroke-2 fill-none', 'base', ['fill_color' => 'accent'], $colors));
+        $this->assertSame('stroke-2 stroke-primary fill-current', TailwindClasses::write('stroke-2 stroke-current fill-current', 'base', ['stroke_color' => 'primary'], $colors));
+        $this->assertSame('stroke-2', TailwindClasses::write('stroke-2 stroke-primary', 'base', ['stroke_color' => null], $colors));
+    }
+
     public function test_a_border_colour_is_a_theme_token_apart_from_the_border_width()
     {
         $this->assertSame(['border' => 1, 'border_color' => 'input'], TailwindClasses::read('border border-input', self::SHADCN)['base']);

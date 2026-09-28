@@ -42,6 +42,7 @@ class TailwindClasses
         'text_size', 'text_weight', 'text_align', 'font_style', 'text_decoration', 'text_case', 'line_clamp', 'line_height', 'letter_spacing', 'text_color', 'background',
         'object_fit', 'object_position', 'aspect_ratio',
         'hover_text_color', 'hover_background',
+        'fill_color', 'stroke_color',
     ];
 
     protected const KEYWORDS = [
@@ -70,9 +71,10 @@ class TailwindClasses
 
     /**
      * The properties that take one of the app's colours, by the prefix of
-     * their classes.
+     * their classes. "fill" and "stroke" paint a drawing's (an SVG's)
+     * insides and lines.
      */
-    protected const COLORS = ['text' => 'text_color', 'bg' => 'background', 'border' => 'border_color'];
+    protected const COLORS = ['text' => 'text_color', 'bg' => 'background', 'border' => 'border_color', 'fill' => 'fill_color', 'stroke' => 'stroke_color'];
 
     /**
      * The colours a part can take while the pointer is on it, written with
@@ -318,7 +320,7 @@ class TailwindClasses
             }
         }
 
-        if (preg_match('/^(text|bg|border)-([^\/]+)(\/.+)?$/', $utility, $match) === 1) {
+        if (preg_match('/^(text|bg|border|fill|stroke)-([^\/]+)(\/.+)?$/', $utility, $match) === 1) {
             $property = self::COLORS[$match[1]];
             $name = $match[2];
 

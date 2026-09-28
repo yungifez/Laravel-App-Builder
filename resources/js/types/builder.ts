@@ -389,7 +389,9 @@ export type VisualProperty =
     | 'letter_spacing'
     | 'text_color'
     | 'border_color'
-    | 'background';
+    | 'background'
+    | 'fill_color'
+    | 'stroke_color';
 
 export type VisualValue = number | string;
 
