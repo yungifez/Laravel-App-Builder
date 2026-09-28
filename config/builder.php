@@ -473,6 +473,14 @@ return [
             'minutes' => 10,
         ],
 
+        // Whoever runs a coding agent, ours or the owner's own, reaches the
+        // change's tools (routes/ai.php) with a token that opens that one
+        // change for "minutes", and makes at most "per_minute" calls.
+        'workers' => [
+            'minutes' => (int) env('BUILDER_WORKER_MINUTES', 240),
+            'per_minute' => (int) env('BUILDER_WORKER_PER_MINUTE', 60),
+        ],
+
         'reviewers' => [
             'anthropic' => ['provider' => 'openai', 'model' => env('BUILDER_OPENAI_REVIEWER_MODEL')],
             'openai' => ['provider' => 'anthropic', 'model' => env('BUILDER_ANTHROPIC_REVIEWER_MODEL')],

@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Laravel\Sanctum\HasApiTokens;
 
 /**
  * One attempt to build a feature request's change in a workspace.
@@ -48,6 +49,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable(['workspace_id', 'driver', 'config_version', 'stop_reason', 'status', 'fencing_token', 'lease_owner', 'lease_expires_at', 'workspace_revision', 'plan', 'context', 'repairs', 'feedback', 'review', 'error', 'question', 'answers', 'question_limit', 'started_at', 'finished_at'])]
 class Run extends Model
 {
+    // A worker's token opens this one change (GrantWorkerAccess).
+    use HasApiTokens;
+
     /** @use HasFactory<RunFactory> */
     use HasFactory;
 

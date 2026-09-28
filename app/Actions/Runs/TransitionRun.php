@@ -59,6 +59,10 @@ class TransitionRun
 
             if ($to->finished()) {
                 $locked->finished_at = now();
+
+                // A worker has nothing left to do on a change that ended.
+                $locked->tokens()->delete();
+
                 $locked->lease_owner = null;
                 $locked->lease_expires_at = null;
             } elseif ($lease !== null) {

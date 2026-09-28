@@ -9,8 +9,11 @@ use App\Runs\Agents\CodingAgentManager;
 use App\Runs\ConstructionDriverManager;
 use App\Workspaces\Boxes\BoxProviderManager;
 use App\Workspaces\WorkspaceManager;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\DevCommands;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -40,6 +43,11 @@ class AppServiceProvider extends ServiceProvider
         // Operators see every owner's changes, so nobody is one by default.
         Gate::define('viewOperations', fn (User $user) => $user->hasVerifiedEmail()
             && in_array(strtolower($user->email), (array) config('operations.operators'), true));
+
+        // A worker's calls count against its token, not an address it
+        // shares with others.
+        RateLimiter::for('worker', fn (Request $request) => Limit::perMinute((int) config('builder.agents.workers.per_minute'))
+            ->by('worker:'.($request->attributes->get('worker_token') ?? $request->ip())));
 
         // Checks and previews on their own queues need their own workers
         // under `composer dev` too, or they would never start.
