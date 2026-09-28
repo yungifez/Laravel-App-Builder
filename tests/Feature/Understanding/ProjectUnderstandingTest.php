@@ -306,6 +306,24 @@ class ProjectUnderstandingTest extends TestCase
                 ->where('kept', 2));
     }
 
+    public function test_the_owner_sees_how_many_things_were_tidied_in_the_background()
+    {
+        $shortcut = ['rule' => 'SL210', 'path' => 'app/A.php', 'line' => 2];
+        $tidy = fn (array $attributes, int $count) => FeatureRequest::factory()->generated()->for($this->project)->create([
+            'tidy' => ['of' => 1, 'tier' => 'light', 'shortcuts' => array_fill(0, $count, $shortcut)],
+            ...$attributes,
+        ]);
+        $tidy(['accepted_at' => now()], 2);
+        $tidy(['accepted_at' => now()], 1);
+        // Only tidy-ups still in the app count.
+        $tidy(['accepted_at' => now(), 'reverted_at' => now()], 4);
+        $tidy([], 3);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('tidied', 3));
+    }
+
     public function test_each_part_lists_what_the_owner_asked_for_and_whether_its_test_is_still_there()
     {
         $kept = function (array $attributes, array $verified) {

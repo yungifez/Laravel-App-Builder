@@ -101,6 +101,10 @@ class ProjectUnderstandingController extends Controller
                 'feature_request_id',
                 $project->featureRequests()->select('id')->whereNotNull('accepted_at')->whereNull('reverted_at'),
             ))->count(),
+            // Shortcuts in the code the builder fixed on its own, in tidy-ups
+            // still in the app.
+            'tidied' => (clone $kept)->whereNotNull('tidy')->get()
+                ->sum(fn (FeatureRequest $featureRequest) => count($featureRequest->tidy['shortcuts'] ?? [])),
             // The tests the kept changes added, and their screens found to fit.
             'proven' => $tallyKeptProof->handle($project),
             'decisions' => array_slice($decisions = $listDecisions->handle($project, $notes->section(RecordDecision::SECTION), limit: null), 0, 12),

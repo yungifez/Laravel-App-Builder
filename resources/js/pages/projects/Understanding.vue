@@ -57,6 +57,8 @@ const props = defineProps<{
     looks: number;
     // Problems caught and fixed before the owner saw the kept changes.
     caught: number;
+    // Shortcuts in the code fixed on my own in the background, still kept.
+    tidied: number;
     // Across the kept changes: tests they added, and screens found to fit.
     proven: { tests: number; screens: number };
     // The product decisions behind kept changes, newest change first, then
@@ -180,6 +182,11 @@ const facts = computed(() =>
             props.caught,
             'problem fixed before you saw it',
             'problems fixed before you saw them',
+        ],
+        [
+            props.tidied,
+            'thing tidied in the background',
+            'things tidied in the background',
         ],
         [props.proven.tests, 'test added', 'tests added'],
         [
