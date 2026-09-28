@@ -358,21 +358,28 @@ const unexpected = computed(() =>
 );
 
 const checks = computed(() => {
+    // A pass is said once: the proof below opens with the same verdict.
+    const proven = props.change.proof.length > 0;
+
     switch (props.change.verification?.status) {
         case 'passed':
-            return {
-                icon: CircleCheck,
-                tone: 'text-green-600',
-                label: 'Checks passed',
-            };
+            return proven
+                ? null
+                : {
+                      icon: CircleCheck,
+                      tone: 'text-green-600',
+                      label: 'Checks passed',
+                  };
         // No protected tests apply, so the change is not proven (§12, §30.2).
         // The proof below names that gap; this only says there is one.
         case 'unverified':
-            return {
-                icon: CircleMinus,
-                tone: 'text-muted-foreground',
-                label: 'Checks passed, with gaps',
-            };
+            return proven
+                ? null
+                : {
+                      icon: CircleMinus,
+                      tone: 'text-muted-foreground',
+                      label: 'Checks passed, with gaps',
+                  };
         case 'failed':
             return {
                 icon: CircleAlert,
