@@ -400,6 +400,61 @@ export function useAppPreview(source: Source) {
         }
     }
 
+    // How a part looks, copied to give to other parts, as in design tools.
+    // Where a part sits and how big it is stay its own.
+    const lookProperties: VisualProperty[] = [
+        'padding_x',
+        'padding_y',
+        'border',
+        'radius',
+        'shadow',
+        'opacity',
+        'text_size',
+        'text_weight',
+        'text_align',
+        'text_color',
+        'border_color',
+        'background',
+    ];
+    const copiedLook = ref<Partial<
+        Record<VisualProperty, VisualValue | null>
+    > | null>(null);
+
+    function copyLook(): void {
+        if (element.value === null) {
+            return;
+        }
+
+        // A colour of the part's own, or sides that differ, cannot be
+        // written onto another part; those stay as the other part has them.
+        copiedLook.value = Object.fromEntries(
+            lookProperties
+                .map((property) => [property, valueOf(property)] as const)
+                .filter(([, value]) => value !== 'custom' && value !== 'mixed'),
+        );
+    }
+
+    // Give the picked part the look copied. It is saved as one change.
+    function pasteLook(): void {
+        const look = copiedLook.value;
+
+        if (look === null || !element.value?.editable) {
+            return;
+        }
+
+        for (const property of lookProperties) {
+            if (!(property in look)) {
+                continue;
+            }
+
+            const value = look[property] ?? null;
+
+            if (value !== valueOf(property)) {
+                change(property, value, true);
+            }
+        }
+    }
+
     // Hold saving while the owner drags, and save once they let go.
     function hold(on: boolean): void {
         dragging.value = on;
@@ -853,6 +908,10 @@ export function useAppPreview(source: Source) {
                 hide();
             } else if (data.key === 'duplicate') {
                 reshape('duplicate');
+            } else if (data.key === 'copy-look') {
+                copyLook();
+            } else if (data.key === 'paste-look') {
+                pasteLook();
             }
         }
     }
@@ -2161,6 +2220,20 @@ export function useAppPreview(source: Source) {
         } else if (mod && key === 'd' && selected.value !== null && !inside) {
             event.preventDefault();
             reshape('duplicate');
+        } else if (
+            mod &&
+            event.altKey &&
+            (event.code === 'KeyC' || event.code === 'KeyV') &&
+            selected.value !== null &&
+            !inside
+        ) {
+            event.preventDefault();
+
+            if (event.code === 'KeyC') {
+                copyLook();
+            } else {
+                pasteLook();
+            }
         } else if (key === 'escape' && selected.value !== null && !inside) {
             deselect();
         } else if (
@@ -2229,6 +2302,9 @@ export function useAppPreview(source: Source) {
         press,
         hide,
         reshape,
+        copyLook,
+        pasteLook,
+        copiedLook,
         undoable,
         redoable,
         canUndo,

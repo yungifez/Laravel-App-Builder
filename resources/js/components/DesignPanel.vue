@@ -15,6 +15,7 @@ import {
     AlignLeft,
     AlignRight,
     Check,
+    ClipboardPaste,
     ChevronDown,
     ChevronUp,
     Crosshair,
@@ -32,6 +33,7 @@ import {
     LoaderCircle,
     MessageSquare,
     MousePointerClick,
+    Paintbrush,
     Plus,
     Redo2,
     Rows3,
@@ -1459,6 +1461,41 @@ const recent = computed(() => {
                                         @change="set('border_color', $event)"
                                     />
                                 </Reveal>
+                            </section>
+
+                            <!-- A look copied from one part goes onto
+                                 another in one go, as in design tools. -->
+                            <section
+                                v-if="element.editable"
+                                class="flex gap-2"
+                                data-test="look"
+                            >
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    class="min-h-11 flex-1 sm:min-h-8"
+                                    aria-keyshortcuts="Control+Alt+C"
+                                    title="Copy how it looks (Ctrl+Alt+C)"
+                                    data-test="look-copy"
+                                    @click="state.copyLook()"
+                                >
+                                    <Paintbrush class="size-4" /> Copy look
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    class="min-h-11 flex-1 sm:min-h-8"
+                                    aria-keyshortcuts="Control+Alt+V"
+                                    title="Make it look like the part copied (Ctrl+Alt+V)"
+                                    data-test="look-paste"
+                                    :disabled="
+                                        state.copiedLook === null ||
+                                        state.saving
+                                    "
+                                    @click="state.pasteLook()"
+                                >
+                                    <ClipboardPaste class="size-4" /> Paste look
+                                </Button>
                             </section>
                         </div>
 

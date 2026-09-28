@@ -1481,6 +1481,19 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                 event.preventDefault();
                 send({ type: 'key', key: 'duplicate' });
             } else if (
+                (event.metaKey || event.ctrlKey) &&
+                event.altKey &&
+                (event.code === 'KeyC' || event.code === 'KeyV') &&
+                selected
+            ) {
+                // Copy a part's look, or give it the look copied, as in
+                // design tools.
+                event.preventDefault();
+                send({
+                    type: 'key',
+                    key: event.code === 'KeyC' ? 'copy-look' : 'paste-look',
+                });
+            } else if (
                 (key === 'delete' || key === 'backspace') &&
                 selected &&
                 handlesOn
