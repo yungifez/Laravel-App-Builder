@@ -34,6 +34,7 @@ import {
     LoaderCircle,
     MessageSquare,
     MousePointerClick,
+    Pointer,
     Paintbrush,
     Plus,
     Redo2,
@@ -642,8 +643,19 @@ const recent = computed(() => {
                     class="flex items-center justify-center gap-2 p-4 text-sm text-muted-foreground lg:flex-col lg:py-10"
                     data-test="design-empty"
                 >
-                    <MousePointerClick class="size-5 lg:size-8" />
-                    Click any part of your app
+                    <!-- A phone is tapped, not clicked. -->
+                    <MousePointerClick
+                        class="size-5 lg:size-8 pointer-coarse:hidden"
+                    />
+                    <Pointer
+                        class="hidden size-5 lg:size-8 pointer-coarse:block"
+                    />
+                    <span class="pointer-coarse:hidden"
+                        >Click any part of your app</span
+                    >
+                    <span class="hidden pointer-coarse:inline"
+                        >Tap any part of your app</span
+                    >
                 </div>
 
                 <!-- A change I decide on, so the owner reads what it may do
@@ -1067,7 +1079,10 @@ const recent = computed(() => {
                                         draft = state.selected?.words ?? ''
                                     "
                                 />
-                                <p class="text-xs text-muted-foreground">
+                                <!-- A phone has no double-click. -->
+                                <p
+                                    class="text-xs text-muted-foreground pointer-coarse:hidden"
+                                >
                                     Or double-click the words in your app.
                                 </p>
                             </section>
