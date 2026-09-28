@@ -49,8 +49,9 @@ class StartPreview implements ShouldQueue
     /**
      * Copy the project into a workspace, apply the change and every change it
      * follows up on (a project preview has none), prepare the app, and start
-     * its web server. An editable preview is marked for point-and-edit and
-     * rebuilt first, by a build that keeps watching for changes when it can. A duplicate delivery, or one for a preview already
+     * its web server. An editable preview is marked for point-and-edit
+     * before the build, and its build keeps watching for changes when it
+     * can. A duplicate delivery, or one for a preview already
      * stopped, does nothing.
      */
     public function handle(
@@ -96,14 +97,14 @@ class StartPreview implements ShouldQueue
 
             if ($this->preview->editable) {
                 $this->run($runWorkspaceCommand, $workspace, self::locatorCommand($workspace), 300, __('The preview could not be prepared for editing.'));
+            }
 
-                if (! $this->startWatching($driver, $runWorkspaceCommand, $workspace)) {
-                    /** @var list<array{name: string, command: list<string>, timeout: int}> $rebuild */
-                    $rebuild = config('builder.preview.rebuild', []);
+            if (! ($this->preview->editable && $this->startWatching($driver, $runWorkspaceCommand, $workspace))) {
+                /** @var list<array{name: string, command: list<string>, timeout: int}> $build */
+                $build = config('builder.preview.build', []);
 
-                    foreach ($rebuild as $step) {
-                        $this->run($runWorkspaceCommand, $workspace, $step['command'], $step['timeout'], __('The setup step ":name" failed.', ['name' => $step['name']]));
-                    }
+                foreach ($build as $step) {
+                    $this->run($runWorkspaceCommand, $workspace, $step['command'], $step['timeout'], __('The setup step ":name" failed.', ['name' => $step['name']]));
                 }
             }
 
@@ -209,9 +210,9 @@ class StartPreview implements ShouldQueue
 
     /**
      * Start the frontend build in watch mode and wait for its first build,
-     * which takes the place of the rebuild steps. Each rebuild after an edit
+     * which takes the place of the build steps. Each rebuild after an edit
      * then builds only what changed. A watcher that does not build in time
-     * leaves the build to the rebuild steps.
+     * leaves the build to the build steps.
      */
     protected function startWatching(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace): bool
     {

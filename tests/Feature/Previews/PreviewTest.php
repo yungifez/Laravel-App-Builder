@@ -61,7 +61,9 @@ class PreviewTest extends TestCase
         $workspaceId = $this->driver->copies[0]['workspace'];
         $this->assertSame('PARENT PATCH', $this->driver->files["{$workspaceId}:.patches-to-apply/01.patch"]);
         $this->assertSame('CHILD PATCH', $this->driver->files["{$workspaceId}:.patches-to-apply/02.patch"]);
-        $this->assertContains(['composer', 'install'], array_column($this->driver->executed, 'command'));
+        $commands = array_column($this->driver->executed, 'command');
+        $this->assertContains(['composer', 'install'], $commands);
+        $this->assertGreaterThan(array_search(['composer', 'install'], $commands, true), array_search(['npm', 'run', 'build'], $commands, true), 'The frontend is built after setup.');
 
         $service = $this->driver->services[0];
         $this->assertSame($preview->port, $service['port']);

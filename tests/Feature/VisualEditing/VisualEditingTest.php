@@ -78,7 +78,7 @@ class VisualEditingTest extends TestCase
             'builder.preview.domain' => 'preview.test',
             'builder.preview.public_port' => null,
             'builder.preview.setup' => [],
-            'builder.preview.rebuild' => [['name' => 'Build the frontend', 'command' => ['npm', 'run', 'build'], 'timeout' => 600]],
+            'builder.preview.build' => [['name' => 'Build the frontend', 'command' => ['npm', 'run', 'build'], 'timeout' => 600]],
             'builder.preview.watch.enabled' => false,
             'app.url' => 'http://builder.test',
         ]);
@@ -460,7 +460,7 @@ class VisualEditingTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('preview.updating', false));
     }
 
-    public function test_an_editable_preview_keeps_its_build_watching_in_place_of_the_rebuild_steps()
+    public function test_an_editable_preview_keeps_its_build_watching_in_place_of_the_build_steps()
     {
         Http::fake(['*/up' => Http::response('ok')]);
         config(['builder.preview.watch.enabled' => true]);
@@ -480,7 +480,7 @@ class VisualEditingTest extends TestCase
         $this->assertNotContains(['npm', 'run', 'build'], $commands);
     }
 
-    public function test_a_watcher_that_does_not_build_in_time_leaves_the_build_to_the_rebuild_steps()
+    public function test_a_watcher_that_does_not_build_in_time_leaves_the_build_to_the_build_steps()
     {
         Http::fake(['*/up' => Http::response('ok')]);
         config(['builder.preview.watch.enabled' => true]);

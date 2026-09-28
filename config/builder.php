@@ -727,19 +727,18 @@ return [
             ['name' => 'Generate app key', 'command' => ['php', 'artisan', 'key:generate', '--no-interaction'], 'timeout' => 60],
             ['name' => 'Create the database', 'command' => ['php', 'artisan', 'migrate', '--force', '--no-interaction'], 'timeout' => 120],
             ['name' => 'Install Node dependencies', 'command' => ['npm', 'ci', '--no-audit', '--no-fund'], 'timeout' => 600],
-            ['name' => 'Build the frontend', 'command' => ['npm', 'run', 'build'], 'timeout' => 600],
         ],
 
         // Point-and-edit. An editable preview runs the locator after setup,
-        // which marks each element with the template line it comes from,
-        // then runs the rebuild steps. The same steps run again after each
-        // visual edit.
+        // which marks each element with the template line it comes from.
         'locator' => [
             'node' => env('BUILDER_AGENT_NODE', 'node'),
             'path' => env('BUILDER_PREVIEW_LOCATOR', resource_path('preview-tools/locate-sources.mjs')),
             'directories' => ['resources/js'],
         ],
-        'rebuild' => [
+        // Commands that build the frontend: after setup (and the locator),
+        // and again after each visual edit.
+        'build' => [
             ['name' => 'Build the frontend', 'command' => ['npm', 'run', 'build'], 'timeout' => 600],
         ],
 
@@ -748,8 +747,8 @@ return [
         // The build prints "started" when a build begins and "done" when it
         // ends. "directory" is ours in the workspace; the build must not
         // watch it. A preview whose watcher stops or takes longer than
-        // "timeout" seconds runs the rebuild steps instead. Set
-        // BUILDER_PREVIEW_WATCH=false to always run the rebuild steps.
+        // "timeout" seconds runs the build steps instead. Set
+        // BUILDER_PREVIEW_WATCH=false to always run the build steps.
         'watch' => [
             'enabled' => (bool) env('BUILDER_PREVIEW_WATCH', true),
             'command' => ['npm', 'run', 'build', '--', '--watch'],
