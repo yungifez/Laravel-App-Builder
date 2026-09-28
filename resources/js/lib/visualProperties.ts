@@ -398,6 +398,47 @@ export const properties: PropertyDefinition[] = [
             ],
         },
     },
+    {
+        key: 'font_style',
+        label: 'Slanted',
+        group: 'Text',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'italic', label: 'Slanted' },
+                { value: 'normal', label: 'Upright' },
+            ],
+        },
+    },
+    {
+        key: 'text_decoration',
+        label: 'Line on the words',
+        group: 'Text',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'underline', label: 'Underlined' },
+                { value: 'line-through', label: 'Crossed out' },
+                { value: 'none', label: 'No line' },
+            ],
+        },
+    },
+    {
+        key: 'line_height',
+        label: 'Space between lines',
+        group: 'Text',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'none', label: 'None' },
+                { value: 'tight', label: 'Tight' },
+                { value: 'snug', label: 'Snug' },
+                { value: 'normal', label: 'Normal' },
+                { value: 'relaxed', label: 'Relaxed' },
+                { value: 'loose', label: 'Loose' },
+            ],
+        },
+    },
     // Colours come from the app's own theme, so they stay right in dark
     // mode and when the theme changes.
     {
@@ -688,6 +729,16 @@ export const colorTokens: string[] = [
 const color = (token: VisualValue): string =>
     `var(--color-${token}, var(--${token}))`;
 
+/** Tailwind's line heights, for an app whose theme leaves them out. */
+const leadings: Record<string, string> = {
+    none: '1',
+    tight: '1.25',
+    snug: '1.375',
+    normal: '1.5',
+    relaxed: '1.625',
+    loose: '2',
+};
+
 export const weights: Record<string, string> = {
     light: '300',
     normal: '400',
@@ -734,11 +785,17 @@ function nearest(
  * slider with nothing chosen starts where the part is.
  */
 export function drawnStep(
-    property: 'text_size' | 'max_width',
+    property: 'text_size' | 'max_width' | 'line_height',
     drawn: Drawn | undefined,
 ): string | null {
     if (drawn === undefined) {
         return null;
+    }
+
+    if (property === 'line_height') {
+        return drawn.line_height == null
+            ? null
+            : nearest(leadings, drawn.line_height, 1);
     }
 
     if (property === 'text_size') {
@@ -838,6 +895,15 @@ export function inlineStyles(
                 break;
             case 'text_align':
                 styles.textAlign = String(value);
+                break;
+            case 'font_style':
+                styles.fontStyle = String(value);
+                break;
+            case 'text_decoration':
+                styles.textDecorationLine = String(value);
+                break;
+            case 'line_height':
+                styles.lineHeight = `var(--leading-${value}, ${leadings[value] ?? 'normal'})`;
                 break;
             case 'padding_x':
                 styles.paddingLeft = styles.paddingRight = pixels(value);

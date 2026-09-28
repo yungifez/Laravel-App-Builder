@@ -113,6 +113,25 @@ class TailwindClassesTest extends TestCase
         );
     }
 
+    public function test_slant_lines_on_words_and_line_spacing_are_read_and_written_as_utilities()
+    {
+        $this->assertSame(
+            ['font_style' => 'italic', 'text_decoration' => 'underline', 'line_height' => 'relaxed'],
+            TailwindClasses::read('italic underline underline-offset-4 leading-relaxed')['base'],
+        );
+        $this->assertSame(
+            ['font_style' => 'normal', 'text_decoration' => 'none', 'line_height' => 'none'],
+            TailwindClasses::read('md:not-italic md:no-underline md:leading-none')['md'],
+        );
+        $this->assertSame(
+            'not-italic line-through underline-offset-4 leading-tight',
+            TailwindClasses::write('italic underline underline-offset-4 leading-relaxed', 'base', [
+                'font_style' => 'normal', 'text_decoration' => 'line-through', 'line_height' => 'tight',
+            ]),
+        );
+        $this->assertSame('underline-offset-4', TailwindClasses::write('underline underline-offset-4', 'base', ['text_decoration' => null]));
+    }
+
     public function test_height_turn_move_and_see_through_are_read_in_pixels_degrees_and_percent()
     {
         $this->assertSame(

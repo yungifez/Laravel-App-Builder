@@ -29,6 +29,7 @@ import {
     Columns3,
     Copy,
     EyeOff,
+    Italic,
     LayoutGrid,
     LoaderCircle,
     MessageSquare,
@@ -39,8 +40,10 @@ import {
     Rows3,
     Sparkles,
     StretchVertical,
+    Strikethrough,
     TextWrap,
     Trash2,
+    Underline,
     Undo2,
     X,
 } from '@lucide/vue';
@@ -391,6 +394,69 @@ const moves = computed(() => {
 
 function set(property: VisualProperty, value: VisualValue | null): void {
     props.state.change(property, value);
+}
+
+// A mark on the words is on when it is set, or, with nothing set, when
+// the words are drawn with it now. Turning off a mark the part set
+// clears it; turning off one it gets from around it sets the opposite.
+type Mark = {
+    property: 'font_style' | 'text_decoration';
+    value: string;
+    off: string;
+    label: string;
+    icon: Component;
+    on: boolean;
+};
+
+const marks = computed<Mark[]>(() => {
+    const drawn = props.state.selected?.drawn;
+    const style = props.state.valueOf('font_style');
+    const line = props.state.valueOf('text_decoration');
+
+    return [
+        {
+            property: 'font_style',
+            value: 'italic',
+            off: 'normal',
+            label: 'Slanted',
+            icon: Italic,
+            on:
+                style != null
+                    ? style === 'italic'
+                    : drawn?.font_style === 'italic',
+        },
+        {
+            property: 'text_decoration',
+            value: 'underline',
+            off: 'none',
+            label: 'Underlined',
+            icon: Underline,
+            on:
+                line != null
+                    ? line === 'underline'
+                    : (drawn?.text_decoration ?? '').includes('underline'),
+        },
+        {
+            property: 'text_decoration',
+            value: 'line-through',
+            off: 'none',
+            label: 'Crossed out',
+            icon: Strikethrough,
+            on:
+                line != null
+                    ? line === 'line-through'
+                    : (drawn?.text_decoration ?? '').includes('line-through'),
+        },
+    ];
+});
+
+function toggleMark(mark: Mark): void {
+    const now = props.state.valueOf(mark.property);
+
+    set(
+        mark.property,
+        mark.on ? (now === mark.value ? null : mark.off) : mark.value,
+    );
 }
 
 const reasons: Record<NonNullable<InspectedElement['reason']>, string> = {
@@ -1401,6 +1467,58 @@ const recent = computed(() => {
                                     "
                                     @change="set('text_weight', $event)"
                                 />
+                                <StepSlider
+                                    id="property-line_height"
+                                    label="Lines"
+                                    :value="state.valueOf('line_height')"
+                                    :options="options('line_height')"
+                                    :rest="3"
+                                    :now="
+                                        drawnStep(
+                                            'line_height',
+                                            state.selected?.drawn,
+                                        )
+                                    "
+                                    @change="set('line_height', $event)"
+                                />
+                                <!-- Slanted, underlined and crossed out are
+                                     each on or off, as in a word processor;
+                                     each starts from how the words look. -->
+                                <div class="flex items-center gap-3">
+                                    <span
+                                        class="w-14 shrink-0 text-xs text-muted-foreground"
+                                        aria-hidden="true"
+                                        >Style</span
+                                    >
+                                    <div
+                                        class="flex rounded-md bg-muted p-0.5"
+                                        role="group"
+                                        aria-label="Text style"
+                                        data-test="text-style"
+                                    >
+                                        <button
+                                            v-for="mark in marks"
+                                            :key="mark.value"
+                                            type="button"
+                                            :aria-pressed="mark.on"
+                                            :aria-label="mark.label"
+                                            :title="mark.label"
+                                            :class="[
+                                                'grid min-h-11 w-11 place-items-center rounded transition-colors duration-quick select-none sm:min-h-7 sm:w-9',
+                                                mark.on
+                                                    ? 'bg-background text-foreground shadow-sm'
+                                                    : 'text-muted-foreground hover:text-foreground',
+                                            ]"
+                                            :data-test="`text-style-${mark.value}`"
+                                            @click="toggleMark(mark)"
+                                        >
+                                            <component
+                                                :is="mark.icon"
+                                                class="size-4"
+                                            />
+                                        </button>
+                                    </div>
+                                </div>
                                 <Swatches
                                     label="Colour"
                                     name="Text colour"

@@ -521,6 +521,15 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
 
             return {
                 text_size: parseFloat(computed.fontSize),
+                // Lines as a share of the words' size, or null for the
+                // font's own spacing.
+                line_height:
+                    computed.lineHeight === 'normal'
+                        ? null
+                        : parseFloat(computed.lineHeight) /
+                          parseFloat(computed.fontSize),
+                font_style: computed.fontStyle,
+                text_decoration: computed.textDecorationLine,
                 max_width: computed.maxWidth,
                 rem: parseFloat(
                     getComputedStyle(document.documentElement).fontSize,

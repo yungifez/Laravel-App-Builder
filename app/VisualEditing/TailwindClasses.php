@@ -35,7 +35,7 @@ class TailwindClasses
         'layout', 'direction', 'wrap', 'align', 'justify', 'columns', 'gap',
         'width', 'height', 'max_width', 'padding_x', 'padding_y', 'margin_x', 'margin_y', 'border', 'border_color', 'radius', 'shadow',
         'rotate', 'translate_x', 'translate_y', 'opacity',
-        'text_size', 'text_weight', 'text_align', 'text_color', 'background',
+        'text_size', 'text_weight', 'text_align', 'font_style', 'text_decoration', 'line_height', 'text_color', 'background',
     ];
 
     protected const KEYWORDS = [
@@ -50,6 +50,9 @@ class TailwindClasses
         'text_size' => ['text-xs' => 'xs', 'text-sm' => 'sm', 'text-base' => 'base', 'text-lg' => 'lg', 'text-xl' => 'xl', 'text-2xl' => '2xl', 'text-3xl' => '3xl', 'text-4xl' => '4xl', 'text-5xl' => '5xl', 'text-6xl' => '6xl'],
         'text_weight' => ['font-light' => 'light', 'font-normal' => 'normal', 'font-medium' => 'medium', 'font-semibold' => 'semibold', 'font-bold' => 'bold'],
         'text_align' => ['text-left' => 'left', 'text-center' => 'center', 'text-right' => 'right', 'text-justify' => 'justify', 'text-start' => 'start', 'text-end' => 'end'],
+        'font_style' => ['italic' => 'italic', 'not-italic' => 'normal'],
+        'text_decoration' => ['underline' => 'underline', 'line-through' => 'line-through', 'no-underline' => 'none'],
+        'line_height' => ['leading-none' => 'none', 'leading-tight' => 'tight', 'leading-snug' => 'snug', 'leading-normal' => 'normal', 'leading-relaxed' => 'relaxed', 'leading-loose' => 'loose'],
         'text_color' => ['text-foreground' => 'foreground', 'text-muted-foreground' => 'muted-foreground', 'text-primary' => 'primary', 'text-primary-foreground' => 'primary-foreground', 'text-secondary-foreground' => 'secondary-foreground', 'text-accent-foreground' => 'accent-foreground', 'text-destructive' => 'destructive'],
         'border_color' => ['border-border' => 'border', 'border-input' => 'input', 'border-foreground' => 'foreground', 'border-muted-foreground' => 'muted-foreground', 'border-primary' => 'primary', 'border-accent' => 'accent', 'border-destructive' => 'destructive', 'border-transparent' => 'transparent'],
         'background' => ['bg-transparent' => 'transparent', 'bg-background' => 'background', 'bg-card' => 'card', 'bg-muted' => 'muted', 'bg-primary' => 'primary', 'bg-secondary' => 'secondary', 'bg-accent' => 'accent', 'bg-destructive' => 'destructive'],

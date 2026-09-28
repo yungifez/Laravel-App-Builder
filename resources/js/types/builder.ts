@@ -369,6 +369,9 @@ export type VisualProperty =
     | 'text_size'
     | 'text_weight'
     | 'text_align'
+    | 'font_style'
+    | 'text_decoration'
+    | 'line_height'
     | 'text_color'
     | 'border_color'
     | 'background';
@@ -507,6 +510,13 @@ export type SelectedElement = {
 export type Drawn = {
     /** The size of its words, in pixels. */
     text_size: number;
+    /** The space its lines take, as a share of the words' size; null for
+     * the font's own spacing. */
+    line_height?: number | null;
+    /** Whether its words are slanted, as "italic". */
+    font_style?: string;
+    /** The lines drawn on its words, as "underline". */
+    text_decoration?: string;
     /** The widest it may get, as the browser works it out. */
     max_width: string;
     /** The size of one rem in the app, in pixels. */
@@ -732,6 +742,14 @@ export type SavedRows = {
 };
 
 /** A task the app on show runs on its own, and when. */
+/** A page of the app a visitor can open by its address. */
+export type AppPage = {
+    path: string;
+    words: string;
+    /** Whether a visitor must be signed in to see it. */
+    signed_in: boolean;
+};
+
 export type ScheduledTask = {
     /** The name the task is run by. */
     name: string;
