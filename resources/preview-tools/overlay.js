@@ -931,6 +931,17 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
 
         const from = element.getBoundingClientRect();
         const to = other.getBoundingClientRect();
+
+        // A part wholly above or below reads as up or down, even when it
+        // is much wider: a button under a wide heading is below it.
+        if (to.bottom <= from.top || to.top >= from.bottom) {
+            return to.top < from.top ? 'up' : 'down';
+        }
+
+        if (to.right <= from.left || to.left >= from.right) {
+            return to.left < from.left ? 'left' : 'right';
+        }
+
         const x = to.left + to.width / 2 - (from.left + from.width / 2);
         const y = to.top + to.height / 2 - (from.top + from.height / 2);
 
