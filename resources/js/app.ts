@@ -1,4 +1,4 @@
-import { createInertiaApp } from '@inertiajs/vue3';
+import { createInertiaApp, router } from '@inertiajs/vue3';
 import { initializeTheme } from '@/composables/useAppearance';
 import AppLayout from '@/layouts/AppLayout.vue';
 import AppPageLayout from '@/layouts/AppPageLayout.vue';
@@ -52,6 +52,19 @@ void createInertiaApp({
                 ? { viewTransition: true }
                 : {},
     },
+});
+
+// After an update the page is out of date, and the server refuses its
+// requests until it loads again. Inertia reloads for a visit but not for a
+// background request (a part's details, a poll), which would then fail
+// every time. So load the page again once, whichever request found it.
+let reloading = false;
+
+router.on('location', (event) => {
+    if (event.detail.versionChange && !reloading) {
+        reloading = true;
+        window.location.reload();
+    }
 });
 
 // This will set light / dark mode on page load...
