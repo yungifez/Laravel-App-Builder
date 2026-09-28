@@ -1476,6 +1476,26 @@ export function useAppPreview(source: Source) {
 
         claims.value.set(edit.id, { undone: key === 'undo', shown });
 
+        // A copy undone, or a part removed again, goes at once while the app
+        // is the version right after it, where the part is still at its place.
+        if (
+            ((key === 'undo' && edit.kind === 'duplicate') ||
+                (key === 'redo' && edit.kind === 'remove')) &&
+            frames.value[0]?.revision === edit.revision
+        ) {
+            post({
+                type: 'take',
+                location: { kind: 'any', value: edit.target },
+            });
+
+            if (selected.value?.source === edit.target) {
+                deselect();
+            } else {
+                post({ type: 'outline' });
+            }
+        }
+
+
         // New words show at once too, without waiting for the rebuild.
         const words = key === 'undo' ? edit.words_before : edit.words;
 

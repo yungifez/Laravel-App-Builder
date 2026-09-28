@@ -1751,6 +1751,20 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             }
         }
 
+        // A part the builder takes away at once: a copy undone, or a part
+        // removed again. The rebuilt app replaces the page.
+        if (message.type === 'take') {
+            for (const part of matching(message.location)) {
+                if (selected && part.contains(selected)) {
+                    choose(null, false);
+                }
+
+                part.remove();
+            }
+
+            placeFrame();
+        }
+
         if (message.type === 'clear') {
             choose(null, false);
         }
