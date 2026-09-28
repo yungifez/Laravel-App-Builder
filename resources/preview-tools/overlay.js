@@ -1596,6 +1596,28 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
 
     send({ type: 'ready', path: location.pathname });
 
+    // Apps that change page without loading one (Inertia, Livewire) only
+    // change the address, so say so, and the builder keeps the owner's page.
+    let path = location.pathname;
+    const moved = () => {
+        if (location.pathname !== path) {
+            path = location.pathname;
+            send({ type: 'page', path });
+        }
+    };
+
+    for (const name of ['pushState', 'replaceState']) {
+        const change = history[name];
+        history[name] = function (...args) {
+            const result = change.apply(this, args);
+            moved();
+
+            return result;
+        };
+    }
+
+    window.addEventListener('popstate', moved);
+
     // Say when the page has drawn its parts, so the builder can show this
     // page in place of the old one without a blank moment.
     // A browser can hold back animation frames in a page it is not

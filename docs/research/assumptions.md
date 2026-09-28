@@ -296,3 +296,12 @@ them and correct any that are wrong.
   is now SameSite=None, Secure and partitioned, as the app's own preview
   already was. Browsers accept a Secure cookie on localhost. A preview
   domain served over plain HTTP elsewhere would need HTTPS.
+- **The owner can sign in to their app inside the builder, and it opens
+  where they left it.** The app's own cookies were SameSite=Lax, so the
+  browser dropped them in the builder's frame, and sign-in failed without
+  a message. The preview gateway now rewrites every cookie the app sets to
+  SameSite=None, Secure and partitioned. It also lets the builder frame
+  every preview, not only an editable one. The builder keeps the owner's
+  last page for each app in this browser (local storage), and the preview
+  link opens that page. Only a path on the preview host is accepted. The
+  page is kept per browser, not per account, because it is a convenience.

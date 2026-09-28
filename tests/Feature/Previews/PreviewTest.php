@@ -207,6 +207,55 @@ class PreviewTest extends TestCase
             && $request->body() === 'name=Acme');
     }
 
+    public function test_the_app_can_be_signed_in_to_inside_the_builder()
+    {
+        $preview = $this->previewWithSession('secret-value');
+        Http::fake(['*' => Http::response('<h1>Log in</h1>', 200, [
+            'Content-Type' => 'text/html',
+            'X-Frame-Options' => 'SAMEORIGIN',
+            'Set-Cookie' => ['laravel-session=abc; path=/; httponly; samesite=lax', 'XSRF-TOKEN=def; path=/; samesite=lax'],
+        ])]);
+
+        $response = $this->previewRequest('GET', "http://{$preview->host}.preview.test/login", ['builder_preview' => 'secret-value']);
+
+        // Shown in the builder's frame, the app's session and form token
+        // would be refused as a third party's, and every sign-in would fail.
+        $response->assertOk();
+        $this->assertFalse($response->headers->has('X-Frame-Options'));
+        $this->assertStringContainsString('frame-ancestors '.config('app.url'), (string) $response->headers->get('Content-Security-Policy'));
+        $cookies = collect($response->headers->getCookies())->keyBy(fn ($cookie) => $cookie->getName());
+        $this->assertSame(['laravel-session', 'XSRF-TOKEN'], $cookies->keys()->all());
+
+        foreach ($cookies as $cookie) {
+            $this->assertSame('none', $cookie->getSameSite());
+            $this->assertTrue($cookie->isSecure());
+            $this->assertTrue($cookie->isPartitioned());
+        }
+
+        $this->assertTrue($cookies['laravel-session']->isHttpOnly());
+        $this->assertSame('abc', $cookies['laravel-session']->getValue());
+    }
+
+    public function test_the_app_opens_on_the_page_the_owner_was_on()
+    {
+        $preview = Preview::factory()->ready()->create();
+        $owner = $preview->featureRequest->project->owner;
+
+        // Built first: after a request to the preview host, URLs resolve
+        // against that host.
+        $elsewhere = ['//evil.test/x', '/\\evil.test', 'https://evil.test/'];
+        $opens = collect(['/classes/3?week=2', ...$elsewhere])->mapWithKeys(fn (string $to) => [$to => route('previews.show', [$preview, 'to' => $to])]);
+
+        $location = (string) $this->actingAs($owner)->get($opens['/classes/3?week=2'])->headers->get('Location');
+        $this->get($location)->assertRedirect('/classes/3?week=2');
+
+        // Never another site.
+        foreach ($elsewhere as $to) {
+            $location = (string) $this->actingAs($owner)->get($opens[$to])->headers->get('Location');
+            $this->get($location)->assertRedirect('/');
+        }
+    }
+
     public function test_file_uploads_are_relayed_as_multipart_requests()
     {
         $preview = $this->previewWithSession('secret-value');

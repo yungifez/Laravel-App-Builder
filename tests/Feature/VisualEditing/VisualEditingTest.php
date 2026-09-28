@@ -531,8 +531,10 @@ class VisualEditingTest extends TestCase
         $this->assertSame('console.log("</body>")', $script->getContent());
 
         $page = $this->call('GET', "http://{$ordinary->host}.preview.test/", [], ['builder_preview' => 'other'], [], ['HTTP_COOKIE' => 'builder_preview=other']);
+        // An ordinary preview gets no overlay, but the builder may still frame
+        // it so the owner can use a change's copy.
         $this->assertSame('<body></body>', $page->getContent());
-        $this->assertNull($page->headers->get('Content-Security-Policy'));
+        $this->assertSame('frame-ancestors http://builder.test', $page->headers->get('Content-Security-Policy'));
     }
 
     public function test_an_editable_previews_session_cookie_works_inside_the_builder()

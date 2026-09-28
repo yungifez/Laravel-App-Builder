@@ -103,7 +103,9 @@ class PreviewGateway
         // Every preview can show inside the builder (the app, and a change
         // waiting for the owner), where the preview host is a third party,
         // so its cookie is partitioned to the site that shows it.
-        $response = new RedirectResponse('/');
+        // Back to the page the owner was on. Only a path on this host.
+        $to = $request->query('to');
+        $response = new RedirectResponse(is_string($to) && preg_match('#^/(?![/\\\\])#', $to) === 1 ? $to : '/');
         $response->headers->setCookie(Cookie::create(
             name: (string) config('builder.preview.cookie'),
             value: $secret,
@@ -211,6 +213,7 @@ class PreviewGateway
         }
 
         $response->headers->set('X-Robots-Tag', 'noindex, nofollow');
+        $this->letBuilderShow($response);
 
         if ($preview->editable) {
             $this->prepareForEditing($response);
@@ -220,15 +223,29 @@ class PreviewGateway
     }
 
     /**
-     * Let the builder embed an editable preview, and add the point-and-edit
-     * overlay to its pages. Only the builder's origin may embed it.
+     * Let the builder show the app in a frame, as a working app. Only the
+     * builder's origin may frame it. There the preview host is a third
+     * party, so the app's own cookies (its session, its form tokens) would
+     * be refused and every sign-in or form would fail: they are relayed
+     * the way a framed site's cookies must be, kept apart for the builder.
+     */
+    protected function letBuilderShow(Response $response): void
+    {
+        $response->headers->remove('X-Frame-Options');
+        $response->headers->set('Content-Security-Policy', 'frame-ancestors '.self::builderOrigin(), false);
+
+        foreach ($response->headers->getCookies() as $cookie) {
+            $response->headers->removeCookie($cookie->getName(), $cookie->getPath(), $cookie->getDomain());
+            $response->headers->setCookie($cookie->withSecure(true)->withSameSite(Cookie::SAMESITE_NONE)->withPartitioned(true));
+        }
+    }
+
+    /**
+     * Add the point-and-edit overlay to an editable preview's pages.
      */
     protected function prepareForEditing(Response $response): void
     {
         $origin = self::builderOrigin();
-
-        $response->headers->remove('X-Frame-Options');
-        $response->headers->set('Content-Security-Policy', "frame-ancestors {$origin}", false);
 
         $body = (string) $response->getContent();
         $position = strripos($body, '</body>');

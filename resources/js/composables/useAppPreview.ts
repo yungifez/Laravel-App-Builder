@@ -130,6 +130,32 @@ export function useAppPreview(source: Source) {
     const nextDrawn = ref(false);
     const holding = ref(false);
     const framePath = ref('/');
+
+    // The page of the app the owner was on, kept in this browser, so the
+    // app opens there again after a reload or a restart, not on its front
+    // page. Storage can be missing or refused; the front page is then used.
+    function savedPath(): string {
+        try {
+            return (
+                localStorage.getItem(
+                    `builder:app-path:${source.projectId()}`,
+                ) ?? '/'
+            );
+        } catch {
+            return '/';
+        }
+    }
+
+    function savePath(path: string): void {
+        try {
+            localStorage.setItem(
+                `builder:app-path:${source.projectId()}`,
+                path,
+            );
+        } catch {
+            // Only a convenience.
+        }
+    }
     // The pages the owner has been to, oldest first, so Back can return.
     const visited = ref<string[]>([]);
     // Start at the owner's own screen size: a phone edits the phone layout.
@@ -563,13 +589,16 @@ export function useAppPreview(source: Source) {
             return;
         }
 
-        if (data.type === 'ready') {
+        if (data.type === 'ready' || data.type === 'page') {
             framePath.value = String(data.path ?? '/');
+            savePath(framePath.value);
 
             if (visited.value.at(-1) !== framePath.value) {
                 visited.value = [...visited.value, framePath.value].slice(-20);
             }
+        }
 
+        if (data.type === 'ready') {
             holding.value = false;
             setUp(frame.value?.contentWindow);
         }
@@ -828,7 +857,9 @@ export function useAppPreview(source: Source) {
                 frames.value = [
                     {
                         key: ++frameKeys,
-                        src: showPreview(preview.id).url,
+                        src: showPreview(preview.id, {
+                            query: { to: savedPath() },
+                        }).url,
                         shows: 0,
                     },
                 ];
