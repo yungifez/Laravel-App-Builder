@@ -153,7 +153,7 @@ class SdkDriver extends AgentDriver
             ->where('type', 'model_call')
             ->where('data->role', 'coder')
             ->where('data->status', AgentOutcomeStatus::Completed->value)
-            ->latest('sequence')
+            ->reorder('sequence', 'desc')
             ->first();
     }
 

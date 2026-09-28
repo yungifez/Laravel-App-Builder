@@ -36,6 +36,7 @@ use App\Runs\Exceptions\LeaseLost;
 use App\Runs\Exceptions\ProvidersUnavailable;
 use App\Runs\Exceptions\RunCancelled;
 use App\Runs\Exceptions\SpendLimitReached;
+use App\Runs\Exceptions\WaitingForWorker;
 use App\Runs\Plan;
 use App\Runs\Review;
 use App\Runs\ReviewEvidence;
@@ -89,6 +90,8 @@ class ConstructRun
             $this->cancelRun->finish($run);
         } catch (LeaseLost) {
             // Another worker took the run over and carries on from here.
+        } catch (WaitingForWorker) {
+            // The change is written outside; handing it back runs this again.
         } catch (BudgetExhausted $exception) {
             $this->stopForDecision($run, $lease, $exception->getMessage(), 'budget_exhausted');
         } catch (ProvidersUnavailable $exception) {

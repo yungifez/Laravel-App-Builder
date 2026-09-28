@@ -1457,14 +1457,29 @@ Each comes back only when the experiment shows the need.
   score, Effect) or any internal field.
 - `worker_query` events are recorded.
 
-**Status.** Not built. Today our agents get the brief and the working rules
-inside `task.json`, and there are no tools. The first slice:
+**Status.** Partly built.
 
-1. Render the brief to `TASK.md`, and add the brief lint.
-2. Add the Sanctum token on `Run` and the MCP server with `get_task` and
-   `submit_change`.
-3. Point our own runner at it.
-4. Then add `ask_about_product`, `ask_owner` and "Work on this yourself".
+- **Built:**
+    - `WriteBrief` is the only code that writes worker text, and a brief lint
+      tests it.
+    - A Sanctum token on `Run` (`GrantWorkerAccess`) opens the `laravel/mcp`
+      server at `/mcp/task` (`routes/ai.php`). The server has `get_task`,
+      `submit_change` and `check_status`. The token is revoked when the run
+      ends.
+    - The `worker` construction driver (`WorkerDriver`) plans and reviews like
+      `sdk`. It waits in `implementing` until a worker hands back a patch.
+    - Each patch is the whole change against the owner's commit. It is applied
+      three-way on a clean baseline. A patch that does not apply goes back to
+      the worker with git's reason. `runs:reconcile` leaves a waiting run
+      alone.
+- **Next:**
+    1. Point our own runner at the token and the tools.
+    2. Add "Work on this yourself".
+    3. Add `ask_about_product` and `ask_owner`.
+- **Open:**
+    - A waiting run has no time limit yet; the owner can cancel it.
+    - A worker's change is reviewed by the default reviewer, which is logged
+      as not independent.
 
 ### Execution router
 

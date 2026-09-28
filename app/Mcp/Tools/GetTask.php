@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools;
 
 use App\Actions\Runs\WriteBrief;
+use App\Models\Run;
 use App\Runs\Plan;
 use App\Runs\WorkerTask;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -34,10 +35,26 @@ class GetTask extends Tool
             return Response::text(__('The task is still being planned. Ask again in a minute.'));
         }
 
-        $brief = $this->writeBrief->handle($run, Plan::fromArray($run->plan));
-        $base = $run->workspace?->baseline_commit;
+        return Response::text($this->writeBrief->handle($run, Plan::fromArray($run->plan))."\n\n".$this->handBack($run));
+    }
 
-        return Response::text($base === null ? $brief : "{$brief}\n\n## Starting point\n\nMake the change on top of commit {$base}.");
+    /**
+     * Say where the change starts and how to hand it back. The starting
+     * point is a commit of the owner's own repository, which the worker can
+     * check out; our workspace's commits mean nothing outside it.
+     */
+    protected function handBack(Run $run): string
+    {
+        $featureRequest = $run->featureRequest;
+        $base = $featureRequest->base_revision;
+        $unkept = count($featureRequest->lineage()) > 1;
+
+        return implode("\n\n", array_filter([
+            '## Hand the change back',
+            $base === null ? null : __('Start from commit :base of the app.', ['base' => $base]),
+            $unkept ? __('Earlier changes that are not kept yet are applied under yours. Change only what this task asks.') : null,
+            __('When you are done, call submit_change with the whole change as one patch, such as the output of `git add -N . && git diff --binary :base`, and a short summary. Then call check_status to see how the checks went.', ['base' => $base ?? 'HEAD']),
+        ]));
     }
 
     /**

@@ -440,7 +440,7 @@ class SdkDriverTest extends TestCase
         $this->agent('claude', 'anthropic', function (Workspace $workspace, AgentTask $task) {
             File::put($this->path($workspace, 'app/Team.php'), "<?php\n// ".count($this->agents['claude']->tasks)."\n");
 
-            return new AgentOutcome('claude', 'anthropic', null, AgentOutcomeStatus::Completed, 'Done.', session: 'session-1', resumed: $task->resume !== null);
+            return new AgentOutcome('claude', 'anthropic', null, AgentOutcomeStatus::Completed, 'Done.', session: 'session-'.count($this->agents['claude']->tasks), resumed: $task->resume !== null);
         });
 
         $run = app(StartRun::class)->handle($this->request())->refresh();
@@ -455,6 +455,10 @@ class SdkDriverTest extends TestCase
         $this->assertStringContainsString("Owner's request", $repair->prompt);
         $this->assertStringContainsString('Expected description to be fillable.', $repair->prompt);
         $this->assertSame([false, true], $run->events()->where('type', 'model_call')->where('data->role', 'coder')->orderBy('sequence')->get()->map(fn (RunEvent $event) => $event->data['resumed'])->all());
+
+        // A later repair continues the latest session, not the first.
+        $this->failVerification($run->refresh(), 'Expected description to be required.');
+        $this->assertSame('session-2', $this->agents['claude']->tasks[2]->resume['session'] ?? null);
     }
 
     public function test_the_runner_continues_only_its_own_agents_session_and_passes_the_effort()

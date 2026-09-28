@@ -6,6 +6,7 @@ use App\Features\FeatureGeneratorManager;
 use App\Runs\Contracts\ConstructionDriver;
 use App\Runs\Drivers\ScriptedDriver;
 use App\Runs\Drivers\SdkDriver;
+use App\Runs\Drivers\WorkerDriver;
 use Illuminate\Support\Manager;
 
 /**
@@ -35,5 +36,14 @@ class ConstructionDriverManager extends Manager
     public function createSdkDriver(): ConstructionDriver
     {
         return $this->container->make(SdkDriver::class);
+    }
+
+    /**
+     * Create the driver whose change is written by a worker outside our
+     * boxes and handed back through its tools.
+     */
+    public function createWorkerDriver(): ConstructionDriver
+    {
+        return $this->container->make(WorkerDriver::class);
     }
 }

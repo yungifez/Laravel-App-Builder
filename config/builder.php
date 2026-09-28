@@ -295,7 +295,9 @@ return [
     | server-side tools only, then hands the change to verification. The
     | "scripted" driver applies the generator's change through the tools. The
     | "sdk" driver plans and reviews with the model roles below, and builds
-    | with a coding agent in the workspace (see "Coding Agents").
+    | with a coding agent in the workspace (see "Coding Agents"). The
+    | "worker" driver plans and reviews the same way, but waits for a worker
+    | outside, such as the owner's own coding agent, to hand the change back.
     |
     | One worker writes to a run at a time. Its lease lasts "lease_seconds"
     | and is renewed by every tool call, and every "heartbeat_seconds" while
@@ -475,10 +477,12 @@ return [
 
         // Whoever runs a coding agent, ours or the owner's own, reaches the
         // change's tools (routes/ai.php) with a token that opens that one
-        // change for "minutes", and makes at most "per_minute" calls.
+        // change for "minutes", and makes at most "per_minute" calls. A
+        // change it hands back is at most "max_patch_kb" long.
         'workers' => [
             'minutes' => (int) env('BUILDER_WORKER_MINUTES', 240),
             'per_minute' => (int) env('BUILDER_WORKER_PER_MINUTE', 60),
+            'max_patch_kb' => (int) env('BUILDER_WORKER_MAX_PATCH_KB', 512),
         ],
 
         'reviewers' => [

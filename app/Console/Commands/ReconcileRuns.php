@@ -7,6 +7,7 @@ use App\Actions\Runs\CompleteRunVerification;
 use App\Enums\RunStatus;
 use App\Jobs\ExecuteRun;
 use App\Models\Run;
+use App\Runs\Drivers\WorkerDriver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -20,7 +21,7 @@ class ReconcileRuns extends Command
     /**
      * Execute the console command.
      */
-    public function handle(CompleteRunVerification $completeRunVerification, RequestVerification $requestVerification): int
+    public function handle(CompleteRunVerification $completeRunVerification, RequestVerification $requestVerification, WorkerDriver $workers): int
     {
         $stale = now()->subSeconds((int) config('builder.construction.lease_seconds'));
         $resumed = 0;
@@ -31,7 +32,12 @@ class ReconcileRuns extends Command
             ->where(fn (Builder $query) => $query
                 ->where('lease_expires_at', '<', now())
                 ->orWhere(fn (Builder $query) => $query->whereNull('lease_owner')->where('updated_at', '<', $stale)))
-            ->each(function (Run $run) use (&$resumed) {
+            ->each(function (Run $run) use ($workers, &$resumed) {
+                // A worker outside has the change; handing it back resumes the run.
+                if ($run->driver === 'worker' && $run->status === RunStatus::Implementing && $run->workspace_id !== null && $workers->submission($run) === null) {
+                    return;
+                }
+
                 ExecuteRun::dispatch($run);
                 $resumed++;
             });

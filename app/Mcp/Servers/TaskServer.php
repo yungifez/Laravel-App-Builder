@@ -2,7 +2,9 @@
 
 namespace App\Mcp\Servers;
 
+use App\Mcp\Tools\CheckStatus;
 use App\Mcp\Tools\GetTask;
+use App\Mcp\Tools\SubmitChange;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\Name;
@@ -20,5 +22,7 @@ class TaskServer extends Server
 {
     protected array $tools = [
         GetTask::class,
+        SubmitChange::class,
+        CheckStatus::class,
     ];
 }
