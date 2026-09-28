@@ -62,6 +62,38 @@ class PreviewDataTest extends TestCase
         $this->assertSame('log', $this->driver->environments[0]['MAIL_MAILER']);
     }
 
+    public function test_the_owner_reads_the_rows_of_a_table_with_what_visitors_sign_in_with_hidden()
+    {
+        $rows = collect(range(51, 1))->map(fn (int $id) => ['id' => $id, 'name' => "Member {$id}", 'password' => 'secret-hash', 'bio' => str_repeat('a', 300), 'deleted_at' => null])->all();
+        $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(exitCode: 0, output: $command[1] === '-r'
+            ? json_encode(['columns' => ['id', 'name', 'password', 'bio', 'deleted_at'], 'rows' => $rows])
+            : json_encode(['tables' => [['table' => 'members', 'rows' => 51]]]), errorOutput: '', durationMs: 5);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', ['project' => $this->project, 'table' => 'members']))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('rows', fn (Assert $page) => $page
+                ->where('rows.name', 'members')
+                ->where('rows.words', 'Members')
+                ->where('rows.columns', ['id', 'name', 'password', 'bio', 'deleted_at'])
+                ->count('rows.rows', 50)
+                ->where('rows.rows.0', ['51', 'Member 51', '••••••', str_repeat('a', 200).'...', null])
+                ->where('rows.more', true)));
+
+        // The table's name is passed to the app, never written into code.
+        $read = collect($this->driver->executed)->firstWhere('command.1', '-r');
+        $this->assertSame(['--', 'members', '50'], array_slice($read['command'], 3));
+    }
+
+    public function test_a_table_the_app_does_not_have_is_not_read()
+    {
+        $this->driver->onExec = fn () => new CommandResult(exitCode: 0, output: json_encode(['tables' => [['table' => 'members', 'rows' => 1]]]), errorOutput: '', durationMs: 5);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', ['project' => $this->project, 'table' => 'members; drop table members']))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('rows', fn (Assert $page) => $page->where('rows', null)));
+        $this->assertNull(collect($this->driver->executed)->firstWhere('command.1', '-r'));
+    }
+
     public function test_the_owner_starts_the_data_again_with_examples_or_empty()
     {
         $this->actingAs($this->owner)

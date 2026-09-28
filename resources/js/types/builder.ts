@@ -711,3 +711,13 @@ export type SavedTable = {
     /** False for the tables Laravel keeps for its own work. */
     own: boolean;
 };
+
+/** The newest rows of one table of the app on show, as short text. */
+export type SavedRows = {
+    name: string;
+    words: string;
+    columns: string[];
+    rows: (string | null)[][];
+    /** True when the table holds more rows than are shown. */
+    more: boolean;
+};

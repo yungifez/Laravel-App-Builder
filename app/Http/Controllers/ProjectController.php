@@ -7,6 +7,7 @@ use App\Actions\Previews\DescribeProjectPreview;
 use App\Actions\Previews\ReadPreviewData;
 use App\Actions\Previews\ReadPreviewEmails;
 use App\Actions\Previews\ReadPreviewProblems;
+use App\Actions\Previews\ReadPreviewRows;
 use App\Actions\Projects\CreateProject;
 use App\Actions\Projects\StartProjectFromTemplate;
 use App\Actions\Projects\SummarizeChanges;
@@ -127,7 +128,7 @@ class ProjectController extends Controller
      * app running beside it, and the design panel for changing how it looks.
      * The element the owner selected is loaded on request.
      */
-    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails, ReadPreviewProblems $readPreviewProblems, ReadPreviewData $readPreviewData): Response
+    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails, ReadPreviewProblems $readPreviewProblems, ReadPreviewData $readPreviewData, ReadPreviewRows $readPreviewRows): Response
     {
         Gate::authorize('view', $project);
 
@@ -147,6 +148,8 @@ class ProjectController extends Controller
             'problems' => Inertia::optional(fn () => $readPreviewProblems->handle($project)),
             // And what it has saved.
             'data' => Inertia::optional(fn () => $readPreviewData->handle($project)),
+            // And the rows of one table, when the owner opens it.
+            'rows' => Inertia::optional(fn () => $request->filled('table') ? $readPreviewRows->handle($project, $request->string('table')->toString()) : null),
             'change' => fn () => $request->filled('change')
                 ? $describeFeatureRequest->handle($project->featureRequests()->findOrFail($request->integer('change')))
                 : null,

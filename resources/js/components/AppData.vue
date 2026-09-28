@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { Form } from '@inertiajs/vue3';
-import { Database } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import { Form, router } from '@inertiajs/vue3';
+import { ArrowLeft, ChevronRight, Database } from '@lucide/vue';
+import { computed, ref, watch } from 'vue';
 import PreviewDataController from '@/actions/App/Http/Controllers/PreviewDataController';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
-import type { SavedTable } from '@/types';
+import type { SavedRows, SavedTable } from '@/types';
 
 const props = defineProps<{
     projectId: number;
     data: SavedTable[] | null | undefined;
+    rows: SavedRows | null | undefined;
 }>();
 
 const emit = defineEmits<{ restarted: [] }>();
@@ -22,6 +23,30 @@ const laravel = computed(() =>
 // Clearing what was saved cannot be undone, so it is asked for twice, in
 // place, where the owner's eyes already are.
 const asking = ref<'examples' | 'empty' | null>(null);
+
+// One table opened in place of the list, read when opened and again when
+// its count changes, so a new sign-up shows while the owner looks.
+const opened = ref<string | null>(null);
+const openedTable = computed(
+    () =>
+        (props.data ?? []).find((table) => table.name === opened.value) ?? null,
+);
+const shown = computed(() =>
+    props.rows?.name === opened.value ? props.rows : undefined,
+);
+
+function readRows(): void {
+    if (opened.value !== null) {
+        router.reload({ only: ['rows'], data: { table: opened.value } });
+    }
+}
+
+function open(table: SavedTable): void {
+    opened.value = table.name;
+    readRows();
+}
+
+watch(() => openedTable.value?.rows, readRows);
 
 function rows(table: SavedTable): string {
     if (table.rows === null) {
@@ -46,7 +71,86 @@ function rows(table: SavedTable): string {
 
         <template v-else>
             <div
-                v-if="own.length === 0"
+                v-if="openedTable"
+                class="flex min-h-0 flex-1 flex-col"
+                data-test="app-data-rows"
+            >
+                <div class="flex shrink-0 items-center gap-1 border-b px-1">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        class="size-9"
+                        aria-label="All tables"
+                        title="All tables"
+                        @click="opened = null"
+                    >
+                        <ArrowLeft class="size-4" />
+                    </Button>
+                    <span class="truncate text-sm font-medium">{{
+                        openedTable.words
+                    }}</span>
+                    <span
+                        class="shrink-0 text-xs text-muted-foreground tabular-nums"
+                        >· {{ rows(openedTable) }}</span
+                    >
+                </div>
+                <div
+                    v-if="shown === undefined"
+                    class="flex flex-1 items-center justify-center text-sm text-muted-foreground"
+                >
+                    Reading…
+                </div>
+                <p
+                    v-else-if="shown === null || shown.rows.length === 0"
+                    class="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground"
+                >
+                    Nothing saved here yet.
+                </p>
+                <div v-else class="min-h-0 flex-1 overflow-auto">
+                    <table class="w-max min-w-full text-xs">
+                        <thead class="sticky top-0 bg-background">
+                            <tr>
+                                <th
+                                    v-for="column in shown.columns"
+                                    :key="column"
+                                    class="border-b px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground"
+                                >
+                                    {{ column }}
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr
+                                v-for="(row, index) in shown.rows"
+                                :key="index"
+                                class="border-b"
+                            >
+                                <td
+                                    v-for="(value, at) in row"
+                                    :key="at"
+                                    class="max-w-60 truncate px-3 py-2 whitespace-nowrap"
+                                    :title="value ?? ''"
+                                >
+                                    <span
+                                        v-if="value === null"
+                                        class="text-muted-foreground"
+                                        >—</span
+                                    >
+                                    <template v-else>{{ value }}</template>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p
+                        v-if="shown.more"
+                        class="px-3 py-2 text-xs text-muted-foreground"
+                    >
+                        The newest {{ shown.rows.length }} are shown.
+                    </p>
+                </div>
+            </div>
+            <div
+                v-else-if="own.length === 0"
                 class="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center"
                 data-test="app-data-empty"
             >
@@ -58,25 +162,30 @@ function rows(table: SavedTable): string {
                 </p>
             </div>
 
-            <ul v-else class="min-h-0 flex-1 overflow-y-auto">
-                <li
-                    v-for="table in own"
-                    :key="table.name"
-                    class="flex min-h-11 items-center gap-3 border-b px-3"
-                    :data-test="`app-data-${table.name}`"
-                >
-                    <span class="min-w-0 flex-1 truncate text-sm">{{
-                        table.words
-                    }}</span>
-                    <span
-                        class="shrink-0 text-xs text-muted-foreground tabular-nums"
-                        >{{ rows(table) }}</span
+            <ul v-else-if="!openedTable" class="min-h-0 flex-1 overflow-y-auto">
+                <li v-for="table in own" :key="table.name" class="border-b">
+                    <button
+                        type="button"
+                        class="flex min-h-11 w-full items-center gap-3 px-3 text-left hover:bg-muted/50"
+                        :data-test="`app-data-${table.name}`"
+                        @click="open(table)"
                     >
+                        <span class="min-w-0 flex-1 truncate text-sm">{{
+                            table.words
+                        }}</span>
+                        <span
+                            class="shrink-0 text-xs text-muted-foreground tabular-nums"
+                            >{{ rows(table) }}</span
+                        >
+                        <ChevronRight
+                            class="size-4 shrink-0 text-muted-foreground"
+                        />
+                    </button>
                 </li>
             </ul>
 
             <details
-                v-if="laravel.length > 0"
+                v-if="laravel.length > 0 && !openedTable"
                 class="shrink-0 border-t text-sm"
             >
                 <summary

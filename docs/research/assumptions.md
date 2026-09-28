@@ -358,3 +358,9 @@ them and correct any that are wrong.
   again with examples" runs `migrate:fresh --seed` and "Empty it" runs
   `migrate:fresh`. Both change only the preview's own database and ask
   again before they run. A signed-in owner may need to sign up again.
+- 2026-09-27 — A table in "Saved data" opens to its newest 50 rows,
+  newest by `id` or `created_at` when it has one. They are read by a fixed
+  `php -r` script that boots the app; the table name is passed as an
+  argument, and only names `db:show` listed are read. Values of columns
+  named like password, token, secret, remember, two_factor or a key are
+  hidden. Long values are cut to 200 characters.

@@ -95,6 +95,7 @@ import type {
     ProjectTelemetry,
     SentEmail,
     AppProblem,
+    SavedRows,
     SavedTable,
     VisualEditSummary,
 } from '@/types';
@@ -115,6 +116,7 @@ const props = defineProps<{
     emails?: SentEmail[];
     problems?: AppProblem[];
     data?: SavedTable[] | null;
+    rows?: SavedRows | null;
 }>();
 
 // The left panel talks about changes (Chat) or changes how the app looks
@@ -1787,6 +1789,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                 class="min-h-0 flex-1"
                 :project-id="project.id"
                 :data="data"
+                :rows="rows"
                 @restarted="app.reload()"
             />
             <AppEmails

@@ -1624,8 +1624,8 @@ reads the preview's workspace, so the app itself does not change.
   from the control plane's database. Laravel's own tables stay folded. The
   owner can start the data again, with the app's example data
   (`migrate:fresh --seed`) or empty, after a second click; only the copy
-  they try changes. Reading rows comes next; changing rows later, with an
-  undo.
+  they try changes. A table opens to its newest 50 rows, with what
+  visitors sign in with hidden. Changing rows comes later, with an undo.
 - **Jobs** need no tab while previews run queued work at once
   (`QUEUE_CONNECTION=sync`).
 
