@@ -69,8 +69,14 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { AppPreviewState, Way } from '@/composables/useAppPreview';
-import { kindOfTag, newParts } from '@/lib/partKinds';
-import type { NewPartKind } from '@/lib/partKinds';
+import {
+    kindOfTag,
+    newParts,
+    sectionNames,
+    sectionOf,
+    sectionsFor,
+} from '@/lib/partKinds';
+import type { LookSection, NewPartKind } from '@/lib/partKinds';
 import {
     colorName,
     partColorOptions,
@@ -348,6 +354,49 @@ const arranges = computed(
 );
 const hasWords = computed(() => props.state.selected?.holds?.words ?? true);
 const hidden = computed(() => layout.value === 'hidden');
+
+// The sections this kind of part is usually changed with come first; the
+// others wait behind "More choices", unless the part has a value set there,
+// so nothing already changed is out of sight. The choice to see them all
+// stays while the owner picks other parts.
+const allSections = ref(false);
+const suggested = computed(
+    () => new Set(sectionsFor(props.state.selected ?? { tag: 'div' })),
+);
+const setIn = computed(() => {
+    const sections = new Set<LookSection>();
+
+    for (const property of properties) {
+        const section = sectionOf(property.key);
+
+        if (section && props.state.valueOf(property.key) != null) {
+            sections.add(section);
+        }
+    }
+
+    return sections;
+});
+const shows = (section: LookSection): boolean =>
+    allSections.value ||
+    suggested.value.has(section) ||
+    setIn.value.has(section);
+const tucked = computed(() =>
+    (Object.keys(sectionNames) as LookSection[]).filter(
+        (section) =>
+            !shows(section) &&
+            (section !== 'layout' || arranges.value) &&
+            (section !== 'text' || hasWords.value),
+    ),
+);
+
+// A part in a row or a grid moves from place to place there, so shifting
+// it by some pixels is offered only to undo a shift it already has.
+const shifts = computed(
+    () =>
+        !props.state.selected?.snaps ||
+        props.state.valueOf('translate_x') != null ||
+        props.state.valueOf('translate_y') != null,
+);
 
 const sizes = options('text_size');
 
@@ -1364,7 +1413,10 @@ const recent = computed(() => {
                                 />
                             </section>
 
-                            <section v-if="arranges" class="space-y-2">
+                            <section
+                                v-if="arranges && shows('layout')"
+                                class="space-y-2"
+                            >
                                 <h3 class="text-xs font-medium">Layout</h3>
                                 <Segmented
                                     label="Arrange contents"
@@ -1455,7 +1507,7 @@ const recent = computed(() => {
                                 </Reveal>
                             </section>
 
-                            <section class="space-y-2">
+                            <section v-if="shows('size')" class="space-y-2">
                                 <h3 class="text-xs font-medium">Size</h3>
                                 <div class="grid grid-cols-2 gap-2">
                                     <MeasureField
@@ -1501,12 +1553,12 @@ const recent = computed(() => {
                                 />
                             </section>
 
-                            <section class="space-y-2">
+                            <section v-if="shows('space')" class="space-y-2">
                                 <h3 class="text-xs font-medium">Space</h3>
                                 <SpacingBox :state="state" />
                             </section>
 
-                            <section class="space-y-2">
+                            <section v-if="shows('place')" class="space-y-2">
                                 <h3 class="text-xs font-medium">
                                     Turn and move
                                 </h3>
@@ -1516,16 +1568,18 @@ const recent = computed(() => {
                                         property="rotate"
                                         mark="↻"
                                     />
-                                    <MeasureField
-                                        :state="state"
-                                        property="translate_x"
-                                        mark="X"
-                                    />
-                                    <MeasureField
-                                        :state="state"
-                                        property="translate_y"
-                                        mark="Y"
-                                    />
+                                    <template v-if="shifts">
+                                        <MeasureField
+                                            :state="state"
+                                            property="translate_x"
+                                            mark="X"
+                                        />
+                                        <MeasureField
+                                            :state="state"
+                                            property="translate_y"
+                                            mark="Y"
+                                        />
+                                    </template>
                                 </div>
                                 <div
                                     v-if="moves.length"
@@ -1593,7 +1647,10 @@ const recent = computed(() => {
                                 </label>
                             </section>
 
-                            <section v-if="hasWords" class="space-y-2">
+                            <section
+                                v-if="hasWords && shows('text')"
+                                class="space-y-2"
+                            >
                                 <h3 class="text-xs font-medium">Text</h3>
                                 <StepSlider
                                     id="property-text_size"
@@ -1743,7 +1800,7 @@ const recent = computed(() => {
                                 />
                             </section>
 
-                            <section class="space-y-2">
+                            <section v-if="shows('fill')" class="space-y-2">
                                 <h3 class="text-xs font-medium">
                                     Fill and edges
                                 </h3>
@@ -1867,6 +1924,39 @@ const recent = computed(() => {
                                     @change="set('hover_background', $event)"
                                 />
                             </section>
+
+                            <button
+                                v-if="tucked.length > 0"
+                                type="button"
+                                class="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:min-h-8"
+                                data-test="more-choices"
+                                @click="allSections = true"
+                            >
+                                <ChevronDown class="size-4 shrink-0" />
+                                <span class="min-w-0 flex-1 truncate"
+                                    >More choices:
+                                    {{
+                                        tucked
+                                            .map(
+                                                (section) =>
+                                                    sectionNames[section],
+                                            )
+                                            .join(', ')
+                                    }}</span
+                                >
+                            </button>
+                            <button
+                                v-else-if="allSections"
+                                type="button"
+                                class="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:min-h-8"
+                                data-test="fewer-choices"
+                                @click="allSections = false"
+                            >
+                                <ChevronDown
+                                    class="size-4 shrink-0 rotate-180"
+                                />
+                                Fewer choices
+                            </button>
 
                             <!-- A look copied from one part goes onto
                                  another in one go, as in design tools. -->

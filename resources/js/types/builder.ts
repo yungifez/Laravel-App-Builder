@@ -493,6 +493,9 @@ export type SelectedElement = {
     src?: string | null;
     /** How many parts it holds, and whether it holds any words. */
     holds?: { parts: number; words: boolean };
+    /** Whether it sits in a row, a column or a grid beside parts it can
+     * change places with, so it moves from place to place there. */
+    snaps?: boolean;
     /** The parts it sits in, nearest first, as the parts list names them. */
     trail?: { kind: string; words: string }[];
     /** The colours the part is drawn in now, by colour property. */

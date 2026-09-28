@@ -11,7 +11,9 @@
 // corner), turn, move, and the space inside it. Dragging one sends the raw
 // values it points at; the builder snaps them to the scale (or not, when the
 // owner fine tunes) and sends the styles back, so the element and its frame
-// follow the snapped value. Saving waits until the handle is let go.
+// follow the snapped value. Saving waits until the handle is let go. In a row,
+// a column or a grid, the move handle and the arrow keys put the part in
+// another place among the parts beside it instead.
 (() => {
     const script = document.currentScript;
     const origin = script && script.dataset.builderOrigin;
@@ -149,6 +151,12 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
     handles.se.title = 'Drag to change the size';
     handles.rotate.title = 'Drag to turn it';
     handles.move.title = 'Drag to move it';
+    handles.move.addEventListener('pointerenter', () => {
+        handles.move.title =
+            selected && snaps(selected)
+                ? 'Drag to put it in another place'
+                : 'Drag to move it';
+    });
 
     for (const side of ['l', 'r', 't', 'b']) {
         handles[`pad-${side}`].title = 'Drag to change the space inside';
@@ -477,6 +485,9 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                       ).length,
             words: /\S/.test(element.textContent ?? ''),
         },
+        // Whether it moves from place to place in a row or a grid, rather
+        // than off its place by some pixels.
+        snaps: snaps(element),
         text: (element.innerText || element.getAttribute('aria-label') || '')
             .replace(/\s+/g, ' ')
             .trim()
@@ -853,6 +864,15 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
 
             event.preventDefault();
             event.stopPropagation();
+
+            // A part with a place in a row or a grid is dragged from one
+            // place to another, as dragging the part itself does.
+            if (kind === 'move' && snaps(selected)) {
+                pressed = { x: event.clientX, y: event.clientY };
+
+                return;
+            }
+
             handle.setPointerCapture(event.pointerId);
             drag = {
                 kind,
@@ -1037,6 +1057,14 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
 
         return computed.display.includes('grid') ? 'grid' : 'y';
     };
+
+    // Whether the part sits in a row, a column or a grid beside parts it
+    // can change places with. Such a part moves from place to place, never
+    // off its place by some pixels, so the layout stays as it was made.
+    const snaps = (element) =>
+        element.parentElement !== null &&
+        /flex|grid/.test(getComputedStyle(element.parentElement).display) &&
+        siblings(element).length > 0;
 
     let pressed = null;
     let reorder = null;
@@ -1541,9 +1569,14 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                     choose(element, true);
                     element.scrollIntoView({ block: 'nearest' });
                 }
-            } else if (arrows[key] && event.altKey && selected && handlesOn) {
-                // Alt and an arrow move the part before or after the one
-                // next to it.
+            } else if (
+                arrows[key] &&
+                selected &&
+                handlesOn &&
+                (event.altKey || snaps(selected))
+            ) {
+                // Alt and an arrow, or an arrow on a part in a row or a
+                // grid, move the part before or after the one next to it.
                 event.preventDefault();
                 toward(key);
             } else if (arrows[key] && selected && handlesOn) {
