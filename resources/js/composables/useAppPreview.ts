@@ -240,6 +240,10 @@ export function useAppPreview(source: Source) {
     // The version of the app the part was moved or copied in; the new
     // place is picked once a newer version is on show.
     let movedFrom: string | null = null;
+    // Words the owner wrote in a new part before it was saved, and where
+    // the new part is once it is: they are kept when the app shows it.
+    let fresh: { text: string; before: string; at: string | null } | null =
+        null;
     // Parts the app took out, by the edit that took them, so undoing a
     // removal or redoing a copy puts them back at once. Removals not
     // saved yet wait in order for theirs; a null one cannot be put back.
@@ -569,6 +573,19 @@ export function useAppPreview(source: Source) {
 
         setUp(to);
 
+        // Words written in a new part show in the new app before it does.
+        const part = selected.value;
+
+        if (
+            moved &&
+            fresh !== null &&
+            fresh.text !== '' &&
+            part !== null &&
+            (part.instance ?? part.source) === fresh.at
+        ) {
+            post({ type: 'words', text: fresh.text }, to);
+        }
+
         // Give the app a moment to apply them before it shows.
         setTimeout(() => {
             if (frames.value[1]?.key === next.key) {
@@ -708,6 +725,17 @@ export function useAppPreview(source: Source) {
             saveError.value = null;
             known.value = null;
             inspect();
+
+            const part = selected.value;
+
+            if (
+                fresh !== null &&
+                fresh.at !== null &&
+                (part.instance ?? part.source) === fresh.at
+            ) {
+                reword(fresh.text, fresh.before);
+                fresh = null;
+            }
         }
 
         if (data.type === 'adjust' && data.values) {
@@ -751,7 +779,15 @@ export function useAppPreview(source: Source) {
         }
 
         if (data.type === 'words' && typeof data.text === 'string') {
-            reword(data.text, String(data.before ?? ''));
+            if (data.fresh === true) {
+                fresh = {
+                    text: data.text,
+                    before: String(data.before ?? ''),
+                    at: fresh?.at ?? null,
+                };
+            } else {
+                reword(data.text, String(data.before ?? ''));
+            }
         }
 
         if (data.type === 'move' && data.to) {
@@ -1193,6 +1229,11 @@ export function useAppPreview(source: Source) {
         // Show it at once, even when an earlier change is still saving:
         // a second Ctrl+D is a second copy, not a lost key press.
         saveError.value = null;
+
+        if (how === 'add') {
+            fresh = null;
+        }
+
         post({
             type: 'reshape',
             how,
@@ -1275,6 +1316,14 @@ export function useAppPreview(source: Source) {
                     | { target: string; instance: boolean }
                     | undefined;
 
+                if (copy !== undefined && how === 'add') {
+                    fresh = {
+                        text: fresh?.text ?? '',
+                        before: fresh?.before ?? '',
+                        at: copy.target,
+                    };
+                }
+
                 if (copy !== undefined && how !== 'remove') {
                     onlyThisOne.value = true;
                     movedTo.value = copy.instance
@@ -1308,6 +1357,7 @@ export function useAppPreview(source: Source) {
             },
             onError: (errors: Record<string, string>) => {
                 saveError.value = Object.values(errors)[0] ?? null;
+                fresh = null;
                 // The app changed already: show it as it is saved.
                 reload();
             },

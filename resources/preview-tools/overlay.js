@@ -1197,12 +1197,14 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
     // any editor. Enter keeps the new words and Escape puts the old back.
     let writing = null;
 
-    const startWriting = (element) => {
+    // A new part is written in before it is saved, so its words go with it
+    // once the builder knows where it is.
+    const startWriting = (element, fresh = false) => {
         if (writing || !editing || plainWords(element) === null) {
             return;
         }
 
-        writing = { element, before: element.textContent };
+        writing = { element, before: element.textContent, fresh };
         element.setAttribute('contenteditable', 'plaintext-only');
         element.setAttribute('data-builder-writing', '');
         layer.setAttribute('data-writing', '');
@@ -1215,6 +1217,8 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         element.addEventListener('blur', () => stopWriting(true), {
             once: true,
         });
+        // The rebuilt app would take the words half written: it waits.
+        send({ type: 'holding', on: true });
     };
 
     const stopWriting = (keep) => {
@@ -1222,7 +1226,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             return;
         }
 
-        const { element, before } = writing;
+        const { element, before, fresh } = writing;
         writing = null;
         const after = element.textContent.replace(/\s+/g, ' ').trim();
         element.removeAttribute('contenteditable');
@@ -1241,9 +1245,11 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                 type: 'words',
                 before: before.replace(/\s+/g, ' ').trim(),
                 text: after,
+                fresh,
             });
         }
 
+        send({ type: 'holding', on: false });
         placeFrame();
     };
 
@@ -1880,9 +1886,12 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                 const holder = document.createElement('template');
                 holder.innerHTML = message.markup;
 
-                if (holder.content.firstElementChild) {
-                    selected.after(holder.content.firstElementChild);
+                const part = holder.content.firstElementChild;
+
+                if (part) {
+                    selected.after(part);
                     placeFrame();
+                    startWriting(part, true);
                 }
             } else if (message.how === 'remove') {
                 const gone = selected;
