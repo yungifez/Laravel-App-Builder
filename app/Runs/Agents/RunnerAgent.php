@@ -28,6 +28,8 @@ class RunnerAgent implements CodingAgent
      * @param  array<string, string>  $credentials  Environment variables for the runner
      * @param  string|null  $sandbox  The agent's own sandbox mode, when it has one
      * @param  string|null  $lightModel  The cheaper model for light tasks, or null to use the usual one
+     * @param  string|null  $effort  How hard the model thinks, or null for its default
+     * @param  string|null  $lightEffort  How hard it thinks on light tasks, or null to use $effort
      */
     public function __construct(
         protected string $adapter,
@@ -38,6 +40,8 @@ class RunnerAgent implements CodingAgent
         protected RunWorkspaceCommand $runWorkspaceCommand,
         protected ?string $sandbox = null,
         protected ?string $lightModel = null,
+        protected ?string $effort = null,
+        protected ?string $lightEffort = null,
     ) {}
 
     public function provider(): string
@@ -49,10 +53,18 @@ class RunnerAgent implements CodingAgent
     {
         $taskFile = self::TASK_DIRECTORY.'/task.json';
 
+        // A repair pass continues this agent's own earlier session, so it
+        // does not read the whole app again. Another agent's session is no
+        // use to it, so it starts fresh with the whole prompt.
+        $resume = $task->resume !== null && $task->resume['adapter'] === $this->adapter ? $task->resume : null;
+
         $this->workspaces->driver($workspace->driver)->writeFile((string) $workspace->driver_id, $taskFile, (string) json_encode([
             'adapter' => $this->adapter,
             'prompt' => $task->prompt,
             'model' => $task->light ? ($this->lightModel ?? $this->model) : $this->model,
+            'effort' => $task->light ? ($this->lightEffort ?? $this->effort) : $this->effort,
+            'session' => $resume['session'] ?? null,
+            'follow_up' => $resume['prompt'] ?? null,
             'max_turns' => $task->maxTurns,
             'max_budget_usd' => $task->maxBudgetUsd,
             'sandbox' => $this->sandbox,

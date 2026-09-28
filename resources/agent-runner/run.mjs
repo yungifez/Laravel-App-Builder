@@ -9,7 +9,11 @@
 // else that goes wrong is "failed".
 //
 // Usage: node run.mjs <task.json>
-// The task file: {adapter, prompt, model?, max_turns?, max_budget_usd?}.
+// The task file: {adapter, prompt, model?, effort?, max_turns?, max_budget_usd?,
+// session?, follow_up?}. With "session", the agent continues that earlier
+// session and is sent "follow_up" instead of the whole prompt. The result
+// line names the session ("session"), and whether the earlier one was
+// continued ("resumed").
 //
 // While the agent works, progress.json next to the task file says what it
 // is doing, so the owner can follow along:
@@ -117,55 +121,98 @@ function print(result) {
     process.stdout.write(`${JSON.stringify({ type: 'result', ...result })}\n`);
 }
 
-async function runClaude(task) {
+/**
+ * Continue the agent's earlier session when the task names one, so a repair
+ * pass starts from what the agent already read instead of reading the whole
+ * app again. A session that cannot be continued (it is gone, or was kept on
+ * another machine) falls back to a fresh start with the whole prompt.
+ */
+async function runTask(adapter, task) {
+    if (task.session) {
+        const result = await adapter(
+            task,
+            task.session,
+            task.follow_up ?? task.prompt,
+        );
+
+        if (!result.lost) {
+            return { ...result, resumed: true };
+        }
+    }
+
+    return { ...(await adapter(task, null, task.prompt)), resumed: false };
+}
+
+/** Whether a failure means the session to continue could not be found. */
+function lostSession(session, started, error) {
+    return session !== null && !started && !PROVIDER_ERROR.test(error ?? '');
+}
+
+async function runClaude(task, session, prompt) {
     const { query } = await import('@anthropic-ai/claude-agent-sdk');
     let providerError = null;
     let final = null;
+    let started = false;
+    let sessionId = session;
 
-    for await (const message of query({
-        prompt: task.prompt,
-        options: {
-            cwd: process.cwd(),
-            model: task.model ?? undefined,
-            maxTurns: task.max_turns ?? undefined,
-            maxBudgetUsd: task.max_budget_usd ?? undefined,
-            permissionMode: 'acceptEdits',
-            allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'],
-            disallowedTools: ['WebFetch', 'WebSearch'],
-            settingSources: ['project'],
-            systemPrompt: { type: 'preset', preset: 'claude_code' },
-        },
-    })) {
-        if (message.type === 'assistant' && message.error) {
-            providerError = message.error;
-        }
+    try {
+        for await (const message of query({
+            prompt,
+            options: {
+                cwd: process.cwd(),
+                model: task.model ?? undefined,
+                effort: task.effort ?? undefined,
+                resume: session ?? undefined,
+                maxTurns: task.max_turns ?? undefined,
+                maxBudgetUsd: task.max_budget_usd ?? undefined,
+                permissionMode: 'acceptEdits',
+                allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'],
+                disallowedTools: ['WebFetch', 'WebSearch'],
+                settingSources: ['project'],
+                systemPrompt: { type: 'preset', preset: 'claude_code' },
+            },
+        })) {
+            sessionId = message.session_id ?? sessionId;
 
-        for (const block of message.type === 'assistant'
-            ? (message.message?.content ?? [])
-            : []) {
-            if (block.type === 'text') {
-                say(block.text);
+            if (message.type === 'assistant' && message.error) {
+                providerError = message.error;
+            } else if (message.type === 'assistant') {
+                started = true;
             }
 
-            if (block.type !== 'tool_use') {
-                continue;
+            for (const block of message.type === 'assistant'
+                ? (message.message?.content ?? [])
+                : []) {
+                if (block.type === 'text') {
+                    say(block.text);
+                }
+
+                if (block.type !== 'tool_use') {
+                    continue;
+                }
+
+                if (['Write', 'Edit', 'MultiEdit'].includes(block.name)) {
+                    track('changing', block.input?.file_path);
+                } else if (block.name === 'Read') {
+                    track('reading', block.input?.file_path);
+                } else if (
+                    block.name === 'Bash' &&
+                    TEST_COMMAND.test(block.input?.command ?? '')
+                ) {
+                    track('testing');
+                }
             }
 
-            if (['Write', 'Edit', 'MultiEdit'].includes(block.name)) {
-                track('changing', block.input?.file_path);
-            } else if (block.name === 'Read') {
-                track('reading', block.input?.file_path);
-            } else if (
-                block.name === 'Bash' &&
-                TEST_COMMAND.test(block.input?.command ?? '')
-            ) {
-                track('testing');
+            if (message.type === 'result') {
+                final = message;
             }
         }
-
-        if (message.type === 'result') {
-            final = message;
+    } catch (error) {
+        if (lostSession(session, started, String(error?.message ?? error))) {
+            return { lost: true };
         }
+
+        throw error;
     }
 
     const usage = {
@@ -173,6 +220,7 @@ async function runClaude(task) {
         input_tokens: final?.usage?.input_tokens ?? 0,
         output_tokens: final?.usage?.output_tokens ?? 0,
         cost_usd: final?.total_cost_usd ?? null,
+        session: sessionId,
     };
 
     if (providerError !== null && CLAUDE_PROVIDER_ERRORS.has(providerError)) {
@@ -197,6 +245,11 @@ async function runClaude(task) {
         const status = final.api_error_status ?? null;
         const error =
             (final.errors ?? []).join(' ') || final.result || final.subtype;
+
+        if (status === null && lostSession(session, started, error)) {
+            return { lost: true };
+        }
+
         const unavailable =
             (status !== null &&
                 (status === 401 ||
@@ -216,53 +269,73 @@ async function runClaude(task) {
     return { status: 'completed', summary: final.result, ...usage };
 }
 
-async function runCodex(task) {
+async function runCodex(task, session, prompt) {
     const { Codex } = await import('@openai/codex-sdk');
     const codex = new Codex({
         baseUrl: process.env.OPENAI_BASE_URL || undefined,
         apiKey: process.env.OPENAI_API_KEY || undefined,
     });
-    const thread = codex.startThread({
+    const options = {
         workingDirectory: process.cwd(),
         model: task.model ?? undefined,
+        modelReasoningEffort: task.effort ?? undefined,
         sandboxMode: task.sandbox ?? 'workspace-write',
         approvalPolicy: 'never',
         networkAccessEnabled: false,
         webSearchMode: 'disabled',
-    });
+    };
+    const thread = session
+        ? codex.resumeThread(session, options)
+        : codex.startThread(options);
 
-    const { events } = await thread.runStreamed(task.prompt);
     let summary = '';
     let usage = null;
     let failure = null;
+    let started = false;
 
-    for await (const event of events) {
-        if (
-            event.type === 'item.completed' &&
-            event.item.type === 'file_change'
-        ) {
-            for (const change of event.item.changes ?? []) {
-                track('changing', change.path);
+    try {
+        const { events } = await thread.runStreamed(prompt);
+
+        for await (const event of events) {
+            started ||= event.type.startsWith('item.');
+
+            if (
+                event.type === 'item.completed' &&
+                event.item.type === 'file_change'
+            ) {
+                for (const change of event.item.changes ?? []) {
+                    track('changing', change.path);
+                }
+            } else if (
+                event.type === 'item.started' &&
+                event.item.type === 'command_execution' &&
+                TEST_COMMAND.test(event.item.command ?? '')
+            ) {
+                track('testing');
+            } else if (
+                event.type === 'item.completed' &&
+                event.item.type === 'agent_message'
+            ) {
+                summary = event.item.text;
+                say(event.item.text);
+            } else if (event.type === 'turn.completed') {
+                usage = event.usage;
+            } else if (event.type === 'turn.failed') {
+                failure = event.error.message;
+            } else if (event.type === 'error') {
+                failure = event.message;
             }
-        } else if (
-            event.type === 'item.started' &&
-            event.item.type === 'command_execution' &&
-            TEST_COMMAND.test(event.item.command ?? '')
-        ) {
-            track('testing');
-        } else if (
-            event.type === 'item.completed' &&
-            event.item.type === 'agent_message'
-        ) {
-            summary = event.item.text;
-            say(event.item.text);
-        } else if (event.type === 'turn.completed') {
-            usage = event.usage;
-        } else if (event.type === 'turn.failed') {
-            failure = event.error.message;
-        } else if (event.type === 'error') {
-            failure = event.message;
         }
+    } catch (error) {
+        if (lostSession(session, started, String(error?.message ?? error))) {
+            return { lost: true };
+        }
+
+        throw error;
+    }
+
+    if (failure !== null && lostSession(session, started, failure)) {
+        return { lost: true };
     }
 
     const counts = {
@@ -273,6 +346,7 @@ async function runCodex(task) {
         output_tokens:
             (usage?.output_tokens ?? 0) + (usage?.reasoning_output_tokens ?? 0),
         cost_usd: null,
+        session: thread.id ?? session,
     };
 
     if (failure !== null) {
@@ -301,7 +375,7 @@ try {
 
     print({
         adapter: task.adapter,
-        ...(await adapters[task.adapter](task)),
+        ...(await runTask(adapters[task.adapter], task)),
         story: progress.story,
     });
 } catch (error) {

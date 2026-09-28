@@ -15,6 +15,7 @@ use App\Jobs\VerifyFeatureRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
+use App\Models\RunEvent;
 use App\Models\Workspace;
 use App\Models\WorkspaceCommand;
 use App\Runs\Agents\AgentOutcome;
@@ -433,6 +434,54 @@ class SdkDriverTest extends TestCase
         $this->assertStringStartsWith('model=claude-opus-5 ', $account(null));
     }
 
+    public function test_a_repair_pass_continues_the_agents_session_with_only_the_problems()
+    {
+        $this->agent('claude', 'anthropic', function (Workspace $workspace, AgentTask $task) {
+            File::put($this->path($workspace, 'app/Team.php'), "<?php\n// ".count($this->agents['claude']->tasks)."\n");
+
+            return new AgentOutcome('claude', 'anthropic', null, AgentOutcomeStatus::Completed, 'Done.', session: 'session-1', resumed: $task->resume !== null);
+        });
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->failVerification($run, 'Expected description to be fillable.');
+
+        [$first, $repair] = $this->agents['claude']->tasks;
+        $this->assertNull($first->resume);
+        $this->assertSame(['claude', 'session-1'], [$repair->resume['adapter'] ?? null, $repair->resume['session'] ?? null]);
+        $this->assertStringContainsString('Expected description to be fillable.', $repair->resume['prompt']);
+        $this->assertStringNotContainsString("Owner's request", $repair->resume['prompt'], 'The session already has the brief.');
+        // Should the session be gone, the agent starts fresh with everything.
+        $this->assertStringContainsString("Owner's request", $repair->prompt);
+        $this->assertStringContainsString('Expected description to be fillable.', $repair->prompt);
+        $this->assertSame([false, true], $run->events()->where('type', 'model_call')->where('data->role', 'coder')->orderBy('sequence')->get()->map(fn (RunEvent $event) => $event->data['resumed'])->all());
+    }
+
+    public function test_the_runner_continues_only_its_own_agents_session_and_passes_the_effort()
+    {
+        config([
+            'builder.agents.order' => ['codex'],
+            'builder.agents.runner.path' => base_path('tests/Fixtures/fake-agent-runner.mjs'),
+            'builder.agents.adapters.codex.effort' => 'medium',
+        ]);
+        FeaturePlanner::fake([$this->plan()]);
+        $run = app(StartRun::class)->handle($featureRequest = $this->request())->refresh();
+
+        $this->assertStringEndsWith('effort=medium', $run->events()->where('type', 'build_finished')->sole()->data['account']);
+
+        $this->failVerification($run, 'Expected description to be fillable.');
+
+        $calls = $run->events()->where('type', 'model_call')->where('data->role', 'coder')->orderBy('sequence')->get()->map(fn (RunEvent $event) => [$event->data['session'], $event->data['resumed']])->all();
+        $this->assertSame([['fake-session', false], ['fake-session', true]], $calls);
+        $this->assertStringNotContainsString("Owner's request", (string) $featureRequest->refresh()->patch, 'The continued session was sent only the problems.');
+
+        // A session made by another agent is not continued.
+        $agent = app(CodingAgentManager::class)->driver('codex');
+        $workspace = $run->refresh()->workspace;
+        $outcome = $agent->run($workspace, new AgentTask('Whole prompt', resume: ['adapter' => 'claude', 'session' => 'other', 'prompt' => 'Only this']));
+        $this->assertFalse($outcome->resumed);
+        $this->assertSame('Whole prompt', File::get($this->path($workspace, 'agent-output.txt')));
+    }
+
     public function test_the_codex_agent_gets_its_configured_sandbox()
     {
         config([
@@ -526,6 +575,19 @@ class SdkDriverTest extends TestCase
         $verification = $run->verifications()->latest('id')->firstOrFail();
         $verification->update(['status' => VerificationStatus::Passed, 'results' => [
             ['name' => 'Tests', 'stage' => 'checks', 'outcome' => 'passed', 'exit_code' => 0, 'timed_out' => false, 'duration_ms' => 10, 'output' => 'OK'],
+        ], 'finished_at' => now()]);
+
+        app(CompleteRunVerification::class)->handle($verification);
+    }
+
+    /**
+     * Record a failing verification for the run's change and carry it back.
+     */
+    protected function failVerification(Run $run, string $output): void
+    {
+        $verification = $run->verifications()->latest('id')->firstOrFail();
+        $verification->update(['status' => VerificationStatus::Failed, 'results' => [
+            ['name' => 'Tests', 'stage' => 'checks', 'outcome' => 'failed', 'exit_code' => 1, 'timed_out' => false, 'duration_ms' => 10, 'output' => $output],
         ], 'finished_at' => now()]);
 
         app(CompleteRunVerification::class)->handle($verification);

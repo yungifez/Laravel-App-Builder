@@ -61,6 +61,7 @@ class SdkDriver extends AgentDriver
             maxBudgetUsd: (float) ($light ? config('builder.verification.shortcuts.tidy.max_budget_usd') : config('builder.agents.max_budget_usd')),
             timeoutSeconds: (int) config('builder.construction.budgets.minutes') * 60,
             light: $light,
+            resume: $this->resumeFor($run),
         ));
 
         $this->restoreProtectedPaths($run);
@@ -74,6 +75,34 @@ class SdkDriver extends AgentDriver
         }
 
         return (string) $outcome->summary;
+    }
+
+    /**
+     * For a repair pass, get the session the change was built in and what
+     * to tell the agent there: only the problems, since it already has the
+     * brief. Most of a pass's cost is the agent reading the app, and a
+     * continued session has read it already.
+     *
+     * @return array{adapter: string, session: string, prompt: string}|null
+     */
+    protected function resumeFor(Run $run): ?array
+    {
+        if ($run->feedback === null) {
+            return null;
+        }
+
+        $data = $this->lastBuild($run)->data ?? [];
+
+        if (! is_string($data['adapter'] ?? null) || ! is_string($data['session'] ?? null)) {
+            return null;
+        }
+
+        return [
+            'adapter' => $data['adapter'],
+            'session' => $data['session'],
+            'prompt' => "## Fix these problems with your earlier attempt\n\nThe files already contain your earlier changes.\n\n".$this->list($run->feedback['details'])
+                ."\n\n".trim($this->selfChecks().'When you are done, reply with a short summary of what you changed.'),
+        ];
     }
 
     /**
@@ -113,17 +142,23 @@ class SdkDriver extends AgentDriver
      */
     protected function builtBy(Run $run): ?string
     {
-        /** @var RunEvent|null $event */
-        $event = $run->events()
+        $provider = $this->lastBuild($run)?->data['provider'] ?? null;
+
+        return is_string($provider) ? $provider : null;
+    }
+
+    /**
+     * Get the log entry of the latest agent attempt that built the change.
+     */
+    protected function lastBuild(Run $run): ?RunEvent
+    {
+        /** @var RunEvent|null */
+        return $run->events()
             ->where('type', 'model_call')
             ->where('data->role', 'coder')
             ->where('data->status', AgentOutcomeStatus::Completed->value)
             ->latest('sequence')
             ->first();
-
-        $provider = $event?->data['provider'] ?? null;
-
-        return is_string($provider) ? $provider : null;
     }
 
     /**

@@ -440,11 +440,16 @@ return [
 
         'adapters' => [
             // "light_model" takes small, well-defined tasks, such as a
-            // background tidy-up; unset, the usual model takes them.
+            // background tidy-up; unset, the usual model takes them. "effort"
+            // sets how hard the model thinks (low, medium, high and so on),
+            // and "light_effort" does the same for light tasks. Less effort
+            // costs less; unset, the provider's default is used.
             'claude' => [
                 'provider' => 'anthropic',
                 'model' => env('BUILDER_CLAUDE_AGENT_MODEL'),
                 'light_model' => env('BUILDER_CLAUDE_AGENT_LIGHT_MODEL'),
+                'effort' => env('BUILDER_CLAUDE_AGENT_EFFORT'),
+                'light_effort' => env('BUILDER_CLAUDE_AGENT_LIGHT_EFFORT'),
             ],
             // Codex's own sandbox needs Linux user namespaces, which most
             // containers do not allow. Where the workspace is already the
@@ -454,6 +459,8 @@ return [
                 'provider' => 'openai',
                 'model' => env('BUILDER_CODEX_AGENT_MODEL'),
                 'light_model' => env('BUILDER_CODEX_AGENT_LIGHT_MODEL'),
+                'effort' => env('BUILDER_CODEX_AGENT_EFFORT'),
+                'light_effort' => env('BUILDER_CODEX_AGENT_LIGHT_EFFORT'),
                 'sandbox' => env('BUILDER_CODEX_SANDBOX', 'workspace-write'),
             ],
         ],

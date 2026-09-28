@@ -27,6 +27,9 @@ final readonly class AgentOutcome
         public ?float $costUsd = null,
         public array $story = [],
         public int $cachedInputTokens = 0,
+        // The agent's session, which a repair pass can continue.
+        public ?string $session = null,
+        public bool $resumed = false,
     ) {}
 
     /**
@@ -69,6 +72,8 @@ final readonly class AgentOutcome
             costUsd: isset($result['cost_usd']) ? (float) $result['cost_usd'] : null,
             story: self::story($result['story'] ?? []),
             cachedInputTokens: (int) ($result['cached_input_tokens'] ?? 0),
+            session: is_string($result['session'] ?? null) && $result['session'] !== '' ? Str::limit($result['session'], 200, '') : null,
+            resumed: ($result['resumed'] ?? false) === true,
         );
     }
 
@@ -114,6 +119,8 @@ final readonly class AgentOutcome
             'cached_input_tokens' => $this->cachedInputTokens,
             'output_tokens' => $this->outputTokens,
             'cost_usd' => $this->costUsd,
+            'session' => $this->session,
+            'resumed' => $this->resumed,
         ];
     }
 }
