@@ -424,6 +424,9 @@ export type InspectedElement = {
     /** Where a link goes: null for a part that is no link, and an href of
      * null when the app decides it. */
     link: { href: string | null } | null;
+    /** Which file a picture shows: null for a part that is no picture, and
+     * a src of null when the app decides it. */
+    picture: { src: string | null } | null;
     classes: string;
     values: Record<
         Device,
@@ -469,6 +472,10 @@ export type SelectedElement = {
     words?: string | null;
     /** Where the part's link goes as the app draws it, or null. */
     href?: string | null;
+    /** What kind of part it is, in plain words, as "Picture". */
+    kind?: string;
+    /** The picture it shows as the app draws it, or null. */
+    src?: string | null;
     /** How many parts it holds, and whether it holds any words. */
     holds?: { parts: number; words: boolean };
     /** The parts it sits in, nearest first, as the parts list names them. */
@@ -508,14 +515,23 @@ export type VisualEditSummary = {
     tag: string;
     device: Device;
     /** A change to how the part looks, a move among its siblings, new
-     * words, a new address for a link, a copy, or a removal. */
-    kind: 'look' | 'move' | 'text' | 'link' | 'duplicate' | 'remove';
+     * words, a new address for a link, a new picture, a copy, or a removal. */
+    kind:
+        | 'look'
+        | 'move'
+        | 'text'
+        | 'link'
+        | 'picture'
+        | 'duplicate'
+        | 'remove';
     properties: VisualProperty[];
     /** The new words and the words they replaced, for new words. */
     words: string | null;
     words_before: string | null;
     /** Where a link goes after a new address. */
     link: string | null;
+    /** Which file a picture shows after a new picture. */
+    picture: string | null;
     /** The part's classes and the app's version after this edit (or its undo). */
     classes: string;
     revision: string;

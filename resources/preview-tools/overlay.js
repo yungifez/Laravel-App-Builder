@@ -475,6 +475,10 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         // Where the link goes as the app draws it, even when the app works
         // the address out, so the owner can go there.
         href: element.closest('a[href]')?.href ?? null,
+        // What kind of part it is, to name one that shows no words.
+        kind: kindOf(element),
+        // The picture it shows, so the owner sees it beside the choice.
+        src: element instanceof HTMLImageElement ? element.currentSrc : null,
         // The parts it sits in, nearest first, so the owner sees where it
         // is and can pick one.
         trail: (() => {
@@ -1584,6 +1588,22 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             }
 
             placeFrame();
+        }
+
+        // A new picture the owner chose, shown at once in the picked part;
+        // the rebuilt app shows the kept file.
+        if (
+            message.type === 'picture' &&
+            selected instanceof HTMLImageElement &&
+            message.picture instanceof Blob
+        ) {
+            // The builder's own address for the file cannot load here, so
+            // the file itself comes over.
+            selected.removeAttribute('srcset');
+            selected.src = URL.createObjectURL(message.picture);
+            selected.addEventListener('load', () => placeFrame(), {
+                once: true,
+            });
         }
 
         // The space around the selected part shows only while the owner

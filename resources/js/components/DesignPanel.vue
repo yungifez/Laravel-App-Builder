@@ -116,6 +116,27 @@ function keepAddress(): void {
     props.state.relink(address.value);
 }
 
+// The picture the owner chose, shown here at once, until another part is
+// picked.
+const pictureInput = ref<HTMLInputElement | null>(null);
+const chosenPicture = ref<string | null>(null);
+watch(
+    () => props.state.selected?.source,
+    () => (chosenPicture.value = null),
+);
+
+function choosePicture(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const picture = input.files?.[0];
+
+    if (picture !== undefined) {
+        chosenPicture.value = URL.createObjectURL(picture);
+        props.state.repicture(picture);
+    }
+
+    input.value = '';
+}
+
 // How many parts up the link this part sits in is, to pick it at once.
 const linkUp = computed(() => {
     const at = (props.state.selected?.trail ?? []).findIndex(
@@ -417,6 +438,10 @@ function describeEdit(edit: VisualEditSummary): string {
         return 'Link';
     }
 
+    if (edit.kind === 'picture') {
+        return 'Picture';
+    }
+
     if (edit.kind === 'duplicate') {
         return 'Copied';
     }
@@ -702,7 +727,10 @@ const recent = computed(() => {
                         </nav>
                         <p class="truncate text-sm font-medium">
                             {{
-                                state.selected.text || element?.area?.name || ''
+                                state.selected.text ||
+                                state.selected.kind ||
+                                element?.area?.name ||
+                                ''
                             }}
                         </p>
                     </div>
@@ -972,6 +1000,58 @@ const recent = computed(() => {
                                         >
                                     </p>
                                 </template>
+                            </section>
+
+                            <section
+                                v-if="element.picture"
+                                class="space-y-2"
+                                data-test="picture"
+                            >
+                                <h3 class="text-xs font-medium">Picture</h3>
+                                <div class="flex items-center gap-3">
+                                    <img
+                                        v-if="
+                                            chosenPicture ?? state.selected?.src
+                                        "
+                                        :src="
+                                            chosenPicture ??
+                                            state.selected?.src ??
+                                            undefined
+                                        "
+                                        alt=""
+                                        class="size-14 shrink-0 rounded-md bg-muted object-cover"
+                                    />
+                                    <template
+                                        v-if="element.picture.src != null"
+                                    >
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            class="h-11 sm:h-8"
+                                            :disabled="state.saving"
+                                            data-test="picture-choose"
+                                            @click="pictureInput?.click()"
+                                            >Choose a picture</Button
+                                        >
+                                        <input
+                                            ref="pictureInput"
+                                            type="file"
+                                            accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
+                                            class="sr-only"
+                                            tabindex="-1"
+                                            aria-label="Choose a picture"
+                                            data-test="picture-file"
+                                            @change="choosePicture"
+                                        />
+                                    </template>
+                                    <p
+                                        v-else
+                                        class="text-xs text-muted-foreground"
+                                    >
+                                        Your app decides which picture shows
+                                        here. Ask me to change it.
+                                    </p>
+                                </div>
                             </section>
 
                             <section v-if="arranges" class="space-y-2">

@@ -11,6 +11,7 @@ import type { Ref } from 'vue';
 import VisualEditController from '@/actions/App/Http/Controllers/VisualEditController';
 import VisualEditReversionController from '@/actions/App/Http/Controllers/VisualEditReversionController';
 import VisualLinkController from '@/actions/App/Http/Controllers/VisualLinkController';
+import VisualPictureController from '@/actions/App/Http/Controllers/VisualPictureController';
 import VisualMoveController from '@/actions/App/Http/Controllers/VisualMoveController';
 import VisualPartController from '@/actions/App/Http/Controllers/VisualPartController';
 import VisualTextController from '@/actions/App/Http/Controllers/VisualTextController';
@@ -1409,6 +1410,61 @@ export function useAppPreview(source: Source) {
         );
     }
 
+    // Put a new picture in the picked one. The app shows it at once from
+    // the owner's own file; the file is kept in the app, which rebuilds
+    // with it.
+    function repicture(picture: File): void {
+        const preview = source.preview();
+        const part = selected.value;
+        const was = element.value?.picture?.src ?? null;
+        const at = part?.instance ?? part?.source;
+
+        if (preview === null || part === null || !at || was === null) {
+            return;
+        }
+
+        if (sending.value !== null || queue.value.length > 0 || moving.value) {
+            save();
+            setTimeout(() => repicture(picture), 200);
+
+            return;
+        }
+
+        moving.value = true;
+        saveError.value = null;
+        post({ type: 'picture', picture });
+
+        router.post(
+            VisualPictureController.store.url(source.projectId()),
+            {
+                preview: preview.id,
+                target: at,
+                instance: Boolean(part.instance),
+                before: was,
+                picture,
+                revision: head.value ?? element.value?.revision,
+            },
+            {
+                only: ['edits', 'preview'],
+                async: true,
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => {
+                    last.value = null;
+                    head.value = null;
+                    known.value = null;
+                    inspect();
+                },
+                onError: (errors) => {
+                    saveError.value = Object.values(errors)[0] ?? null;
+                    // The app shows the owner's file already: take it back.
+                    reload();
+                },
+                onFinish: () => (moving.value = false),
+            },
+        );
+    }
+
     // Go back to the page before this one, or forward again. The frame's
     // own history is not used: at its first page it would move the builder.
     function browse(by: -1 | 1): void {
@@ -1882,6 +1938,7 @@ export function useAppPreview(source: Source) {
         showSpacing,
         reword,
         relink,
+        repicture,
         follow,
         addressOf,
         back,

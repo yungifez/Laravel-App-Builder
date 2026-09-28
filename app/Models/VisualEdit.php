@@ -68,6 +68,12 @@ class VisualEdit extends Model
     public const REMOVE = 'remove';
 
     /**
+     * The key in "changes" of a new picture: the file shown before and
+     * after, as the app serves them.
+     */
+    public const PICTURE = 'picture';
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -109,6 +115,14 @@ class VisualEdit extends Model
     }
 
     /**
+     * Determine whether the edit put a new picture in.
+     */
+    public function repictures(): bool
+    {
+        return isset($this->getAttribute('changes')[self::PICTURE]);
+    }
+
+    /**
      * Determine whether the edit copied the element or took it out.
      */
     public function reshapes(): bool
@@ -122,12 +136,13 @@ class VisualEdit extends Model
      */
     public function rewritesFile(): bool
     {
-        return $this->moves() || $this->rewords() || $this->relinks() || $this->reshapes();
+        return $this->moves() || $this->rewords() || $this->relinks() || $this->repictures() || $this->reshapes();
     }
 
     /**
      * Get what kind of edit this is: a change to how the element looks, a
-     * move, new words, a new address for a link, a copy, or taking it out.
+     * move, new words, a new address for a link, a new picture, a copy, or
+     * taking it out.
      */
     public function kind(): string
     {
@@ -135,6 +150,7 @@ class VisualEdit extends Model
             $this->moves() => 'move',
             $this->rewords() => 'text',
             $this->relinks() => 'link',
+            $this->repictures() => 'picture',
             isset($this->getAttribute('changes')[self::DUPLICATE]) => 'duplicate',
             isset($this->getAttribute('changes')[self::REMOVE]) => 'remove',
             default => 'look',

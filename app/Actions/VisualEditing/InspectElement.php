@@ -11,6 +11,7 @@ use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TailwindClasses;
 use App\VisualEditing\TemplateElement;
 use App\VisualEditing\TemplateLink;
+use App\VisualEditing\TemplatePicture;
 use Illuminate\Support\Str;
 
 class InspectElement
@@ -63,6 +64,9 @@ class InspectElement
             // Where a link goes, when it is written plainly and so can be
             // changed here; null when the app decides it.
             'link' => $element?->tag === 'a' ? ['href' => TemplateLink::in((string) $contents, $element)['value'] ?? null] : null,
+            // Which file a picture shows, when it is written plainly and so
+            // can be changed here; null when the app decides it.
+            'picture' => $element?->tag === 'img' ? ['src' => TemplatePicture::in((string) $contents, $element)['value'] ?? null] : null,
             'classes' => $classes,
             'values' => TailwindClasses::effective($classes),
             'area' => $this->area($preview, $location->file),
