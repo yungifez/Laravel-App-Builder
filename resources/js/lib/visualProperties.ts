@@ -531,6 +531,42 @@ export function definition(property: VisualProperty): PropertyDefinition {
  * Spacing is Tailwind's classic scale; Tailwind v4 writes any of these as
  * a theme utility (`p-4`, `w-72`).
  */
+// Properties that are one thing to the owner when changed together.
+const pairs: { keys: [VisualProperty, VisualProperty]; label: string }[] = [
+    { keys: ['padding_x', 'padding_y'], label: 'Space inside' },
+    { keys: ['margin_x', 'margin_y'], label: 'Space outside' },
+    { keys: ['translate_x', 'translate_y'], label: 'Place on the page' },
+];
+
+// What a change to several properties changed, in a few words: one or two
+// things by name, more by the groups they are in.
+export function describeChanged(keys: VisualProperty[]): string {
+    let names: string[] = [];
+    const paired = new Set<VisualProperty>();
+
+    for (const pair of pairs) {
+        if (pair.keys.every((key) => keys.includes(key))) {
+            pair.keys.forEach((key) => paired.add(key));
+            names.push(pair.label);
+        }
+    }
+
+    names = [
+        ...keys
+            .filter((key) => !paired.has(key))
+            .map((key) => definition(key).label),
+        ...names,
+    ];
+
+    if (names.length > 2) {
+        names = [...new Set(keys.map((key) => definition(key).group))];
+    }
+
+    return names.length > 1
+        ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+        : (names[0] ?? '');
+}
+
 export const scales: Record<Scale, { steps: number[]; every: number }> = {
     spacing: {
         steps: [

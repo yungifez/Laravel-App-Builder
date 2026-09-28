@@ -74,6 +74,7 @@ import { themeColorLabel } from '@/lib/themeColors';
 import { when } from '@/lib/when';
 import {
     definition,
+    describeChanged,
     describeValue,
     drawnStep,
     properties,
@@ -550,13 +551,7 @@ function describeEdit(edit: VisualEditSummary): string {
         return 'Added';
     }
 
-    return edit.properties
-        .map(
-            (key) =>
-                properties.find((property) => property.key === key)?.label ??
-                key,
-        )
-        .join(', ');
+    return describeChanged(edit.properties);
 }
 
 // What a change set its one property to, in words, with the colour itself
