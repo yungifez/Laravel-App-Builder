@@ -897,8 +897,9 @@ export function useAppPreview(source: Source) {
         { immediate: true },
     );
 
+    // A rebuild takes a few seconds; asking each second shows it sooner.
     const { start, stop } = usePoll(
-        2000,
+        1000,
         { only: ['preview', 'edits'] },
         { autoStart: false },
     );

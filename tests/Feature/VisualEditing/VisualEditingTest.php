@@ -190,6 +190,16 @@ class VisualEditingTest extends TestCase
         Queue::assertPushed(RebuildPreview::class, fn (RebuildPreview $job) => $job->preview->is($preview));
     }
 
+    public function test_the_rebuild_after_an_edit_runs_with_the_previews_not_behind_coding_runs()
+    {
+        config(['builder.preview.queue' => 'previews']);
+
+        $job = new RebuildPreview(Preview::factory()->create());
+
+        $this->assertSame('previews', $job->queue);
+        $this->assertGreaterThan(now()->addSeconds($job->timeout), $job->retryUntil());
+    }
+
     public function test_an_edit_made_on_an_old_version_is_refused_and_nothing_is_committed()
     {
         Queue::fake();

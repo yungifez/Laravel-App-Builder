@@ -9,6 +9,7 @@ use App\Models\PreviewRebuild;
 use App\Projects\ProjectRepository;
 use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\WorkspaceManager;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
@@ -24,11 +25,6 @@ class RebuildPreview implements ShouldQueue
      * The number of seconds the job can run: the frontend build.
      */
     public int $timeout = 900;
-
-    /**
-     * A rebuild waits while another rebuild of the same preview runs.
-     */
-    public int $tries = 60;
 
     /**
      * A failed rebuild is not retried; the next edit rebuilds again.
@@ -47,16 +43,31 @@ class RebuildPreview implements ShouldQueue
     public function __construct(public Preview $preview)
     {
         $this->queuedAt = now()->toIso8601String();
+
+        // On the default queue, a rebuild would wait behind a model's
+        // coding run, which takes minutes; the owner waits for this one.
+        $this->onQueue(config('builder.preview.queue'));
     }
 
     /**
-     * Get the middleware the job should pass through.
+     * A rebuild waits while another rebuild of the same preview runs, for
+     * as long as that one may take.
+     */
+    public function retryUntil(): CarbonImmutable
+    {
+        return now()->addSeconds($this->timeout * 2);
+    }
+
+    /**
+     * Get the middleware the job should pass through. A waiting rebuild
+     * checks again each second: a build takes a few seconds, and the
+     * owner sees their change only when the next one is done.
      *
      * @return list<object>
      */
     public function middleware(): array
     {
-        return [(new WithoutOverlapping("preview:{$this->preview->id}"))->releaseAfter(10)->expireAfter($this->timeout)];
+        return [(new WithoutOverlapping("preview:{$this->preview->id}"))->releaseAfter(1)->expireAfter($this->timeout)];
     }
 
     /**
