@@ -140,6 +140,18 @@ class TailwindClassesTest extends TestCase
         $this->assertSame('tracking-wide', TailwindClasses::write('uppercase tracking-wide', 'base', ['text_case' => null]));
     }
 
+    public function test_a_colour_while_pointed_at_is_read_and_written_with_hover()
+    {
+        $colors = ['primary', 'accent'];
+
+        $this->assertSame(['background' => 'primary', 'hover_background' => 'accent'], TailwindClasses::read('bg-primary hover:bg-accent', $colors)['base']);
+        $this->assertSame(['hover_text_color' => 'primary'], TailwindClasses::read('md:hover:text-primary', $colors)['md']);
+        $this->assertSame(['hover_background' => 'custom'], TailwindClasses::read('hover:underline hover:bg-accent/50', $colors)['base']);
+        $this->assertSame('bg-primary hover:bg-primary', TailwindClasses::write('bg-primary hover:bg-accent', 'base', ['hover_background' => 'primary'], $colors));
+        $this->assertSame('bg-primary lg:hover:text-accent', TailwindClasses::write('bg-primary', 'lg', ['hover_text_color' => 'accent'], $colors));
+        $this->assertSame('bg-primary', TailwindClasses::write('bg-primary hover:bg-accent', 'base', ['hover_background' => null], $colors));
+    }
+
     public function test_a_border_line_style_is_read_and_written_beside_its_width_and_colour()
     {
         $this->assertSame(['border' => 2, 'border_style' => 'dashed'], TailwindClasses::read('border-2 border-dashed')['base']);

@@ -422,6 +422,15 @@ function set(property: VisualProperty, value: VisualValue | null): void {
     props.state.change(property, value);
 }
 
+// Links and buttons answer the pointer, so they show the colours for
+// then; any part that has such a colour already shows them too.
+const answersPointer = computed(
+    () =>
+        ['a', 'button'].includes(props.state.selected?.tag ?? '') ||
+        props.state.valueOf('hover_text_color') != null ||
+        props.state.valueOf('hover_background') != null,
+);
+
 // How the picture fills its box: as set, or else as the app draws it.
 const pictureFit = computed(
     () =>
@@ -1826,6 +1835,37 @@ const recent = computed(() => {
                                         @change="set('border_color', $event)"
                                     />
                                 </Reveal>
+                            </section>
+
+                            <!-- Colours while the pointer is on it. The
+                                 preview shows them while they are chosen;
+                                 after that, point at the part to see them. -->
+                            <section
+                                v-if="answersPointer"
+                                class="space-y-2"
+                                data-test="pointed-at"
+                            >
+                                <h3 class="text-xs font-medium">
+                                    When pointed at
+                                </h3>
+                                <Swatches
+                                    label="Text"
+                                    name="Text colour when pointed at"
+                                    kind="color"
+                                    :colors="drawnColors"
+                                    :value="state.valueOf('hover_text_color')"
+                                    :options="options('hover_text_color')"
+                                    @change="set('hover_text_color', $event)"
+                                />
+                                <Swatches
+                                    label="Fill"
+                                    name="Fill when pointed at"
+                                    kind="color"
+                                    :colors="drawnColors"
+                                    :value="state.valueOf('hover_background')"
+                                    :options="options('hover_background')"
+                                    @change="set('hover_background', $event)"
+                                />
                             </section>
 
                             <!-- A look copied from one part goes onto

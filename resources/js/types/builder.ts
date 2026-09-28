@@ -377,6 +377,8 @@ export type VisualProperty =
     | 'object_fit'
     | 'object_position'
     | 'aspect_ratio'
+    | 'hover_text_color'
+    | 'hover_background'
     | 'line_height'
     | 'letter_spacing'
     | 'text_color'

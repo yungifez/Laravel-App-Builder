@@ -38,6 +38,7 @@ class TailwindClasses
         'rotate', 'translate_x', 'translate_y', 'opacity',
         'text_size', 'text_weight', 'text_align', 'font_style', 'text_decoration', 'text_case', 'line_clamp', 'line_height', 'letter_spacing', 'text_color', 'background',
         'object_fit', 'object_position', 'aspect_ratio',
+        'hover_text_color', 'hover_background',
     ];
 
     protected const KEYWORDS = [
@@ -69,6 +70,12 @@ class TailwindClasses
      * their classes.
      */
     protected const COLORS = ['text' => 'text_color', 'bg' => 'background', 'border' => 'border_color'];
+
+    /**
+     * The colours a part can take while the pointer is on it, written with
+     * a "hover:" before the colour's class.
+     */
+    protected const HOVER = ['text_color' => 'hover_text_color', 'background' => 'hover_background'];
 
     /**
      * Colours that are not the app's: Tailwind's palette, white and black,
@@ -264,6 +271,18 @@ class TailwindClasses
     protected static function parse(string $token, array $colors): ?array
     {
         $parts = explode(':', $token);
+
+        // A colour while the pointer is on the part, as "md:hover:bg-accent";
+        // other classes for that moment are left as they are.
+        if (count($parts) > 1 && $parts[count($parts) - 2] === 'hover') {
+            array_splice($parts, -2, 1);
+            $parsed = self::parse(implode(':', $parts), $colors);
+
+            return $parsed !== null && isset(self::HOVER[$parsed[1]])
+                ? [$parsed[0], self::HOVER[$parsed[1]], $parsed[2]]
+                : null;
+        }
+
         $utility = (string) array_pop($parts);
 
         if (count($parts) > 1 || str_starts_with($utility, '!') || str_ends_with($utility, '!')) {
@@ -426,7 +445,7 @@ class TailwindClasses
             $new = $value === null ? [] : [self::utility($group, $value, $colors)];
         }
 
-        $prefix = $device === 'base' ? '' : "{$device}:";
+        $prefix = ($device === 'base' ? '' : "{$device}:").(in_array($group, self::HOVER, true) ? 'hover:' : '');
         $new = array_map(fn (string $utility) => $prefix.$utility, $new);
 
         array_splice($kept, $position ?? count($kept), 0, $new);
@@ -490,6 +509,10 @@ class TailwindClasses
      */
     protected static function utility(string $property, int|float|string $value, array $colors): string
     {
+        if (($color = array_search($property, self::HOVER, true)) !== false) {
+            return self::utility($color, $value, $colors);
+        }
+
         if (($prefix = array_search($property, self::COLORS, true)) !== false) {
             return in_array($value, $colors, true) || ($value === 'transparent' && $property !== 'text_color')
                 ? "{$prefix}-{$value}"

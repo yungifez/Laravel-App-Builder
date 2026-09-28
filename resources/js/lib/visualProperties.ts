@@ -606,6 +606,19 @@ export const properties: PropertyDefinition[] = [
     },
 ];
 
+// A colour while the pointer is on a part takes the same choices as the
+// colour it replaces.
+for (const [key, from, label] of [
+    ['hover_text_color', 'text_color', 'Text colour when pointed at'],
+    ['hover_background', 'background', 'Fill when pointed at'],
+] as const) {
+    properties.push({
+        ...properties.find((item) => item.key === from)!,
+        key,
+        label,
+    });
+}
+
 /** Find a property's definition. */
 export function definition(property: VisualProperty): PropertyDefinition {
     return properties.find((item) => item.key === property)!;
@@ -1145,6 +1158,9 @@ export function inlineStyles(
             case 'text_weight':
                 styles.fontWeight = weights[value] ?? String(value);
                 break;
+            // A colour for when the pointer is on the part shows while it
+            // is being chosen; once saved, the app's own class takes over.
+            case 'hover_text_color':
             case 'text_color':
                 styles.color = color(value);
                 break;
@@ -1152,6 +1168,7 @@ export function inlineStyles(
                 styles.borderColor =
                     value === 'transparent' ? 'transparent' : color(value);
                 break;
+            case 'hover_background':
             case 'background':
                 styles.backgroundColor =
                     value === 'transparent' ? 'transparent' : color(value);

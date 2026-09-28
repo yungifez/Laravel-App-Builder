@@ -446,6 +446,8 @@ export function useAppPreview(source: Source) {
         'text_color',
         'border_color',
         'background',
+        'hover_text_color',
+        'hover_background',
     ];
     const copiedLook = ref<Partial<
         Record<VisualProperty, VisualValue | null>
