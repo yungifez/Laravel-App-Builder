@@ -24,6 +24,8 @@
 
 import { spawn } from 'node:child_process';
 import {
+    copyFileSync,
+    existsSync,
     mkdirSync,
     readdirSync,
     readFileSync,
@@ -133,7 +135,16 @@ function place(stage, removed) {
         const target = relative(stage, file);
 
         mkdirSync(dirname(target), { recursive: true });
-        renameSync(file, target);
+
+        // A file the build already uses is written over, not replaced: the
+        // build's watcher follows the file itself, and stops seeing changes
+        // to a path whose file was swapped for another.
+        if (existsSync(target)) {
+            copyFileSync(file, target);
+            rmSync(file);
+        } else {
+            renameSync(file, target);
+        }
     }
 
     for (const path of removed) {
