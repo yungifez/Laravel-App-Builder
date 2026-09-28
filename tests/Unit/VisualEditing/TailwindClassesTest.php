@@ -140,6 +140,14 @@ class TailwindClassesTest extends TestCase
         $this->assertSame('tracking-wide', TailwindClasses::write('uppercase tracking-wide', 'base', ['text_case' => null]));
     }
 
+    public function test_a_border_line_style_is_read_and_written_beside_its_width_and_colour()
+    {
+        $this->assertSame(['border' => 2, 'border_style' => 'dashed'], TailwindClasses::read('border-2 border-dashed')['base']);
+        $this->assertSame(['border_style' => 'dotted'], TailwindClasses::read('md:border-dotted')['md']);
+        $this->assertSame('border border-dotted', TailwindClasses::write('border border-dashed', 'base', ['border_style' => 'dotted']));
+        $this->assertSame('border', TailwindClasses::write('border border-dashed', 'base', ['border_style' => null]));
+    }
+
     public function test_a_line_limit_is_read_and_written_as_a_line_clamp()
     {
         $this->assertSame(['line_clamp' => '2'], TailwindClasses::read('line-clamp-2')['base']);

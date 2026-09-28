@@ -438,6 +438,19 @@ export const properties: PropertyDefinition[] = [
         },
     },
     {
+        key: 'border_style',
+        label: 'Border line',
+        group: 'Fill and edges',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'solid', label: 'Solid' },
+                { value: 'dashed', label: 'Dashed' },
+                { value: 'dotted', label: 'Dotted' },
+            ],
+        },
+    },
+    {
         key: 'line_clamp',
         label: 'Lines shown',
         group: 'Text',
@@ -1101,7 +1114,10 @@ export function inlineStyles(
                 break;
             case 'border':
                 styles.borderWidth = pixels(value);
-                styles.borderStyle = 'solid';
+                styles.borderStyle ??= 'solid';
+                break;
+            case 'border_style':
+                styles.borderStyle = String(value);
                 break;
             case 'radius':
                 styles.borderRadius = radii[value] ?? '0';

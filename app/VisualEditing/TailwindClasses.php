@@ -34,7 +34,7 @@ class TailwindClasses
      */
     public const PROPERTIES = [
         'layout', 'direction', 'wrap', 'align', 'justify', 'columns', 'gap',
-        'width', 'height', 'max_width', 'padding_x', 'padding_y', 'margin_x', 'margin_y', 'border', 'border_color', 'radius', 'shadow',
+        'width', 'height', 'max_width', 'padding_x', 'padding_y', 'margin_x', 'margin_y', 'border', 'border_style', 'border_color', 'radius', 'shadow',
         'rotate', 'translate_x', 'translate_y', 'opacity',
         'text_size', 'text_weight', 'text_align', 'font_style', 'text_decoration', 'text_case', 'line_clamp', 'line_height', 'letter_spacing', 'text_color', 'background',
         'object_fit', 'object_position', 'aspect_ratio',
@@ -46,6 +46,7 @@ class TailwindClasses
         'wrap' => ['flex-wrap' => 'wrap', 'flex-nowrap' => 'nowrap'],
         'align' => ['items-start' => 'start', 'items-center' => 'center', 'items-end' => 'end', 'items-stretch' => 'stretch', 'items-baseline' => 'baseline'],
         'justify' => ['justify-start' => 'start', 'justify-center' => 'center', 'justify-end' => 'end', 'justify-between' => 'between', 'justify-around' => 'around', 'justify-evenly' => 'evenly'],
+        'border_style' => ['border-solid' => 'solid', 'border-dashed' => 'dashed', 'border-dotted' => 'dotted', 'border-double' => 'double', 'border-none' => 'none'],
         'radius' => ['rounded-none' => 'none', 'rounded-xs' => 'xs', 'rounded-sm' => 'sm', 'rounded' => 'sm', 'rounded-md' => 'md', 'rounded-lg' => 'lg', 'rounded-xl' => 'xl', 'rounded-2xl' => '2xl', 'rounded-3xl' => '3xl', 'rounded-4xl' => '4xl', 'rounded-full' => 'full'],
         'max_width' => ['max-w-none' => 'none', 'max-w-xs' => 'xs', 'max-w-sm' => 'sm', 'max-w-md' => 'md', 'max-w-lg' => 'lg', 'max-w-xl' => 'xl', 'max-w-2xl' => '2xl', 'max-w-3xl' => '3xl', 'max-w-4xl' => '4xl', 'max-w-5xl' => '5xl', 'max-w-6xl' => '6xl', 'max-w-7xl' => '7xl', 'max-w-prose' => 'prose', 'max-w-full' => 'full'],
         'shadow' => ['shadow-none' => 'none', 'shadow-2xs' => '2xs', 'shadow-xs' => 'xs', 'shadow-sm' => 'sm', 'shadow' => 'sm', 'shadow-md' => 'md', 'shadow-lg' => 'lg', 'shadow-xl' => 'xl', 'shadow-2xl' => '2xl'],

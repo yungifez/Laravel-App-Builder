@@ -1771,6 +1771,40 @@ const recent = computed(() => {
                                         :state="state"
                                         property="border"
                                     />
+                                    <!-- Each line style underlines its own
+                                         name in that style. -->
+                                    <Segmented
+                                        v-if="
+                                            Number(
+                                                state.valueOf('border') ?? 0,
+                                            ) > 0
+                                        "
+                                        class="flex-1"
+                                        label="Border line"
+                                        :value="
+                                            state.valueOf('border_style') ??
+                                            'solid'
+                                        "
+                                        :options="
+                                            options('border_style').map(
+                                                (option) => ({
+                                                    ...option,
+                                                    style: {
+                                                        textDecorationLine:
+                                                            'underline',
+                                                        textDecorationStyle:
+                                                            option.value as
+                                                                | 'solid'
+                                                                | 'dashed'
+                                                                | 'dotted',
+                                                        textUnderlineOffset:
+                                                            '3px',
+                                                    },
+                                                }),
+                                            )
+                                        "
+                                        @change="set('border_style', $event)"
+                                    />
                                 </div>
                                 <Reveal
                                     :open="

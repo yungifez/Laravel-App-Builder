@@ -429,6 +429,7 @@ export function useAppPreview(source: Source) {
         'padding_x',
         'padding_y',
         'border',
+        'border_style',
         'radius',
         'shadow',
         'opacity',

@@ -360,6 +360,7 @@ export type VisualProperty =
     | 'margin_x'
     | 'margin_y'
     | 'border'
+    | 'border_style'
     | 'radius'
     | 'shadow'
     | 'rotate'
