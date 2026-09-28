@@ -395,6 +395,19 @@ export type SentEmail = {
     text: string | null;
 };
 
+/** A kind of problem the app on show ran into, counted each time. */
+export type AppProblem = {
+    id: string;
+    words: string;
+    class: string | null;
+    message: string;
+    place: string | null;
+    trace: string[];
+    count: number;
+    first_at: string | null;
+    last_at: string | null;
+};
+
 export type InspectedElement = {
     target: string;
     file: string;

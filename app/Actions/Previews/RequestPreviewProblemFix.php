@@ -1,0 +1,65 @@
+<?php
+
+namespace App\Actions\Previews;
+
+use App\Actions\Features\RequestFeature;
+use App\Enums\FeatureRequestStatus;
+use App\Models\FeatureRequest;
+use App\Models\Project;
+use App\Models\User;
+use Illuminate\Validation\ValidationException;
+
+/**
+ * Turn a problem the owner ran into while trying their app into an ask to
+ * fix it, with one click. The owner's words stay plain; the builder gets the
+ * error and where it happened.
+ */
+class RequestPreviewProblemFix
+{
+    public function __construct(private ReadPreviewProblems $readProblems, private RequestFeature $requestFeature) {}
+
+    /**
+     * Ask for the problem to be fixed, or get the fix already asked for, so
+     * a second click does not pay for the same work twice.
+     *
+     * @throws ValidationException when the app on show no longer lists it.
+     */
+    public function handle(Project $project, User $requester, string $problemId): FeatureRequest
+    {
+        $asked = $project->featureRequests()
+            ->where('live_errors->problem', $problemId)
+            ->whereNull('dismissed_at')
+            ->whereNotIn('status', [FeatureRequestStatus::Failed, FeatureRequestStatus::Cancelled])
+            ->latest('id')
+            ->first();
+
+        if ($asked !== null) {
+            return $asked;
+        }
+
+        // The problem is read again from the app, not taken from the page.
+        $problem = collect($this->readProblems->handle($project))->firstWhere('id', $problemId);
+        $preview = $project->previews()->whereNull('feature_request_id')->where('editable', true)->latest('id')->first();
+
+        if ($problem === null || $preview === null) {
+            throw ValidationException::withMessages(['fix' => __('This problem is no longer in your app. Try again if it comes back.')]);
+        }
+
+        return $this->requestFeature->handle(
+            $project,
+            $requester,
+            __('Fix this problem I ran into while trying my app: :words', ['words' => $problem['words']]),
+            liveErrors: [
+                'preview_id' => $preview->id,
+                'problem' => $problemId,
+                'errors' => [[
+                    'class' => $problem['class'],
+                    'message' => $problem['message'],
+                    'count' => $problem['count'],
+                    'place' => $problem['place'],
+                    'trace' => $problem['trace'],
+                ]],
+            ],
+        );
+    }
+}

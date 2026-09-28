@@ -19,15 +19,10 @@ class LoggedEmails
      */
     public static function in(string $log, int $limit = 50): array
     {
-        // Each entry starts "[time] channel.LEVEL: ". Anything before the
-        // first one is the end of an entry cut off by a partial read.
-        $pieces = preg_split('/^\[([^\]\n]+)\] [\w-]+\.(\w+): /m', $log, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [];
         $emails = [];
 
-        for ($at = 1; $at + 2 < count($pieces); $at += 3) {
-            [$time, $level, $message] = [$pieces[$at], $pieces[$at + 1], $pieces[$at + 2]];
-
-            if ($level === 'DEBUG' && ($email = self::read($message, $time)) !== null) {
+        foreach (LogEntries::in($log) as $entry) {
+            if ($entry['level'] === 'DEBUG' && ($email = self::read($entry['message'], $entry['time'])) !== null) {
                 $emails[] = $email;
             }
         }
@@ -42,7 +37,7 @@ class LoggedEmails
      */
     protected static function read(string $message, string $time): ?array
     {
-        [$headers, $body] = self::split(str_replace("\r\n", "\n", rtrim($message)));
+        [$headers, $body] = self::split(str_replace("\r\n", "\n", $message));
 
         if (! isset($headers['mime-version']) || ! (isset($headers['to']) || isset($headers['subject']))) {
             return null;

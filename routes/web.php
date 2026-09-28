@@ -23,6 +23,7 @@ use App\Http\Controllers\Operations\AttentionController;
 use App\Http\Controllers\Operations\ChangeController as OperationsChangeController;
 use App\Http\Controllers\PageConsistencyController;
 use App\Http\Controllers\PreviewController;
+use App\Http\Controllers\PreviewProblemFixController;
 use App\Http\Controllers\ProjectCompatibilityController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectEditorController;
@@ -62,6 +63,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('projects/{project}/publishing', [ProjectPublishingController::class, 'update'])->name('projects.publishing.update');
     Route::post('projects/{project}/deployments', [DeploymentController::class, 'store'])->name('deployments.store');
     Route::post('projects/{project}/live-error-fixes', [LiveErrorFixController::class, 'store'])->name('live-error-fixes.store');
+    Route::post('projects/{project}/preview-problem-fixes', [PreviewProblemFixController::class, 'store'])->name('preview-problem-fixes.store');
     Route::get('projects/{project}/editor', [ProjectEditorController::class, 'show'])->name('projects.editor.show');
     Route::post('projects/{project}/previews', [ProjectPreviewController::class, 'store'])->name('projects.previews.store');
     Route::post('projects/{project}/experiments', [ExperimentController::class, 'store'])->name('experiments.store');

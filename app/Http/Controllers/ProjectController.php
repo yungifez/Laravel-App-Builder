@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Actions\Features\DescribeFeatureRequest;
 use App\Actions\Previews\DescribeProjectPreview;
 use App\Actions\Previews\ReadPreviewEmails;
+use App\Actions\Previews\ReadPreviewProblems;
 use App\Actions\Projects\CreateProject;
 use App\Actions\Projects\StartProjectFromTemplate;
 use App\Actions\Projects\SummarizeChanges;
@@ -125,7 +126,7 @@ class ProjectController extends Controller
      * app running beside it, and the design panel for changing how it looks.
      * The element the owner selected is loaded on request.
      */
-    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails): Response
+    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails, ReadPreviewProblems $readPreviewProblems): Response
     {
         Gate::authorize('view', $project);
 
@@ -141,6 +142,8 @@ class ProjectController extends Controller
             'element' => Inertia::optional(fn () => $inspectSelection->handle($project, $request->query('target'), $request->boolean('instance'))),
             // The email the app on show has sent, read while the owner looks.
             'emails' => Inertia::optional(fn () => $readPreviewEmails->handle($project)),
+            // And the problems it ran into while the owner tried it.
+            'problems' => Inertia::optional(fn () => $readPreviewProblems->handle($project)),
             'change' => fn () => $request->filled('change')
                 ? $describeFeatureRequest->handle($project->featureRequests()->findOrFail($request->integer('change')))
                 : null,

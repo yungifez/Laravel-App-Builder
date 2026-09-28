@@ -29,7 +29,7 @@ use Illuminate\Support\Carbon;
  * @property string $prompt
  * @property array{file: string, line: int, column: int, tag: string, text: string|null, area: string|null}|null $selection The element the owner pointed at in the preview
  * @property list<array{path: string, name: string}>|null $images Pictures the owner attached to show what they mean, on the request images disk
- * @property array{deployment_id: int, errors: list<array{class: string|null, message: string, count: int}>}|null $live_errors The errors the published app raised, when the ask is to fix them
+ * @property array{deployment_id?: int, preview_id?: int, problem?: string, errors: list<array{class: string|null, message: string, count: int, place?: string|null, trace?: list<string>}>}|null $live_errors The errors the published app raised, or the app on show while the owner tried it, when the ask is to fix them
  * @property string|null $target_step
  * @property FeatureRequestStatus $status
  * @property string $generator
@@ -99,14 +99,14 @@ class FeatureRequest extends Model
 
     /**
      * Get the owner's words with where they started from: the element they
-     * pointed at, or the errors online.
+     * pointed at, or the errors online or while they tried the app.
      */
     protected function describedPrompt(): string
     {
         $selection = $this->selection;
 
         if ($this->live_errors !== null) {
-            return $this->prompt."\n\n".$this->liveErrorInstructions($this->live_errors['errors']);
+            return $this->prompt."\n\n".$this->liveErrorInstructions($this->live_errors['errors'], isset($this->live_errors['preview_id']));
         }
 
         if ($selection === null) {
@@ -121,19 +121,27 @@ class FeatureRequest extends Model
     }
 
     /**
-     * Describe the errors people hit in the published app. The owner only
-     * saw that something went wrong; the details are for the builder.
+     * Describe the errors people hit in the published app, or the owner hit
+     * while trying it. The owner only saw that something went wrong; the
+     * details are for the builder.
      *
-     * @param  list<array{class: string|null, message: string, count: int}>  $errors
+     * @param  list<array{class: string|null, message: string, count: int, place?: string|null, trace?: list<string>}>  $errors
      */
-    protected function liveErrorInstructions(array $errors): string
+    protected function liveErrorInstructions(array $errors, bool $tried = false): string
     {
         $lines = array_map(
-            fn (array $error) => '- '.trim(($error['class'] ?? '').': '.str($this->redact($error['message']))->squish()->limit(300), ': ').' ('.($error['count'] === 1 ? 'once' : "{$error['count']} times").')',
+            fn (array $error) => '- '.trim(($error['class'] ?? '').': '.str($this->redact($error['message']))->squish()->limit(300), ': ')
+                .(filled($error['place'] ?? null) ? " (at {$error['place']})" : '')
+                .' ('.($error['count'] === 1 ? 'once' : "{$error['count']} times").')'
+                .(($error['trace'] ?? []) === [] ? '' : "\n  Through the app's code: ".implode(', ', $error['trace'])),
             $errors,
         );
 
-        return "People using the published app ran into these errors since its current version went online, most frequent first. Find why each happens and fix the cause, with a test that fails without the fix:\n".implode("\n", $lines);
+        $intro = $tried
+            ? 'The owner ran into this error while trying the app.'
+            : 'People using the published app ran into these errors since its current version went online, most frequent first.';
+
+        return "{$intro} Find why each happens and fix the cause, with a test that fails without the fix:\n".implode("\n", $lines);
     }
 
     /**

@@ -2,21 +2,12 @@
 
 namespace App\Actions\Previews;
 
-use App\Enums\PreviewStatus;
 use App\Models\Project;
 use App\Previews\LoggedEmails;
-use App\Workspaces\WorkspaceManager;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Config;
 
 class ReadPreviewEmails
 {
-    /**
-     * The end of the log that is read. Older email is not shown.
-     */
-    protected const TAIL_BYTES = 2_000_000;
-
-    public function __construct(private WorkspaceManager $workspaces) {}
+    public function __construct(private ReadPreviewLog $readLog) {}
 
     /**
      * Get the email the app on show has sent, newest first. A preview
@@ -27,23 +18,8 @@ class ReadPreviewEmails
      */
     public function handle(Project $project): array
     {
-        $preview = $project->previews()->whereNull('feature_request_id')->where('editable', true)->latest('id')->first();
-        $workspace = $preview?->workspace;
+        $preview = $this->readLog->preview($project);
 
-        if ($preview?->status !== PreviewStatus::Ready || $workspace === null) {
-            return [];
-        }
-
-        // The builder asks every few seconds while the owner looks; the
-        // workspace is read at most once in that time.
-        return Cache::remember("previews:{$preview->id}:emails", now()->addSeconds(2), function () use ($workspace) {
-            $log = rescue(
-                fn () => $this->workspaces->driver($workspace->driver)->readFile((string) $workspace->driver_id, Config::string('builder.preview.log')),
-                '',
-                report: false,
-            );
-
-            return LoggedEmails::in(substr((string) $log, -self::TAIL_BYTES));
-        });
+        return $preview === null ? [] : LoggedEmails::in($this->readLog->handle($preview));
     }
 }

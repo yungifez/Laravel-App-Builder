@@ -39,6 +39,7 @@ import PreviewController from '@/actions/App/Http/Controllers/PreviewController'
 import ProjectExperimentController from '@/actions/App/Http/Controllers/ProjectExperimentController';
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
 import AppEmails from '@/components/AppEmails.vue';
+import AppProblems from '@/components/AppProblems.vue';
 import AppPreview from '@/components/AppPreview.vue';
 import BesidePanel from '@/components/BesidePanel.vue';
 import ChangeThread from '@/components/ChangeThread.vue';
@@ -91,6 +92,7 @@ import type {
     AppService,
     ProjectTelemetry,
     SentEmail,
+    AppProblem,
     VisualEditSummary,
 } from '@/types';
 
@@ -108,6 +110,7 @@ const props = defineProps<{
     publishing: ProjectPublishing;
     services: AppService[];
     emails?: SentEmail[];
+    problems?: AppProblem[];
 }>();
 
 // The left panel talks about changes (Chat) or changes how the app looks
@@ -183,65 +186,91 @@ const app = useAppPreview({
     designing,
 });
 
-// Beside the app, what it does behind the page: the emails it sent.
-const showing = ref<'app' | 'emails'>('app');
-const showingTabs = [
-    { key: 'app', label: 'App' },
-    { key: 'emails', label: 'Emails' },
-] as const;
+// Beside the app, what it does behind the page: the emails it sent and
+// the problems it ran into.
+type Behind = 'app' | 'emails' | 'problems';
+const showing = ref<Behind>('app');
 
-// Emails are looked for every few seconds while the app runs, so a new one
-// is counted as soon as the app sends it.
-const emailPoll = usePoll(5000, { only: ['emails'] }, { autoStart: false });
+// Looked for every few seconds while the app runs, so what is new is
+// counted as soon as it happens.
+const behindPoll = usePoll(
+    5000,
+    { only: ['emails', 'problems'] },
+    { autoStart: false },
+);
 
 watch(
     () => app.running && !app.lost,
-    (running) => (running ? emailPoll.start() : emailPoll.stop()),
+    (running) => (running ? behindPoll.start() : behindPoll.stop()),
     { immediate: true },
 );
-watch(
-    showing,
-    (value) => value === 'emails' && router.reload({ only: ['emails'] }),
-);
+watch(showing, (value) => value !== 'app' && router.reload({ only: [value] }));
 
-// The newest email the owner has seen, kept in this browser, so the tab
-// counts only new ones.
-const seenEmail = ref<string | null>(null);
+// What the owner has seen of each, kept in this browser, so a tab counts
+// only what is new.
+function seen(name: string) {
+    const key = `builder:seen-${name}:${props.project.id}`;
+    const value = ref<string | null>(null);
 
-try {
-    seenEmail.value = localStorage.getItem(
-        `builder:seen-email:${props.project.id}`,
-    );
-} catch {
-    // Only a convenience.
-}
+    try {
+        value.value = localStorage.getItem(key);
+    } catch {
+        // Only a convenience.
+    }
 
-const unseenEmails = computed(() => {
-    const emails = props.emails ?? [];
-    const seen = emails.findIndex((email) => email.id === seenEmail.value);
-
-    return seen === -1 ? emails.length : seen;
-});
-
-watch(
-    () => [showing.value, props.emails?.[0]?.id] as const,
-    ([value, newest]) => {
-        if (value !== 'emails' || newest === undefined) {
-            return;
-        }
-
-        seenEmail.value = newest;
-
+    watch(value, (now) => {
         try {
-            localStorage.setItem(
-                `builder:seen-email:${props.project.id}`,
-                newest,
-            );
+            if (now !== null) {
+                localStorage.setItem(key, now);
+            }
         } catch {
             // Only a convenience.
         }
+    });
+
+    return value;
+}
+
+// The newest email opened, and the time of the newest problem looked at.
+const seenEmail = seen('email');
+const seenProblem = seen('problem');
+
+const unseenEmails = computed(() => {
+    const emails = props.emails ?? [];
+    const at = emails.findIndex((email) => email.id === seenEmail.value);
+
+    return at === -1 ? emails.length : at;
+});
+
+const unseenProblems = computed(
+    () =>
+        (props.problems ?? []).filter(
+            (problem) => (problem.last_at ?? '') > (seenProblem.value ?? ''),
+        ).length,
+);
+
+watch(
+    () => [showing.value, props.emails?.[0]?.id, props.problems?.[0]] as const,
+    ([value, newestEmail, newestProblem]) => {
+        if (value === 'emails' && newestEmail !== undefined) {
+            seenEmail.value = newestEmail;
+        }
+
+        if (value === 'problems' && newestProblem?.last_at) {
+            seenProblem.value = newestProblem.last_at;
+        }
     },
 );
+
+const showingTabs = computed(() => [
+    { key: 'app' as const, label: 'App', count: 0 },
+    { key: 'emails' as const, label: 'Emails', count: unseenEmails.value },
+    {
+        key: 'problems' as const,
+        label: 'Problems',
+        count: unseenProblems.value,
+    },
+]);
 
 // A link in an email opens its page in the app.
 function openFromEmail(href: string): void {
@@ -805,38 +834,6 @@ function sendOnEnter(event: KeyboardEvent): void {
 
         <div class="ml-auto flex shrink-0 items-center gap-1">
             <template v-if="app.running && !app.lost && preview">
-                <div
-                    :class="[
-                        'mr-1 items-center rounded-md bg-muted p-0.5',
-                        pane === 'app' ? 'flex' : 'hidden md:flex',
-                    ]"
-                    role="group"
-                    aria-label="What to show"
-                >
-                    <button
-                        v-for="tab in showingTabs"
-                        :key="tab.key"
-                        type="button"
-                        :aria-pressed="showing === tab.key"
-                        :class="[
-                            'flex h-8 items-center gap-1.5 rounded px-2.5 text-xs select-none',
-                            showing === tab.key
-                                ? 'bg-background shadow-sm'
-                                : 'text-muted-foreground hover:text-foreground',
-                        ]"
-                        :data-test="`showing-${tab.key}`"
-                        @click="showing = tab.key"
-                    >
-                        {{ tab.label }}
-                        <span
-                            v-if="tab.key === 'emails' && unseenEmails > 0"
-                            class="min-w-4 rounded-full bg-primary px-1 text-center text-[10px] leading-4 text-primary-foreground tabular-nums"
-                            :aria-label="`${unseenEmails} new`"
-                            data-test="emails-new"
-                            >{{ unseenEmails }}</span
-                        >
-                    </button>
-                </div>
                 <!-- The page of the app on show, and the way back from it
                      once the owner has gone somewhere, as a browser gives. -->
                 <div class="mr-1 hidden min-w-0 items-center md:flex">
@@ -1596,6 +1593,41 @@ function sendOnEnter(event: KeyboardEvent): void {
             data-test="app-pane"
             data-morph="app"
         >
+            <!-- The app, and what it does behind the page. -->
+            <nav
+                v-if="app.running && !app.lost && preview && !changeCopy"
+                class="-mb-1 flex shrink-0 items-center gap-1 overflow-x-auto"
+                aria-label="What to show"
+            >
+                <button
+                    v-for="tab in showingTabs"
+                    :key="tab.key"
+                    type="button"
+                    :aria-pressed="showing === tab.key"
+                    :class="[
+                        'flex min-h-9 shrink-0 items-center gap-1.5 border-b-2 px-2 text-xs select-none',
+                        showing === tab.key
+                            ? 'border-foreground text-foreground'
+                            : 'border-transparent text-muted-foreground hover:text-foreground',
+                    ]"
+                    :data-test="`showing-${tab.key}`"
+                    @click="showing = tab.key"
+                >
+                    {{ tab.label }}
+                    <span
+                        v-if="tab.count > 0"
+                        :class="[
+                            'min-w-4 rounded-full px-1 text-center text-[10px] leading-4 tabular-nums',
+                            tab.key === 'problems'
+                                ? 'bg-destructive text-white'
+                                : 'bg-primary text-primary-foreground',
+                        ]"
+                        :aria-label="`${tab.count} new`"
+                        :data-test="`${tab.key}-new`"
+                        >{{ tab.count }}</span
+                    >
+                </button>
+            </nav>
             <template v-if="decidingOn">
                 <p
                     v-if="changeCopy"
@@ -1705,6 +1737,12 @@ function sendOnEnter(event: KeyboardEvent): void {
             </Form>
             <!-- Hidden, not removed, while a change shows, so the app does
                  not reload. -->
+            <AppProblems
+                v-if="showing === 'problems' && !changeCopy"
+                class="min-h-0 flex-1"
+                :project-id="project.id"
+                :problems="problems"
+            />
             <AppEmails
                 v-if="showing === 'emails' && !changeCopy"
                 class="min-h-0 flex-1"
