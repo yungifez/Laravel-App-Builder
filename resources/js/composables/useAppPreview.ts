@@ -439,6 +439,7 @@ export function useAppPreview(source: Source) {
         'text_decoration',
         'text_case',
         'object_fit',
+        'object_position',
         'line_height',
         'letter_spacing',
         'text_color',

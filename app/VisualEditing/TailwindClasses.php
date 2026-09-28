@@ -37,7 +37,7 @@ class TailwindClasses
         'width', 'height', 'max_width', 'padding_x', 'padding_y', 'margin_x', 'margin_y', 'border', 'border_color', 'radius', 'shadow',
         'rotate', 'translate_x', 'translate_y', 'opacity',
         'text_size', 'text_weight', 'text_align', 'font_style', 'text_decoration', 'text_case', 'line_height', 'letter_spacing', 'text_color', 'background',
-        'object_fit', 'aspect_ratio',
+        'object_fit', 'object_position', 'aspect_ratio',
     ];
 
     protected const KEYWORDS = [
@@ -56,6 +56,7 @@ class TailwindClasses
         'text_decoration' => ['underline' => 'underline', 'line-through' => 'line-through', 'no-underline' => 'none'],
         'text_case' => ['uppercase' => 'uppercase', 'lowercase' => 'lowercase', 'capitalize' => 'capitalize', 'normal-case' => 'none'],
         'aspect_ratio' => ['aspect-auto' => 'auto', 'aspect-square' => 'square', 'aspect-video' => 'video', 'aspect-4/3' => '4/3', 'aspect-3/4' => '3/4'],
+        'object_position' => ['object-top' => 'top', 'object-center' => 'center', 'object-bottom' => 'bottom', 'object-left' => 'left', 'object-right' => 'right'],
         'object_fit' => ['object-cover' => 'cover', 'object-contain' => 'contain', 'object-fill' => 'fill'],
         'line_height' => ['leading-none' => 'none', 'leading-tight' => 'tight', 'leading-snug' => 'snug', 'leading-normal' => 'normal', 'leading-relaxed' => 'relaxed', 'leading-loose' => 'loose'],
         'letter_spacing' => ['tracking-tighter' => 'tighter', 'tracking-tight' => 'tight', 'tracking-normal' => 'normal', 'tracking-wide' => 'wide', 'tracking-wider' => 'wider', 'tracking-widest' => 'widest'],

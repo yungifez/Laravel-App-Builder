@@ -422,6 +422,14 @@ function set(property: VisualProperty, value: VisualValue | null): void {
     props.state.change(property, value);
 }
 
+// How the picture fills its box: as set, or else as the app draws it.
+const pictureFit = computed(
+    () =>
+        props.state.valueOf('object_fit') ??
+        props.state.selected?.drawn?.object_fit ??
+        null,
+);
+
 // A set height would keep the picture from taking its new shape, so a
 // shape frees the height in the same change, and one undo takes both back.
 function shape(value: VisualValue | null): void {
@@ -1328,13 +1336,22 @@ const recent = computed(() => {
                                 <Segmented
                                     label="Picture fit"
                                     caption="Fit"
-                                    :value="
-                                        state.valueOf('object_fit') ??
-                                        state.selected?.drawn?.object_fit ??
-                                        null
-                                    "
+                                    :value="pictureFit"
                                     :options="options('object_fit')"
                                     @change="set('object_fit', $event)"
+                                />
+                                <!-- Only a picture cropped to fill its box
+                                     has a part to keep in view. -->
+                                <Segmented
+                                    v-if="pictureFit === 'cover'"
+                                    label="Picture focus"
+                                    caption="Focus"
+                                    :value="
+                                        state.valueOf('object_position') ??
+                                        'center'
+                                    "
+                                    :options="options('object_position')"
+                                    @change="set('object_position', $event)"
                                 />
                             </section>
 

@@ -547,6 +547,21 @@ export const properties: PropertyDefinition[] = [
         },
     },
     {
+        key: 'object_position',
+        label: 'Picture focus',
+        group: 'Picture',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'top', label: 'Top' },
+                { value: 'center', label: 'Middle' },
+                { value: 'bottom', label: 'Bottom' },
+                { value: 'left', label: 'Left' },
+                { value: 'right', label: 'Right' },
+            ],
+        },
+    },
+    {
         key: 'aspect_ratio',
         label: 'Picture shape',
         group: 'Picture',
@@ -1022,6 +1037,9 @@ export function inlineStyles(
                 break;
             case 'object_fit':
                 styles.objectFit = String(value);
+                break;
+            case 'object_position':
+                styles.objectPosition = String(value);
                 break;
             case 'aspect_ratio':
                 styles.aspectRatio =

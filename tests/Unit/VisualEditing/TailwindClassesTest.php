@@ -142,15 +142,22 @@ class TailwindClassesTest extends TestCase
 
     public function test_picture_fit_is_read_and_written_and_leaves_the_focus_alone()
     {
-        $this->assertSame(['object_fit' => 'cover'], TailwindClasses::read('object-cover object-center')['base']);
+        $this->assertSame(['object_fit' => 'cover', 'object_position' => 'center'], TailwindClasses::read('object-cover object-center')['base']);
         $this->assertSame(['object_fit' => 'contain'], TailwindClasses::read('md:object-contain')['md']);
         $this->assertSame('object-contain object-top size-10', TailwindClasses::write('object-cover object-top size-10', 'base', ['object_fit' => 'contain']));
         $this->assertSame('object-top size-10', TailwindClasses::write('object-cover object-top size-10', 'base', ['object_fit' => null]));
     }
 
+    public function test_picture_focus_is_read_and_written_beside_the_fit()
+    {
+        $this->assertSame(['object_position' => 'top'], TailwindClasses::read('md:object-top')['md']);
+        $this->assertSame('object-cover object-bottom', TailwindClasses::write('object-cover object-top', 'base', ['object_position' => 'bottom']));
+        $this->assertSame('object-cover', TailwindClasses::write('object-cover object-top', 'base', ['object_position' => null]));
+    }
+
     public function test_picture_shape_is_read_and_written_as_an_aspect_utility()
     {
-        $this->assertSame(['aspect_ratio' => '4/3'], TailwindClasses::read('aspect-4/3 object-center')['base']);
+        $this->assertSame(['aspect_ratio' => '4/3'], TailwindClasses::read('aspect-4/3 shrink-0')['base']);
         $this->assertSame(['aspect_ratio' => 'square'], TailwindClasses::read('lg:aspect-square')['lg']);
         $this->assertSame('aspect-video w-full', TailwindClasses::write('aspect-4/3 w-full', 'base', ['aspect_ratio' => 'video']));
         $this->assertSame('w-full', TailwindClasses::write('aspect-3/4 w-full', 'base', ['aspect_ratio' => null]));

@@ -373,6 +373,7 @@ export type VisualProperty =
     | 'text_decoration'
     | 'text_case'
     | 'object_fit'
+    | 'object_position'
     | 'aspect_ratio'
     | 'line_height'
     | 'letter_spacing'
