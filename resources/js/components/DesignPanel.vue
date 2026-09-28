@@ -53,6 +53,7 @@ import type { Component } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
 import PageConsistencyController from '@/actions/App/Http/Controllers/PageConsistencyController';
 import MeasureField from '@/components/design/MeasureField.vue';
+import PanelSection from '@/components/design/PanelSection.vue';
 import Reveal from '@/components/design/Reveal.vue';
 import Segmented from '@/components/design/Segmented.vue';
 import SpacingBox from '@/components/design/SpacingBox.vue';
@@ -387,6 +388,33 @@ const tucked = computed(() =>
             (section !== 'layout' || arranges.value) &&
             (section !== 'text' || hasWords.value),
     ),
+);
+
+// One group of choices is open at a time, so the panel asks one thing.
+// Another part opens on the group that matters most for it, unless the
+// group already open is offered for it too.
+type Group = LookSection | 'pointed';
+const opened = ref<Group | null>(null);
+const offered = (group: Group): boolean =>
+    group === 'pointed'
+        ? answersPointer.value
+        : shows(group) &&
+          (group !== 'layout' || arranges.value) &&
+          (group !== 'text' || hasWords.value);
+const toggle = (group: Group): void => {
+    opened.value = opened.value === group ? null : group;
+};
+watch(
+    () => props.state.selected?.source,
+    () => {
+        if (opened.value === null || !offered(opened.value)) {
+            opened.value =
+                sectionsFor(props.state.selected ?? { tag: 'div' }).find(
+                    offered,
+                ) ?? null;
+        }
+    },
+    { immediate: true },
 );
 
 // A part in a row or a grid moves from place to place there, so shifting
@@ -1413,11 +1441,13 @@ const recent = computed(() => {
                                 />
                             </section>
 
-                            <section
-                                v-if="arranges && shows('layout')"
-                                class="space-y-2"
+                            <PanelSection
+                                v-if="offered('layout')"
+                                name="Layout"
+                                :open="opened === 'layout'"
+                                :changed="setIn.has('layout')"
+                                @toggle="toggle('layout')"
                             >
-                                <h3 class="text-xs font-medium">Layout</h3>
                                 <Segmented
                                     label="Arrange contents"
                                     caption="Arrange"
@@ -1505,10 +1535,15 @@ const recent = computed(() => {
                                         </div>
                                     </div>
                                 </Reveal>
-                            </section>
+                            </PanelSection>
 
-                            <section v-if="shows('size')" class="space-y-2">
-                                <h3 class="text-xs font-medium">Size</h3>
+                            <PanelSection
+                                v-if="offered('size')"
+                                name="Size"
+                                :open="opened === 'size'"
+                                :changed="setIn.has('size')"
+                                @toggle="toggle('size')"
+                            >
                                 <div class="grid grid-cols-2 gap-2">
                                     <MeasureField
                                         :state="state"
@@ -1551,17 +1586,25 @@ const recent = computed(() => {
                                     "
                                     @change="set('max_width', $event)"
                                 />
-                            </section>
+                            </PanelSection>
 
-                            <section v-if="shows('space')" class="space-y-2">
-                                <h3 class="text-xs font-medium">Space</h3>
+                            <PanelSection
+                                v-if="offered('space')"
+                                name="Space"
+                                :open="opened === 'space'"
+                                :changed="setIn.has('space')"
+                                @toggle="toggle('space')"
+                            >
                                 <SpacingBox :state="state" />
-                            </section>
+                            </PanelSection>
 
-                            <section v-if="shows('place')" class="space-y-2">
-                                <h3 class="text-xs font-medium">
-                                    Turn and move
-                                </h3>
+                            <PanelSection
+                                v-if="offered('place')"
+                                name="Turn and move"
+                                :open="opened === 'place'"
+                                :changed="setIn.has('place')"
+                                @toggle="toggle('place')"
+                            >
                                 <div class="grid grid-cols-3 gap-2">
                                     <MeasureField
                                         :state="state"
@@ -1645,13 +1688,15 @@ const recent = computed(() => {
                                         }}%</span
                                     >
                                 </label>
-                            </section>
+                            </PanelSection>
 
-                            <section
-                                v-if="hasWords && shows('text')"
-                                class="space-y-2"
+                            <PanelSection
+                                v-if="offered('text')"
+                                name="Text"
+                                :open="opened === 'text'"
+                                :changed="setIn.has('text')"
+                                @toggle="toggle('text')"
                             >
-                                <h3 class="text-xs font-medium">Text</h3>
                                 <StepSlider
                                     id="property-text_size"
                                     label="Size"
@@ -1798,12 +1843,15 @@ const recent = computed(() => {
                                     :options="options('text_color')"
                                     @change="set('text_color', $event)"
                                 />
-                            </section>
+                            </PanelSection>
 
-                            <section v-if="shows('fill')" class="space-y-2">
-                                <h3 class="text-xs font-medium">
-                                    Fill and edges
-                                </h3>
+                            <PanelSection
+                                v-if="offered('fill')"
+                                name="Fill and edges"
+                                :open="opened === 'fill'"
+                                :changed="setIn.has('fill')"
+                                @toggle="toggle('fill')"
+                            >
                                 <Swatches
                                     label="Fill"
                                     kind="color"
@@ -1892,19 +1940,22 @@ const recent = computed(() => {
                                         @change="set('border_color', $event)"
                                     />
                                 </Reveal>
-                            </section>
+                            </PanelSection>
 
                             <!-- Colours while the pointer is on it. The
                                  preview shows them while they are chosen;
                                  after that, point at the part to see them. -->
-                            <section
+                            <PanelSection
                                 v-if="answersPointer"
-                                class="space-y-2"
+                                name="When pointed at"
+                                :open="opened === 'pointed'"
+                                :changed="
+                                    state.valueOf('hover_text_color') != null ||
+                                    state.valueOf('hover_background') != null
+                                "
                                 data-test="pointed-at"
+                                @toggle="toggle('pointed')"
                             >
-                                <h3 class="text-xs font-medium">
-                                    When pointed at
-                                </h3>
                                 <Swatches
                                     label="Text"
                                     name="Text colour when pointed at"
@@ -1923,7 +1974,7 @@ const recent = computed(() => {
                                     :options="options('hover_background')"
                                     @change="set('hover_background', $event)"
                                 />
-                            </section>
+                            </PanelSection>
 
                             <button
                                 v-if="tucked.length > 0"
