@@ -209,6 +209,10 @@ export function useAppPreview(source: Source) {
     const theme = ref<Record<string, string>>({});
     // Whether the app shows its dark look, whose colours are written apart.
     const themeDark = ref(false);
+    // Whether the app has a dark look at all, and the look the owner chose
+    // to show instead of the one the device prefers.
+    const themeLooks = ref(false);
+    const look = ref<'light' | 'dark' | null>(null);
     // Theme colours chosen but not yet built into the app on show, by
     // token, so a newer frame shows them too; with the version that has
     // them once saved. A colour shown by an undo or redo names its change
@@ -611,6 +615,11 @@ export function useAppPreview(source: Source) {
     // picked part and the changes it does not show yet.
     function setUp(to: Window | null): void {
         post({ type: 'mode', editing: source.designing.value }, to);
+
+        if (look.value !== null) {
+            post({ type: 'look', dark: look.value === 'dark' }, to);
+        }
+
         post({ type: 'theme', tokens: colorTokens }, to);
 
         for (const [token, { value }] of recolored) {
@@ -830,6 +839,7 @@ export function useAppPreview(source: Source) {
         if (data.type === 'theme' && typeof data.colors === 'object') {
             theme.value = data.colors as Record<string, string>;
             themeDark.value = data.dark === true;
+            themeLooks.value = data.looks === true;
         }
 
         if (data.type === 'holding') {
@@ -1649,6 +1659,14 @@ export function useAppPreview(source: Source) {
         post({ type: 'recolor', token, value });
     }
 
+    // Show the app's light or dark look. A colour shown on top belongs to
+    // the look it was chosen in, so it goes; a saved one shows once built.
+    function showLook(to: 'light' | 'dark'): void {
+        forgetColors();
+        look.value = to;
+        post({ type: 'look', dark: to === 'dark' });
+    }
+
     // Show the app's own theme colours again.
     function forgetColors(): void {
         for (const token of recolored.keys()) {
@@ -2456,6 +2474,8 @@ export function useAppPreview(source: Source) {
         recolor,
         forgetColors,
         themeDark,
+        themeLooks,
+        showLook,
         undoable,
         redoable,
         canUndo,

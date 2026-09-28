@@ -710,8 +710,10 @@ const recent = computed(() => {
                 <ThemeColors
                     :colors="state.theme"
                     :dark="state.themeDark"
+                    :looks="state.themeLooks"
                     @preview="state.recolor"
                     @change="state.saveColor"
+                    @look="state.showLook"
                 />
 
                 <section

@@ -2041,7 +2041,47 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
 
             sendTheme();
         }
+
+        // The owner shows the app's light or dark look, to see and change
+        // its colours, whatever the device prefers.
+        if (message.type === 'look' && typeof message.dark === 'boolean') {
+            document.documentElement.classList.toggle('dark', message.dark);
+            document.documentElement.style.colorScheme = message.dark
+                ? 'dark'
+                : 'light';
+            sendTheme();
+        }
     });
+
+    // Whether the app has a dark look written apart: a rule for `.dark`
+    // in its styles, looked for until one is found.
+    let darkLook = false;
+
+    const hasDarkLook = () => {
+        const search = (rules) => {
+            for (const rule of rules) {
+                if (rule.selectorText?.includes('.dark')) {
+                    return true;
+                }
+
+                if (rule.cssRules && search(rule.cssRules)) {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        for (const sheet of document.styleSheets) {
+            try {
+                darkLook ||= search(sheet.cssRules);
+            } catch {
+                // A stylesheet from another address cannot be read.
+            }
+        }
+
+        return darkLook;
+    };
 
     // The theme colours the builder asked for, as the app draws them now,
     // and whether it shows its dark look, whose colours are written apart.
@@ -2067,6 +2107,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             type: 'theme',
             colors,
             dark: document.documentElement.classList.contains('dark'),
+            looks: hasDarkLook(),
         });
     };
 
