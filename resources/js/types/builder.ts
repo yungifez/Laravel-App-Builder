@@ -384,6 +384,17 @@ export type EditorPreview = {
     updating: boolean;
 };
 
+/** An email the app on show sent. A preview keeps it instead of sending it. */
+export type SentEmail = {
+    id: string;
+    sent_at: string | null;
+    from: string;
+    to: string;
+    subject: string;
+    html: string | null;
+    text: string | null;
+};
+
 export type InspectedElement = {
     target: string;
     file: string;

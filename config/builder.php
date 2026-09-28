@@ -720,11 +720,16 @@ return [
         ],
         'overlay' => resource_path('preview-tools/overlay.js'),
 
+        // The app's log inside the workspace. Email the app sends is written
+        // here, and the builder shows it to the owner.
+        'log' => env('BUILDER_PREVIEW_LOG', 'storage/logs/laravel.log'),
+
         // Environment for the app's web server. APP_URL is set to the preview's URL.
         'environment' => [
             'APP_ENV' => 'local',
             'APP_DEBUG' => 'true',
             'MAIL_MAILER' => 'log',
+            'MAIL_LOG_CHANNEL' => 'single',
             'QUEUE_CONNECTION' => 'sync',
         ],
     ],

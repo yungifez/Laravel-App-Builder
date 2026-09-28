@@ -1290,6 +1290,18 @@ export function useAppPreview(source: Source) {
 
     const canGoBack = computed(() => visited.value.length > 1);
 
+    // Open a page of the app, as a link in an email the app sent does.
+    function visit(href: string): void {
+        const preview = source.preview();
+
+        if (preview === null || !href.startsWith(preview.origin)) {
+            return;
+        }
+
+        post({ type: 'go', href });
+        deselect();
+    }
+
     // An address as the owner reads it: a page of the app by its path,
     // any other site in full.
     function addressOf(href: string): string {
@@ -1674,6 +1686,7 @@ export function useAppPreview(source: Source) {
         addressOf,
         back,
         canGoBack,
+        visit,
         press,
         hide,
         reshape,

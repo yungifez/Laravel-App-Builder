@@ -38,6 +38,7 @@ import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/Feat
 import PreviewController from '@/actions/App/Http/Controllers/PreviewController';
 import ProjectExperimentController from '@/actions/App/Http/Controllers/ProjectExperimentController';
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
+import AppEmails from '@/components/AppEmails.vue';
 import AppPreview from '@/components/AppPreview.vue';
 import BesidePanel from '@/components/BesidePanel.vue';
 import ChangeThread from '@/components/ChangeThread.vue';
@@ -89,6 +90,7 @@ import type {
     ProjectPublishing,
     AppService,
     ProjectTelemetry,
+    SentEmail,
     VisualEditSummary,
 } from '@/types';
 
@@ -105,6 +107,7 @@ const props = defineProps<{
     telemetry: ProjectTelemetry;
     publishing: ProjectPublishing;
     services: AppService[];
+    emails?: SentEmail[];
 }>();
 
 // The left panel talks about changes (Chat) or changes how the app looks
@@ -179,6 +182,72 @@ const app = useAppPreview({
     edits: () => props.edits,
     designing,
 });
+
+// Beside the app, what it does behind the page: the emails it sent.
+const showing = ref<'app' | 'emails'>('app');
+const showingTabs = [
+    { key: 'app', label: 'App' },
+    { key: 'emails', label: 'Emails' },
+] as const;
+
+// Emails are looked for every few seconds while the app runs, so a new one
+// is counted as soon as the app sends it.
+const emailPoll = usePoll(5000, { only: ['emails'] }, { autoStart: false });
+
+watch(
+    () => app.running && !app.lost,
+    (running) => (running ? emailPoll.start() : emailPoll.stop()),
+    { immediate: true },
+);
+watch(
+    showing,
+    (value) => value === 'emails' && router.reload({ only: ['emails'] }),
+);
+
+// The newest email the owner has seen, kept in this browser, so the tab
+// counts only new ones.
+const seenEmail = ref<string | null>(null);
+
+try {
+    seenEmail.value = localStorage.getItem(
+        `builder:seen-email:${props.project.id}`,
+    );
+} catch {
+    // Only a convenience.
+}
+
+const unseenEmails = computed(() => {
+    const emails = props.emails ?? [];
+    const seen = emails.findIndex((email) => email.id === seenEmail.value);
+
+    return seen === -1 ? emails.length : seen;
+});
+
+watch(
+    () => [showing.value, props.emails?.[0]?.id] as const,
+    ([value, newest]) => {
+        if (value !== 'emails' || newest === undefined) {
+            return;
+        }
+
+        seenEmail.value = newest;
+
+        try {
+            localStorage.setItem(
+                `builder:seen-email:${props.project.id}`,
+                newest,
+            );
+        } catch {
+            // Only a convenience.
+        }
+    },
+);
+
+// A link in an email opens its page in the app.
+function openFromEmail(href: string): void {
+    showing.value = 'app';
+    app.visit(href);
+}
 
 // A change waiting for the owner shows in the app pane, so they see what
 // they are deciding on without opening anything. They can look at their
@@ -736,6 +805,38 @@ function sendOnEnter(event: KeyboardEvent): void {
 
         <div class="ml-auto flex shrink-0 items-center gap-1">
             <template v-if="app.running && !app.lost && preview">
+                <div
+                    :class="[
+                        'mr-1 items-center rounded-md bg-muted p-0.5',
+                        pane === 'app' ? 'flex' : 'hidden md:flex',
+                    ]"
+                    role="group"
+                    aria-label="What to show"
+                >
+                    <button
+                        v-for="tab in showingTabs"
+                        :key="tab.key"
+                        type="button"
+                        :aria-pressed="showing === tab.key"
+                        :class="[
+                            'flex h-8 items-center gap-1.5 rounded px-2.5 text-xs select-none',
+                            showing === tab.key
+                                ? 'bg-background shadow-sm'
+                                : 'text-muted-foreground hover:text-foreground',
+                        ]"
+                        :data-test="`showing-${tab.key}`"
+                        @click="showing = tab.key"
+                    >
+                        {{ tab.label }}
+                        <span
+                            v-if="tab.key === 'emails' && unseenEmails > 0"
+                            class="min-w-4 rounded-full bg-primary px-1 text-center text-[10px] leading-4 text-primary-foreground tabular-nums"
+                            :aria-label="`${unseenEmails} new`"
+                            data-test="emails-new"
+                            >{{ unseenEmails }}</span
+                        >
+                    </button>
+                </div>
                 <!-- The page of the app on show, and the way back from it
                      once the owner has gone somewhere, as a browser gives. -->
                 <div class="mr-1 hidden min-w-0 items-center md:flex">
@@ -747,7 +848,10 @@ function sendOnEnter(event: KeyboardEvent): void {
                         aria-label="Back"
                         title="Back to the page before"
                         data-test="preview-back"
-                        @click="app.back()"
+                        @click="
+                            showing = 'app';
+                            app.back();
+                        "
                     >
                         <ArrowLeft class="size-4" />
                     </Button>
@@ -777,7 +881,10 @@ function sendOnEnter(event: KeyboardEvent): void {
                                 : 'text-muted-foreground hover:text-foreground',
                         ]"
                         :data-test="`screen-${screen.key}`"
-                        @click="app.device = screen.key"
+                        @click="
+                            showing = 'app';
+                            app.device = screen.key;
+                        "
                     >
                         <component :is="screen.icon" class="size-4" />
                     </button>
@@ -788,7 +895,10 @@ function sendOnEnter(event: KeyboardEvent): void {
                     class="hidden size-9 md:inline-flex"
                     aria-label="Reload"
                     title="Reload"
-                    @click="app.reload()"
+                    @click="
+                        showing = 'app';
+                        app.reload();
+                    "
                 >
                     <RotateCw class="size-4" />
                 </Button>
@@ -1595,7 +1705,17 @@ function sendOnEnter(event: KeyboardEvent): void {
             </Form>
             <!-- Hidden, not removed, while a change shows, so the app does
                  not reload. -->
-            <div v-show="!changeCopy" class="min-h-0 flex-1">
+            <AppEmails
+                v-if="showing === 'emails' && !changeCopy"
+                class="min-h-0 flex-1"
+                :emails="emails"
+                :origin="preview?.origin ?? null"
+                @open="openFromEmail"
+            />
+            <div
+                v-show="!changeCopy && showing === 'app'"
+                class="min-h-0 flex-1"
+            >
                 <AppPreview
                     :project-id="project.id"
                     :preview="preview"

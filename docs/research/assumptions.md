@@ -330,3 +330,16 @@ them and correct any that are wrong.
   `<title>`) is skipped, because it is never drawn on the page. Words with
   the quote, a backslash or a line break go through a request. Only `.vue`
   files are searched. Undo and redo swap the words in that file.
+- 2026-09-27 — The builder shows the email the app on show sent, in an
+  "Emails" tab beside "App". A preview already writes email to its log
+  instead of sending it. The preview now pins that log to the `single`
+  channel (`MAIL_LOG_CHANNEL=single`), which every new Laravel app has,
+  and the builder reads `storage/logs/laravel.log` (`BUILDER_PREVIEW_LOG`).
+  Only the last 2 MB of the log are read, and the newest 50 emails are
+  shown. The builder looks for new email every 5 seconds while the app
+  runs, and counts the ones the owner has not opened in this browser. An
+  email shows in a frame without scripts. Its links to the app open in the
+  app on show, and other links open in a new tab. An app that sets its own
+  mail or log settings in code, not in the environment, may write email
+  elsewhere, and the tab then stays empty. "Problems" and "Saved data" tabs
+  are planned in the architecture (§15).

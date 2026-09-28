@@ -1,0 +1,160 @@
+<?php
+
+namespace App\Previews;
+
+use Carbon\CarbonImmutable;
+use Throwable;
+
+/**
+ * Email an app wrote to its log instead of sending it. Laravel's log mailer
+ * writes each email whole, as a debug entry, with its quoted-printable parts
+ * already decoded.
+ */
+class LoggedEmails
+{
+    /**
+     * Find the emails in a log, newest first.
+     *
+     * @return list<array{id: string, sent_at: string|null, from: string, to: string, subject: string, html: string|null, text: string|null}>
+     */
+    public static function in(string $log, int $limit = 50): array
+    {
+        // Each entry starts "[time] channel.LEVEL: ". Anything before the
+        // first one is the end of an entry cut off by a partial read.
+        $pieces = preg_split('/^\[([^\]\n]+)\] [\w-]+\.(\w+): /m', $log, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [];
+        $emails = [];
+
+        for ($at = 1; $at + 2 < count($pieces); $at += 3) {
+            [$time, $level, $message] = [$pieces[$at], $pieces[$at + 1], $pieces[$at + 2]];
+
+            if ($level === 'DEBUG' && ($email = self::read($message, $time)) !== null) {
+                $emails[] = $email;
+            }
+        }
+
+        return array_slice(array_reverse($emails), 0, $limit);
+    }
+
+    /**
+     * Read one log entry as an email, or null when it is not one.
+     *
+     * @return array{id: string, sent_at: string|null, from: string, to: string, subject: string, html: string|null, text: string|null}|null
+     */
+    protected static function read(string $message, string $time): ?array
+    {
+        [$headers, $body] = self::split(str_replace("\r\n", "\n", rtrim($message)));
+
+        if (! isset($headers['mime-version']) || ! (isset($headers['to']) || isset($headers['subject']))) {
+            return null;
+        }
+
+        $content = ['html' => null, 'text' => null];
+        self::collect($headers, $body, $content);
+
+        return [
+            'id' => sha1($time."\n".($headers['message-id'] ?? $message)),
+            'sent_at' => rescue(fn () => CarbonImmutable::parse($time)->toIso8601String(), null, report: false),
+            'from' => $headers['from'] ?? '',
+            'to' => $headers['to'] ?? '',
+            'subject' => $headers['subject'] ?? '',
+            'html' => $content['html'],
+            'text' => $content['text'],
+        ];
+    }
+
+    /**
+     * Split a part into its headers, by lower-case name, and its body.
+     *
+     * @return array{array<string, string>, string}
+     */
+    protected static function split(string $part): array
+    {
+        [$head, $body] = array_pad(explode("\n\n", $part, 2), 2, '');
+        $headers = [];
+        $name = null;
+
+        foreach (explode("\n", $head) as $line) {
+            // A long header goes on in lines that start with a space.
+            if ($name !== null && preg_match('/^[ \t]/', $line) === 1) {
+                $headers[$name] .= ' '.trim($line);
+
+                continue;
+            }
+
+            if (preg_match('/^([\w-]+):\s?(.*)$/', $line, $match) !== 1) {
+                // Not a header block: this entry is not an email.
+                return [[], $part];
+            }
+
+            $name = strtolower($match[1]);
+            $headers[$name] = $match[2];
+        }
+
+        return [array_map(self::decode(...), $headers), $body];
+    }
+
+    /**
+     * Take the first HTML and plain text bodies, looking inside nested
+     * parts and leaving out attachments.
+     *
+     * @param  array<string, string>  $headers
+     * @param  array{html: string|null, text: string|null}  $content
+     */
+    protected static function collect(array $headers, string $body, array &$content): void
+    {
+        $type = strtolower(trim(strtok($headers['content-type'] ?? 'text/plain', ';') ?: 'text/plain'));
+
+        if (str_starts_with($type, 'multipart/')) {
+            if (preg_match('/boundary="?([^";]+)"?/i', $headers['content-type'] ?? '', $match) !== 1) {
+                return;
+            }
+
+            $sections = explode('--'.$match[1], $body);
+
+            // Before the first boundary is a preamble; after the last one
+            // ("--boundary--") is nothing that shows.
+            foreach (array_slice($sections, 1) as $section) {
+                if (str_starts_with($section, '--')) {
+                    break;
+                }
+
+                [$partHeaders, $partBody] = self::split(ltrim($section, "\n"));
+                self::collect($partHeaders, $partBody, $content);
+            }
+
+            return;
+        }
+
+        if (str_starts_with(strtolower($headers['content-disposition'] ?? ''), 'attachment')) {
+            return;
+        }
+
+        $key = match ($type) {
+            'text/html' => 'html',
+            'text/plain' => 'text',
+            default => null,
+        };
+
+        if ($key === null || $content[$key] !== null) {
+            return;
+        }
+
+        $decoded = strtolower(trim($headers['content-transfer-encoding'] ?? '')) === 'base64'
+            ? (string) base64_decode(preg_replace('/\s+/', '', $body) ?? '', true)
+            : $body;
+
+        $content[$key] = rtrim($decoded, "\n");
+    }
+
+    /**
+     * Decode words written in another character set, as in a subject line.
+     */
+    protected static function decode(string $value): string
+    {
+        try {
+            return trim(mb_decode_mimeheader($value));
+        } catch (Throwable) {
+            return trim($value);
+        }
+    }
+}

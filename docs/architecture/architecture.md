@@ -1596,6 +1596,31 @@ own workspace and serves it at `http://{host}.{preview domain}`.
   the workspace.
 - Serves built assets; hot reload arrives with the edge proxy.
 
+### What the app does behind the page
+
+An app does work the page does not show: it sends email, saves rows and
+writes down its problems. The owner must see that work to try the app. The
+builder shows it in tabs beside the app, for the preview on show. Each tab
+reads the preview's workspace, so the app itself does not change.
+
+- **Emails** (built). A preview sends email to its log
+  (`MAIL_MAILER=log`, `MAIL_LOG_CHANNEL=single`), so nothing leaves the
+  machine. The builder reads the log file (`builder.preview.log`), finds
+  each email in it and lists them newest first. An email opens as its
+  reader sees it, in a sandboxed frame without scripts. A link to the app
+  opens that page in the app on show, so sign-up, password reset and
+  verify-email flows can be tried to the end.
+- **Problems** (next). The same log file holds the app's errors and
+  warnings. The tab lists them in plain words, newest first, with the page
+  that caused them. The details for a developer stay folded. Each problem
+  offers "Ask me to fix this", which starts a normal change.
+- **Saved data** (after that). The preview's tables, read only at first:
+  what a sign-up or an order saved. Rows are read through the app's own
+  database connection inside the workspace, never from the control plane's
+  database. Changing rows comes later, with an undo.
+- **Jobs** need no tab while previews run queued work at once
+  (`QUEUE_CONNECTION=sync`).
+
 ## 16. Model gateway and credentials
 
 Every model call, from the control plane or a runtime, goes through one metered
