@@ -8,6 +8,7 @@ use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\VerificationStatus;
 use App\Features\AcceptanceSuite;
+use App\Features\CodeShortcuts;
 use App\Features\ScreenCheck;
 use App\Features\TestMap;
 use App\Features\TestReport;
@@ -127,6 +128,7 @@ class VerifyFeatureRequest implements ShouldQueue
 
             $checksPassed = $this->runSteps($driver, $runWorkspaceCommand, $workspace, 'checks', stopOnFailure: false);
             $this->auditPackages($runWorkspaceCommand, $workspace);
+            $this->observeShortcuts($driver, $runWorkspaceCommand, $workspace, $featureRequest);
 
             // Before the protected acceptance tests are copied in, so the map
             // only ever holds the project's own tests.
@@ -293,6 +295,33 @@ class VerifyFeatureRequest implements ShouldQueue
                 },
             ]);
         });
+    }
+
+    /**
+     * When the change touches the app's PHP code, read the files it touched
+     * for shortcuts that cost the owner later. The review reads what was
+     * found; like the screen check it never changes the checks' result,
+     * and when the analyser cannot run nothing is kept.
+     */
+    protected function observeShortcuts(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): void
+    {
+        /** @var array{enabled: bool, command: list<string>, timeout: int, report: string} $config */
+        $config = config('builder.verification.shortcuts');
+
+        if (! $config['enabled'] || ! CodeShortcuts::scans($featureRequest->patch)) {
+            return;
+        }
+
+        rescue(function () use ($driver, $runWorkspaceCommand, $workspace, $config, $featureRequest) {
+            $paths = array_map(fn (string $path) => "--path={$path}", CodeShortcuts::files($featureRequest->patch));
+            $command = $runWorkspaceCommand->handle($workspace, [...$config['command'], ...$paths], $config['timeout']);
+
+            if ($this->outcome($command) !== self::OUTCOME_PASSED) {
+                return;
+            }
+
+            $this->verification->update(['shortcuts' => CodeShortcuts::parse((string) $driver->readFile((string) $workspace->driver_id, $config['report']))]);
+        }, report: false);
     }
 
     /**

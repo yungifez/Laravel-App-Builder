@@ -378,3 +378,13 @@ them and correct any that are wrong.
   PNG, JPEG, GIF, WebP and AVIF pictures show inline; every other file,
   SVG and HTML among them, is a download, sent sandboxed and with
   `nosniff`, so nothing an app stored runs on the builder's pages.
+- 2026-09-28 — Sloppy (`heyosseus/sloppy` 1.1.1) was tried before it was
+  added. It scanned this repository's 376 files in under 2 seconds without
+  changing them. Run on 15 changes the builder had generated for a test
+  app, it found one new problem: a size warning on a 27-line method. On a
+  planted controller it found 5 of 7 shortcuts (not inline validation, nor
+  logic in a controller). Its size rules flagged 40 of 56 findings on this
+  repository, and it flagged an ignored error that a comment explained, so
+  only four line-level rules send a change back, and a comment lets one
+  through. It is young and has one maintainer, so the PHAR is pinned by
+  version and checksum.

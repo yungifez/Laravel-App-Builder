@@ -408,6 +408,50 @@ class VerificationTest extends TestCase
         $this->assertNull($missing->verifications()->sole()->screens);
     }
 
+    public function test_the_php_a_change_touched_is_read_for_shortcuts_and_what_is_found_is_kept()
+    {
+        $scan = ['sh', '-c', 'scan for shortcuts'];
+        config(['builder.verification.shortcuts' => ['enabled' => true, 'command' => $scan, 'timeout' => 120, 'report' => 'shortcuts.json']]);
+        $this->driver->onExec = function (string $workspace, array $command) use ($scan) {
+            if (array_slice($command, 0, 3) === $scan) {
+                $this->driver->files["{$workspace}:shortcuts.json"] = json_encode(['schema' => 1, 'tool' => 'sloppy', 'findings' => [
+                    ['rule' => 'SL107', 'file' => 'app/Models/Team.php', 'line' => 2, 'message' => 'Swallowed.'],
+                ]]);
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        $code = FeatureRequest::factory()->generated()->create(['patch' => implode("\n", [
+            'diff --git a/app/Models/Team.php b/app/Models/Team.php',
+            '+++ b/app/Models/Team.php',
+            '@@ -1 +1,2 @@',
+            '+// Teams',
+            'diff --git a/tests/Feature/TeamTest.php b/tests/Feature/TeamTest.php',
+            '+++ b/tests/Feature/TeamTest.php',
+            '@@ -1 +1,2 @@',
+            '+// Test',
+        ])]);
+        $screen = FeatureRequest::factory()->generated()->create(['patch' => "diff --git a/resources/js/pages/Teams.vue b/resources/js/pages/Teams.vue\n+++ b/resources/js/pages/Teams.vue\n@@ -1 +1,2 @@\n+<p>Teams</p>"]);
+
+        app(RequestVerification::class)->handle($code);
+        app(RequestVerification::class)->handle($screen);
+
+        // Only the app's own PHP files are read, and the reading is never one of the checks.
+        $this->assertContains([...$scan, '--path=app/Models/Team.php'], array_column($this->driver->executed, 'command'));
+        $this->assertSame([['rule' => 'SL107', 'path' => 'app/Models/Team.php', 'line' => 2]], $code->verifications()->sole()->shortcuts);
+        $this->assertNotContains('Shortcuts', array_column($code->verifications()->sole()->results, 'name'));
+        $this->assertNull($screen->verifications()->sole()->shortcuts);
+        $this->assertSame(1, collect($this->driver->executed)->filter(fn (array $run) => array_slice($run['command'], 0, 3) === $scan)->count());
+
+        // Where the analyser is not installed its command fails, and nothing is kept.
+        $missing = FeatureRequest::factory()->generated()->create(['patch' => $code->patch]);
+        $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(exitCode: array_slice($command, 0, 3) === $scan ? 1 : 0, output: '', errorOutput: '', durationMs: 5);
+
+        app(RequestVerification::class)->handle($missing);
+
+        $this->assertNull($missing->verifications()->sole()->shortcuts);
+    }
+
     public function test_pictures_of_the_touched_screens_are_kept_after_the_workspace_is_gone()
     {
         Storage::fake('local');

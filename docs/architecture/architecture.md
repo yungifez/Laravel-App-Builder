@@ -1410,6 +1410,24 @@ line, or the line above, that says why it is safe lets it through: a reason
 a person can read and question. The owner sees the clean result as one line
 of the change's proof.
 
+**Shortcuts in PHP code are found by an analyser, on added lines only.**
+When a change touches the app's PHP code (not its tests), verification runs
+the Sloppy analyser (`heyosseus/sloppy`, a pinned PHAR in the box image,
+never added to the app) over the files it touched. It reads the code with a
+parser, without running it or asking a model, so the same code always gets
+the same answer. Four of its rules are held against a change: an error caught
+and ignored (SL107), a relation read once per item in a loop (SL203), a query
+inside a loop (SL204) and `Model::all()` (SL210). Its size and structure rules
+are too noisy on real code to send a change back for, so they are not run.
+Shortcuts on lines the change added are kept on the verification. They never
+hold the change back, so the owner is not kept waiting for them; they are for
+a later pass that fixes them in the background (not built yet). A comment on
+the line, the line above or the line below lets one through. Where the
+analyser is missing, nothing is read or said. The owner sees the clean result
+as one line of the change's proof.
+`builder.verification.shortcuts` turns it off. No first-party Laravel package
+reads code for these shortcuts; Larastan checks types, not these.
+
 **Made-up colours are sent back too** (direction 26, the first design check
 that graduated from the contract). The lines a change adds to screen files
 (Vue, Blade, TSX, JSX; not tests, and not CSS, where the theme lives) are

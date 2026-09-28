@@ -494,6 +494,22 @@ class AgentDriverTest extends TestCase
         $this->assertSame(RunStatus::Completed, $run->refresh()->status);
     }
 
+    public function test_a_shortcut_is_kept_for_later_and_never_holds_the_change_back()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]));
+        ChangeReviewer::fake([['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]]]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, shortcuts: [['rule' => 'SL107', 'path' => 'app/Models/Team.php', 'line' => 7]]);
+
+        // The owner is not kept waiting for it: it is dealt with after.
+        $run->refresh();
+        $this->assertSame(RunStatus::Completed, $run->status);
+        $this->assertSame(0, $run->repairs);
+        $this->assertSame([['rule' => 'SL107', 'path' => 'app/Models/Team.php', 'line' => 7]], $run->verifications()->latest('id')->first()->shortcuts);
+    }
+
     public function test_a_named_test_that_did_not_run_is_not_evidence_and_sends_the_change_back()
     {
         FeaturePlanner::fake([$this->plan()]);
@@ -847,14 +863,15 @@ class AgentDriverTest extends TestCase
      * By default the suite's report shows the change's own test passing.
      *
      * @param  list<array{file: string, name: string, outcome: string}>|null  $tests
+     * @param  list<array{rule: string, path: string, line: int}>|null  $shortcuts
      */
-    protected function passVerification(Run $run, ?array $tests = null, ?array $screens = null): void
+    protected function passVerification(Run $run, ?array $tests = null, ?array $screens = null, ?array $shortcuts = null): void
     {
         $tests ??= [['file' => '/workspace/tests/Feature/TeamDescriptionTest.php', 'name' => 'teams have a nullable description', 'outcome' => 'passed']];
         $verification = $run->verifications()->latest('id')->firstOrFail();
         $verification->update(['status' => VerificationStatus::Passed, 'results' => [
             ['name' => 'Tests', 'stage' => 'checks', 'outcome' => 'passed', 'exit_code' => 0, 'timed_out' => false, 'duration_ms' => 10, 'output' => 'OK', 'tests' => $tests],
-        ], 'screens' => $screens, 'finished_at' => now()]);
+        ], 'screens' => $screens, 'shortcuts' => $shortcuts, 'finished_at' => now()]);
 
         app(CompleteRunVerification::class)->handle($verification);
     }

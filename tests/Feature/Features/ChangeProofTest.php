@@ -153,6 +153,37 @@ class ChangeProofTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('proof', fn ($proof) => ! collect($proof)->contains('text', 'Its screens take their colours from your app\'s theme. None were made up.')));
     }
 
+    public function test_a_change_whose_code_takes_no_shortcuts_says_so()
+    {
+        $patch = implode("\n", [
+            'diff --git a/app/Http/Controllers/TeamController.php b/app/Http/Controllers/TeamController.php',
+            '--- a/app/Http/Controllers/TeamController.php',
+            '+++ b/app/Http/Controllers/TeamController.php',
+            '@@ -1 +1,2 @@',
+            ' <?php',
+            '+$teams = Team::all();',
+        ]);
+        $clean = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
+        $shortcut = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
+        $unread = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
+        $this->checked($clean);
+        $this->checked($shortcut);
+        $this->checked($unread);
+        $clean->verifications()->sole()->update(['shortcuts' => []]);
+        $shortcut->verifications()->sole()->update(['shortcuts' => [['rule' => 'SL210', 'path' => 'app/Http/Controllers/TeamController.php', 'line' => 2]]]);
+        $said = 'Its code was checked for shortcuts that slow an app down or hide its errors, such as asking the database once for every row. None were found.';
+
+        $this->actingAs($clean->project->owner)
+            ->get(route('feature-requests.show', $clean))
+            ->assertInertia(fn (Assert $page) => $page->where('proof', fn ($proof) => collect($proof)->contains(['kind' => 'passed', 'text' => $said])));
+        // A shortcut left in, or code the analyser never read, is never called clean.
+        foreach ([$shortcut, $unread] as $request) {
+            $this->actingAs($request->project->owner)
+                ->get(route('feature-requests.show', $request))
+                ->assertInertia(fn (Assert $page) => $page->where('proof', fn ($proof) => ! collect($proof)->contains('text', $said)));
+        }
+    }
+
     public function test_a_change_whose_pictures_are_described_says_so()
     {
         $request = FeatureRequest::factory()->generated()->create(['patch' => implode("\n", [

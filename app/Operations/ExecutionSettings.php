@@ -39,6 +39,7 @@ class ExecutionSettings
         'builder.verification.require_verify_tests',
         'builder.verification.safety_scan',
         'builder.verification.design_scan',
+        'builder.verification.shortcuts.enabled',
         'builder.verification.screens.enabled',
         'builder.verification.suite_paths',
         'builder.verification.suite_suffixes',

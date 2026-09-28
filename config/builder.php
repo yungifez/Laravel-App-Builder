@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\Consequence;
+use App\Features\CodeShortcuts;
 use App\Runs\Tools\ApplyPatch;
 use App\Runs\Tools\ListFiles;
 use App\Runs\Tools\ReadFile;
@@ -568,6 +569,29 @@ return [
         // an alt description. Each one is a blocking finding, so the coder
         // is sent back to fix it.
         'design_scan' => (bool) env('BUILDER_DESIGN_SCAN', true),
+
+        // Shortcuts in the app's PHP code that cost the owner later: errors
+        // caught and ignored, and the database asked once per row. The PHP
+        // files a change touched are read by the Sloppy analyser
+        // (heyosseus/sloppy), which runs without a model, so the same code
+        // always gets the same answer. It ships in the box image, never in
+        // the app. What it finds is kept on the verification and never
+        // holds the change back: the owner is not kept waiting for it.
+        // Where the analyser is not installed, nothing is read and nothing
+        // is said. The changed files are added as --path options.
+        'shortcuts' => [
+            'enabled' => (bool) env('BUILDER_SHORTCUT_SCAN', true),
+            'command' => ['sh', '-c', implode(' ', [
+                'test -f '.env('BUILDER_SHORTCUT_TOOL', '/opt/sloppy/sloppy.phar'),
+                '&& mkdir -p storage/logs',
+                '&& php '.env('BUILDER_SHORTCUT_TOOL', '/opt/sloppy/sloppy.phar').' scan --project=. --no-baseline --format=json --fail-on=never',
+                '--min-confidence='.(int) env('BUILDER_SHORTCUT_MIN_CONFIDENCE', 80),
+                implode(' ', array_map(fn (string $rule) => "--rule={$rule}", CodeShortcuts::rules())),
+                '"$@" > storage/logs/shortcuts.json',
+            ]), 'shortcuts'],
+            'timeout' => 120,
+            'report' => 'storage/logs/shortcuts.json',
+        ],
 
         // Screens on phones, tablets and computers (direction 26). When the
         // checks pass and the change touches a screen, the app is built,

@@ -4,6 +4,7 @@ namespace App\Actions\Features;
 
 use App\Actions\Context\ReadProjectContext;
 use App\Enums\VerificationStatus;
+use App\Features\CodeShortcuts;
 use App\Features\InventedColours;
 use App\Features\PatchSummary;
 use App\Features\ScreenCheck;
@@ -43,7 +44,7 @@ class DescribeProof
             return [];
         }
 
-        return [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest), ...$this->safety($featureRequest), ...$this->colours($featureRequest), ...$this->pictures($featureRequest), ...$this->screens($featureRequest, $verification), ...$this->reach($featureRequest->latestRun), ...$this->approach($featureRequest->latestRun), ...$this->rules($featureRequest)];
+        return [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest), ...$this->safety($featureRequest), ...$this->shortcuts($featureRequest, $verification), ...$this->colours($featureRequest), ...$this->pictures($featureRequest), ...$this->screens($featureRequest, $verification), ...$this->reach($featureRequest->latestRun), ...$this->approach($featureRequest->latestRun), ...$this->rules($featureRequest)];
     }
 
     /**
@@ -146,6 +147,21 @@ class DescribeProof
         }
 
         return [['kind' => 'passed', 'text' => __('Its code was checked for common safety mistakes, such as unsafe text on a page or unsafe database lookups. None were found.')]];
+    }
+
+    /**
+     * Say that the change's code was read for shortcuts that slow an app
+     * down or hide its errors and none were left, when the scan ran.
+     *
+     * @return list<array{kind: string, text: string, evidence?: bool}>
+     */
+    protected function shortcuts(FeatureRequest $featureRequest, Verification $verification): array
+    {
+        if (! config('builder.verification.shortcuts.enabled') || $verification->shortcuts === null || CodeShortcuts::found($verification->shortcuts, $featureRequest->patch) !== []) {
+            return [];
+        }
+
+        return [['kind' => 'passed', 'text' => __('Its code was checked for shortcuts that slow an app down or hide its errors, such as asking the database once for every row. None were found.')]];
     }
 
     /**
