@@ -19,8 +19,10 @@ import {
     ChevronUp,
     Crosshair,
     ArrowDown,
+    ArrowLeft,
     ArrowRight,
     ArrowRightToLine,
+    ArrowUp,
     ArrowUpRight,
     Baseline,
     Columns3,
@@ -49,7 +51,7 @@ import StepSlider from '@/components/design/StepSlider.vue';
 import Swatches from '@/components/design/Swatches.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
-import type { AppPreviewState } from '@/composables/useAppPreview';
+import type { AppPreviewState, Way } from '@/composables/useAppPreview';
 import { when } from '@/lib/when';
 import {
     definition,
@@ -289,6 +291,43 @@ const widest = [
         options('max_width').find((option) => option.value === value)?.label ??
         value,
 }));
+
+// Moving a part among the ones next to it, named the way the owner sees
+// it: up and down in a column, left and right in a row. A side with no
+// neighbour still shows, turned off, so the pair keeps its place.
+const opposite: Record<Way, Way> = {
+    up: 'down',
+    down: 'up',
+    left: 'right',
+    right: 'left',
+};
+const wayOrder: Way[] = ['up', 'left', 'down', 'right'];
+const wayLooks: Record<Way, { name: string; icon: Component; key: string }> = {
+    up: { name: 'Up', icon: ArrowUp, key: '↑' },
+    down: { name: 'Down', icon: ArrowDown, key: '↓' },
+    left: { name: 'Left', icon: ArrowLeft, key: '←' },
+    right: { name: 'Right', icon: ArrowRight, key: '→' },
+};
+const moves = computed(() => {
+    const { earlier, later } = props.state.neighbours;
+
+    if (earlier === null && later === null) {
+        return [];
+    }
+
+    return [
+        {
+            step: -1 as const,
+            way: earlier ?? opposite[later!],
+            can: earlier !== null,
+        },
+        {
+            step: 1 as const,
+            way: later ?? opposite[earlier!],
+            can: later !== null,
+        },
+    ].sort((a, b) => wayOrder.indexOf(a.way) - wayOrder.indexOf(b.way));
+});
 
 function set(property: VisualProperty, value: VisualValue | null): void {
     props.state.change(property, value);
@@ -939,38 +978,30 @@ const recent = computed(() => {
                                     />
                                 </div>
                                 <div
-                                    v-if="
-                                        state.neighbours.earlier ||
-                                        state.neighbours.later
-                                    "
+                                    v-if="moves.length"
                                     class="grid grid-cols-2 gap-2"
                                 >
                                     <Button
+                                        v-for="move in moves"
+                                        :key="move.step"
                                         variant="secondary"
                                         size="sm"
                                         class="h-11 sm:h-7"
-                                        :disabled="
-                                            !state.neighbours.earlier ||
-                                            state.saving
+                                        :disabled="!move.can || state.saving"
+                                        :title="`Move it ${move.way}, past the part next to it (Alt + ${wayLooks[move.way].key})`"
+                                        :data-test="
+                                            move.step < 0
+                                                ? 'move-earlier'
+                                                : 'move-later'
                                         "
-                                        title="Put it before the part next to it (Alt + ←)"
-                                        data-test="move-earlier"
-                                        @click="state.shift(-1)"
-                                        >Earlier</Button
+                                        @click="state.shift(move.step)"
                                     >
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        class="h-11 sm:h-7"
-                                        :disabled="
-                                            !state.neighbours.later ||
-                                            state.saving
-                                        "
-                                        title="Put it after the part next to it (Alt + →)"
-                                        data-test="move-later"
-                                        @click="state.shift(1)"
-                                        >Later</Button
-                                    >
+                                        <component
+                                            :is="wayLooks[move.way].icon"
+                                            class="size-4"
+                                        />
+                                        {{ wayLooks[move.way].name }}
+                                    </Button>
                                 </div>
                                 <label class="flex items-center gap-3">
                                     <span

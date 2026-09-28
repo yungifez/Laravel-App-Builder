@@ -594,8 +594,8 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         if (element) {
             send({
                 type: 'neighbours',
-                earlier: neighbour(element, -1) !== undefined,
-                later: neighbour(element, 1) !== undefined,
+                earlier: way(element, neighbour(element, -1)),
+                later: way(element, neighbour(element, 1)),
             });
         }
     };
@@ -754,6 +754,26 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         return direction < 0
             ? around.filter((other) => order.indexOf(other) < index).at(-1)
             : around.find((other) => order.indexOf(other) > index);
+    };
+
+    // Which way another part lies on screen from this one: up, down, left
+    // or right. A row, a column and a reversed row all read the same way
+    // to the owner as they see them.
+    const way = (element, other) => {
+        if (!other) {
+            return null;
+        }
+
+        const from = element.getBoundingClientRect();
+        const to = other.getBoundingClientRect();
+        const x = to.left + to.width / 2 - (from.left + from.width / 2);
+        const y = to.top + to.height / 2 - (from.top + from.height / 2);
+
+        if (Math.abs(x) > Math.abs(y)) {
+            return x < 0 ? 'left' : 'right';
+        }
+
+        return y < 0 ? 'up' : 'down';
     };
 
     // Put the selected part before or after another one straight away,
@@ -1213,7 +1233,18 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                 // next to it.
                 event.preventDefault();
                 const [x, y] = arrows[key];
-                shift(x + y);
+                const pointed = key.slice('arrow'.length);
+
+                // Move towards the neighbour the arrow points at, so the
+                // part goes the way the owner pressed, even in a reversed
+                // row; otherwise left and up mean earlier.
+                if (way(selected, neighbour(selected, -1)) === pointed) {
+                    shift(-1);
+                } else if (way(selected, neighbour(selected, 1)) === pointed) {
+                    shift(1);
+                } else {
+                    shift(x + y);
+                }
             } else if (arrows[key] && selected && handlesOn) {
                 event.preventDefault();
                 const [x, y] = arrows[key];

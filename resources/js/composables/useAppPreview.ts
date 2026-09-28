@@ -62,6 +62,11 @@ type Batch = {
 
 type Step = 'undo' | 'redo';
 
+/** Which way a part lies on screen from another. */
+export type Way = 'up' | 'down' | 'left' | 'right';
+
+const ways: unknown[] = ['up', 'down', 'left', 'right'];
+
 /** How long the owner can pause before their changes are saved. */
 const SAVE_AFTER_MS = 700;
 
@@ -166,7 +171,12 @@ export function useAppPreview(source: Source) {
     const moving = ref(false);
     // Whether the selected part can change places with the part before or
     // after it.
-    const neighbours = ref({ earlier: false, later: false });
+    // Which way the parts next to the selected one lie on screen, so moving
+    // it can be named the way the owner sees it.
+    const neighbours = ref<{ earlier: Way | null; later: Way | null }>({
+        earlier: null,
+        later: null,
+    });
     // Undo and redo the server has not done yet, oldest first. The edit is
     // null while the change it takes back is still being saved.
     const steps = ref<{ key: Step; edit: VisualEditSummary | null }[]>([]);
@@ -391,7 +401,7 @@ export function useAppPreview(source: Source) {
         save();
         selected.value = null;
         known.value = null;
-        neighbours.value = { earlier: false, later: false };
+        neighbours.value = { earlier: null, later: null };
         post({ type: 'clear' });
         post({ type: 'outline' });
     }
@@ -620,8 +630,10 @@ export function useAppPreview(source: Source) {
 
         if (data.type === 'neighbours') {
             neighbours.value = {
-                earlier: data.earlier === true,
-                later: data.later === true,
+                earlier: ways.includes(data.earlier)
+                    ? (data.earlier as Way)
+                    : null,
+                later: ways.includes(data.later) ? (data.later as Way) : null,
             };
         }
 
