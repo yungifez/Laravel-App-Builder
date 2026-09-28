@@ -438,6 +438,21 @@ export const properties: PropertyDefinition[] = [
         },
     },
     {
+        key: 'line_clamp',
+        label: 'Lines shown',
+        group: 'Text',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'none', label: 'All of it', short: 'All' },
+                { value: '1', label: '1 line' },
+                { value: '2', label: '2 lines' },
+                { value: '3', label: '3 lines' },
+                { value: '4', label: '4 lines' },
+            ],
+        },
+    },
+    {
         key: 'line_height',
         label: 'Space between lines',
         group: 'Text',
@@ -1037,6 +1052,25 @@ export function inlineStyles(
                 break;
             case 'object_fit':
                 styles.objectFit = String(value);
+                break;
+            // Words past the last line shown end in "…", as
+            // Tailwind's line-clamp does.
+            case 'line_clamp':
+                Object.assign(
+                    styles,
+                    value === 'none'
+                        ? {
+                              overflow: 'visible',
+                              display: 'block',
+                              webkitLineClamp: 'unset',
+                          }
+                        : {
+                              overflow: 'hidden',
+                              display: '-webkit-box',
+                              webkitBoxOrient: 'vertical',
+                              webkitLineClamp: String(value),
+                          },
+                );
                 break;
             case 'object_position':
                 styles.objectPosition = String(value);

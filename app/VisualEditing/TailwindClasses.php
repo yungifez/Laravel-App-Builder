@@ -36,7 +36,7 @@ class TailwindClasses
         'layout', 'direction', 'wrap', 'align', 'justify', 'columns', 'gap',
         'width', 'height', 'max_width', 'padding_x', 'padding_y', 'margin_x', 'margin_y', 'border', 'border_color', 'radius', 'shadow',
         'rotate', 'translate_x', 'translate_y', 'opacity',
-        'text_size', 'text_weight', 'text_align', 'font_style', 'text_decoration', 'text_case', 'line_height', 'letter_spacing', 'text_color', 'background',
+        'text_size', 'text_weight', 'text_align', 'font_style', 'text_decoration', 'text_case', 'line_clamp', 'line_height', 'letter_spacing', 'text_color', 'background',
         'object_fit', 'object_position', 'aspect_ratio',
     ];
 
@@ -58,6 +58,7 @@ class TailwindClasses
         'aspect_ratio' => ['aspect-auto' => 'auto', 'aspect-square' => 'square', 'aspect-video' => 'video', 'aspect-4/3' => '4/3', 'aspect-3/4' => '3/4'],
         'object_position' => ['object-top' => 'top', 'object-center' => 'center', 'object-bottom' => 'bottom', 'object-left' => 'left', 'object-right' => 'right'],
         'object_fit' => ['object-cover' => 'cover', 'object-contain' => 'contain', 'object-fill' => 'fill'],
+        'line_clamp' => ['line-clamp-none' => 'none', 'line-clamp-1' => '1', 'line-clamp-2' => '2', 'line-clamp-3' => '3', 'line-clamp-4' => '4'],
         'line_height' => ['leading-none' => 'none', 'leading-tight' => 'tight', 'leading-snug' => 'snug', 'leading-normal' => 'normal', 'leading-relaxed' => 'relaxed', 'leading-loose' => 'loose'],
         'letter_spacing' => ['tracking-tighter' => 'tighter', 'tracking-tight' => 'tight', 'tracking-normal' => 'normal', 'tracking-wide' => 'wide', 'tracking-wider' => 'wider', 'tracking-widest' => 'widest'],
     ];

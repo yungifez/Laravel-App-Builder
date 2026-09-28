@@ -140,6 +140,14 @@ class TailwindClassesTest extends TestCase
         $this->assertSame('tracking-wide', TailwindClasses::write('uppercase tracking-wide', 'base', ['text_case' => null]));
     }
 
+    public function test_a_line_limit_is_read_and_written_as_a_line_clamp()
+    {
+        $this->assertSame(['line_clamp' => '2'], TailwindClasses::read('line-clamp-2')['base']);
+        $this->assertSame(['line_clamp' => 'none'], TailwindClasses::read('md:line-clamp-none')['md']);
+        $this->assertSame('text-sm line-clamp-3', TailwindClasses::write('text-sm line-clamp-1', 'base', ['line_clamp' => '3']));
+        $this->assertSame('text-sm', TailwindClasses::write('text-sm line-clamp-1', 'base', ['line_clamp' => null]));
+    }
+
     public function test_picture_fit_is_read_and_written_and_leaves_the_focus_alone()
     {
         $this->assertSame(['object_fit' => 'cover', 'object_position' => 'center'], TailwindClasses::read('object-cover object-center')['base']);

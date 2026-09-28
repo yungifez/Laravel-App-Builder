@@ -372,6 +372,7 @@ export type VisualProperty =
     | 'font_style'
     | 'text_decoration'
     | 'text_case'
+    | 'line_clamp'
     | 'object_fit'
     | 'object_position'
     | 'aspect_ratio'

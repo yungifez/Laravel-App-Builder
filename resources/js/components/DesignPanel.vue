@@ -1711,6 +1711,17 @@ const recent = computed(() => {
                                     "
                                     @change="set('text_case', $event)"
                                 />
+                                <!-- Long words end in "…" after the lines
+                                     chosen, as on a card. -->
+                                <Segmented
+                                    label="Lines shown"
+                                    caption="Show"
+                                    :value="
+                                        state.valueOf('line_clamp') ?? 'none'
+                                    "
+                                    :options="options('line_clamp')"
+                                    @change="set('line_clamp', $event)"
+                                />
                                 <Swatches
                                     label="Colour"
                                     name="Text colour"
