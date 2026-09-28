@@ -238,7 +238,13 @@ abstract class AgentDriver implements ConstructionDriver
     protected function reviewPrompt(ReviewEvidence $evidence): string
     {
         $results = array_map(
-            fn (array $result) => "- [{$result['outcome']}] {$result['name']} ({$result['stage']})".($result['outcome'] === 'passed' ? '' : "\n  ".str_replace("\n", "\n  ", mb_substr($result['output'], -1500))),
+            fn (array $result) => match (true) {
+                $result['outcome'] === 'passed' => "- [passed] {$result['name']} ({$result['stage']})",
+                // It failed on the starting commit too: only what is new
+                // there is the change's doing.
+                ($result['at_start'] ?? null) === 'failed' => "- [failed before this change too] {$result['name']} ({$result['stage']})".(($result['new_problems'] ?? []) === [] ? '' : "\n  New with the change:\n  - ".implode("\n  - ", $result['new_problems'])),
+                default => "- [{$result['outcome']}] {$result['name']} ({$result['stage']})\n  ".str_replace("\n", "\n  ", mb_substr($result['output'], -1500)),
+            },
             $evidence->verificationResults,
         );
 

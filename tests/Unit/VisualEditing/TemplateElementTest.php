@@ -61,6 +61,17 @@ class TemplateElementTest extends TestCase
         $this->assertStringContainsString('<hr class="my-4" />', $element->withClasses(self::TEMPLATE, 'my-4'));
     }
 
+    public function test_a_class_attribute_left_with_no_classes_goes_and_none_is_added_empty()
+    {
+        $button = TemplateElement::at(self::TEMPLATE, 3, 9);
+        $helper = TemplateElement::at(self::TEMPLATE, 9, 9);
+        $rule = TemplateElement::at(self::TEMPLATE, 10, 9);
+
+        $this->assertStringContainsString("<Button\n            variant=\"outline\"\n            @click=\"save\"", $button->withClasses(self::TEMPLATE, ''));
+        $this->assertStringContainsString("cn('', props.class)", $helper->withClasses(self::TEMPLATE, ''));
+        $this->assertSame(self::TEMPLATE, $rule->withClasses(self::TEMPLATE, ' '));
+    }
+
     public function test_nothing_is_found_where_no_tag_starts()
     {
         $this->assertNull(TemplateElement::at(self::TEMPLATE, 2, 6));

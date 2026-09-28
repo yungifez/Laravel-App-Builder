@@ -64,6 +64,7 @@ class OwnerWording
             'review' => ($data['approved'] ?? false) ? __('The change looks right') : __('I found something to fix'),
             'change_accepted' => __('You kept this change'),
             'change_reverted' => __('You undid this change'),
+            'verification_retried' => __('Something on our side stopped the checks, so I started them again'),
             default => null,
         });
     }
@@ -87,6 +88,10 @@ class OwnerWording
             };
         }
 
+        if ($to === RunStatus::Reviewing && ($data['reason'] ?? null) === 'failed_before') {
+            return __('The change broke nothing that worked before. Looking over what changed');
+        }
+
         if ($to === RunStatus::Reviewing && ($data['verification'] ?? null) === 'passed') {
             return __('The checks passed. Looking over what changed');
         }
@@ -96,7 +101,11 @@ class OwnerWording
         }
 
         if ($to === RunStatus::NeedsUserDecision) {
-            return ($data['reason'] ?? null) === 'question' ? __('Asked you a question') : __('Stopped to ask what you want to do');
+            return match ($data['reason'] ?? null) {
+                'question' => __('Asked you a question'),
+                'verification_interrupted' => __('The checks could not run because of a problem on our side. This is our fault.'),
+                default => __('Stopped to ask what you want to do'),
+            };
         }
 
         return match ($to) {

@@ -79,6 +79,7 @@ class RunWorkspaceCommand
             'command' => $command,
             'exit_code' => $result->exitCode,
             'timed_out' => $result->timedOut,
+            'lost' => $result->lost,
             'duration_ms' => $result->durationMs,
             'output' => $this->tail($result->output, $limit),
             'error_output' => $this->tail($result->errorOutput, $limit),

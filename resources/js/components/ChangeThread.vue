@@ -41,7 +41,7 @@ import {
 } from '@/components/ui/collapsible';
 import { show as showFeatureRequest } from '@/routes/feature-requests';
 import { show as showProject } from '@/routes/projects';
-import type { ChangeDetail, Run } from '@/types';
+import type { ChangeDetail, Run, VerificationResult } from '@/types';
 
 // Roomy when the chat has the whole screen: more air between messages and
 // the owner's messages kept narrow, so they read as a conversation.
@@ -281,6 +281,14 @@ const outcomes: Record<string, { icon: typeof CircleCheck; tone: string }> = {
     skipped: { icon: CircleMinus, tone: 'text-muted-foreground' },
     not_applicable: { icon: CircleMinus, tone: 'text-muted-foreground' },
 };
+
+// A check that failed the same way before the change is the app's old
+// problem, not something the change broke.
+function failedBefore(result: VerificationResult): boolean {
+    return (
+        result.at_start === 'failed' && (result.new_problems ?? []).length === 0
+    );
+}
 
 function lineClass(line: string): string {
     if (line.startsWith('+') && !line.startsWith('+++')) {
@@ -1239,16 +1247,31 @@ const checks = computed(() => {
                                         class="flex items-center gap-2"
                                     >
                                         <component
-                                            :is="outcomes[result.outcome].icon"
+                                            :is="
+                                                failedBefore(result)
+                                                    ? CircleMinus
+                                                    : outcomes[result.outcome]
+                                                          .icon
+                                            "
                                             :class="[
                                                 'size-4 shrink-0',
-                                                outcomes[result.outcome].tone,
+                                                failedBefore(result)
+                                                    ? 'text-muted-foreground'
+                                                    : outcomes[result.outcome]
+                                                          .tone,
                                             ]"
                                             :aria-label="result.outcome"
                                         />
-                                        <span class="min-w-0 flex-1 truncate">{{
-                                            result.name
-                                        }}</span>
+                                        <span class="min-w-0 flex-1 truncate"
+                                            >{{ result.name
+                                            }}<span
+                                                v-if="failedBefore(result)"
+                                                class="text-muted-foreground"
+                                            >
+                                                · failing before this change
+                                                too</span
+                                            ></span
+                                        >
                                         <span
                                             class="shrink-0 text-xs text-muted-foreground tabular-nums"
                                             >{{

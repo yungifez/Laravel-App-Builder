@@ -187,6 +187,10 @@ export type VerificationResult = {
     timed_out: boolean;
     duration_ms: number;
     output: string;
+    /** How the check went on the starting commit, when it failed here. */
+    at_start?: VerificationOutcome;
+    /** What failed here but not on the starting commit. */
+    new_problems?: string[];
 };
 
 export type Verification = {

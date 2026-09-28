@@ -6,9 +6,11 @@ use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Workspaces\DestroyWorkspace;
 use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
+use App\Context\ProjectNotes;
 use App\Enums\VerificationStatus;
 use App\Features\AcceptanceSuite;
 use App\Features\CodeShortcuts;
+use App\Features\PatchSummary;
 use App\Features\ScreenCheck;
 use App\Features\TestMap;
 use App\Features\TestReport;
@@ -20,12 +22,14 @@ use App\Models\WorkspaceCommand;
 use App\Projects\ProjectRepository;
 use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\Drivers\CopyExclusions;
+use App\Workspaces\Exceptions\CommandLost;
 use App\Workspaces\WorkspaceFiles;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Throwable;
 
 class VerifyFeatureRequest implements ShouldQueue
@@ -59,9 +63,31 @@ class VerifyFeatureRequest implements ShouldQueue
     public const OUTCOME_NOT_APPLICABLE = 'not_applicable';
 
     /**
-     * @var list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string, tests?: list<array{file: string, name: string, outcome: string}>}>
+     * @var list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string, tests?: list<array{file: string, name: string, outcome: string}>, at_start?: string, new_problems?: list<string>}>
      */
     protected array $results = [];
+
+    /**
+     * The whole output of each check, by its place in the results, to
+     * compare with the same check on the starting commit.
+     *
+     * @var array<int, string>
+     */
+    protected array $outputs = [];
+
+    /**
+     * Whether each file the change touches was deleted, by path.
+     *
+     * @var array<string, bool>
+     */
+    protected array $touched = [];
+
+    /**
+     * Files whose change alters what setup installs. A check cannot be run
+     * on the starting commit with the change's packages, so a change to one
+     * of these is judged on its own result.
+     */
+    protected const PACKAGE_FILES = ['composer.json', 'composer.lock', 'package.json', 'package-lock.json'];
 
     /**
      * Create a new job instance.
@@ -96,6 +122,7 @@ class VerifyFeatureRequest implements ShouldQueue
         $this->verification->update(['status' => VerificationStatus::Running, 'started_at' => now()]);
 
         try {
+            $this->touched = $this->touchedFiles($featureRequest);
             $workspace = $provisionWorkspace->handle($project->owner, (string) config('builder.verification.workspace_driver'));
             $this->verification->update(['workspace_id' => $workspace->id]);
 
@@ -128,6 +155,10 @@ class VerifyFeatureRequest implements ShouldQueue
             $workspaceFiles->sync($project, $workspace);
 
             $checksPassed = $this->runSteps($driver, $runWorkspaceCommand, $workspace, 'checks', stopOnFailure: false);
+
+            if (! $checksPassed) {
+                $this->compareWithStart($driver, $runWorkspaceCommand, $workspace, $featureRequest);
+            }
             $this->auditPackages($runWorkspaceCommand, $workspace);
             $this->observeShortcuts($driver, $runWorkspaceCommand, $workspace, $featureRequest);
 
@@ -147,9 +178,11 @@ class VerifyFeatureRequest implements ShouldQueue
                 default => VerificationStatus::Passed,
             });
         } catch (Throwable $exception) {
-            report($exception);
+            if (! $exception instanceof CommandLost) {
+                report($exception);
+            }
 
-            $this->finish(VerificationStatus::Errored, $exception->getMessage());
+            $this->finish(VerificationStatus::Errored, __('The checks stopped because of a problem on our side. This is our fault.'), interrupted: true);
         } finally {
             if ($workspace !== null) {
                 rescue(fn () => $destroyWorkspace->handle($workspace));
@@ -164,7 +197,8 @@ class VerifyFeatureRequest implements ShouldQueue
     {
         $this->verification->update([
             'status' => VerificationStatus::Errored,
-            'error' => __('Verification stopped unexpectedly.'),
+            'error' => __('The checks stopped because of a problem on our side. This is our fault.'),
+            'interrupted' => true,
             'finished_at' => now(),
         ]);
 
@@ -182,14 +216,15 @@ class VerifyFeatureRequest implements ShouldQueue
         $steps = $this->configuredSteps($stage);
 
         foreach ($steps as $index => $step) {
-            $report = $step['report'] ?? null;
+            $files = isset($step['files']) ? $this->changedFiles($step['files']) : null;
 
-            if ($report !== null) {
-                $runWorkspaceCommand->handle($workspace, ['rm', '-f', $report], 30);
+            if ($files === []) {
+                $this->addResult($step['name'], $stage, self::OUTCOME_NOT_APPLICABLE, output: __('The change touched no files this check reads.'));
+
+                continue;
             }
 
-            $command = $runWorkspaceCommand->handle($workspace, $step['command'], $step['timeout']);
-            $tests = $report === null ? null : TestReport::fromJunit((string) rescue(fn () => $driver->readFile((string) $workspace->driver_id, $report), '', report: false));
+            [$command, $tests] = $this->runStep($driver, $runWorkspaceCommand, $workspace, $step, $files ?? []);
 
             if (! $this->record($step['name'], $stage, $command, $tests)) {
                 $allSucceeded = false;
@@ -205,6 +240,180 @@ class VerifyFeatureRequest implements ShouldQueue
         }
 
         return $allSucceeded;
+    }
+
+    /**
+     * Run one step, with the given files after its command. A step with a
+     * "report" writes a JUnit report there, and the tests it lists come
+     * back with its command.
+     *
+     * @param  array{name: string, command: list<string>, timeout: int, report?: string, files?: list<string>}  $step
+     * @param  list<string>  $files
+     * @return array{WorkspaceCommand, list<array{file: string, name: string, outcome: string}>|null}
+     */
+    protected function runStep(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, array $step, array $files = []): array
+    {
+        $report = $step['report'] ?? null;
+
+        if ($report !== null) {
+            $runWorkspaceCommand->handle($workspace, ['rm', '-f', $report], 30);
+        }
+
+        $command = $runWorkspaceCommand->handle($workspace, [...$step['command'], ...$files], $step['timeout']);
+        $tests = $report === null ? null : TestReport::fromJunit((string) rescue(fn () => $driver->readFile((string) $workspace->driver_id, $report), '', report: false));
+
+        return [$command, $tests];
+    }
+
+    /**
+     * Run each whole-app check the change failed again on the starting
+     * commit, and keep with its result how it went there and which of its
+     * problems are new. Problems the app already had are not the change's
+     * to fix, so only the new ones are sent back. The change is put back
+     * afterwards, for the checks that follow.
+     */
+    protected function compareWithStart(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): void
+    {
+        $steps = collect($this->configuredSteps('checks'))->keyBy('name');
+        $comparable = array_keys(array_filter($this->results, fn (array $result) => $result['stage'] === 'checks' && $result['outcome'] === self::OUTCOME_FAILED && ! isset($steps[$result['name']]['files'])));
+
+        if ($comparable === [] || array_intersect(array_keys($this->touched), self::PACKAGE_FILES) !== []) {
+            return;
+        }
+
+        $lineage = $featureRequest->lineage();
+        $undone = [];
+
+        foreach (array_reverse(array_keys($lineage)) as $position) {
+            if (! $this->applyPatch($driver, $runWorkspaceCommand, $workspace, $lineage, $position, reverse: true)) {
+                break;
+            }
+
+            $undone[] = $position;
+        }
+
+        if (count($undone) === count($lineage)) {
+            foreach ($comparable as $index) {
+                [$command, $tests] = $this->runStep($driver, $runWorkspaceCommand, $workspace, $steps[$this->results[$index]['name']]);
+
+                if ($command->lost) {
+                    throw new CommandLost($command->error_output);
+                }
+
+                $result = $this->results[$index];
+                $result['at_start'] = $this->outcome($command);
+
+                if ($result['at_start'] === self::OUTCOME_FAILED) {
+                    $result['new_problems'] = isset($result['tests']) && $tests !== null
+                        ? $this->newFailingTests($result['tests'], $tests)
+                        : $this->newLines($this->outputs[$index] ?? '', $this->withoutTerminalCodes($command->output."\n".$command->error_output));
+                }
+
+                $this->results[$index] = $result;
+            }
+
+            $this->verification->update(['results' => $this->results]);
+        }
+
+        foreach (array_reverse($undone) as $position) {
+            if (! $this->applyPatch($driver, $runWorkspaceCommand, $workspace, $lineage, $position)) {
+                throw new RuntimeException('The change could not be put back after its checks ran on the starting commit.');
+            }
+        }
+
+        $runWorkspaceCommand->handle($workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], 30);
+    }
+
+    /**
+     * Apply one change of the lineage to the workspace, or take it out.
+     *
+     * @param  list<FeatureRequest>  $lineage
+     */
+    protected function applyPatch(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, array $lineage, int $position, bool $reverse = false): bool
+    {
+        $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);
+        $driver->writeFile((string) $workspace->driver_id, $patch, (string) $lineage[$position]->patch);
+
+        $command = $runWorkspaceCommand->handle($workspace, ['git', 'apply', '--whitespace=nowarn', ...($reverse ? ['--reverse'] : []), ...CopyExclusions::applyFlags(), $patch], 120);
+
+        if ($command->lost) {
+            throw new CommandLost($command->error_output);
+        }
+
+        return $this->outcome($command) === self::OUTCOME_PASSED;
+    }
+
+    /**
+     * Name the tests that fail now but did not fail before the change.
+     *
+     * @param  list<array{file: string, name: string, outcome: string}>  $now
+     * @param  list<array{file: string, name: string, outcome: string}>  $before
+     * @return list<string>
+     */
+    protected function newFailingTests(array $now, array $before): array
+    {
+        $failing = fn (array $tests) => collect($tests)
+            ->where('outcome', TestReport::FAILED)
+            ->mapWithKeys(fn (array $test) => [$test['file'].'::'.$test['name'] => $test['name'].' ('.basename($test['file']).')']);
+
+        return array_values(array_map(strval(...), $failing($now)->diffKeys($failing($before))->unique()->all()));
+    }
+
+    /**
+     * Get the lines of a check's output that its output before the change
+     * does not have. Numbers are left out of the comparison, as a change
+     * moves line numbers and counts without adding a problem.
+     *
+     * @return list<string>
+     */
+    protected function newLines(string $now, string $before): array
+    {
+        $key = fn (string $line) => (string) preg_replace(['/\d+/', '/\s+/'], ['', ' '], trim($line));
+        $seen = array_flip(array_map($key, explode("\n", $before)));
+        $new = [];
+
+        foreach (explode("\n", $now) as $line) {
+            if (trim($line) !== '' && trim($key($line)) !== '' && ! isset($seen[$key($line)])) {
+                $new[trim($line)] = true;
+            }
+        }
+
+        return array_slice(array_keys($new), 0, 40);
+    }
+
+    /**
+     * Find every file the change and its ancestors touch, later changes
+     * winning, and whether it ends up deleted.
+     *
+     * @return array<string, bool>
+     */
+    protected function touchedFiles(FeatureRequest $featureRequest): array
+    {
+        $touched = [];
+
+        foreach ($featureRequest->lineage() as $request) {
+            foreach (PatchSummary::files($request->patch) as $file) {
+                $touched[$file['path']] = preg_match('/^deleted file mode /m', $file['diff']) === 1;
+            }
+        }
+
+        return $touched;
+    }
+
+    /**
+     * List the files the change added or modified with one of the given
+     * extensions, leaving out the notes.
+     *
+     * @param  list<string>  $extensions
+     * @return list<string>
+     */
+    protected function changedFiles(array $extensions): array
+    {
+        return array_values(array_filter(
+            array_keys(array_filter($this->touched, fn (bool $deleted) => ! $deleted)),
+            fn (string $file) => in_array(pathinfo($file, PATHINFO_EXTENSION), $extensions, true)
+                && ! str_starts_with($file, ProjectNotes::directory().'/'),
+        ));
     }
 
     /**
@@ -449,11 +658,11 @@ class VerifyFeatureRequest implements ShouldQueue
     /**
      * Get the configured setup commands or checks.
      *
-     * @return list<array{name: string, command: list<string>, timeout: int, report?: string}>
+     * @return list<array{name: string, command: list<string>, timeout: int, report?: string, files?: list<string>}>
      */
     protected function configuredSteps(string $stage): array
     {
-        /** @var list<array{name: string, command: list<string>, timeout: int, report?: string}> $steps */
+        /** @var list<array{name: string, command: list<string>, timeout: int, report?: string, files?: list<string>}> $steps */
         $steps = config("builder.verification.{$stage}", []);
 
         return $steps;
@@ -466,7 +675,14 @@ class VerifyFeatureRequest implements ShouldQueue
      */
     protected function record(string $name, string $stage, WorkspaceCommand $command, ?array $tests = null): bool
     {
+        if ($command->lost) {
+            $this->addResult($name, $stage, self::OUTCOME_ERRORED, timedOut: true, durationMs: $command->duration_ms, output: $command->error_output);
+
+            throw new CommandLost($command->error_output);
+        }
+
         $outcome = $this->outcome($command);
+        $this->outputs[count($this->results)] = $this->withoutTerminalCodes($command->output."\n".$command->error_output);
 
         $this->addResult(
             $name,
@@ -528,12 +744,13 @@ class VerifyFeatureRequest implements ShouldQueue
     /**
      * Store the final status.
      */
-    protected function finish(VerificationStatus $status, ?string $error = null): void
+    protected function finish(VerificationStatus $status, ?string $error = null, bool $interrupted = false): void
     {
         $this->verification->update([
             'status' => $status,
             'results' => $this->results,
             'error' => $error,
+            'interrupted' => $interrupted,
             'finished_at' => now(),
         ]);
 

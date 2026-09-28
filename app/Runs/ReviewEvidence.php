@@ -14,7 +14,7 @@ final readonly class ReviewEvidence
 {
     /**
      * @param  list<array{path: string, deleted: bool, removed_assertions: int}>  $weakenedTests
-     * @param  list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string}>  $verificationResults
+     * @param  list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string, at_start?: string, new_problems?: list<string>}>  $verificationResults
      * @param  array<string, string>  $areaNames  Area names, keyed by area
      */
     public function __construct(

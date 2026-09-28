@@ -21,16 +21,17 @@ use Illuminate\Support\Carbon;
  * @property int|null $run_id
  * @property int|null $workspace_id
  * @property VerificationStatus $status
- * @property list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string, tests?: list<array{file: string, name: string, outcome: string}>}>|null $results
+ * @property list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string, tests?: list<array{file: string, name: string, outcome: string}>, at_start?: string, new_problems?: list<string>}>|null $results
  * @property array{pages: list<array<string, mixed>>, signed_in?: bool, shots?: list<array{screen: string, width: int, path: string}>}|null $screens
  * @property list<array{rule: string, path: string, line: int}>|null $shortcuts What the shortcut scan found in the files the change touched, or null when it did not run
  * @property string|null $error
+ * @property bool $interrupted The checks stopped because of a problem on our side, so they say nothing about the change
  * @property Carbon|null $started_at
  * @property Carbon|null $finished_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['run_id', 'workspace_id', 'status', 'results', 'screens', 'shortcuts', 'error', 'started_at', 'finished_at'])]
+#[Fillable(['run_id', 'workspace_id', 'status', 'results', 'screens', 'shortcuts', 'error', 'interrupted', 'started_at', 'finished_at'])]
 class Verification extends Model
 {
     /** @use HasFactory<VerificationFactory> */
@@ -50,6 +51,7 @@ class Verification extends Model
             'results' => 'array',
             'screens' => 'array',
             'shortcuts' => 'array',
+            'interrupted' => 'boolean',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
         ];

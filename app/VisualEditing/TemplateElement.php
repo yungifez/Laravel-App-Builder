@@ -82,12 +82,25 @@ class TemplateElement
 
     /**
      * Get the contents with the element's editable classes replaced, adding
-     * a static class attribute when the element has none.
+     * a static class attribute when the element has none. A static class
+     * attribute left with no classes goes, as it was before one was added.
      */
     public function withClasses(string $contents, string $classes): string
     {
         if ($this->classes !== null) {
+            $before = substr($contents, $this->start, $this->classes['offset'] - $this->start);
+
+            if (trim($classes) === '' && preg_match('/\s+class\s*=\s*["\']$/', $before, $attribute) === 1) {
+                $from = $this->classes['offset'] - strlen($attribute[0]);
+
+                return substr_replace($contents, '', $from, $this->classes['offset'] + $this->classes['length'] + 1 - $from);
+            }
+
             return substr_replace($contents, $classes, $this->classes['offset'], $this->classes['length']);
+        }
+
+        if (trim($classes) === '') {
+            return $contents;
         }
 
         $afterTag = $this->start + 1 + strlen($this->tag);

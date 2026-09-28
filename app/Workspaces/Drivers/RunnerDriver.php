@@ -59,6 +59,7 @@ class RunnerDriver implements WorkspaceDriver
                 errorOutput: (string) ($result['error_output'] ?? ''),
                 durationMs: (int) $finished->created_at?->diffInMilliseconds($finished->finished_at, true),
                 timedOut: true,
+                lost: true,
             );
         }
 

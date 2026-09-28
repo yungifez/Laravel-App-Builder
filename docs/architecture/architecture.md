@@ -1594,6 +1594,26 @@ named test that is missing, skipped or misnamed is a blocking finding. A
 suite without a report leaves the reviewer's claim as a claim, shown to the
 owner as not confirmed.
 
+**The change is judged, not the app it started from.** Format and lint
+checks run only on the files the change added or modified
+(`files` on the check). When a whole-app check fails, it runs again on the
+starting commit in the same workspace: the change is taken out with
+`git apply --reverse`, the check runs, and the change is put back. A failing
+test or output line that is also there before the change is the app's old
+problem. Only the new problems go back to the coder, and a change whose only
+problems are old ones goes on to review. The result keeps both outcomes
+(`at_start`, `new_problems`), and the owner sees "failing before this change
+too". A change to the package files skips the comparison, as the starting
+commit would need other packages installed.
+
+**Our failures never cost a repair.** A command no runner took, or one that
+never answered, a workspace that did not start, or a crash in our own code
+stops the checks as interrupted. They run again, up to
+`builder.verification.retries` times, and the coder never hears of it. When
+they still cannot run, the run stops and says it is our fault. Only problems
+the coder can fix count against the repairs budget
+(`BUILDER_RUN_MAX_REPAIRS`, 4 by default).
+
 **Common safety mistakes are found by pattern, on added lines only.** The
 review scans the lines a change adds for unescaped Blade output (`{!! !!}`),
 `v-html`, queries built from values mixed into their text, models open to

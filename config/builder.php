@@ -330,7 +330,7 @@ return [
             'operations' => (int) env('BUILDER_RUN_MAX_OPERATIONS', 30),
             'minutes' => (int) env('BUILDER_RUN_MAX_MINUTES', 20),
             // Attempts to fix a change that failed verification or review.
-            'repairs' => (int) env('BUILDER_RUN_MAX_REPAIRS', 2),
+            'repairs' => (int) env('BUILDER_RUN_MAX_REPAIRS', 4),
             // What all changes together may spend on AI in one day, in US
             // dollars; a run stops once today's spend reaches it. 0 turns
             // the limit off.
@@ -555,6 +555,12 @@ return [
         // worker so they do not wait behind other changes being built.
         'queue' => env('BUILDER_VERIFICATION_QUEUE'),
 
+        // How many times checks stopped by a problem on our side (no runner
+        // took a command, a workspace could not start) are run again before
+        // the run stops and says it is our fault. These never count as a
+        // repair, and the coder never hears of them.
+        'retries' => (int) env('BUILDER_VERIFICATION_RETRIES', 2),
+
         // Platform-owned acceptance suites and their runner configuration.
         // They are copied fresh into tests/Acceptance after the checks, replacing
         // anything the change put there, and run with this directory's
@@ -714,11 +720,17 @@ return [
             'foundation_min_tests' => (int) env('BUILDER_FOUNDATION_MIN_TESTS', 10),
         ],
 
+        // A check with "files" runs only on the files the change added or
+        // modified with those extensions: layout and lint are about the
+        // lines written, and the rest of the app is not the change's to
+        // tidy. A check without it runs on the whole app, and when it fails
+        // it runs again on the starting commit, so only problems the change
+        // brought are sent back to be fixed.
         'checks' => [
             ['name' => 'Tests', 'command' => ['php', 'artisan', 'test', '--log-junit=storage/logs/junit.xml'], 'timeout' => 600, 'report' => 'storage/logs/junit.xml'],
             ['name' => 'Static analysis', 'command' => ['vendor/bin/phpstan', 'analyse', '--no-progress'], 'timeout' => 600],
-            ['name' => 'PHP formatting', 'command' => ['vendor/bin/pint', '--test'], 'timeout' => 300],
-            ['name' => 'Frontend format and lint', 'command' => ['npx', 'vp', 'check'], 'timeout' => 300],
+            ['name' => 'PHP formatting', 'command' => ['vendor/bin/pint', '--test'], 'timeout' => 300, 'files' => ['php']],
+            ['name' => 'Frontend format and lint', 'command' => ['npx', 'vp', 'check', '--no-error-on-unmatched-pattern'], 'timeout' => 300, 'files' => ['ts', 'vue', 'js', 'mjs', 'css', 'json', 'md']],
             ['name' => 'TypeScript', 'command' => ['npm', 'run', 'types:check'], 'timeout' => 300],
         ],
 

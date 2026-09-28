@@ -502,4 +502,108 @@ class VerificationTest extends TestCase
         $this->actingAs($featureRequest->project->owner)->get(route('verifications.shots.show', [$verification, 5]))->assertNotFound();
         $this->actingAs(User::factory()->create())->get(route('verifications.shots.show', [$verification, 0]))->assertForbidden();
     }
+
+    public function test_format_checks_read_only_the_files_the_change_added_or_modified()
+    {
+        config(['builder.verification.checks' => [
+            ['name' => 'Lint', 'command' => ['pint', '--test'], 'timeout' => 60, 'files' => ['php']],
+            ['name' => 'Frontend lint', 'command' => ['vp', 'check'], 'timeout' => 60, 'files' => ['vue']],
+        ]]);
+        $request = FeatureRequest::factory()->generated()->create(['patch' => implode("\n", [
+            'diff --git a/app/Models/Team.php b/app/Models/Team.php',
+            '--- a/app/Models/Team.php',
+            '+++ b/app/Models/Team.php',
+            '@@ -1 +1,2 @@',
+            ' <?php',
+            '+// A team',
+            'diff --git a/app/Old.php b/app/Old.php',
+            'deleted file mode 100644',
+            '--- a/app/Old.php',
+            '+++ /dev/null',
+            '@@ -1 +0,0 @@',
+            '-<?php',
+            'diff --git a/.product-notes/teams.md b/.product-notes/teams.md',
+            '--- a/.product-notes/teams.md',
+            '+++ b/.product-notes/teams.md',
+            '@@ -1 +1,2 @@',
+            ' # Teams',
+            '+Teams have a description.',
+            '',
+        ])]);
+
+        app(RequestVerification::class)->handle($request);
+
+        $commands = array_column($this->driver->executed, 'command');
+        $this->assertContains(['pint', '--test', 'app/Models/Team.php'], $commands);
+        $this->assertNotContains(['vp', 'check'], $commands);
+        $this->assertSame(
+            ['Lint' => 'passed', 'Frontend lint' => 'not_applicable'],
+            collect($request->verifications()->sole()->results)->where('stage', 'checks')->pluck('outcome', 'name')->all(),
+        );
+    }
+
+    public function test_a_check_that_already_failed_before_the_change_keeps_only_its_new_problems()
+    {
+        $atStart = false;
+        $this->driver->onExec = function (string $id, array $command) use (&$atStart) {
+            if ($command[0] === 'git') {
+                $atStart = in_array('--reverse', $command, true);
+            }
+
+            return match (true) {
+                $command === ['php', 'artisan', 'test'] => new CommandResult(exitCode: 1, output: $atStart ? "FAIL old problem on line 12\nTests: 1 failed" : "FAIL old problem on line 14\nFAIL teams have a description\nTests: 2 failed", errorOutput: '', durationMs: 10),
+                default => new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5),
+            };
+        };
+        $request = FeatureRequest::factory()->generated()->create(['acceptance' => ['Invitations/ContractTest.php']]);
+
+        app(RequestVerification::class)->handle($request);
+
+        $verification = $request->verifications()->sole();
+        $tests = collect($verification->results)->firstWhere('name', 'Tests');
+        $this->assertSame('failed', $tests['outcome']);
+        $this->assertSame('failed', $tests['at_start']);
+        $this->assertSame(['FAIL teams have a description'], $tests['new_problems']);
+        $this->assertArrayNotHasKey('at_start', collect($verification->results)->firstWhere('name', 'Lint'));
+        $this->assertSame(VerificationStatus::Failed, $verification->status);
+
+        // The change is put back before the protected tests run on it.
+        $applies = array_values(array_filter(array_column($this->driver->executed, 'command'), fn (array $command) => $command[0] === 'git'));
+        $this->assertContains('--reverse', end($applies) === false ? [] : $applies[count($applies) - 2]);
+        $this->assertNotContains('--reverse', end($applies));
+        $this->assertSame('passed', collect($verification->results)->firstWhere('stage', 'acceptance')['outcome']);
+    }
+
+    public function test_a_change_to_the_packages_is_judged_on_its_own_result()
+    {
+        $this->driver->onExec = fn (string $id, array $command) => new CommandResult(
+            exitCode: $command === ['php', 'artisan', 'test'] ? 1 : 0,
+            output: 'FAIL',
+            errorOutput: '',
+            durationMs: 10,
+        );
+        $request = FeatureRequest::factory()->generated()->create(['patch' => "diff --git a/composer.json b/composer.json\n--- a/composer.json\n+++ b/composer.json\n@@ -1 +1,2 @@\n {\n+\n"]);
+
+        app(RequestVerification::class)->handle($request);
+
+        $this->assertArrayNotHasKey('at_start', collect($request->verifications()->sole()->results)->firstWhere('name', 'Tests'));
+        $this->assertEmpty(array_filter(array_column($this->driver->executed, 'command'), fn (array $command) => in_array('--reverse', $command, true)));
+    }
+
+    public function test_a_command_no_runner_took_stops_the_checks_as_our_fault()
+    {
+        $this->driver->onExec = fn (string $id, array $command) => $command === ['php', 'artisan', 'test']
+            ? new CommandResult(exitCode: 124, output: '', errorOutput: 'No runner took the command.', durationMs: 0, timedOut: true, lost: true)
+            : new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        $request = FeatureRequest::factory()->generated()->create(['acceptance' => ['Invitations/ContractTest.php']]);
+
+        app(RequestVerification::class)->handle($request);
+
+        $verification = $request->verifications()->sole();
+        $this->assertSame(VerificationStatus::Errored, $verification->status);
+        $this->assertTrue($verification->interrupted);
+        $this->assertSame('The checks stopped because of a problem on our side. This is our fault.', $verification->error);
+        $this->assertNotContains(['pint', '--test'], array_column($this->driver->executed, 'command'));
+        $this->assertCount(1, $this->driver->destroyed);
+    }
 }
