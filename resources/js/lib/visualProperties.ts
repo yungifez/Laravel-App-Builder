@@ -424,6 +424,20 @@ export const properties: PropertyDefinition[] = [
         },
     },
     {
+        key: 'text_case',
+        label: 'Capital letters',
+        group: 'Text',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'none', label: 'As typed' },
+                { value: 'uppercase', label: 'Capitals' },
+                { value: 'capitalize', label: 'Title case', short: 'Title' },
+                { value: 'lowercase', label: 'Small letters', short: 'Small' },
+            ],
+        },
+    },
+    {
         key: 'line_height',
         label: 'Space between lines',
         group: 'Text',
@@ -972,6 +986,9 @@ export function inlineStyles(
                 break;
             case 'text_decoration':
                 styles.textDecorationLine = String(value);
+                break;
+            case 'text_case':
+                styles.textTransform = String(value);
                 break;
             case 'letter_spacing':
                 styles.letterSpacing = `var(--tracking-${value}, ${trackings[value] ?? 'normal'})`;

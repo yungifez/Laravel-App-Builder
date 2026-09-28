@@ -132,6 +132,14 @@ class TailwindClassesTest extends TestCase
         $this->assertSame('underline-offset-4', TailwindClasses::write('underline underline-offset-4', 'base', ['text_decoration' => null]));
     }
 
+    public function test_letter_case_is_read_and_written_as_utilities()
+    {
+        $this->assertSame(['text_case' => 'uppercase'], TailwindClasses::read('uppercase')['base']);
+        $this->assertSame(['text_case' => 'none'], TailwindClasses::read('md:normal-case')['md']);
+        $this->assertSame('capitalize tracking-wide', TailwindClasses::write('uppercase tracking-wide', 'base', ['text_case' => 'capitalize']));
+        $this->assertSame('tracking-wide', TailwindClasses::write('uppercase tracking-wide', 'base', ['text_case' => null]));
+    }
+
     public function test_letter_spacing_is_read_and_written_and_spacing_off_the_steps_is_replaced()
     {
         $this->assertSame(['letter_spacing' => 'wide'], TailwindClasses::read('tracking-wide')['base']);

@@ -36,7 +36,7 @@ class TailwindClasses
         'layout', 'direction', 'wrap', 'align', 'justify', 'columns', 'gap',
         'width', 'height', 'max_width', 'padding_x', 'padding_y', 'margin_x', 'margin_y', 'border', 'border_color', 'radius', 'shadow',
         'rotate', 'translate_x', 'translate_y', 'opacity',
-        'text_size', 'text_weight', 'text_align', 'font_style', 'text_decoration', 'line_height', 'letter_spacing', 'text_color', 'background',
+        'text_size', 'text_weight', 'text_align', 'font_style', 'text_decoration', 'text_case', 'line_height', 'letter_spacing', 'text_color', 'background',
     ];
 
     protected const KEYWORDS = [
@@ -53,6 +53,7 @@ class TailwindClasses
         'text_align' => ['text-left' => 'left', 'text-center' => 'center', 'text-right' => 'right', 'text-justify' => 'justify', 'text-start' => 'start', 'text-end' => 'end'],
         'font_style' => ['italic' => 'italic', 'not-italic' => 'normal'],
         'text_decoration' => ['underline' => 'underline', 'line-through' => 'line-through', 'no-underline' => 'none'],
+        'text_case' => ['uppercase' => 'uppercase', 'lowercase' => 'lowercase', 'capitalize' => 'capitalize', 'normal-case' => 'none'],
         'line_height' => ['leading-none' => 'none', 'leading-tight' => 'tight', 'leading-snug' => 'snug', 'leading-normal' => 'normal', 'leading-relaxed' => 'relaxed', 'leading-loose' => 'loose'],
         'letter_spacing' => ['tracking-tighter' => 'tighter', 'tracking-tight' => 'tight', 'tracking-normal' => 'normal', 'tracking-wide' => 'wide', 'tracking-wider' => 'wider', 'tracking-widest' => 'widest'],
     ];

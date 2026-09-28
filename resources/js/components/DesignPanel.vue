@@ -1638,6 +1638,24 @@ const recent = computed(() => {
                                         </button>
                                     </div>
                                 </div>
+                                <!-- Each choice shows itself: "CAPITALS"
+                                     in capitals. -->
+                                <Segmented
+                                    label="Capital letters"
+                                    caption="Case"
+                                    :value="state.valueOf('text_case')"
+                                    :options="
+                                        options('text_case').map((option) => ({
+                                            ...option,
+                                            style: {
+                                                textTransform: String(
+                                                    option.value,
+                                                ),
+                                            },
+                                        }))
+                                    "
+                                    @change="set('text_case', $event)"
+                                />
                                 <Swatches
                                     label="Colour"
                                     name="Text colour"
