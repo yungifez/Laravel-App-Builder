@@ -18,7 +18,12 @@
 // `data-builder-when` ("if", "either" or "show"), so the designer can say a change reaches every item,
 // or that the part is not always there.
 //
-// Usage: node locate-sources.mjs [directory ...]  (default: resources/js)
+// Usage: node locate-sources.mjs [--stage <dir>] [directory ...]  (default: resources/js)
+//
+// With --stage, the files staged under <dir> are stamped instead, each named
+// by its place under <dir>, which is its place in the app. They are stamped
+// before they are moved into the app, so a build that watches it sees them
+// change once.
 
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -61,13 +66,15 @@ try {
     }
 }
 
-const directories =
-    process.argv.slice(2).length > 0 ? process.argv.slice(2) : ['resources/js'];
+const options = process.argv.slice(2);
+const base = options[0] === '--stage' ? join(root, options[1]) : root;
+const named = options[0] === '--stage' ? options.slice(2) : options;
+const directories = named.length > 0 ? named : ['resources/js'];
 let files = 0;
 let elements = 0;
 
 for (const directory of directories) {
-    for (const file of vueFiles(join(root, directory))) {
+    for (const file of vueFiles(join(base, directory))) {
         const stamped = stamp(file);
 
         if (stamped > 0) {
@@ -119,7 +126,7 @@ function stamp(file) {
         return 0;
     }
 
-    const name = relative(root, file).split(sep).join('/');
+    const name = relative(base, file).split(sep).join('/');
     const insertions = [];
 
     walk(descriptor.template.ast.children, (node, around, next) => {

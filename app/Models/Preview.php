@@ -25,6 +25,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $workspace_id
  * @property string|null $revision The project commit a project preview runs
  * @property bool $editable Whether elements carry their source location
+ * @property bool $watching Whether the frontend build runs in watch mode, so a rebuild only moves the changed files in
  * @property string $host The preview's subdomain label
  * @property PreviewStatus $status
  * @property int|null $port
@@ -42,7 +43,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['project_id', 'feature_request_id', 'revision', 'editable', 'rebuilt_at', 'workspace_id', 'host', 'status', 'port', 'upstream_url', 'grant_hash', 'grant_expires_at', 'session_hash', 'session_expires_at', 'error', 'ready_at', 'last_seen_at', 'expires_at', 'stopped_at'])]
+#[Fillable(['project_id', 'feature_request_id', 'revision', 'editable', 'watching', 'rebuilt_at', 'workspace_id', 'host', 'status', 'port', 'upstream_url', 'grant_hash', 'grant_expires_at', 'session_hash', 'session_expires_at', 'error', 'ready_at', 'last_seen_at', 'expires_at', 'stopped_at'])]
 class Preview extends Model
 {
     /** @use HasFactory<PreviewFactory> */
@@ -61,6 +62,7 @@ class Preview extends Model
             'grant_expires_at' => 'datetime',
             'session_expires_at' => 'datetime',
             'editable' => 'boolean',
+            'watching' => 'boolean',
             'ready_at' => 'datetime',
             'rebuilt_at' => 'datetime',
             'last_seen_at' => 'datetime',

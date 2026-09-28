@@ -6,6 +6,7 @@ use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\PreviewStatus;
 use App\Models\Preview;
 use App\Models\PreviewRebuild;
+use App\Models\Workspace;
 use App\Projects\ProjectRepository;
 use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\WorkspaceManager;
@@ -13,6 +14,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
@@ -73,7 +75,7 @@ class RebuildPreview implements ShouldQueue
     /**
      * Bring a running editable preview up to the project's latest commit:
      * copy in the files that changed, mark them for point-and-edit again,
-     * and rebuild the frontend. Several quick edits share one rebuild,
+     * and rebuild the frontend (only what changed, when the build watches). Several quick edits share one rebuild,
      * because each rebuild goes to whatever the latest commit is then.
      */
     public function handle(WorkspaceManager $workspaces, RunWorkspaceCommand $runWorkspaceCommand, ProjectRepository $repository): void
@@ -105,21 +107,23 @@ class RebuildPreview implements ShouldQueue
         ]);
 
         try {
-            foreach ($changed as $path => $deleted) {
-                if ($deleted) {
-                    $this->run($runWorkspaceCommand, $preview, ['rm', '-f', '--', $path], 30);
-                } else {
-                    $driver->writeFile((string) $workspace->driver_id, $path, (string) $repository->show($project, $head, $path));
+            if (! ($preview->watching && $this->handToWatcher($driver, $runWorkspaceCommand, $repository, $preview, $workspace, $head, $changed))) {
+                foreach ($changed as $path => $deleted) {
+                    if ($deleted) {
+                        $this->run($runWorkspaceCommand, $preview, ['rm', '-f', '--', $path], 30);
+                    } else {
+                        $driver->writeFile((string) $workspace->driver_id, $path, (string) $repository->show($project, $head, $path));
+                    }
                 }
-            }
 
-            $this->run($runWorkspaceCommand, $preview, StartPreview::locatorCommand($preview->workspace), 300);
+                $this->run($runWorkspaceCommand, $preview, StartPreview::locatorCommand($preview->workspace), 300);
 
-            /** @var list<array{name: string, command: list<string>, timeout: int}> $rebuild */
-            $rebuild = config('builder.preview.rebuild', []);
+                /** @var list<array{name: string, command: list<string>, timeout: int}> $rebuild */
+                $rebuild = config('builder.preview.rebuild', []);
 
-            foreach ($rebuild as $step) {
-                $this->run($runWorkspaceCommand, $preview, $step['command'], $step['timeout']);
+                foreach ($rebuild as $step) {
+                    $this->run($runWorkspaceCommand, $preview, $step['command'], $step['timeout']);
+                }
             }
 
             $preview->update(['revision' => $head, 'rebuilt_at' => now(), 'error' => null]);
@@ -132,6 +136,48 @@ class RebuildPreview implements ShouldQueue
             $this->restore($driver, $runWorkspaceCommand, $repository, $preview, array_keys($changed));
             $preview->update(['error' => __('The preview could not show your latest change. Start it again to see it.')]);
         }
+    }
+
+    /**
+     * Give the changed files to the build that is watching: stage them, mark
+     * them there, then move them all in at once, so the build runs once for
+     * them, and wait for it. Returns false when the watcher has stopped or
+     * is slow; the files are then copied in and built as usual.
+     *
+     * @param  array<string, bool>  $changed  Whether each changed path was deleted
+     */
+    protected function handToWatcher(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, ProjectRepository $repository, Preview $preview, Workspace $workspace, string $head, array $changed): bool
+    {
+        $stage = Config::string('builder.preview.watch.directory').'/stage';
+        $removed = [];
+
+        foreach ($changed as $path => $deleted) {
+            if ($deleted) {
+                $removed[] = $path;
+            } else {
+                $driver->writeFile((string) $workspace->driver_id, "{$stage}/{$path}", (string) $repository->show($preview->project, $head, $path));
+            }
+        }
+
+        $this->run($runWorkspaceCommand, $preview, StartPreview::locatorCommand($workspace, $stage), 300);
+
+        $timeout = (int) config('builder.preview.watch.timeout');
+        $result = $runWorkspaceCommand->handle($workspace, StartPreview::watchCommand($workspace, 'place', [
+            (string) config('builder.preview.watch.quiet_ms'),
+            (string) $timeout,
+            ...$removed,
+        ]), $timeout + 30);
+
+        if ($result->exit_code === 0 && ! $result->timed_out) {
+            return true;
+        }
+
+        // Exit code 3: no watcher is running any more.
+        if ($result->exit_code === 3) {
+            $preview->update(['watching' => false]);
+        }
+
+        return false;
     }
 
     /**

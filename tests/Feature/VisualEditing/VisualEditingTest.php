@@ -79,6 +79,7 @@ class VisualEditingTest extends TestCase
             'builder.preview.public_port' => null,
             'builder.preview.setup' => [],
             'builder.preview.rebuild' => [['name' => 'Build the frontend', 'command' => ['npm', 'run', 'build'], 'timeout' => 600]],
+            'builder.preview.watch.enabled' => false,
             'app.url' => 'http://builder.test',
         ]);
     }
@@ -457,6 +458,83 @@ class VisualEditingTest extends TestCase
 
         $this->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->where('preview.updating', false));
+    }
+
+    public function test_an_editable_preview_keeps_its_build_watching_in_place_of_the_rebuild_steps()
+    {
+        Http::fake(['*/up' => Http::response('ok')]);
+        config(['builder.preview.watch.enabled' => true]);
+
+        $this->actingAs($this->owner)->post(route('projects.previews.store', $this->project));
+
+        $preview = $this->project->previews()->sole();
+        $this->assertSame(PreviewStatus::Ready, $preview->status);
+        $this->assertTrue($preview->watching);
+
+        $watcher = $this->driver->services[0];
+        $this->assertSame(0, $watcher['port']);
+        $this->assertSame(StartPreview::watchCommand(null, 'watch', ['build started', 'built in', 'npm', 'run', 'build', '--', '--watch']), $watcher['command']);
+
+        $commands = array_column($this->driver->executed, 'command');
+        $this->assertContains(StartPreview::watchCommand(null, 'wait', ['150', '60']), $commands);
+        $this->assertNotContains(['npm', 'run', 'build'], $commands);
+    }
+
+    public function test_a_watcher_that_does_not_build_in_time_leaves_the_build_to_the_rebuild_steps()
+    {
+        Http::fake(['*/up' => Http::response('ok')]);
+        config(['builder.preview.watch.enabled' => true]);
+        $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(exitCode: in_array('wait', $command, true) ? 4 : 0, output: '', errorOutput: '', durationMs: 5);
+
+        $this->actingAs($this->owner)->post(route('projects.previews.store', $this->project));
+
+        $preview = $this->project->previews()->sole();
+        $this->assertSame(PreviewStatus::Ready, $preview->status);
+        $this->assertFalse($preview->watching);
+        $this->assertContains(['npm', 'run', 'build'], array_column($this->driver->executed, 'command'));
+    }
+
+    public function test_a_watching_preview_is_rebuilt_by_moving_the_marked_files_in_at_once()
+    {
+        $preview = $this->runningPreview(['watching' => true]);
+        Event::fakeFor(fn () => $this->repository->commitFiles($this->project, (string) $preview->revision, ['resources/js/pages/Plans.vue' => "<template><div class=\"gap-8\" /></template>\n"], 'Edit', null));
+        $this->repository->git($this->project, ['rm', '-q', 'resources/js/pages/Home.vue']);
+        $this->repository->git($this->project, ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-q', '-m', 'Remove home']);
+        $head = $this->repository->head($this->project);
+
+        RebuildPreview::dispatchSync($preview);
+
+        $workspace = (string) $preview->workspace->driver_id;
+        $this->assertSame("<template><div class=\"gap-8\" /></template>\n", $this->driver->files["{$workspace}:node_modules/.cache/preview-watch/stage/resources/js/pages/Plans.vue"]);
+        $this->assertArrayNotHasKey("{$workspace}:resources/js/pages/Plans.vue", $this->driver->files, 'The watching build sees the file only once it is marked.');
+
+        $commands = array_column($this->driver->executed, 'command');
+        $this->assertSame([
+            StartPreview::locatorCommand(null, 'node_modules/.cache/preview-watch/stage'),
+            StartPreview::watchCommand(null, 'place', ['150', '60', 'resources/js/pages/Home.vue']),
+        ], $commands);
+
+        $preview->refresh();
+        $this->assertSame($head, $preview->revision);
+        $this->assertTrue($preview->watching);
+        $this->assertDatabaseHas('preview_rebuilds', ['preview_id' => $preview->id, 'to_revision' => $head, 'status' => 'rebuilt']);
+    }
+
+    public function test_a_preview_whose_watcher_stopped_is_rebuilt_as_usual_from_then_on()
+    {
+        $preview = $this->runningPreview(['watching' => true]);
+        Event::fakeFor(fn () => $this->repository->commitFiles($this->project, (string) $preview->revision, ['resources/js/pages/Plans.vue' => "<template />\n"], 'Edit', null));
+        $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(exitCode: in_array('place', $command, true) ? 3 : 0, output: '', errorOutput: '', durationMs: 5);
+
+        RebuildPreview::dispatchSync($preview);
+
+        $workspace = (string) $preview->workspace->driver_id;
+        $this->assertSame("<template />\n", $this->driver->files["{$workspace}:resources/js/pages/Plans.vue"]);
+        $this->assertContains(['npm', 'run', 'build'], array_column($this->driver->executed, 'command'));
+
+        $preview->refresh();
+        $this->assertFalse($preview->watching);
+        $this->assertSame($this->repository->head($this->project), $preview->revision);
     }
 
     public function test_any_new_commit_brings_the_editable_preview_up_to_date()

@@ -42,4 +42,24 @@ class SourceStampsTest extends TestCase
         $this->assertStringContainsString('<div data-builder-source="resources/js/pages/Plans.vue:8:5" data-builder-when="show" v-show', $stamped);
         $this->assertStringContainsString('<footer data-builder-source="resources/js/pages/Plans.vue:9:5">', $stamped);
     }
+
+    public function test_staged_files_are_named_by_their_place_in_the_app()
+    {
+        $workspace = storage_path('framework/testing/stamps-stage-'.getmypid());
+        File::ensureDirectoryExists("{$workspace}/stage/resources/js/pages");
+        File::ensureDirectoryExists("{$workspace}/resources/js/pages");
+        File::put("{$workspace}/stage/resources/js/pages/Plans.vue", "<template>\n    <div class=\"p-4\">Plans</div>\n</template>\n");
+        File::put("{$workspace}/resources/js/pages/Home.vue", "<template>\n    <main>Home</main>\n</template>\n");
+
+        try {
+            Process::path($workspace)->run([config('builder.preview.locator.node'), config('builder.preview.locator.path'), '--stage', 'stage', 'resources/js'])->throw();
+            $staged = File::get("{$workspace}/stage/resources/js/pages/Plans.vue");
+            $untouched = File::get("{$workspace}/resources/js/pages/Home.vue");
+        } finally {
+            File::deleteDirectory($workspace);
+        }
+
+        $this->assertStringContainsString('<div data-builder-source="resources/js/pages/Plans.vue:2:5" class="p-4">', $staged);
+        $this->assertStringNotContainsString('data-builder-', $untouched);
+    }
 }

@@ -46,7 +46,8 @@ interface WorkspaceDriver
     /**
      * Start a long-running process in the workspace, such as the app's web
      * server, listening on the given port. It runs until the workspace is
-     * destroyed.
+     * destroyed. Port 0 is for a process that listens on none, such as a
+     * build in watch mode.
      *
      * @param  list<string>  $command
      */

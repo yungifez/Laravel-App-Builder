@@ -718,6 +718,24 @@ return [
         'rebuild' => [
             ['name' => 'Build the frontend', 'command' => ['npm', 'run', 'build'], 'timeout' => 600],
         ],
+
+        // Keep the frontend build running in watch mode in an editable
+        // preview, so the rebuild after an edit builds only what changed.
+        // The build prints "started" when a build begins and "done" when it
+        // ends. "directory" is ours in the workspace; the build must not
+        // watch it. A preview whose watcher stops or takes longer than
+        // "timeout" seconds runs the rebuild steps instead. Set
+        // BUILDER_PREVIEW_WATCH=false to always run the rebuild steps.
+        'watch' => [
+            'enabled' => (bool) env('BUILDER_PREVIEW_WATCH', true),
+            'command' => ['npm', 'run', 'build', '--', '--watch'],
+            'started' => 'build started',
+            'done' => 'built in',
+            'path' => resource_path('preview-tools/watch-build.mjs'),
+            'directory' => 'node_modules/.cache/preview-watch',
+            'quiet_ms' => 150,
+            'timeout' => 60,
+        ],
         'overlay' => resource_path('preview-tools/overlay.js'),
 
         // The app's log inside the workspace. Email the app sends is written

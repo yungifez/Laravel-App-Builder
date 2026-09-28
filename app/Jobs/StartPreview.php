@@ -11,6 +11,7 @@ use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\Workspace;
 use App\Projects\ProjectRepository;
+use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\WorkspaceFiles;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -49,7 +50,7 @@ class StartPreview implements ShouldQueue
      * Copy the project into a workspace, apply the change and every change it
      * follows up on (a project preview has none), prepare the app, and start
      * its web server. An editable preview is marked for point-and-edit and
-     * rebuilt first. A duplicate delivery, or one for a preview already
+     * rebuilt first, by a build that keeps watching for changes when it can. A duplicate delivery, or one for a preview already
      * stopped, does nothing.
      */
     public function handle(
@@ -96,11 +97,13 @@ class StartPreview implements ShouldQueue
             if ($this->preview->editable) {
                 $this->run($runWorkspaceCommand, $workspace, self::locatorCommand($workspace), 300, __('The preview could not be prepared for editing.'));
 
-                /** @var list<array{name: string, command: list<string>, timeout: int}> $rebuild */
-                $rebuild = config('builder.preview.rebuild', []);
+                if (! $this->startWatching($driver, $runWorkspaceCommand, $workspace)) {
+                    /** @var list<array{name: string, command: list<string>, timeout: int}> $rebuild */
+                    $rebuild = config('builder.preview.rebuild', []);
 
-                foreach ($rebuild as $step) {
-                    $this->run($runWorkspaceCommand, $workspace, $step['command'], $step['timeout'], __('The setup step ":name" failed.', ['name' => $step['name']]));
+                    foreach ($rebuild as $step) {
+                        $this->run($runWorkspaceCommand, $workspace, $step['command'], $step['timeout'], __('The setup step ":name" failed.', ['name' => $step['name']]));
+                    }
                 }
             }
 
@@ -159,20 +162,83 @@ class StartPreview implements ShouldQueue
     }
 
     /**
-     * Get the command that marks elements with their source location.
+     * Get the command that marks elements with their source location: in the
+     * app, or in the files staged under "stage".
      *
      * @return list<string>
      */
-    public static function locatorCommand(?Workspace $workspace = null): array
+    public static function locatorCommand(?Workspace $workspace = null, ?string $stage = null): array
     {
-        // A box has its own read-only copy; the other drivers use ours.
-        $boxPath = $workspace === null ? null : config("workspaces.drivers.{$workspace->driver}.preview_locator");
-
         return [
             Config::string('builder.preview.locator.node'),
-            is_string($boxPath) && $boxPath !== '' ? $boxPath : Config::string('builder.preview.locator.path'),
+            self::toolPath($workspace, 'preview_locator', 'builder.preview.locator.path'),
+            ...($stage === null ? [] : ['--stage', $stage]),
             ...array_values(array_filter(Config::array('builder.preview.locator.directories'), is_string(...))),
         ];
+    }
+
+    /**
+     * Get the command that runs the build in watch mode ("watch"), waits for
+     * its first build ("wait") or moves staged files in and waits for their
+     * build ("place").
+     *
+     * @param  list<string>  $arguments
+     * @return list<string>
+     */
+    public static function watchCommand(?Workspace $workspace, string $mode, array $arguments = []): array
+    {
+        return [
+            Config::string('builder.preview.locator.node'),
+            self::toolPath($workspace, 'preview_watch', 'builder.preview.watch.path'),
+            $mode,
+            Config::string('builder.preview.watch.directory'),
+            ...$arguments,
+        ];
+    }
+
+    /**
+     * Get where a preview tool is: a box has its own read-only copy; the
+     * other drivers use ours.
+     */
+    protected static function toolPath(?Workspace $workspace, string $boxKey, string $key): string
+    {
+        $boxPath = $workspace === null ? null : config("workspaces.drivers.{$workspace->driver}.{$boxKey}");
+
+        return is_string($boxPath) && $boxPath !== '' ? $boxPath : Config::string($key);
+    }
+
+    /**
+     * Start the frontend build in watch mode and wait for its first build,
+     * which takes the place of the rebuild steps. Each rebuild after an edit
+     * then builds only what changed. A watcher that does not build in time
+     * leaves the build to the rebuild steps.
+     */
+    protected function startWatching(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace): bool
+    {
+        if (! config('builder.preview.watch.enabled')) {
+            return false;
+        }
+
+        $timeout = (int) config('builder.preview.watch.timeout');
+
+        $driver->startService((string) $workspace->driver_id, self::watchCommand($workspace, 'watch', [
+            Config::string('builder.preview.watch.started'),
+            Config::string('builder.preview.watch.done'),
+            ...array_values(array_filter(Config::array('builder.preview.watch.command'), is_string(...))),
+        ]), 0);
+
+        $result = $runWorkspaceCommand->handle($workspace, self::watchCommand($workspace, 'wait', [
+            (string) config('builder.preview.watch.quiet_ms'),
+            (string) $timeout,
+        ]), $timeout + 30);
+
+        if ($result->exit_code !== 0 || $result->timed_out) {
+            return false;
+        }
+
+        $this->preview->update(['watching' => true]);
+
+        return true;
     }
 
     /**
