@@ -194,31 +194,36 @@ class TailwindClassesTest extends TestCase
         }
     }
 
-    public function test_colours_are_theme_tokens_and_any_other_colour_reads_as_custom()
+    /**
+     * The colours of a shadcn theme, as ThemeColors finds them.
+     */
+    private const SHADCN = ['background', 'foreground', 'card', 'muted', 'muted-foreground', 'primary', 'primary-foreground', 'accent', 'destructive', 'border', 'input'];
+
+    public function test_colours_are_the_apps_own_and_any_other_colour_reads_as_custom()
     {
         $this->assertSame(
             ['text_color' => 'muted-foreground', 'background' => 'card'],
-            TailwindClasses::read('text-muted-foreground bg-card bg-cover')['base'],
+            TailwindClasses::read('text-muted-foreground bg-card bg-cover', self::SHADCN)['base'],
         );
-        $this->assertSame(['text_color' => 'custom', 'background' => 'custom'], TailwindClasses::read('text-gray-600 bg-primary/10')['base']);
-        $this->assertSame(['background' => 'custom'], TailwindClasses::read('md:bg-[#ff0000]')['md']);
+        $this->assertSame(['text_color' => 'custom', 'background' => 'custom'], TailwindClasses::read('text-gray-600 bg-primary/10', self::SHADCN)['base']);
+        $this->assertSame(['background' => 'custom'], TailwindClasses::read('md:bg-[#ff0000]', self::SHADCN)['md']);
 
         // Choosing a token replaces the custom colour, so the two never fight.
-        $this->assertSame('bg-muted text-center', TailwindClasses::write('bg-primary/10 text-center', 'base', ['background' => 'muted']));
+        $this->assertSame('bg-muted text-center', TailwindClasses::write('bg-primary/10 text-center', 'base', ['background' => 'muted'], self::SHADCN));
 
         $this->expectException(InvalidArgumentException::class);
-        TailwindClasses::write('', 'base', ['text_color' => 'red-500']);
+        TailwindClasses::write('', 'base', ['text_color' => 'red-500'], self::SHADCN);
     }
 
     public function test_a_border_colour_is_a_theme_token_apart_from_the_border_width()
     {
-        $this->assertSame(['border' => 1, 'border_color' => 'input'], TailwindClasses::read('border border-input')['base']);
-        $this->assertSame(['border' => 2, 'border_color' => 'custom'], TailwindClasses::read('border-2 border-black')['base']);
-        $this->assertSame(['border_color' => 'custom'], TailwindClasses::read('md:border-[#eeeeec]')['md']);
+        $this->assertSame(['border' => 1, 'border_color' => 'input'], TailwindClasses::read('border border-input', self::SHADCN)['base']);
+        $this->assertSame(['border' => 2, 'border_color' => 'custom'], TailwindClasses::read('border-2 border-black', self::SHADCN)['base']);
+        $this->assertSame(['border_color' => 'custom'], TailwindClasses::read('md:border-[#eeeeec]', self::SHADCN)['md']);
 
         // Choosing a colour keeps the width, and replaces the custom colour.
-        $this->assertSame('border border-primary', TailwindClasses::write('border border-black', 'base', ['border_color' => 'primary']));
-        $this->assertSame('border-4 border-primary', TailwindClasses::write('border border-primary', 'base', ['border' => 4]));
+        $this->assertSame('border border-primary', TailwindClasses::write('border border-black', 'base', ['border_color' => 'primary'], self::SHADCN));
+        $this->assertSame('border-4 border-primary', TailwindClasses::write('border border-primary', 'base', ['border' => 4], self::SHADCN));
     }
 
     public function test_a_theme_colour_takes_away_the_parts_own_dark_mode_colour()
@@ -227,12 +232,28 @@ class TailwindClassesTest extends TestCase
         // properties stay.
         $this->assertSame(
             'border border-black dark:bg-[#eeeeec] dark:hover:border-white lg:border-destructive',
-            TailwindClasses::write('border border-black dark:border-[#eeeeec] dark:bg-[#eeeeec] dark:hover:border-white', 'lg', ['border_color' => 'destructive']),
+            TailwindClasses::write('border border-black dark:border-[#eeeeec] dark:bg-[#eeeeec] dark:hover:border-white', 'lg', ['border_color' => 'destructive'], self::SHADCN),
         );
-        $this->assertSame('text-primary', TailwindClasses::write('text-white dark:text-[#1C1C1A]', 'base', ['text_color' => 'primary']));
+        $this->assertSame('text-primary', TailwindClasses::write('text-white dark:text-[#1C1C1A]', 'base', ['text_color' => 'primary'], self::SHADCN));
 
         // Removing a colour leaves the dark-mode one alone.
-        $this->assertSame('dark:bg-black', TailwindClasses::write('bg-muted dark:bg-black', 'base', ['background' => null]));
+        $this->assertSame('dark:bg-black', TailwindClasses::write('bg-muted dark:bg-black', 'base', ['background' => null], self::SHADCN));
+    }
+
+    public function test_colours_follow_whatever_the_app_names_them()
+    {
+        $colors = ['brand-500', 'ink'];
+
+        $this->assertSame(
+            ['text_color' => 'ink', 'background' => 'brand-500'],
+            TailwindClasses::read('text-ink bg-brand-500 bg-cover', $colors)['base'],
+        );
+        // Without that design system, `bg-primary` is not a colour it knows.
+        $this->assertSame(['background' => 'custom'], TailwindClasses::read('bg-brand-500/20 bg-primary', $colors)['base']);
+        $this->assertSame('text-lg text-ink', TailwindClasses::write('text-lg text-white', 'base', ['text_color' => 'ink'], $colors));
+
+        $this->expectException(InvalidArgumentException::class);
+        TailwindClasses::write('', 'base', ['background' => 'primary'], $colors);
     }
 
     public function test_it_refuses_unknown_devices_properties_and_values()

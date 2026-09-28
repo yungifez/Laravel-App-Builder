@@ -526,6 +526,15 @@ export type Drawn = {
     rem: number;
 };
 
+/** A colour the app's stylesheets write: the name its classes use
+ * ("brand-500" in `bg-brand-500`), the variable that holds it, and
+ * whether it has Tailwind classes at all. */
+export type AppColor = {
+    name: string;
+    variable: string;
+    classes: boolean;
+};
+
 export type VisualEditSummary = {
     id: number;
     tag: string;
@@ -551,8 +560,9 @@ export type VisualEditSummary = {
     /** Which file a picture shows after a new picture, and before it. */
     picture: string | null;
     picture_before: string | null;
-    /** Which of the app's colours changed, for which look, and its value
-     * before and after, for a change to the app's colours. */
+    /** Which of the app's colours changed (the variable that holds it),
+     * for which look, and its value before and after, for a change to the
+     * app's colours. */
     theme: {
         mode: 'light' | 'dark';
         token: string;

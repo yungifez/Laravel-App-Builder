@@ -18,6 +18,7 @@ class ApplyVisualEdit
     public function __construct(
         private ProjectRepository $repository,
         private FollowLocation $followLocation,
+        private ReadAppColors $readAppColors,
     ) {}
 
     /**
@@ -66,7 +67,7 @@ class ApplyVisualEdit
         }
 
         try {
-            $after = TailwindClasses::write($before, $device, $changes);
+            $after = TailwindClasses::write($before, $device, $changes, $this->readAppColors->names($project));
         } catch (InvalidArgumentException) {
             throw ValidationException::withMessages(['edit' => __('That value cannot be used here.')]);
         }

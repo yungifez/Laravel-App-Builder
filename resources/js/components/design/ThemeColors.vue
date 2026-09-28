@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { Moon, Sun } from '@lucide/vue';
 import { computed, ref } from 'vue';
-import { themeColorLabel, themeColors } from '@/lib/themeColors';
+import type { ThemeColorChoice } from '@/lib/themeColors';
 
 const props = defineProps<{
+    /** The app's colours to offer, as its design system names them. */
+    choices: ThemeColorChoice[];
     /** The app's own theme colours as it draws them now, by token. */
     colors: Record<string, string>;
     /** Whether the app shows its dark look, whose colours are its own. */
@@ -28,12 +30,12 @@ const looks = [
 
 // A colour the app does not have is left out.
 const shown = computed(() =>
-    themeColors.filter((choice) => props.colors[choice.token] !== undefined),
+    props.choices.filter((choice) => props.colors[choice.token] !== undefined),
 );
 
 // The colour the owner points at or is on, named in the heading, since a
 // phone has no hover to show a swatch's name.
-const pointed = ref<string | null>(null);
+const pointed = ref<ThemeColorChoice | null>(null);
 
 // A colour picker takes "#rrggbb"; the app may write its colours any way
 // CSS allows, so the browser draws one and reads it back.
@@ -72,10 +74,7 @@ function picked(event: Event): string {
     <section v-if="shown.length > 0" class="px-4 pb-4" data-test="app-colours">
         <div class="flex items-center justify-between gap-2 pb-1">
             <h3 class="truncate text-xs font-medium text-muted-foreground">
-                {{
-                    pointed === null
-                        ? "Your app's colours"
-                        : themeColorLabel(pointed)
+                {{ pointed === null ? "Your app's colours" : pointed.label
                 }}<span v-if="dark && !props.looks"> in the dark</span>
             </h3>
             <!-- An app with a dark look has two sets of colours: the owner
@@ -115,9 +114,9 @@ function picked(event: Event): string {
                 v-for="choice in shown"
                 :key="choice.token"
                 class="relative grid aspect-square max-h-11 cursor-pointer place-items-center rounded-md select-none focus-within:ring-2 focus-within:ring-foreground hover:bg-muted"
-                @pointerenter="pointed = choice.token"
+                @pointerenter="pointed = choice"
                 @pointerleave="pointed = null"
-                @focusin="pointed = choice.token"
+                @focusin="pointed = choice"
                 @focusout="pointed = null"
             >
                 <span

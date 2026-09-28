@@ -17,6 +17,7 @@ use App\Actions\Projects\SummarizeChanges;
 use App\Actions\Projects\SummarizeProjectTelemetry;
 use App\Actions\Publishing\DescribeUnpublished;
 use App\Actions\VisualEditing\InspectSelection;
+use App\Actions\VisualEditing\ReadAppColors;
 use App\Enums\DeploymentStatus;
 use App\Enums\ExperimentStatus;
 use App\Enums\FeatureRequestStatus;
@@ -131,7 +132,7 @@ class ProjectController extends Controller
      * app running beside it, and the design panel for changing how it looks.
      * The element the owner selected is loaded on request.
      */
-    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails, ReadPreviewProblems $readPreviewProblems, ReadPreviewData $readPreviewData, ReadPreviewRows $readPreviewRows, ReadPreviewSchedule $readPreviewSchedule, ReadPreviewFiles $readPreviewFiles, ReadPreviewPages $readPreviewPages): Response
+    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails, ReadPreviewProblems $readPreviewProblems, ReadPreviewData $readPreviewData, ReadPreviewRows $readPreviewRows, ReadPreviewSchedule $readPreviewSchedule, ReadPreviewFiles $readPreviewFiles, ReadPreviewPages $readPreviewPages, ReadAppColors $readAppColors): Response
     {
         Gate::authorize('view', $project);
 
@@ -141,6 +142,10 @@ class ProjectController extends Controller
                 ->filter(fn (DatabaseNotification $notification) => ($notification->data['feature_request_id'] ?? null) === $request->integer('change'))
                 ->each->markAsRead();
         }
+
+        // The names of the app's colours, read once and only for a change
+        // to how a part looks.
+        $colors = fn (): array => once(fn () => $readAppColors->names($project));
 
         return Inertia::render('projects/Show', [
             'design' => $request->boolean('design'),
@@ -157,6 +162,9 @@ class ProjectController extends Controller
             'schedule' => Inertia::optional(fn () => $readPreviewSchedule->handle($project)),
             // And its pages, to open one from the address bar.
             'pages' => Inertia::optional(fn () => $readPreviewPages->handle($project)),
+            // The colours the app's stylesheets write, as its design system
+            // names them, for the design panel.
+            'colors' => Inertia::defer(fn () => $readAppColors->handle($project)),
             // And the rows of one table, when the owner opens it.
             'rows' => Inertia::optional(fn () => $request->filled('table') ? $readPreviewRows->handle($project, $request->string('table')->toString()) : null),
             'change' => fn () => $request->filled('change')
@@ -194,8 +202,8 @@ class ProjectController extends Controller
                     // straight away.
                     'target' => "{$edit->file}:{$edit->line}:{$edit->column}",
                     'sides' => $edit->kind() !== 'look' ? null : [
-                        'before' => ['classes' => $edit->classes_before, 'values' => array_map(fn (array $value) => $value['value'], TailwindClasses::effective($edit->classes_before)[$edit->device] ?? [])],
-                        'after' => ['classes' => $edit->classes_after, 'values' => array_map(fn (array $value) => $value['value'], TailwindClasses::effective($edit->classes_after)[$edit->device] ?? [])],
+                        'before' => ['classes' => $edit->classes_before, 'values' => array_map(fn (array $value) => $value['value'], TailwindClasses::effective($edit->classes_before, $colors())[$edit->device] ?? [])],
+                        'after' => ['classes' => $edit->classes_after, 'values' => array_map(fn (array $value) => $value['value'], TailwindClasses::effective($edit->classes_after, $colors())[$edit->device] ?? [])],
                     ],
                     'created_at' => $edit->created_at?->toIso8601String(),
                     'reverted_at' => $edit->reverted_at?->toIso8601String(),

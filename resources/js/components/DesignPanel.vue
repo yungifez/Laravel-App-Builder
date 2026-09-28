@@ -71,7 +71,12 @@ import {
 import type { AppPreviewState, Way } from '@/composables/useAppPreview';
 import { kindOfTag, newParts } from '@/lib/partKinds';
 import type { NewPartKind } from '@/lib/partKinds';
-import { themeColorLabel } from '@/lib/themeColors';
+import {
+    colorName,
+    partColorOptions,
+    themeColorChoices,
+    themeColorLabel,
+} from '@/lib/themeColors';
 import { when } from '@/lib/when';
 import {
     definition,
@@ -281,19 +286,36 @@ function options(
     property: VisualProperty,
     only?: VisualValue[],
 ): { value: VisualValue; label: string; short?: string; icon?: Component }[] {
-    const { input } = definition(property);
+    const { input, group } = definition(property);
 
     if (input.kind !== 'choice') {
         return [];
     }
 
-    return input.options
+    // Colours are the app's own, whatever its design system calls them.
+    return (
+        group === 'Colours'
+            ? partColorOptions(input.options, props.state.colors)
+            : input.options
+    )
         .filter((option) => only === undefined || only.includes(option.value))
         .map((option) => ({
             ...option,
             icon: icons[`${property}:${option.value}`],
         }));
 }
+
+// The app's colours as it draws them now, by the name its classes use,
+// since the variable that holds a colour may have another name.
+const drawnColors = computed(() =>
+    Object.fromEntries(
+        props.state.colors.flatMap((color) =>
+            props.state.theme[color.variable] === undefined
+                ? []
+                : [[color.name, props.state.theme[color.variable]]],
+        ),
+    ),
+);
 
 // The words a number property can be instead, for a row of narrow
 // buttons: only the ones short enough to fit.
@@ -573,7 +595,7 @@ function describeResult(
     // A change to the app's colours names the colour and shows it.
     if (edit.kind === 'theme' && edit.theme) {
         return {
-            words: themeColorLabel(edit.theme.token) ?? 'A colour',
+            words: themeColorLabel(edit.theme.token, props.state.colors),
             color: edit.theme.after,
         };
     }
@@ -593,12 +615,19 @@ function describeResult(
         return null;
     }
 
-    const words = describeValue(definition(property), value);
+    // One of the app's colours, named as the panel names it.
+    const colour =
+        definition(property).group === 'Colours' &&
+        value !== 'transparent' &&
+        value !== 'custom';
+    const words = colour
+        ? (options(property).find((option) => option.value === value)?.label ??
+          colorName(String(value)))
+        : describeValue(definition(property), value);
 
-    const color =
-        definition(property).group === 'Colours' && value !== 'transparent'
-            ? (props.state.theme[String(value)] ?? `var(--${value})`)
-            : null;
+    const color = colour
+        ? (drawnColors.value[String(value)] ?? `var(--color-${value})`)
+        : null;
 
     return { words, color };
 }
@@ -708,6 +737,7 @@ const recent = computed(() => {
                 </section>
 
                 <ThemeColors
+                    :choices="themeColorChoices(state.colors)"
                     :colors="state.theme"
                     :dark="state.themeDark"
                     :looks="state.themeLooks"
@@ -1578,7 +1608,7 @@ const recent = computed(() => {
                                     label="Colour"
                                     name="Text colour"
                                     kind="color"
-                                    :colors="state.theme"
+                                    :colors="drawnColors"
                                     :value="state.valueOf('text_color')"
                                     :own="state.selected?.colors?.text_color"
                                     :options="options('text_color')"
@@ -1593,7 +1623,7 @@ const recent = computed(() => {
                                 <Swatches
                                     label="Fill"
                                     kind="color"
-                                    :colors="state.theme"
+                                    :colors="drawnColors"
                                     :value="state.valueOf('background')"
                                     :own="state.selected?.colors?.background"
                                     :options="options('background')"
@@ -1635,7 +1665,7 @@ const recent = computed(() => {
                                         label="Colour"
                                         name="Border colour"
                                         kind="color"
-                                        :colors="state.theme"
+                                        :colors="drawnColors"
                                         :value="state.valueOf('border_color')"
                                         :own="
                                             state.selected?.colors?.border_color

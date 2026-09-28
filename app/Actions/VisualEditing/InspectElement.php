@@ -20,6 +20,7 @@ class InspectElement
         private ProjectRepository $repository,
         private ReadProjectContext $readProjectContext,
         private FollowLocation $followLocation,
+        private ReadAppColors $readAppColors,
     ) {}
 
     /**
@@ -68,7 +69,7 @@ class InspectElement
             // can be changed here; null when the app decides it.
             'picture' => $element?->tag === 'img' ? ['src' => TemplatePicture::in((string) $contents, $element)['value'] ?? null] : null,
             'classes' => $classes,
-            'values' => TailwindClasses::effective($classes),
+            'values' => TailwindClasses::effective($classes, $this->readAppColors->names($project)),
             'area' => $this->area($preview, $location->file),
             'origin' => $followed === null ? null : $this->origin($preview, $head, $location->file, $followed->line),
             'revision' => $head,

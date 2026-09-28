@@ -838,6 +838,33 @@ class VisualEditingTest extends TestCase
         $this->assertSame($changed, $this->repository->show($this->project, $this->repository->head($this->project), $file));
     }
 
+    public function test_the_owner_changes_a_colour_of_an_app_that_does_not_use_shadcn()
+    {
+        Queue::fake();
+        $file = 'resources/css/tokens.css';
+        $css = "@theme {\n    --color-brand-500: oklch(0.55 0.2 290);\n    --spacing-gutter: 24px;\n}\n";
+        $this->repository->commitFiles($this->project, $this->repository->head($this->project), [$file => $css], 'Add tokens', ['name' => 'Ada Owner', 'email' => 'ada@example.com']);
+        $preview = $this->runningPreview();
+
+        // The panel offers the colour by the name its classes use.
+        $this->actingAs($this->owner)->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->missing('colors')->loadDeferredProps(fn (Assert $page) => $page
+                ->where('colors', [['name' => 'brand-500', 'variable' => 'color-brand-500', 'classes' => true]])));
+
+        $this->post(route('theme-colors.store', $this->project), [
+            'preview' => $preview->id,
+            'mode' => 'light',
+            'token' => 'color-brand-500',
+            'color' => '#7c3aed',
+            'revision' => $preview->revision,
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame(
+            str_replace('oklch(0.55 0.2 290)', '#7c3aed', $css),
+            $this->repository->show($this->project, $this->repository->head($this->project), $file),
+        );
+    }
+
     public function test_a_theme_colour_the_app_does_not_write_or_a_value_that_is_not_a_colour_is_refused()
     {
         Queue::fake();
@@ -851,7 +878,7 @@ class VisualEditingTest extends TestCase
         ]);
 
         $recolor(['color' => 'red; } body { display: none'])->assertSessionHasErrors('color');
-        $recolor(['token' => 'sidebar-ring'])->assertSessionHasErrors('token');
+        $recolor(['token' => 'primary: red; --x'])->assertSessionHasErrors('token');
         $recolor(['mode' => 'sepia'])->assertSessionHasErrors('mode');
         $recolor([])->assertSessionHasErrors(['edit' => 'Your app keeps this colour some other way, so I can\'t change it here. Ask me to change it instead.']);
         $this->assertSame($preview->revision, $this->repository->head($this->project));

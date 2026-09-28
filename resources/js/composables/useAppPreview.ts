@@ -18,7 +18,6 @@ import VisualMoveController from '@/actions/App/Http/Controllers/VisualMoveContr
 import VisualPartController from '@/actions/App/Http/Controllers/VisualPartController';
 import VisualTextController from '@/actions/App/Http/Controllers/VisualTextController';
 import {
-    colorTokens,
     definition,
     devices,
     inlineStyles,
@@ -30,6 +29,7 @@ import { newParts } from '@/lib/partKinds';
 import type { NewPartKind } from '@/lib/partKinds';
 import { show as showPreview } from '@/routes/previews';
 import type {
+    AppColor,
     Device,
     EditorPreview,
     InspectedElement,
@@ -45,6 +45,9 @@ type Source = {
     preview: () => EditorPreview | null;
     element: () => InspectedElement | null | undefined;
     edits: () => VisualEditSummary[];
+    /** The colours the app's stylesheets write, as its design system
+     * names them. */
+    colors: () => AppColor[];
     /** Whether clicking in the app selects a part of it. */
     designing: Ref<boolean>;
 };
@@ -611,6 +614,14 @@ export function useAppPreview(source: Source) {
         };
     }
 
+    // The variables that hold the app's colours, for the app to say how it
+    // draws each one now.
+    const colors = computed(() => source.colors());
+    const colorVariables = () => colors.value.map((color) => color.variable);
+
+    // The colours arrive after the page, so the app is asked again.
+    watch(colors, () => post({ type: 'theme', tokens: colorVariables() }));
+
     // Tell a frame's app how to show: designing or not, the scroll, the
     // picked part and the changes it does not show yet.
     function setUp(to: Window | null): void {
@@ -620,7 +631,7 @@ export function useAppPreview(source: Source) {
             post({ type: 'look', dark: look.value === 'dark' }, to);
         }
 
-        post({ type: 'theme', tokens: colorTokens }, to);
+        post({ type: 'theme', tokens: colorVariables() }, to);
 
         for (const [token, { value }] of recolored) {
             post({ type: 'recolor', token, value }, to);
@@ -2470,6 +2481,7 @@ export function useAppPreview(source: Source) {
         copyLook,
         pasteLook,
         copiedLook,
+        colors,
         saveColor,
         recolor,
         forgetColors,

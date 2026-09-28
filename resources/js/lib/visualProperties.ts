@@ -761,22 +761,6 @@ const textSizes: Record<string, [string, string]> = {
     '6xl': ['3.75rem', '1'],
 };
 
-/** Every theme colour a colour property can choose. */
-export const colorTokens: string[] = [
-    ...new Set(
-        properties
-            .filter((property) => property.group === 'Colours')
-            .flatMap((property) =>
-                property.input.kind === 'choice'
-                    ? property.input.options.map((option) =>
-                          String(option.value),
-                      )
-                    : [],
-            )
-            .filter((token) => token !== 'transparent'),
-    ),
-];
-
 // A theme colour, from Tailwind's variable or the theme's own.
 const color = (token: VisualValue): string =>
     `var(--color-${token}, var(--${token}))`;

@@ -98,6 +98,7 @@ import type {
     AppService,
     ProjectTelemetry,
     SentEmail,
+    AppColor,
     AppPage,
     AppProblem,
     SavedRows,
@@ -127,6 +128,7 @@ const props = defineProps<{
     schedule?: ScheduledTask[] | null;
     files?: StoredFile[] | null;
     pages?: AppPage[] | null;
+    colors?: AppColor[];
 }>();
 
 // The left panel talks about changes (Chat) or changes how the app looks
@@ -199,6 +201,7 @@ const app = useAppPreview({
     preview: () => props.preview,
     element: () => props.element,
     edits: () => props.edits,
+    colors: () => props.colors ?? [],
     designing,
 });
 

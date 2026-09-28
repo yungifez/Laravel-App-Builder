@@ -2033,7 +2033,10 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
 
         // A theme colour the owner is choosing shows on every part drawn in
         // it at once, before it is saved; null shows the app's own again.
-        if (message.type === 'recolor' && /^[a-z-]+$/.test(message.token)) {
+        if (
+            message.type === 'recolor' &&
+            /^[A-Za-z0-9_-]+$/.test(message.token)
+        ) {
             if (message.value) {
                 document.documentElement.style.setProperty(
                     `--${message.token}`,
@@ -2089,8 +2092,9 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         return darkLook;
     };
 
-    // The theme colours the builder asked for, as the app draws them now,
-    // and whether it shows its dark look, whose colours are written apart.
+    // The app's colours the builder asked for, by the variable that holds
+    // each, as the app draws them now, and whether it shows its dark look,
+    // whose colours are written apart.
     let themeTokens = [];
 
     const sendTheme = () => {
@@ -2100,7 +2104,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         const colors = {};
 
         for (const token of themeTokens) {
-            probe.style.color = `var(--color-${token}, var(--${token}, rgb(1, 2, 3)))`;
+            probe.style.color = `var(--${token}, rgb(1, 2, 3))`;
             const color = getComputedStyle(probe).color;
 
             if (color !== 'rgb(1, 2, 3)') {

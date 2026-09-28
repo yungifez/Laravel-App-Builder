@@ -35,7 +35,8 @@ class ThemeColorStoreRequest extends FormRequest
         return [
             'preview' => ['required', 'integer', Rule::exists('previews', 'id')->where('project_id', $project->id)->where('editable', true)],
             'mode' => ['required', Rule::in(array_keys(ThemeColors::MODES))],
-            'token' => ['required', Rule::in(ThemeColors::TOKENS)],
+            // The variable that holds the colour, named as the app names it.
+            'token' => ['required', 'string', 'max:100', 'regex:/^[A-Za-z0-9_-]+$/'],
             'color' => ['required', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'revision' => ['required', 'string', 'regex:/^[0-9a-f]{40,64}$/'],
         ];

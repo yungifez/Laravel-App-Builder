@@ -18,8 +18,9 @@ use InvalidArgumentException;
  * `p-[12.5px]`, 7.5 degrees is `rotate-[7.5deg]`). Whether a value sits on
  * the scale is the inspector's choice (it snaps unless the owner fine
  * tunes); this class writes any value it is given. Colours are the
- * app's theme tokens only; any other colour reads as "custom", and choosing
- * a token replaces it.
+ * app's own, named as its design system names them ("brand-500" in
+ * `bg-brand-500`), and passed in by the caller; any other colour reads as
+ * "custom", and choosing one of the app's replaces it.
  */
 class TailwindClasses
 {
@@ -54,21 +55,20 @@ class TailwindClasses
         'text_decoration' => ['underline' => 'underline', 'line-through' => 'line-through', 'no-underline' => 'none'],
         'line_height' => ['leading-none' => 'none', 'leading-tight' => 'tight', 'leading-snug' => 'snug', 'leading-normal' => 'normal', 'leading-relaxed' => 'relaxed', 'leading-loose' => 'loose'],
         'letter_spacing' => ['tracking-tighter' => 'tighter', 'tracking-tight' => 'tight', 'tracking-normal' => 'normal', 'tracking-wide' => 'wide', 'tracking-wider' => 'wider', 'tracking-widest' => 'widest'],
-        'text_color' => ['text-foreground' => 'foreground', 'text-muted-foreground' => 'muted-foreground', 'text-primary' => 'primary', 'text-primary-foreground' => 'primary-foreground', 'text-secondary-foreground' => 'secondary-foreground', 'text-accent-foreground' => 'accent-foreground', 'text-destructive' => 'destructive'],
-        'border_color' => ['border-border' => 'border', 'border-input' => 'input', 'border-foreground' => 'foreground', 'border-muted-foreground' => 'muted-foreground', 'border-primary' => 'primary', 'border-accent' => 'accent', 'border-destructive' => 'destructive', 'border-transparent' => 'transparent'],
-        'background' => ['bg-transparent' => 'transparent', 'bg-background' => 'background', 'bg-card' => 'card', 'bg-muted' => 'muted', 'bg-primary' => 'primary', 'bg-secondary' => 'secondary', 'bg-accent' => 'accent', 'bg-destructive' => 'destructive'],
     ];
 
     /**
-     * Colours that are not theme tokens: Tailwind's palette, white and
-     * black, a token with an opacity, or a written colour code.
+     * The properties that take one of the app's colours, by the prefix of
+     * their classes.
      */
-    /**
-     * The properties that take a colour from the app's theme.
-     */
-    protected const COLORS = ['text_color', 'background', 'border_color'];
+    protected const COLORS = ['text' => 'text_color', 'bg' => 'background', 'border' => 'border_color'];
 
-    protected const CUSTOM_COLOR = '/^(text|bg|border)-(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}|white|black|(?:foreground|muted-foreground|primary|primary-foreground|secondary|secondary-foreground|accent|accent-foreground|destructive|background|card|muted|border|input)|\[#[0-9a-fA-F]{3,8}\])(?:\/\d+)?$/';
+    /**
+     * Colours that are not the app's: Tailwind's palette, white and black,
+     * or a written colour code. One of the app's with an opacity is not
+     * its own either.
+     */
+    protected const CUSTOM_COLOR = '/^(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}|white|black|\[#[0-9a-fA-F]{3,8}\])$/';
 
     /**
      * Properties written as a prefix and an amount, such as `w-60`, `h-1/2`
@@ -112,14 +112,15 @@ class TailwindClasses
      * Get the values each device sets explicitly. A side-based property is
      * "mixed" when its two sides differ.
      *
+     * @param  list<string>  $colors  the names of the app's colours
      * @return array<string, array<string, int|float|string>>
      */
-    public static function read(string $classes): array
+    public static function read(string $classes, array $colors = []): array
     {
         $values = array_fill_keys(self::DEVICES, []);
 
         foreach (self::tokens($classes) as $token) {
-            $parsed = self::parse($token);
+            $parsed = self::parse($token, $colors);
 
             if ($parsed === null) {
                 continue;
@@ -146,11 +147,12 @@ class TailwindClasses
      * Get the value that applies at each device, from the device itself or
      * the nearest smaller one.
      *
+     * @param  list<string>  $colors  the names of the app's colours
      * @return array<string, array<string, array{value: int|float|string, from: string}>>
      */
-    public static function effective(string $classes): array
+    public static function effective(string $classes, array $colors = []): array
     {
-        $explicit = self::read($classes);
+        $explicit = self::read($classes, $colors);
         $effective = [];
         $current = [];
 
@@ -170,10 +172,11 @@ class TailwindClasses
      * belong to them. A null value removes the property at that device.
      *
      * @param  array<string, int|float|string|null>  $changes
+     * @param  list<string>  $colors  the names of the app's colours
      *
      * @throws InvalidArgumentException for an unknown device, property or value.
      */
-    public static function write(string $classes, string $device, array $changes): string
+    public static function write(string $classes, string $device, array $changes, array $colors = []): string
     {
         if (! in_array($device, self::DEVICES, true)) {
             throw new InvalidArgumentException("Unknown device [{$device}].");
@@ -191,7 +194,7 @@ class TailwindClasses
         }
 
         foreach ($groups as $group => $groupChanges) {
-            $tokens = self::writeGroup($tokens, $device, $group, $groupChanges);
+            $tokens = self::writeGroup($tokens, $device, $group, $groupChanges, $colors);
         }
 
         // A theme colour already changes in dark mode. The part's own
@@ -200,7 +203,7 @@ class TailwindClasses
             if ($value !== null && in_array($property, self::COLORS, true)) {
                 $tokens = array_values(array_filter(
                     $tokens,
-                    fn (string $token) => ! str_starts_with($token, 'dark:') || (self::parse(substr($token, 5))[1] ?? null) !== $property,
+                    fn (string $token) => ! str_starts_with($token, 'dark:') || (self::parse(substr($token, 5), $colors)[1] ?? null) !== $property,
                 ));
             }
         }
@@ -248,9 +251,10 @@ class TailwindClasses
      * Understand one class: its device, property and value. Side-based
      * properties return their sides.
      *
+     * @param  list<string>  $colors
      * @return array{0: string, 1: string, 2: int|float|string|array<string, int|float|string>}|null
      */
-    protected static function parse(string $token): ?array
+    protected static function parse(string $token, array $colors): ?array
     {
         $parts = explode(':', $token);
         $utility = (string) array_pop($parts);
@@ -277,12 +281,17 @@ class TailwindClasses
             }
         }
 
-        if (preg_match(self::CUSTOM_COLOR, $utility, $match) === 1) {
-            return [$device, match ($match[1]) {
-                'bg' => 'background',
-                'border' => 'border_color',
-                default => 'text_color',
-            }, 'custom'];
+        if (preg_match('/^(text|bg|border)-([^\/]+)(\/.+)?$/', $utility, $match) === 1) {
+            $property = self::COLORS[$match[1]];
+            $name = $match[2];
+
+            if (! isset($match[3]) && (in_array($name, $colors, true) || ($name === 'transparent' && $property !== 'text_color'))) {
+                return [$device, $property, $name];
+            }
+
+            if (in_array($name, $colors, true) || preg_match(self::CUSTOM_COLOR, $name) === 1) {
+                return [$device, $property, 'custom'];
+            }
         }
 
         // Spacing of the part's own, off the named steps: choosing a step
@@ -372,16 +381,17 @@ class TailwindClasses
      *
      * @param  list<string>  $tokens
      * @param  array<string, int|float|string|null>  $changes
+     * @param  list<string>  $colors
      * @return list<string>
      */
-    protected static function writeGroup(array $tokens, string $device, string $group, array $changes): array
+    protected static function writeGroup(array $tokens, string $device, string $group, array $changes, array $colors): array
     {
         $position = null;
         $sides = [];
         $kept = [];
 
         foreach ($tokens as $token) {
-            $parsed = self::parse($token);
+            $parsed = self::parse($token, $colors);
 
             if ($parsed !== null && $parsed[0] === $device && $parsed[1] === $group) {
                 $position ??= count($kept);
@@ -406,7 +416,7 @@ class TailwindClasses
             $new = self::sideClasses($group === 'padding' ? 'p' : 'm', array_filter($sides, fn ($value) => $value !== null));
         } else {
             $value = $changes[$group];
-            $new = $value === null ? [] : [self::utility($group, $value)];
+            $new = $value === null ? [] : [self::utility($group, $value, $colors)];
         }
 
         $prefix = $device === 'base' ? '' : "{$device}:";
@@ -467,10 +477,18 @@ class TailwindClasses
     /**
      * Write one property's utility.
      *
+     * @param  list<string>  $colors
+     *
      * @throws InvalidArgumentException for a value the property cannot take.
      */
-    protected static function utility(string $property, int|float|string $value): string
+    protected static function utility(string $property, int|float|string $value, array $colors): string
     {
+        if (($prefix = array_search($property, self::COLORS, true)) !== false) {
+            return in_array($value, $colors, true) || ($value === 'transparent' && $property !== 'text_color')
+                ? "{$prefix}-{$value}"
+                : throw new InvalidArgumentException("Invalid {$property} [{$value}].");
+        }
+
         if (isset(self::KEYWORDS[$property])) {
             $utility = array_search($value, $property === 'radius' ? array_diff_key(self::KEYWORDS[$property], ['rounded' => true]) : self::KEYWORDS[$property], true);
 
