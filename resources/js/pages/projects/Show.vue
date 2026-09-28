@@ -38,6 +38,7 @@ import FeatureRequestDismissalController from '@/actions/App/Http/Controllers/Fe
 import FeatureRequestFollowUpController from '@/actions/App/Http/Controllers/FeatureRequestFollowUpController';
 import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
 import PreviewController from '@/actions/App/Http/Controllers/PreviewController';
+import PreviewProblemFixController from '@/actions/App/Http/Controllers/PreviewProblemFixController';
 import ProjectExperimentController from '@/actions/App/Http/Controllers/ProjectExperimentController';
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
 import AppData from '@/components/AppData.vue';
@@ -349,10 +350,25 @@ watch(
         );
 
         if (fresh) {
+            // Fixing it is one click from the moment it happened.
             toast.error('Your app ran into a problem', {
                 description: fresh.words,
                 duration: 10000,
                 action: {
+                    label: 'Fix it',
+                    onClick: () =>
+                        router.post(
+                            PreviewProblemFixController.store.url(
+                                props.project.id,
+                            ),
+                            { problem: fresh.id },
+                            {
+                                onError: (errors) =>
+                                    toast.error(Object.values(errors)[0]),
+                            },
+                        ),
+                },
+                cancel: {
                     label: 'See it',
                     onClick: () => (showing.value = 'problems'),
                 },
