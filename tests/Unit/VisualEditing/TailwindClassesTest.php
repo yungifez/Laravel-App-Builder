@@ -69,6 +69,33 @@ class TailwindClassesTest extends TestCase
         );
     }
 
+    public function test_a_class_it_does_not_read_goes_when_tailwind_would_apply_the_new_one_instead()
+    {
+        $colors = ['primary', 'accent'];
+
+        $this->assertSame('w-60 md:w-(--sidebar) dark:w-[10px]', TailwindClasses::write('w-[calc(100%-2rem)] md:w-(--sidebar) dark:w-[10px]', 'base', ['width' => 240]));
+        $this->assertSame('flex gap-6', TailwindClasses::write('flex gap-x-4 gap-y-2', 'base', ['gap' => 24]));
+        $this->assertSame('rounded-lg shadow-md', TailwindClasses::write('rounded-[10px] shadow-[0_1px_2px_black]', 'base', ['radius' => 'lg', 'shadow' => 'md']));
+        $this->assertSame('text-primary', TailwindClasses::write('text-(--brand)', 'base', ['text_color' => 'primary'], $colors));
+        $this->assertSame(
+            'lg:hover:bg-accent hover:bg-(--y) bg-(--z)',
+            TailwindClasses::write('lg:hover:bg-[var(--x)] hover:bg-(--y) bg-(--z)', 'lg', ['hover_background' => 'accent'], $colors),
+        );
+    }
+
+    public function test_a_text_class_named_by_the_app_is_kept_since_it_may_be_a_size()
+    {
+        $this->assertSame('text-hero text-primary', TailwindClasses::write('text-hero', 'base', ['text_color' => 'primary'], ['primary']));
+        $this->assertSame('text-hero text-lg', TailwindClasses::write('text-hero', 'base', ['text_size' => 'lg'], ['primary']));
+    }
+
+    public function test_one_side_set_apart_is_kept_until_the_whole_axis_is_set()
+    {
+        $this->assertSame(['padding_x' => 'mixed', 'padding_y' => 8], TailwindClasses::read('px-4 pl-2 py-2')['base']);
+        $this->assertSame('pr-4 pl-2 py-4', TailwindClasses::write('px-4 pl-2 py-2', 'base', ['padding_y' => 16]));
+        $this->assertSame('px-4', TailwindClasses::write('pl-2', 'base', ['padding_x' => 16]));
+    }
+
     public function test_padding_is_written_in_the_shortest_form()
     {
         $this->assertSame('p-3.75', TailwindClasses::write('px-4 py-3.75', 'base', ['padding_x' => 15]));

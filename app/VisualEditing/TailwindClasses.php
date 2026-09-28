@@ -3,6 +3,7 @@
 namespace App\VisualEditing;
 
 use InvalidArgumentException;
+use TalesFromADev\TailwindMerge\TailwindMerge;
 
 /**
  * Reads and writes visual properties (size, space, layout, border, corners,
@@ -11,7 +12,9 @@ use InvalidArgumentException;
  *
  * Devices are Tailwind's own breakpoints: "base" (every screen, so phones),
  * "md" (tablets and up) and "lg" (desktops). A class with any other variant
- * (hover:, sm:, dark:) or one this adapter does not know is never touched.
+ * (sm:, dark:) is never touched. A class this adapter does not read goes
+ * only when Tailwind would apply the new class in its place (`size-8` when
+ * a width is set), as tailwind-merge decides.
  *
  * Spacing is written with theme-relative utilities where Tailwind v4 has one
  * (15px is `p-3.75`), and as an arbitrary value otherwise (12.5px is
@@ -111,6 +114,8 @@ class TailwindClasses
     protected const FRACTIONS = [[1, 2], [1, 3], [2, 3], [1, 4], [3, 4], [1, 5], [2, 5], [3, 5], [4, 5]];
 
     protected const SIDES = ['top', 'right', 'bottom', 'left'];
+
+    protected static ?TailwindMerge $merger = null;
 
     protected const SIDE_PREFIXES = [
         '' => ['top', 'right', 'bottom', 'left'],
@@ -412,24 +417,19 @@ class TailwindClasses
      */
     protected static function writeGroup(array $tokens, string $device, string $group, array $changes, array $colors): array
     {
-        $position = null;
         $sides = [];
-        $kept = [];
+        $replaced = [];
 
-        foreach ($tokens as $token) {
+        foreach ($tokens as $index => $token) {
             $parsed = self::parse($token, $colors);
 
             if ($parsed !== null && $parsed[0] === $device && $parsed[1] === $group) {
-                $position ??= count($kept);
+                $replaced[$index] = true;
 
                 if (is_array($parsed[2])) {
                     $sides = array_replace($sides, $parsed[2]);
                 }
-
-                continue;
             }
-
-            $kept[] = $token;
         }
 
         if (in_array($group, ['padding', 'margin'], true)) {
@@ -448,9 +448,43 @@ class TailwindClasses
         $prefix = ($device === 'base' ? '' : "{$device}:").(in_array($group, self::HOVER, true) ? 'hover:' : '');
         $new = array_map(fn (string $utility) => $prefix.$utility, $new);
 
-        array_splice($kept, $position ?? count($kept), 0, $new);
+        foreach ($tokens as $index => $token) {
+            if (! isset($replaced[$index]) && self::clashes($token, $new, $colors)) {
+                $replaced[$index] = true;
+            }
+        }
+
+        // No class before the first replaced one goes, so it keeps its place.
+        $position = $replaced === [] ? count($tokens) : min(array_keys($replaced));
+        $kept = array_values(array_diff_key($tokens, $replaced));
+        array_splice($kept, $position, 0, $new);
 
         return $kept;
+    }
+
+    /**
+     * Whether Tailwind would apply one of the new classes in place of a
+     * class this adapter does not read, such as `size-8` against `w-60`.
+     *
+     * @param  list<string>  $new
+     * @param  list<string>  $colors
+     */
+    protected static function clashes(string $token, array $new, array $colors): bool
+    {
+        if ($new === [] || self::parse($token, $colors) !== null) {
+            return false;
+        }
+
+        // `text-` and a name is a size or a colour, and only the app's
+        // stylesheet says which: tailwind-merge takes `text-hero` for a
+        // colour, so it would go when the owner picks a text colour.
+        if (preg_match('/^(?:[^:]+:)*text-[a-z][a-z0-9-]*$/', $token) === 1) {
+            return false;
+        }
+
+        self::$merger ??= new TailwindMerge;
+
+        return ! in_array($token, explode(' ', self::$merger->merge($token, ...$new)), true);
     }
 
     /**

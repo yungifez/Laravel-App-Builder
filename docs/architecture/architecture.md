@@ -1774,7 +1774,14 @@ clean.
 - **Tailwind classes:** spacing, sizing, alignment, flex and grid, typography,
   radius, borders, shadow, visibility, gap, position; tokens grouped by utility
   family with variant and responsive prefixes; values snap to the project's
-  `@theme` steps but are not limited to them (§26.12).
+  `@theme` steps but are not limited to them (§26.12). A class the editor does
+  not read goes only when Tailwind would apply the new class in its place
+  (`size-8` or `w-[calc(…)]` against a new width). The package
+  `tales-from-a-dev/tailwind-merge-php` decides this. It is a PHP port of
+  tailwind-merge, which the app's own `cn()` uses. Laravel has no first-party
+  package for this, and it saves us from keeping Tailwind's clash rules
+  ourselves. One exception: a `text-` class with a name (`text-hero`) is kept,
+  because only the app's stylesheet says if it is a size or a colour.
 - **Literal text** in templates, or translation files for translation keys.
 - **Show or hide** by breakpoint.
 - **This instance or all instances:** editing a shared component changes it
