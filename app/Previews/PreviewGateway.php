@@ -2,10 +2,12 @@
 
 namespace App\Previews;
 
+use App\Actions\Previews\GrantPreviewAccess;
 use App\Enums\PreviewStatus;
 use App\Models\Preview;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -116,6 +118,23 @@ class PreviewGateway
             sameSite: Cookie::SAMESITE_NONE,
             partitioned: true,
         ));
+
+        // A cookie of the app's own that came with the grant, such as the
+        // session of the person the owner signs in as.
+        $cookie = Cache::pull(GrantPreviewAccess::cookieKey($preview, (string) $grant));
+
+        if (is_array($cookie)) {
+            $response->headers->setCookie(Cookie::create(
+                name: (string) $cookie['name'],
+                value: (string) $cookie['value'],
+                expire: now()->addMinutes((int) $cookie['minutes']),
+                path: '/',
+                secure: true,
+                httpOnly: true,
+                sameSite: Cookie::SAMESITE_NONE,
+                partitioned: true,
+            ));
+        }
 
         return $response;
     }

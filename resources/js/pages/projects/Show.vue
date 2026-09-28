@@ -51,6 +51,7 @@ import AppPreview from '@/components/AppPreview.vue';
 import BesidePanel from '@/components/BesidePanel.vue';
 import ChangeThread from '@/components/ChangeThread.vue';
 import ChatList from '@/components/ChatList.vue';
+import SignInAs from '@/components/SignInAs.vue';
 import DesignPanel from '@/components/DesignPanel.vue';
 import IdeaMenu from '@/components/ideas/IdeaMenu.vue';
 import StartIdeaDialog from '@/components/ideas/StartIdeaDialog.vue';
@@ -94,6 +95,7 @@ import type {
     Ideas,
     InspectedElement,
     ProjectCommit,
+    PreviewPerson,
     ProjectSummary,
     ProjectPublishing,
     AppService,
@@ -123,6 +125,7 @@ const props = defineProps<{
     publishing: ProjectPublishing;
     services: AppService[];
     emails?: SentEmail[];
+    people?: PreviewPerson[] | null;
     problems?: AppProblem[];
     data?: SavedTable[] | null;
     rows?: SavedRows | null;
@@ -403,8 +406,9 @@ function openPage(path: string): void {
     app.follow(path);
 }
 
-// A link in an email opens its page in the app.
-function openFromEmail(href: string): void {
+// A link from beside the app, in an email or a sign-in, opens its page in
+// the app.
+function openInApp(href: string): void {
     showing.value = 'app';
     app.visit(href);
 }
@@ -1018,6 +1022,12 @@ function sendOnEnter(event: KeyboardEvent): void {
                         <component :is="screen.icon" class="size-4" />
                     </button>
                 </div>
+                <SignInAs
+                    :project-id="project.id"
+                    :people="people"
+                    :path="app.path"
+                    @open="openInApp"
+                />
                 <Button
                     variant="ghost"
                     size="icon"
@@ -2008,7 +2018,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                 :project-id="project.id"
                 :emails="emails"
                 :origin="preview?.origin ?? null"
-                @open="openFromEmail"
+                @open="openInApp"
             />
             <div
                 v-show="!changeCopy && showing === 'app'"

@@ -8,6 +8,7 @@ use App\Actions\Previews\ReadPreviewData;
 use App\Actions\Previews\ReadPreviewEmails;
 use App\Actions\Previews\ReadPreviewFiles;
 use App\Actions\Previews\ReadPreviewPages;
+use App\Actions\Previews\ReadPreviewPeople;
 use App\Actions\Previews\ReadPreviewProblems;
 use App\Actions\Previews\ReadPreviewRows;
 use App\Actions\Previews\ReadPreviewSchedule;
@@ -133,7 +134,7 @@ class ProjectController extends Controller
      * app running beside it, and the design panel for changing how it looks.
      * The element the owner selected is loaded on request.
      */
-    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails, ReadPreviewProblems $readPreviewProblems, ReadPreviewData $readPreviewData, ReadPreviewRows $readPreviewRows, ReadPreviewSchedule $readPreviewSchedule, ReadPreviewFiles $readPreviewFiles, ReadPreviewPages $readPreviewPages, ReadAppColors $readAppColors): Response
+    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails, ReadPreviewPeople $readPreviewPeople, ReadPreviewProblems $readPreviewProblems, ReadPreviewData $readPreviewData, ReadPreviewRows $readPreviewRows, ReadPreviewSchedule $readPreviewSchedule, ReadPreviewFiles $readPreviewFiles, ReadPreviewPages $readPreviewPages, ReadAppColors $readAppColors): Response
     {
         Gate::authorize('view', $project);
 
@@ -163,6 +164,8 @@ class ProjectController extends Controller
             'element' => Inertia::optional(fn () => $inspectSelection->handle($project, $request->query('target'), $request->boolean('instance'))),
             // The email the app on show has sent, read while the owner looks.
             'emails' => Inertia::optional(fn () => $readPreviewEmails->handle($project)),
+            // Who the owner can sign in to the app on show as, one tap each.
+            'people' => Inertia::optional(fn () => $readPreviewPeople->handle($project)),
             // And the problems it ran into while the owner tried it.
             'problems' => Inertia::optional(fn () => $readPreviewProblems->handle($project)),
             // And what it has saved.

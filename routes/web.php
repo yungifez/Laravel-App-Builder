@@ -30,6 +30,7 @@ use App\Http\Controllers\PreviewEmailController;
 use App\Http\Controllers\PreviewFileController;
 use App\Http\Controllers\PreviewProblemFixController;
 use App\Http\Controllers\PreviewScheduledTaskRunController;
+use App\Http\Controllers\PreviewSignInController;
 use App\Http\Controllers\ProjectCompatibilityController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectDownloadController;
@@ -74,6 +75,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/deployments', [DeploymentController::class, 'store'])->name('deployments.store');
     Route::post('projects/{project}/live-error-fixes', [LiveErrorFixController::class, 'store'])->name('live-error-fixes.store');
     Route::post('projects/{project}/preview-problem-fixes', [PreviewProblemFixController::class, 'store'])->name('preview-problem-fixes.store');
+    Route::post('projects/{project}/preview-sign-ins', [PreviewSignInController::class, 'store'])->name('preview-sign-ins.store');
     Route::delete('projects/{project}/preview-emails', [PreviewEmailController::class, 'destroy'])->name('preview-emails.destroy');
     Route::post('projects/{project}/cleared-problems', [ClearedProblemController::class, 'store'])->name('cleared-problems.store');
     Route::delete('projects/{project}/cleared-problems/{problem}', [ClearedProblemController::class, 'destroy'])->name('cleared-problems.destroy');

@@ -14,6 +14,13 @@ export type ProjectSummary = {
     tests: number | null;
 };
 
+/** Someone who can sign in to the app on show, as the app keeps them. */
+export type PreviewPerson = {
+    id: string;
+    name: string | null;
+    email: string | null;
+};
+
 /** One app on the owner's apps list. */
 export type ProjectListItem = {
     id: string;
