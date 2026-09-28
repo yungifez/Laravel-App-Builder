@@ -825,6 +825,93 @@ class VisualEditingTest extends TestCase
         $this->assertSame(4, $this->project->visualEdits()->sole()->line);
     }
 
+    public function test_a_part_moved_twice_before_the_rebuild_is_followed_both_times()
+    {
+        Queue::fake();
+        $preview = $this->runningPreview();
+        $file = 'resources/js/pages/Plans.vue';
+        $move = fn (string $placement) => $this->actingAs($this->owner)->post(route('visual-moves.store', $this->project), [
+            'preview' => $preview->id,
+            // Both places are where the running preview still shows them.
+            'target' => "{$file}:3:9",
+            'to' => "{$file}:4:9",
+            'placement' => $placement,
+            'revision' => $this->repository->head($this->project),
+        ]);
+
+        $move('after')->assertSessionHasNoErrors();
+        $move('before')->assertSessionHasNoErrors();
+
+        $this->assertSame(self::CARD, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+        $this->assertSame(2, $this->project->visualEdits()->count());
+    }
+
+    public function test_a_part_that_looks_like_its_sibling_is_not_mistaken_for_it_after_a_move()
+    {
+        Queue::fake();
+        $file = 'resources/js/pages/Steps.vue';
+        $steps = <<<'VUE'
+        <template>
+            <ul>
+                <li
+                    class="py-2 before:top-1/2"
+                >
+                    <span>One</span>
+                </li>
+                <li
+                    class="py-2 before:top-0"
+                >
+                    <span>Two</span>
+                </li>
+            </ul>
+        </template>
+
+        VUE;
+        Event::fakeFor(fn () => $this->repository->commitFiles($this->project, $this->repository->head($this->project), [$file => $steps], 'Add steps', null));
+        $preview = $this->runningPreview();
+        // A diff lines up the two items' matching lines, so following the
+        // first item's lines would find the second one.
+        $move = fn (string $placement) => $this->actingAs($this->owner)->post(route('visual-moves.store', $this->project), [
+            'preview' => $preview->id,
+            'target' => "{$file}:3:9",
+            'to' => "{$file}:8:9",
+            'placement' => $placement,
+            'revision' => $this->repository->head($this->project),
+        ]);
+
+        $move('after')->assertSessionHasNoErrors();
+        $move('before')->assertSessionHasNoErrors();
+
+        $this->assertSame($steps, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+    }
+
+    public function test_a_new_look_after_a_move_changes_the_moved_part_not_the_one_now_in_its_place()
+    {
+        Queue::fake();
+        $preview = $this->runningPreview();
+        $file = 'resources/js/pages/Plans.vue';
+
+        $this->actingAs($this->owner)->post(route('visual-moves.store', $this->project), [
+            'preview' => $preview->id,
+            'target' => "{$file}:3:9",
+            'to' => "{$file}:4:9",
+            'placement' => 'after',
+            'revision' => $preview->revision,
+        ])->assertSessionHasNoErrors();
+
+        $this->post(route('visual-edits.store', $this->project), [
+            'preview' => $preview->id,
+            'target' => "{$file}:3:9",
+            'revision' => $this->repository->head($this->project),
+            'expected' => 'text-xl',
+            'device' => 'base',
+            'changes' => ['gap' => 8],
+        ])->assertSessionHasNoErrors();
+
+        $contents = (string) $this->repository->show($this->project, $this->repository->head($this->project), $file);
+        $this->assertStringContainsString("<p :class=\"{ 'font-bold': active }\">Pick one</p>\n        <h1 class=\"text-xl gap-2\">Plans</h1>", $contents);
+    }
+
     public function test_a_part_whose_own_lines_were_rewritten_waits_for_the_rebuild()
     {
         Queue::fake();

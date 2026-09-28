@@ -6,9 +6,13 @@ use App\Models\Project;
 use App\Projects\ProjectRepository;
 use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TemplateElement;
+use App\VisualEditing\TemplateOrder;
 
 class FollowLocation
 {
+    /** The most commits to follow a part through, one at a time. */
+    protected const MAX_STEPS = 20;
+
     public function __construct(private ProjectRepository $repository) {}
 
     /**
@@ -22,6 +26,48 @@ class FollowLocation
      * that cannot be followed, so nothing is edited by mistake.
      */
     public function handle(Project $project, string $from, string $to, SourceLocation $location): ?SourceLocation
+    {
+        return $this->follow($project, $from, $to, $location)
+            ?? $this->stepwise($project, $from, $to, $location);
+    }
+
+    /**
+     * Follow the element one commit at a time, when a part was both moved
+     * and changed since: within one commit it is only one of the two. This
+     * lets the owner move a part twice before the app is rebuilt.
+     */
+    protected function stepwise(Project $project, string $from, string $to, SourceLocation $location): ?SourceLocation
+    {
+        $commits = preg_split('/\s+/', trim($this->repository->git($project, ['rev-list', '--reverse', '--ancestry-path', "{$from}..{$to}"])->output()), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        if ($commits === [] || count($commits) > self::MAX_STEPS || end($commits) !== $to) {
+            return null;
+        }
+
+        $current = $from;
+
+        foreach ($commits as $next) {
+            $location = $this->follow($project, $current, $next, $location);
+
+            if ($location === null) {
+                return null;
+            }
+
+            $current = $next;
+        }
+
+        return $location;
+    }
+
+    /**
+     * Follow the element from one version to another. An element none of
+     * whose lines changed keeps its place, shifted by the lines added or
+     * removed above it. One whose lines changed may have moved: a diff can
+     * line up two similar parts wrongly, so it is looked for by its whole
+     * text first, and followed through its lines only if that text is
+     * gone (something inside it changed).
+     */
+    protected function follow(Project $project, string $from, string $to, SourceLocation $location): ?SourceLocation
     {
         if ($from === $to) {
             return $location;
@@ -39,17 +85,58 @@ class FollowLocation
         }
 
         $element = TemplateElement::at($before, $location->line, $location->column);
-        $line = $element === null ? null : self::line($this->hunks($project, $from, $to, $location->file), $location->line);
+        $whole = $element === null ? null : collect(TemplateOrder::elements($before))->firstWhere('start', $element->start);
 
-        if ($element === null || $line === null) {
+        if ($element === null || $whole === null) {
             return null;
         }
 
-        $followed = TemplateElement::at($after, $line, $location->column);
+        $hunks = $this->hunks($project, $from, $to, $location->file);
+        [$last] = TemplateOrder::position($before, max($whole['start'], $whole['end'] - 1));
+
+        if (self::touched($hunks, $location->line, $last)) {
+            $text = substr($before, $whole['start'], $whole['end'] - $whole['start']);
+            $same = collect(TemplateOrder::elements($after))
+                ->filter(fn (array $candidate) => substr($after, $candidate['start'], $candidate['end'] - $candidate['start']) === $text);
+
+            if ($same->count() === 1) {
+                [$line, $column] = TemplateOrder::position($after, $same->first()['start']);
+
+                return new SourceLocation($location->file, $line, $column, $location->instance);
+            }
+
+            if ($same->count() > 1) {
+                return null;
+            }
+        }
+
+        $line = self::line($hunks, $location->line);
+        $followed = $line === null ? null : TemplateElement::at($after, $line, $location->column);
 
         return $followed !== null && $followed->tag === $element->tag
-            ? new SourceLocation($location->file, $line, $location->column, $location->instance)
+            ? new SourceLocation($location->file, (int) $line, $location->column, $location->instance)
             : null;
+    }
+
+    /**
+     * Whether a diff's hunks changed any of the lines from first to last,
+     * or added lines between them.
+     *
+     * @param  list<array{int, int, int, int}>  $hunks
+     */
+    protected static function touched(array $hunks, int $first, int $last): bool
+    {
+        foreach ($hunks as [$oldStart, $oldCount]) {
+            $touched = $oldCount === 0
+                ? $oldStart >= $first && $oldStart < $last
+                : $oldStart <= $last && $oldStart + $oldCount - 1 >= $first;
+
+            if ($touched) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

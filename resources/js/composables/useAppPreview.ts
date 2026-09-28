@@ -1001,18 +1001,41 @@ export function useAppPreview(source: Source) {
     // where the owner dropped it. Changes waiting to be saved go first, so
     // the move builds on them.
     function move(to: SelectedElement, placement: 'before' | 'after'): void {
+        const part = selected.value;
+
+        if (part !== null) {
+            saveMove(part, to, placement, source.preview()?.revision ?? null);
+        }
+    }
+
+    // Save a move once the changes before it are saved: the app has moved
+    // the part already, so a quick second move is saved too, not lost.
+    function saveMove(
+        part: SelectedElement,
+        to: SelectedElement,
+        placement: 'before' | 'after',
+        seen: string | null,
+    ): void {
         const preview = source.preview();
         // A part moves where it is placed on the page: the one use of a
         // shared piece, as the preview found its neighbours.
-        const from = selected.value?.instance ?? selected.value?.source;
+        const from = part.instance ?? part.source;
 
-        if (preview === null || !from || moving.value) {
+        if (preview === null || !from) {
             return;
         }
 
-        if (sending.value !== null || queue.value.length > 0) {
+        // The part was found in an app that has since been replaced, so
+        // its place may be wrong: show the app as it is saved instead.
+        if (preview.revision !== seen) {
+            reload();
+
+            return;
+        }
+
+        if (moving.value || sending.value !== null || queue.value.length > 0) {
             save();
-            setTimeout(() => move(to, placement), 200);
+            setTimeout(() => saveMove(part, to, placement, seen), 200);
 
             return;
         }
@@ -1020,13 +1043,14 @@ export function useAppPreview(source: Source) {
         moving.value = true;
         movedFrom = preview.revision;
         saveError.value = null;
+        const newest = source.edits()[0]?.id ?? 0;
 
         router.post(
             VisualMoveController.store.url(source.projectId()),
             {
                 preview: preview.id,
                 target: from,
-                instance: Boolean(selected.value?.instance),
+                instance: Boolean(part.instance),
                 to: to.instance ?? to.source,
                 to_instance: Boolean(to.instance),
                 placement,
@@ -1050,8 +1074,15 @@ export function useAppPreview(source: Source) {
                     }
                 },
                 onSuccess: () => {
+                    const edit = source.edits()[0];
+
+                    // The next change builds on this one, even before the
+                    // app is rebuilt.
                     last.value = null;
-                    head.value = null;
+                    head.value =
+                        edit !== undefined && edit.id > newest
+                            ? edit.revision
+                            : null;
                     known.value = null;
                     inspect();
                 },
@@ -1074,25 +1105,53 @@ export function useAppPreview(source: Source) {
         // A shared piece is copied or taken out where it is used.
         const at = part?.instance ?? part?.source;
 
-        if (preview === null || part === null || !at || moving.value) {
+        if (preview === null || part === null || !at) {
             return;
         }
 
-        if (sending.value !== null || queue.value.length > 0) {
-            save();
-            setTimeout(() => reshape(how), 200);
-
-            return;
-        }
-
-        moving.value = true;
-        movedFrom = preview.revision;
+        // Show it at once, even when an earlier change is still saving:
+        // a second Ctrl+D is a second copy, not a lost key press.
         saveError.value = null;
         post({ type: 'reshape', how });
 
         if (how === 'remove') {
             deselect();
         }
+
+        saveReshape(how, part, at, preview.revision);
+    }
+
+    // Save a copy or a removal once the changes before it are saved.
+    function saveReshape(
+        how: 'duplicate' | 'remove',
+        part: SelectedElement,
+        at: string,
+        seen: string | null,
+    ): void {
+        const preview = source.preview();
+
+        if (preview === null) {
+            return;
+        }
+
+        // The part was found in an app that has since been replaced, so
+        // its place may be wrong: show the app as it is saved instead.
+        if (preview.revision !== seen) {
+            reload();
+
+            return;
+        }
+
+        if (moving.value || sending.value !== null || queue.value.length > 0) {
+            save();
+            setTimeout(() => saveReshape(how, part, at, seen), 200);
+
+            return;
+        }
+
+        moving.value = true;
+        movedFrom = preview.revision;
+        const newest = source.edits()[0]?.id ?? 0;
 
         const data = {
             preview: preview.id,
@@ -1118,8 +1177,15 @@ export function useAppPreview(source: Source) {
                 }
             },
             onSuccess: () => {
+                const edit = source.edits()[0];
+
+                // The next change builds on this one, even before the app
+                // is rebuilt.
                 last.value = null;
-                head.value = null;
+                head.value =
+                    edit !== undefined && edit.id > newest
+                        ? edit.revision
+                        : null;
                 known.value = null;
 
                 if (how === 'duplicate') {
