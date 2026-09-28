@@ -884,6 +884,18 @@ const checks = computed(() => {
                                 </button>
                             </Form>
                         </div>
+                        <!-- Say why, or "Check again" looks like it does nothing. -->
+                        <p
+                            v-if="
+                                !checking &&
+                                change.verification?.status === 'errored' &&
+                                change.verification.error
+                            "
+                            class="text-xs text-muted-foreground"
+                            data-test="verification-error"
+                        >
+                            {{ change.verification.error }}
+                        </p>
                         <ChangeProof
                             v-if="request.status === 'generated'"
                             :proof="change.proof"
