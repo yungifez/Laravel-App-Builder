@@ -77,6 +77,7 @@ import {
     definition,
     describeChanged,
     describeValue,
+    textSizeBetween,
     drawnStep,
     properties,
     weights,
@@ -1472,6 +1473,9 @@ const recent = computed(() => {
                                             'text_size',
                                             state.selected?.drawn,
                                         )
+                                    "
+                                    :now-words="
+                                        textSizeBetween(state.selected?.drawn)
                                     "
                                     @change="set('text_size', $event)"
                                 />

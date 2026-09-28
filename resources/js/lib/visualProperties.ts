@@ -890,6 +890,24 @@ export function drawnStep(
         : null;
 }
 
+/**
+ * The text size a part is drawn at in pixels, when it falls between the
+ * steps, so the owner reads what they see rather than the nearest step.
+ */
+export function textSizeBetween(drawn: Drawn | undefined): string | null {
+    const step = drawnStep('text_size', drawn);
+
+    if (drawn === undefined || step === null) {
+        return null;
+    }
+
+    const size = parseFloat(textSizes[step][0]) * drawn.rem;
+
+    return Math.abs(size - drawn.text_size) < 0.5
+        ? null
+        : `${Math.round(drawn.text_size * 10) / 10} px`;
+}
+
 const pixels = (value: VisualValue): string =>
     typeof value === 'number' ? `${value}px` : value;
 

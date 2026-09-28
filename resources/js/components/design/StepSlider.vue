@@ -13,6 +13,8 @@ const props = defineProps<{
     rest?: number;
     /** The step nearest to how the part is drawn now. */
     now?: VisualValue | null;
+    /** How the part is drawn now in words, when it falls between steps. */
+    nowWords?: string | null;
 }>();
 
 const emit = defineEmits<{ change: [value: VisualValue] }>();
@@ -58,7 +60,7 @@ const nowIndex = computed(() =>
                 index >= 0
                     ? options[index].label
                     : nowIndex >= 0
-                      ? options[nowIndex].label
+                      ? (nowWords ?? options[nowIndex].label)
                       : 'Not set'
             }}</span
         >
