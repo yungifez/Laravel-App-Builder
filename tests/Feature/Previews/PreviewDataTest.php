@@ -66,7 +66,7 @@ class PreviewDataTest extends TestCase
     {
         $rows = collect(range(51, 1))->map(fn (int $id) => ['id' => $id, 'name' => "Member {$id}", 'password' => 'secret-hash', 'bio' => str_repeat('a', 300), 'deleted_at' => null])->all();
         $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(exitCode: 0, output: $command[1] === '-r'
-            ? json_encode(['columns' => ['id', 'name', 'password', 'bio', 'deleted_at'], 'rows' => $rows])
+            ? json_encode(['columns' => ['id', 'name', 'password', 'bio', 'deleted_at'], 'key' => 'id', 'rows' => $rows])
             : json_encode(['tables' => [['table' => 'members', 'rows' => 51]]]), errorOutput: '', durationMs: 5);
 
         $this->actingAs($this->owner)
@@ -77,6 +77,8 @@ class PreviewDataTest extends TestCase
                 ->where('rows.columns', ['id', 'name', 'password', 'bio', 'deleted_at'])
                 ->count('rows.rows', 50)
                 ->where('rows.rows.0', ['51', 'Member 51', '••••••', str_repeat('a', 200).'...', null])
+                ->where('rows.key', 'id')
+                ->where('rows.ids.0', '51')
                 ->where('rows.more', true)));
 
         // The table's name is passed to the app, never written into code.
@@ -91,6 +93,48 @@ class PreviewDataTest extends TestCase
         $this->actingAs($this->owner)
             ->get(route('projects.show', ['project' => $this->project, 'table' => 'members; drop table members']))
             ->assertInertia(fn (Assert $page) => $page->reloadOnly('rows', fn (Assert $page) => $page->where('rows', null)));
+        $this->assertNull(collect($this->driver->executed)->firstWhere('command.1', '-r'));
+    }
+
+    public function test_the_owner_deletes_one_row_through_the_app()
+    {
+        $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(exitCode: 0, output: $command[1] === '-r'
+            ? "Some notice\n".json_encode(['deleted' => 1, 'linked' => false])
+            : json_encode(['tables' => [['table' => 'members', 'rows' => 2]]]), errorOutput: '', durationMs: 5);
+
+        $this->actingAs($this->owner)
+            ->from(route('projects.show', $this->project))
+            ->delete(route('preview-rows.destroy', $this->project), ['table' => 'members', 'row' => '7'])
+            ->assertRedirect(route('projects.show', $this->project))
+            ->assertSessionHasNoErrors();
+
+        // The table and the row are passed to the app, never written into code.
+        $deleted = collect($this->driver->executed)->firstWhere('command.1', '-r');
+        $this->assertSame(['--', 'members', '7'], array_slice($deleted['command'], 3));
+    }
+
+    public function test_a_row_other_data_points_to_is_kept_and_told()
+    {
+        $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(exitCode: 0, output: $command[1] === '-r'
+            ? json_encode(['deleted' => 0, 'linked' => true])
+            : json_encode(['tables' => [['table' => 'members', 'rows' => 2]]]), errorOutput: '', durationMs: 5);
+
+        $this->actingAs($this->owner)
+            ->delete(route('preview-rows.destroy', $this->project), ['table' => 'members', 'row' => '7'])
+            ->assertSessionHasErrors(['app' => 'Your app kept it, because other saved data still points to it. Delete that first.']);
+    }
+
+    public function test_only_the_owner_deletes_and_only_from_the_apps_own_tables()
+    {
+        $this->driver->onExec = fn () => new CommandResult(exitCode: 0, output: json_encode(['tables' => [['table' => 'members', 'rows' => 1]]]), errorOutput: '', durationMs: 5);
+
+        $this->actingAs($this->owner)
+            ->delete(route('preview-rows.destroy', $this->project), ['table' => 'members; drop table members', 'row' => '7'])
+            ->assertSessionHasErrors('table');
+
+        $this->actingAs(User::factory()->create())
+            ->delete(route('preview-rows.destroy', $this->project), ['table' => 'members', 'row' => '7'])
+            ->assertForbidden();
         $this->assertNull(collect($this->driver->executed)->firstWhere('command.1', '-r'));
     }
 

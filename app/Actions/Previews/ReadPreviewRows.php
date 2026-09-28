@@ -32,7 +32,9 @@ class ReadPreviewRows
         $columns = $schema->getColumnListing($table);
         $query = Illuminate\Support\Facades\DB::table($table)->limit((int) $argv[2] + 1);
         foreach (['id', 'created_at'] as $newest) { if (in_array($newest, $columns, true)) { $query->orderByDesc($newest); break; } }
-        echo json_encode(['columns' => $columns, 'rows' => $query->get()], JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR);
+        $primary = collect($schema->getIndexes($table))->firstWhere('primary', true);
+        $key = $primary !== null && count($primary['columns']) === 1 ? $primary['columns'][0] : null;
+        echo json_encode(['columns' => $columns, 'key' => $key, 'rows' => $query->get()], JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR);
         PHP;
 
     public function __construct(private ReadPreviewLog $readPreviewLog, private ReadPreviewData $readPreviewData, private RunPreviewCommand $runPreviewCommand) {}
@@ -41,7 +43,7 @@ class ReadPreviewRows
      * Get the rows of one table the app on show saved, or null when it is
      * not one of its tables or the app does not run.
      *
-     * @return array{name: string, words: string, columns: list<string>, rows: list<list<string|null>>, more: bool}|null
+     * @return array{name: string, words: string, columns: list<string>, key: string|null, ids: list<string|null>, rows: list<list<string|null>>, more: bool}|null
      */
     public function handle(Project $project, string $table): ?array
     {
@@ -62,11 +64,18 @@ class ReadPreviewRows
         /** @var list<string> $columns */
         $columns = array_values(array_filter(is_array($data) ? (array) ($data['columns'] ?? []) : [], is_string(...)));
         $rows = is_array($data) ? (array) ($data['rows'] ?? []) : [];
+        // A row can be deleted when the table names it by one column.
+        $key = is_array($data) && is_string($data['key'] ?? null) && in_array($data['key'], $columns, true) ? $data['key'] : null;
 
         return [
             'name' => $table,
             'words' => $known['words'],
             'columns' => $columns,
+            'key' => $key,
+            'ids' => array_values(array_map(
+                fn ($row) => $key !== null && is_array($row) && is_scalar($row[$key] ?? null) ? (string) $row[$key] : null,
+                array_slice($rows, 0, self::LIMIT),
+            )),
             'rows' => array_values(array_map(
                 fn ($row) => array_map(fn (string $column) => $this->shown($column, is_array($row) ? ($row[$column] ?? null) : null), $columns),
                 array_slice($rows, 0, self::LIMIT),

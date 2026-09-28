@@ -29,6 +29,7 @@ use App\Http\Controllers\PreviewDataController;
 use App\Http\Controllers\PreviewEmailController;
 use App\Http\Controllers\PreviewFileController;
 use App\Http\Controllers\PreviewProblemFixController;
+use App\Http\Controllers\PreviewRowController;
 use App\Http\Controllers\PreviewScheduledTaskRunController;
 use App\Http\Controllers\PreviewSignInController;
 use App\Http\Controllers\ProjectCompatibilityController;
@@ -79,6 +80,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('projects/{project}/preview-emails', [PreviewEmailController::class, 'destroy'])->name('preview-emails.destroy');
     Route::post('projects/{project}/cleared-problems', [ClearedProblemController::class, 'store'])->name('cleared-problems.store');
     Route::delete('projects/{project}/cleared-problems/{problem}', [ClearedProblemController::class, 'destroy'])->name('cleared-problems.destroy');
+    Route::delete('projects/{project}/preview-rows', [PreviewRowController::class, 'destroy'])->name('preview-rows.destroy');
     Route::put('projects/{project}/preview-data', [PreviewDataController::class, 'update'])->name('preview-data.update');
     Route::post('projects/{project}/preview-schedule-runs', [PreviewScheduledTaskRunController::class, 'store'])->name('preview-schedule-runs.store');
     Route::get('projects/{project}/preview-files', [PreviewFileController::class, 'show'])->name('preview-files.show');

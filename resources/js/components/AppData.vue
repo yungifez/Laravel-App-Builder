@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { Form, router } from '@inertiajs/vue3';
-import { ArrowLeft, ChevronRight, Database, File } from '@lucide/vue';
+import { ArrowLeft, ChevronRight, Database, File, Trash2 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
+import { toast } from 'vue-sonner';
 import PreviewDataController from '@/actions/App/Http/Controllers/PreviewDataController';
 import PreviewFileController from '@/actions/App/Http/Controllers/PreviewFileController';
+import PreviewRowController from '@/actions/App/Http/Controllers/PreviewRowController';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { when } from '@/lib/when';
@@ -50,6 +52,46 @@ function open(table: SavedTable): void {
 }
 
 watch(() => openedTable.value?.rows, readRows);
+
+// A deleted row goes at once; it comes back if the app keeps it.
+const deleting = ref<Set<string>>(new Set());
+const shownRows = computed(() =>
+    (shown.value?.rows ?? [])
+        .map((values, index) => ({
+            values,
+            id: shown.value?.ids[index] ?? null,
+        }))
+        .filter(
+            (row) =>
+                row.id === null ||
+                !deleting.value.has(`${shown.value?.name}:${row.id}`),
+        ),
+);
+
+function remove(id: string): void {
+    const table = opened.value;
+    const key = `${table}:${id}`;
+
+    deleting.value = new Set([...deleting.value, key]);
+
+    // The count changes, and the rows are read again from it.
+    router.delete(PreviewRowController.destroy.url(props.projectId), {
+        data: { table, row: id },
+        only: ['data'],
+        preserveScroll: true,
+        preserveState: true,
+        onError: (errors) => {
+            deleting.value = new Set(
+                [...deleting.value].filter((kept) => kept !== key),
+            );
+            toast.error(
+                errors.app ??
+                    errors.table ??
+                    'Your app could not delete it. This is our fault. Try again.',
+            );
+        },
+    });
+}
 
 function fileUrl(file: StoredFile): string {
     return PreviewFileController.show.url(props.projectId, {
@@ -120,7 +162,7 @@ function rows(table: SavedTable): string {
                     Reading…
                 </div>
                 <p
-                    v-else-if="shown === null || shown.rows.length === 0"
+                    v-else-if="shown === null || shownRows.length === 0"
                     class="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground"
                 >
                     Nothing saved here yet.
@@ -136,16 +178,17 @@ function rows(table: SavedTable): string {
                                 >
                                     {{ column }}
                                 </th>
+                                <th v-if="shown.key" class="border-b" />
                             </tr>
                         </thead>
                         <tbody>
                             <tr
-                                v-for="(row, index) in shown.rows"
-                                :key="index"
-                                class="border-b"
+                                v-for="(row, index) in shownRows"
+                                :key="row.id ?? index"
+                                class="group border-b"
                             >
                                 <td
-                                    v-for="(value, at) in row"
+                                    v-for="(value, at) in row.values"
                                     :key="at"
                                     class="max-w-60 truncate px-3 py-2 whitespace-nowrap"
                                     :title="value ?? ''"
@@ -156,6 +199,22 @@ function rows(table: SavedTable): string {
                                         >—</span
                                     >
                                     <template v-else>{{ value }}</template>
+                                </td>
+                                <td
+                                    v-if="shown.key"
+                                    class="sticky right-0 w-0 bg-background p-0"
+                                >
+                                    <button
+                                        v-if="row.id !== null"
+                                        type="button"
+                                        class="grid size-11 place-items-center text-muted-foreground hover:text-destructive sm:size-8 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+                                        aria-label="Delete this row"
+                                        title="Delete this row"
+                                        :data-test="`app-data-delete-${row.id}`"
+                                        @click="remove(row.id)"
+                                    >
+                                        <Trash2 class="size-3.5" />
+                                    </button>
                                 </td>
                             </tr>
                         </tbody>

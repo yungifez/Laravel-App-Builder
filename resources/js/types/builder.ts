@@ -785,6 +785,10 @@ export type SavedRows = {
     name: string;
     words: string;
     columns: string[];
+    /** The column that names each row, when rows can be deleted by it. */
+    key: string | null;
+    /** Each row's name in that column, in the order of the rows. */
+    ids: (string | null)[];
     rows: (string | null)[][];
     /** True when the table holds more rows than are shown. */
     more: boolean;
