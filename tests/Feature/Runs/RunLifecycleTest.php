@@ -258,6 +258,31 @@ class RunLifecycleTest extends TestCase
         $this->assertSame('The run finished without changing the project.', $run->error);
     }
 
+    public function test_a_run_stops_once_todays_ai_spend_reaches_the_daily_limit()
+    {
+        config(['builder.construction.budgets.daily_usd' => 10]);
+        Run::factory()->create()->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 10.5]);
+        $featureRequest = $this->invitationRequest();
+
+        $run = app(StartRun::class)->handle($featureRequest)->refresh();
+
+        $this->assertSame(RunStatus::Failed, $run->status);
+        $this->assertStringStartsWith('This is our fault: we paused new work for today', (string) $run->error);
+        $this->assertSame(0, $run->events()->where('type', 'model_call')->count());
+    }
+
+    public function test_spend_from_earlier_days_does_not_count_towards_the_daily_limit()
+    {
+        config(['builder.construction.budgets.daily_usd' => 10]);
+        $this->travel(-1)->days();
+        Run::factory()->create()->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 50]);
+        $this->travelBack();
+
+        $run = app(StartRun::class)->handle($this->invitationRequest())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+    }
+
     public function test_a_passing_verification_completes_the_run_after_review()
     {
         [$run, $verification] = $this->verifyingRun(VerificationStatus::Passed);

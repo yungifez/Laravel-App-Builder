@@ -326,6 +326,10 @@ return [
             'minutes' => (int) env('BUILDER_RUN_MAX_MINUTES', 20),
             // Attempts to fix a change that failed verification or review.
             'repairs' => (int) env('BUILDER_RUN_MAX_REPAIRS', 2),
+            // What all changes together may spend on AI in one day, in US
+            // dollars; a run stops once today's spend reaches it. 0 turns
+            // the limit off.
+            'daily_usd' => (float) env('BUILDER_DAILY_SPEND_USD', 10),
         ],
 
         // What the planner sees besides the request: the file list (up to

@@ -7,6 +7,7 @@ use App\Actions\Context\AssessVerifyItems;
 use App\Actions\Context\ClassifyChange;
 use App\Actions\Context\CompileContext;
 use App\Actions\Features\RequestVerification;
+use App\Actions\Operations\SummarizeSpend;
 use App\Actions\Previews\RequestPreview;
 use App\Actions\Workspaces\DestroyWorkspace;
 use App\Context\Capability;
@@ -34,6 +35,7 @@ use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\LeaseLost;
 use App\Runs\Exceptions\ProvidersUnavailable;
 use App\Runs\Exceptions\RunCancelled;
+use App\Runs\Exceptions\SpendLimitReached;
 use App\Runs\Plan;
 use App\Runs\Review;
 use App\Runs\ReviewEvidence;
@@ -69,6 +71,7 @@ class ConstructRun
         private AssessVerifyItems $assessVerifyItems,
         private FormatChange $formatChange,
         private RequestPreview $requestPreview,
+        private SummarizeSpend $summarizeSpend,
     ) {}
 
     /**
@@ -94,6 +97,8 @@ class ConstructRun
             $this->failRun->handle($run, $exception->getMessage(), $lease, 'construction_failed');
         } catch (CannotGenerateFeature $exception) {
             $this->failRun->handle($run, $exception->getMessage(), $lease, 'cannot_generate');
+        } catch (SpendLimitReached $exception) {
+            $this->failRun->handle($run, $exception->getMessage(), $lease, 'spend_limit');
         }
     }
 
@@ -107,6 +112,10 @@ class ConstructRun
 
         while (true) {
             $run->refresh();
+
+            if (in_array($run->status, [RunStatus::Planning, RunStatus::Implementing, RunStatus::Reviewing], true)) {
+                $this->ensureWithinDailySpend();
+            }
 
             switch ($run->status) {
                 case RunStatus::Cancelling:
@@ -449,6 +458,21 @@ class ConstructRun
             acceptance: $featureRequest->acceptance ?? [],
             solutionKey: $featureRequest->solution_key,
         );
+    }
+
+    /**
+     * Stop before the next model call once today's AI spend reached the
+     * limit, so a busy day cannot drain the AI accounts unseen.
+     *
+     * @throws SpendLimitReached
+     */
+    protected function ensureWithinDailySpend(): void
+    {
+        $limit = (float) config('builder.construction.budgets.daily_usd');
+
+        if ($limit > 0 && $this->summarizeSpend->handle(now()->startOfDay()->toImmutable())['total_usd'] >= $limit) {
+            throw new SpendLimitReached(__('This is our fault: we paused new work for today to keep our costs in check. Nothing in your app changed. Try again tomorrow.'));
+        }
     }
 
     /**
