@@ -1746,7 +1746,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                         <DropdownMenuTrigger as-child>
                             <button
                                 type="button"
-                                class="ml-1 hidden h-9 max-w-48 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground sm:flex"
+                                class="ml-1 flex h-9 w-24 shrink-0 items-center justify-between gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground sm:w-auto sm:max-w-48 sm:justify-start"
                                 :title="app.path"
                                 data-test="preview-path"
                             >
