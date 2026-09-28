@@ -1657,6 +1657,25 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             });
         }
 
+        // A picture undone or redone: the file it showed, as the app serves
+        // it, at once.
+        if (
+            message.type === 'picture' &&
+            message.location &&
+            typeof message.src === 'string' &&
+            /^(\/(?!\/)|https?:\/\/)/.test(message.src)
+        ) {
+            for (const image of matching(message.location)) {
+                if (image instanceof HTMLImageElement) {
+                    image.removeAttribute('srcset');
+                    image.src = message.src;
+                    image.addEventListener('load', () => placeFrame(), {
+                        once: true,
+                    });
+                }
+            }
+        }
+
         // The space around the selected part shows only while the owner
         // works with it, so the part itself stays easy to see.
         if (message.type === 'spacing') {

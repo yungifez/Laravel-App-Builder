@@ -1676,6 +1676,22 @@ export function useAppPreview(source: Source) {
             post({ type: 'outline' });
         }
 
+        // A new picture, or the one it replaced, shows at once, while the
+        // app is the version the picture is at its place in.
+        const picture = key === 'undo' ? edit.picture_before : edit.picture;
+
+        if (
+            edit.kind === 'picture' &&
+            picture !== null &&
+            frames.value[0]?.revision === edit.revision
+        ) {
+            post({
+                type: 'picture',
+                location: { kind: 'any', value: edit.target },
+                src: picture,
+            });
+        }
+
         // A part taken out comes back at once the same way.
         const spot = taken.get(edit.id);
 

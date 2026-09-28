@@ -81,7 +81,8 @@ class VisualPicturesTest extends TestCase
         $this->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('edits.0.kind', 'picture')
-                ->where('edits.0.picture', '/'.substr($path, strlen('public/'))));
+                ->where('edits.0.picture', '/'.substr($path, strlen('public/')))
+                ->where('edits.0.picture_before', '/images/ada.jpg'));
 
         $this->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
         $this->assertSame(self::TEAM, $this->file());

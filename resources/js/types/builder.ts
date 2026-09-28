@@ -530,8 +530,9 @@ export type VisualEditSummary = {
     words_before: string | null;
     /** Where a link goes after a new address. */
     link: string | null;
-    /** Which file a picture shows after a new picture. */
+    /** Which file a picture shows after a new picture, and before it. */
     picture: string | null;
+    picture_before: string | null;
     /** The part's classes and the app's version after this edit (or its undo). */
     classes: string;
     revision: string;

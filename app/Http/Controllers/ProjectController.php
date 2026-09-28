@@ -161,6 +161,7 @@ class ProjectController extends Controller
                     'words_before' => $edit->changes[VisualEdit::TEXT]['before'] ?? null,
                     'link' => $edit->changes[VisualEdit::LINK]['after'] ?? null,
                     'picture' => $edit->changes[VisualEdit::PICTURE]['after'] ?? null,
+                    'picture_before' => $edit->changes[VisualEdit::PICTURE]['before'] ?? null,
                     // What the element looks like after this edit, and the
                     // commit that made it, so the next automatic save can
                     // build on it without waiting for the rebuild.
