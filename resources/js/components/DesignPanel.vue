@@ -93,13 +93,15 @@ function keepWords(): void {
 }
 
 // The three parts nearest around the selected one, outermost first.
+// The two nearest parts around it: more would not fit beside the part's
+// buttons without cutting every name short.
 const trail = computed(() =>
     (props.state.selected?.trail ?? [])
-        .slice(0, 3)
+        .slice(0, 2)
         .map((step, index) => ({ ...step, up: index + 1 }))
         .reverse(),
 );
-const trailCut = computed(() => (props.state.selected?.trail?.length ?? 0) > 3);
+const trailCut = computed(() => (props.state.selected?.trail?.length ?? 0) > 2);
 
 // Where the selected link goes, as the owner types it. Saved like words.
 const address = ref('');
@@ -201,7 +203,6 @@ const icons: Partial<Record<string, Component>> = {
     'layout:block': Rows3,
     'layout:flex': Columns3,
     'layout:grid': LayoutGrid,
-    'layout:hidden': EyeOff,
     'direction:across': ArrowRight,
     'direction:down': ArrowDown,
     'wrap:wrap': TextWrap,
@@ -261,6 +262,17 @@ const layout = computed(() =>
 const inline = computed(() =>
     String(props.state.valueOf('layout') ?? '').startsWith('inline'),
 );
+
+// Only the choices that do something for this part: arranging needs
+// parts inside (or undoing an arrangement it has), text needs words.
+// Hiding it is in the header, so hiding does not bring in this section.
+const arranges = computed(
+    () =>
+        (props.state.selected?.holds?.parts ?? 1) > 0 ||
+        ['flex', 'grid'].includes(layout.value),
+);
+const hasWords = computed(() => props.state.selected?.holds?.words ?? true);
+const hidden = computed(() => layout.value === 'hidden');
 
 const sizes = options('text_size');
 
@@ -643,10 +655,12 @@ const recent = computed(() => {
             </template>
 
             <template v-else>
+                <!-- On a phone the part's name takes its own line: its
+                     buttons are finger-sized and leave it no room. -->
                 <header
-                    class="sticky top-0 z-10 flex items-center gap-2 border-b bg-background px-4 py-2"
+                    class="sticky top-0 z-10 flex flex-wrap items-center gap-x-2 border-b bg-background px-4 py-2"
                 >
-                    <div class="min-w-0 flex-1">
+                    <div class="min-w-0 flex-1 basis-full sm:basis-0">
                         <!-- The parts it sits in, outermost first, so the
                              owner sees where it is and can step out. -->
                         <nav
@@ -723,6 +737,29 @@ const recent = computed(() => {
                         @click="state.reshape('duplicate')"
                     >
                         <Copy class="size-4" />
+                    </Button>
+                    <Button
+                        v-if="element?.editable"
+                        variant="ghost"
+                        size="icon"
+                        class="size-11 shrink-0 text-muted-foreground aria-pressed:bg-accent aria-pressed:text-foreground sm:size-7"
+                        :aria-label="
+                            hidden
+                                ? 'Show it on this screen size'
+                                : 'Hide it on this screen size'
+                        "
+                        :aria-pressed="hidden"
+                        aria-keyshortcuts="Delete"
+                        :title="
+                            hidden
+                                ? 'Show it on this screen size'
+                                : 'Hide it on this screen size (Delete)'
+                        "
+                        data-test="part-hide"
+                        :disabled="state.saving"
+                        @click="set('layout', hidden ? null : 'hidden')"
+                    >
+                        <EyeOff class="size-4" />
                     </Button>
                     <Button
                         v-if="element?.editable"
@@ -931,7 +968,7 @@ const recent = computed(() => {
                                 </template>
                             </section>
 
-                            <section class="space-y-2">
+                            <section v-if="arranges" class="space-y-2">
                                 <h3 class="text-xs font-medium">Layout</h3>
                                 <Segmented
                                     label="Arrange contents"
@@ -944,7 +981,6 @@ const recent = computed(() => {
                                             'block',
                                             'flex',
                                             'grid',
-                                            'hidden',
                                         ])
                                     "
                                     @change="set('layout', $event)"
@@ -1137,7 +1173,7 @@ const recent = computed(() => {
                                 </label>
                             </section>
 
-                            <section class="space-y-2">
+                            <section v-if="hasWords" class="space-y-2">
                                 <h3 class="text-xs font-medium">Text</h3>
                                 <StepSlider
                                     id="property-text_size"

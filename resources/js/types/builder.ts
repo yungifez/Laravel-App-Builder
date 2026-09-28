@@ -441,6 +441,8 @@ export type SelectedElement = {
     words?: string | null;
     /** Where the part's link goes as the app draws it, or null. */
     href?: string | null;
+    /** How many parts it holds, and whether it holds any words. */
+    holds?: { parts: number; words: boolean };
     /** The parts it sits in, nearest first, as the parts list names them. */
     trail?: { kind: string; words: string }[];
     /** The colours the part is drawn in now, by colour property. */
