@@ -3,6 +3,7 @@
 namespace Tests\Feature\Features;
 
 use App\Models\Project;
+use App\Models\TestObservation;
 use App\Models\User;
 use App\Projects\ProjectRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -81,5 +82,23 @@ class ProjectTest extends TestCase
         $this->actingAs(User::factory()->create())
             ->get(route('projects.show', Project::factory()->create()))
             ->assertForbidden();
+    }
+
+    public function test_the_workspace_says_how_many_tests_guard_the_app()
+    {
+        $project = Project::factory()->create();
+
+        $this->actingAs($project->owner)
+            ->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page->where('project.tests', null));
+
+        TestObservation::create(['project_id' => $project->id, 'tests' => [
+            ['id' => 'Tests\\Feature\\PlanTest::test_customers_pick_a_plan', 'file' => 'tests/Feature/PlanTest.php', 'groups' => []],
+            ['id' => 'Tests\\Feature\\PlanTest::test_plans_are_listed', 'file' => 'tests/Feature/PlanTest.php', 'groups' => []],
+        ], 'files' => []]);
+
+        $this->actingAs($project->owner)
+            ->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page->where('project.tests', 2));
     }
 }

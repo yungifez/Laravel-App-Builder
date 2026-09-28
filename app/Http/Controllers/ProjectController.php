@@ -229,6 +229,8 @@ class ProjectController extends Controller
                 'id' => $project->uuid,
                 ...$project->only('name', 'source_path'),
                 'published_at' => $this->publishedAt($project),
+                // How many of the app's own tests guard it, as last run.
+                'tests' => TestObservation::latestFor($project)?->testCount(),
             ],
             'changes' => $summarizeChanges->handle($project),
             'preview' => $describePreview->handle($project),

@@ -10,6 +10,8 @@ export type ProjectSummary = {
     name: string;
     source_path: string;
     published_at: string | null;
+    /** How many of the app's own tests guard it, as last run. */
+    tests: number | null;
 };
 
 /** One app on the owner's apps list. */

@@ -28,6 +28,7 @@ import {
     Monitor,
     MousePointerClick,
     RotateCw,
+    ShieldCheck,
     Smartphone,
     Tablet,
 } from '@lucide/vue';
@@ -966,6 +967,22 @@ function sendOnEnter(event: KeyboardEvent): void {
             </DropdownMenuContent>
         </DropdownMenu>
 
+        <!-- What guards the app, in sight while the owner works: each
+             kept change adds tests that run on every later change. -->
+        <Link
+            v-if="project.tests"
+            :href="showUnderstanding(project.id)"
+            :title="`${project.tests} ${project.tests === 1 ? 'check runs' : 'checks run'} on every change, so what works keeps working. See what they check.`"
+            class="flex h-11 shrink-0 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground tabular-nums select-none hover:bg-muted hover:text-foreground sm:h-9"
+            data-test="app-guard"
+        >
+            <ShieldCheck class="size-3.5 text-green-600" />
+            {{ project.tests }}
+            <span class="hidden sm:inline">{{
+                project.tests === 1 ? 'check' : 'checks'
+            }}</span>
+        </Link>
+
         <IdeaMenu
             v-if="ideas.current"
             :project-id="project.id"
@@ -1246,7 +1263,6 @@ function sendOnEnter(event: KeyboardEvent): void {
             <DesignPanel
                 v-if="designing"
                 class="flex-1"
-                :project-id="project.id"
                 :preview="preview"
                 :edits="edits"
                 :state="app"
@@ -1966,20 +1982,17 @@ function sendOnEnter(event: KeyboardEvent): void {
             <AppProblems
                 v-if="showing === 'problems' && !changeCopy"
                 class="min-h-0 flex-1"
-                :project-id="project.id"
                 :problems="problems"
             />
             <AppSchedule
                 v-if="showing === 'schedule' && !changeCopy"
                 class="min-h-0 flex-1"
-                :project-id="project.id"
                 :schedule="schedule"
                 @ran="router.reload({ only: ['emails', 'problems'] })"
             />
             <AppData
                 v-if="showing === 'data' && !changeCopy"
                 class="min-h-0 flex-1"
-                :project-id="project.id"
                 :data="data"
                 :rows="rows"
                 :files="files"
@@ -2005,7 +2018,6 @@ function sendOnEnter(event: KeyboardEvent): void {
             <DesignPanel
                 v-if="designing && pane === 'app'"
                 class="h-[45svh] shrink-0 rounded-lg border lg:hidden"
-                :project-id="project.id"
                 :preview="preview"
                 :edits="edits"
                 :state="app"
