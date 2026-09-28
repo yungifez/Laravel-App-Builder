@@ -176,6 +176,13 @@ class ProjectController extends Controller
                     // build on it without waiting for the rebuild.
                     'classes' => $edit->reverted_at === null ? $edit->classes_after : $edit->classes_before,
                     'revision' => $edit->reverted_at === null ? $edit->commit_sha : $edit->revert_sha,
+                    // The app's version before this edit and right after it,
+                    // so several undos in a row can each show at once.
+                    'base' => $edit->base_revision,
+                    'commit' => $edit->commit_sha,
+                    // Where a removed part was written: the edit names the
+                    // part left picked, its parent.
+                    'removed' => $edit->changes[VisualEdit::REMOVE]['from'] ?? null,
                     // Where the part is and how it looks on each side of
                     // the edit, so undo and redo show in the running app
                     // straight away.

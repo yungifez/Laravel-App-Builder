@@ -537,6 +537,11 @@ export type VisualEditSummary = {
     /** The part's classes and the app's version after this edit (or its undo). */
     classes: string;
     revision: string;
+    /** The app's version before this edit, and right after it. */
+    base: string | null;
+    commit: string | null;
+    /** Where a removed part was written. */
+    removed: string | null;
     /** Where the part is written. */
     target: string;
     /** How the part looks before and after a change to its look. */

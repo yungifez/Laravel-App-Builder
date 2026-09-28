@@ -240,6 +240,9 @@ export function useAppPreview(source: Source) {
     // The version of the app the part was moved or copied in; the new
     // place is picked once a newer version is on show.
     let movedFrom: string | null = null;
+    // Which versions of the app the page on show holds, as undo and redo
+    // left it: null while it holds the version it was built from.
+    let alike: Set<string | null> | null = null;
     // A picture the owner chose, shown from the file itself until the app
     // built with it is on show: an app built before it would show the old
     // one. The version it is saved in is known once it is saved.
@@ -565,6 +568,21 @@ export function useAppPreview(source: Source) {
             return;
         }
 
+        // Undo or redo showed newer versions at once. An app built before
+        // them would take them away for a moment while a newer one is
+        // coming, so it is skipped.
+        if (
+            alike !== null &&
+            alike.size > 0 &&
+            next.revision !== null &&
+            !holds(next.revision) &&
+            (stepping.value ||
+                steps.value.length > 0 ||
+                source.preview()?.updating === true)
+        ) {
+            return;
+        }
+
         // The new app shows these saved changes itself, and names a moved
         // part by its new place.
         saved.value = saved.value.slice(next.shows);
@@ -620,6 +638,7 @@ export function useAppPreview(source: Source) {
 
                 frames.value = [next];
                 drawnKey.value = next.key;
+                alike = null;
                 inspect();
 
                 // It listed its parts before it showed; ask again now.
@@ -644,7 +663,10 @@ export function useAppPreview(source: Source) {
         }, 50);
     }
 
-    watch([dragging, holding], swap);
+    watch(
+        [dragging, holding, stepping, () => source.preview()?.updating],
+        swap,
+    );
 
     function onMessage(event: MessageEvent): void {
         const preview = source.preview();
@@ -1000,6 +1022,7 @@ export function useAppPreview(source: Source) {
             }
 
             if (frames.value.length === 0) {
+                alike = null;
                 frames.value = [
                     {
                         key: ++frameKeys,
@@ -1746,6 +1769,46 @@ export function useAppPreview(source: Source) {
         return edit;
     });
 
+    // Versions of the app that hold the same thing: an undone change's
+    // version and the version before that change, or a redone change's
+    // new version and the one it first made.
+    const same = new Map<string, string>();
+
+    function find(revision: string): string {
+        let at = revision;
+
+        while (same.has(at) && same.get(at) !== at) {
+            at = same.get(at) as string;
+        }
+
+        return at;
+    }
+
+    function join(one: string | null, other: string | null): void {
+        if (one !== null && other !== null && find(one) !== find(other)) {
+            same.set(find(one), find(other));
+        }
+    }
+
+    // Whether the page on show holds a version of the app.
+    function holds(revision: string | null): boolean {
+        if (revision === null) {
+            return false;
+        }
+
+        for (const edit of source.edits()) {
+            if (edit.reverted_at !== null) {
+                join(edit.revision, edit.base);
+            }
+        }
+
+        const shown = alike ?? new Set([frames.value[0]?.revision ?? null]);
+
+        return [...shown].some(
+            (held) => held !== null && find(held) === find(revision),
+        );
+    }
+
     // Take an edit back, or put it back, in the running app straight away.
     // The server follows, one step at a time.
     function claim(edit: VisualEditSummary, key: Step): void {
@@ -1774,17 +1837,41 @@ export function useAppPreview(source: Source) {
 
         claims.value.set(edit.id, { undone: key === 'undo', shown });
 
+        // Whether the app on show holds the version this step starts from:
+        // right after the change to undo it, or right before it to redo it.
+        // Only then are parts where the change left them.
+        const ready =
+            key === 'undo'
+                ? holds(edit.revision) || holds(edit.commit)
+                : holds(edit.revision) || holds(edit.base);
+
+        // Once this step shows, the app holds the version on its other side,
+        // so the next step can show at once too. A part added, taken out or
+        // moved shifts where the parts after it are written, so the places
+        // the app knows its parts by hold only until it is rebuilt.
+        const after = key === 'undo' ? edit.base : edit.commit;
+        const shifts = ['duplicate', 'add', 'remove', 'move'].includes(
+            edit.kind,
+        );
+        alike = new Set(ready && !shifts && after !== null ? [after] : []);
+
         // A copy undone, or a part removed again, goes at once while the app
         // is the version right after it, where the part is still at its place.
         if (
             ((key === 'undo' &&
                 (edit.kind === 'duplicate' || edit.kind === 'add')) ||
                 (key === 'redo' && edit.kind === 'remove')) &&
-            frames.value[0]?.revision === edit.revision
+            ready &&
+            (edit.kind !== 'remove' || edit.removed !== null)
         ) {
+            // A removal names the part left picked; the part itself is
+            // where it was written.
             post({
                 type: 'take',
-                location: { kind: 'any', value: edit.target },
+                location: {
+                    kind: 'any',
+                    value: edit.kind === 'remove' ? edit.removed : edit.target,
+                },
                 edit: edit.id,
             });
 
@@ -1802,7 +1889,7 @@ export function useAppPreview(source: Source) {
             key === 'undo' &&
             edit.kind === 'move' &&
             by !== undefined &&
-            frames.value[0]?.revision === edit.revision
+            ready
         ) {
             post({
                 type: 'budge',
@@ -1820,11 +1907,7 @@ export function useAppPreview(source: Source) {
             chosen = null;
         }
 
-        if (
-            edit.kind === 'picture' &&
-            picture !== null &&
-            frames.value[0]?.revision === edit.revision
-        ) {
+        if (edit.kind === 'picture' && picture !== null && ready) {
             post({
                 type: 'picture',
                 location: { kind: 'any', value: edit.target },
@@ -1840,7 +1923,7 @@ export function useAppPreview(source: Source) {
                 (key === 'redo' &&
                     (edit.kind === 'duplicate' || edit.kind === 'add'))) &&
             spot != null &&
-            frames.value[0]?.revision === edit.revision
+            ready
         ) {
             post({ type: 'put', spot });
             post({ type: 'outline' });
@@ -1981,6 +2064,14 @@ export function useAppPreview(source: Source) {
             preserveState: true,
             onSuccess: () => {
                 claims.value.delete(edit.id);
+
+                // A redone change is made again as a new version.
+                const now = source.edits().find((one) => one.id === edit.id);
+
+                if (next.key === 'redo' && now !== undefined) {
+                    join(now.commit, edit.commit);
+                }
+
                 last.value = null;
                 head.value = null;
                 known.value = null;

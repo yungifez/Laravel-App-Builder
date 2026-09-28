@@ -99,6 +99,9 @@ class VisualPartsTest extends TestCase
         $this->assertSame('remove', $edit->kind());
         $this->assertSame([2, 5], [$edit->line, $edit->column]);
 
+        $this->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('edits.0.removed', self::FILE.':3:9'));
+
         $this->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
         $this->assertSame(self::CARD, $this->file());
     }
@@ -121,7 +124,9 @@ class VisualPartsTest extends TestCase
         $this->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page
                 ->hasFlash('moved', ['target' => self::FILE.':4:9', 'instance' => false])
-                ->where('edits.0.kind', 'add'));
+                ->where('edits.0.kind', 'add')
+                ->where('edits.0.base', $edit->base_revision)
+                ->where('edits.0.commit', $edit->commit_sha));
 
         $this->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
         $this->assertSame(self::CARD, $this->file());
