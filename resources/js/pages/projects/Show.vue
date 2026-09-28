@@ -23,6 +23,7 @@ import {
     ChevronDown,
     ExternalLink,
     ImagePlus,
+    Lock,
     MessageSquare,
     Monitor,
     MousePointerClick,
@@ -97,6 +98,7 @@ import type {
     AppService,
     ProjectTelemetry,
     SentEmail,
+    AppPage,
     AppProblem,
     SavedRows,
     ScheduledTask,
@@ -124,6 +126,7 @@ const props = defineProps<{
     rows?: SavedRows | null;
     schedule?: ScheduledTask[] | null;
     files?: StoredFile[] | null;
+    pages?: AppPage[] | null;
 }>();
 
 // The left panel talks about changes (Chat) or changes how the app looks
@@ -388,6 +391,13 @@ const showingTabs = computed(() => [
     { key: 'data' as const, label: 'Saved data', count: 0 },
     { key: 'schedule' as const, label: 'Schedule', count: 0 },
 ]);
+
+// Any page of the app is one pick away, as in a browser's address bar,
+// read from the app when the owner looks.
+function openPage(path: string): void {
+    showing.value = 'app';
+    app.follow(path);
+}
 
 // A link in an email opens its page in the app.
 function openFromEmail(href: string): void {
@@ -1728,12 +1738,64 @@ function sendOnEnter(event: KeyboardEvent): void {
                     >
                         <RotateCw class="size-4" />
                     </Button>
-                    <span
-                        class="ml-1 hidden max-w-48 truncate text-xs text-muted-foreground sm:block"
-                        :title="app.path"
-                        data-test="preview-path"
-                        >{{ app.path === '/' ? 'Home' : app.path }}</span
+                    <DropdownMenu
+                        @update:open="
+                            (open) => open && router.reload({ only: ['pages'] })
+                        "
                     >
+                        <DropdownMenuTrigger as-child>
+                            <button
+                                type="button"
+                                class="ml-1 hidden h-9 max-w-48 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground sm:flex"
+                                :title="app.path"
+                                data-test="preview-path"
+                            >
+                                <span class="truncate">{{
+                                    app.path === '/' ? 'Home' : app.path
+                                }}</span>
+                                <ChevronDown class="size-3.5 shrink-0" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                            align="start"
+                            class="max-h-80 w-64 overflow-y-auto"
+                            data-test="preview-pages"
+                        >
+                            <p
+                                v-if="pages === undefined"
+                                class="px-2 py-1.5 text-xs text-muted-foreground"
+                            >
+                                Looking for pages…
+                            </p>
+                            <p
+                                v-else-if="!pages?.length"
+                                class="px-2 py-1.5 text-xs text-muted-foreground"
+                            >
+                                No pages to open by their address.
+                            </p>
+                            <DropdownMenuItem
+                                v-for="page in pages ?? []"
+                                :key="page.path"
+                                :data-test="`preview-page-${page.path}`"
+                                @select="openPage(page.path)"
+                            >
+                                <span class="min-w-0 flex-1">
+                                    <span class="block truncate">{{
+                                        page.words
+                                    }}</span>
+                                    <span
+                                        class="block truncate text-xs text-muted-foreground"
+                                        >{{ page.path }}</span
+                                    >
+                                </span>
+                                <Lock
+                                    v-if="page.signed_in"
+                                    class="size-3.5 shrink-0 text-muted-foreground"
+                                    aria-label="Only when signed in"
+                                />
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </div>
                 <div
                     v-if="!changeCopy"

@@ -1633,6 +1633,11 @@ reads the preview's workspace, so the app itself does not change.
   until it runs next. "Run it now" runs one at once (`schedule:test`), so
   a daily reminder email can be tried without waiting a day. What it sent
   or ran into shows in the other tabs.
+- **Pages** (built). The address beside Back and Forward opens a list of
+  the app's pages, read through the app itself (`route:list`): each web
+  address that needs nothing filled in, with a lock when a visitor must
+  sign in. Picking one opens it in the app on show. Framework addresses
+  that answer with data, not a page, are left out.
 - **Jobs** need no tab while previews run queued work at once
   (`QUEUE_CONNECTION=sync`).
 
