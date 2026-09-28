@@ -153,7 +153,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
     handles.move.title = 'Drag to move it';
     handles.move.addEventListener('pointerenter', () => {
         handles.move.title =
-            selected && snaps(selected)
+            selected && keepsPlace(selected)
                 ? 'Drag to put it in another place'
                 : 'Drag to move it';
     });
@@ -885,7 +885,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
 
             // A part with a place in a row or a grid is dragged from one
             // place to another, as dragging the part itself does.
-            if (kind === 'move' && snaps(selected)) {
+            if (kind === 'move' && keepsPlace(selected)) {
                 pressed = { x: event.clientX, y: event.clientY };
 
                 return;
@@ -1083,6 +1083,12 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         element.parentElement !== null &&
         /flex|grid/.test(getComputedStyle(element.parentElement).display) &&
         siblings(element).length > 0;
+
+    // Whether the move handle and the arrow keys keep such a part to its
+    // places. The owner can turn this off to place it anywhere, shifted
+    // from where the layout puts it.
+    let moveFreely = false;
+    const keepsPlace = (element) => !moveFreely && snaps(element);
 
     let pressed = null;
     let reorder = null;
@@ -1591,7 +1597,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                 arrows[key] &&
                 selected &&
                 handlesOn &&
-                (event.altKey || snaps(selected))
+                (event.altKey || keepsPlace(selected))
             ) {
                 // Alt and an arrow, or an arrow on a part in a row or a
                 // grid, move the part before or after the one next to it.
@@ -1836,6 +1842,10 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                 String(1 / (Number(message.zoom) || 1)),
             );
             placeFrame();
+        }
+
+        if (message.type === 'free') {
+            moveFreely = Boolean(message.enabled);
         }
 
         if (message.type === 'handles') {

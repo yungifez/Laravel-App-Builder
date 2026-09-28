@@ -93,6 +93,9 @@ const SAVE_AFTER_MS = 700;
 /** Where the owner's fine tune choice is kept in this browser. */
 const FINE_KEY = 'builder.design.fine';
 
+/** Where the owner's choice to move parts freely is kept in this browser. */
+const FREE_KEY = 'builder.design.free';
+
 function remembered(key: string): boolean {
     try {
         return window.localStorage.getItem(key) === '1';
@@ -207,6 +210,11 @@ export function useAppPreview(source: Source) {
     const known = ref<InspectedElement | null>(null);
     // Whether numbers are free instead of snapped to the scale.
     const fine = ref(typeof window !== 'undefined' && remembered(FINE_KEY));
+    // A part in a row or a grid keeps to its places when moved, unless the
+    // owner chose to place parts anywhere.
+    const moveFreely = ref(
+        typeof window !== 'undefined' && remembered(FREE_KEY),
+    );
     // The app's own theme colours as it draws them, by token, so a swatch
     // shows the colour the app will really get.
     const theme = ref<Record<string, string>>({});
@@ -650,6 +658,8 @@ export function useAppPreview(source: Source) {
             post({ type: 'handles', enabled: editable.value }, to);
         }
 
+        post({ type: 'free', enabled: moveFreely.value }, to);
+
         showUnshown(to);
 
         if (source.designing.value) {
@@ -1038,6 +1048,16 @@ export function useAppPreview(source: Source) {
     watch(fine, (value) => {
         try {
             window.localStorage.setItem(FINE_KEY, value ? '1' : '0');
+        } catch {
+            // Not kept: the choice lasts until the page closes.
+        }
+    });
+
+    watch(moveFreely, (value) => {
+        post({ type: 'free', enabled: value });
+
+        try {
+            window.localStorage.setItem(FREE_KEY, value ? '1' : '0');
         } catch {
             // Not kept: the choice lasts until the page closes.
         }
@@ -2452,6 +2472,7 @@ export function useAppPreview(source: Source) {
         nudge,
         hold,
         fine,
+        moveFreely,
         theme,
         zoom,
         dragging,

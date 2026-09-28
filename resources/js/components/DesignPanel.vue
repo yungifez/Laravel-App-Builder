@@ -418,10 +418,12 @@ watch(
 );
 
 // A part in a row or a grid moves from place to place there, so shifting
-// it by some pixels is offered only to undo a shift it already has.
+// it by some pixels is offered only when the owner chose to move parts
+// anywhere, or to undo a shift it already has.
 const shifts = computed(
     () =>
         !props.state.selected?.snaps ||
+        props.state.moveFreely ||
         props.state.valueOf('translate_x') != null ||
         props.state.valueOf('translate_y') != null,
 );
@@ -1650,6 +1652,28 @@ const recent = computed(() => {
                                         {{ wayLooks[move.way].name }}
                                     </Button>
                                 </div>
+                                <!-- Kept to its places by default, so the layout
+                                     stays as it was made; the owner can still
+                                     place it anywhere. -->
+                                <Segmented
+                                    v-if="state.selected.snaps"
+                                    label="How it moves"
+                                    caption="Moves"
+                                    :value="
+                                        state.moveFreely ? 'free' : 'places'
+                                    "
+                                    :options="[
+                                        {
+                                            value: 'places',
+                                            label: 'Beside others',
+                                        },
+                                        { value: 'free', label: 'Anywhere' },
+                                    ]"
+                                    data-test="move-freely"
+                                    @change="
+                                        state.moveFreely = $event === 'free'
+                                    "
+                                />
                                 <label class="flex items-center gap-3">
                                     <span
                                         class="w-14 text-xs text-muted-foreground"
