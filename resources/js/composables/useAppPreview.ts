@@ -240,6 +240,14 @@ export function useAppPreview(source: Source) {
     // The version of the app the part was moved or copied in; the new
     // place is picked once a newer version is on show.
     let movedFrom: string | null = null;
+    // A picture the owner chose, shown from the file itself until the app
+    // built with it is on show: an app built before it would show the old
+    // one. The version it is saved in is known once it is saved.
+    let chosen: {
+        location: { kind: string; value: string };
+        picture: File;
+        revision: string | null;
+    } | null = null;
     // Words the owner wrote in a new part before it was saved, and where
     // the new part is once it is: they are kept when the app shows it.
     let fresh: { text: string; before: string; at: string | null } | null =
@@ -572,6 +580,21 @@ export function useAppPreview(source: Source) {
         }
 
         setUp(to);
+
+        // A chosen picture shows in an app built before it was saved; the
+        // app built with it shows it itself.
+        if (chosen !== null && next.revision === chosen.revision) {
+            chosen = null;
+        } else if (chosen !== null) {
+            post(
+                {
+                    type: 'picture',
+                    location: chosen.location,
+                    picture: chosen.picture,
+                },
+                to,
+            );
+        }
 
         // Words written in a new part show in the new app before it does.
         const part = selected.value;
@@ -1560,6 +1583,13 @@ export function useAppPreview(source: Source) {
         saveError.value = null;
         post({ type: 'picture', picture });
 
+        const newest = source.edits()[0]?.id ?? 0;
+        const place = location();
+        chosen =
+            place === null
+                ? null
+                : { location: place, picture, revision: null };
+
         router.post(
             VisualPictureController.store.url(source.projectId()),
             {
@@ -1579,10 +1609,21 @@ export function useAppPreview(source: Source) {
                     last.value = null;
                     head.value = null;
                     known.value = null;
+
+                    const edit = source.edits()[0];
+
+                    if (chosen?.picture === picture) {
+                        chosen =
+                            edit !== undefined && edit.id > newest
+                                ? { ...chosen, revision: edit.revision }
+                                : null;
+                    }
+
                     inspect();
                 },
                 onError: (errors) => {
                     saveError.value = Object.values(errors)[0] ?? null;
+                    chosen = null;
                     // The app shows the owner's file already: take it back.
                     reload();
                 },
@@ -1774,6 +1815,10 @@ export function useAppPreview(source: Source) {
         // A new picture, or the one it replaced, shows at once, while the
         // app is the version the picture is at its place in.
         const picture = key === 'undo' ? edit.picture_before : edit.picture;
+
+        if (edit.kind === 'picture') {
+            chosen = null;
+        }
 
         if (
             edit.kind === 'picture' &&

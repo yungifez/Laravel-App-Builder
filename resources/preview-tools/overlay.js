@@ -1668,6 +1668,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         // the rebuilt app shows the kept file.
         if (
             message.type === 'picture' &&
+            !message.location &&
             selected instanceof HTMLImageElement &&
             message.picture instanceof Blob
         ) {
@@ -1678,6 +1679,21 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             selected.addEventListener('load', () => placeFrame(), {
                 once: true,
             });
+        }
+
+        // A chosen picture not saved in this app yet: the builder names
+        // where it is, as the owner may have picked another part since.
+        if (
+            message.type === 'picture' &&
+            message.location &&
+            message.picture instanceof Blob
+        ) {
+            for (const image of matching(message.location)) {
+                if (image instanceof HTMLImageElement) {
+                    image.removeAttribute('srcset');
+                    image.src = URL.createObjectURL(message.picture);
+                }
+            }
         }
 
         // A picture undone or redone: the file it showed, as the app serves
