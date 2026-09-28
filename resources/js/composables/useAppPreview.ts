@@ -1191,6 +1191,7 @@ export function useAppPreview(source: Source) {
                 before: was,
                 text: words,
                 revision: head.value ?? element.value?.revision,
+                places: part.places ?? [],
             },
             {
                 only: ['edits', 'preview'],
@@ -1406,6 +1407,16 @@ export function useAppPreview(source: Source) {
                 location: { kind: 'any', value: edit.target },
                 text: words,
             });
+
+            // Words written in another file are not where the part is, so
+            // the part the owner picked is put right by what it shows.
+            const part = selected.value;
+            const shownNow = key === 'undo' ? edit.words : edit.words_before;
+
+            if (part !== null && part.words === shownNow) {
+                post({ type: 'words', text: words });
+                selected.value = { ...part, words, text: words.slice(0, 80) };
+            }
         }
 
         if (shown !== null) {

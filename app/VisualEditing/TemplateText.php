@@ -43,6 +43,31 @@ class TemplateText
     }
 
     /**
+     * Get what the element shows when it is a single `{{ }}` that names a
+     * value (`title`, `item.title`) or looks up a translation (`__('Log
+     * in')`): those words are written somewhere else as they are.
+     */
+    public static function named(string $contents, TemplateElement $element): ?string
+    {
+        if ($element->selfClosing($contents)) {
+            return null;
+        }
+
+        $close = strpos($contents, '</'.$element->tag, $element->end);
+        $inner = $close === false ? '' : trim(substr($contents, $element->end, $close - $element->end));
+
+        if (preg_match('/^\{\{\s*(.+?)\s*\}\}$/s', $inner, $match) !== 1) {
+            return null;
+        }
+
+        $name = '[A-Za-z_$][\w$]*';
+        $plain = preg_match('/^'.$name.'(?:\??\.'.$name.')*$/', $match[1]) === 1;
+        $translated = preg_match('/^(?:__|\$t|trans|t)\(\s*([\'"])[^\'"\\\\]*\1\s*\)$/', $match[1]) === 1;
+
+        return $plain || $translated ? $match[1] : null;
+    }
+
+    /**
      * Get written words as the page shows them: runs of white space as one
      * space, and entities such as "&amp;" as the character.
      */

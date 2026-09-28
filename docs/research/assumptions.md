@@ -319,3 +319,14 @@ them and correct any that are wrong.
   here, and the thing itself through a request. Editing one item of a list
   on its own is not offered: that needs a condition in the code, so it
   goes through a request. Only Vue templates are read; Blade views are not.
+- 2026-09-27 — Words a part shows through one `{{ }}` are changed where
+  they are written. A heading that shows `{{ title }}` gets its words from
+  a component's attribute (`title="Settings"`), a page's script
+  (`layout: { title: 'Log in' }`) or a translation call (`__('Save')`).
+  The preview sends the page files it drew, nearest first. The words are
+  changed in the first file that writes them exactly once as a whole
+  quoted string. Words written twice in that file are refused, because the
+  builder cannot tell which one shows. The browser tab's title (`<Head>`,
+  `<title>`) is skipped, because it is never drawn on the page. Words with
+  the quote, a backslash or a line break go through a request. Only `.vue`
+  files are searched. Undo and redo swap the words in that file.

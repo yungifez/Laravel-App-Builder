@@ -21,6 +21,7 @@ class VisualTextController extends Controller
             $request->validated('before'),
             trim($request->validated('text')),
             $request->validated('revision'),
+            $request->places(),
         );
 
         return back();

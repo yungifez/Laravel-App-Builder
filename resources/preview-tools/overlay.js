@@ -421,6 +421,37 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         loop: element.hasAttribute('data-builder-loop'),
         when: element.getAttribute('data-builder-when'),
         drawnBy: drawnByCode(element),
+        // The files the page is drawn from: those the part sits in, nearest
+        // first, then the rest. Words shown through "{{ }}" are often
+        // written in one of them.
+        places: (() => {
+            const files = [];
+            const add = (stamp) => {
+                const file = stamp?.replace(/:\d+:\d+$/, '');
+
+                if (file && !files.includes(file)) {
+                    files.push(file);
+                }
+            };
+
+            for (
+                let around = element;
+                around;
+                around = located(around.parentElement)
+            ) {
+                add(around.getAttribute('data-builder-source'));
+                add(around.getAttribute('data-builder-instance'));
+            }
+
+            for (const other of document.querySelectorAll(
+                '[data-builder-source],[data-builder-instance]',
+            )) {
+                add(other.getAttribute('data-builder-source'));
+                add(other.getAttribute('data-builder-instance'));
+            }
+
+            return files.slice(0, 40);
+        })(),
         tag: element.tagName.toLowerCase(),
         // What it holds, so the builder offers only the choices that do
         // something: arranging needs parts inside, text needs words.

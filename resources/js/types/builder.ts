@@ -460,6 +460,9 @@ export type SelectedElement = {
     /** The tag of what the owner clicked inside it that code draws, not
      * the app's templates, as "canvas"; null when there is none. */
     drawnBy?: string | null;
+    /** The files the page is drawn from, nearest first, where words shown
+     * through "{{ }}" may be written. */
+    places?: string[];
 };
 
 /** How a part is drawn now, as the preview measures it. */

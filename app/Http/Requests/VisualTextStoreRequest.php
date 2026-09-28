@@ -42,6 +42,10 @@ class VisualTextStoreRequest extends FormRequest
             // A template would read "{{" as code.
             'text' => ['required', 'string', 'max:2000', 'not_regex:/\{\{|\}\}/'],
             'revision' => ['required', 'string', 'regex:/^[0-9a-f]{40,64}$/'],
+            // The files the page is drawn from, nearest first, where words
+            // shown through "{{ }}" may be written.
+            'places' => ['nullable', 'list', 'max:40'],
+            'places.*' => ['string', 'max:300', 'regex:/^(?!\/)(?!.*\.\.)[\w@.\/-]+\.vue$/'],
         ];
     }
 
@@ -82,6 +86,16 @@ class VisualTextStoreRequest extends FormRequest
     public function preview(): Preview
     {
         return Preview::query()->whereKey($this->validated('preview'))->firstOrFail();
+    }
+
+    /**
+     * Get the files the page is drawn from, nearest first.
+     *
+     * @return list<string>
+     */
+    public function places(): array
+    {
+        return array_values($this->validated('places') ?? []);
     }
 
     /**
