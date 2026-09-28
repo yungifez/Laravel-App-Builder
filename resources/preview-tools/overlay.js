@@ -269,6 +269,8 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             return;
         }
 
+        tellNeighbours();
+
         const m = measure(selected);
         const [pt, pr, pb, pl] = m.padding;
         const [bt, br, bb, bl] = m.border;
@@ -776,6 +778,27 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             : null;
     };
 
+    // Which way the parts beside the selected one lie, for the panel's
+    // move buttons. The page may still be settling when a part is chosen:
+    // styles, fonts and pictures arrive and a row can start as a column.
+    // So it is told again whenever the frame is placed and the answer
+    // changed.
+    let toldWays = null;
+    const tellNeighbours = () => {
+        if (!selected) {
+            return;
+        }
+
+        const earlier = way(selected, neighbour(selected, -1));
+        const later = way(selected, neighbour(selected, 1));
+        const now = `${earlier} ${later}`;
+
+        if (now !== toldWays) {
+            toldWays = now;
+            send({ type: 'neighbours', earlier, later });
+        }
+    };
+
     const resized =
         typeof ResizeObserver === 'function'
             ? new ResizeObserver(() => placeFrame())
@@ -797,13 +820,8 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             send({ type: 'select', element: describe(element) });
         }
 
-        if (element) {
-            send({
-                type: 'neighbours',
-                earlier: way(element, neighbour(element, -1)),
-                later: way(element, neighbour(element, 1)),
-            });
-        }
+        toldWays = null;
+        tellNeighbours();
     };
 
     // What a drag on each handle changes, from where the pointer started.
@@ -1620,6 +1638,9 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         true,
     );
     window.addEventListener('resize', refresh);
+    // Late styles, pictures and fonts move parts after the page first draws.
+    window.addEventListener('load', refresh);
+    void document.fonts?.ready.then(refresh);
 
     // Scroll back to where the owner was before the app reloaded. The page
     // may still be drawing, so keep trying for a moment until it is tall
