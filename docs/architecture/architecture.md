@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 30.** This document consolidates the direction in [direction/](direction/)
+**Version 31.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -78,6 +78,11 @@ data forward with a migration before it keeps an old way alongside the new one.
 The owner sees this as a switch and can set it either way. Version 30 adds
 ready-made services ([§17](#outside-services-and-their-keys)): the owner pastes
 the keys for payments or email, and the app is changed to use them.
+Version 31 puts every worker, ours or the owner's own Claude Code or Codex,
+behind one boundary ([direction 31](direction/31-external-workers.md),
+[§11](#workers-one-boundary-for-ours-and-theirs)): a brief that is written
+to be read, and a few MCP tools scoped to one change by a token. The secret
+is our machinery, not the owner's knowledge of their own app.
 When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
@@ -995,9 +1000,10 @@ dimensions match the work.
 Application essentials form a stable prefix, cached per commit and context
 version. No embeddings or retrieval system in V0: the scope hierarchy is the
 retrieval strategy until an experiment shows it is not enough. The agent can
-still query more through MCP (`context.query`, `introspect.query`,
-`capability.describe`, `transform.apply`, `package.request`, `verify.run`) and
-explore the repository freely; the pack guides, it never imprisons.
+still ask for more through the worker tools
+([§11](#workers-one-boundary-for-ours-and-theirs)) and explore the repository
+freely; the pack guides, it never imprisons. The pack reaches the worker as
+compiled text only: what was included and why stays with us.
 
 The deeper engineering graph for a task is still built on demand in the runtime
 by `builder/introspect --around=<behavior-key>` and discarded after the run.
@@ -1286,6 +1292,179 @@ grades its own work.
 - **Hand-offs between stages and providers** happen only through structured
   artifacts and commits (plan, brief, behaviour diff, verification results),
   never raw transcripts.
+
+### Workers: one boundary for ours and theirs
+
+A **worker** is anything that writes the code for one change: our Claude or
+Codex agent in a box, the owner's own Claude Code or Codex on their machine,
+or a developer they hire. All workers sit outside the control plane and get
+the same thing: one brief, a few task-scoped tools, and a place to hand the
+change back ([direction 31](direction/31-external-workers.md)).
+
+**Assume the worker's human reads everything.** The brief, the tool names,
+every tool answer and our working rules can be read by the person who runs
+the worker. So nothing that would do harm when read goes to a worker. The
+moat is not a secret prompt. It is what the brief is compiled from and what
+happens after the hand-off: the project's accumulated understanding, the
+choice of what matters for this change, the deterministic engines, and the
+verification that the worker cannot edit. A competitor who learns that briefs
+have "goal, preserve, verify" has learned nothing that they can use.
+
+**What is secret, what is compiled, what is open.** The owner's knowledge
+about their own app is the owner's data, not our secret. The builder already
+shows it to them, and it is in every workspace today. Hiding it from their
+own worker gains nothing. The secrets are our machinery and other customers.
+
+| Kind                                                       | In this codebase                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Server only**                                            | Routing: adapter order, models, light models, effort, circuit and prices (`config/builder.php`). The planner's and reviewer's instructions (`app/Ai/Agents`). Decision-model probabilities, confidence and thresholds (`Decision`). What the compiler included and why (`ContextPack` `included`, `outline`, `problems`). How Effects are counted and when they appear. Run telemetry and cost (`run_events`). Other runs, other projects, other customers. |
+| **Compiled output** (made for this task, then handed over) | The goal and the owner's request. What the app does now. Preserve and verify items. The notes of the target areas, their tests and "may also affect" hints with a reason in words. The names of the other areas. Decisions already made that apply. The files to look at.                                                                                                                                                                                   |
+| **Open on purpose** (being open builds trust)              | The tests that must pass. Verification results with their output. Review findings, sent back as problems to fix. Why a question goes to the owner, and the owner's answer. The assumptions the change makes.                                                                                                                                                                                                                                                |
+
+Worker text uses neutral words: area, rule, decision, check, "may also
+affect". It never uses Effect, Context Compiler, capability, confidence or
+score, and it never names a builder or a platform
+([§19](#19-learning-and-privacy)). A hint says why it matters ("the booking
+tests run this code too"), never a number.
+
+**Critique of the proposed Worker Gateway.** A separate gateway service is
+not needed. Each of its duties already has a Laravel home:
+
+| Duty                    | Where it lives                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------- |
+| Check the active task   | The token belongs to one `Run`. A tool refuses when the run is not `implementing`.                |
+| Enforce scope           | No tool takes an id, a project or a path to data. The scope is the token's run.                   |
+| Clean the answers       | Tools return text made by one renderer (the brief's). They never return models, arrays or config. |
+| Rate limit              | A named `RateLimiter` per token.                                                                  |
+| Record requests         | Each call is a `RunEvent` (`worker_query`), in the log that runs already keep.                    |
+| Strip internal metadata | Nothing internal is loaded into an answer in the first place.                                     |
+
+So the "gateway" is one route group: a `laravel/mcp` server, behind
+`auth:sanctum` and `throttle`. Each tool is a thin wrapper over an existing
+action. This is the first-party way, and it keeps the boundary small enough
+to review.
+
+**Agnostic by design.** Claude Code and Codex both read a task file and both
+call MCP servers over HTTP. So the boundary is exactly two things:
+
+1. **The brief as a Markdown file.** Today it is `buildPrompt` plus
+   `workingRules` in `task.json` (`.git/agent-task`). It becomes `TASK.md`
+   there, rendered from `Plan` and `ContextPack`. It also answers the
+   `get_task` tool, for a worker that has no file.
+2. **The MCP tools below.** No tool is shaped for one vendor.
+
+Our own agents become the first external worker. The runner in the box gets
+the same brief and a token for the same tools. So the boundary is tested on
+every run, not only when an owner connects Claude Code. Adapters then differ
+only in how they start the agent, resume it and read its usage
+([§11 Adapters](#adapters)).
+
+**The first tools (minimum for the experiment).**
+
+| Tool                                           | Does                                                                                                                                                                                                                                                                                                           | Reuses                                                       |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `get_task`                                     | Returns the brief, with the owner's answers so far and the problems from the last check.                                                                                                                                                                                                                       | `Plan`, `CompileContext`, `buildPrompt`, `Run::$feedback`    |
+| `ask_about_product(question, area?)`           | Answers from the notes of the task's areas. A named area outside the task is an **expansion**: only its rules and decisions are returned, capped, and the expansion is logged. No model in the first experiment: it returns the matching sections of the notes.                                                | `ProjectContext`, `ProjectNotes`                             |
+| `ask_owner(question, options, recommendation)` | Stops for the owner. This is the existing question flow: the run goes to `needs_user_decision` and the owner answers in the builder. The worker calls `get_task` later for the answer. The worker never records product truth: the answer is kept by us and reaches the notes only through an accepted change. | `Run::$question`, `question_limit`, `answers`                |
+| `submit_change(patch, summary, assumptions)`   | Takes a diff against the base commit in the brief. We apply it in our own workspace, then run our verification and review. The checks the worker says it ran are for information only.                                                                                                                         | `ApplyPatch`, `ExtractCandidateChange`, verification, review |
+| `check_status`                                 | Says where the change is. When a check failed, it gives the problems to fix, in the same words as `Run::$feedback`.                                                                                                                                                                                            | `CompleteRunVerification`                                    |
+
+After the first experiment: `preview_activity` (emails sent and problems met,
+from the preview of the submitted change) and `open_preview` (a single-use
+grant link). There is no `list_*`, `search_*` or `dump_*` tool, and none is
+planned.
+
+**Authorization.** Sanctum personal access tokens, with the `Run` as the
+tokenable model (`HasApiTokens` on `Run`). This adds one table:
+`personal_access_tokens`.
+
+- **Abilities:** `task:read`, `task:ask` and `task:submit`.
+- **Expiry:** the run's minute budget (`construction.budgets.minutes`). The
+  token is revoked when the run leaves `implementing`, is cancelled or ends.
+- **Box runs:** the runner gets the token in its environment, like the
+  provider keys, never in `task.json`. The box runner's own token
+  (`AuthenticateRunner`) stays separate. It opens that runner's commands, not
+  the tools.
+- **Local Claude Code or Codex:** this is power-user depth
+  ([§3](#3-users-and-progressive-disclosure)). The owner picks "Work on this
+  yourself" on a change. We show the token once, inside ready-to-paste
+  commands: `claude mcp add --transport http …` with an `Authorization`
+  header, and the matching `codex` MCP settings. The worker never gets the
+  owner's session, password, account token or provider keys, and the token
+  opens only this one change.
+
+**Why no one can enumerate.** A token reaches one run, so one project and one
+line of work. No tool takes an identifier, so there is nothing to walk. An
+expansion returns one named area's rules and decisions, capped, and at most
+`workers.expansions` per run. Every call is logged and throttled. No query
+can reach another project, and tests prove it. Inside the project, a worker
+can at most rebuild the notes the owner can already read. For a hired
+developer who is not the owner, the workspace gets only the target areas'
+notes, not the whole `.product-notes` copy.
+
+**Models, values and runtime state.**
+
+- **Models (existing):** `Run` is the task. `FeatureRequest` is the change.
+  `Workspace`, `Preview` and `Verification` stay as they are.
+- **Models (new):** only the Sanctum token table.
+- **Worker queries:** `RunEvent`s. They need no new table.
+- **Values:** `Plan`, `ContextPack` and a brief renderer are readonly values.
+  The renderer is the only code that writes worker text, so it is the one
+  place to review and to lint.
+- **Runtime state:** MCP sessions and agent sessions. A repair pass resumes
+  the agent's own session (Claude `resume`, Codex `resumeThread`) and sends
+  only the problems to fix. When the session is gone, the agent starts fresh
+  with the whole brief.
+
+**Local and remote.** The brief names the base commit. The worker hands back
+a patch, not a push, so it needs no git credential. We apply the patch
+three-way in our workspace. A conflict goes back as a problem to fix. Our
+repository, branch and credentials never leave the control plane
+([§11 Adapters](#adapters)). The preview of a submitted change is an ordinary
+preview of our workspace ([§15](#15-previews)). A local worker may also run
+the app on its own machine, but only our preview and verification count.
+
+**Query logs improve the compiler.** Each `worker_query` records the area
+asked about and whether it was in the brief. When questions keep reaching an
+area that the brief left out, the area was a missed target. These counts are
+candidates for `CompileContext`, reviewed like any other rule
+([§19](#19-learning-and-privacy)). The same count is a cost signal: every
+question means a round trip that a better brief would save
+([§25.2](#252-the-economic-metric-cost-per-accepted-change)).
+
+**Not now (over-engineering at this stage):**
+
+- a separate gateway service or process;
+- OAuth or a device flow (Passport) for workers;
+- signed capability tokens of our own;
+- graph or embedding queries;
+- a model that answers product questions;
+- a field-level redaction engine;
+- a git server or proxy for local workers;
+- streaming preview traces.
+
+Each comes back only when the experiment shows the need.
+
+**Testable now, with what exists.**
+
+- A Sanctum token on a `Run` opens its tools, and a token of another run, of
+  another project or of a finished run is refused.
+- `laravel/mcp`'s test helpers call each tool.
+- The fake runner (`tests/Fixtures/fake-agent-runner.mjs`) submits a patch,
+  and verification runs on it.
+- A **brief lint** fails the build when worker text contains a forbidden word
+  (builder, platform, control plane, a configured model id, confidence,
+  score, Effect) or any internal field.
+- `worker_query` events are recorded.
+
+**Status.** Not built. Today our agents get the brief and the working rules
+inside `task.json`, and there are no tools. The first slice:
+
+1. Render the brief to `TASK.md`, and add the brief lint.
+2. Add the Sanctum token on `Run` and the MCP server with `get_task` and
+   `submit_change`.
+3. Point our own runner at it.
+4. Then add `ask_about_product`, `ask_owner` and "Work on this yourself".
 
 ### Execution router
 
@@ -1689,8 +1868,11 @@ path.
   discretion and observability rules), so the box holds only the task: the
   plan, its acceptance criteria and the owner's own request for their own app
   ([§19](#19-learning-and-privacy)). Not built yet: today the SDK driver sends
-  our working rules inside the task, which is acceptable only while the agent
-  runs on our trusted fixtures.
+  our working rules inside the task. This protects the rules only in our own
+  boxes; a worker on the owner's machine sees whatever it is sent. So the
+  working rules are written to be read: plain engineering guidance, with
+  nothing in them that would do harm when read
+  ([§11](#workers-one-boundary-for-ours-and-theirs)).
 - **Credentials vault** per account, encrypted, masked, revocable, each checked
   by a test call before saving: `api_key`, `claude_subscription_token`,
   `codex_chatgpt_token`, and provider OAuth (for example OpenRouter) later.
@@ -1781,6 +1963,9 @@ shows it honestly; normalization improves it over time.
     - The workspace box holds nothing of ours either: no control-plane code,
       keys or prompts ([§11](#adapters)).
     - The project notes are never committed to the repository (§26.3).
+- **Workers see compiled text, never our machinery.** What stays on the
+  server, what a brief may carry and what is open on purpose are listed in
+  [§11](#workers-one-boundary-for-ours-and-theirs). A brief lint enforces it.
 
 ## 20. Deliberately not built yet
 
@@ -1825,6 +2010,11 @@ architecture-rule compiler or complexity-budget scoring, mature audits and
 adversarial review, a learned model router, a large precedent database,
 native PHP or Symfony support, a fully deterministic Effect graph, and full
 reverse engineering of existing repositories.
+
+Not built for workers (version 31, direction 31): a separate gateway service,
+OAuth or device flow for workers, our own signed capability tokens, graph or
+embedding queries, a model that answers product questions, field-level
+redaction, a git server for local workers, and streaming preview traces.
 
 ## 21. Status and staged plan
 
