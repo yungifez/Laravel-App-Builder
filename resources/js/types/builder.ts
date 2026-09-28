@@ -372,6 +372,7 @@ export type VisualProperty =
     | 'font_style'
     | 'text_decoration'
     | 'line_height'
+    | 'letter_spacing'
     | 'text_color'
     | 'border_color'
     | 'background';
@@ -513,6 +514,8 @@ export type Drawn = {
     /** The space its lines take, as a share of the words' size; null for
      * the font's own spacing. */
     line_height?: number | null;
+    /** The space between its letters, in ems. */
+    letter_spacing?: number | null;
     /** Whether its words are slanted, as "italic". */
     font_style?: string;
     /** The lines drawn on its words, as "underline". */

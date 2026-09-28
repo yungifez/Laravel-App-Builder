@@ -1481,6 +1481,20 @@ const recent = computed(() => {
                                     "
                                     @change="set('line_height', $event)"
                                 />
+                                <StepSlider
+                                    id="property-letter_spacing"
+                                    label="Letters"
+                                    :value="state.valueOf('letter_spacing')"
+                                    :options="options('letter_spacing')"
+                                    :rest="2"
+                                    :now="
+                                        drawnStep(
+                                            'letter_spacing',
+                                            state.selected?.drawn,
+                                        )
+                                    "
+                                    @change="set('letter_spacing', $event)"
+                                />
                                 <!-- Slanted, underlined and crossed out are
                                      each on or off, as in a word processor;
                                      each starts from how the words look. -->
@@ -1616,10 +1630,7 @@ const recent = computed(() => {
                                     aria-keyshortcuts="Control+Alt+V"
                                     title="Make it look like the part copied (Ctrl+Alt+V)"
                                     data-test="look-paste"
-                                    :disabled="
-                                        state.copiedLook === null ||
-                                        state.saving
-                                    "
+                                    :disabled="state.copiedLook === null"
                                     @click="state.pasteLook()"
                                 >
                                     <ClipboardPaste class="size-4" /> Paste look

@@ -439,6 +439,22 @@ export const properties: PropertyDefinition[] = [
             ],
         },
     },
+    {
+        key: 'letter_spacing',
+        label: 'Space between letters',
+        group: 'Text',
+        input: {
+            kind: 'choice',
+            options: [
+                { value: 'tighter', label: 'Tighter' },
+                { value: 'tight', label: 'Tight' },
+                { value: 'normal', label: 'Normal' },
+                { value: 'wide', label: 'Wide' },
+                { value: 'wider', label: 'Wider' },
+                { value: 'widest', label: 'Widest' },
+            ],
+        },
+    },
     // Colours come from the app's own theme, so they stay right in dark
     // mode and when the theme changes.
     {
@@ -729,6 +745,17 @@ export const colorTokens: string[] = [
 const color = (token: VisualValue): string =>
     `var(--color-${token}, var(--${token}))`;
 
+/** Tailwind's letter spacing, in ems, for an app whose theme leaves it
+ * out. */
+const trackings: Record<string, string> = {
+    tighter: '-0.05em',
+    tight: '-0.025em',
+    normal: '0em',
+    wide: '0.025em',
+    wider: '0.05em',
+    widest: '0.1em',
+};
+
 /** Tailwind's line heights, for an app whose theme leaves them out. */
 const leadings: Record<string, string> = {
     none: '1',
@@ -785,11 +812,17 @@ function nearest(
  * slider with nothing chosen starts where the part is.
  */
 export function drawnStep(
-    property: 'text_size' | 'max_width' | 'line_height',
+    property: 'text_size' | 'max_width' | 'line_height' | 'letter_spacing',
     drawn: Drawn | undefined,
 ): string | null {
     if (drawn === undefined) {
         return null;
+    }
+
+    if (property === 'letter_spacing') {
+        return drawn.letter_spacing == null
+            ? null
+            : nearest(trackings, drawn.letter_spacing, 1);
     }
 
     if (property === 'line_height') {
@@ -902,6 +935,9 @@ export function inlineStyles(
             case 'text_decoration':
                 styles.textDecorationLine = String(value);
                 break;
+            case 'letter_spacing':
+                styles.letterSpacing = `var(--tracking-${value}, ${trackings[value] ?? 'normal'})`;
+                break;
             case 'line_height':
                 styles.lineHeight = `var(--leading-${value}, ${leadings[value] ?? 'normal'})`;
                 break;
@@ -980,7 +1016,9 @@ export function describeValue(
     }
 
     if (value === 'custom') {
-        return 'a colour of its own';
+        return property.group === 'Colours'
+            ? 'a colour of its own'
+            : 'a spacing of its own';
     }
 
     const { input } = property;

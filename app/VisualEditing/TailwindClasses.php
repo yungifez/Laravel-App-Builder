@@ -35,7 +35,7 @@ class TailwindClasses
         'layout', 'direction', 'wrap', 'align', 'justify', 'columns', 'gap',
         'width', 'height', 'max_width', 'padding_x', 'padding_y', 'margin_x', 'margin_y', 'border', 'border_color', 'radius', 'shadow',
         'rotate', 'translate_x', 'translate_y', 'opacity',
-        'text_size', 'text_weight', 'text_align', 'font_style', 'text_decoration', 'line_height', 'text_color', 'background',
+        'text_size', 'text_weight', 'text_align', 'font_style', 'text_decoration', 'line_height', 'letter_spacing', 'text_color', 'background',
     ];
 
     protected const KEYWORDS = [
@@ -53,6 +53,7 @@ class TailwindClasses
         'font_style' => ['italic' => 'italic', 'not-italic' => 'normal'],
         'text_decoration' => ['underline' => 'underline', 'line-through' => 'line-through', 'no-underline' => 'none'],
         'line_height' => ['leading-none' => 'none', 'leading-tight' => 'tight', 'leading-snug' => 'snug', 'leading-normal' => 'normal', 'leading-relaxed' => 'relaxed', 'leading-loose' => 'loose'],
+        'letter_spacing' => ['tracking-tighter' => 'tighter', 'tracking-tight' => 'tight', 'tracking-normal' => 'normal', 'tracking-wide' => 'wide', 'tracking-wider' => 'wider', 'tracking-widest' => 'widest'],
         'text_color' => ['text-foreground' => 'foreground', 'text-muted-foreground' => 'muted-foreground', 'text-primary' => 'primary', 'text-primary-foreground' => 'primary-foreground', 'text-secondary-foreground' => 'secondary-foreground', 'text-accent-foreground' => 'accent-foreground', 'text-destructive' => 'destructive'],
         'border_color' => ['border-border' => 'border', 'border-input' => 'input', 'border-foreground' => 'foreground', 'border-muted-foreground' => 'muted-foreground', 'border-primary' => 'primary', 'border-accent' => 'accent', 'border-destructive' => 'destructive', 'border-transparent' => 'transparent'],
         'background' => ['bg-transparent' => 'transparent', 'bg-background' => 'background', 'bg-card' => 'card', 'bg-muted' => 'muted', 'bg-primary' => 'primary', 'bg-secondary' => 'secondary', 'bg-accent' => 'accent', 'bg-destructive' => 'destructive'],
@@ -282,6 +283,12 @@ class TailwindClasses
                 'border' => 'border_color',
                 default => 'text_color',
             }, 'custom'];
+        }
+
+        // Spacing of the part's own, off the named steps: choosing a step
+        // replaces it, so the two never fight.
+        if (preg_match('/^(leading|tracking)-(?:\d+(?:\.\d+)?|\[[^\]]+\]|\([^)]+\))$/', $utility, $match) === 1) {
+            return [$device, $match[1] === 'leading' ? 'line_height' : 'letter_spacing', 'custom'];
         }
 
         if (preg_match('/^grid-cols-(\d+)$/', $utility, $match) === 1) {

@@ -528,6 +528,11 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                         ? null
                         : parseFloat(computed.lineHeight) /
                           parseFloat(computed.fontSize),
+                letter_spacing:
+                    computed.letterSpacing === 'normal'
+                        ? 0
+                        : parseFloat(computed.letterSpacing) /
+                          parseFloat(computed.fontSize),
                 font_style: computed.fontStyle,
                 text_decoration: computed.textDecorationLine,
                 max_width: computed.maxWidth,

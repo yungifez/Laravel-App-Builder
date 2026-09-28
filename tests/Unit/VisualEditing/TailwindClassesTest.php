@@ -132,6 +132,22 @@ class TailwindClassesTest extends TestCase
         $this->assertSame('underline-offset-4', TailwindClasses::write('underline underline-offset-4', 'base', ['text_decoration' => null]));
     }
 
+    public function test_letter_spacing_is_read_and_written_and_spacing_off_the_steps_is_replaced()
+    {
+        $this->assertSame(['letter_spacing' => 'wide'], TailwindClasses::read('tracking-wide')['base']);
+        $this->assertSame(
+            ['line_height' => 'custom', 'letter_spacing' => 'custom'],
+            TailwindClasses::read('leading-6 tracking-[0.2em]')['base'],
+        );
+        $this->assertSame(['line_height' => 'custom'], TailwindClasses::read('md:leading-[1.1]')['md']);
+
+        // Choosing a step replaces the part's own spacing, so the two never fight.
+        $this->assertSame(
+            'text-sm leading-loose tracking-tight',
+            TailwindClasses::write('text-sm leading-6 tracking-[0.2em]', 'base', ['line_height' => 'loose', 'letter_spacing' => 'tight']),
+        );
+    }
+
     public function test_height_turn_move_and_see_through_are_read_in_pixels_degrees_and_percent()
     {
         $this->assertSame(
