@@ -709,6 +709,28 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         ];
     };
 
+    // Where a part is written, as the builder names it, or null.
+    const locate = (element) =>
+        element?.dataset?.builderInstance
+            ? { kind: 'instance', value: element.dataset.builderInstance }
+            : element?.dataset?.builderSource
+              ? { kind: 'source', value: element.dataset.builderSource }
+              : null;
+
+    // A part about to be taken out, and where it was: after the part
+    // before it, or first in the part around it. Both are written before
+    // it, so a rebuilt app still finds them there. Null when neither has a
+    // place of its own.
+    const spot = (element) => {
+        const before = element.previousElementSibling;
+        const after = before ? locate(before) : null;
+        const inside = before ? null : locate(element.parentElement);
+
+        return after || inside
+            ? { html: element.outerHTML, after, inside }
+            : null;
+    };
+
     const resized =
         typeof ResizeObserver === 'function'
             ? new ResizeObserver(() => placeFrame())
@@ -1747,6 +1769,7 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                 const gone = selected;
 
                 choose(null, false);
+                send({ type: 'taken', spot: spot(gone) });
                 gone.remove();
             }
         }
@@ -1759,10 +1782,31 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
                     choose(null, false);
                 }
 
+                send({ type: 'taken', spot: spot(part), edit: message.edit });
                 part.remove();
             }
 
             placeFrame();
+        }
+
+        // A part the builder puts back at once where it was: a removal
+        // undone, or a copy made again. The rebuilt app replaces the page.
+        if (message.type === 'put' && message.spot) {
+            const { html, after, inside } = message.spot;
+            const [anchor, ...more] = matching(after ?? inside);
+            const holder = document.createElement('template');
+            holder.innerHTML = html;
+            const part = holder.content.firstElementChild;
+
+            if (anchor && more.length === 0 && part) {
+                if (after) {
+                    anchor.after(part);
+                } else {
+                    anchor.prepend(part);
+                }
+
+                placeFrame();
+            }
         }
 
         if (message.type === 'clear') {

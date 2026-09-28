@@ -63,6 +63,14 @@ type Batch = {
 
 type Step = 'undo' | 'redo';
 
+// A part the app took out, and where it was: after the part before it, or
+// first in the part around it.
+type Spot = {
+    html: string;
+    after: { kind: string; value: string } | null;
+    inside: { kind: string; value: string } | null;
+};
+
 /** Which way a part lies on screen from another. */
 export type Way = 'up' | 'down' | 'left' | 'right';
 
@@ -225,6 +233,11 @@ export function useAppPreview(source: Source) {
     // The version of the app the part was moved or copied in; the new
     // place is picked once a newer version is on show.
     let movedFrom: string | null = null;
+    // Parts the app took out, by the edit that took them, so undoing a
+    // removal or redoing a copy puts them back at once. Removals not
+    // saved yet wait in order for theirs; a null one cannot be put back.
+    const taken = new Map<number, Spot>();
+    const taking: { spot: Spot | null }[] = [];
     // Where the owner had scrolled each page to, so a rebuild keeps it.
     const scrolled = new Map<string, { x: number; y: number }>();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -697,6 +710,16 @@ export function useAppPreview(source: Source) {
             takeNeighbours(data);
         }
 
+        if (data.type === 'taken') {
+            const spot = (data.spot ?? null) as Spot | null;
+
+            if (typeof data.edit === 'number') {
+                taken.set(data.edit, spot as Spot);
+            } else if (taking.length > 0) {
+                (taking.shift() as { spot: Spot | null }).spot = spot;
+            }
+        }
+
         if (data.type === 'words' && typeof data.text === 'string') {
             reword(data.text, String(data.before ?? ''));
         }
@@ -1122,11 +1145,20 @@ export function useAppPreview(source: Source) {
         saveError.value = null;
         post({ type: 'reshape', how });
 
+        // What the app takes out can be put back on undo, when the app on
+        // show is the saved one, so its places are the ones written.
+        const removal = { spot: null as Spot | null };
+
         if (how === 'remove') {
+            taking.push(removal);
             deselect();
         }
 
-        saveReshape(how, part, at, preview.revision);
+        const fair =
+            frames.value[0]?.revision === preview.revision &&
+            (head.value === null || head.value === preview.revision);
+
+        saveReshape(how, part, at, preview.revision, fair ? removal : null);
     }
 
     // Save a copy or a removal once the changes before it are saved.
@@ -1135,6 +1167,7 @@ export function useAppPreview(source: Source) {
         part: SelectedElement,
         at: string,
         seen: string | null,
+        removal: { spot: Spot | null } | null = null,
     ): void {
         const preview = source.preview();
 
@@ -1152,7 +1185,7 @@ export function useAppPreview(source: Source) {
 
         if (moving.value || sending.value !== null || queue.value.length > 0) {
             save();
-            setTimeout(() => saveReshape(how, part, at, seen), 200);
+            setTimeout(() => saveReshape(how, part, at, seen, removal), 200);
 
             return;
         }
@@ -1195,6 +1228,14 @@ export function useAppPreview(source: Source) {
                         ? edit.revision
                         : null;
                 known.value = null;
+
+                if (
+                    edit !== undefined &&
+                    edit.id > newest &&
+                    removal?.spot != null
+                ) {
+                    taken.set(edit.id, removal.spot);
+                }
 
                 if (how === 'duplicate') {
                     inspect();
@@ -1489,6 +1530,39 @@ export function useAppPreview(source: Source) {
                   };
 
         claims.value.set(edit.id, { undone: key === 'undo', shown });
+
+        // A copy undone, or a part removed again, goes at once while the app
+        // is the version right after it, where the part is still at its place.
+        if (
+            ((key === 'undo' && edit.kind === 'duplicate') ||
+                (key === 'redo' && edit.kind === 'remove')) &&
+            frames.value[0]?.revision === edit.revision
+        ) {
+            post({
+                type: 'take',
+                location: { kind: 'any', value: edit.target },
+                edit: edit.id,
+            });
+
+            if (selected.value?.source === edit.target) {
+                deselect();
+            } else {
+                post({ type: 'outline' });
+            }
+        }
+
+        // A part taken out comes back at once the same way.
+        const spot = taken.get(edit.id);
+
+        if (
+            ((key === 'undo' && edit.kind === 'remove') ||
+                (key === 'redo' && edit.kind === 'duplicate')) &&
+            spot != null &&
+            frames.value[0]?.revision === edit.revision
+        ) {
+            post({ type: 'put', spot });
+            post({ type: 'outline' });
+        }
 
         // New words show at once too, without waiting for the rebuild.
         const words = key === 'undo' ? edit.words_before : edit.words;
