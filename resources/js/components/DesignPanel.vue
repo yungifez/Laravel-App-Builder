@@ -1020,17 +1020,41 @@ const recent = computed(() => {
                                         :options="options('justify')"
                                         @change="set('justify', $event)"
                                     />
-                                    <div class="grid grid-cols-2 gap-2">
-                                        <MeasureField
-                                            :state="state"
-                                            property="gap"
-                                            mark="↔"
-                                        />
-                                        <MeasureField
-                                            v-if="layout === 'grid'"
-                                            :state="state"
-                                            property="columns"
-                                        />
+                                    <!-- Captioned like the choices above, so every
+                                         row starts at the same place. -->
+                                    <div class="flex items-center gap-3">
+                                        <span
+                                            class="w-14 shrink-0 text-xs text-muted-foreground"
+                                            aria-hidden="true"
+                                            >Between</span
+                                        >
+                                        <div
+                                            class="grid flex-1 grid-cols-2 gap-2"
+                                        >
+                                            <MeasureField
+                                                :state="state"
+                                                property="gap"
+                                                mark="↔"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div
+                                        v-if="layout === 'grid'"
+                                        class="flex items-center gap-3"
+                                    >
+                                        <span
+                                            class="w-14 shrink-0 text-xs text-muted-foreground"
+                                            aria-hidden="true"
+                                            >Columns</span
+                                        >
+                                        <div
+                                            class="grid flex-1 grid-cols-2 gap-2"
+                                        >
+                                            <MeasureField
+                                                :state="state"
+                                                property="columns"
+                                            />
+                                        </div>
                                     </div>
                                 </Reveal>
                             </section>

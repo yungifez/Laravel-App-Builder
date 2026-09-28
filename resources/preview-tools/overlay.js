@@ -422,6 +422,18 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         when: element.getAttribute('data-builder-when'),
         drawnBy: drawnByCode(element),
         tag: element.tagName.toLowerCase(),
+        // What it holds, so the builder offers only the choices that do
+        // something: arranging needs parts inside, text needs words.
+        holds: {
+            // A drawing's shapes are not parts to arrange.
+            parts:
+                element instanceof SVGElement
+                    ? 0
+                    : [...element.children].filter(
+                          (child) => !['BR', 'WBR'].includes(child.tagName),
+                      ).length,
+            words: /\S/.test(element.textContent ?? ''),
+        },
         text: (element.innerText || element.getAttribute('aria-label') || '')
             .replace(/\s+/g, ' ')
             .trim()
@@ -453,18 +465,6 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             const computed = getComputedStyle(element);
 
             return {
-        // What it holds, so the builder offers only the choices that do
-        // something: arranging needs parts inside, text needs words.
-        holds: {
-            // A drawing's shapes are not parts to arrange.
-            parts:
-                element instanceof SVGElement
-                    ? 0
-                    : [...element.children].filter(
-                          (child) => !['BR', 'WBR'].includes(child.tagName),
-                      ).length,
-            words: /\S/.test(element.textContent ?? ''),
-        },
                 text_color: computed.color,
                 background: computed.backgroundColor,
                 border_color: computed.borderTopColor,
