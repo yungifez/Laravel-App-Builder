@@ -64,6 +64,7 @@
 [data-builder-overlay] [data-handle=pad-t],[data-builder-overlay] [data-handle=pad-b]{width:calc(16px*var(--bz));height:calc(5px*var(--bz));cursor:ns-resize}
 [data-builder-overlay] [data-part=stem]{position:absolute;left:50%;top:calc(-24px*var(--bz));height:calc(24px*var(--bz));width:calc(1px*var(--bz));background:${ACCENT}}
 [data-builder-overlay][data-fixed] [data-handle],[data-builder-overlay][data-fixed] [data-part=stem]{display:none}
+[data-builder-overlay][data-thin] [data-handle=e],[data-builder-overlay][data-slim] [data-handle=s],[data-builder-overlay][data-slim] [data-handle=pad-l],[data-builder-overlay][data-slim] [data-handle=pad-r]{display:none}
 [data-builder-overlay][data-narrow] [data-handle=pad-l],[data-builder-overlay][data-narrow] [data-handle=pad-r],[data-builder-overlay][data-short] [data-handle=pad-t],[data-builder-overlay][data-short] [data-handle=pad-b]{display:none}
 [data-builder-overlay] [data-part=chip]{position:fixed;display:none;transform:translateX(-50%);background:${ACCENT};color:#fff;font:500 calc(11px*var(--bz))/1.2 system-ui,sans-serif;padding:calc(3px*var(--bz)) calc(6px*var(--bz));border-radius:calc(4px*var(--bz));white-space:nowrap;font-variant-numeric:tabular-nums}
 html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!important;cursor:var(--builder-cursor)!important}
@@ -297,6 +298,11 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         // itself must stay free to grab and drag to a new place.
         layer.toggleAttribute('data-narrow', m.width < 120 * zoom());
         layer.toggleAttribute('data-short', m.height < 64 * zoom());
+        // On a line of words or a small link, the side and space handles
+        // would sit on the words; the corner handle still changes the size,
+        // and the panel still sets the space.
+        layer.toggleAttribute('data-thin', m.width < 48 * zoom());
+        layer.toggleAttribute('data-slim', m.height < 32 * zoom());
 
         chip.textContent =
             hint ?? `${Math.round(m.width)} × ${Math.round(m.height)}`;
