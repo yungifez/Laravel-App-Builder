@@ -753,13 +753,23 @@ const recent = computed(() => {
                                 >
                             </template>
                         </nav>
-                        <p class="truncate text-sm font-medium">
-                            {{
-                                state.selected.text ||
-                                state.selected.kind ||
-                                element?.area?.name ||
-                                ''
-                            }}
+                        <!-- Named as the parts list names it: its kind, then
+                             its own words, so a box is not named after all
+                             the words inside it. -->
+                        <p
+                            class="truncate text-sm"
+                            :title="state.selected.name || undefined"
+                            data-test="part-name"
+                        >
+                            <span class="font-medium">{{
+                                state.selected.kind || element?.area?.name || ''
+                            }}</span>
+                            <span
+                                v-if="state.selected.name"
+                                class="ml-1.5 text-muted-foreground"
+                            >
+                                {{ state.selected.name }}</span
+                            >
                         </p>
                     </div>
                     <Button

@@ -483,6 +483,9 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         href: element.closest('a[href]')?.href ?? null,
         // What kind of part it is, to name one that shows no words.
         kind: kindOf(element),
+        // Its own words, as the parts list names it: none for a part that
+        // only holds other parts.
+        name: wordsOf(element),
         // The picture it shows, so the owner sees it beside the choice.
         src: element instanceof HTMLImageElement ? element.currentSrc : null,
         // The parts it sits in, nearest first, so the owner sees where it

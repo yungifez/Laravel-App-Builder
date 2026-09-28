@@ -474,6 +474,9 @@ export type SelectedElement = {
     href?: string | null;
     /** What kind of part it is, in plain words, as "Picture". */
     kind?: string;
+    /** Its own words, as the parts list names it; empty for a part that
+     * only holds other parts. */
+    name?: string;
     /** The picture it shows as the app draws it, or null. */
     src?: string | null;
     /** How many parts it holds, and whether it holds any words. */
