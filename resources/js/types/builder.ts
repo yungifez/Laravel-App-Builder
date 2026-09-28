@@ -700,3 +700,13 @@ export type Starter = {
     /** What the first version includes, in the owner's words. */
     includes: string[];
 };
+
+/** A table the app on show keeps its data in, and how many rows it holds. */
+export type SavedTable = {
+    name: string;
+    /** The table's name in plain words. */
+    words: string;
+    rows: number | null;
+    /** False for the tables Laravel keeps for its own work. */
+    own: boolean;
+};

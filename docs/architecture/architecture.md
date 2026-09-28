@@ -1618,10 +1618,14 @@ reads the preview's workspace, so the app itself does not change.
   its fix is kept, or when the owner clears it. It returns, marked "came
   back", if the app runs into it again after that. The log itself is never
   changed; the builder keeps only which problems the owner cleared.
-- **Saved data** (after that). The preview's tables, read only at first:
-  what a sign-up or an order saved. Rows are read through the app's own
-  database connection inside the workspace, never from the control plane's
-  database. Changing rows comes later, with an undo.
+- **Saved data** (built: tables and counts). The preview's tables, with
+  how many rows each holds: what a sign-up or an order saved. They are read
+  through the app itself (`db:show`), with the settings it runs with, never
+  from the control plane's database. Laravel's own tables stay folded. The
+  owner can start the data again, with the app's example data
+  (`migrate:fresh --seed`) or empty, after a second click; only the copy
+  they try changes. Reading rows comes next; changing rows later, with an
+  undo.
 - **Jobs** need no tab while previews run queued work at once
   (`QUEUE_CONNECTION=sync`).
 

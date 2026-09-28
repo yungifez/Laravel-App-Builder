@@ -100,6 +100,22 @@ class Preview extends Model
     }
 
     /**
+     * Get the environment the app runs with. The keys for the app's outside
+     * services come first, so the preview's own settings win: a preview
+     * never sends real email.
+     *
+     * @return array<string, string>
+     */
+    public function environment(): array
+    {
+        /** @var array<string, string> $environment */
+        $environment = [...$this->project->serviceEnvironment(), ...config('builder.preview.environment', [])];
+        $environment['APP_URL'] = rtrim($this->url(), '/');
+
+        return $environment;
+    }
+
+    /**
      * Get the preview's public URL.
      */
     public function url(string $path = '/'): string

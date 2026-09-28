@@ -39,6 +39,7 @@ import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/Feat
 import PreviewController from '@/actions/App/Http/Controllers/PreviewController';
 import ProjectExperimentController from '@/actions/App/Http/Controllers/ProjectExperimentController';
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
+import AppData from '@/components/AppData.vue';
 import AppEmails from '@/components/AppEmails.vue';
 import AppProblems from '@/components/AppProblems.vue';
 import AppPreview from '@/components/AppPreview.vue';
@@ -94,6 +95,7 @@ import type {
     ProjectTelemetry,
     SentEmail,
     AppProblem,
+    SavedTable,
     VisualEditSummary,
 } from '@/types';
 
@@ -112,6 +114,7 @@ const props = defineProps<{
     services: AppService[];
     emails?: SentEmail[];
     problems?: AppProblem[];
+    data?: SavedTable[] | null;
 }>();
 
 // The left panel talks about changes (Chat) or changes how the app looks
@@ -187,9 +190,9 @@ const app = useAppPreview({
     designing,
 });
 
-// Beside the app, what it does behind the page: the emails it sent and
-// the problems it ran into.
-type Behind = 'app' | 'emails' | 'problems';
+// Beside the app, what it does behind the page: the emails it sent, the
+// problems it ran into and the data it saved.
+type Behind = 'app' | 'emails' | 'problems' | 'data';
 const showing = ref<Behind>('app');
 
 // Looked for every few seconds while the app runs, so what is new is
@@ -206,6 +209,14 @@ watch(
     { immediate: true },
 );
 watch(showing, (value) => value !== 'app' && router.reload({ only: [value] }));
+
+// Saved data is read by running the app, so only while the owner looks.
+const dataPoll = usePoll(5000, { only: ['data'] }, { autoStart: false });
+
+watch(
+    () => showing.value === 'data' && app.running && !app.lost,
+    (looking) => (looking ? dataPoll.start() : dataPoll.stop()),
+);
 
 // What the owner has seen of each, kept in this browser, so a tab counts
 // only what is new.
@@ -273,6 +284,7 @@ const showingTabs = computed(() => [
         label: 'Problems',
         count: unseenProblems.value,
     },
+    { key: 'data' as const, label: 'Saved data', count: 0 },
 ]);
 
 // A link in an email opens its page in the app.
@@ -1615,7 +1627,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                         <RotateCw class="size-4" />
                     </Button>
                     <span
-                        class="ml-1 max-w-48 truncate text-xs text-muted-foreground"
+                        class="ml-1 hidden max-w-48 truncate text-xs text-muted-foreground sm:block"
                         :title="app.path"
                         data-test="preview-path"
                         >{{ app.path === '/' ? 'Home' : app.path }}</span
@@ -1769,6 +1781,13 @@ function sendOnEnter(event: KeyboardEvent): void {
                 class="min-h-0 flex-1"
                 :project-id="project.id"
                 :problems="problems"
+            />
+            <AppData
+                v-if="showing === 'data' && !changeCopy"
+                class="min-h-0 flex-1"
+                :project-id="project.id"
+                :data="data"
+                @restarted="app.reload()"
             />
             <AppEmails
                 v-if="showing === 'emails' && !changeCopy"

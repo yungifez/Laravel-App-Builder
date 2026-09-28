@@ -350,3 +350,11 @@ them and correct any that are wrong.
   "came back", and asking again starts a new change. A problem is known by
   its kind of error, its message with numbers left out, and its place in
   the code, so a change of line number counts as a new problem.
+- 2026-09-27 — The "Saved data" tab reads the app's tables by running
+  `php artisan db:show --json --counts` in the preview's workspace, with the
+  preview's settings. It runs only while the owner has the tab open, at
+  most every 4 seconds. Tables every Laravel app may keep for itself
+  (migrations, cache, jobs, sessions and similar) are folded away. "Start
+  again with examples" runs `migrate:fresh --seed` and "Empty it" runs
+  `migrate:fresh`. Both change only the preview's own database and ask
+  again before they run. A signed-in owner may need to sign up again.

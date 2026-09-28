@@ -24,6 +24,7 @@ use App\Http\Controllers\Operations\AttentionController;
 use App\Http\Controllers\Operations\ChangeController as OperationsChangeController;
 use App\Http\Controllers\PageConsistencyController;
 use App\Http\Controllers\PreviewController;
+use App\Http\Controllers\PreviewDataController;
 use App\Http\Controllers\PreviewProblemFixController;
 use App\Http\Controllers\ProjectCompatibilityController;
 use App\Http\Controllers\ProjectController;
@@ -68,6 +69,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/preview-problem-fixes', [PreviewProblemFixController::class, 'store'])->name('preview-problem-fixes.store');
     Route::post('projects/{project}/cleared-problems', [ClearedProblemController::class, 'store'])->name('cleared-problems.store');
     Route::delete('projects/{project}/cleared-problems/{problem}', [ClearedProblemController::class, 'destroy'])->name('cleared-problems.destroy');
+    Route::put('projects/{project}/preview-data', [PreviewDataController::class, 'update'])->name('preview-data.update');
     Route::get('projects/{project}/editor', [ProjectEditorController::class, 'show'])->name('projects.editor.show');
     Route::post('projects/{project}/previews', [ProjectPreviewController::class, 'store'])->name('projects.previews.store');
     Route::post('projects/{project}/experiments', [ExperimentController::class, 'store'])->name('experiments.store');
