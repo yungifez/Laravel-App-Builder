@@ -420,6 +420,12 @@ watch(
 // A part in a row or a grid moves from place to place there, so shifting
 // it by some pixels is offered only when the owner chose to move parts
 // anywhere, or to undo a shift it already has.
+// In a row or a grid the arrow keys alone swap places, unless the owner
+// moves parts anywhere; elsewhere they shift it, and Alt swaps.
+const arrowKeysSwap = computed(
+    () => !!props.state.selected?.snaps && !props.state.moveFreely,
+);
+
 const shifts = computed(
     () =>
         !props.state.selected?.snaps ||
@@ -1637,7 +1643,7 @@ const recent = computed(() => {
                                         size="sm"
                                         class="h-11 sm:h-7"
                                         :disabled="!move.can || state.saving"
-                                        :title="`Move it ${move.way}, past the part next to it (Alt + ${wayLooks[move.way].key})`"
+                                        :title="`Move it ${move.way}, past the part next to it (${arrowKeysSwap ? '' : 'Alt + '}${wayLooks[move.way].key})`"
                                         :data-test="
                                             move.step < 0
                                                 ? 'move-earlier'
