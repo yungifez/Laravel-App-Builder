@@ -12,12 +12,24 @@ class ThemeColors
 
     /**
      * The rules each look writes its colours in. Tailwind's `@theme` holds
-     * the light look too, as does `html`.
+     * the light look too, as does `html`. The dark look may instead be an
+     * attribute (see DARK_ATTRIBUTE), or the light look's rules inside
+     * `@media (prefers-color-scheme: dark)`.
      */
     protected const SELECTORS = [
         'light' => [':root', ':host', 'html', '@theme'],
         'dark' => ['.dark', ':root.dark', 'html.dark'],
     ];
+
+    /**
+     * A dark look chosen by an attribute, as `[data-theme="dark"]`.
+     */
+    protected const DARK_ATTRIBUTE = '/^(?::root|html)?\[data-[\w-]+=["\']?dark["\']?\]$/';
+
+    /**
+     * A media query for the device's dark setting.
+     */
+    protected const DARK_MEDIA = '/^@media\b.*prefers-color-scheme\s*:\s*dark/i';
 
     /**
      * A value the design panel can show and replace: a colour code or a
@@ -131,10 +143,16 @@ class ThemeColors
 
         foreach ($rules as $rule) {
             $prelude = trim($rule[1][0]);
+            $inDarkMedia = preg_match(self::DARK_MEDIA, self::parentPrelude($css, $rule[1][1])) === 1;
             $selector = str_starts_with($prelude, '@theme') ? '@theme' : null;
 
             foreach (array_map(trim(...), explode(',', $prelude)) as $part) {
-                $selector ??= in_array($part, self::SELECTORS[$mode], true) ? $part : null;
+                $selector ??= match (true) {
+                    // The light look's rules, written again for a dark device.
+                    $inDarkMedia => $mode === 'dark' && in_array($part, self::SELECTORS['light'], true) ? $part : null,
+                    $mode === 'dark' && preg_match(self::DARK_ATTRIBUTE, $part) === 1 => $part,
+                    default => in_array($part, self::SELECTORS[$mode], true) ? $part : null,
+                };
             }
 
             if ($selector !== null && ($selector !== '@theme' || $mode === 'light')) {
@@ -143,6 +161,33 @@ class ThemeColors
         }
 
         return $blocks;
+    }
+
+    /**
+     * The prelude of the rule a rule at this offset is written inside, as
+     * "@media (prefers-color-scheme: dark)", or "" at the top level.
+     */
+    protected static function parentPrelude(string $css, int $offset): string
+    {
+        $depth = 0;
+
+        for ($at = $offset - 1; $at >= 0; $at--) {
+            if ($css[$at] === '}') {
+                $depth++;
+            } elseif ($css[$at] === '{' && $depth-- === 0) {
+                $before = substr($css, 0, $at);
+                $start = 0;
+
+                foreach (['}', ';', '{'] as $end) {
+                    $found = strrpos($before, $end);
+                    $start = $found === false ? $start : max($start, $found + 1);
+                }
+
+                return trim(substr($before, $start));
+            }
+        }
+
+        return '';
     }
 
     /**

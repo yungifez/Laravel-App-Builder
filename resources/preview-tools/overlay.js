@@ -2054,42 +2054,111 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         // The owner shows the app's light or dark look, to see and change
         // its colours, whatever the device prefers.
         if (message.type === 'look' && typeof message.dark === 'boolean') {
-            document.documentElement.classList.toggle('dark', message.dark);
-            document.documentElement.style.colorScheme = message.dark
-                ? 'dark'
-                : 'light';
+            showLook(message.dark);
             sendTheme();
         }
     });
 
-    // Whether the app has a dark look written apart: a rule for `.dark`
-    // in its styles, looked for until one is found.
-    let darkLook = false;
+    // How the app writes its dark look apart, found in its styles until
+    // one is: a `.dark` class, an attribute such as `[data-theme="dark"]`,
+    // or the device's own setting, `@media (prefers-color-scheme: dark)`.
+    // Each is shown its own way, since apps do not share one.
+    const DARK_ATTRIBUTE = /\[(data-[\w-]+)=["']?dark["']?\]/;
+    const SCHEME_MEDIA = /prefers-color-scheme\s*:\s*(dark|light)/;
+    let darkLook = null;
+    let schemeRules = [];
+    let shownScheme = null;
 
-    const hasDarkLook = () => {
+    const findDarkLook = () => {
+        const found = { classes: false, attribute: null, media: [] };
         const search = (rules) => {
             for (const rule of rules) {
-                if (rule.selectorText?.includes('.dark')) {
-                    return true;
+                const selector = rule.selectorText ?? '';
+
+                found.classes ||= selector.includes('.dark');
+                found.attribute ??= DARK_ATTRIBUTE.exec(selector)?.[1] ?? null;
+
+                if (rule.media && SCHEME_MEDIA.test(rule.media.mediaText)) {
+                    found.media.push(rule);
                 }
 
-                if (rule.cssRules && search(rule.cssRules)) {
-                    return true;
+                if (rule.cssRules) {
+                    search(rule.cssRules);
                 }
             }
-
-            return false;
         };
 
         for (const sheet of document.styleSheets) {
             try {
-                darkLook ||= search(sheet.cssRules);
+                search(sheet.cssRules);
             } catch {
                 // A stylesheet from another address cannot be read.
             }
         }
 
+        if (found.classes) {
+            darkLook = { kind: 'class' };
+        } else if (found.attribute) {
+            darkLook = { kind: 'attribute', name: found.attribute };
+        } else if (found.media.length > 0) {
+            // Each rule keeps its own words, since it may ask more of the
+            // device than its setting, as a width.
+            schemeRules = found.media.map((rule) => ({
+                rule,
+                text: rule.media.mediaText,
+                dark: SCHEME_MEDIA.exec(rule.media.mediaText)[1] === 'dark',
+            }));
+            darkLook = { kind: 'media' };
+        }
+
         return darkLook;
+    };
+
+    const hasDarkLook = () => (darkLook ?? findDarkLook()) !== null;
+
+    const showsDark = () => {
+        const root = document.documentElement;
+
+        switch (darkLook?.kind) {
+            case 'attribute':
+                return root.getAttribute(darkLook.name) === 'dark';
+            case 'media':
+                return (
+                    shownScheme ??
+                    matchMedia('(prefers-color-scheme: dark)').matches
+                );
+            default:
+                return root.classList.contains('dark');
+        }
+    };
+
+    const showLook = (dark) => {
+        const root = document.documentElement;
+        hasDarkLook();
+
+        switch (darkLook?.kind) {
+            case 'attribute':
+                root.setAttribute(darkLook.name, dark ? 'dark' : 'light');
+                break;
+            case 'media':
+                // Each rule for the device's setting is turned on or off
+                // for the look chosen, whatever the device prefers.
+                shownScheme = dark;
+
+                for (const { rule, text, dark: forDark } of schemeRules) {
+                    rule.media.mediaText = text.replace(
+                        /\(\s*prefers-color-scheme\s*:\s*(dark|light)\s*\)/,
+                        forDark === dark
+                            ? '(min-width: 0px)'
+                            : '(max-width: 0px) and (min-width: 1px)',
+                    );
+                }
+                break;
+            default:
+                root.classList.toggle('dark', dark);
+        }
+
+        root.style.colorScheme = dark ? 'dark' : 'light';
     };
 
     // The app's colours the builder asked for, by the variable that holds
@@ -2116,8 +2185,8 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         send({
             type: 'theme',
             colors,
-            dark: document.documentElement.classList.contains('dark'),
             looks: hasDarkLook(),
+            dark: showsDark(),
         });
     };
 
