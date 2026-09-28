@@ -66,6 +66,7 @@ class CodingAgentManager extends Manager
     {
         $model = $this->config->get("builder.agents.adapters.{$adapter}.model");
         $sandbox = $this->config->get("builder.agents.adapters.{$adapter}.sandbox");
+        $lightModel = $this->config->get("builder.agents.adapters.{$adapter}.light_model");
 
         return new RunnerAgent(
             $adapter,
@@ -75,6 +76,7 @@ class CodingAgentManager extends Manager
             $this->container->make(WorkspaceManager::class),
             $this->container->make(RunWorkspaceCommand::class),
             is_string($sandbox) && $sandbox !== '' ? $sandbox : null,
+            is_string($lightModel) && $lightModel !== '' ? $lightModel : null,
         );
     }
 }

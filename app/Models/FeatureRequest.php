@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\ExperimentStatus;
 use App\Enums\FeatureRequestStatus;
+use App\Features\CodeShortcuts;
 use Database\Factories\FeatureRequestFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -30,6 +31,7 @@ use Illuminate\Support\Carbon;
  * @property array{file: string, line: int, column: int, tag: string, text: string|null, area: string|null}|null $selection The element the owner pointed at in the preview
  * @property list<array{path: string, name: string}>|null $images Pictures the owner attached to show what they mean, on the request images disk
  * @property array{deployment_id?: int, preview_id?: int, problem?: string, errors: list<array{class: string|null, message: string, count: int, place?: string|null, trace?: list<string>}>}|null $live_errors The errors the published app raised, or the app on show while the owner tried it, when the ask is to fix them
+ * @property array{of: int, tier: string, shortcuts: list<array{rule: string, path: string, line: int}>}|null $tidy The shortcuts a kept change took, when this is the background pass that fixes them, and whether the light or the full coder makes it
  * @property string|null $target_step
  * @property FeatureRequestStatus $status
  * @property string $generator
@@ -50,7 +52,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['experiment_id', 'project_id', 'user_id', 'parent_id', 'retry_of_id', 'prompt', 'selection', 'images', 'live_errors', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'note_changes', 'steps', 'acceptance', 'error', 'decision_model_calls', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at', 'dismissed_at'])]
+#[Fillable(['experiment_id', 'project_id', 'user_id', 'parent_id', 'retry_of_id', 'prompt', 'selection', 'images', 'live_errors', 'tidy', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'note_changes', 'steps', 'acceptance', 'error', 'decision_model_calls', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at', 'dismissed_at'])]
 class FeatureRequest extends Model
 {
     /**
@@ -78,6 +80,7 @@ class FeatureRequest extends Model
             'selection' => 'array',
             'images' => 'array',
             'live_errors' => 'array',
+            'tidy' => 'array',
             'accepted_at' => 'datetime',
             'reverted_at' => 'datetime',
             'dismissed_at' => 'datetime',
@@ -107,6 +110,10 @@ class FeatureRequest extends Model
 
         if ($this->live_errors !== null) {
             return $this->prompt."\n\n".$this->liveErrorInstructions($this->live_errors['errors'], isset($this->live_errors['preview_id']));
+        }
+
+        if ($this->tidy !== null) {
+            return $this->prompt."\n\nFix only these, and change nothing else:\n".implode("\n", array_map(fn (array $shortcut) => '- '.CodeShortcuts::finding($shortcut), $this->tidy['shortcuts']));
         }
 
         if ($selection === null) {

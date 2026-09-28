@@ -12,5 +12,7 @@ final readonly class AgentTask
         public ?int $maxTurns = null,
         public ?float $maxBudgetUsd = null,
         public int $timeoutSeconds = 1200,
+        // A small, well-defined task: the agent's light model may take it.
+        public bool $light = false,
     ) {}
 }

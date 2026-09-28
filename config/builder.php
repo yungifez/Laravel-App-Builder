@@ -432,7 +432,13 @@ return [
         ],
 
         'adapters' => [
-            'claude' => ['provider' => 'anthropic', 'model' => env('BUILDER_CLAUDE_AGENT_MODEL')],
+            // "light_model" takes small, well-defined tasks, such as a
+            // background tidy-up; unset, the usual model takes them.
+            'claude' => [
+                'provider' => 'anthropic',
+                'model' => env('BUILDER_CLAUDE_AGENT_MODEL'),
+                'light_model' => env('BUILDER_CLAUDE_AGENT_LIGHT_MODEL'),
+            ],
             // Codex's own sandbox needs Linux user namespaces, which most
             // containers do not allow. Where the workspace is already the
             // boundary (a container), set BUILDER_CODEX_SANDBOX to
@@ -440,6 +446,7 @@ return [
             'codex' => [
                 'provider' => 'openai',
                 'model' => env('BUILDER_CODEX_AGENT_MODEL'),
+                'light_model' => env('BUILDER_CODEX_AGENT_LIGHT_MODEL'),
                 'sandbox' => env('BUILDER_CODEX_SANDBOX', 'workspace-write'),
             ],
         ],
@@ -585,6 +592,15 @@ return [
         // is a real problem, with the whole file to read. It waits
         // "delay_minutes" so it does not compete with the owner's next
         // change. A "yes" at or above "threshold" counts as a real problem.
+        //
+        // The real ones are then fixed by "tidy": a change the app asks for
+        // itself, built by the coding agents' light model on a small budget
+        // and, when that fails or leaves a shortcut, by the usual model. It
+        // starts only while the owner has no change being built, or built
+        // and touched in the last "idle_minutes", checking again every
+        // "wait_minutes" for a day. It is kept on its own once it passes the
+        // checks and the shortcuts are gone or explained in a comment. The
+        // owner can undo it.
         'shortcuts' => [
             'enabled' => (bool) env('BUILDER_SHORTCUT_SCAN', true),
             'command' => ['sh', '-c', implode(' ', [
@@ -602,6 +618,12 @@ return [
                 'delay_minutes' => (int) env('BUILDER_SHORTCUT_TRIAGE_DELAY_MINUTES', 10),
                 'threshold' => (float) env('BUILDER_SHORTCUT_TRIAGE_THRESHOLD', 0.5),
                 'timeout' => (int) env('BUILDER_SHORTCUT_TRIAGE_TIMEOUT', 30),
+            ],
+            'tidy' => [
+                'enabled' => (bool) env('BUILDER_SHORTCUT_TIDY', true),
+                'max_budget_usd' => (float) env('BUILDER_SHORTCUT_TIDY_MAX_BUDGET_USD', 1),
+                'wait_minutes' => (int) env('BUILDER_SHORTCUT_TIDY_WAIT_MINUTES', 15),
+                'idle_minutes' => (int) env('BUILDER_SHORTCUT_TIDY_IDLE_MINUTES', 120),
             ],
         ],
 

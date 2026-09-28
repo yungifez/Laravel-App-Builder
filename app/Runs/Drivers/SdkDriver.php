@@ -52,11 +52,15 @@ class SdkDriver extends AgentDriver
     {
         $workspace = $run->workspace ?? throw new ConstructionFailed(__('The run has no workspace.'));
 
+        // A background tidy-up goes to the light model first, on a smaller budget.
+        $light = ($run->featureRequest->tidy['tier'] ?? null) === 'light';
+
         $outcome = $this->runCodingAgent->handle($run, $tools->lease(), $workspace, new AgentTask(
             prompt: $this->buildPrompt($run, $plan)."\n\n".$this->workingRules(),
             maxTurns: (int) config('builder.agents.max_turns'),
-            maxBudgetUsd: (float) config('builder.agents.max_budget_usd'),
+            maxBudgetUsd: (float) ($light ? config('builder.verification.shortcuts.tidy.max_budget_usd') : config('builder.agents.max_budget_usd')),
             timeoutSeconds: (int) config('builder.construction.budgets.minutes') * 60,
+            light: $light,
         ));
 
         $this->restoreProtectedPaths($run);

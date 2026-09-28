@@ -22,7 +22,8 @@ class NotifyOwnerAboutRun
         $featureRequest = $event->run->featureRequest;
         $owner = $featureRequest?->user;
 
-        if ($featureRequest === null || $owner === null) {
+        // A background tidy-up is kept or put aside on its own.
+        if ($featureRequest === null || $owner === null || $featureRequest->tidy !== null) {
             return;
         }
 

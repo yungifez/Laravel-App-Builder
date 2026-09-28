@@ -389,6 +389,27 @@ class SdkDriverTest extends TestCase
         $this->assertSame([null, null], $cost());
     }
 
+    public function test_a_background_tidy_up_goes_to_the_light_model_and_other_changes_to_the_usual_one()
+    {
+        config([
+            'ai.providers.anthropic.key' => 'test-anthropic-key',
+            'builder.agents.runner.path' => base_path('tests/Fixtures/fake-agent-runner.mjs'),
+            'builder.agents.adapters.claude.model' => 'claude-opus-5',
+            'builder.agents.adapters.claude.light_model' => 'claude-haiku-5',
+        ]);
+        $account = function (?array $tidy) {
+            FeaturePlanner::fake([$this->plan()]);
+            $request = $this->request();
+            $request->update(['tidy' => $tidy]);
+
+            return app(StartRun::class)->handle($request)->refresh()->events()->where('type', 'build_finished')->sole()->data['account'];
+        };
+
+        $this->assertStringStartsWith('model=claude-haiku-5 ', $account(['of' => 1, 'tier' => 'light', 'shortcuts' => []]));
+        $this->assertStringStartsWith('model=claude-opus-5 ', $account(['of' => 1, 'tier' => 'full', 'shortcuts' => []]));
+        $this->assertStringStartsWith('model=claude-opus-5 ', $account(null));
+    }
+
     public function test_the_codex_agent_gets_its_configured_sandbox()
     {
         config([

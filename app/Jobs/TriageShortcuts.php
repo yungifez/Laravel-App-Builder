@@ -39,14 +39,15 @@ class TriageShortcuts implements ShouldQueue
      * real problem, reading the whole file as it was kept, and log the
      * answers on the change's run. A shortcut whose line is no longer in
      * the kept file, because a change kept with it rewrote the line, is
-     * logged as gone and not asked about.
+     * logged as gone and not asked about. The real ones go to a tidy-up.
      */
     public function handle(ProjectRepository $repository): void
     {
         $request = $this->featureRequest;
         $run = $request->latestRun;
 
-        if (! config('builder.verification.shortcuts.triage.enabled') || MakeDecisions::providers() === [] || $request->commit_sha === null || $run === null) {
+        // A tidy-up's own shortcuts are not tidied again, so it never loops.
+        if (! config('builder.verification.shortcuts.triage.enabled') || MakeDecisions::providers() === [] || $request->commit_sha === null || $request->tidy !== null || $run === null) {
             return;
         }
 
@@ -87,6 +88,15 @@ class TriageShortcuts implements ShouldQueue
             'commit' => $request->commit_sha,
             'shortcuts' => $triaged,
         ]);
+
+        $real = array_values(array_map(
+            fn (array $shortcut) => ['rule' => $shortcut['rule'], 'path' => $shortcut['path'], 'line' => $shortcut['line']],
+            array_filter($triaged, fn (array $shortcut) => $shortcut['verdict'] === 'real'),
+        ));
+
+        if ($real !== []) {
+            TidyShortcuts::dispatch($request, $real);
+        }
     }
 
     /**

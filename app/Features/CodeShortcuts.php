@@ -167,6 +167,36 @@ class CodeShortcuts
     }
 
     /**
+     * Determine if a later patch dealt with a shortcut whose line held the
+     * code: it removed that line, or added a comment to the file saying
+     * why it is right.
+     */
+    public static function addressed(string $path, string $code, ?string $patch): bool
+    {
+        foreach (PatchSummary::files($patch) as $file) {
+            if ($file['path'] !== $path) {
+                continue;
+            }
+
+            foreach (explode("\n", $file['diff']) as $line) {
+                if (str_starts_with($line, '---') || str_starts_with($line, '+++')) {
+                    continue;
+                }
+
+                if ($line === '-'.$code) {
+                    return true;
+                }
+
+                if (str_starts_with($line, '+') && (preg_match(self::COMMENT_LINE, substr($line, 1)) === 1 || preg_match(self::COMMENT_END, substr($line, 1)) === 1)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Say what a shortcut costs the owner, as a statement about its line.
      */
     public static function concern(string $rule): string

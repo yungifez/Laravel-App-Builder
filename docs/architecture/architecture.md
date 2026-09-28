@@ -1427,8 +1427,19 @@ AI SDK's classification) whether each one is a real problem, with the whole
 kept file to read. A shortcut whose line a change kept with it rewrote is
 logged as gone and not asked about. The answers are logged on the run as
 `shortcuts_triaged`, and each call as a `model_call` with the role `triage`.
-Fixing the real ones in the background is the next step (not built yet). A
-comment on
+The real ones become a tidy-up (`TidyShortcuts`): a change the app asks for in
+the owner's name ("Tidy up 2 things in my app's code."), with the shortcuts in
+its brief (`feature_requests.tidy`). It starts only while the owner has no
+change of the main app being built, or built and touched lately; otherwise it
+checks again later, for a day. It is built by the coding agents'
+`light_model` on `shortcuts.tidy.max_budget_usd`. When its run completes and
+its patch removed each flagged line or added a comment saying why it stays,
+`KeepTidy` keeps it through `AcceptChange`, in the owner's name, and the owner
+is not notified; the owner can undo it like any kept change. When the light
+model fails or leaves a shortcut, the usual model tries once; when that fails
+too, the tidy-up is put aside (`tidy_put_aside`) and the app stays as it was.
+A tidy-up built on an app that changed since is built again on the new one.
+Tidy-ups are not triaged, so they never loop. A comment on
 the line, the line above or the line below lets one through. Where the
 analyser is missing, nothing is read or said. The owner sees the clean result
 as one line of the change's proof.

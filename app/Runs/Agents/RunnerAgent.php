@@ -27,6 +27,7 @@ class RunnerAgent implements CodingAgent
     /**
      * @param  array<string, string>  $credentials  Environment variables for the runner
      * @param  string|null  $sandbox  The agent's own sandbox mode, when it has one
+     * @param  string|null  $lightModel  The cheaper model for light tasks, or null to use the usual one
      */
     public function __construct(
         protected string $adapter,
@@ -36,6 +37,7 @@ class RunnerAgent implements CodingAgent
         protected WorkspaceManager $workspaces,
         protected RunWorkspaceCommand $runWorkspaceCommand,
         protected ?string $sandbox = null,
+        protected ?string $lightModel = null,
     ) {}
 
     public function provider(): string
@@ -50,7 +52,7 @@ class RunnerAgent implements CodingAgent
         $this->workspaces->driver($workspace->driver)->writeFile((string) $workspace->driver_id, $taskFile, (string) json_encode([
             'adapter' => $this->adapter,
             'prompt' => $task->prompt,
-            'model' => $this->model,
+            'model' => $task->light ? ($this->lightModel ?? $this->model) : $this->model,
             'max_turns' => $task->maxTurns,
             'max_budget_usd' => $task->maxBudgetUsd,
             'sandbox' => $this->sandbox,
