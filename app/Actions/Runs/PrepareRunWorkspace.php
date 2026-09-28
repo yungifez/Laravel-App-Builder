@@ -12,6 +12,7 @@ use App\Models\Workspace;
 use App\Projects\ProjectRepository;
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\RunLease;
+use App\Workspaces\Drivers\CopyExclusions;
 use App\Workspaces\WorkspaceFiles;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Support\Facades\DB;
@@ -57,7 +58,7 @@ class PrepareRunWorkspace
                 $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);
                 $driver->writeFile((string) $workspace->driver_id, $patch, (string) $ancestor->patch);
 
-                $this->run($workspace, ['git', 'apply', '--whitespace=nowarn', $patch], __('Change #:id no longer applies to the project.', ['id' => $ancestor->id]));
+                $this->run($workspace, ['git', 'apply', '--whitespace=nowarn', ...CopyExclusions::applyFlags(), $patch], __('Change #:id no longer applies to the project.', ['id' => $ancestor->id]));
             }
 
             $this->run($workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], __('The workspace could not be prepared.'));

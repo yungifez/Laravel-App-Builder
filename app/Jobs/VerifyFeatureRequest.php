@@ -19,6 +19,7 @@ use App\Models\Workspace;
 use App\Models\WorkspaceCommand;
 use App\Projects\ProjectRepository;
 use App\Workspaces\Contracts\WorkspaceDriver;
+use App\Workspaces\Drivers\CopyExclusions;
 use App\Workspaces\WorkspaceFiles;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -105,7 +106,7 @@ class VerifyFeatureRequest implements ShouldQueue
                 $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);
                 $driver->writeFile((string) $workspace->driver_id, $patch, (string) $request->patch);
 
-                $command = $runWorkspaceCommand->handle($workspace, ['git', 'apply', '--whitespace=nowarn', $patch], 120);
+                $command = $runWorkspaceCommand->handle($workspace, ['git', 'apply', '--whitespace=nowarn', ...CopyExclusions::applyFlags(), $patch], 120);
 
                 if (! $this->record("Apply change #{$request->id}", 'apply', $command)) {
                     $this->skipRemaining(['setup', 'checks'], $featureRequest);

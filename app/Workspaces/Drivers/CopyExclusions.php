@@ -20,4 +20,20 @@ class CopyExclusions
     {
         return implode(' ', array_map(fn (string $path) => "--exclude='{$path}'", self::PATHS));
     }
+
+    /**
+     * Build the git apply flags that skip the excluded paths. A workspace
+     * never has them, so a change that touched them (older changes edited
+     * the app's notes in .builder) would otherwise not apply at all.
+     *
+     * @return list<string>
+     */
+    public static function applyFlags(): array
+    {
+        return array_merge(...array_map(function (string $path) {
+            $path = substr($path, 2);
+
+            return ["--exclude={$path}", "--exclude={$path}/*"];
+        }, self::PATHS));
+    }
 }
