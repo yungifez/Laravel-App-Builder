@@ -80,7 +80,10 @@ function look(kind: string, option: VisualValue): Record<string, string> {
                           'repeating-linear-gradient(45deg, var(--muted) 0 3px, transparent 3px 6px)',
                   }
                 : {
-                      background: props.colors?.[option] ?? `var(--${option})`,
+                      // Until the app's colours are read, the swatch stays
+                      // blank: a variable of the same name here would be
+                      // the editor's own colour, not the app's.
+                      background: props.colors?.[option] ?? 'var(--muted)',
                   };
         default:
             return {
