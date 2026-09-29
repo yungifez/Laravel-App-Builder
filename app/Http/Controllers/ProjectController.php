@@ -182,7 +182,7 @@ class ProjectController extends Controller
             // And the rows of one table, when the owner opens it.
             'rows' => Inertia::optional(fn () => $request->filled('table') ? $readPreviewRows->handle($project, $request->string('table')->toString()) : null),
             'change' => fn () => $change === null ? null : $describeFeatureRequest->handle($change),
-            'edits' => $project->visualEdits()->where('experiment_id', $project->experiment_id)->latest('id')->limit(10)->get()
+            'edits' => fn () => $project->visualEdits()->where('experiment_id', $project->experiment_id)->latest('id')->limit(10)->get()
                 ->map(fn (VisualEdit $edit) => [
                     'id' => $edit->uuid,
                     'tag' => $edit->tag,
@@ -223,23 +223,23 @@ class ProjectController extends Controller
             'services' => fn () => $this->services($project),
             // The idea the owner is working in (null for the main app) and
             // the ideas still open, to move between.
-            'ideas' => [
+            'ideas' => fn () => [
                 'current' => $project->experiment === null ? null : ['id' => $project->experiment->uuid, ...$project->experiment->only('name', 'branch')],
                 'open' => $project->experiments()->where('status', ExperimentStatus::Open)->latest('id')->get()->map(fn (Experiment $experiment) => ['id' => $experiment->uuid, ...$experiment->only('name', 'branch')]),
                 'main' => Experiment::mainBranch(),
             ],
-            'project' => [
+            'project' => fn () => [
                 'id' => $project->uuid,
                 ...$project->only('name', 'source_path'),
                 'published_at' => $this->publishedAt($project),
                 // How many of the app's own tests guard it, as last run.
                 'tests' => TestObservation::latestFor($project)?->testCount(),
             ],
-            'changes' => $summarizeChanges->handle($project),
-            'preview' => $describePreview->handle($project),
-            'history' => $repository->log($project, 20),
-            'telemetry' => $summarizeTelemetry->handle($project),
-            'publishing' => [
+            'changes' => fn () => $summarizeChanges->handle($project),
+            'preview' => fn () => $describePreview->handle($project),
+            'history' => fn () => $repository->log($project, 20),
+            'telemetry' => fn () => $summarizeTelemetry->handle($project),
+            'publishing' => fn () => [
                 'connected' => $project->publishable(),
                 // We host it: the owner never chose a branch.
                 'managed' => $project->publishingHost() !== 'git',

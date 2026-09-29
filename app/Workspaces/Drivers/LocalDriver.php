@@ -127,9 +127,21 @@ class LocalDriver implements WorkspaceDriver
         File::put($target, $contents);
     }
 
-    public function readFile(string $workspaceId, string $path): string
+    public function readFile(string $workspaceId, string $path, ?int $tailBytes = null): string
     {
-        return File::get($this->path($workspaceId, $path));
+        $target = $this->path($workspaceId, $path);
+
+        if ($tailBytes === null) {
+            return File::get($target);
+        }
+
+        $result = Process::run(['tail', '-c', (string) max(0, $tailBytes), '--', $target]);
+
+        if ($result->failed()) {
+            throw new RuntimeException("Could not read [{$path}]: ".trim($result->errorOutput()));
+        }
+
+        return $result->output();
     }
 
     /**

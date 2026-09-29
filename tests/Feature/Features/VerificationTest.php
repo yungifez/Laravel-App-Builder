@@ -5,14 +5,17 @@ namespace Tests\Feature\Features;
 use App\Actions\Features\RequestVerification;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
+use App\Jobs\ExecuteRun;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\User;
 use App\Models\Verification;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\FakesWorkspaces;
 use Tests\Concerns\UsesAcceptanceSuite;
 use Tests\Fakes\FakeWorkspaceDriver;
@@ -572,6 +575,138 @@ class VerificationTest extends TestCase
         $this->assertContains('--reverse', end($applies) === false ? [] : $applies[count($applies) - 2]);
         $this->assertNotContains('--reverse', end($applies));
         $this->assertSame('passed', collect($verification->results)->firstWhere('stage', 'acceptance')['outcome']);
+    }
+
+    #[DataProvider('diagnosticOutputs')]
+    public function test_diagnostic_comparison_preserves_additional_errors(string $before, string $after, array $expected)
+    {
+        config(['builder.verification.checks' => [
+            ['name' => 'Static analysis', 'command' => ['analyse'], 'timeout' => 60],
+        ]]);
+        $atStart = false;
+        $this->driver->onExec = function (string $workspace, array $command) use (&$atStart, $before, $after) {
+            if ($command[0] === 'git') {
+                $atStart = in_array('--reverse', $command, true);
+            }
+
+            return $command === ['analyse']
+                ? new CommandResult(exitCode: 1, output: $atStart ? $before : $after, errorOutput: '', durationMs: 10)
+                : new CommandResult(exitCode: 0, output: '', errorOutput: '', durationMs: 5);
+        };
+        $request = FeatureRequest::factory()->generated()->create();
+
+        app(RequestVerification::class)->handle($request);
+
+        $result = collect($request->verifications()->sole()->results)->firstWhere('name', 'Static analysis');
+        $this->assertSame('failed', $result['at_start']);
+        $this->assertSame($expected, $result['new_problems']);
+    }
+
+    public static function diagnosticOutputs(): array
+    {
+        return [
+            'additional occurrence' => [
+                "10  Call to undefined method Foo::missing().\n20  Call to undefined method Foo::missing().\n[ERROR] Found 2 errors",
+                "12  Call to undefined method Foo::missing().\n22  Call to undefined method Foo::missing().\n30  Call to undefined method Foo::missing().\n[ERROR] Found 3 errors",
+                ['30  Call to undefined method Foo::missing().'],
+            ],
+            'numeric types differ' => ['10  Expected 200, got 400.', '12  Expected 200, got 500.', ['12  Expected 200, got 500.']],
+            'error codes differ' => ['app.ts(10,3): error TS2322: Broken.', 'app.ts(12,4): error TS2344: Broken.', ['app.ts(12,4): error TS2344: Broken.']],
+            'locations move' => ["app.ts(10,3): error TS2322: Broken.\napp/Foo.php:10: Broken on line 12", "app.ts(12,4): error TS2322: Broken.\napp/Foo.php:12: Broken on line 14", []],
+        ];
+    }
+
+    #[DataProvider('reportsWithoutFailures')]
+    public function test_failed_suites_without_reported_failures_are_not_dismissed_as_existing_problems(?string $report, bool $onBaseline)
+    {
+        Queue::fake([ExecuteRun::class]);
+        config(['builder.verification.checks' => [
+            ['name' => 'Tests', 'command' => ['php', 'artisan', 'test'], 'timeout' => 300, 'report' => 'storage/logs/junit.xml'],
+        ]]);
+        $atStart = false;
+        $this->driver->onExec = function (string $workspace, array $command) use (&$atStart, $report, $onBaseline) {
+            if ($command[0] === 'git') {
+                $atStart = in_array('--reverse', $command, true);
+            }
+
+            if ($command === ['rm', '-f', 'storage/logs/junit.xml']) {
+                unset($this->driver->files["{$workspace}:storage/logs/junit.xml"]);
+            }
+
+            if ($command === ['php', 'artisan', 'test']) {
+                $xml = $atStart === $onBaseline ? $report : '<testsuites><testcase name="old failure" file="tests/OldTest.php"><failure/></testcase></testsuites>';
+
+                if ($xml !== null) {
+                    $this->driver->files["{$workspace}:storage/logs/junit.xml"] = $xml;
+                }
+
+                return new CommandResult(exitCode: 1, output: 'The test command failed.', errorOutput: '', durationMs: 10);
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        $request = FeatureRequest::factory()->generated()->create();
+        $run = Run::factory()->for($request)->create(['status' => RunStatus::Verifying, 'driver' => 'worker']);
+
+        app(RequestVerification::class)->handle($request, $run);
+
+        $verification = $request->verifications()->sole();
+        $result = collect($verification->results)->firstWhere('name', 'Tests');
+        $this->assertSame(VerificationStatus::Failed, $verification->status);
+        $this->assertArrayNotHasKey('at_start', $result);
+        $this->assertArrayNotHasKey('new_problems', $result);
+        $this->assertSame(RunStatus::Implementing, $run->refresh()->status);
+        $this->assertSame(1, $run->repairs);
+        $this->assertSame(["Tests failed:\nThe test command failed."], $run->feedback['details']);
+        Queue::assertPushed(ExecuteRun::class, 1);
+        $this->assertCount(1, $this->driver->destroyed);
+    }
+
+    /**
+     * @return array<string, array{string|null, bool}>
+     */
+    public static function reportsWithoutFailures(): array
+    {
+        $cases = [];
+
+        foreach (['missing' => null, 'malformed' => 'not xml', 'empty' => '<testsuites/>', 'passing' => '<testsuites><testcase name="passes" file="tests/OldTest.php"/></testsuites>'] as $name => $report) {
+            $cases["{$name} change report"] = [$report, false];
+            $cases["{$name} baseline report"] = [$report, true];
+        }
+
+        return $cases;
+    }
+
+    public function test_matching_reported_test_failures_still_go_on_to_review()
+    {
+        Queue::fake([ExecuteRun::class]);
+        config(['builder.verification.checks' => [
+            ['name' => 'Tests', 'command' => ['php', 'artisan', 'test'], 'timeout' => 300, 'report' => 'storage/logs/junit.xml'],
+        ]]);
+        $this->driver->onExec = function (string $workspace, array $command) {
+            if ($command === ['rm', '-f', 'storage/logs/junit.xml']) {
+                unset($this->driver->files["{$workspace}:storage/logs/junit.xml"]);
+            }
+
+            if ($command === ['php', 'artisan', 'test']) {
+                $this->driver->files["{$workspace}:storage/logs/junit.xml"] = '<testsuites><testcase name="old failure" file="tests/OldTest.php"><failure/></testcase></testsuites>';
+
+                return new CommandResult(exitCode: 1, output: 'Old test failure.', errorOutput: '', durationMs: 10);
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        $request = FeatureRequest::factory()->generated()->create();
+        $run = Run::factory()->for($request)->create(['status' => RunStatus::Verifying, 'driver' => 'worker']);
+
+        app(RequestVerification::class)->handle($request, $run);
+
+        $result = collect($request->verifications()->sole()->results)->firstWhere('name', 'Tests');
+        $this->assertSame('failed', $result['at_start']);
+        $this->assertSame([], $result['new_problems']);
+        $this->assertSame(RunStatus::Reviewing, $run->refresh()->status);
+        $this->assertSame(0, $run->repairs);
+        Queue::assertPushed(ExecuteRun::class, 1);
     }
 
     public function test_a_change_to_the_packages_is_judged_on_its_own_result()

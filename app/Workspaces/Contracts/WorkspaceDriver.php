@@ -39,9 +39,10 @@ interface WorkspaceDriver
     public function writeFile(string $workspaceId, string $path, string $contents): void;
 
     /**
-     * Read a file from inside the workspace.
+     * Read a file from inside the workspace. With tailBytes, read at most
+     * that many bytes from its end before transferring it to the caller.
      */
-    public function readFile(string $workspaceId, string $path): string;
+    public function readFile(string $workspaceId, string $path, ?int $tailBytes = null): string;
 
     /**
      * Start a long-running process in the workspace, such as the app's web

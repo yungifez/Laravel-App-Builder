@@ -144,9 +144,10 @@ class DockerDriver implements WorkspaceDriver
     /**
      * Read a file from the container.
      */
-    public function readFile(string $workspaceId, string $path): string
+    public function readFile(string $workspaceId, string $path, ?int $tailBytes = null): string
     {
-        $result = Process::run([$this->binary, 'exec', $workspaceId, 'cat', '--', $path]);
+        $command = $tailBytes === null ? ['cat'] : ['tail', '-c', (string) max(0, $tailBytes)];
+        $result = Process::run([$this->binary, 'exec', $workspaceId, ...$command, '--', $path]);
 
         if ($result->failed()) {
             throw new RuntimeException("Could not read [{$path}]: ".trim($result->errorOutput()));

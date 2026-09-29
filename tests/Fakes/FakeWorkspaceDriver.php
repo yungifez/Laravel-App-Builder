@@ -83,9 +83,11 @@ class FakeWorkspaceDriver implements WorkspaceDriver
         $this->files["{$workspaceId}:{$path}"] = $contents;
     }
 
-    public function readFile(string $workspaceId, string $path): string
+    public function readFile(string $workspaceId, string $path, ?int $tailBytes = null): string
     {
-        return $this->files["{$workspaceId}:{$path}"] ?? throw new RuntimeException("No such file [{$path}].");
+        $contents = $this->files["{$workspaceId}:{$path}"] ?? throw new RuntimeException("No such file [{$path}].");
+
+        return $tailBytes === null ? $contents : ($tailBytes <= 0 ? '' : substr($contents, -$tailBytes));
     }
 
     /** @var list<array{workspace: string, command: list<string>, port: int}> */

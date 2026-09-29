@@ -12,6 +12,7 @@ use Illuminate\Broadcasting\BroadcastException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Tests\Fakes\FakeBoxRunner;
@@ -133,6 +134,25 @@ class RunnerDriverTest extends TestCase
         $this->expectExceptionMessage('The workspace could not read: No such file');
 
         $this->driver->readFile('workspace-1', 'missing.txt');
+    }
+
+    public function test_the_runner_receives_the_file_tail_limit()
+    {
+        $this->runner->on('read', fn (array $payload) => [
+            'exit_code' => 0, 'output' => '', 'error_output' => '', 'timed_out' => false, 'duration_ms' => 1,
+            'contents' => base64_encode('recent'),
+        ]);
+
+        $this->assertSame('recent', $this->driver->readFile('workspace-1', 'app.log', 6));
+        $this->assertSame(['path' => 'app.log', 'tail_bytes' => 6], $this->runner->received[0]['payload']);
+        $this->assertSame('recent', base64_decode(BoxCommand::sole()->result['contents']));
+    }
+
+    public function test_the_real_runner_returns_only_the_requested_file_tail()
+    {
+        $result = Process::timeout(20)->run(['node', base_path('tests/Fixtures/box-runner-files.mjs'), base_path('resources/box-runner/runner.mjs')]);
+
+        $this->assertTrue($result->successful(), $result->output().$result->errorOutput());
     }
 
     public function test_the_project_is_packed_without_secrets_and_the_archive_is_removed_afterwards()

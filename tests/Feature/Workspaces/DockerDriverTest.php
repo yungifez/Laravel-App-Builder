@@ -106,6 +106,16 @@ class DockerDriverTest extends TestCase
         $this->driver()->create(new WorkspaceSpec('workspace-test', 'missing', 1, 512, 64));
     }
 
+    public function test_a_file_tail_is_read_inside_the_container()
+    {
+        Process::fake(['*' => Process::result(output: 'recent')]);
+
+        $this->assertSame("recent\n", $this->driver()->readFile('abc123', 'app log.txt', 7));
+        Process::assertRan(fn (PendingProcess $process) => $process->command === [
+            'docker', 'exec', 'abc123', 'tail', '-c', '7', '--', 'app log.txt',
+        ]);
+    }
+
     protected function driver(): DockerDriver
     {
         return new DockerDriver(binary: 'docker', network: 'none', workdir: '/workspace');

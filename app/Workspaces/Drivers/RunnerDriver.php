@@ -101,9 +101,12 @@ class RunnerDriver implements WorkspaceDriver
         $this->channel->call($workspaceId, 'write', ['path' => $this->relative($path), 'contents' => base64_encode($contents)], $this->fileSeconds);
     }
 
-    public function readFile(string $workspaceId, string $path): string
+    public function readFile(string $workspaceId, string $path, ?int $tailBytes = null): string
     {
-        $result = $this->channel->call($workspaceId, 'read', ['path' => $this->relative($path)], $this->fileSeconds);
+        $result = $this->channel->call($workspaceId, 'read', [
+            'path' => $this->relative($path),
+            ...($tailBytes === null ? [] : ['tail_bytes' => max(0, $tailBytes)]),
+        ], $this->fileSeconds);
 
         return (string) base64_decode((string) ($result['contents'] ?? ''), true);
     }

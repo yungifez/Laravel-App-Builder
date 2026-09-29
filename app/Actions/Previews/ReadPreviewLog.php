@@ -42,10 +42,10 @@ class ReadPreviewLog
 
         // The builder asks every few seconds while the owner looks; the
         // workspace is read at most once in that time.
-        return Cache::remember("previews:{$preview->id}:log", now()->addSeconds(2), fn () => substr((string) rescue(
-            fn () => $this->workspaces->driver($workspace->driver)->readFile((string) $workspace->driver_id, Config::string('builder.preview.log')),
+        return Cache::remember("previews:{$preview->id}:log", now()->addSeconds(2), fn () => (string) rescue(
+            fn () => $this->workspaces->driver($workspace->driver)->readFile((string) $workspace->driver_id, Config::string('builder.preview.log'), self::TAIL_BYTES),
             '',
             report: false,
-        ), -self::TAIL_BYTES));
+        ));
     }
 }

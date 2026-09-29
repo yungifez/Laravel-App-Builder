@@ -304,6 +304,13 @@ class VerifyFeatureRequest implements ShouldQueue
                 $result['at_start'] = $this->outcome($command);
 
                 if ($result['at_start'] === self::OUTCOME_FAILED) {
+                    // A failed command needs a reported test failure on both
+                    // sides. Missing reports or passing tests cannot explain
+                    // a crash, so keep the original failure for repair.
+                    if (isset($result['tests']) && (! collect($result['tests'])->contains('outcome', TestReport::FAILED) || ! collect($tests ?? [])->contains('outcome', TestReport::FAILED))) {
+                        continue;
+                    }
+
                     $result['new_problems'] = isset($result['tests']) && $tests !== null
                         ? $this->newFailingTests($result['tests'], $tests)
                         : $this->newLines($this->outputs[$index] ?? '', $this->withoutTerminalCodes($command->output."\n".$command->error_output));
@@ -360,25 +367,51 @@ class VerifyFeatureRequest implements ShouldQueue
     }
 
     /**
-     * Get the lines of a check's output that its output before the change
-     * does not have. Numbers are left out of the comparison, as a change
-     * moves line numbers and counts without adding a problem.
+     * Get additional occurrences of diagnostic lines. Ignore summary totals
+     * and source locations, but preserve numbers in the diagnostics themselves.
      *
      * @return list<string>
      */
     protected function newLines(string $now, string $before): array
     {
-        $key = fn (string $line) => (string) preg_replace(['/\d+/', '/\s+/'], ['', ' '], trim($line));
-        $seen = array_flip(array_map($key, explode("\n", $before)));
+        $seen = array_count_values(array_map($this->diagnosticKey(...), explode("\n", $before)));
         $new = [];
 
         foreach (explode("\n", $now) as $line) {
-            if (trim($line) !== '' && trim($key($line)) !== '' && ! isset($seen[$key($line)])) {
-                $new[trim($line)] = true;
+            $key = $this->diagnosticKey($line);
+
+            if ($key === '') {
+                continue;
             }
+
+            if (($seen[$key] ?? 0) > 0) {
+                $seen[$key]--;
+
+                continue;
+            }
+
+            $new[trim($line)] = true;
         }
 
         return array_slice(array_keys($new), 0, 40);
+    }
+
+    /**
+     * Normalize locations written by PHPStan, TypeScript and test output.
+     */
+    protected function diagnosticKey(string $line): string
+    {
+        $line = trim($line);
+
+        if (preg_match('/^(?:Tests:|Time:|Duration:|(?:\[ERROR\] )?Found \d+ errors?\b)/', $line) === 1) {
+            return '';
+        }
+
+        return (string) preg_replace(
+            ['/^(\d+)(?=\s{2,}\S)/', '/\bline \d+\b/i', '/(\.[a-z]+):\d+(?::\d+)?(?=[:\s]|$)/i', '/(\.[a-z]+)\(\d+,\d+\)(?=:)/i', '/\s+/'],
+            ['<line>', 'line <line>', '$1:<line>', '$1(<line>,<column>)', ' '],
+            $line,
+        );
     }
 
     /**

@@ -122,6 +122,18 @@ class LocalDriverTest extends TestCase
         $this->assertDirectoryDoesNotExist("{$copy}/vendor");
     }
 
+    public function test_file_tails_are_bounded_and_handle_short_and_missing_files()
+    {
+        $this->driver->writeFile($this->workspaceId, 'large.log', str_repeat('old', 1_000_000).'recent');
+        $this->assertSame('recent', $this->driver->readFile($this->workspaceId, 'large.log', 6));
+        $this->assertSame('', $this->driver->readFile($this->workspaceId, 'large.log', 0));
+        $this->driver->writeFile($this->workspaceId, 'short.log', 'short');
+        $this->assertSame('short', $this->driver->readFile($this->workspaceId, 'short.log', 100));
+
+        $this->expectException(RuntimeException::class);
+        $this->driver->readFile($this->workspaceId, 'missing.log', 100);
+    }
+
     public function test_destroying_removes_the_directory()
     {
         $this->driver->destroy($this->workspaceId);

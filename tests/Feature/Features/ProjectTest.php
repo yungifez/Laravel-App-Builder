@@ -2,12 +2,21 @@
 
 namespace Tests\Feature\Features;
 
+use App\Actions\Previews\DescribeProjectPreview;
+use App\Actions\Previews\ReadPreviewEmails;
+use App\Actions\Projects\SummarizeChanges;
+use App\Actions\Projects\SummarizeProjectTelemetry;
+use App\Actions\Publishing\DescribeUnpublished;
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\Project;
 use App\Models\TestObservation;
 use App\Models\User;
 use App\Projects\ProjectRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\PreparesRuns;
 use Tests\TestCase;
@@ -20,6 +29,36 @@ class ProjectTest extends TestCase
     public function test_guests_are_redirected_to_the_login_page()
     {
         $this->get(route('projects.index'))->assertRedirect(route('login'));
+    }
+
+    public function test_email_polls_do_not_load_unrequested_project_data()
+    {
+        $project = Project::factory()->create();
+        $this->mock(SummarizeChanges::class)->shouldNotReceive('handle');
+        $this->mock(SummarizeProjectTelemetry::class)->shouldNotReceive('handle');
+        $this->mock(DescribeProjectPreview::class)->shouldNotReceive('handle');
+        $this->mock(DescribeUnpublished::class)->shouldNotReceive('handle');
+        $this->mock(ReadPreviewEmails::class)->shouldReceive('handle')->once()->andReturn([]);
+        Process::fake();
+        DB::enableQueryLog();
+
+        try {
+            $this->actingAs($project->owner)->get(route('projects.show', $project), [
+                'X-Inertia' => 'true',
+                'X-Inertia-Version' => (string) app(HandleInertiaRequests::class)->version(Request::create('/')),
+                'X-Inertia-Partial-Component' => 'projects/Show',
+                'X-Inertia-Partial-Data' => 'emails',
+            ])->assertOk()->assertJsonPath('props.emails', [])->assertJsonMissingPath('props.telemetry');
+
+            foreach (DB::getQueryLog() as $query) {
+                $this->assertDoesNotMatchRegularExpression('/from "(?:visual_edits|experiments|deployments|test_observations|feature_requests|run_events)"/', $query['query']);
+            }
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
+
+        Process::assertNothingRan();
     }
 
     public function test_users_see_only_their_own_projects()

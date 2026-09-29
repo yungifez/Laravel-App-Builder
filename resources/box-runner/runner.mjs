@@ -379,9 +379,24 @@ const handlers = {
     },
 
     async read(command) {
+        const tailBytes = command.payload.tail_bytes;
+
+        if (
+            tailBytes !== undefined &&
+            (!Number.isSafeInteger(tailBytes) || tailBytes < 0)
+        ) {
+            throw new Error(
+                'The file tail size must be a nonnegative integer.',
+            );
+        }
+
+        const read =
+            tailBytes === undefined
+                ? ['cat']
+                : ['tail', '-c', String(tailBytes)];
         const chunks = [];
         const result = await run(
-            ['cat', '--', relative(command.payload.path)],
+            [...read, '--', relative(command.payload.path)],
             {
                 cwd: box(command.box),
                 timeoutSeconds: command.timeout_seconds,

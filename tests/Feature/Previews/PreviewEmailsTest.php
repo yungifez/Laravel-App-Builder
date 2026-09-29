@@ -3,6 +3,7 @@
 namespace Tests\Feature\Previews;
 
 use App\Actions\Previews\ReadPreviewEmails;
+use App\Actions\Previews\ReadPreviewLog;
 use App\Actions\Projects\CreateProject;
 use App\Models\Preview;
 use App\Models\Project;
@@ -10,6 +11,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Projects\ProjectRepository;
 use App\Workspaces\CommandResult;
+use App\Workspaces\WorkspaceManager;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
@@ -17,6 +19,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Process;
 use Inertia\Testing\AssertableInertia as Assert;
+use Mockery;
 use Tests\Concerns\FakesWorkspaces;
 use Tests\Concerns\PreparesRuns;
 use Tests\Fakes\FakeWorkspaceDriver;
@@ -84,6 +87,18 @@ class PreviewEmailsTest extends TestCase
 
         $this->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->reloadOnly('emails', fn (Assert $page) => $page->where('emails', [])));
+    }
+
+    public function test_log_polls_request_a_bounded_tail_and_share_the_cached_read()
+    {
+        $workspace = Workspace::factory()->create(['user_id' => $this->owner->id]);
+        $preview = Preview::factory()->editable()->ready()->create(['project_id' => $this->project->id, 'workspace_id' => $workspace->id]);
+        $driver = Mockery::mock(FakeWorkspaceDriver::class);
+        $driver->shouldReceive('readFile')->once()->with($workspace->driver_id, 'storage/logs/laravel.log', 2_000_000)->andReturn('recent log');
+        app(WorkspaceManager::class)->extend('fake', fn () => $driver);
+
+        $this->assertSame('recent log', app(ReadPreviewLog::class)->handle($preview));
+        $this->assertSame('recent log', app(ReadPreviewLog::class)->handle($preview));
     }
 
     public function test_the_owner_deletes_one_email_or_all_of_them_with_a_mark_in_the_app_log()
