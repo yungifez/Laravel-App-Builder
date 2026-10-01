@@ -1791,7 +1791,7 @@ function sendOnEnter(event: KeyboardEvent): void {
             <!-- The app, and what it does behind the page. -->
             <nav
                 v-if="app.running && !app.lost && preview"
-                class="-mb-1 flex shrink-0 items-center gap-1"
+                class="-mb-1 flex shrink-0 flex-wrap items-center gap-1 sm:flex-nowrap"
                 aria-label="What to show"
             >
                 <!-- Moving between the app's pages, as a browser does. It
@@ -1903,9 +1903,11 @@ function sendOnEnter(event: KeyboardEvent): void {
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </div>
+                <!-- On a phone the tabs take a line of their own, so none
+                     hides past the edge. -->
                 <div
                     v-if="!changeCopy"
-                    class="ml-auto flex min-w-0 [scrollbar-width:none] items-center gap-1 overflow-x-auto"
+                    class="flex min-w-0 basis-full [scrollbar-width:none] items-center gap-1 overflow-x-auto sm:ml-auto sm:basis-auto"
                 >
                     <button
                         v-for="tab in showingTabs"
