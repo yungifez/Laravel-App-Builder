@@ -186,12 +186,9 @@ export function useAppPreview(source: Source) {
     const visited = ref<string[]>([]);
     const visitedAt = ref(-1);
     // Start at the owner's own screen size: a phone edits the phone layout.
-    const device = ref<Device>(
-        typeof window !== 'undefined' &&
-            window.matchMedia('(min-width: 1024px)').matches
-            ? 'lg'
-            : 'base',
-    );
+    // The server cannot see the screen, so the browser sets it once mounted
+    // (see below); setting it here would not match the server's page.
+    const device = ref<Device>('base');
     const selected = ref<SelectedElement | null>(null);
     const onlyThisOne = ref(true);
     const saveError = ref<string | null>(null);
@@ -209,12 +206,20 @@ export function useAppPreview(source: Source) {
     // rebuilds after a save.
     const known = ref<InspectedElement | null>(null);
     // Whether numbers are free instead of snapped to the scale.
-    const fine = ref(typeof window !== 'undefined' && remembered(FINE_KEY));
+    const fine = ref(false);
     // A part in a row or a grid keeps to its places when moved, unless the
     // owner chose to place parts anywhere.
-    const moveFreely = ref(
-        typeof window !== 'undefined' && remembered(FREE_KEY),
-    );
+    const moveFreely = ref(false);
+
+    // What only the browser knows: the screen and the owner's choices.
+    onMounted(() => {
+        if (window.matchMedia('(min-width: 1024px)').matches) {
+            device.value = 'lg';
+        }
+
+        fine.value = remembered(FINE_KEY);
+        moveFreely.value = remembered(FREE_KEY);
+    });
     // The app's own theme colours as it draws them, by token, so a swatch
     // shows the colour the app will really get.
     const theme = ref<Record<string, string>>({});

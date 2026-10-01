@@ -1,4 +1,4 @@
-import { onBeforeUnmount, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 
 const KEY = 'builder.panel-width';
 const DEFAULT = 384;
@@ -36,7 +36,9 @@ function remember(width: number): void {
  * change in full. It is remembered in this browser only.
  */
 export function usePanelWidth() {
-    const width = ref(typeof window === 'undefined' ? DEFAULT : stored());
+    // The server cannot read the browser's storage, so the stored width is
+    // set once mounted; setting it here would not match the server's page.
+    const width = ref(DEFAULT);
     const resizing = ref(false);
     let startX = 0;
     let startWidth = 0;
@@ -87,6 +89,7 @@ export function usePanelWidth() {
         remember(width.value);
     }
 
+    onMounted(() => (width.value = stored()));
     onBeforeUnmount(() => stop());
 
     return { width, resizing, start, nudge, reset, min: MIN };
