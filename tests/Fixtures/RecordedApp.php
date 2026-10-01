@@ -214,6 +214,13 @@ class RecordedApp
         return response()->noContent();
     }
 
+    public function careful(): Response
+    {
+        RecordedCarefulJob::dispatch();
+
+        return response()->noContent();
+    }
+
     /**
      * Asks an outside service again when it gets no answer.
      */

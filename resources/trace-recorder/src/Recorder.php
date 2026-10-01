@@ -166,6 +166,8 @@ class Recorder
 
                 if ($event instanceof JobProcessed) {
                     $this->again($event->job, $place);
+                } else {
+                    $this->retry($event->job, $place);
                 }
             }
         });
@@ -442,6 +444,35 @@ class Recorder
         }
 
         $this->operation['fault'] = $place;
+        $this->rerun($job, $place);
+    }
+
+    /**
+     * Run a job a second time, when the write this run is about failed in
+     * it and the job did not take the failure in. A queue tries a failed
+     * job again: what the job did before the failure is then done again.
+     */
+    protected function retry(object $job, ?int $place): void
+    {
+        $failed = $this->operation['fault'] ?? null;
+
+        if ($place === null || $this->operation === null || $this->jobs > 0 || ! is_int($failed) || $failed <= $place
+            || ($this->fault['kind'] ?? null) !== 'query'
+            || ! ($this->operation['effects'][$failed]['job'] ?? false)
+            || ($this->operation['effects'][$place]['kind'] ?? null) !== 'job'
+            || array_any($this->operation['effects'], fn (array $effect) => $effect['again'] ?? false)
+            || ! method_exists($job, 'fire')) {
+            return;
+        }
+
+        $this->rerun($job, $place);
+    }
+
+    /**
+     * Run a job again and mark in the trace where its second run starts.
+     */
+    protected function rerun(object $job, int $place): void
+    {
         $this->jobs++;
         $this->effect(['kind' => 'job', 'what' => $this->operation['effects'][$place]['what'] ?? 'job', 'again' => true], origin: false);
 

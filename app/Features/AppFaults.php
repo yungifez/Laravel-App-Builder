@@ -36,6 +36,12 @@ namespace App\Features;
  * arrived, so the service can do it twice (a payment taken twice). It is
  * a finding for a POST or a PATCH that does not say which call it is
  * (an idempotency key). A GET, a PUT and a DELETE can be made again.
+ *
+ * A job has a second place: the last save it makes after it sent
+ * something. That save is refused, and the job is run again, the way a
+ * queue tries a failed job again. A job that asks if it ran before, but
+ * marks that only after it sent, passes the run above and sends twice
+ * here.
  */
 class AppFaults
 {
@@ -49,11 +55,15 @@ class AppFaults
 
     public const CALLED_AGAIN = 'called_again';
 
+    public const SENT_AGAIN = 'sent_again';
+
     public const SEND = 'send';
 
     public const SAVE = 'save';
 
     public const AGAIN = 'again';
+
+    public const RETRY = 'retry';
 
     /**
      * What the recorder can make fail when the app sends it.
@@ -130,6 +140,14 @@ class AppFaults
                     $jobs[] = [self::AGAIN, $place, $effect, array_any($ran, $new)];
                 }
 
+                // A save the job makes after it sent something: when it
+                // fails, a queue tries the job again.
+                $late = self::lateSave($ran);
+
+                if ($late !== null) {
+                    $jobs[] = [self::RETRY, $late, $effect, array_any($ran, $new), 'query'];
+                }
+
                 if (in_array($effect['kind'], self::FAILS, true)) {
                     $found[] = [self::SEND, $place, $effect];
                 } elseif ($effect['open'] > 0 && AppTraces::writes($effect)) {
@@ -157,7 +175,7 @@ class AppFaults
                     'at' => $failed['at'] ?? null,
                     'test' => $request['test'],
                     'filter' => $filter,
-                    'fault' => ['test' => $request['test'], 'request' => $request['n'], 'effect' => $at, 'kind' => $failed['kind']],
+                    'fault' => ['test' => $request['test'], 'request' => $request['n'], 'effect' => $at, 'kind' => $point[4] ?? $failed['kind']],
                     'times' => count(self::same($request['effects'], $failed)),
                     // A job is also the change's when the change wrote what it does.
                     'own' => $new($failed) || ($point[3] ?? false),
@@ -170,7 +188,7 @@ class AppFaults
         $order = fn (array $point): array => [
             $point['own'] ? 0 : 1,
             isset($lines[$point['at'] ?? '']) || isset($routes[$point['route']]) ? 0 : 1,
-            self::ORDER[$point['fault']['kind']] ?? count(self::ORDER),
+            self::ORDER[$point['fails'] === self::RETRY ? 'job' : $point['fault']['kind']] ?? count(self::ORDER),
         ];
         $points = array_values($points);
 
@@ -209,7 +227,7 @@ class AppFaults
                 && ($request['n'] ?? null) === $point['fault']['request']
                 && ($request['fault'] ?? null) === $point['fault']['effect']
                 // A second run that is not whole in the trace cannot be compared.
-                && ! ($point['fails'] === self::AGAIN && $request['cut']));
+                && ! (in_array($point['fails'], [self::AGAIN, self::RETRY], true) && $request['cut']));
 
             if ($point === null || $hit === null) {
                 continue;
@@ -274,6 +292,10 @@ class AppFaults
             return array_filter([self::DONE_TWICE => self::twice($hit['effects'], $place)]);
         }
 
+        if ($fails === self::RETRY) {
+            return array_filter([self::SENT_AGAIN => self::sentAgain($hit['effects'], $place)]);
+        }
+
         $before = fn (array $effect, int $at): bool => $at < $place && ! ($effect['job'] ?? false);
         $stayed = AppTraces::saved($hit['effects']);
         // What the framework or a package saved by itself is not part of
@@ -336,7 +358,7 @@ class AppFaults
      * Get the things a request did that are the same as one thing: the
      * same name from the same line. Each keeps its place.
      *
-     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>  $effects
+     * @param  array<int, array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>  $effects
      * @param  array{kind: string, sql?: string, what?: string, at?: string|null}  $one
      * @return array<int, array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>
      */
@@ -375,6 +397,57 @@ class AppFaults
             fn (array $effect, int $at) => self::repeats($effect, isset($stayed[$at])) && isset($once[self::name($effect).'|'.($effect['at'] ?? '')]),
             ARRAY_FILTER_USE_BOTH,
         ));
+    }
+
+    /**
+     * Get what a job sent before its save failed and sent again, from the
+     * same line, when it was tried again. A job that took the failure in
+     * was not tried again, and nothing is said.
+     *
+     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>  $effects
+     * @return list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>
+     */
+    protected static function sentAgain(array $effects, int $place): array
+    {
+        $marker = array_find_key($effects, fn (array $effect, int $at) => $at > $place && ($effect['again'] ?? false));
+
+        if ($marker === null) {
+            return [];
+        }
+
+        $again = self::ran($effects, $marker);
+        $sent = [];
+
+        // The job's first run, back from the save that failed.
+        for ($at = $place - 1; $effects[$at]['job'] ?? false; $at--) {
+            if (in_array($effects[$at]['kind'], self::SENT, true) && self::same($again, $effects[$at]) !== []) {
+                array_unshift($sent, $effects[$at]);
+            }
+        }
+
+        return $sent;
+    }
+
+    /**
+     * Get the place of the last save a job made after it sent something,
+     * when there is one.
+     *
+     * @param  array<int, array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>  $ran  From ran()
+     */
+    protected static function lateSave(array $ran): ?int
+    {
+        $sent = false;
+        $late = null;
+
+        foreach ($ran as $at => $effect) {
+            if (in_array($effect['kind'], self::SENT, true)) {
+                $sent = true;
+            } elseif ($sent && AppTraces::writes($effect)) {
+                $late = $at;
+            }
+        }
+
+        return $late;
     }
 
     /**

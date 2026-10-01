@@ -556,6 +556,7 @@ class AgentDriverTest extends TestCase
                 ['kind' => 'saved_then_failed', 'route' => 'POST /teams', 'failed' => 'mail App\Mail\TeamCreated', 'what' => 'insert teams, insert team_user', 'at' => 'app/Models/Team.php:13', 'test' => 'Tests\Feature\TeamDescriptionTest::test_owners_create_teams'],
                 ['kind' => 'sent_then_lost', 'route' => 'POST /teams', 'failed' => 'insert team_user', 'what' => 'job App\Jobs\SyncSeats', 'at' => null, 'test' => 'Tests\Feature\TeamDescriptionTest::test_owners_create_teams'],
                 ['kind' => 'done_twice', 'route' => 'POST /teams', 'failed' => 'job App\Jobs\SyncSeats', 'what' => 'insert seats, mail App\Mail\SeatsChanged', 'at' => 'app/Models/Team.php:13', 'test' => 'Tests\Feature\TeamDescriptionTest::test_owners_create_teams'],
+                ['kind' => 'sent_again', 'route' => 'POST /teams', 'failed' => 'job App\Jobs\SyncSeats', 'what' => 'mail App\Mail\SeatsChanged', 'at' => 'app/Models/Team.php:13', 'test' => 'Tests\Feature\TeamDescriptionTest::test_owners_create_teams'],
                 ['kind' => 'called_again', 'route' => 'POST /teams', 'failed' => 'http POST api.stripe.com', 'what' => 'http POST api.stripe.com', 'at' => 'app/Models/Team.php:12', 'test' => 'Tests\Feature\TeamDescriptionTest::test_owners_create_teams'],
             ]],
         ]);
@@ -577,10 +578,11 @@ class AgentDriverTest extends TestCase
                 ."\nFor 2 recorded things the part of the request could not be told."
                 ."\nRead from the code the change added, not seen running; each is likely, so check the method before you hold it against the change:"
                 ."\n- App\Providers\AppServiceProvider::boot queries the database at app/Providers/AppServiceProvider.php:14, and Laravel runs it while it starts the app, for every request, command and queue worker",
-            "One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer, a save the database refused, or a queued job that ran a second time. Of 6 places where those requests send, save or run a job, 5 were tried and the failure happened in 4. What the app left behind:"
+            "One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer, a save the database refused, or a queued job that ran a second time, whole or after a save in it was refused. Of 6 places where those requests send, save or run a job, 5 were tried and the failure happened in 4. What the app left behind:"
                 ."\n- POST /teams: when mail App\Mail\TeamCreated failed at app/Models/Team.php:13, the request ended in a server error but had already saved: insert teams, insert team_user (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)"
                 ."\n- POST /teams: when insert team_user failed, the save was lost but the request had already sent: job App\Jobs\SyncSeats (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)"
                 ."\n- POST /teams: when job App\Jobs\SyncSeats, queued at app/Models/Team.php:13, ran a second time, it sent or added the same thing again: insert seats, mail App\Mail\SeatsChanged (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)"
+                ."\n- POST /teams: when a save failed in job App\Jobs\SyncSeats, queued at app/Models/Team.php:13, and the job was tried again, it sent the same thing again: mail App\Mail\SeatsChanged (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)"
                 ."\n- POST /teams: when http POST api.stripe.com at app/Models/Team.php:12 got no answer, the request made the same call again with no idempotency key, so the service may do it twice (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)",
         ])));
     }

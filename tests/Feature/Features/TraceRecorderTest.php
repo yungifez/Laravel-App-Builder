@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Route;
 use Tests\Fixtures\RecordedApp;
+use Tests\Fixtures\RecordedCarefulJob;
 use Tests\Fixtures\RecordedJob;
 use Tests\Fixtures\RecordedMail;
 use Tests\Fixtures\RecordedNotice;
@@ -361,7 +362,55 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([[[RecordedQueuedNotice::class, true]], [[RecordedJob::class, false]]], [$jobs($told), $jobs($worked)]);
         $this->assertContains('mail', array_column(array_filter($told['effects'], fn (array $effect) => $effect['job'] ?? false), 'kind'));
         $this->assertSame([], AppFaults::points([$told], $this->wholeFilePatch()));
-        $this->assertSame(['again'], array_column(AppFaults::points([$worked], $this->wholeFilePatch()), 'fails'));
+        // The job changes a row after it sends: that save is a place of its own.
+        $this->assertSame(['again', 'retry'], array_column(AppFaults::points([$worked], $this->wholeFilePatch()), 'fails'));
+    }
+
+    public function test_a_job_tried_again_after_its_save_failed_shows_what_it_sent_both_times()
+    {
+        User::factory()->create(['name' => 'Careful']);
+        Route::post('/_failing/careful', [RecordedApp::class, 'careful']);
+        $recorded = $this->recordWithFailure(effect: 3, kind: 'query');
+
+        $this->post('/_failing/careful')->assertNoContent();
+        User::query()->where('name', 'Told')->update(['name' => 'Careful']);
+        // The job's failure reaches the request here; in use it stays on the queue.
+        $this->post('/_failing/careful')->assertStatus(500);
+
+        $requests = $recorded();
+        $did = fn (array $request) => array_map(fn (array $effect) => [AppTraces::verb($effect['sql'] ?? '') ?: $effect['kind'], $effect['job'] ?? false, $effect['again'] ?? false], $request['effects']);
+        $once = [['job', false, false], ['select', true, false], ['mail', true, false], ['update', true, false]];
+
+        $this->assertSame([$once, [...$once, ['job', true, true], ...array_slice($once, 1)]], [$did($requests[0]), $did($requests[1])]);
+        $this->assertSame([null, 3], [$requests[0]['fault'] ?? null, $requests[1]['fault'] ?? null]);
+        // The second try saved what the first could not.
+        $this->assertSame(1, User::query()->where('name', 'Told')->count());
+
+        $points = AppFaults::points([$requests[0]], $this->wholeFilePatch());
+        $this->assertSame([['again', 0, 'job'], ['retry', 3, 'query']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
+        $points[1]['fault']['request'] = 1;
+
+        $measured = (array) AppFaults::measure($points, [1 => $requests], $this->wholeFilePatch());
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['sent_again', 'POST /_failing/careful', 'job '.RecordedCarefulJob::class, 'mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
+    public function test_a_careful_job_made_to_run_twice_whole_sends_once()
+    {
+        User::factory()->create(['name' => 'Careful']);
+        Route::post('/_failing/careful', [RecordedApp::class, 'careful']);
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'job');
+
+        $this->post('/_failing/careful')->assertNoContent();
+        User::query()->where('name', 'Told')->update(['name' => 'Careful']);
+        $this->post('/_failing/careful')->assertNoContent();
+
+        $requests = $recorded();
+        // The second run asked, saw that it ran before, and stopped.
+        $this->assertSame(['job', 'query', 'mail', 'query', 'job', 'query'], array_column($requests[1]['effects'], 'kind'));
+
+        $measured = $this->measureFailure($requests, 'job '.RecordedCarefulJob::class);
+        $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
     }
 
     public function test_an_email_a_test_fakes_is_still_seen_and_the_fake_still_holds_it()

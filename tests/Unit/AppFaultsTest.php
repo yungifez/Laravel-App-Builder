@@ -189,8 +189,9 @@ class AppFaultsTest extends TestCase
         $this->assertSame([], $this->points([$this->recorded('POST', '/orders', 302, $effects, ['n' => null])]));
         $this->assertSame([], $this->points([$this->recorded('POST', '/orders', 302, $effects, ['cut' => true])]));
 
-        // In use the job runs later, on a queue: its email is not the request's. The job is a place by itself.
-        $this->assertSame(['again'], array_column($this->points([$this->recorded('POST', '/orders', 302, [
+        // In use the job runs later, on a queue: its email and its save are not the request's.
+        // The job is a place by itself, and so is the save it makes after its email.
+        $this->assertSame(['again', 'retry'], array_column($this->points([$this->recorded('POST', '/orders', 302, [
             $this->asked('insert into "orders" ("total") values (?)', self::NEW.':3'),
             ['kind' => 'job', 'what' => 'App\Jobs\SendReceipt', 'open' => 0, 'at' => self::NEW.':4'],
             [...$this->mailed('app/Jobs/SendReceipt.php:20'), 'job' => true],
@@ -325,8 +326,9 @@ class AppFaultsTest extends TestCase
         $this->assertSame([], $places([$this->job(self::NEW.':4'), $this->done(['kind' => 'begin', 'open' => 1]), [...$receipt, 'open' => 1], $this->done(['kind' => 'rollback', 'open' => 0])]));
         // A job of the framework that delivers one email has no code of the app to make safe.
         $this->assertSame([], $places([[...$this->job(self::NEW.':4'), 'delivers' => true], $this->done($this->mailed(null))]));
-        // What a job inside the job does is the outer job's.
-        $this->assertSame([0], array_column($places([$this->job(self::NEW.':4'), $this->done($this->job('app/Jobs/SendReceipt.php:18')), $receipt]), 4));
+        // What a job inside the job does is the outer job's. The outer job queued it and then
+        // saved: a second try queues it again, so that save is the outer job's second place.
+        $this->assertSame([0, 2], array_column($places([$this->job(self::NEW.':4'), $this->done($this->job('app/Jobs/SendReceipt.php:18')), $receipt]), 4));
     }
 
     public function test_a_job_that_ran_twice_is_found_when_it_sent_or_added_the_same_thing_both_times()
@@ -342,7 +344,8 @@ class AppFaultsTest extends TestCase
         $measured = $this->measure([$this->job(self::NEW.':4'), ...$run], 302, [$this->job(self::NEW.':4'), ...$run, $again, ...$run]);
 
         // The row that is changed again stays as it was, so it is not named.
-        $this->assertSame(['points' => 1, 'run' => 1, 'missed' => 0, 'existing' => 0], array_diff_key($measured, ['findings' => 1]));
+        // The change the job makes after its email is a second place, not tried here.
+        $this->assertSame(['points' => 2, 'run' => 1, 'missed' => 0, 'existing' => 0], array_diff_key($measured, ['findings' => 1]));
         $this->assertSame([
             ['kind' => 'done_twice', 'route' => 'POST /orders', 'failed' => 'job App\Jobs\SendReceipt', 'what' => 'insert receipts, mail App\Mail\Receipt', 'at' => self::NEW.':4', 'test' => self::TEST],
         ], $measured['findings']);
@@ -367,6 +370,68 @@ class AppFaultsTest extends TestCase
         $undone = $this->measure($normal, 302, [...$normal, $again, $asks, $this->done(['kind' => 'begin', 'open' => 1]), [...$run[1], 'open' => 1], $this->done(['kind' => 'rollback', 'open' => 0])]);
 
         $this->assertSame([[1, []], [1, []], [1, []]], array_map(fn (array $measured) => [$measured['run'], $measured['findings']], [$stopped, $other, $undone]));
+    }
+
+    public function test_the_last_save_a_job_makes_after_it_sent_is_a_place_tried_with_the_jobs()
+    {
+        $places = fn (array $effects) => array_map(
+            fn (array $point) => [$point['fails'], $point['failed'], $point['at'], $point['fault']['effect'], $point['fault']['kind']],
+            $this->points([$this->recorded('POST', '/orders', 302, $effects)]),
+        );
+        $asks = $this->done($this->asked('select * from "orders" where "id" = ?', 'app/Jobs/SendReceipt.php:19'));
+        $mail = $this->done($this->mailed('app/Jobs/SendReceipt.php:21'));
+        $marks = $this->done($this->asked('update "orders" set "receipt_sent_at" = ?', 'app/Jobs/SendReceipt.php:22'));
+        $logs = $this->done($this->asked('update "orders" set "tries" = ?', 'app/Jobs/SendReceipt.php:23'));
+        $stock = $this->asked('update "products" set "left" = ?', self::NEW.':5');
+
+        // The last save after the email is the place; it is tried with the job, before the request's own save.
+        $this->assertSame([
+            ['again', 'job App\Jobs\SendReceipt', self::NEW.':4', 2, 'job'],
+            ['retry', 'job App\Jobs\SendReceipt', self::NEW.':4', 6, 'query'],
+            ['save', 'update products', self::NEW.':5', 1, 'query'],
+        ], $places([$this->asked('insert into "orders" ("total") values (?)', self::NEW.':3'), $stock, $this->job(self::NEW.':4'), $asks, $mail, $marks, $logs]));
+        // A job that saves first and sends last has no save to lose after the send.
+        $this->assertSame(['again'], array_column($places([$this->job(self::NEW.':4'), $marks, $mail]), 0));
+        // A job of the framework is no place.
+        $this->assertSame([], $places([[...$this->job(self::NEW.':4'), 'delivers' => true], $mail, $marks]));
+    }
+
+    public function test_a_job_tried_again_after_its_save_failed_is_found_when_it_sent_the_same_thing_again()
+    {
+        $asks = $this->done($this->asked('select * from "orders" where "receipt_sent_at" is null', 'app/Jobs/SendReceipt.php:19'));
+        $mail = $this->done($this->mailed('app/Jobs/SendReceipt.php:21'));
+        $marks = $this->done($this->asked('update "orders" set "receipt_sent_at" = ?', 'app/Jobs/SendReceipt.php:22'));
+        $normal = [$this->job(self::NEW.':4'), $asks, $mail, $marks];
+        $again = $this->done([...$this->job(null), 'again' => true]);
+
+        $measured = $this->measure($normal, 500, [...$normal, $again, $asks, $mail, $marks], point: 1);
+
+        $this->assertSame(['points' => 2, 'run' => 1, 'missed' => 0, 'existing' => 0], array_diff_key((array) $measured, ['findings' => 1]));
+        $this->assertSame([
+            ['kind' => 'sent_again', 'route' => 'POST /orders', 'failed' => 'job App\Jobs\SendReceipt', 'what' => 'mail App\Mail\Receipt', 'at' => self::NEW.':4', 'test' => self::TEST],
+        ], $measured['findings'] ?? null);
+    }
+
+    public function test_a_job_tried_again_is_no_finding_when_it_sends_once_and_missed_when_its_second_run_is_not_whole()
+    {
+        $asks = $this->done($this->asked('select * from "orders" where "receipt_sent_at" is null', 'app/Jobs/SendReceipt.php:19'));
+        $mail = $this->done($this->mailed('app/Jobs/SendReceipt.php:21'));
+        $marks = $this->done($this->asked('update "orders" set "receipt_sent_at" = ?', 'app/Jobs/SendReceipt.php:22'));
+        $normal = [$this->job(self::NEW.':4'), $asks, $mail, $marks];
+        $again = $this->done([...$this->job(null), 'again' => true]);
+
+        // The job took the failure in: no queue tries it again.
+        $tookIn = $this->measure($normal, 302, $normal, point: 1);
+        // The second try saw what the first had done, and did not send.
+        $stopped = $this->measure($normal, 500, [...$normal, $again, $asks, $marks], point: 1);
+        // The second try sent something else, from another line.
+        $other = $this->measure($normal, 500, [...$normal, $again, $asks, $this->done($this->mailed('app/Jobs/SendReceipt.php:30')), $marks], point: 1);
+
+        $this->assertSame([[1, []], [1, []], [1, []]], array_map(fn (?array $measured) => [$measured['run'] ?? null, $measured['findings'] ?? null], [$tookIn, $stopped, $other]));
+
+        $points = AppFaults::points(AppTraces::parse($this->recorded('POST', '/orders', 302, $normal)), self::PATCH);
+        $cut = AppFaults::measure($points, [1 => AppTraces::parse($this->recorded('POST', '/orders', 500, [...$normal, $again, $asks], ['fault' => 3, 'cut' => true]))], self::PATCH);
+        $this->assertSame([0, 1, []], [$cut['run'] ?? null, $cut['missed'] ?? null, $cut['findings'] ?? null]);
     }
 
     public function test_an_outside_call_made_again_after_no_answer_is_found()

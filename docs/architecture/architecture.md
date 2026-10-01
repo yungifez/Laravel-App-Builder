@@ -1890,6 +1890,9 @@ can be caused, in requests that ran the change's code:
   runs a second time. A job of the framework that only delivers one email,
   notification or broadcast is not a place: it has no code of the app to
   make safe.
+- **A save in a job.** The last save a job makes after it sent something.
+  The save is refused, and the job is run again, the way a queue tries a
+  failed job again.
 
 For each place, verification runs the one test that made the request again,
 with `TRACE_RECORDER_FAULT` naming the test, the request and the effect. The
@@ -1909,6 +1912,10 @@ The trace of that request shows what stayed:
 - **Done twice.** A job ran twice, and both runs sent the same thing or
   added the same row from the same line. A queue gives a job to a worker at
   least once, so a job must be safe to run again.
+- **Sent again.** A save failed in a job after the job sent something, the
+  job was tried again, and it sent the same thing again from the same line.
+  A job that asks if it ran before passes the run above. It fails here when
+  it marks that only after it sent.
 - **Called again.** An outside call got no answer, and the request made the
   same call again from the same line. A call that got no answer can still
   have arrived, so the service can do it twice: a payment taken twice.
@@ -1938,13 +1945,16 @@ first. The order comes only from the trace, the patch and those findings. At
 most `points` places are tried, and no place starts after `seconds`, so the
 owner's wait has a limit. A place whose failure did not happen is counted as
 `missed`, never as clean. What a job on the sync queue does is not a place
-to fail, because in use that job runs later on a queue. The job as a whole
-is the place. It is the change's when the change queues it or wrote what it
-does. A second run that the trace cut short is missed. An email that a test
+of the request, because in use that job runs later on a queue. The job as a
+whole is the place, and the save after its send is a second place of the
+job. Both are tried with the jobs, before the saves of the request. They
+are the change's when the change queues the job or wrote what it does. A
+job that takes the failure of its save in is not tried again, and nothing
+is said. A second run that the trace cut short is missed. An email that a test
 fakes is a place too: the stand-in of the fake fails it the same way, before
 the fake takes it.
 
-The reviewer blocks all five, unless the request or the plan asks for
+The reviewer blocks all six, unless the request or the plan asks for
 exactly that. The owner reads each in the proof: "If saving fails at /invitations,
 your app has already sent something. People are told about something that
 was not saved." When failures were caused and nothing stayed: "We made things
@@ -1952,7 +1962,9 @@ go wrong 3 times while your app used the new code, such as an email that
 cannot be sent or a save that fails. Each time, your app left nothing half
 done." For a job: "Your app does some work on its own after someone uses
 /orders. If that work is cut off and starts over, it sends or adds the same
-thing twice." For a call made again: "If an outside service is slow to
+thing twice." When the job sends twice only after its save failed, the
+owner reads that in its place: "If saving fails during that work and it
+starts over, it sends the same thing twice." For a call made again: "If an outside service is slow to
 answer at /orders/{order}/pay, your app asks it again. The service may then
 do the same thing twice, such as take a payment twice." On the fixture the reference change has 2 places, both clean,
 in about 2 seconds. A copy of it that sends an email before its last save is

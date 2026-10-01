@@ -329,11 +329,11 @@ abstract class AgentDriver implements ConstructionDriver
 
         if (isset($measured['faults'])) {
             $faults = $measured['faults'];
-            $parts[] = sprintf("One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer, a save the database refused, or a queued job that ran a second time. Of %d places where those requests send, save or run a job, %d were tried and the failure happened in %d.", $faults['points'], $faults['run'] + $faults['missed'], $faults['run'])
+            $parts[] = sprintf("One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer, a save the database refused, or a queued job that ran a second time, whole or after a save in it was refused. Of %d places where those requests send, save or run a job, %d were tried and the failure happened in %d.", $faults['points'], $faults['run'] + $faults['missed'], $faults['run'])
                 .match (true) {
                     $faults['findings'] !== [] => " What the app left behind:\n".$this->list(array_map($this->left(...), $faults['findings'])),
                     $faults['run'] === 0 => ' So this says nothing about the change.',
-                    default => ' Each time the app left nothing behind: it had saved nothing before a server error, sent nothing before a save it lost, kept no part of a save it lost, sent or added nothing again in a job that ran twice, and made no POST or PATCH call again without an idempotency key.',
+                    default => ' Each time the app left nothing behind: it had saved nothing before a server error, sent nothing before a save it lost, kept no part of a save it lost, sent or added nothing again in a job that ran twice or was tried again after its save failed, and made no POST or PATCH call again without an idempotency key.',
                 };
         }
 
@@ -353,6 +353,13 @@ abstract class AgentDriver implements ConstructionDriver
             return "{$finding['route']}: when {$finding['failed']}"
                 .($finding['at'] === null ? '' : ", queued at {$finding['at']},")
                 ." ran a second time, it sent or added the same thing again: {$finding['what']} (caused in {$finding['test']})";
+        }
+
+        // A queue tries a failed job again: what it sent before the failure goes out twice.
+        if ($finding['kind'] === AppFaults::SENT_AGAIN) {
+            return "{$finding['route']}: when a save failed in {$finding['failed']}"
+                .($finding['at'] === null ? '' : ", queued at {$finding['at']},")
+                ." and the job was tried again, it sent the same thing again: {$finding['what']} (caused in {$finding['test']})";
         }
 
         // A call that got no answer may still have arrived at the service.

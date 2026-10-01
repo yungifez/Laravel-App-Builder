@@ -549,6 +549,18 @@ class ChangeProofTest extends TestCase
         ], $left->where('kind', 'gap')->pluck('text')->all());
         $this->assertFalse($left->contains(fn (array $line) => str_contains($line['text'], $clean)));
 
+        // Work that sends twice only when its save fails is said in its own words,
+        // and once when it also sends twice each time it starts over.
+        $again = $finding('sent_again', 'POST /orders', 'job App\Jobs\SendReceipt');
+        $this->assertSame(
+            ['Your app does some work on its own after someone uses /orders. If saving fails during that work and it starts over, it sends the same thing twice.'],
+            $proof(['run' => 1, 'findings' => [$again]])->where('kind', 'gap')->pluck('text')->all(),
+        );
+        $this->assertSame(
+            ['Your app does some work on its own after someone uses /orders. If that work is cut off and starts over, it sends or adds the same thing twice.'],
+            $proof(['run' => 2, 'findings' => [$finding('done_twice', 'POST /orders', 'job App\Jobs\SendReceipt'), $again]])->where('kind', 'gap')->pluck('text')->all(),
+        );
+
         $this->assertSame(
             ['If an outside service does not answer at /orders/{order}/pay, the person sees an error, but your app has already saved what they did. They may try again and do it twice.'],
             $proof(['run' => 1, 'findings' => [$finding('saved_then_failed', 'POST /orders/{order}/pay', 'http POST api.stripe.com')]])->where('kind', 'gap')->pluck('text')->all(),
