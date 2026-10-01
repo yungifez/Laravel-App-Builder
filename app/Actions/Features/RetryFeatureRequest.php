@@ -39,8 +39,8 @@ class RetryFeatureRequest
     }
 
     /**
-     * Determine if a made change was never kept and its run stopped before
-     * the checks and review were done.
+     * Determine if a made change was never kept and its run stopped, or the
+     * owner stopped it, before the checks and review were done.
      */
     public static function stoppedWhileChecking(FeatureRequest $featureRequest): bool
     {
@@ -48,7 +48,7 @@ class RetryFeatureRequest
             && $featureRequest->commit_sha === null
             && $featureRequest->reverted_at === null
             && $featureRequest->latestRun?->question === null
-            && in_array($featureRequest->latestRun?->status, [RunStatus::Failed, RunStatus::NeedsUserDecision], true);
+            && in_array($featureRequest->latestRun?->status, [RunStatus::Failed, RunStatus::NeedsUserDecision, RunStatus::Cancelled], true);
     }
 
     /**

@@ -78,6 +78,19 @@ class RetryFeatureRequestTest extends TestCase
         $this->assertSame(2, $this->project->featureRequests()->count());
     }
 
+    public function test_a_made_change_the_owner_stopped_while_checking_is_not_one_to_try()
+    {
+        $made = FeatureRequest::factory()->for($this->project)->generated()->create();
+        Run::factory()->for($made)->create(['status' => RunStatus::Cancelled]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('changes.0.state', 'stopped'));
+
+        $this->get(route('projects.index'))
+            ->assertInertia(fn (Assert $page) => $page->where('projects.0.waiting', 0));
+    }
+
     public function test_a_change_that_did_not_stop_is_not_tried_again()
     {
         $running = FeatureRequest::factory()->for($this->project)->create();
