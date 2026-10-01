@@ -24,12 +24,31 @@ class RetryFeatureRequest
     public static function retryable(FeatureRequest $featureRequest): bool
     {
         // A change that waits for the owner's answer has not stopped.
-        if ($featureRequest->status === FeatureRequestStatus::Generated || $featureRequest->latestRun?->question !== null) {
+        if ($featureRequest->latestRun?->question !== null) {
             return false;
+        }
+
+        // A made change waits for the owner to try it, unless the run
+        // stopped while checking it: then the owner can only ask again.
+        if ($featureRequest->status === FeatureRequestStatus::Generated) {
+            return self::stoppedWhileChecking($featureRequest);
         }
 
         return in_array($featureRequest->status, [FeatureRequestStatus::Failed, FeatureRequestStatus::Cancelled], true)
             || in_array($featureRequest->latestRun?->status, [RunStatus::Failed, RunStatus::NeedsUserDecision, RunStatus::Cancelled], true);
+    }
+
+    /**
+     * Determine if a made change was never kept and its run stopped before
+     * the checks and review were done.
+     */
+    public static function stoppedWhileChecking(FeatureRequest $featureRequest): bool
+    {
+        return $featureRequest->status === FeatureRequestStatus::Generated
+            && $featureRequest->commit_sha === null
+            && $featureRequest->reverted_at === null
+            && $featureRequest->latestRun?->question === null
+            && in_array($featureRequest->latestRun?->status, [RunStatus::Failed, RunStatus::NeedsUserDecision], true);
     }
 
     /**

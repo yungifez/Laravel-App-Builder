@@ -62,6 +62,22 @@ class RetryFeatureRequestTest extends TestCase
         $this->assertSame(2, $this->project->featureRequests()->count());
     }
 
+    public function test_a_made_change_whose_run_stopped_while_checking_can_be_tried_again()
+    {
+        $made = FeatureRequest::factory()->for($this->project)->generated()->create();
+        Run::factory()->for($made)->create(['status' => RunStatus::Failed, 'error' => 'The reviewer returned an invalid review.']);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('changes.0.state', 'stopped'));
+
+        $this->get(route('feature-requests.show', $made))
+            ->assertInertia(fn (Assert $page) => $page->where('featureRequest.can_retry', true));
+
+        $this->post(route('feature-requests.retries.store', $made))->assertSessionHasNoErrors();
+        $this->assertSame(2, $this->project->featureRequests()->count());
+    }
+
     public function test_a_change_that_did_not_stop_is_not_tried_again()
     {
         $running = FeatureRequest::factory()->for($this->project)->create();

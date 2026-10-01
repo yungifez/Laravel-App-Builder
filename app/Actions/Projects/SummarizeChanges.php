@@ -2,6 +2,7 @@
 
 namespace App\Actions\Projects;
 
+use App\Actions\Features\RetryFeatureRequest;
 use App\Enums\ChangeState;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
@@ -112,6 +113,11 @@ class SummarizeChanges
 
         if ($newest->status === FeatureRequestStatus::Answered) {
             return [ChangeState::Answered, $newest];
+        }
+
+        // Made, but the run stopped before it was checked: the owner asks again.
+        if (RetryFeatureRequest::stoppedWhileChecking($newest)) {
+            return [ChangeState::Stopped, $newest];
         }
 
         if ($newest->status === FeatureRequestStatus::Generated && $newest->commit_sha === null && $newest->reverted_at === null) {
