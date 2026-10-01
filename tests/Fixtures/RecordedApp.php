@@ -200,6 +200,13 @@ class RecordedApp
         return response()->noContent();
     }
 
+    public function told(User $user): Response
+    {
+        $user->notify(new RecordedQueuedNotice);
+
+        return response()->noContent();
+    }
+
     public function worked(): Response
     {
         RecordedJob::dispatch();

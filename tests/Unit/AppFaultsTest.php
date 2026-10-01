@@ -313,6 +313,8 @@ class AppFaultsTest extends TestCase
         $this->assertSame([], $places([$this->job(self::NEW.':4'), $this->done($this->asked('insert ignore into `receipts` (`order_id`) values (?)', 'app/Jobs/SendReceipt.php:20'))]));
         // An insert the job put back did not stay.
         $this->assertSame([], $places([$this->job(self::NEW.':4'), $this->done(['kind' => 'begin', 'open' => 1]), [...$receipt, 'open' => 1], $this->done(['kind' => 'rollback', 'open' => 0])]));
+        // A job of the framework that delivers one email has no code of the app to make safe.
+        $this->assertSame([], $places([[...$this->job(self::NEW.':4'), 'delivers' => true], $this->done($this->mailed(null))]));
         // What a job inside the job does is the outer job's.
         $this->assertSame([0], array_column($places([$this->job(self::NEW.':4'), $this->done($this->job('app/Jobs/SendReceipt.php:18')), $receipt]), 4));
     }

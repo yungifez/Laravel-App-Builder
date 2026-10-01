@@ -28,7 +28,8 @@ namespace App\Features;
  * shape is compared: the same send or the same insert from the same line
  * in both runs. A change that is made again (an update, a delete, or an
  * insert that says what to do when the row is there) is not held against
- * the job.
+ * the job. A job of the framework that delivers one email, notification
+ * or broadcast is not run twice: it has no code of the app to make safe.
  */
 class AppFaults
 {
@@ -84,7 +85,7 @@ class AppFaults
      * order comes only from the trace, the patch and those findings, so
      * the same change gives the same order.
      *
-     * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>  $requests  From AppTraces::parse(), of the tests' normal run
+     * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>  $requests  From AppTraces::parse(), of the tests' normal run
      * @param  list<array{route: string, at?: string|null}>  $suspected  Findings of the other engines about the change, such as AppTraces and AppBoundaries give
      * @return list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string}, own: bool}>
      */
@@ -114,8 +115,8 @@ class AppFaults
                     continue;
                 }
 
-                // A job that ran here: what it did can be done twice.
-                $ran = $effect['kind'] === 'job' ? self::ran($request['effects'], $place) : [];
+                // A job of the app that ran here: what it did can be done twice.
+                $ran = $effect['kind'] === 'job' && ! ($effect['delivers'] ?? false) ? self::ran($request['effects'], $place) : [];
 
                 if (array_any($ran, fn (array $effect, int $at) => self::repeats($effect, isset($stayed[$at])))) {
                     $jobs[] = [self::AGAIN, $place, $effect, array_any($ran, $new)];
@@ -179,7 +180,7 @@ class AppFaults
      * a missed place, or about a place that was not tried.
      *
      * @param  list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string}, own: bool}>  $points  From points()
-     * @param  array<int, list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>>  $runs  What was recorded when each place's failure was caused, by the place's position in $points; a place not tried is absent
+     * @param  array<int, list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>>  $runs  What was recorded when each place's failure was caused, by the place's position in $points; a place not tried is absent
      * @return array{points: int, run: int, missed: int, existing: int, findings: list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}>}|null
      */
     public static function measure(array $points, array $runs, ?string $patch): ?array
@@ -252,8 +253,8 @@ class AppFaults
      * Get what a request left behind after its failure that the failure
      * should have stopped or undone, by the kind of problem it is.
      *
-     * @param  array{status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool}>, fault?: int}  $hit  The request the failure was caused in
-     * @return array<string, list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool}>>
+     * @param  array{status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool}>, fault?: int}  $hit  The request the failure was caused in
+     * @return array<string, list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool}>>
      */
     protected static function left(string $fails, array $hit): array
     {
@@ -299,8 +300,8 @@ class AppFaults
      * Get what a job did in both of its runs that must happen once: the
      * same send, or the same insert that stayed, from the same line.
      *
-     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool}>  $effects
-     * @return list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool}>
+     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool}>  $effects
+     * @return list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool}>
      */
     protected static function twice(array $effects, int $place): array
     {
@@ -332,8 +333,8 @@ class AppFaults
      * as a job's right after the job, up to where it was made to run
      * again. Each keeps its place among the things the request did.
      *
-     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool}>  $effects
-     * @return array<int, array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool}>
+     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool}>  $effects
+     * @return array<int, array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool}>
      */
     protected static function ran(array $effects, int $place): array
     {

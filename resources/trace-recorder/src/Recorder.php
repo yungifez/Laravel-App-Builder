@@ -155,7 +155,7 @@ class Recorder
             // The sync queue runs a job where it is dispatched, without queueing it.
             if ($event->connectionName === 'sync') {
                 $this->running[] = $this->operation === null ? null : count($this->operation['effects']);
-                $this->effect(['kind' => 'job', 'what' => $event->job->resolveName()]);
+                $this->effect(['kind' => 'job', 'what' => $event->job->resolveName(), ...($this->delivers($event->job) ? ['delivers' => true] : [])]);
                 $this->jobs++;
             }
         });
@@ -389,6 +389,25 @@ class Recorder
         if ($failing) {
             throw $fails();
         }
+    }
+
+    /**
+     * Determine if a job is the framework's own: it delivers one email,
+     * notification or broadcast, and has no code of the app to make safe.
+     */
+    protected function delivers(object $job): bool
+    {
+        try {
+            $command = method_exists($job, 'payload') ? ($job->payload()['data']['commandName'] ?? null) : null;
+        } catch (Throwable) {
+            return false;
+        }
+
+        return in_array($command, [
+            'Illuminate\\Notifications\\SendQueuedNotifications',
+            'Illuminate\\Mail\\SendQueuedMailable',
+            'Illuminate\\Broadcasting\\BroadcastEvent',
+        ], true);
     }
 
     /**

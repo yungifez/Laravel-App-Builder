@@ -22,6 +22,7 @@ use Tests\Fixtures\RecordedApp;
 use Tests\Fixtures\RecordedJob;
 use Tests\Fixtures\RecordedMail;
 use Tests\Fixtures\RecordedNotice;
+use Tests\Fixtures\RecordedQueuedNotice;
 use Tests\Fixtures\RecordedResource;
 use Tests\TestCase;
 use TraceRecorder\Provider;
@@ -341,6 +342,26 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
         // The change to a row is made again, which leaves the row as it was.
         $this->assertSame([['done_twice', 'POST /_failing/worked', 'job '.RecordedJob::class, 'insert users, mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
+    public function test_a_job_of_the_framework_that_delivers_a_notification_is_marked_and_is_no_place_to_run_twice()
+    {
+        $user = User::factory()->create();
+        Route::post('/_failing/told/{user}', [RecordedApp::class, 'told'])->middleware('web');
+        Route::post('/_failing/worked', [RecordedApp::class, 'worked']);
+        $recorded = $this->record();
+
+        $this->post("/_failing/told/{$user->id}")->assertNoContent();
+        $this->post('/_failing/worked')->assertNoContent();
+
+        [$told, $worked] = $recorded();
+        $jobs = fn (array $request) => array_values(array_map(fn (array $effect) => [$effect['what'], $effect['delivers'] ?? false], array_filter($request['effects'], fn (array $effect) => $effect['kind'] === 'job')));
+
+        // The job is named as the notification it delivers; the app wrote no code in it.
+        $this->assertSame([[[RecordedQueuedNotice::class, true]], [[RecordedJob::class, false]]], [$jobs($told), $jobs($worked)]);
+        $this->assertContains('mail', array_column(array_filter($told['effects'], fn (array $effect) => $effect['job'] ?? false), 'kind'));
+        $this->assertSame([], AppFaults::points([$told], $this->wholeFilePatch()));
+        $this->assertSame(['again'], array_column(AppFaults::points([$worked], $this->wholeFilePatch()), 'fails'));
     }
 
     public function test_an_email_a_test_fakes_is_still_seen_and_the_fake_still_holds_it()
