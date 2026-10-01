@@ -15,6 +15,11 @@ function rate(part: number, whole: number): string {
         : `${Math.round((part / whole) * 100)}% (${part} of ${whole})`;
 }
 
+// "1 request", "2 requests": a count reads as the owner would say it.
+function count(amount: number, one: string): string {
+    return `${amount} ${one}${amount === 1 ? '' : 's'}`;
+}
+
 function dollars(amount: number | null): string {
     return amount === null ? '–' : `$${amount.toFixed(2)}`;
 }
@@ -35,7 +40,7 @@ function dollars(amount: number | null): string {
             <Heading
                 variant="small"
                 title="How changes went"
-                :description="`${telemetry.requests} requests, ${telemetry.accepted} kept, ${telemetry.reverted} undone`"
+                :description="`${count(telemetry.requests, 'request')}, ${telemetry.accepted} kept, ${telemetry.reverted} undone`"
             />
 
             <dl class="grid grid-cols-2 gap-x-4 gap-y-3">
@@ -101,16 +106,20 @@ function dollars(amount: number | null): string {
 
             <p class="text-xs text-muted-foreground">
                 You adjusted a plan
-                {{ telemetry.owner_actions.adjustments }} times, stopped
-                {{ telemetry.owner_actions.stops }}, asked again
+                {{ count(telemetry.owner_actions.adjustments, 'time') }},
+                stopped {{ telemetry.owner_actions.stops }}, asked again
                 {{ telemetry.owner_actions.retries }} and undid
                 {{ telemetry.owner_actions.undos }}.
             </p>
 
             <p class="text-xs text-muted-foreground">
                 About {{ dollars(telemetry.cost_usd) }} in total.
-                {{ telemetry.visual_edits }} changes to how it looks were made
-                straight away.
+                {{
+                    telemetry.visual_edits === 1
+                        ? '1 change to how it looks was'
+                        : `${telemetry.visual_edits} changes to how it looks were`
+                }}
+                made straight away.
                 <template v-if="telemetry.setup_cost_usd > 0">
                     Reading your app to describe it cost
                     {{ dollars(telemetry.setup_cost_usd) }}.
