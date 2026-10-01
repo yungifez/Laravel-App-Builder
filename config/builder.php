@@ -753,7 +753,8 @@ return [
         // What the app leaves behind when one thing fails (direction 32).
         // Once the checks pass, the recorder makes one thing fail in one
         // request of one test: an email that cannot be sent, an outside
-        // service that does not answer, or a save the database refuses.
+        // service that does not answer, or a save the database refuses
+        // (in a transaction, or after an earlier step of a save in steps).
         // The places come from the recording above, in requests that ran
         // the change's code, so nothing is random. Each place runs
         // "command" once, with the name of its test added after it; the

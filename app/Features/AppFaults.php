@@ -16,9 +16,10 @@ namespace App\Features;
  *
  * Three things are read from what stayed: the app saved, then the person
  * got an error; the app sent something, then lost what it was saving; and
- * the app lost one part of what it was saving but kept another. What a
- * job on the queue does is left out: in use that job runs later, by
- * itself.
+ * the app lost one part of what it was saving but kept another. The last
+ * one is how a request that saves in steps, with no transaction around
+ * them, is found. What a job on the queue does is left out: in use that
+ * job runs later, by itself.
  */
 class AppFaults
 {
@@ -51,9 +52,11 @@ class AppFaults
 
     /**
      * Find the places where a failure can be caused: each email and outside
-     * call a request makes, and the last save of each transaction a request
-     * commits. Only requests that ran the change's code are used. Places
-     * on the change's own lines come first, so a small budget goes to them.
+     * call a request makes, the last save of each transaction a request
+     * commits, and the last save the app's code makes outside a transaction
+     * once the request has saved or sent something. Only requests that ran
+     * the change's code are used. Places on the change's own lines come
+     * first, so a small budget goes to them.
      *
      * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>  $requests  From AppTraces::parse(), of the tests' normal run
      * @return list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string}, own: bool}>
@@ -72,32 +75,35 @@ class AppFaults
             }
 
             $route = $request['method'].' '.($request['route'] ?? '?');
+            $stayed = AppTraces::saved($request['effects']);
+            $found = [];
             $last = null;
+            $apart = null;
+            $done = false;
 
             foreach ($request['effects'] as $place => $effect) {
                 if ($effect['job'] ?? false) {
                     continue;
                 }
 
-                $found = null;
-
                 if (in_array($effect['kind'], self::FAILS, true)) {
-                    $found = [self::SEND, $place, $effect];
+                    $found[] = [self::SEND, $place, $effect];
                 } elseif ($effect['open'] > 0 && AppTraces::writes($effect)) {
-                    $last = [$place, $effect];
+                    $last = [self::SAVE, $place, $effect];
                 } elseif ($effect['kind'] === 'commit' && $last !== null) {
                     // The last save: everything before it in the transaction
                     // was done, and must be undone with it.
-                    $found = [self::SAVE, ...$last];
+                    $found[] = $last;
                     $last = null;
+                } elseif ($done && isset($stayed[$place]) && is_string($effect['at'] ?? null)) {
+                    // A save in steps: nothing undoes the steps before it.
+                    $apart = [self::SAVE, $place, $effect];
                 }
 
-                if ($found === null) {
-                    continue;
-                }
+                $done = $done || in_array($effect['kind'], self::SENT, true) || (isset($stayed[$place]) && is_string($effect['at'] ?? null));
+            }
 
-                [$fails, $at, $failed] = $found;
-
+            foreach ([...$found, ...($apart === null ? [] : [$apart])] as [$fails, $at, $failed]) {
                 $points[implode('|', [$fails, $route, self::name($failed), $failed['at'] ?? ''])] ??= [
                     'fails' => $fails,
                     'route' => $route,
@@ -204,7 +210,9 @@ class AppFaults
         $place = $hit['fault'] ?? 0;
         $before = fn (array $effect, int $at): bool => $at < $place && ! ($effect['job'] ?? false);
         $stayed = AppTraces::saved($hit['effects']);
-        $kept = array_values(array_filter($stayed, $before, ARRAY_FILTER_USE_BOTH));
+        // What the framework or a package saved by itself is not part of
+        // what the app was saving.
+        $kept = array_values(array_filter($stayed, fn (array $effect, int $at) => $before($effect, $at) && is_string($effect['at'] ?? null), ARRAY_FILTER_USE_BOTH));
 
         if ($fails === self::SEND) {
             // The person got an error page, but what the request saved
@@ -214,12 +222,16 @@ class AppFaults
 
         $failed = $hit['effects'][$place] ?? null;
 
-        // The save was lost when its transaction was put back and no later
-        // try saved the same thing. An app that carried on to commit took
-        // the failure in; what it did then is not known from a trace.
+        // The save was refused before it ran. In a transaction, the app
+        // lost it when the transaction was put back; an app that carried
+        // on to commit took the failure in, and what it did then is not
+        // known from a trace. Outside a transaction the same holds when
+        // the request did not end in a server error. A later try that
+        // saved the same thing lost nothing.
         $again = fn (array $effect, int $at): bool => $at > $place && ($effect['sql'] ?? null) === ($failed['sql'] ?? '') && ($effect['at'] ?? null) === ($failed['at'] ?? null);
+        $tookIn = $failed !== null && ($failed['open'] > 0 ? isset($stayed[$place]) : $hit['status'] < 500);
 
-        if ($failed === null || isset($stayed[$place]) || array_any($stayed, $again)) {
+        if ($failed === null || $tookIn || array_any($stayed, $again)) {
             return [];
         }
 

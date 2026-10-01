@@ -7,20 +7,18 @@ use App\Features\AppTraces;
 use App\Models\User;
 use Closure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Route;
-use RuntimeException;
+use Tests\Fixtures\RecordedApp;
 use Tests\TestCase;
 use TraceRecorder\Provider;
 
 /**
  * The recorder that goes into the box image, loaded into this app the way
- * it is loaded into an owner's app: as a service provider.
+ * it is loaded into an owner's app: as a service provider. The routes it
+ * records are RecordedApp's, which stands in for the owner's code.
  */
 class TraceRecorderTest extends TestCase
 {
@@ -81,13 +79,13 @@ class TraceRecorderTest extends TestCase
     }
 
     /**
-     * A patch that adds every line of this file, so what its routes do is
-     * the change's.
+     * A patch that adds every line of the app that is recorded, so what
+     * its routes do is the change's.
      */
     protected function wholeFilePatch(): string
     {
-        $path = 'tests/Feature/Features/TraceRecorderTest.php';
-        $lines = count(file(__FILE__) ?: []);
+        $path = RecordedApp::PATH;
+        $lines = count(file(base_path($path)) ?: []);
 
         return "diff --git a/{$path} b/{$path}\n--- /dev/null\n+++ b/{$path}\n@@ -0,0 +1,{$lines} @@\n".str_repeat("+//\n", $lines);
     }
@@ -113,15 +111,7 @@ class TraceRecorderTest extends TestCase
     public function test_a_request_is_recorded_with_what_it_asked_saved_and_sent_and_where()
     {
         $user = User::factory()->create();
-        Route::post('/_recorded/{user}', function (User $user) {
-            DB::transaction(function () use ($user) {
-                $user->update(['name' => 'Renamed']);
-                Mail::raw('Hello', fn ($message) => $message->to('owner@example.com'));
-            });
-            dispatch(fn () => null);
-
-            return response()->noContent();
-        })->middleware('web');
+        Route::post('/_recorded/{user}', [RecordedApp::class, 'renamed'])->middleware('web');
         $recorded = $this->record();
 
         $this->post("/_recorded/{$user->id}")->assertNoContent();
@@ -134,9 +124,9 @@ class TraceRecorderTest extends TestCase
         $kinds = array_map(fn (array $effect) => $effect['kind'].' '.$effect['open'], $request['effects']);
         $this->assertSame(['begin 1', 'query 1', 'mail 1', 'commit 0', 'job 0'], array_slice($kinds, -5));
 
-        // Queries keep their placeholders, and each thing names the line of this file it came from.
+        // Queries keep their placeholders, and each thing names the line of the app's code it came from.
         $update = collect($request['effects'])->firstWhere('sql', 'update "users" set "name" = ?, "updated_at" = ? where "id" = ?');
-        $this->assertMatchesRegularExpression('#^tests/Feature/Features/TraceRecorderTest\.php:\d+$#', $update['at']);
+        $this->assertMatchesRegularExpression('#^'.preg_quote(RecordedApp::PATH).':\d+$#', $update['at']);
         $this->assertStringNotContainsString('Renamed', File::get("{$this->directory}/trace.jsonl"));
 
         // The reader finds the mail sent before the saving was finished.
@@ -148,22 +138,10 @@ class TraceRecorderTest extends TestCase
     public function test_refusals_rollbacks_and_reads_that_save_are_told_apart()
     {
         Route::middleware('web')->group(function () {
-            Route::get('/_recorded/read', fn () => tap(response()->noContent(), fn () => User::factory()->create()));
-            Route::post('/_recorded/denied', function () {
-                User::factory()->create();
-                abort(403);
-            });
-            Route::post('/_recorded/invalid', fn (Request $request) => $request->validate(['name' => 'required']));
-            Route::post('/_recorded/undone', function () {
-                try {
-                    DB::transaction(function () {
-                        User::factory()->create();
-                        abort(422);
-                    });
-                } finally {
-                    User::query()->count();
-                }
-            });
+            Route::get('/_recorded/read', [RecordedApp::class, 'read']);
+            Route::post('/_recorded/denied', [RecordedApp::class, 'denied']);
+            Route::post('/_recorded/invalid', [RecordedApp::class, 'invalid']);
+            Route::post('/_recorded/undone', [RecordedApp::class, 'undone']);
         });
         $recorded = $this->record();
 
@@ -187,12 +165,7 @@ class TraceRecorderTest extends TestCase
 
     public function test_an_email_made_to_fail_ends_the_request_in_an_error_and_what_it_saved_stays()
     {
-        Route::post('/_failing/order', function () {
-            DB::table('users')->where('id', 0)->update(['name' => 'Ordered']);
-            Mail::raw('Receipt', fn ($message) => $message->to('owner@example.com'));
-
-            return response()->noContent();
-        });
+        Route::post('/_failing/order', [RecordedApp::class, 'order']);
         $recorded = $this->recordWithFailure(effect: 1, kind: 'mail');
 
         $this->post('/_failing/order')->assertNoContent();
@@ -213,12 +186,7 @@ class TraceRecorderTest extends TestCase
 
     public function test_a_save_made_to_fail_is_put_back_but_what_was_sent_before_it_is_gone()
     {
-        Route::post('/_failing/invite', function () {
-            Mail::raw('You are invited', fn ($message) => $message->to('guest@example.com'));
-            DB::transaction(fn () => User::factory()->create());
-
-            return response()->noContent();
-        });
+        Route::post('/_failing/invite', [RecordedApp::class, 'invite']);
         $recorded = $this->recordWithFailure(effect: 2, kind: 'query');
 
         $this->post('/_failing/invite')->assertNoContent();
@@ -235,13 +203,50 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([['sent_then_lost', 'insert users', 'mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['failed'], $finding['what']], $measured['findings']));
     }
 
+    public function test_a_save_made_to_fail_outside_a_transaction_is_never_made_and_the_step_before_it_stays()
+    {
+        Route::post('/_failing/steps', [RecordedApp::class, 'steps']);
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'query');
+
+        $this->post('/_failing/steps')->assertNoContent();
+        $this->post('/_failing/steps')->assertStatus(500);
+
+        $requests = $recorded();
+        $this->assertSame(['query 0', 'query 0'], array_map(fn (array $effect) => $effect['kind'].' '.$effect['open'], $requests[1]['effects']));
+        $this->assertSame(1, $requests[1]['fault']);
+        // The second step was refused before it ran: the failing request's user is there, with the name it was made with.
+        $this->assertSame([1, 1], [User::query()->where('name', 'Second step')->count(), User::query()->where('name', '!=', 'Second step')->count()]);
+
+        $measured = $this->measureFailure($requests, 'update users');
+        $this->assertSame([['saved_in_part', 'POST /_failing/steps', 'update users', 'insert users']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
+    public function test_what_the_tests_own_code_does_inside_a_request_is_not_the_apps()
+    {
+        $user = User::factory()->create();
+        Route::post('/_recorded/full/{user}', [RecordedApp::class, 'full'])->middleware('web');
+        // The test stands in for a second person, who saves while the request runs.
+        $saved = false;
+        User::retrieved(function () use (&$saved) {
+            $saved = $saved || (bool) User::factory()->create();
+        });
+        $recorded = $this->record();
+
+        $this->post("/_recorded/full/{$user->id}")->assertStatus(422);
+
+        [$request] = $recorded();
+        $writes = array_values(array_filter($request['effects'], AppTraces::writes(...)));
+        $this->assertSame(['insert users', 'update users'], array_map(fn (array $effect) => AppTraces::statement($effect['sql']), $writes));
+        $this->assertNull($writes[0]['at']);
+        $this->assertStringStartsWith(RecordedApp::PATH.':', $writes[1]['at']);
+
+        // Only what the app kept is held against it.
+        $this->assertSame(['update users'], array_column(AppTraces::measure([$request], null, ['POST /_recorded/full/{user}'])['findings'], 'what'));
+    }
+
     public function test_nothing_fails_for_another_test_or_another_kind_of_thing()
     {
-        Route::post('/_failing/order', function () {
-            Mail::raw('Receipt', fn ($message) => $message->to('owner@example.com'));
-
-            return response()->noContent();
-        });
+        Route::post('/_failing/order', [RecordedApp::class, 'receipt']);
         putenv('TRACE_RECORDER_FAULT='.json_encode(['test' => self::class.'::test_some_other_test', 'request' => 0, 'effect' => 0, 'kind' => 'mail']));
         $recorded = $this->record();
 
@@ -252,19 +257,8 @@ class TraceRecorderTest extends TestCase
 
     public function test_what_a_job_on_the_sync_queue_does_is_marked_and_an_uncaught_error_is_still_recorded()
     {
-        Route::post('/_failing/queued', function () {
-            dispatch(function () {
-                User::query()->count();
-            });
-            User::query()->count();
-
-            return response()->noContent();
-        });
-        Route::post('/_failing/thrown', function () {
-            DB::table('users')->where('id', 0)->update(['name' => 'Thrown']);
-
-            throw new RuntimeException('No error page for this one.');
-        });
+        Route::post('/_failing/queued', [RecordedApp::class, 'queued']);
+        Route::post('/_failing/thrown', [RecordedApp::class, 'thrown']);
         $recorded = $this->record();
 
         $this->post('/_failing/queued')->assertNoContent();
@@ -278,7 +272,7 @@ class TraceRecorderTest extends TestCase
 
     public function test_a_fake_that_hides_what_is_sent_is_named()
     {
-        Route::post('/_recorded/quiet', fn () => response()->noContent());
+        Route::post('/_recorded/quiet', [RecordedApp::class, 'quiet']);
         $recorded = $this->record();
         Notification::fake();
 

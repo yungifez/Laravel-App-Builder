@@ -80,7 +80,7 @@ class AppFaultsTest extends TestCase
         return AppFaults::measure($points, [$point => $run], self::PATCH);
     }
 
-    public function test_it_finds_each_send_and_the_last_save_of_each_transaction_in_requests_that_ran_the_change()
+    public function test_it_finds_each_send_and_the_last_save_in_and_outside_a_transaction_in_requests_that_ran_the_change()
     {
         $points = $this->points([
             $this->recorded('POST', '/orders', 302, [
@@ -91,7 +91,7 @@ class AppFaultsTest extends TestCase
                 ['kind' => 'commit', 'open' => 0],
                 $this->mailed(self::NEW.':4'),
                 ['kind' => 'http', 'what' => 'POST api.stripe.com', 'open' => 0, 'at' => 'app/Billing/Charge.php:12'],
-                // A save outside a transaction is not undone when it fails, so it is no place.
+                // A save outside a transaction, after the request saved and sent: a save in steps.
                 $this->asked('update "users" set "ordered_at" = ?', self::NEW.':5'),
             ], ['n' => 2]),
             // The same place in another request is one place.
@@ -100,14 +100,16 @@ class AppFaultsTest extends TestCase
             $this->recorded('POST', '/teams', 302, [['kind' => 'mail', 'what' => 'App\Mail\Welcome', 'open' => 0, 'at' => 'app/Actions/CreateTeam.php:20']]),
         ]);
 
-        // The place on the change's own line comes first.
+        // The places on the change's own lines come first.
         $this->assertSame([
             ['send', 'mail App\Mail\Receipt', self::NEW.':4', true],
+            ['save', 'update users', self::NEW.':5', true],
             ['save', 'update products', 'app/Models/Product.php:30', false],
             ['send', 'http POST api.stripe.com', 'app/Billing/Charge.php:12', false],
         ], array_map(fn (array $point) => [$point['fails'], $point['failed'], $point['at'], $point['own']], $points));
         $this->assertSame(['test' => self::TEST, 'request' => 2, 'effect' => 5, 'kind' => 'mail'], $points[0]['fault']);
-        $this->assertSame(['test' => self::TEST, 'request' => 2, 'effect' => 3, 'kind' => 'query'], $points[1]['fault']);
+        $this->assertSame(['test' => self::TEST, 'request' => 2, 'effect' => 7, 'kind' => 'query'], $points[1]['fault']);
+        $this->assertSame(['test' => self::TEST, 'request' => 2, 'effect' => 3, 'kind' => 'query'], $points[2]['fault']);
         $this->assertSame('test_customers_order', $points[0]['filter']);
         $this->assertSame('POST /orders', $points[0]['route']);
     }
@@ -197,6 +199,43 @@ class AppFaultsTest extends TestCase
         $clean = $this->measure([['kind' => 'begin', 'open' => 1], $order, ['kind' => 'commit', 'open' => 0]], 500, [['kind' => 'begin', 'open' => 1], $order, ['kind' => 'rollback', 'open' => 0]]);
 
         $this->assertSame([[1, []], [1, []], [1, []]], array_map(fn (array $measured) => [$measured['run'], $measured['findings']], [$again, $carriedOn, $clean]));
+    }
+
+    public function test_only_the_last_save_in_steps_is_a_place_and_only_after_the_apps_code_saved_or_sent()
+    {
+        $order = $this->asked('insert into "orders" ("total") values (?)', self::NEW.':3');
+        $items = $this->asked('insert into "order_items" ("order_id") values (?)', self::NEW.':4');
+        $stock = $this->asked('update "products" set "left" = ?', self::NEW.':5');
+        $failed = fn (array $effects) => array_column($this->points([$this->recorded('POST', '/orders', 302, $effects)]), 'failed');
+
+        // When the last step fails, every step before it is seen to stay.
+        $this->assertSame(['update products'], $failed([$order, $items, $stock]));
+        // One save alone leaves nothing behind when it fails.
+        $this->assertSame([], $failed([$this->asked('select * from "products"', self::NEW.':3'), $order]));
+        // What the framework saved by itself is no step of the app's, before or as the save.
+        $this->assertSame([], $failed([$this->asked('update "users" set "remember_token" = ?', null), $order]));
+        $this->assertSame([], $failed([$order, $this->asked('update "sessions" set "payload" = ?', null)]));
+        // A save that was rolled back did not stay, so nothing came before the one after it.
+        $this->assertSame([], $failed([['kind' => 'begin', 'open' => 1], [...$order, 'open' => 1], ['kind' => 'rollback', 'open' => 0], $items]));
+    }
+
+    public function test_a_save_in_steps_that_fails_is_found_when_the_person_gets_an_error_and_an_earlier_step_stayed()
+    {
+        $order = $this->asked('insert into "orders" ("total") values (?)', self::NEW.':3');
+        $token = $this->asked('update "users" set "remember_token" = ?', null);
+        $items = $this->asked('insert into "order_items" ("order_id") values (?)', self::NEW.':4');
+
+        $measured = $this->measure([$token, $order, $items], 500, [$token, $order, $items]);
+        // The app caught the failure and answered in its own way: it took the failure in.
+        $handled = $this->measure([$order, $items], 302, [$order, $items]);
+        // The app tried the step again and it was saved.
+        $again = $this->measure([$order, $items], 500, [$order, $items, $items]);
+
+        // The order stayed without its items. What the framework saved by itself is not named.
+        $this->assertSame([
+            ['kind' => 'saved_in_part', 'route' => 'POST /orders', 'failed' => 'insert order_items', 'what' => 'insert orders', 'at' => self::NEW.':4', 'test' => self::TEST],
+        ], $measured['findings']);
+        $this->assertSame([[1, []], [1, []]], array_map(fn (array $measured) => [$measured['run'], $measured['findings']], [$handled, $again]));
     }
 
     public function test_what_only_code_the_app_already_had_left_behind_is_counted_but_not_held_against_the_change()

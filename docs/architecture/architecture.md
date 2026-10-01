@@ -1733,7 +1733,9 @@ one line for each request a test makes: the route, the status, whether the app
 refused it, and each effect in order. An effect is a query, a transaction that
 starts, commits or rolls back, a job, a mail, a notification or an outside
 call. Each effect has the nearest line of the app's own code and the number of
-transactions the request had open.
+transactions the request had open. What the test's own code does inside a
+request has no line: a test can play a second person who saves at the same
+moment, and that save is not the app's.
 
 The recorder changes no file of the app. The coverage command sets PHP's
 `auto_prepend_file` in an ini file under `storage/logs/test-map/trace`. That
@@ -1789,20 +1791,30 @@ Nothing is random. `AppFaults` reads the recording for the places a failure
 can be caused, in requests that ran the change's code:
 
 - **A send.** Each mail and each outside call of a request.
-- **A save.** The last write of each transaction that a request commits.
+- **A save in a transaction.** The last write of each transaction that a
+  request commits.
+- **A save in steps.** The last write the app's code makes outside a
+  transaction, when the request saved or sent something before it. Most
+  requests that save twice have no transaction, so this is the common place.
 
 For each place, verification runs the one test that made the request again,
 with `TRACE_RECORDER_FAULT` naming the test, the request and the effect. The
 recorder then makes that one effect fail the way it fails in use: the mail
 transport cannot connect, the outside call times out, or the database
-refuses the write. The trace of that request shows what stayed:
+refuses the write before it runs. The trace of that request shows what
+stayed:
 
 - **Saved, then failed.** A send failed, the person got a server error, and
   a write from before the failure was kept. A second try can save it twice.
-- **Sent, then lost.** A save failed and was rolled back, but a mail, a job
-  or an outside call had left before it.
-- **Saved in part.** A save failed and was rolled back, but a write outside
-  its transaction was kept.
+- **Sent, then lost.** A save failed and was lost, but a mail, a job or an
+  outside call had left before it.
+- **Saved in part.** A save failed and was lost, but a write of the app's
+  code from before it was kept: an order without its items.
+
+A save in a transaction is lost when the transaction rolls back. A save in
+steps is lost when the request ends in a server error. An app that catches
+the failure and answers in its own way took the failure in, and nothing is
+said.
 
 A finding counts against a change only when the failed effect, or what
 stayed, comes from a line the change added. The rest is counted (`existing`)

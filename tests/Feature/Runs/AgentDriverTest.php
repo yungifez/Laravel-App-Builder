@@ -565,7 +565,7 @@ class AgentDriverTest extends TestCase
                 ."\nOf the requests that ran the change's code, 2 opened a transaction in a test that fakes mail, jobs or notifications, so what they sent, and when, was not seen.",
             "One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer, or a save the database refused. Of 5 places where those requests send or save, 4 were tried and the failure happened in 3. What the app left behind:"
                 ."\n- POST /teams: when mail App\Mail\TeamCreated failed at app/Models/Team.php:13, the request ended in a server error but had already saved: insert teams, insert team_user (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)"
-                ."\n- POST /teams: when insert team_user failed, the save was rolled back but the request had already sent: job App\Jobs\SyncSeats (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)",
+                ."\n- POST /teams: when insert team_user failed, the save was lost but the request had already sent: job App\Jobs\SyncSeats (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)",
         ])));
     }
 

@@ -27,8 +27,10 @@ use Illuminate\Support\Testing\Fakes\NotificationFake;
 use Illuminate\Support\Testing\Fakes\QueueFake;
 use PDOException;
 use PHPUnit\Framework\TestCase;
+use ReflectionObject;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Throwable;
+use WeakMap;
 
 /**
  * Records what one request does: its queries, its transactions and what it
@@ -41,8 +43,8 @@ use Throwable;
  * It only listens, with one exception. When TRACE_RECORDER_FAULT names one
  * thing of one request of one test (the place it has in a trace recorded
  * before), that thing fails the way it fails in use: the mail cannot be
- * sent, the outside call gets no answer, the write is refused. The trace
- * of that request then shows what the app left behind.
+ * sent, the outside call gets no answer, the write is refused before it
+ * is made. The trace of that request then shows what the app left behind.
  */
 class Recorder
 {
@@ -59,6 +61,12 @@ class Recorder
 
     protected ?string $test;
 
+    /** The file the running test is written in, when it is known. */
+    protected ?string $testFile = null;
+
+    /** @var WeakMap<object, true> The connections that tell this recorder of a query before it runs */
+    protected WeakMap $watched;
+
     /** @var array{request: int, effect: int, kind: string}|null The one thing to make fail, when this test is the one named */
     protected ?array $fault = null;
 
@@ -73,6 +81,7 @@ class Recorder
     public function __construct(protected Application $app, protected string $directory)
     {
         $this->base = rtrim($app->basePath(), '/').'/';
+        $this->watched = new WeakMap;
         $this->test = $this->runningTest();
         $this->fault = $this->faultToCause();
     }
@@ -86,11 +95,13 @@ class Recorder
     {
         $events = $this->app->make('events');
 
-        $events->listen(QueryExecuted::class, fn (QueryExecuted $query) => $this->effect(
-            ['kind' => 'query', 'sql' => $query->sql],
-            fails: fn () => new QueryException($query->connectionName, $query->sql, [], new PDOException('SQLSTATE[57014]: Query canceled: canceling statement due to statement timeout')),
-        ));
+        $events->listen(QueryExecuted::class, function (QueryExecuted $query) {
+            $this->watch($query->connection);
+            $this->effect(['kind' => 'query', 'sql' => $query->sql]);
+        });
         $events->listen(TransactionBeginning::class, function (TransactionBeginning $event) {
+            $this->watch($event->connection);
+
             // A test that wraps itself in a transaction can open it inside
             // the first request; it is not the request's.
             if ($this->operation !== null && $this->byTestTools()) {
@@ -138,7 +149,10 @@ class Recorder
         $this->requests++;
         $this->jobs = 0;
 
-        $this->baseline = array_map(fn ($connection) => $connection->transactionLevel(), $this->app->make('db')->getConnections());
+        $connections = $this->app->make('db')->getConnections();
+        array_map($this->watch(...), $connections);
+
+        $this->baseline = array_map(fn ($connection) => $connection->transactionLevel(), $connections);
         $this->operation = [
             'test' => $this->test,
             'n' => $this->requests - 1,
@@ -267,6 +281,45 @@ class Recorder
     }
 
     /**
+     * Ask a connection to tell this recorder of each query before it runs,
+     * once. A write can then be refused before it is made, which is how a
+     * database fails: nothing of the write stays.
+     */
+    protected function watch($connection): void
+    {
+        try {
+            if (! is_object($connection) || isset($this->watched[$connection]) || ! method_exists($connection, 'beforeExecuting')) {
+                return;
+            }
+
+            $this->watched[$connection] = true;
+        } catch (Throwable) {
+            return;
+        }
+
+        $connection->beforeExecuting(fn ($sql) => $this->refuse((string) $sql, $connection->getName()));
+    }
+
+    /**
+     * Refuse the query that is about to run, when it is the write this run
+     * is to make fail. A query that is not a write is never refused: the
+     * test took another way this time.
+     */
+    protected function refuse(string $sql, ?string $connection): void
+    {
+        if ($this->operation === null || $this->fault === null || isset($this->operation['fault'])
+            || $this->fault !== ['request' => $this->requests - 1, 'effect' => count($this->operation['effects']), 'kind' => 'query']
+            || preg_match('/^[\s(]*(insert|update|delete|replace)\b/i', $sql) !== 1) {
+            return;
+        }
+
+        $this->effect(
+            ['kind' => 'query', 'sql' => $sql],
+            fails: fn () => new QueryException((string) $connection, $sql, [], new PDOException('SQLSTATE[57014]: Query canceled: canceling statement due to statement timeout')),
+        );
+    }
+
+    /**
      * Count the transactions open now that the request itself opened. A
      * test that wraps each test in a transaction opened one that is not
      * the request's.
@@ -305,11 +358,15 @@ class Recorder
 
     /**
      * Find the line of the app's own code that caused what happens now,
-     * or null when the framework or a package did it by itself.
+     * or null when the framework or a package did it by itself. What the
+     * test's own code does inside a request, such as a second person
+     * saving at the same moment, is not the app's either.
      */
     protected function origin(): ?string
     {
-        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 80) as $frame) {
+        $frames = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 80);
+
+        foreach ($frames as $position => $frame) {
             $file = $frame['file'] ?? '';
 
             // Below this frame is whatever sent the request, such as a test.
@@ -324,7 +381,10 @@ class Recorder
             }
 
             if (str_starts_with($file, $this->base) && ! str_starts_with($file, $this->base.'vendor/') && ! str_starts_with($file, $this->base.'storage/') && ! str_starts_with($file, $this->base.'public/')) {
-                return substr($file, strlen($this->base)).':'.($frame['line'] ?? 0);
+                // The frame after this one names the code this line is in.
+                $in = $frames[$position + 1]['class'] ?? '';
+
+                return $file === $this->testFile || ($in !== '' && is_a($in, TestCase::class, true)) ? null : substr($file, strlen($this->base)).':'.($frame['line'] ?? 0);
             }
         }
 
@@ -394,10 +454,28 @@ class Recorder
             $object = $frame['object'] ?? null;
 
             if ($object instanceof TestCase) {
+                $this->testFile = $this->fileOf($object);
+
                 return $object::class.'::'.(method_exists($object, 'nameWithDataSet') ? $object->nameWithDataSet() : $object->name());
             }
         }
 
         return null;
+    }
+
+    /**
+     * Find the file a test is written in. A test written as a function
+     * has a class made for it, which keeps the name of its file.
+     */
+    protected function fileOf(TestCase $test): ?string
+    {
+        try {
+            $class = new ReflectionObject($test);
+            $file = $class->hasProperty('__filename') ? $class->getStaticPropertyValue('__filename') : $class->getFileName();
+
+            return is_string($file) ? $file : null;
+        } catch (Throwable) {
+            return null;
+        }
     }
 }

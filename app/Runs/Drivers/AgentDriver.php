@@ -339,8 +339,8 @@ abstract class AgentDriver implements ConstructionDriver
     {
         $did = match ($finding['kind']) {
             AppFaults::SAVED_THEN_FAILED => 'the request ended in a server error but had already saved',
-            AppFaults::SENT_THEN_LOST => 'the save was rolled back but the request had already sent',
-            AppFaults::SAVED_IN_PART => 'the save was rolled back but the request kept what it had saved outside that transaction',
+            AppFaults::SENT_THEN_LOST => 'the save was lost but the request had already sent',
+            AppFaults::SAVED_IN_PART => 'the save was lost but the request kept what it had saved before it, with no transaction around both',
             default => $finding['kind'],
         };
 
