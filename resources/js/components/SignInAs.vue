@@ -31,6 +31,10 @@ function opened(open: boolean): void {
     }
 }
 
+function label(person: PreviewPerson): string {
+    return person.name ?? person.email ?? `Person ${person.id}`;
+}
+
 const signIn = useHttp({ person: '', to: '/' });
 const signingIn = ref<string | null>(null);
 
@@ -45,6 +49,8 @@ async function signInAs(person: PreviewPerson): Promise<void> {
         )) as { url: string };
 
         emit('open', url);
+        // The app takes a moment to show it, so say who they are now.
+        toast(`You are signed in as ${label(person)}`);
     } catch {
         // The app's own reason comes under "app"; ours under "person".
         const errors = signIn.errors as Record<string, string | undefined>;
@@ -105,9 +111,7 @@ async function signInAs(person: PreviewPerson): Promise<void> {
                     :data-test="`sign-in-as-${person.id}`"
                     @select="signInAs(person)"
                 >
-                    <span class="w-full truncate">{{
-                        person.name ?? person.email ?? `Person ${person.id}`
-                    }}</span>
+                    <span class="w-full truncate">{{ label(person) }}</span>
                     <span
                         v-if="person.name && person.email"
                         class="w-full truncate text-xs text-muted-foreground"
