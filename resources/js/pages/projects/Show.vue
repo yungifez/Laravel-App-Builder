@@ -1077,12 +1077,16 @@ function sendOnEnter(event: KeyboardEvent): void {
                         <component :is="screen.icon" class="size-4" />
                     </button>
                 </div>
-                <SignInAs
-                    :project-id="project.id"
-                    :people="people"
-                    :path="app.path"
-                    @open="openInApp"
-                />
+                <!-- On a phone it sits beside the app's pages instead, so
+                     the app's name keeps its room here. -->
+                <div class="hidden sm:contents">
+                    <SignInAs
+                        :project-id="project.id"
+                        :people="people"
+                        :path="app.path"
+                        @open="openInApp"
+                    />
+                </div>
                 <Button
                     variant="ghost"
                     size="icon"
@@ -1930,6 +1934,14 @@ function sendOnEnter(event: KeyboardEvent): void {
                             </DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>
+                </div>
+                <div class="ml-auto sm:hidden">
+                    <SignInAs
+                        :project-id="project.id"
+                        :people="people"
+                        :path="app.path"
+                        @open="openInApp"
+                    />
                 </div>
                 <!-- On a phone the tabs take a line of their own, so none
                      hides past the edge. -->
