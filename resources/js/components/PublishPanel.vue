@@ -27,6 +27,8 @@ import type { ProjectPublishing } from '@/types';
 const props = defineProps<{
     projectId: string;
     publishing: ProjectPublishing;
+    // How many of the app's own tests guard it, as last run.
+    tests: number | null;
 }>();
 
 const changing = ref(false);
@@ -100,6 +102,21 @@ const troubled = computed(() => (live.value?.problems ?? 0) > 0);
 
 const times = (count: number) => (count === 1 ? 'once' : `${count} times`);
 
+// The app's own tests run before any version goes online. Saying how many
+// shows the owner what "checked" means.
+const tests = computed(() =>
+    (props.tests ?? 0) > 0
+        ? `${props.tests} ${props.tests === 1 ? 'test' : 'tests'}`
+        : null,
+);
+const testsPassed = computed(
+    () =>
+        tests.value !== null &&
+        (live.value?.checks ?? []).some(
+            (check) => check.name === 'Tests' && check.passed,
+        ),
+);
+
 const status = computed(() => {
     switch (true) {
         case latest.value?.status === 'checking':
@@ -166,7 +183,9 @@ const status = computed(() => {
                 icon: CircleCheck,
                 tone: 'text-green-600',
                 title: 'Online and up to date',
-                detail: `Went online ${when(live.value?.finished_at ?? null)}.`,
+                detail: testsPassed.value
+                    ? `Went online ${when(live.value?.finished_at ?? null)}, after its ${tests.value} passed.`
+                    : `Went online ${when(live.value?.finished_at ?? null)}.`,
             };
         default:
             return {
@@ -322,6 +341,17 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                     }}
                 </Button>
                 <InputError class="mt-2" :message="errors.publish" />
+                <p
+                    class="mt-2 text-xs text-muted-foreground"
+                    data-test="publish-checked-first"
+                >
+                    I check it first{{ tests ? `, with its ${tests}` : '' }}.
+                    {{
+                        live
+                            ? 'If a check fails, what is online stays as it is.'
+                            : 'If a check fails, nothing goes online.'
+                    }}
+                </p>
             </Form>
 
             <Collapsible>

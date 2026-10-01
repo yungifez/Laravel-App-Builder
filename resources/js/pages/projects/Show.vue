@@ -1426,7 +1426,11 @@ function sendOnEnter(event: KeyboardEvent): void {
                     Your latest kept version, for everyone to use
                 </DialogDescription>
             </DialogHeader>
-            <PublishPanel :project-id="project.id" :publishing="publishing" />
+            <PublishPanel
+                :project-id="project.id"
+                :publishing="publishing"
+                :tests="project.tests"
+            />
         </DialogContent>
     </Dialog>
 
