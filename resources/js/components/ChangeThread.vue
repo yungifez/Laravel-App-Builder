@@ -800,8 +800,15 @@ const checks = computed(() => {
                                 class="space-y-0.5"
                             >
                                 <p class="flex items-start gap-2 font-medium">
+                                    <!-- Not green when it stopped: none of
+                                         this reached the app. -->
                                     <Check
-                                        class="mt-0.5 size-4 shrink-0 text-green-600"
+                                        :class="[
+                                            'mt-0.5 size-4 shrink-0',
+                                            failed
+                                                ? 'text-muted-foreground'
+                                                : 'text-green-600',
+                                        ]"
                                     />
                                     {{ item.behavior }}
                                 </p>
