@@ -16,7 +16,7 @@ import {
     Target,
     Undo2,
 } from '@lucide/vue';
-import { useMediaQuery } from '@vueuse/core';
+import { useScreen } from '@/composables/useScreen';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import FeatureRequestAcceptanceController from '@/actions/App/Http/Controllers/FeatureRequestAcceptanceController';
 import FeatureRequestAnswerController from '@/actions/App/Http/Controllers/FeatureRequestAnswerController';
@@ -53,6 +53,8 @@ const emit = defineEmits<{
     full: [on: boolean];
     // Whether the chat has the plan and the code beside it.
     sides: [on: boolean];
+    // Whether the change stopped without being finished.
+    stopped: [on: boolean];
 }>();
 
 const request = computed(() => props.change.featureRequest);
@@ -121,7 +123,7 @@ function toggleFull(): void {
 // puts the plan and the code on one side (and, when wider, the owner's
 // other chats on the other). The why, the how and the code move there, so every depth is in
 // view at once and the depth switch steps aside.
-const wide = useMediaQuery('(min-width: 1024px)');
+const wide = useScreen('(min-width: 1024px)');
 const spread = computed(() => !!props.roomy && wide.value);
 const sides = computed(
     () => spread.value && !!run.value?.plan && !run.value.plan.answer,
@@ -354,6 +356,9 @@ const failed = computed(
             run.value.question === null) ||
         (run.value === null && request.value.status === 'failed'),
 );
+
+watch(failed, (on) => emit('stopped', on), { immediate: true });
+onBeforeUnmount(() => emit('stopped', false));
 
 // Why the change could not be finished, as the run or the request says.
 const reason = computed(() => run.value?.error ?? request.value.error ?? null);

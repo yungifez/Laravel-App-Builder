@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
 import { ArrowLeft, Mail, Trash2 } from '@lucide/vue';
-import { useMediaQuery } from '@vueuse/core';
+import { useScreen } from '@/composables/useScreen';
 import { computed, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import PreviewEmailController from '@/actions/App/Http/Controllers/PreviewEmailController';
@@ -17,7 +17,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ open: [href: string] }>();
 
-const wide = useMediaQuery('(min-width: 768px)');
+const wide = useScreen('(min-width: 768px)');
 const chosenId = ref<string | null>(null);
 
 // Deleted emails leave the list at once; they come back only if the app

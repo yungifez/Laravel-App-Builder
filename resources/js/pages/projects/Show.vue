@@ -32,7 +32,8 @@ import {
     Smartphone,
     Tablet,
 } from '@lucide/vue';
-import { useMediaQuery, useResizeObserver } from '@vueuse/core';
+import { useResizeObserver } from '@vueuse/core';
+import { useScreen } from '@/composables/useScreen';
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
@@ -182,9 +183,10 @@ const chatCentred = computed(() => panelFull.value && !codeOnScreen.value);
 // without a plan yet says so on the right. The tabs above line up with the
 // chat.
 const SIDES = { left: '16rem', right: 'clamp(22rem, 28vw, 30rem)' };
-const desktop = useMediaQuery('(min-width: 1024px)');
-const wide = useMediaQuery('(min-width: 1280px)');
+const desktop = useScreen('(min-width: 1024px)');
+const wide = useScreen('(min-width: 1280px)');
 const threadSides = ref(false);
+const threadStopped = ref(false);
 const panelOn = computed(
     () => chatCentred.value && desktop.value && props.change !== null,
 );
@@ -1020,14 +1022,14 @@ function sendOnEnter(event: KeyboardEvent): void {
         <Link
             v-if="project.tests"
             :href="showUnderstanding(project.id)"
-            :title="`${project.tests} ${project.tests === 1 ? 'check runs' : 'checks run'} on every change, so what works keeps working. See what they check.`"
+            :title="`${project.tests} ${project.tests === 1 ? 'test runs' : 'tests run'} on every change, so what works keeps working. See what they check.`"
             class="flex h-11 shrink-0 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground tabular-nums select-none hover:bg-muted hover:text-foreground sm:h-9"
             data-test="app-guard"
         >
             <ShieldCheck class="size-3.5 text-green-600" />
             {{ project.tests }}
             <span class="hidden sm:inline">{{
-                project.tests === 1 ? 'check' : 'checks'
+                project.tests === 1 ? 'test' : 'tests'
             }}</span>
         </Link>
 
@@ -1366,6 +1368,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                         :roomy="chatCentred"
                         @full="codeOnWholeScreen"
                         @sides="threadSides = $event"
+                        @stopped="threadStopped = $event"
                     />
 
                     <div v-else class="min-h-0 flex-1 overflow-y-auto p-4">
@@ -1745,6 +1748,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                         v-if="change"
                         v-show="panelOn"
                         :ready="threadSides"
+                        :stopped="threadStopped"
                         :class="[
                             'row-span-2 row-start-1',
                             listOn ? 'col-start-3' : 'col-start-2',

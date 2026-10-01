@@ -1,6 +1,8 @@
 <?php
 
 use App\Actions\Projects\CreateProject;
+use App\Enums\FeatureRequestStatus;
+use App\Enums\RunStatus;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
@@ -189,6 +191,21 @@ it('keeps the three columns in place when the owner moves to a chat without a pl
         ->assertVisible('@chat-list')
         ->assertVisible('@beside-panel')
         ->assertSeeIn('@beside-waiting', 'The plan shows here once I know what to build.')
+        ->assertNoJavaScriptErrors();
+});
+
+it('says a stopped chat will not get a plan, rather than promise one', function () {
+    $this->actingAs($this->owner);
+    $stopped = Run::factory()->for(
+        FeatureRequest::factory()->for($this->project)->state(['prompt' => 'Show who was active last week.', 'status' => FeatureRequestStatus::Failed]),
+    )->create(['status' => RunStatus::Failed, 'error' => 'The run stopped unexpectedly.'])->featureRequest;
+
+    visit(route('projects.show', ['project' => $this->project, 'change' => $stopped->uuid]))
+        ->resize(1440, 900)
+        ->assertVisible('@beside-panel')
+        ->assertSeeIn('@beside-waiting', 'This change stopped before it had a plan.')
+        ->click('@beside-code')
+        ->assertSeeIn('@beside-waiting', 'No code was changed.')
         ->assertNoJavaScriptErrors();
 });
 

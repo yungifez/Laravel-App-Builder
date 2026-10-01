@@ -2,7 +2,9 @@
 import { usePage } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
-defineProps<{ ready: boolean }>();
+// A stopped change will not get a plan, so the panel says so rather than
+// promise one.
+defineProps<{ ready: boolean; stopped: boolean }>();
 
 // Beside a chat on a wide screen: the plan the change is built from, in
 // the owner's words, or its code for whoever reads code. The open change
@@ -75,11 +77,16 @@ const tabs = [
                 class="px-5 py-5 leading-relaxed text-muted-foreground"
                 data-test="beside-waiting"
             >
-                {{
+                <template v-if="stopped">{{
+                    tab === 'plan'
+                        ? 'This change stopped before it had a plan.'
+                        : 'No code was changed.'
+                }}</template>
+                <template v-else>{{
                     tab === 'plan'
                         ? 'The plan shows here once I know what to build.'
                         : 'The code shows here once I start building.'
-                }}
+                }}</template>
             </p>
             <Transition
                 enter-active-class="transition duration-base ease-settle"
