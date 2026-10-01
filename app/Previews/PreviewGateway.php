@@ -73,7 +73,7 @@ class PreviewGateway
         }
 
         if (! $this->hasSession($request, $preview)) {
-            return $this->page(403, __('Open this preview from the builder.'));
+            return $this->page(403, __('This page has closed. Open the app again from the builder, or from the link you were sent.'));
         }
 
         $this->recordActivity($preview);
@@ -100,7 +100,7 @@ class PreviewGateway
             && $preview->grant_expires_at?->isFuture());
 
         if (! $valid) {
-            return $this->page(403, __('This preview link has expired. Open the preview from the builder again.'));
+            return $this->page(403, __('This link to the app has expired. Open the app again from the builder, or from the link you were sent.'));
         }
 
         $secret = Str::random(64);

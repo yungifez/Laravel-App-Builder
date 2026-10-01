@@ -324,7 +324,7 @@ class PreviewTest extends TestCase
         $this->actingAs($preview->featureRequest->project->owner)
             ->get("http://{$preview->host}.preview.test/dashboard")
             ->assertForbidden()
-            ->assertSee('Open this preview from the builder.');
+            ->assertSee('This page has closed. Open the app again from the builder, or from the link you were sent.');
 
         $this->get("http://{$preview->host}.preview.test/previews/{$preview->uuid}")->assertForbidden();
         $this->get('http://unknown.preview.test/')->assertNotFound();
