@@ -59,6 +59,7 @@ class StartProjectFromTemplate
         }
 
         return DB::transaction(function () use ($owner, $name, $purpose, $template, $design, $images, $includes) {
+            $name = $this->freeName($owner, $name);
             $project = $this->createProject->handle($owner, $name, $template, draftNotes: false);
             $project->forceFill(['started_here' => true])->save();
 
@@ -71,9 +72,9 @@ class StartProjectFromTemplate
             $this->updateProjectNotes->handle($project, 'introduction', $purpose, $this->notes->version($project));
 
             if (config('builder.projects.first_version')) {
-                // Without the last sentence, the first build hides behind the
-                // login and the app still opens on the template's welcome page.
-                $prompt = __('Make the first version: :purpose Give it its own front page in place of the starter welcome page.', [
+                // The owner's own words; the planner also reads that the
+                // app needs its own front page (FeatureRequest::instructions).
+                $prompt = __('Make the first version: :purpose', [
                     'purpose' => Str::finish(trim($purpose), '.'),
                 ]);
 
@@ -86,6 +87,24 @@ class StartProjectFromTemplate
 
             return $project;
         });
+    }
+
+    /**
+     * Get a name none of the owner's apps has yet, so two apps started from
+     * the same idea can be told apart: "Bright Cleaning 2" after
+     * "Bright Cleaning".
+     */
+    protected function freeName(User $owner, string $name): string
+    {
+        $name = trim($name);
+        $taken = $owner->projects()->pluck('name')->map(fn (string $taken) => mb_strtolower($taken))->all();
+        $free = $name;
+
+        for ($number = 2; in_array(mb_strtolower($free), $taken, true); $number++) {
+            $free = "{$name} {$number}";
+        }
+
+        return $free;
     }
 
     /**

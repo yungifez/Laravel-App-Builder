@@ -101,7 +101,29 @@ class FeatureRequest extends Model
         $count = count($this->images ?? []);
         $images = $count === 0 ? '' : "\n\nThe owner attached ".($count === 1 ? 'a picture that shows' : "{$count} pictures that show").' what they mean. Match what '.($count === 1 ? 'it shows' : 'they show').' unless the words say otherwise.';
 
-        return $this->describedPrompt().$images;
+        return $this->describedPrompt().$this->frontPage().$images;
+    }
+
+    /**
+     * Whether this asks for the first version of an app started here. The
+     * owner asked for it by saying what the app is for.
+     */
+    public function isFirstVersion(): bool
+    {
+        return $this->parent_id === null && str_starts_with($this->prompt, __('Make the first version:'));
+    }
+
+    /**
+     * Ask the first version for its own front page. Without it, the first
+     * build hides behind the login and the app still opens on the
+     * template's welcome page. The owner never asked for it in these
+     * words, so it is not part of what they see they asked.
+     */
+    protected function frontPage(): string
+    {
+        $sentence = __('Give it its own front page in place of the starter welcome page.');
+
+        return $this->isFirstVersion() && ! str_contains($this->prompt, $sentence) ? "\n\n".$sentence : '';
     }
 
     /**

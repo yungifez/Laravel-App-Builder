@@ -4,6 +4,7 @@ namespace Tests\Feature\Features;
 
 use App\Context\ProjectNotes;
 use App\Jobs\ExecuteRun;
+use App\Models\Project;
 use App\Models\User;
 use App\Projects\DesignDirection;
 use App\Projects\ProjectRepository;
@@ -47,7 +48,9 @@ class NewProjectTest extends TestCase
 
         // The owner's sentence is the first change, and they are taken to it.
         $first = $project->featureRequests()->sole();
-        $this->assertSame('Make the first version: Cleaners see their jobs for the day, and customers book a clean online. Give it its own front page in place of the starter welcome page.', $first->prompt);
+        $this->assertSame('Make the first version: Cleaners see their jobs for the day, and customers book a clean online.', $first->prompt);
+        // The builder, not the owner, asks for the app's own front page.
+        $this->assertSame("Make the first version: Cleaners see their jobs for the day, and customers book a clean online.\n\nGive it its own front page in place of the starter welcome page.", $first->instructions());
         $this->assertTrue($first->user->is($owner));
         $response->assertRedirect(route('projects.show', ['project' => $project, 'change' => $first->uuid]));
         Queue::assertPushed(ExecuteRun::class);
@@ -76,6 +79,19 @@ class NewProjectTest extends TestCase
         $this->assertSame('Name the app Bright Cleaning', $repository->log($project)[0]['subject']);
     }
 
+    public function test_a_second_app_with_the_same_name_gets_a_number_so_the_two_can_be_told_apart()
+    {
+        config(['builder.projects.template' => $this->makeProjectSource($this->laravelApp())]);
+        $owner = User::factory()->create();
+        Project::factory()->for($owner, 'owner')->create(['name' => 'Bright Cleaning']);
+        Project::factory()->create(['name' => 'Bright Cleaning 2']);
+
+        $this->actingAs($owner)->post(route('projects.new.store'), ['name' => 'bright cleaning', 'purpose' => 'Book a clean.']);
+        $this->actingAs($owner)->post(route('projects.new.store'), ['name' => 'Bright Cleaning', 'purpose' => 'Book a clean.']);
+
+        $this->assertSame(['Bright Cleaning', 'bright cleaning 2', 'Bright Cleaning 3'], $owner->projects()->orderBy('id')->pluck('name')->all());
+    }
+
     public function test_what_the_owner_kept_from_a_starter_goes_with_the_first_version()
     {
         config(['builder.projects.template' => $this->makeProjectSource($this->laravelApp())]);
@@ -88,8 +104,12 @@ class NewProjectTest extends TestCase
         ])->assertRedirect();
 
         $this->assertSame(
-            "Make the first version: Members book a place in a class. Give it its own front page in place of the starter welcome page.\n\nIt includes:\n- A timetable of upcoming classes\n- Trainers see who is booked",
+            "Make the first version: Members book a place in a class.\n\nIt includes:\n- A timetable of upcoming classes\n- Trainers see who is booked",
             $owner->projects()->sole()->featureRequests()->sole()->prompt,
+        );
+        $this->assertStringEndsWith(
+            "- Trainers see who is booked\n\nGive it its own front page in place of the starter welcome page.",
+            $owner->projects()->sole()->featureRequests()->sole()->instructions(),
         );
         // What the app is for stays the owner's sentence.
         $this->assertStringNotContainsString('timetable', app(ProjectNotes::class)->files($owner->projects()->sole())['project.md']);
