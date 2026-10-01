@@ -20,7 +20,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{ restarted: [] }>();
 
-const own = computed(() => (props.data ?? []).filter((table) => table.own));
+// What the app holds comes first; empty tables follow, quieter, in the
+// same order as before.
+const own = computed(() =>
+    (props.data ?? [])
+        .filter((table) => table.own)
+        .sort((a, b) => Number(a.rows === 0) - Number(b.rows === 0)),
+);
 const laravel = computed(() =>
     (props.data ?? []).filter((table) => !table.own),
 );
@@ -401,9 +407,13 @@ function rows(table: SavedTable): string {
                             :data-test="`app-data-${table.name}`"
                             @click="open(table)"
                         >
-                            <span class="min-w-0 flex-1 truncate text-sm">{{
-                                table.words
-                            }}</span>
+                            <span
+                                :class="[
+                                    'min-w-0 flex-1 truncate text-sm',
+                                    table.rows === 0 && 'text-muted-foreground',
+                                ]"
+                                >{{ table.words }}</span
+                            >
                             <span
                                 class="shrink-0 text-xs text-muted-foreground tabular-nums"
                                 >{{ rows(table) }}</span
