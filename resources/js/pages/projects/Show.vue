@@ -28,6 +28,7 @@ import {
     Monitor,
     MousePointerClick,
     RotateCw,
+    Share2,
     ShieldCheck,
     Smartphone,
     Tablet,
@@ -70,6 +71,7 @@ import ProjectDetails from '@/components/ProjectDetails.vue';
 import NotificationBell from '@/components/NotificationBell.vue';
 import PublishPanel from '@/components/PublishPanel.vue';
 import RenameAppDialog from '@/components/RenameAppDialog.vue';
+import ShareAppDialog from '@/components/ShareAppDialog.vue';
 import ServicesDialog from '@/components/ServicesDialog.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -710,6 +712,7 @@ const behind = computed(() => {
 });
 const startingIdea = ref(false);
 const renaming = ref(false);
+const sharing = ref(false);
 const connecting = ref(false);
 const usingIdea = ref(false);
 
@@ -1335,6 +1338,19 @@ function sendOnEnter(event: KeyboardEvent): void {
             </Form>
 
             <NotificationBell />
+            <!-- Others try the app before it goes online, as Lovable's
+                 share link does. An idea is the owner's own, so not here. -->
+            <Button
+                v-if="!ideas.current"
+                variant="outline"
+                class="ml-1 h-11 select-none sm:h-9"
+                aria-label="Share"
+                data-test="share-open"
+                @click="sharing = true"
+            >
+                <Share2 class="size-4" />
+                <span class="hidden sm:inline">Share</span>
+            </Button>
             <!-- In an idea, the next step is to use it; only the app itself
                  goes online. -->
             <Button
@@ -1368,6 +1384,11 @@ function sendOnEnter(event: KeyboardEvent): void {
         v-model:open="renaming"
         :project-id="project.id"
         :name="project.name"
+    />
+    <ShareAppDialog
+        v-model:open="sharing"
+        :project-id="project.id"
+        :share="project.share"
     />
     <ServicesDialog
         v-model:open="connecting"
@@ -2219,39 +2240,49 @@ function sendOnEnter(event: KeyboardEvent): void {
                     </button>
                 </div>
             </nav>
-            <template v-if="decidingOn">
-                <p
-                    v-if="changeCopy"
-                    class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
-                    data-test="change-copy-bar"
+            <!-- One switch in one place, with or without the change, so
+                 trying it and going back never moves what is around it. -->
+            <div
+                v-if="decidingOn"
+                class="flex items-center justify-center gap-2 text-xs"
+                data-test="change-copy-switch"
+            >
+                <div
+                    class="flex items-center rounded-md bg-muted p-0.5"
+                    role="group"
+                    aria-label="Show your app"
                 >
-                    Your app with this change. Not kept yet.
                     <button
                         type="button"
-                        class="min-h-11 underline underline-offset-2 select-none hover:text-foreground sm:min-h-0"
+                        :aria-pressed="!changeCopy"
+                        :class="[
+                            'min-h-11 rounded px-3 select-none sm:min-h-8',
+                            !changeCopy
+                                ? 'bg-background shadow-sm'
+                                : 'text-muted-foreground hover:text-foreground',
+                        ]"
                         data-test="change-copy-hide"
                         @click="withoutChange = true"
                     >
-                        Show it without
+                        Without the change
                     </button>
-                </p>
-                <div
-                    v-else
-                    class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
-                    data-test="change-copy-off"
-                >
-                    Your app without this change.
                     <button
                         v-if="
                             decidingOn.preview?.status === 'ready' ||
                             decidingOn.preview?.status === 'starting'
                         "
                         type="button"
-                        class="min-h-11 underline underline-offset-2 select-none hover:text-foreground sm:min-h-0"
+                        :aria-pressed="!!changeCopy"
+                        :class="[
+                            'min-h-11 rounded px-3 select-none sm:min-h-8',
+                            changeCopy
+                                ? 'bg-background shadow-sm'
+                                : 'text-muted-foreground hover:text-foreground',
+                        ]"
                         data-test="change-copy-show"
                         @click="withoutChange = false"
                     >
-                        Show it with the change
+                        With the change
                     </button>
                     <Form
                         v-else
@@ -2262,18 +2293,30 @@ function sendOnEnter(event: KeyboardEvent): void {
                         "
                         :options="{ preserveScroll: true, preserveState: true }"
                         v-slot="{ processing }"
+                        class="contents"
                         @success="withoutChange = false"
                     >
                         <button
-                            class="min-h-11 underline underline-offset-2 select-none hover:text-foreground disabled:opacity-50 sm:min-h-0"
+                            :aria-pressed="false"
+                            class="min-h-11 rounded px-3 text-muted-foreground select-none hover:text-foreground disabled:opacity-50 sm:min-h-8"
                             :disabled="processing"
                             data-test="change-copy-start"
                         >
-                            Show it with the change
+                            With the change
                         </button>
                     </Form>
                 </div>
-            </template>
+                <span
+                    :class="[
+                        'text-muted-foreground transition-opacity',
+                        changeCopy ? 'opacity-100' : 'opacity-0',
+                    ]"
+                    :aria-hidden="!changeCopy"
+                    data-test="change-copy-not-kept"
+                >
+                    Not kept yet
+                </span>
+            </div>
             <div
                 v-if="changeCopy"
                 v-show="showing === 'app' || !changeCopyRuns"
