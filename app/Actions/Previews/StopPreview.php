@@ -5,6 +5,8 @@ namespace App\Actions\Previews;
 use App\Actions\Workspaces\DestroyWorkspace;
 use App\Enums\PreviewStatus;
 use App\Models\Preview;
+use App\Previews\PreviewGateway;
+use Illuminate\Support\Facades\Cache;
 
 class StopPreview
 {
@@ -28,5 +30,7 @@ class StopPreview
             'error' => $reason ?? $preview->error,
             'stopped_at' => now(),
         ]);
+
+        Cache::forget(PreviewGateway::sessionsKey($preview));
     }
 }

@@ -33,6 +33,12 @@ class PreviewGateway
     public const SESSION_PATH = '__builder/session';
 
     /**
+     * How many places one preview can be open in at once, such as the
+     * builder and a tab of its own.
+     */
+    protected const SESSIONS = 5;
+
+    /**
      * Request headers that are not forwarded: hop-by-hop headers, and ones
      * the gateway sets itself.
      *
@@ -102,6 +108,15 @@ class PreviewGateway
             'session_expires_at' => now()->addMinutes($minutes),
         ]);
 
+        // The owner can have the app open in the builder and in a tab of its
+        // own at once, so a new session does not end the ones before it.
+        $sessions = collect(Cache::get(self::sessionsKey($preview), []))
+            ->filter(fn (int $expires) => $expires > now()->getTimestamp())
+            ->put(hash('sha256', $secret), now()->addMinutes($minutes)->getTimestamp())
+            ->sortDesc()
+            ->take(self::SESSIONS);
+        Cache::put(self::sessionsKey($preview), $sessions->all(), now()->addMinutes($minutes));
+
         // Every preview can show inside the builder (the app, and a change
         // waiting for the owner), where the preview host is a third party,
         // so its cookie is partitioned to the site that shows it.
@@ -146,11 +161,28 @@ class PreviewGateway
     {
         $secret = $request->cookies->get((string) config('builder.preview.cookie'));
 
-        return $preview->status === PreviewStatus::Ready
-            && is_string($secret)
-            && $preview->session_hash !== null
-            && hash_equals($preview->session_hash, hash('sha256', $secret))
-            && (bool) $preview->session_expires_at?->isFuture();
+        if ($preview->status !== PreviewStatus::Ready || ! is_string($secret)) {
+            return false;
+        }
+
+        $hash = hash('sha256', $secret);
+
+        if ($preview->session_hash !== null && hash_equals($preview->session_hash, $hash)) {
+            return (bool) $preview->session_expires_at?->isFuture();
+        }
+
+        $expires = Cache::get(self::sessionsKey($preview), [])[$hash] ?? null;
+
+        return is_int($expires) && $expires > now()->getTimestamp();
+    }
+
+    /**
+     * Where the sessions of a preview still open wait, so the owner can
+     * have it open in more than one place.
+     */
+    public static function sessionsKey(Preview $preview): string
+    {
+        return "previews:{$preview->id}:sessions";
     }
 
     /**

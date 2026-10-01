@@ -13,6 +13,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -160,6 +161,32 @@ class PreviewTest extends TestCase
 
         // The grant cannot be used twice.
         $this->get((string) $location)->assertForbidden();
+    }
+
+    public function test_the_owner_can_have_a_preview_open_in_the_builder_and_in_a_tab_at_once()
+    {
+        $preview = Preview::factory()->ready()->create();
+        Http::fake(['http://127.0.0.1:20001/*' => Http::response('<h1>Teams</h1>', 200, ['Content-Type' => 'text/html'])]);
+        $owner = $preview->featureRequest->project->owner;
+        $show = route('previews.show', $preview);
+        $stop = route('previews.destroy', $preview);
+        $open = function () use ($show, $owner): string {
+            $location = $this->actingAs($owner)->get($show)->headers->get('Location');
+            $cookie = collect($this->get((string) $location)->headers->getCookies())->firstWhere(fn ($cookie) => $cookie->getName() === 'builder_preview');
+
+            return (string) $cookie->getValue();
+        };
+
+        $builder = $open();
+        $tab = $open();
+
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/", ['builder_preview' => $builder])->assertOk();
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/", ['builder_preview' => $tab])->assertOk();
+
+        // Stopping the preview ends every session.
+        $this->actingAs($owner)->delete($stop);
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/", ['builder_preview' => $builder])->assertForbidden();
+        $this->assertNull(Cache::get(PreviewGateway::sessionsKey($preview)));
     }
 
     public function test_an_expired_grant_is_refused()
