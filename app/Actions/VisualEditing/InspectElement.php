@@ -4,8 +4,10 @@ namespace App\Actions\VisualEditing;
 
 use App\Actions\Context\ReadProjectContext;
 use App\Context\Capability;
+use App\Models\Experiment;
 use App\Models\FeatureRequest;
 use App\Models\Preview;
+use App\Models\Project;
 use App\Projects\ProjectRepository;
 use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TailwindClasses;
@@ -116,6 +118,47 @@ class InspectElement
     }
 
     /**
+     * Get the commits that made and changed a line, newest first. An idea
+     * the owner used is one commit on the main branch, so there the line
+     * is followed on into the idea's own commits, when the idea left the
+     * file as it is in that commit.
+     *
+     * @return list<string>
+     */
+    protected function lineHistory(Project $project, string $head, string $file, int $line): array
+    {
+        $commits = $this->lineCommits($project, $head, $file, $line);
+        $ideas = Experiment::query()->whereBelongsTo($project)->whereIn('merge_sha', $commits)->pluck('branch', 'merge_sha');
+
+        if ($ideas->isEmpty()) {
+            return $commits;
+        }
+
+        $followed = [];
+
+        foreach ($commits as $commit) {
+            $followed[] = $commit;
+            $kept = $ideas->has($commit) ? ProjectRepository::kept((string) $ideas->get($commit)) : null;
+
+            if ($kept !== null && $this->repository->git($project, ['diff', '--quiet', $commit, $kept, '--', $file], throw: false)->successful()) {
+                array_push($followed, ...$this->lineCommits($project, $kept, $file, $line));
+            }
+        }
+
+        return array_values(array_unique($followed));
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function lineCommits(Project $project, string $revision, string $file, int $line): array
+    {
+        $result = $this->repository->git($project, ['log', '-s', '--format=%H', '-L', "{$line},{$line}:{$file}", $revision], throw: false, timeout: 10);
+
+        return $result->successful() ? array_values(preg_grep('/^[0-9a-f]{40}$/', explode("\n", trim($result->output()))) ?: []) : [];
+    }
+
+    /**
      * Get the kept request behind the element's line, so the owner can see
      * why a part is there in their own words. The line's history is
      * followed back through later edits and moves. Requests later undone
@@ -125,8 +168,7 @@ class InspectElement
      */
     protected function origin(Preview $preview, string $head, string $file, int $line): ?array
     {
-        $result = $this->repository->git($preview->project, ['log', '-s', '--format=%H', '-L', "{$line},{$line}:{$file}", $head], throw: false, timeout: 10);
-        $commits = $result->successful() ? array_values(preg_grep('/^[0-9a-f]{40}$/', explode("\n", trim($result->output()))) ?: []) : [];
+        $commits = $this->lineHistory($preview->project, $head, $file, $line);
 
         if ($commits === []) {
             return null;

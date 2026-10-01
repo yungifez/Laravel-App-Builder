@@ -125,7 +125,7 @@ class ExperimentTest extends TestCase
         $this->assertSame(ExperimentStatus::Merged, $experiment->status);
         $this->assertSame($main, $experiment->merge_sha);
         $this->assertSame("<?php\n// added\n", $this->repository->show($this->project, $main, 'app/A.php'));
-        $this->assertSame("Merge branch '{$experiment->branch}'", $this->repository->log($this->project, 1, 'main')[0]['subject']);
+        $this->assertSame('Comments', $this->repository->log($this->project, 1, 'main')[0]['subject']);
         $this->assertSame('', trim($this->repository->git($this->project, ['branch', '--list', $experiment->branch])->output()));
         $this->assertNull($this->project->refresh()->experiment_id);
 
@@ -135,6 +135,30 @@ class ExperimentTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('changes.0.id', $change->uuid)->where('changes.0.state', 'kept'));
         $this->actingAs($this->owner)->post(route('feature-requests.reversion.store', $change))->assertSessionHasNoErrors();
         $this->assertSame("<?php\n", $this->repository->show($this->project, $this->repository->head($this->project, 'main'), 'app/A.php'));
+    }
+
+    public function test_an_idea_with_several_steps_becomes_one_entry_in_the_apps_history()
+    {
+        $before = $this->repository->head($this->project, 'main');
+        $this->actingAs($this->owner)->post(route('experiments.store', $this->project), ['name' => 'Comments']);
+        $experiment = $this->project->experiments()->sole();
+        $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $this->completedChange(self::ADD_COMMENT, ['experiment_id' => $experiment->id])));
+        $file = $this->completedChange(self::ADD_FILE, ['experiment_id' => $experiment->id]);
+        $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $file));
+        $tip = $this->repository->head($this->project, $experiment->branch);
+
+        $this->actingAs($this->owner)->post(route('experiments.merge.store', $experiment))->assertSessionHasNoErrors();
+
+        $main = $this->repository->head($this->project, 'main');
+        $this->assertSame($before, trim($this->repository->git($this->project, ['rev-parse', "{$main}^"])->output()));
+        $this->assertSame('', trim($this->repository->git($this->project, ['rev-parse', '--verify', '--quiet', "{$main}^2"], throw: false)->output()));
+        $this->assertSame(2, substr_count($this->repository->git($this->project, ['log', '-1', '--format=%b', $main])->output(), '* '));
+        $this->assertSame("<?php\n", $this->repository->show($this->project, $main, 'app/B.php'));
+
+        // The idea's own steps stay readable, outside every branch.
+        $this->assertSame($tip, trim($this->repository->git($this->project, ['rev-parse', "refs/kept/{$experiment->branch}"])->output()));
+        $this->assertStringNotContainsString('kept', $this->repository->git($this->project, ['branch', '--all'])->output());
+        $this->assertSame("<?php\n", $this->repository->show($this->project, (string) $file->refresh()->commit_sha, 'app/B.php'));
     }
 
     public function test_an_idea_that_clashes_with_the_main_app_is_not_merged()

@@ -120,9 +120,16 @@ class ProjectRepository
     }
 
     /**
-     * Merge a branch into the main branch as one merge commit. When the
-     * main branch changed the same lines since, nothing is merged. A branch
-     * with nothing new merges as the main branch's current commit.
+     * Bring a branch into the main branch as one commit, the way a pull
+     * request is squashed: the main branch's history gets one entry for the
+     * whole branch, not one for each step taken on it. The message lists
+     * those steps under its first line. When the main branch changed the
+     * same lines since, nothing is merged. A branch with nothing new merges
+     * as the main branch's current commit.
+     *
+     * The branch's own commits stay readable under refs/kept/, outside
+     * every branch, as the changes and edits made on it point at them to
+     * show and undo them.
      *
      * @param  array{name: string, email: string}|null  $author
      *
@@ -137,17 +144,23 @@ class ProjectRepository
                 return $this->tip($project);
             }
 
-            $identity = $this->identity($project, $author);
-            $result = $this->git($project, ['-c', "user.name={$identity['name']}", '-c', "user.email={$identity['email']}", 'merge', '--no-ff', '--no-commit', "refs/heads/{$branch}"], throw: false);
+            $steps = array_values(array_filter(explode("\n", trim($this->git($project, ['log', '--reverse', '--format=%s', "HEAD..refs/heads/{$branch}"])->output()))));
+            $result = $this->git($project, ['merge', '--squash', "refs/heads/{$branch}"], throw: false);
 
             if ($result->failed() || $this->hasConflicts($project)) {
-                $this->git($project, ['merge', '--abort'], throw: false);
                 $this->discardChanges($project);
 
                 throw new RepositoryConflict(__('Your app changed in the same places since you started this idea.'));
             }
 
-            $this->commit($project, $message, $author);
+            $this->git($project, ['update-ref', self::kept($branch), "refs/heads/{$branch}"]);
+
+            // Everything on the branch was undone again: the app is as it was.
+            if ($this->git($project, ['diff', '--cached', '--quiet'], throw: false)->successful()) {
+                return $this->tip($project);
+            }
+
+            $this->commit($project, count($steps) > 1 ? $message."\n\n".implode("\n", array_map(fn (string $step) => "* {$step}", $steps)) : $message, $author);
 
             return $this->tip($project);
         });
@@ -452,6 +465,15 @@ class ProjectRepository
 
             return ['sha' => $sha, 'subject' => $subject, 'author' => $author, 'committed_at' => $committedAt];
         }, array_filter(explode("\n", trim($output)))));
+    }
+
+    /**
+     * Get where a merged branch's own commits are kept once the branch is
+     * gone (see merge()).
+     */
+    public static function kept(string $branch): string
+    {
+        return "refs/kept/{$branch}";
     }
 
     /**

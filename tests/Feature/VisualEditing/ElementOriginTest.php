@@ -3,6 +3,8 @@
 namespace Tests\Feature\VisualEditing;
 
 use App\Actions\Projects\CreateProject;
+use App\Enums\ExperimentStatus;
+use App\Models\Experiment;
 use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\Project;
@@ -63,6 +65,23 @@ class ElementOriginTest extends TestCase
             ->where('element.origin.how', 'added')
             ->where('element.origin.asked', 'Show how much people save on yearly plans')
             ->where('element.origin.decided', ['question' => 'How much do yearly plans save?', 'answer' => '20%']));
+    }
+
+    public function test_a_part_added_in_an_idea_the_owner_used_names_the_request_that_added_it()
+    {
+        $main = $this->repository->head($this->project);
+        $this->repository->createBranch($this->project, 'ideas/1', $main);
+        $added = $this->repository->commitFiles($this->project, $main, ['resources/js/pages/Plans.vue' => self::WITH_SAVINGS], 'Show yearly savings', null, 'ideas/1');
+        $featureRequest = $this->kept($added, 'Show how much people save on yearly plans');
+        $this->repository->commitFiles($this->project, $added, ['README.md' => "Plans\n"], 'Explain the plans', null, 'ideas/1');
+
+        // The idea is one commit on the main branch, which no request made.
+        $merged = $this->repository->merge($this->project, 'ideas/1', $this->project->branch(), 'Yearly plans', null);
+        Experiment::factory()->for($this->project)->create(['branch' => 'ideas/1', 'base_sha' => $main, 'status' => ExperimentStatus::Merged, 'merge_sha' => $merged]);
+
+        $this->inspect('resources/js/pages/Plans.vue:4:9', fn (Assert $page) => $page
+            ->where('element.origin.id', $featureRequest->uuid)
+            ->where('element.origin.how', 'added'));
     }
 
     public function test_a_part_the_app_came_with_names_the_latest_request_that_changed_it()

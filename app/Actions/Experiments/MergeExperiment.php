@@ -15,9 +15,10 @@ class MergeExperiment
     public function __construct(private ProjectRepository $repository, private ProjectNotes $notes, private SwitchExperiment $switchExperiment) {}
 
     /**
-     * Use an idea in the app: merge its branch into the main branch, then
-     * go back to the main app. When the main app changed the same places
-     * since the idea started, nothing is merged and the owner is told.
+     * Use an idea in the app: bring its branch into the main branch as one
+     * commit named after the idea, then go back to the main app. When the
+     * main app changed the same places since the idea started, nothing is
+     * merged and the owner is told.
      *
      * @throws ValidationException when the idea is not open or does not merge cleanly.
      */
@@ -34,7 +35,7 @@ class MergeExperiment
                 $project,
                 $experiment->branch,
                 Experiment::mainBranch(),
-                "Merge branch '{$experiment->branch}'",
+                $experiment->name,
                 ['name' => $owner->name, 'email' => $owner->email],
             );
         } catch (RepositoryConflict $exception) {
