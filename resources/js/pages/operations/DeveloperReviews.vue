@@ -70,10 +70,20 @@ function state(review: Row): string {
                             {{ review.app }} ·
                             {{ review.about_change ? 'a change' : 'the app' }}
                             · {{ stamp(review.asked_at) }}
+                            <!-- On a phone the state sits here, so the
+                                 question keeps the width. -->
+                            <span
+                                class="sm:hidden"
+                                :class="
+                                    review.waiting &&
+                                    'font-medium text-amber-600'
+                                "
+                                >· {{ state(review) }}</span
+                            >
                         </span>
                     </span>
                     <span
-                        class="shrink-0 text-xs"
+                        class="hidden shrink-0 text-xs sm:block"
                         :class="
                             review.waiting
                                 ? 'font-medium text-amber-600'
