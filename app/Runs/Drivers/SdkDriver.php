@@ -20,6 +20,7 @@ use App\Runs\Plan;
 use App\Runs\Review;
 use App\Runs\ReviewEvidence;
 use App\Runs\ToolSession;
+use Illuminate\Support\Str;
 
 /**
  * Plans and reviews like the agent driver, but builds with a coding agent
@@ -71,7 +72,11 @@ class SdkDriver extends AgentDriver
                 throw new BudgetExhausted(__('The agent used up its turns or budget before finishing.'));
             }
 
-            throw new ConstructionFailed(__('The agent could not make the change: :reason', ['reason' => $outcome->error ?? $outcome->errorKind]));
+            // The agent's own words name our tools and are for us; the
+            // owner hears whose fault it is and what to do.
+            $run->recordEvent('agent_failed', ['kind' => $outcome->errorKind, 'error' => Str::limit((string) $outcome->error, 2000)]);
+
+            throw new ConstructionFailed(__('This is our fault: the AI stopped before it finished the change. Nothing in your app changed. Try again.'));
         }
 
         return (string) $outcome->summary;

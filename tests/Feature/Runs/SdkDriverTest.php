@@ -184,7 +184,9 @@ class SdkDriverTest extends TestCase
         $run = app(StartRun::class)->handle($this->request())->refresh();
 
         $this->assertSame(RunStatus::Failed, $run->status);
-        $this->assertSame('The agent could not make the change: The tests would not pass.', $run->error);
+        // The owner hears whose fault it is; the agent's words stay with us.
+        $this->assertSame('This is our fault: the AI stopped before it finished the change. Nothing in your app changed. Try again.', $run->error);
+        $this->assertSame(['kind' => 'error_during_execution', 'error' => 'The tests would not pass.'], $run->events()->where('type', 'agent_failed')->sole()->data);
         $this->assertSame(0, $run->events()->where('type', 'failover')->count());
     }
 
