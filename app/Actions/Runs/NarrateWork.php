@@ -232,6 +232,7 @@ class NarrateWork
     protected function caught(array $findings): array
     {
         $lines = [];
+        $tests = false;
 
         foreach ($findings as $finding) {
             // Only the first sentence says what is wrong; a later one read
@@ -243,7 +244,15 @@ class NarrateWork
 
             if ($first !== null && preg_match('/\b(tests?|tested|criteri(on|a)|verif\w*|plan|evidence)\b/i', $first) !== 1) {
                 $lines[] = ['kind' => 'failed', 'names' => [], 'text' => $first];
+            } elseif ($first !== null) {
+                $tests = true;
             }
+        }
+
+        // A finding about tests reads as jargon, but "I found something to
+        // fix" alone leaves the owner guessing what it was.
+        if ($lines === [] && $tests) {
+            $lines[] = ['kind' => 'failed', 'names' => [], 'text' => __('It needed a test that proves what you asked for.')];
         }
 
         return array_slice($lines, 0, 3);

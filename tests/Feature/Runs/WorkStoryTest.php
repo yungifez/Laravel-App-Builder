@@ -166,6 +166,20 @@ class WorkStoryTest extends TestCase
         ], app(NarrateWork::class)->handle($run->refresh()));
     }
 
+    public function test_the_story_says_plainly_when_the_second_look_only_asked_for_a_test()
+    {
+        [$run] = $this->implementingRun();
+        $run->recordEvent('review', ['approved' => false, 'findings' => [
+            ['severity' => 'blocking', 'file' => null, 'summary' => 'No test in the change checks: owners can still rename the team.'],
+            ['severity' => 'blocking', 'file' => null, 'summary' => 'Acceptance criterion 2 is not verified by any test.'],
+        ]]);
+
+        $this->assertSame([
+            ['kind' => 'stage', 'text' => 'I found something to fix'],
+            ['kind' => 'failed', 'text' => 'It needed a test that proves what you asked for.'],
+        ], app(NarrateWork::class)->handle($run->refresh()));
+    }
+
     public function test_a_change_made_without_a_story_shows_none()
     {
         [$run] = $this->implementingRun();
