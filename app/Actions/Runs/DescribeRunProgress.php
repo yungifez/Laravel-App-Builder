@@ -51,6 +51,10 @@ class DescribeRunProgress
             return $this->checking($run);
         }
 
+        if ($run->status === RunStatus::Reviewing) {
+            return $this->reviewing($run);
+        }
+
         $progress = $this->live($run);
 
         return $progress === null ? null : $this->describe($run, $progress);
@@ -192,6 +196,30 @@ class DescribeRunProgress
             ]),
             default => __('Trying it the way you asked for it'),
         };
+
+        return ['text' => (string) $text, 'changed' => 0];
+    }
+
+    /**
+     * Say what the change is checked against while it is looked over: each
+     * thing the owner asked for, and what must stay as it was.
+     *
+     * @return array{text: string, changed: int}|null
+     */
+    protected function reviewing(Run $run): ?array
+    {
+        $asked = count($run->plan['acceptance_criteria'] ?? []);
+        $kept = count($run->plan['preserve'] ?? []);
+
+        if ($asked === 0) {
+            return null;
+        }
+
+        $text = trans_choice('Checking it against the one thing you asked for|Checking it against the :count things you asked for', $asked);
+
+        if ($kept > 0) {
+            $text = __(':asked, and :rules', ['asked' => $text, 'rules' => trans_choice('the one rule that must not change|the :count rules that must not change', $kept)]);
+        }
 
         return ['text' => (string) $text, 'changed' => 0];
     }

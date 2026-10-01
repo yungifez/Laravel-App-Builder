@@ -88,6 +88,19 @@ class RunProgressTest extends TestCase
         $this->assertNull($this->progress($waiting));
     }
 
+    public function test_the_owner_sees_what_the_change_is_checked_against_while_it_is_looked_over()
+    {
+        $run = Run::factory()->create(['status' => RunStatus::Reviewing, 'plan' => ['acceptance_criteria' => ['Owners can invite.', 'Members cannot.'], 'preserve' => [['area' => null, 'statement' => 'Owners can rename a team.']]]]);
+
+        $this->assertSame(['text' => 'Checking it against the 2 things you asked for, and the one rule that must not change', 'changed' => 0], $this->progress($run));
+
+        $run->update(['plan' => ['acceptance_criteria' => ['Owners can invite.']]]);
+        $this->assertSame('Checking it against the one thing you asked for', $this->progress($run)['text']);
+
+        $run->update(['plan' => ['acceptance_criteria' => []]]);
+        $this->assertNull($this->progress($run));
+    }
+
     public function test_the_owner_sees_which_part_of_planning_runs()
     {
         $run = Run::factory()->create(['status' => RunStatus::Planning]);
