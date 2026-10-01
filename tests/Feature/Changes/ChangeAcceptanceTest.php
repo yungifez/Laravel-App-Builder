@@ -91,6 +91,8 @@ class ChangeAcceptanceTest extends TestCase
 
     public function test_the_next_request_builds_on_the_accepted_commit()
     {
+        // Only where the next request starts matters, not building it.
+        Queue::fake([ExecuteRun::class]);
         $request = $this->completedChange(self::ADD_COMMENT);
         $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $request));
 
@@ -130,6 +132,8 @@ class ChangeAcceptanceTest extends TestCase
 
     public function test_once_a_change_is_kept_each_shortcut_it_added_is_weighed_with_the_whole_file()
     {
+        // The weighing is what matters, not building the tidy-up it asks for.
+        Queue::fake([ExecuteRun::class]);
         config(['ai.providers.typesafe.key' => 'test-key', 'builder.decisions.providers' => ['typesafe']]);
         Classification::fake([['real' => new BooleanAnswer(0.92)], ['real' => new BooleanAnswer(0.1)]]);
         $request = $this->completedChange(self::ADD_SHORTCUTS);
