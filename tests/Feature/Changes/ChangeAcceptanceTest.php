@@ -192,7 +192,8 @@ class ChangeAcceptanceTest extends TestCase
 
         // The two were never checked together, so the second is not merged.
         $rebuild = $this->project->featureRequests()->latest('id')->firstOrFail();
-        $response->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $rebuild->uuid]));
+        $response->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $rebuild->uuid]))
+            ->assertInertiaFlash('toast.message', 'Your app changed after I checked this, so I am making it again on your app as it is now. You can keep it when it is ready.');
         $this->assertSame($second->id, $rebuild->retry_of_id);
         $this->assertSame('Note the teams config.', $rebuild->prompt);
         $this->assertNull($second->refresh()->commit_sha);

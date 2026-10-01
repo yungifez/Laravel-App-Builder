@@ -38,6 +38,7 @@ import InputError from '@/components/InputError.vue';
 import WorkStepLine from '@/components/WorkStepLine.vue';
 import WorkYourself from '@/components/WorkYourself.vue';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import {
     Collapsible,
     CollapsibleContent,
@@ -1720,7 +1721,8 @@ const checks = computed(() => {
                         class="h-11 w-full select-none sm:h-9"
                         data-test="accept-change-button"
                     >
-                        Keep it
+                        <Spinner v-if="processing" />
+                        {{ processing ? 'Keeping it' : 'Keep it' }}
                     </Button>
                     <InputError :message="errors.change" />
                 </Form>

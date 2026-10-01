@@ -7,6 +7,7 @@ use App\Models\FeatureRequest;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Inertia\Inertia;
 
 class FeatureRequestAcceptanceController extends Controller
 {
@@ -20,9 +21,14 @@ class FeatureRequestAcceptanceController extends Controller
 
         $accepted = $acceptChange->handle($featureRequest, $request->user());
 
-        // A change checked on an older app is built again instead.
-        return $accepted->is($featureRequest)
-            ? back()
-            : to_route('projects.show', ['project' => $accepted->project, 'change' => $accepted->uuid]);
+        if ($accepted->is($featureRequest)) {
+            return back();
+        }
+
+        // A change checked on an older app is built again instead. The
+        // owner asked to keep it, so they are told why it is not kept yet.
+        Inertia::flash('toast', ['type' => 'info', 'message' => __('Your app changed after I checked this, so I am making it again on your app as it is now. You can keep it when it is ready.')]);
+
+        return to_route('projects.show', ['project' => $accepted->project, 'change' => $accepted->uuid]);
     }
 }
