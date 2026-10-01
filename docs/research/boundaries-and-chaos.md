@@ -3,9 +3,12 @@
 Answer to [direction 33](../architecture/direction/33-architecture-boundaries-and-chaos.md).
 Status: the owner adopted the MVP (§20) on 2026-10-01. Built so far: phase
 and frames per effect, the phase rules (`AppBoundaries`), the same rules read
-from the code (`BoundaryCode`, including the app's start), the job that runs
-twice, fault places ordered by boundary findings, and the protected
-verification inputs, described in architecture.md §12. The rest is proposal.
+from the code (`BoundaryCode`, including the app's start), the ratchet that
+does not count a finding that only moved (§16.1), the job that runs twice,
+the job retried after its save failed, the outside call made again after no
+answer, listeners run in reverse order, fault places ordered by boundary
+findings, and the protected verification inputs, described in
+architecture.md §12. The rest is proposal.
 When parts are adopted, they are folded into the existing sections of
 [architecture.md](../architecture/architecture.md) (§12 Verification, §26.4
 Effects, §31.2 Knowledge is not enforcement, §10 Governance), not appended.
@@ -181,18 +184,18 @@ Two consequences:
 The vocabulary maps one to one onto the recorder's effect kinds, so static
 and runtime evidence speak the same language.
 
-| Effect class     | Recorder kind today              | Target                       | Notes                                                               |
-| ---------------- | -------------------------------- | ---------------------------- | ------------------------------------------------------------------- |
-| `db.read`        | `query` (select)                 | table                        |                                                                     |
-| `db.write`       | `query` (insert/update/delete)   | table                        | A database notification channel is a `db.write` too.                |
-| `db.tx`          | `begin` / `commit` / `rollback`  | connection                   | Structure, not an effect on the world.                              |
-| `queue.dispatch` | `job`                            | job class, connection        | Plus whether it waits for commit (`afterCommit`).                   |
-| `mail.send`      | `mail`                           | mailable class               | Irreversible.                                                       |
-| `notify.send`    | `notification`                   | notification class, channels | Irreversible for mail, SMS and broadcast channels.                  |
-| `http.out`       | `http`                           | method and host              | Irreversible when the target says so (package contract or project). |
-| `event.dispatch` | not yet (one wildcard listener)  | event class                  | Matters for reorder and listener-failure faults.                    |
-| `cache.write`    | not yet (`KeyWritten`)           | key prefix                   |                                                                     |
-| `fs.write`       | not yet (needs a disk decorator) | disk, path prefix            | Storage fires no events; this is the costly one to record.          |
+| Effect class     | Recorder kind today               | Target                       | Notes                                                                |
+| ---------------- | --------------------------------- | ---------------------------- | -------------------------------------------------------------------- |
+| `db.read`        | `query` (select)                  | table                        |                                                                      |
+| `db.write`       | `query` (insert/update/delete)    | table                        | A database notification channel is a `db.write` too.                 |
+| `db.tx`          | `begin` / `commit` / `rollback`   | connection                   | Structure, not an effect on the world.                               |
+| `queue.dispatch` | `job`                             | job class, connection        | Plus whether it waits for commit (`afterCommit`).                    |
+| `mail.send`      | `mail`                            | mailable class               | Irreversible.                                                        |
+| `notify.send`    | `notification`                    | notification class, channels | Irreversible for mail, SMS and broadcast channels.                   |
+| `http.out`       | `http`                            | method and host              | Irreversible when the target says so (package contract or project).  |
+| `event.dispatch` | `events` (top level of the trace) | event class, listeners       | Only listeners found by event discovery; the disk gives their order. |
+| `cache.write`    | not yet (`KeyWritten`)            | key prefix                   |                                                                      |
+| `fs.write`       | not yet (needs a disk decorator)  | disk, path prefix            | Storage fires no events; this is the costly one to record.           |
 
 Targets carry attributes that rules use:
 
@@ -393,8 +396,9 @@ effects of packages, of the container, of observers and listeners
 registered at boot, of serialization, and of whatever runs only under the
 real configuration.
 
-Later recorder additions, each one listener: `event.dispatch` (a wildcard
-listener), `cache.write` (`KeyWritten`), authorization decisions
+`event.dispatch` is recorded since 7e4149f, as `events` with the listeners
+event discovery found. Later recorder additions, each one listener:
+`cache.write` (`KeyWritten`), authorization decisions
 (`Gate::after`: ability, result) for the "authorization ran" presence check,
 and `fs.write` (a disk decorator; the costliest).
 
@@ -407,21 +411,22 @@ is one rerun of one test with one fault, the shape `AppFaults` already uses:
 involved and nothing is random. The planner gives `AppFaults::points()` an
 ordered list; the fault engine stays the only thing that runs faults.
 
-| Signature contains                               | Experiment                                             | Property checked (generic, no oracle needed)                                                            | Exists today |
-| ------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | ------------ |
-| send, then a write                               | the write fails                                        | nothing left that was sent for a save that was lost ("sent, then lost")                                 | yes          |
-| write, then a send                               | the send fails                                         | the person gets an error and nothing was kept that a retry repeats ("saved, then failed")               | yes          |
-| two or more writes outside one transaction       | the last write fails                                   | no half save ("saved in part")                                                                          | yes          |
-| two or more writes in a transaction              | the last write fails                                   | nothing sent or saved outside the transaction stays (the database puts the writes back itself)          | yes          |
-| `queue.dispatch`                                 | the job runs twice                                     | judged by shape: a second insert or a second send is a finding; a repeated update is unknown, not clean | no           |
-| `queue.dispatch` of a job that reads a model     | the model changes or disappears before the job runs    | the job neither crashes unhandled nor acts on a deleted record                                          | no           |
-| a job with a write and a send                    | the write fails, then the job is retried               | the send happened once                                                                                  | no           |
-| `http.out` with a POST to an irreversible target | the call reaches the target, then the client times out | no second identical POST without an idempotency key                                                     | no           |
-| `http.out`                                       | timeout, server error                                  | the person gets a handled answer, nothing half done                                                     | partly       |
-| an event with two or more listeners              | the listeners run in reverse order; one listener fails | the same final state; earlier listeners' effects are not half done                                      | no           |
-| a read, then a write of the same row             | another change to that row lands between the two       | the second change is not lost (lost update). Needs row identity: an owner decision (§22)                | no           |
-| `cache.write` with a `db.write`                  | the write fails after the cache write                  | the cache does not hold what the database lost                                                          | no           |
-| `fs.write` with a `db.write`                     | either one fails                                       | no file without its record, no record without its file                                                  | no           |
+| Signature contains                               | Experiment                                             | Property checked (generic, no oracle needed)                                                              | Exists today |
+| ------------------------------------------------ | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- | ------------ |
+| send, then a write                               | the write fails                                        | nothing left that was sent for a save that was lost ("sent, then lost")                                   | yes          |
+| write, then a send                               | the send fails                                         | the person gets an error and nothing was kept that a retry repeats ("saved, then failed")                 | yes          |
+| two or more writes outside one transaction       | the last write fails                                   | no half save ("saved in part")                                                                            | yes          |
+| two or more writes in a transaction              | the last write fails                                   | nothing sent or saved outside the transaction stays (the database puts the writes back itself)            | yes          |
+| `queue.dispatch`                                 | the job runs twice                                     | judged by shape: a second insert or a second send is a finding; a repeated update is unknown, not clean   | yes          |
+| `queue.dispatch` of a job that reads a model     | the model changes or disappears before the job runs    | the job neither crashes unhandled nor acts on a deleted record                                            | no           |
+| a job with a write and a send                    | the write fails, then the job is retried               | the send happened once ("sent again")                                                                     | yes          |
+| `http.out` with a POST to an irreversible target | the call reaches the target, then the client times out | no second identical POST or PATCH without an idempotency key ("called again")                             | yes          |
+| `http.out`                                       | timeout, server error                                  | the person gets a handled answer, nothing half done                                                       | partly       |
+| an event with two or more listeners              | the listeners run in reverse order                     | the same sends, saves that stayed and status, by shape ("depends on order"); one table, no proof: unknown | yes          |
+| a listener with a send or a save                 | that send or save fails                                | covered by the send and save places inside the listener                                                   | yes          |
+| a read, then a write of the same row             | another change to that row lands between the two       | the second change is not lost (lost update). Needs row identity: an owner decision (§22)                  | no           |
+| `cache.write` with a `db.write`                  | the write fails after the cache write                  | the cache does not hold what the database lost                                                            | no           |
+| `fs.write` with a `db.write`                     | either one fails                                       | no file without its record, no record without its file                                                    | no           |
 
 The recorder keeps no values, by rule: queries keep their placeholders.
 So every property above is judged by the **shape** of the effects, and
