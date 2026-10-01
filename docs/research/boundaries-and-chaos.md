@@ -24,12 +24,12 @@ section.
 | 4. Artifact categories and detection | §3      | 17. Blocked by default                     | §15     |
 | 5. Capability / effect categories    | §4      | 18. Advisory by default                    | §15     |
 | 6. Static analysis architecture      | §7      | 19. Blocking only in strict mode           | §15     |
-| 7. Runtime instrumentation           | §8      | 20. Failure modes of this design           | §17     |
+| 7. Runtime instrumentation           | §8      | 20. Failure modes of this design           | §21     |
 | 8. Baseline and ratchet              | §16.1   | 21. Where static analysis is unreliable    | §18     |
 | 9. Debt representation               | §16.2   | 22. Where runtime evidence is insufficient | §18     |
 | 10. Exceptions and approval          | §16.3   | 23. MVP and long term                      | §20     |
 | 11. Protected control plane          | §11     | 24. Tooling candidates                     | §19     |
-| 12. Architecture feeds chaos         | §9      | 25. Open research questions                | §21     |
+| 12. Architecture feeds chaos         | §9      | 25. Open research questions                | §22     |
 | 13. Chaos feeds architecture         | §10     |                                            |         |
 
 ## 1. The short answer
@@ -359,12 +359,30 @@ MVP is chosen:
    (`class::method`, nearest first, about 6). `origin()` already walks the
    backtrace, so this is cheap and stays deterministic.
 2. **Phase per effect.** Computed from the same backtrace by matching a
-   fixed table of framework frames (`Gate::raw` → authorization,
-   `FormRequest::validateResolved` → validation, `View::render`,
-   `JsonResource::resolve` and `Inertia\Response::toResponse` → rendering,
-   `Model::fireModelEvent` → model hook, `Dispatcher::dispatch` → listener,
-   `Application::boot` → boot, `CallQueuedHandler::call` → job). The table is
-   versioned per Laravel major version and tested on fixtures.
+   fixed table of framework frames, named by full class:
+   `Illuminate\Auth\Access\Gate::raw` → authorization,
+   `Illuminate\Foundation\Http\FormRequest::validateResolved` → validation,
+   `Illuminate\View\View::render`,
+   `Illuminate\Http\Resources\Json\JsonResource::resolve` and
+   `Inertia\Response::toResponse` → rendering,
+   `Illuminate\Database\Eloquent\Model::fireModelEvent` → model hook,
+   `Illuminate\Events\Dispatcher::dispatch` → listener,
+   `Illuminate\Foundation\Application::boot` → boot,
+   `Illuminate\Queue\CallQueuedHandler::call` → job. Names matter:
+   `Illuminate\Bus\Dispatcher::dispatch` is a job dispatch, not a listener.
+   Frames nest (a listener inside a job), and the **innermost** framework
+   frame wins. A frame the table does not know gives phase `unknown`, never
+   a guess. The backtrace is capped at 80 frames, so a deep render or
+   model-hook stack can also end `unknown`. Rules treat `unknown` like a
+   static "possible": a note, never a send back. The table is versioned per
+   Laravel major version and tested on fixtures.
+
+Since bf9b9c5 the recorder stands in for the Mail, Notification, Queue and
+Bus fakes, so a send under a fake is an effect too, with the same backtrace.
+Some things stay hidden, and the recorder names them in `blind`:
+`Event::fake`, notifications to channels other than mail, and jobs the app
+runs inline under `Bus::fake`. A presence check ("authorization ran") on a
+request with `blind` set is "not seen", never "absent".
 
 With these, runtime evidence shows what static analysis cannot (§18):
 effects of packages, of the container, of observers and listeners
@@ -385,24 +403,30 @@ is one rerun of one test with one fault, the shape `AppFaults` already uses:
 involved and nothing is random. The planner gives `AppFaults::points()` an
 ordered list; the fault engine stays the only thing that runs faults.
 
-| Signature contains                               | Experiment                                             | Property checked (generic, no oracle needed)                                              | Exists today |
-| ------------------------------------------------ | ------------------------------------------------------ | ----------------------------------------------------------------------------------------- | ------------ |
-| send, then a write                               | the write fails                                        | nothing left that was sent for a save that was lost ("sent, then lost")                   | yes          |
-| write, then a send                               | the send fails                                         | the person gets an error and nothing was kept that a retry repeats ("saved, then failed") | yes          |
-| two or more writes outside one transaction       | the last write fails                                   | no half save ("saved in part")                                                            | yes          |
-| two or more writes in a transaction              | the last write fails                                   | everything rolls back                                                                     | yes          |
-| `queue.dispatch`                                 | the job runs twice                                     | the second run writes and sends nothing new                                               | no           |
-| `queue.dispatch` of a job that reads a model     | the model changes or disappears before the job runs    | the job neither crashes unhandled nor acts on a deleted record                            | no           |
-| a job with a write and a send                    | the write fails, then the job is retried               | the send happened once                                                                    | no           |
-| `http.out` with a POST to an irreversible target | the call reaches the target, then the client times out | no second identical POST without an idempotency key                                       | no           |
-| `http.out`                                       | timeout, server error                                  | the person gets a handled answer, nothing half done                                       | partly       |
-| an event with two or more listeners              | the listeners run in reverse order; one listener fails | the same final state; earlier listeners' effects are not half done                        | no           |
-| a read, then a write of the same row             | another change to that row lands between the two       | the second change is not lost (lost update)                                               | no           |
-| `cache.write` with a `db.write`                  | the write fails after the cache write                  | the cache does not hold what the database lost                                            | no           |
-| `fs.write` with a `db.write`                     | either one fails                                       | no file without its record, no record without its file                                    | no           |
+| Signature contains                               | Experiment                                             | Property checked (generic, no oracle needed)                                                            | Exists today |
+| ------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | ------------ |
+| send, then a write                               | the write fails                                        | nothing left that was sent for a save that was lost ("sent, then lost")                                 | yes          |
+| write, then a send                               | the send fails                                         | the person gets an error and nothing was kept that a retry repeats ("saved, then failed")               | yes          |
+| two or more writes outside one transaction       | the last write fails                                   | no half save ("saved in part")                                                                          | yes          |
+| two or more writes in a transaction              | the last write fails                                   | nothing sent or saved outside the transaction stays (the database puts the writes back itself)          | yes          |
+| `queue.dispatch`                                 | the job runs twice                                     | judged by shape: a second insert or a second send is a finding; a repeated update is unknown, not clean | no           |
+| `queue.dispatch` of a job that reads a model     | the model changes or disappears before the job runs    | the job neither crashes unhandled nor acts on a deleted record                                          | no           |
+| a job with a write and a send                    | the write fails, then the job is retried               | the send happened once                                                                                  | no           |
+| `http.out` with a POST to an irreversible target | the call reaches the target, then the client times out | no second identical POST without an idempotency key                                                     | no           |
+| `http.out`                                       | timeout, server error                                  | the person gets a handled answer, nothing half done                                                     | partly       |
+| an event with two or more listeners              | the listeners run in reverse order; one listener fails | the same final state; earlier listeners' effects are not half done                                      | no           |
+| a read, then a write of the same row             | another change to that row lands between the two       | the second change is not lost (lost update). Needs row identity: an owner decision (§22)                | no           |
+| `cache.write` with a `db.write`                  | the write fails after the cache write                  | the cache does not hold what the database lost                                                          | no           |
+| `fs.write` with a `db.write`                     | either one fails                                       | no file without its record, no record without its file                                                  | no           |
 
-How experiments are chosen, in order, inside the existing `points` and
-`seconds` budget:
+The recorder keeps no values, by rule: queries keep their placeholders.
+So every property above is judged by the **shape** of the effects, and
+where shape cannot decide, the result is unknown, never clean.
+
+The ordered list is a pure function of (trace, patch, static findings), so
+the same change always gives the same places. Experiments are chosen, in
+order, inside the existing budget (today 8 places, no new rerun after
+180 s, about 1–4 s per rerun):
 
 1. places on the change's own lines (the fault engine's current rule);
 2. findings with "possible" certainty, because an experiment settles them;
@@ -411,9 +435,18 @@ How experiments are chosen, in order, inside the existing `points` and
 
 The planner also reads the **plan**. If the plan says "charge the card, then
 create the order", the order of effects is known before the code exists, and
-the experiments are known too. The agent's brief can then say: "This change
-will be checked by making the order save fail after the charge." Telling the
-agent the experiment up front is the cheapest prevention there is.
+the experiments are known too. The agent's brief can then say what will be
+checked: "The order must not be lost when it fails to save after the
+charge." That is the cheapest prevention there is, with two limits:
+
+- **It invites a swallowed error.** The fault engine reads an app that
+  catches the failure and answers in its own way as "took the failure in".
+  An agent that knows the experiment can pass it with a `try`/`catch` that
+  hides the error. So this idea only ships with the static rule against
+  swallowed exceptions around a send or a save (§11, Blinding), at send
+  back level for new code.
+- **It says what, never how.** The brief names the property, not the
+  engine, the recorder or the fault places (the trade-secret rule).
 
 ## 10. Chaos tests architecture
 
@@ -425,11 +458,13 @@ hand. Three things flow back:
 1. **Findings in phases the happy path never shows.** For example, the
    exception handler writes to the database while rendering the error page.
 2. **Certainty.** A static "possible" finding becomes proven when a fault run
-   shows the effect, or is dropped when the path ran and the effect did not
-   happen.
+   shows the effect. When the path ran and the effect did not happen, it is
+   "not seen on the paths the tests take" and stays "possible": one test's
+   path is not every path of the code.
 3. **Guarantees as facts.** "POST /orders is all-or-nothing under 3 faults"
-   is stored for the entry point. The review, the owner's proof and the other
-   engines read it. An Effect between two areas seen in a fault run is
+   is stored for the entry point, with the places tried and the revision.
+   It ends when the entry point's code changes. The review, the owner's
+   proof and the other engines read it. An Effect between two areas seen in a fault run is
    observed evidence for §26.4.
 
 The fault engine's rules carry over unchanged: findings never change a
@@ -469,11 +504,11 @@ so.
 **Blinding** is reported, not guessed at. Each is a note by default and a
 send back in strict mode:
 
-- a new global fake (`Mail::fake()` in `tests/Pest.php`), or a rise in the
-  share of requests that fakes hid (the recorder's `unseen` count);
-- a new catch-all around an effect (`catch (\Throwable)` that neither
-  rethrows nor reports) in changed code. This matters because the fault
-  engine treats a caught failure as handled;
+- a new fake the recorder cannot see through (`Event::fake()` in
+  `tests/Pest.php`), or a rise in the share of requests marked `blind`;
+- a new catch-all around a send or a save (`catch (\Throwable)` that
+  neither rethrows nor reports) in changed code. This matters because the
+  fault engine reads a caught failure as "took the failure in";
 - `Model::withoutEvents`, `Event::fake` or `Http::fake` in app code.
 
 **How a rule changes.** A rule change is a proposal: the rule, what it would
@@ -568,6 +603,14 @@ writes 50 times. The recorder shows `db.write posts` in phase
 `authorization` within `rendering`, on `GET /posts`. BND-AUTH-WRITE is
 proven: send back. "Saved on a read" (AppTraces) finds it too, from a
 different angle.
+
+**A real finding: a contact form that saves, then mails.** The fault
+engine's first live finding (change 8, `POST /contact`):
+`ContactController.php:37` inserts into `contact_messages`, then sends a mail
+notification in the same request. With the mail made to fail, the person
+gets an error page while the message is already saved, so they send it
+again: "saved, then failed". The test used `Notification::fake()`, so no
+engine saw it until the recorder stood in for fakes.
 
 **A FormRequest that sends.**
 
@@ -935,3 +978,7 @@ proposes shape rules from the codebase.
    example "90% of mutating routes go through `app/Actions`")?
 9. Can owners make exception decisions in plain words, or do these always
    need a developer?
+10. **An owner decision:** should the recorder relax "no values" to keep
+    row identity (for example a hash of the primary key)? Lost update and a
+    precise "job runs twice" need it. Without it, both stay judged by shape
+    and often end unknown.
