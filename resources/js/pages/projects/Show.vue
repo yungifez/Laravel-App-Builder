@@ -612,6 +612,16 @@ const browsing = computed(() =>
           },
 );
 
+// A new tab opens the page on show, of the copy while the owner tries
+// one, so it carries on from where they are.
+const openInTab = computed(() => {
+    const target = changeCopyRuns.value ? changeCopy.value : props.preview;
+
+    return target
+        ? showPreview(target.id, { query: { to: browsing.value.path } }).url
+        : null;
+});
+
 // A phone shows one thing at a time: the chat, the app with the design
 // panel under it, or just the app.
 const phoneViews = [
@@ -1300,22 +1310,6 @@ function sendOnEnter(event: KeyboardEvent): void {
                         @open="openInApp"
                     />
                 </div>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    class="hidden size-9 md:inline-flex"
-                    as-child
-                >
-                    <a
-                        :href="showPreview(preview.id).url"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        aria-label="Open in a new tab"
-                        title="Open in a new tab"
-                    >
-                        <ExternalLink class="size-4" />
-                    </a>
-                </Button>
             </template>
 
             <Form
@@ -2161,6 +2155,24 @@ function sendOnEnter(event: KeyboardEvent): void {
                             </DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>
+                    <Button
+                        v-if="openInTab"
+                        variant="ghost"
+                        size="icon"
+                        class="size-9"
+                        as-child
+                    >
+                        <a
+                            :href="openInTab"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label="Open in a new tab"
+                            title="Open in a new tab"
+                            data-test="preview-open-tab"
+                        >
+                            <ExternalLink class="size-4" />
+                        </a>
+                    </Button>
                 </div>
                 <div class="ml-auto sm:hidden">
                     <SignInAs
