@@ -91,7 +91,7 @@ class DescribeProof
             // No separate checks were written for this change, so only its own
             // tests, if any, try it. That is a gap, said here as the verdict
             // above the lines would otherwise call the change well checked.
-            $verification->status === VerificationStatus::Unverified ? ['kind' => 'gap', 'text' => __('No check written apart from the change tried it.')] : null,
+            $verification->status === VerificationStatus::Unverified ? ['kind' => 'gap', 'text' => __('Only the tests it wrote for itself tried what it does.')] : null,
             $audited && ! $warned ? ['kind' => 'passed', 'text' => __('No known security problems in the packages your app uses.')] : null,
             $warned ? ['kind' => 'gap', 'text' => __('Some packages your app uses have known security problems. Ask me to update them.')] : null,
         ]));

@@ -312,7 +312,7 @@ class ChangeProofTest extends TestCase
         // it, so the owner's verdict shows a gap rather than "well checked".
         $this->actingAs($request->project->owner)
             ->get(route('feature-requests.show', $request))
-            ->assertInertia(fn (Assert $page) => $page->where('proof.1', ['kind' => 'gap', 'text' => 'No check written apart from the change tried it.']));
+            ->assertInertia(fn (Assert $page) => $page->where('proof.1', ['kind' => 'gap', 'text' => 'Only the tests it wrote for itself tried what it does.']));
     }
 
     public function test_nothing_is_claimed_until_the_checks_pass()
