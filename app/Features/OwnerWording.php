@@ -101,6 +101,10 @@ class OwnerWording
         $from = RunStatus::tryFrom((string) ($data['from'] ?? ''));
         $to = RunStatus::tryFrom((string) ($data['to'] ?? ''));
 
+        if ($to === RunStatus::Implementing && ($data['reason'] ?? null) === 'kept_trying') {
+            return __('You asked me to keep trying, so I went back to fix it');
+        }
+
         if ($to === RunStatus::Implementing && in_array($from, [RunStatus::Implementing, RunStatus::Verifying, RunStatus::Reviewing], true)) {
             return match ($data['reason'] ?? null) {
                 'verification_failed' => __('Some checks failed, so I went back to fix them'),

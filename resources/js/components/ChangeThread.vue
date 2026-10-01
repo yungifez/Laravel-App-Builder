@@ -22,6 +22,7 @@ import FeatureRequestAcceptanceController from '@/actions/App/Http/Controllers/F
 import FeatureRequestAnswerController from '@/actions/App/Http/Controllers/FeatureRequestAnswerController';
 import FeatureRequestFollowUpController from '@/actions/App/Http/Controllers/FeatureRequestFollowUpController';
 import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
+import FeatureRequestKeepTryingController from '@/actions/App/Http/Controllers/FeatureRequestKeepTryingController';
 import FeatureRequestRetryController from '@/actions/App/Http/Controllers/FeatureRequestRetryController';
 import FeatureRequestReversionController from '@/actions/App/Http/Controllers/FeatureRequestReversionController';
 import FeatureRequestVerificationController from '@/actions/App/Http/Controllers/FeatureRequestVerificationController';
@@ -810,27 +811,60 @@ const checks = computed(() => {
                             >
                                 Nothing in your app changed.
                             </p>
-                            <Form
-                                v-if="request.can_retry"
-                                v-bind="
-                                    FeatureRequestRetryController.store.form(
-                                        request.id,
-                                    )
-                                "
-                                v-slot="{ errors, processing }"
-                            >
-                                <Button
-                                    size="sm"
-                                    :disabled="processing"
-                                    class="h-11 select-none sm:h-8"
-                                    data-test="retry-button"
+                            <!-- It ran out of tries: going on from its work
+                                 so far comes first, starting over second. -->
+                            <div class="flex flex-wrap items-start gap-2">
+                                <Form
+                                    v-if="request.can_keep_trying"
+                                    v-bind="
+                                        FeatureRequestKeepTryingController.store.form(
+                                            request.id,
+                                        )
+                                    "
+                                    v-slot="{ errors, processing }"
                                 >
-                                    Try again
-                                </Button>
-                                <InputError
-                                    :message="errors.retry ?? errors.step"
-                                />
-                            </Form>
+                                    <Button
+                                        size="sm"
+                                        :disabled="processing"
+                                        class="h-11 select-none sm:h-8"
+                                        title="Go on from the work so far and keep fixing it"
+                                        data-test="keep-trying-button"
+                                    >
+                                        Keep trying
+                                    </Button>
+                                    <InputError :message="errors.keep_trying" />
+                                </Form>
+                                <Form
+                                    v-if="request.can_retry"
+                                    v-bind="
+                                        FeatureRequestRetryController.store.form(
+                                            request.id,
+                                        )
+                                    "
+                                    v-slot="{ errors, processing }"
+                                >
+                                    <Button
+                                        size="sm"
+                                        :variant="
+                                            request.can_keep_trying
+                                                ? 'outline'
+                                                : 'default'
+                                        "
+                                        :disabled="processing"
+                                        class="h-11 select-none sm:h-8"
+                                        data-test="retry-button"
+                                    >
+                                        {{
+                                            request.can_keep_trying
+                                                ? 'Start over'
+                                                : 'Try again'
+                                        }}
+                                    </Button>
+                                    <InputError
+                                        :message="errors.retry ?? errors.step"
+                                    />
+                                </Form>
+                            </div>
                             <Form
                                 v-if="request.can_work_yourself"
                                 v-bind="

@@ -151,6 +151,17 @@ class Run extends Model
     }
 
     /**
+     * Get how many repairs the run may make. Each time the owner asks it to
+     * keep trying, it gets as many again, so the limit is never final.
+     */
+    public function repairLimit(): int
+    {
+        $keptTrying = $this->events()->where('type', 'status')->where('data->reason', 'kept_trying')->count();
+
+        return (int) config('builder.construction.budgets.repairs') * (1 + $keptTrying);
+    }
+
+    /**
      * Append an event to the run's log.
      *
      * Call this inside a transaction that holds the run's row lock, so the

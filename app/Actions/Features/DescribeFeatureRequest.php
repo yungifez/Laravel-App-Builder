@@ -3,6 +3,7 @@
 namespace App\Actions\Features;
 
 use App\Actions\Runs\DescribeRunProgress;
+use App\Actions\Runs\KeepTryingRun;
 use App\Actions\Runs\NarrateWork;
 use App\Context\ProjectContext;
 use App\Context\ProjectNotes;
@@ -68,6 +69,7 @@ class DescribeFeatureRequest
                     && $featureRequest->commit_sha === null
                     && $featureRequest->latestRun?->status === RunStatus::Completed,
                 'can_retry' => RetryFeatureRequest::retryable($featureRequest),
+                'can_keep_trying' => KeepTryingRun::possible($featureRequest),
                 'can_continue' => RequestFollowUp::continuable($featureRequest),
                 'can_work_yourself' => HandChangeToOwner::available($featureRequest),
             ],

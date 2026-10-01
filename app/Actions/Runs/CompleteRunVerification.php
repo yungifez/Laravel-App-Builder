@@ -62,7 +62,7 @@ class CompleteRunVerification
                 return;
             }
 
-            if ($this->drivers->driver($run->driver)->canRepair() && $run->repairs < (int) config('builder.construction.budgets.repairs')) {
+            if ($this->drivers->driver($run->driver)->canRepair() && $run->repairs < $run->repairLimit()) {
                 $this->transitionRun->handle($run, RunStatus::Implementing, attributes: [
                     'repairs' => $run->repairs + 1,
                     'feedback' => ['reason' => 'verification_failed', 'details' => $failures],
@@ -75,6 +75,8 @@ class CompleteRunVerification
 
             $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, attributes: [
                 'error' => __('Verification did not pass, and this run cannot repair the change.'),
+                // Kept so the owner can ask it to keep trying from here.
+                'feedback' => ['reason' => 'verification_failed', 'details' => $failures],
             ], details: [...$details, 'reason' => 'verification_failed', 'choices' => ConstructRun::DECISION_CHOICES]);
         });
     }

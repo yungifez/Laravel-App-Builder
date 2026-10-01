@@ -253,7 +253,7 @@ class ConstructRun
         // verification and a review.
         $skipped = $this->testsTheChecksSkip($patch);
 
-        if ($skipped !== [] && $driver->canRepair() && $run->repairs < (int) config('builder.construction.budgets.repairs')) {
+        if ($skipped !== [] && $driver->canRepair() && $run->repairs < $run->repairLimit()) {
             $paths = Capability::suiteLocation();
 
             $this->transitionRun->handle($run, RunStatus::Implementing, $lease, [
@@ -414,7 +414,7 @@ class ConstructRun
 
         $details = array_map(fn (array $finding) => trim(($finding['file'] !== null ? "{$finding['file']}: " : '').$finding['summary']), $review->blockingFindings() ?: $review->findings);
 
-        if ($driver->canRepair() && $run->repairs < (int) config('builder.construction.budgets.repairs')) {
+        if ($driver->canRepair() && $run->repairs < $run->repairLimit()) {
             $this->transitionRun->handle($run, RunStatus::Implementing, $lease, [
                 'repairs' => $run->repairs + 1,
                 'feedback' => ['reason' => 'review_findings', 'details' => $details ?: [$review->summary]],
@@ -424,7 +424,11 @@ class ConstructRun
             return;
         }
 
-        $this->stopForDecision($run, $lease, __('The review found problems this run cannot fix: :summary', ['summary' => $review->summary]), 'review_findings', $stored);
+        // The findings are kept so the owner can ask it to keep trying.
+        $this->stopForDecision($run, $lease, __('The review found problems this run cannot fix: :summary', ['summary' => $review->summary]), 'review_findings', [
+            ...$stored,
+            'feedback' => ['reason' => 'review_findings', 'details' => $details ?: [$review->summary]],
+        ]);
     }
 
     /**

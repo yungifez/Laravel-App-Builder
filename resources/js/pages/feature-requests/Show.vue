@@ -12,6 +12,7 @@ import { computed, ref, watch } from 'vue';
 import FeatureRequestAcceptanceController from '@/actions/App/Http/Controllers/FeatureRequestAcceptanceController';
 import FeatureRequestAnswerController from '@/actions/App/Http/Controllers/FeatureRequestAnswerController';
 import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
+import FeatureRequestKeepTryingController from '@/actions/App/Http/Controllers/FeatureRequestKeepTryingController';
 import FeatureRequestRetryController from '@/actions/App/Http/Controllers/FeatureRequestRetryController';
 import FeatureRequestReversionController from '@/actions/App/Http/Controllers/FeatureRequestReversionController';
 import FeatureRequestStepChangeController from '@/actions/App/Http/Controllers/FeatureRequestStepChangeController';
@@ -509,17 +510,43 @@ function lineClass(line: string): string {
             data-test="retry"
         >
             <Form
+                v-if="featureRequest.can_keep_trying"
                 v-bind="
-                    FeatureRequestRetryController.store.form(featureRequest.id)
+                    FeatureRequestKeepTryingController.store.form(
+                        featureRequest.id,
+                    )
                 "
                 v-slot="{ errors, processing }"
             >
                 <Button
                     :disabled="processing"
                     class="h-11 select-none sm:h-9"
+                    title="Go on from the work so far and keep fixing it"
+                    data-test="keep-trying-button"
+                >
+                    Keep trying
+                </Button>
+                <InputError class="mt-2" :message="errors.keep_trying" />
+            </Form>
+            <Form
+                v-bind="
+                    FeatureRequestRetryController.store.form(featureRequest.id)
+                "
+                v-slot="{ errors, processing }"
+            >
+                <Button
+                    :variant="
+                        featureRequest.can_keep_trying ? 'outline' : 'default'
+                    "
+                    :disabled="processing"
+                    class="h-11 select-none sm:h-9"
                     data-test="retry-button"
                 >
-                    Try again
+                    {{
+                        featureRequest.can_keep_trying
+                            ? 'Start over'
+                            : 'Try again'
+                    }}
                 </Button>
                 <InputError
                     class="mt-2"
