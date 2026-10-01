@@ -6,6 +6,7 @@ import AuthLayout from '@/layouts/AuthLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import WorkspaceLayout from '@/layouts/WorkspaceLayout.vue';
 import { initializeFlashToast } from '@/lib/flashToast';
+import { settleDates } from '@/lib/when';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -52,6 +53,11 @@ void createInertiaApp({
                 ? { viewTransition: true }
                 : {},
     },
+}).then(() => {
+    // The page is in the browser and matches the server's drawing now.
+    if (typeof window !== 'undefined') {
+        settleDates();
+    }
 });
 
 // After an update the page is out of date, and the server refuses its
