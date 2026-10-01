@@ -30,6 +30,8 @@ export type ProjectListItem = {
     // When the owner last asked for a change, edited the design, or made it.
     edited_at: string | null;
     waiting: number;
+    // Whether the newest change is being made or stopped.
+    now: 'working' | 'stopped' | null;
     // Kept changes the version online does not have yet.
     offline: number;
     // How many of the app's own tests guard it; null before they first ran.

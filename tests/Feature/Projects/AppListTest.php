@@ -3,8 +3,10 @@
 namespace Tests\Feature\Projects;
 
 use App\Enums\FeatureRequestStatus;
+use App\Enums\RunStatus;
 use App\Models\FeatureRequest;
 use App\Models\Project;
+use App\Models\Run;
 use App\Models\TestObservation;
 use App\Models\User;
 use App\Models\Verification;
@@ -91,5 +93,23 @@ class AppListTest extends TestCase
                 ->where('projects.0.picture', route('verifications.shots.show', [$verification, 2]))
                 ->where('projects.1.picture', route('verifications.shots.show', [$new, 2]))
                 ->where('projects.2.picture', null));
+    }
+
+    public function test_each_app_says_when_its_newest_change_is_being_made_or_stopped()
+    {
+        $owner = User::factory()->create();
+        $made = fn (string $name, int $days) => Project::factory()->for($owner, 'owner')->create(['name' => $name, 'created_at' => now()->subDays($days)]);
+        $ask = fn (Project $project, RunStatus $status, array $attributes = []) => Run::factory()->for(FeatureRequest::factory()->for($project)->create(['status' => FeatureRequestStatus::Generating, 'created_at' => $project->created_at, ...$attributes]))->create(['status' => $status]);
+
+        $ask($made('Working', 1), RunStatus::Implementing);
+        $ask($made('Stopped', 2), RunStatus::NeedsUserDecision);
+        // Set aside by the owner, so it is nothing to act on.
+        $ask($made('Set aside', 3), RunStatus::NeedsUserDecision, ['dismissed_at' => now()]);
+
+        $this->actingAs($owner)->get(route('projects.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('projects.0.now', 'working')
+                ->where('projects.1.now', 'stopped')
+                ->where('projects.2.now', null));
     }
 }

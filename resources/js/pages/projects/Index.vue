@@ -502,6 +502,21 @@ function submitOnShortcut(event: KeyboardEvent): void {
                                     class="rounded-full bg-primary/15 px-2 py-0.5 font-medium text-foreground"
                                     >{{ project.waiting }} to look at</span
                                 >
+                                <span
+                                    v-else-if="project.now === 'working'"
+                                    class="flex items-center gap-1.5 text-foreground"
+                                    data-test="app-working"
+                                    ><span
+                                        aria-hidden="true"
+                                        class="size-1.5 animate-pulse rounded-full bg-primary"
+                                    />Making a change</span
+                                >
+                                <span
+                                    v-else-if="project.now === 'stopped'"
+                                    class="rounded-full bg-destructive/10 px-2 py-0.5 font-medium text-destructive"
+                                    data-test="app-stopped"
+                                    >A change stopped</span
+                                >
                             </span>
                         </Link>
                     </li>

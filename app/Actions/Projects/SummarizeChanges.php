@@ -77,6 +77,28 @@ class SummarizeChanges
     }
 
     /**
+     * What the app's card says about its changes: how many wait for the
+     * owner, and whether the newest ask is being made or stopped. A stopped
+     * one the owner set aside no longer counts.
+     *
+     * @return array{waiting: int, now: 'working'|'stopped'|null}
+     */
+    public function card(Project $project): array
+    {
+        $changes = collect($this->handle($project));
+        $newest = $changes->first(fn (array $change) => $change['state'] !== ChangeState::Dismissed->value);
+
+        return [
+            'waiting' => $changes->where('state', ChangeState::Waiting->value)->count(),
+            'now' => match ($newest['state'] ?? null) {
+                ChangeState::Working->value => 'working',
+                ChangeState::Stopped->value => 'stopped',
+                default => null,
+            },
+        ];
+    }
+
+    /**
      * Gather a request and all its follow-ups, however deep.
      *
      * @param  Collection<int, FeatureRequest>  $requests  Every request of the project

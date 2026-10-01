@@ -63,7 +63,9 @@ class ProjectController extends Controller
                     'name' => $project->name,
                     'edited_at' => $this->editedAt($project),
                     'published_at' => $this->publishedAt($project),
-                    'waiting' => $summarizeChanges->waiting($project),
+                    // How many changes wait for the owner, and whether the
+                    // newest is being made or stopped.
+                    ...$summarizeChanges->card($project),
                     // Kept changes the version online does not have yet.
                     'offline' => $this->offline($describeUnpublished->handle($project, $repository->exists($project) ? ($repository->head($project, Experiment::mainBranch()) ?: null) : null)),
                     // How many of the app's own tests guard it, as last run.
