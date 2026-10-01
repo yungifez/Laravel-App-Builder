@@ -12,6 +12,7 @@ use App\Actions\Previews\ReadPreviewPeople;
 use App\Actions\Previews\ReadPreviewProblems;
 use App\Actions\Previews\ReadPreviewRows;
 use App\Actions\Previews\ReadPreviewSchedule;
+use App\Actions\Previews\ShareApp;
 use App\Actions\Projects\CreateProject;
 use App\Actions\Projects\StartProjectFromTemplate;
 use App\Actions\Projects\SummarizeChanges;
@@ -259,6 +260,11 @@ class ProjectController extends Controller
                 'published_at' => $this->publishedAt($project),
                 // How many of the app's own tests guard it, as last run.
                 'tests' => TestObservation::countFor($project),
+                // The link that lets others try the app, while it works.
+                'share' => $project->share_expires_at?->isFuture() ? [
+                    'url' => ShareApp::url((string) $project->share_token),
+                    'expires_at' => $project->share_expires_at->toIso8601String(),
+                ] : null,
             ],
             'changes' => fn () => $summarizeChanges->handle($project),
             'preview' => fn () => $describePreview->handle($project),

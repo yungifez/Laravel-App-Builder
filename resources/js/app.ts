@@ -15,6 +15,7 @@ void createInertiaApp({
     layout: (name) => {
         switch (true) {
             case name === 'Welcome':
+            case name.startsWith('shared-apps/'):
                 return null;
             case name === 'projects/Show':
                 return WorkspaceLayout;

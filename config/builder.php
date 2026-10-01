@@ -885,6 +885,10 @@ return [
         'cookie' => 'builder_preview',
         'grant_seconds' => 60,
         'session_minutes' => 120,
+        // How long a link the owner shares lets others try the app, and
+        // how many people can have it open at once.
+        'share_days' => (int) env('BUILDER_PREVIEW_SHARE_DAYS', 7),
+        'shared_sessions' => 50,
         'idle_minutes' => (int) env('BUILDER_PREVIEW_IDLE_MINUTES', 30),
         'max_minutes' => (int) env('BUILDER_PREVIEW_MAX_MINUTES', 240),
         'boot_seconds' => 30,

@@ -47,8 +47,10 @@ use App\Http\Controllers\ProjectNotesDraftController;
 use App\Http\Controllers\ProjectPreviewController;
 use App\Http\Controllers\ProjectPublishingController;
 use App\Http\Controllers\ProjectServiceController;
+use App\Http\Controllers\ProjectShareController;
 use App\Http\Controllers\ProjectUnderstandingController;
 use App\Http\Controllers\RunCancellationController;
+use App\Http\Controllers\SharedAppController;
 use App\Http\Controllers\ThemeColorController;
 use App\Http\Controllers\VerificationShotController;
 use App\Http\Controllers\VisualEditController;
@@ -61,6 +63,9 @@ use App\Http\Controllers\VisualTextController;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'Welcome')->name('home');
+
+// A link the owner shared: anyone holding it can try the app, with no account.
+Route::get('s/{token}', [SharedAppController::class, 'show'])->where('token', '[A-Za-z0-9]{40}')->middleware('throttle:30,1')->name('shared-apps.show');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
@@ -81,6 +86,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::patch('projects/{project}/name', [ProjectNameController::class, 'update'])->name('projects.name.update');
     Route::put('projects/{project}/compatibility', [ProjectCompatibilityController::class, 'update'])->name('projects.compatibility.update');
     Route::post('projects/{project}/services/{service}', [ProjectServiceController::class, 'store'])->whereIn('service', array_keys(config('builder.services', [])))->name('projects.services.store');
+    Route::post('projects/{project}/share', [ProjectShareController::class, 'store'])->name('projects.share.store');
+    Route::delete('projects/{project}/share', [ProjectShareController::class, 'destroy'])->name('projects.share.destroy');
     Route::put('projects/{project}/publishing', [ProjectPublishingController::class, 'update'])->name('projects.publishing.update');
     Route::post('projects/{project}/deployments', [DeploymentController::class, 'store'])->name('deployments.store');
     Route::post('projects/{project}/live-error-fixes', [LiveErrorFixController::class, 'store'])->name('live-error-fixes.store');

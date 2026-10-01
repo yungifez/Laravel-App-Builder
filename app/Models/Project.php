@@ -37,11 +37,14 @@ use Illuminate\Support\Carbon;
  * @property string|null $notes_draft_error
  * @property list<array{role: string, provider: string|null, model: string|null, input_tokens: int, output_tokens: int, cost_usd: float|null, cost_source?: string|null, at?: string}>|null $setup_model_calls Model calls made to set the project up, outside any change
  * @property Carbon|null $understanding_seen_at When the owner last read what their app is
+ * @property string|null $share_token The link that lets anyone holding it try the app
+ * @property string|null $share_token_hash
+ * @property Carbon|null $share_expires_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'source_path', 'experiment_id', 'deploy_remote', 'deploy_branch', 'live_url', 'host', 'host_state', 'notes_draft_status', 'notes_draft', 'notes_draft_error', 'setup_model_calls'])]
-#[Hidden(['deploy_remote', 'service_keys'])]
+#[Fillable(['name', 'source_path', 'experiment_id', 'deploy_remote', 'deploy_branch', 'live_url', 'host', 'host_state', 'notes_draft_status', 'notes_draft', 'notes_draft_error', 'setup_model_calls', 'share_token', 'share_token_hash', 'share_expires_at'])]
+#[Hidden(['deploy_remote', 'service_keys', 'share_token', 'share_token_hash'])]
 class Project extends Model
 {
     /** @use HasFactory<ProjectFactory> */
@@ -66,6 +69,8 @@ class Project extends Model
             'started_here' => 'boolean',
             'keep_old_working' => 'boolean',
             'service_keys' => 'encrypted:array',
+            'share_token' => 'encrypted',
+            'share_expires_at' => 'datetime',
         ];
     }
 

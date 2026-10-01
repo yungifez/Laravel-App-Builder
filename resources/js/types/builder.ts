@@ -13,6 +13,8 @@ export type ProjectSummary = {
     published_at: string | null;
     /** How many of the app's own tests guard it, as last run. */
     tests: number | null;
+    /** The link that lets others try the app, while it works. */
+    share: { url: string; expires_at: string } | null;
 };
 
 /** Someone who can sign in to the app on show, as the app keeps them. */

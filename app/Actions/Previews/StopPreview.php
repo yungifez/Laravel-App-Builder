@@ -32,5 +32,6 @@ class StopPreview
         ]);
 
         Cache::forget(PreviewGateway::sessionsKey($preview));
+        Cache::forget(PreviewGateway::sharedSessionsKey($preview));
     }
 }

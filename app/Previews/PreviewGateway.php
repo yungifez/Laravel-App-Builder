@@ -88,11 +88,16 @@ class PreviewGateway
     {
         $grant = $request->query('grant');
 
-        $valid = $preview->status === PreviewStatus::Ready
+        // Someone the owner shared the app with, rather than the owner.
+        $shared = $preview->status === PreviewStatus::Ready
+            && is_string($grant)
+            && Cache::pull(GrantPreviewAccess::sharedKey($preview, $grant)) === true;
+
+        $valid = $shared || ($preview->status === PreviewStatus::Ready
             && is_string($grant)
             && $preview->grant_hash !== null
             && hash_equals($preview->grant_hash, hash('sha256', $grant))
-            && $preview->grant_expires_at?->isFuture();
+            && $preview->grant_expires_at?->isFuture());
 
         if (! $valid) {
             return $this->page(403, __('This preview link has expired. Open the preview from the builder again.'));
@@ -101,23 +106,28 @@ class PreviewGateway
         $secret = Str::random(64);
         $minutes = (int) config('builder.preview.session_minutes');
 
-        $preview->update([
-            'grant_hash' => null,
-            'grant_expires_at' => null,
-            'session_hash' => hash('sha256', $secret),
-            'session_expires_at' => now()->addMinutes($minutes),
-        ]);
+        if (! $shared) {
+            $preview->update([
+                'grant_hash' => null,
+                'grant_expires_at' => null,
+                'session_hash' => hash('sha256', $secret),
+                'session_expires_at' => now()->addMinutes($minutes),
+            ]);
+        }
 
         // The owner can have the app open in the builder and in a tab of its
         // own at once, so a new session does not end the ones before it.
+        // People the owner shared it with have sessions of their own, so
+        // they never end the owner's.
+        $key = $shared ? self::sharedSessionsKey($preview) : self::sessionsKey($preview);
         /** @var array<string, int> $open */
-        $open = Cache::get(self::sessionsKey($preview), []);
+        $open = Cache::get($key, []);
         $sessions = collect($open)
             ->filter(fn (int $expires) => $expires > now()->getTimestamp())
             ->put(hash('sha256', $secret), now()->addMinutes($minutes)->getTimestamp())
             ->sortDesc()
-            ->take(self::SESSIONS);
-        Cache::put(self::sessionsKey($preview), $sessions->all(), now()->addMinutes($minutes));
+            ->take($shared ? (int) config('builder.preview.shared_sessions') : self::SESSIONS);
+        Cache::put($key, $sessions->all(), now()->addMinutes($minutes));
 
         // Every preview can show inside the builder (the app, and a change
         // waiting for the owner), where the preview host is a third party,
@@ -173,7 +183,9 @@ class PreviewGateway
             return (bool) $preview->session_expires_at?->isFuture();
         }
 
-        $expires = Cache::get(self::sessionsKey($preview), [])[$hash] ?? null;
+        $expires = Cache::get(self::sessionsKey($preview), [])[$hash]
+            ?? Cache::get(self::sharedSessionsKey($preview), [])[$hash]
+            ?? null;
 
         return is_int($expires) && $expires > now()->getTimestamp();
     }
@@ -185,6 +197,14 @@ class PreviewGateway
     public static function sessionsKey(Preview $preview): string
     {
         return "previews:{$preview->id}:sessions";
+    }
+
+    /**
+     * Where the sessions of people the owner shared the app with wait.
+     */
+    public static function sharedSessionsKey(Preview $preview): string
+    {
+        return "previews:{$preview->id}:shared-sessions";
     }
 
     /**

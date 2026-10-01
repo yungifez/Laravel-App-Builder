@@ -17,11 +17,14 @@ class GrantPreviewAccess
      * app's own, such as a session one of its people is signed in with,
      * is set with the grant.
      *
+     * A grant for someone the owner shared the app with is kept apart, so
+     * it never takes the place of the owner's own grant.
+     *
      * @param  array{name: string, value: string, minutes: int}|null  $cookie
      *
      * @throws ValidationException when the preview is not running.
      */
-    public function handle(Preview $preview, ?string $path = null, ?array $cookie = null): string
+    public function handle(Preview $preview, ?string $path = null, ?array $cookie = null, bool $shared = false): string
     {
         if ($preview->status !== PreviewStatus::Ready) {
             throw ValidationException::withMessages([
@@ -30,6 +33,12 @@ class GrantPreviewAccess
         }
 
         $grant = Str::random(48);
+
+        if ($shared) {
+            Cache::put(self::sharedKey($preview, $grant), true, now()->addSeconds((int) config('builder.preview.grant_seconds')));
+
+            return $preview->url('/__builder/session').'?'.http_build_query(['grant' => $grant]);
+        }
 
         $preview->update([
             'grant_hash' => hash('sha256', $grant),
@@ -49,5 +58,13 @@ class GrantPreviewAccess
     public static function cookieKey(Preview $preview, string $grant): string
     {
         return "previews:{$preview->id}:grant-cookie:".hash('sha256', $grant);
+    }
+
+    /**
+     * Where a grant for someone the owner shared the app with waits.
+     */
+    public static function sharedKey(Preview $preview, string $grant): string
+    {
+        return "previews:{$preview->id}:shared-grant:".hash('sha256', $grant);
     }
 }
