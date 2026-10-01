@@ -222,6 +222,16 @@ class RecordedApp
     }
 
     /**
+     * Dispatches an event that listeners hear.
+     */
+    public function ordered(): Response
+    {
+        event(new RecordedEvent);
+
+        return response()->noContent();
+    }
+
+    /**
      * Asks an outside service again when it gets no answer.
      */
     public function retried(Request $request): Response

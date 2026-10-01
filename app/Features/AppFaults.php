@@ -42,6 +42,16 @@ namespace App\Features;
  * queue tries a failed job again. A job that asks if it ran before, but
  * marks that only after it sent, passes the run above and sends twice
  * here.
+ *
+ * One more thing is read with no failure at all. An event can have two
+ * or more listeners that Laravel found by itself. Laravel takes those in
+ * the order the disk lists their files, so their order is not the same on
+ * every machine. The request runs again with them in the reverse order,
+ * and it must do the same: the same saves and sends from the same lines,
+ * and the same answer. When it does, but two of the listeners use one
+ * table and one of them saves to it, the shape cannot say what stayed
+ * there, and nothing is said. What a listener changes only in memory is
+ * not seen.
  */
 class AppFaults
 {
@@ -57,6 +67,8 @@ class AppFaults
 
     public const SENT_AGAIN = 'sent_again';
 
+    public const DEPENDS_ON_ORDER = 'depends_on_order';
+
     public const SEND = 'send';
 
     public const SAVE = 'save';
@@ -64,6 +76,8 @@ class AppFaults
     public const AGAIN = 'again';
 
     public const RETRY = 'retry';
+
+    public const REORDER = 'reorder';
 
     /**
      * What the recorder can make fail when the app sends it.
@@ -81,7 +95,7 @@ class AppFaults
      * What is tried first when the places are otherwise alike: what cannot
      * be taken back comes before what the database can put back.
      */
-    protected const ORDER = ['http' => 0, 'mail' => 0, 'job' => 1, 'query' => 2];
+    protected const ORDER = ['http' => 0, 'mail' => 0, 'job' => 1, 'event' => 1, 'query' => 2];
 
     /**
      * The most findings kept, so one change cannot fill the row.
@@ -92,8 +106,9 @@ class AppFaults
      * Find the places where a failure can be caused: each email and outside
      * call a request makes, the last save of each transaction a request
      * commits, the last save the app's code makes outside a transaction
-     * once the request has saved or sent something, and each job the sync
-     * queue ran that sent or added something. Only requests that ran the
+     * once the request has saved or sent something, each job the sync
+     * queue ran that sent or added something, and each event with found
+     * listeners to run in the reverse order. Only requests that ran the
      * change's code are used.
      *
      * The places come in the order to try them, so a small budget goes to
@@ -103,9 +118,9 @@ class AppFaults
      * order comes only from the trace, the patch and those findings, so
      * the same change gives the same order.
      *
-     * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>  $requests  From AppTraces::parse(), of the tests' normal run
+     * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, events?: list<array{what: string, at: string|null, listeners: list<string>}>}>  $requests  From AppTraces::parse(), of the tests' normal run
      * @param  list<array{route: string, at?: string|null}>  $suspected  Findings of the other engines about the change, such as AppTraces and AppBoundaries give
-     * @return list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string}, times: int, own: bool}>
+     * @return list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string, what?: string}, times: int, own: bool, was?: array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool}}>
      */
     public static function points(array $requests, ?string $patch, array $suspected = []): array
     {
@@ -116,7 +131,12 @@ class AppFaults
         foreach ($requests as $request) {
             $filter = self::filter($request['test']);
 
-            if ($request['test'] === null || $filter === null || ! isset($request['n']) || $request['cut'] || ! array_any($request['effects'], $new)) {
+            // A request ran the change's code when a line of the change did
+            // something in it, or dispatched an event its listeners heard.
+            $ran = array_any($request['effects'], $new)
+                || array_any($request['events'] ?? [], fn (array $event) => is_string($event['at']) && AppTraces::onAddedLine($event['at'], $added));
+
+            if ($request['test'] === null || $filter === null || ! isset($request['n']) || $request['cut'] || ! $ran) {
                 continue;
             }
 
@@ -181,6 +201,30 @@ class AppFaults
                     'own' => $new($failed) || ($point[3] ?? false),
                 ];
             }
+
+            // An event with listeners Laravel found by itself: the disk
+            // gives their order, so the other order must do the same.
+            foreach ($request['events'] ?? [] as $place => $event) {
+                $points[implode('|', [self::REORDER, $route, $event['what'], $event['at'] ?? ''])] ??= [
+                    'fails' => self::REORDER,
+                    'route' => $route,
+                    'failed' => 'event '.$event['what'],
+                    'at' => $event['at'],
+                    'test' => $request['test'],
+                    'filter' => $filter,
+                    'fault' => ['test' => $request['test'], 'request' => $request['n'], 'effect' => $place, 'kind' => 'event', 'what' => $event['what']],
+                    'times' => 0,
+                    // The event is the change's when the change dispatches it or wrote what a listener does.
+                    'own' => (is_string($event['at']) && AppTraces::onAddedLine($event['at'], $added))
+                        || array_any($request['effects'], fn (array $effect) => array_intersect($effect['frames'] ?? [], $event['listeners']) !== [] && $new($effect)),
+                    'was' => [
+                        'status' => $request['status'],
+                        'did' => self::did($request['effects']),
+                        'listeners' => $event['listeners'],
+                        'apart' => self::apart($request['effects'], $event['listeners']),
+                    ],
+                ];
+            }
         }
 
         $routes = array_fill_keys(array_column($suspected, 'route'), true);
@@ -204,10 +248,11 @@ class AppFaults
      *
      * A place counts as missed when its failure did not happen: the test
      * took another way this time, or could not run. Nothing is known about
-     * a missed place, or about a place that was not tried.
+     * a missed place, or about a place that was not tried. An event whose
+     * two orders cannot be told apart by shape is missed too.
      *
-     * @param  list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string}, times: int, own: bool}>  $points  From points()
-     * @param  array<int, list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>>  $runs  What was recorded when each place's failure was caused, by the place's position in $points; a place not tried is absent
+     * @param  list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string, what?: string}, times: int, own: bool, was?: array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool}}>  $points  From points()
+     * @param  array<int, list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int}>>  $runs  What was recorded when each place's failure was caused, by the place's position in $points; a place not tried is absent
      * @return array{points: int, run: int, missed: int, existing: int, findings: list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}>}|null
      */
     public static function measure(array $points, array $runs, ?string $patch): ?array
@@ -226,16 +271,16 @@ class AppFaults
             $hit = $point === null ? null : array_find($requests, fn (array $request) => $request['test'] === $point['test']
                 && ($request['n'] ?? null) === $point['fault']['request']
                 && ($request['fault'] ?? null) === $point['fault']['effect']
-                // A second run that is not whole in the trace cannot be compared.
-                && ! (in_array($point['fails'], [self::AGAIN, self::RETRY], true) && $request['cut']));
+                // A run that is not whole in the trace cannot be compared.
+                && ! (in_array($point['fails'], [self::AGAIN, self::RETRY, self::REORDER], true) && $request['cut']));
 
-            if ($point === null || $hit === null) {
+            if ($point === null || $hit === null || self::undecided($point, $hit)) {
                 continue;
             }
 
             $run++;
 
-            foreach (self::left($point['fails'], $hit, $point['times']) as $kind => $effects) {
+            foreach (self::left($point['fails'], $hit, $point['times'], $point['was'] ?? null) as $kind => $effects) {
                 $key = implode('|', [$kind, $point['route'], $point['failed'], $point['at'] ?? '']);
                 $own = $point['own'] || array_any($effects, fn (array $effect) => is_string($effect['at'] ?? null) && AppTraces::onAddedLine($effect['at'], $added));
 
@@ -282,11 +327,16 @@ class AppFaults
      *
      * @param  array{status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, fault?: int}  $hit  The request the failure was caused in
      * @param  int  $times  How many times the request did the same thing from the same line in the tests' normal run
+     * @param  array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool}|null  $was  What the request did in the tests' normal run, for an event
      * @return array<string, list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>>
      */
-    protected static function left(string $fails, array $hit, int $times): array
+    protected static function left(string $fails, array $hit, int $times, ?array $was = null): array
     {
         $place = $hit['fault'] ?? 0;
+
+        if ($fails === self::REORDER) {
+            return array_filter([self::DEPENDS_ON_ORDER => $was === null ? [] : self::changed($was, $hit)]);
+        }
 
         if ($fails === self::AGAIN) {
             return array_filter([self::DONE_TWICE => self::twice($hit['effects'], $place)]);
@@ -329,6 +379,125 @@ class AppFaults
         $sent = array_values(array_filter($hit['effects'], fn (array $effect, int $at) => $before($effect, $at) && in_array($effect['kind'], self::SENT, true), ARRAY_FILTER_USE_BOTH));
 
         return array_filter([self::SENT_THEN_LOST => $sent, self::SAVED_IN_PART => $kept]);
+    }
+
+    /**
+     * Determine if nothing can be said about an event whose listeners ran
+     * in the reverse order: the request did the same by shape, but two of
+     * the listeners use one table and one of them saves to it. The
+     * recorder keeps no values, so what stayed in that table is not known.
+     *
+     * @param  array{fails: string, was?: array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool}}  $point
+     * @param  array{status: int, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, frames?: list<string>}>}  $hit
+     */
+    protected static function undecided(array $point, array $hit): bool
+    {
+        if ($point['fails'] !== self::REORDER) {
+            return false;
+        }
+
+        $was = $point['was'] ?? null;
+
+        return $was === null || (self::changed($was, $hit) === [] && ! ($was['apart'] && self::apart($hit['effects'], $was['listeners'])));
+    }
+
+    /**
+     * Get what a request did in another way when the listeners of one
+     * event ran in the reverse order: each send, and each save of the
+     * app's code that stayed, that one run made more times than the other
+     * from the same line, and an answer with another status.
+     *
+     * @param  array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool}  $was
+     * @param  array{status: int, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>}  $hit
+     * @return list<array{kind: string, open: int, what: string, at: string|null}>
+     */
+    protected static function changed(array $was, array $hit): array
+    {
+        $before = self::byName($was['did']);
+        $after = self::byName(self::did($hit['effects']));
+        $changed = $hit['status'] === $was['status'] ? [] : [['kind' => 'answered', 'open' => 0, 'what' => "{$hit['status']}, not {$was['status']}", 'at' => null]];
+
+        foreach ($before + $after as $key => $same) {
+            $less = count($before[$key] ?? []) - count($after[$key] ?? []);
+
+            if ($less !== 0) {
+                $changed[] = ['kind' => $less > 0 ? 'missing' : 'added', 'open' => 0, 'what' => self::name($same[0]), 'at' => $same[0]['at'] ?? null];
+            }
+        }
+
+        return $changed;
+    }
+
+    /**
+     * Get what counts when two runs of a request are compared: what it
+     * sent, and what the app's code saved that stayed.
+     *
+     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>  $effects
+     * @return list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>
+     */
+    protected static function did(array $effects): array
+    {
+        $stayed = AppTraces::saved($effects);
+
+        return array_values(array_filter(
+            $effects,
+            fn (array $effect, int $at) => in_array($effect['kind'], self::SENT, true) || (isset($stayed[$at]) && is_string($effect['at'] ?? null)),
+            ARRAY_FILTER_USE_BOTH,
+        ));
+    }
+
+    /**
+     * Group things by their name and the line they came from.
+     *
+     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>  $effects
+     * @return array<string, non-empty-list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>>
+     */
+    protected static function byName(array $effects): array
+    {
+        $named = [];
+
+        foreach ($effects as $effect) {
+            $named[self::name($effect).'|'.($effect['at'] ?? '')][] = $effect;
+        }
+
+        return $named;
+    }
+
+    /**
+     * Determine if the listeners of an event leave each other's tables
+     * alone: no table that two of them use has a save from one of them.
+     * A query is a listener's when the listener is among the app's code on
+     * the way to it.
+     *
+     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, frames?: list<string>}>  $effects
+     * @param  list<string>  $listeners  As Class::method
+     */
+    protected static function apart(array $effects, array $listeners): bool
+    {
+        $saves = [];
+
+        foreach ($effects as $effect) {
+            foreach (array_intersect($listeners, $effect['frames'] ?? []) as $listener) {
+                foreach (self::tables($effect['sql'] ?? '') as $table) {
+                    $saves[$table][$listener] = ($saves[$table][$listener] ?? false) || AppTraces::writes($effect);
+                }
+            }
+        }
+
+        return ! array_any($saves, fn (array $by) => count($by) > 1 && in_array(true, $by, true));
+    }
+
+    /**
+     * Get the tables a query names.
+     *
+     * @return list<string>
+     */
+    protected static function tables(string $sql): array
+    {
+        preg_match_all('/\b(?:from|join|into|update)\s+[`"\[]?([\w.]+)/i', $sql, $found);
+
+        // "on conflict do update set" names no table.
+        return array_values(array_diff(array_unique(array_map(strtolower(...), $found[1])), ['set']));
     }
 
     /**

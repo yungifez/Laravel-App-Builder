@@ -13,6 +13,7 @@ use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Database\QueryException;
 use Illuminate\Events\Dispatcher as Events;
 use Illuminate\Foundation\Http\Kernel;
+use Illuminate\Foundation\Support\Providers\EventServiceProvider;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Events\RequestSending;
 use Illuminate\Mail\Events\MessageSending;
@@ -46,6 +47,9 @@ use WeakMap;
  * sent, the outside call gets no answer, the write is refused before it
  * is made, the job runs a second time when it is done. The trace of that
  * request then shows what the app left behind.
+ *
+ * It can also name an event. The listeners Laravel found for that event by
+ * itself then run in the reverse order for that one request.
  */
 class Recorder
 {
@@ -94,8 +98,20 @@ class Recorder
     /** @var WeakMap<object, true> The connections that tell this recorder of a query before it runs */
     protected WeakMap $watched;
 
-    /** @var array{request: int, effect: int, kind: string}|null The one thing to make fail, when this test is the one named */
+    /** @var array{request: int, effect: int, kind: string, what?: string}|null The one thing to make fail, when this test is the one named */
     protected ?array $fault = null;
+
+    /** The dispatcher the app started with. */
+    protected ?object $events = null;
+
+    /** @var array<string, list<string>>|null Each event with two or more listeners Laravel found by itself, in the order the app has them */
+    protected ?array $found = null;
+
+    /** @var array<string, true> The events this recorder hears of */
+    protected array $followed = [];
+
+    /** @var array{0: string, 1: array<int, mixed>}|null The event whose listeners run in the reverse order now, and the order they had */
+    protected ?array $turned = null;
 
     /** How many requests this test has made. */
     protected int $requests = 0;
@@ -129,7 +145,7 @@ class Recorder
      */
     public function listen(): void
     {
-        $events = $this->app->make('events');
+        $events = $this->events = $this->app->make('events');
 
         $events->listen(QueryExecuted::class, function (QueryExecuted $query) {
             $this->watch($query->connection);
@@ -192,6 +208,7 @@ class Recorder
         $this->running = [];
         $this->hidden = [];
         $this->fakes->standIn();
+        $this->follow();
 
         $connections = $this->app->make('db')->getConnections();
         array_map($this->watch(...), $connections);
@@ -253,6 +270,8 @@ class Recorder
      */
     public function finish(): void
     {
+        $this->restore();
+
         if ($this->operation === null) {
             return;
         }
@@ -482,6 +501,153 @@ class Recorder
             //
         } finally {
             $this->jobs = max(0, $this->jobs - 1);
+        }
+    }
+
+    /**
+     * Hear of each event that has two or more listeners Laravel found by
+     * itself. Laravel takes those in the order the disk lists their files,
+     * so their order is not the same on every machine. Listeners the app
+     * registers by hand have the order its code gives them, and are left
+     * alone. When this run names one of the events, its found listeners
+     * run in the reverse order for this request.
+     */
+    protected function follow(): void
+    {
+        try {
+            if ($this->events === null || ! method_exists($this->events, 'getRawListeners')) {
+                return;
+            }
+
+            $this->found ??= $this->found();
+
+            foreach (array_keys($this->found) as $event) {
+                if (! isset($this->followed[$event])) {
+                    $this->followed[$event] = true;
+                    $this->events->listen($event, fn () => $this->dispatched($event));
+                }
+            }
+
+            $event = $this->fault['what'] ?? null;
+
+            if (($this->fault['kind'] ?? null) === 'event' && $this->fault['request'] === $this->requests - 1 && isset($this->found[$event])) {
+                $this->turn($event);
+            }
+        } catch (Throwable) {
+            //
+        }
+    }
+
+    /**
+     * Find the events with two or more listeners Laravel found by itself
+     * that the app still has, each with those listeners in the order the
+     * app has them. Laravel names a listener it found as Class@method.
+     *
+     * @return array<string, list<string>>
+     */
+    protected function found(): array
+    {
+        $raw = $this->events->getRawListeners();
+        $named = fn ($listeners) => array_filter((array) $listeners, fn ($listener) => is_string($listener) && str_contains($listener, '@'));
+
+        // No event has two of them: the app's folders need not be read.
+        if (! array_any($raw, fn ($listeners) => count($named($listeners)) >= 2)) {
+            return [];
+        }
+
+        $discovered = [];
+
+        foreach ($this->app->getProviders(EventServiceProvider::class) as $provider) {
+            foreach ($provider->shouldDiscoverEvents() ? $provider->discoverEvents() : [] as $event => $listeners) {
+                $discovered[$event] = [...($discovered[$event] ?? []), ...array_values((array) $listeners)];
+            }
+        }
+
+        $found = [];
+
+        foreach ($discovered as $event => $listeners) {
+            $kept = array_values(array_filter($named($raw[$event] ?? []), fn ($listener) => in_array($listener, $listeners, true)));
+
+            if (count($kept) >= 2) {
+                $found[$event] = $kept;
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * Put the found listeners of an event in the reverse order. Each
+     * other listener keeps its place. A listener of this recorder goes
+     * first: it says that the event came, also when a listener throws.
+     */
+    protected function turn(string $event): void
+    {
+        $raw = array_values($this->events->getRawListeners()[$event] ?? []);
+        $places = array_keys(array_filter($raw, fn ($listener) => is_string($listener) && in_array($listener, $this->found[$event], true)));
+
+        if (count($places) < 2) {
+            return;
+        }
+
+        $turned = $raw;
+
+        foreach ($places as $position => $place) {
+            $turned[$place] = $raw[$places[count($places) - 1 - $position]];
+        }
+
+        $this->turned = [$event, $raw];
+        $this->events->forget($event);
+        $this->events->listen($event, fn () => $this->dispatched($event));
+        array_map(fn ($listener) => $this->events->listen($event, $listener), $turned);
+    }
+
+    /**
+     * Give the listeners of the turned event the order they had.
+     */
+    protected function restore(): void
+    {
+        if ($this->turned === null) {
+            return;
+        }
+
+        [$event, $raw] = $this->turned;
+        $this->turned = null;
+
+        try {
+            $this->events->forget($event);
+            array_map(fn ($listener) => $this->events->listen($event, $listener), $raw);
+        } catch (Throwable) {
+            //
+        }
+    }
+
+    /**
+     * Note an event the request dispatched, once, with the line of the
+     * app's code that dispatched it and its found listeners as the
+     * trace names code. When its listeners run in the reverse order now,
+     * that is the one thing this run changes.
+     */
+    protected function dispatched(string $event): void
+    {
+        if ($this->operation === null) {
+            return;
+        }
+
+        try {
+            if (! in_array($event, array_column($this->operation['events'] ?? [], 'what'), true)) {
+                $this->operation['events'][] = [
+                    'what' => $event,
+                    'at' => $this->cause()['at'],
+                    'listeners' => array_map(fn (string $listener) => str_replace('@', '::', $listener), $this->found[$event] ?? []),
+                ];
+            }
+
+            if (($this->turned[0] ?? null) === $event && ! isset($this->operation['fault'])) {
+                $this->operation['fault'] = $this->fault['effect'];
+            }
+        } catch (Throwable) {
+            //
         }
     }
 
@@ -743,7 +909,7 @@ class Recorder
     /**
      * Read the one thing to make fail, when this test is the one it names.
      *
-     * @return array{request: int, effect: int, kind: string}|null
+     * @return array{request: int, effect: int, kind: string, what?: string}|null
      */
     protected function faultToCause(): ?array
     {
@@ -753,7 +919,13 @@ class Recorder
             return null;
         }
 
-        return ['request' => $fault['request'], 'effect' => $fault['effect'], 'kind' => $fault['kind']];
+        return [
+            'request' => $fault['request'],
+            'effect' => $fault['effect'],
+            'kind' => $fault['kind'],
+            // An event is named, because it has no place among the things a request did.
+            ...($fault['kind'] === 'event' && is_string($fault['what'] ?? null) ? ['what' => $fault['what']] : []),
+        ];
     }
 
     /**

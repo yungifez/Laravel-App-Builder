@@ -566,6 +566,11 @@ class ChangeProofTest extends TestCase
             $proof(['run' => 1, 'findings' => [$finding('saved_then_failed', 'POST /orders/{order}/pay', 'http POST api.stripe.com')]])->where('kind', 'gap')->pluck('text')->all(),
         );
 
+        $this->assertSame(
+            ['When someone uses /orders, your app does a few things one after the other, and nothing says which comes first. When they happen the other way round, your app does not do the same things.'],
+            $proof(['run' => 1, 'findings' => [$finding('depends_on_order', 'POST /orders', 'event App\Events\OrderPlaced')]])->where('kind', 'gap')->pluck('text')->all(),
+        );
+
         // The recording already said it sends before saving ends: it is said once.
         $twice = $proof(['run' => 1, 'findings' => [$finding('sent_then_lost', 'POST /invitations', 'insert invitations')]], ['traces' => ['requests' => 40, 'reached' => 12, 'unseen' => 0, 'existing' => 0, 'repeats' => [], 'findings' => [
             ['kind' => 'sent_before_saved', 'route' => 'POST /invitations', 'what' => 'mail App\Mail\Invited', 'at' => 'app/Models/Order.php:3', 'test' => null],

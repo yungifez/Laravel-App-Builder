@@ -378,6 +378,7 @@ class DescribeProof
             AppFaults::DONE_TWICE => 'Your app does some work on its own after someone uses :address. If that work is cut off and starts over, it sends or adds the same thing twice.',
             AppFaults::SENT_AGAIN => 'Your app does some work on its own after someone uses :address. If saving fails during that work and it starts over, it sends the same thing twice.',
             AppFaults::CALLED_AGAIN => 'If an outside service is slow to answer at :address, your app asks it again. The service may then do the same thing twice, such as take a payment twice.',
+            AppFaults::DEPENDS_ON_ORDER => 'When someone uses :address, your app does a few things one after the other, and nothing says which comes first. When they happen the other way round, your app does not do the same things.',
         ];
         // The recording already said that this is sent before saving ends.
         $said = AppTraces::findings($verification->evidence['traces'] ?? null, AppTraces::SENT_BEFORE_SAVED) !== [];

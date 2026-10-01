@@ -329,11 +329,11 @@ abstract class AgentDriver implements ConstructionDriver
 
         if (isset($measured['faults'])) {
             $faults = $measured['faults'];
-            $parts[] = sprintf("One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer, a save the database refused, or a queued job that ran a second time, whole or after a save in it was refused. Of %d places where those requests send, save or run a job, %d were tried and the failure happened in %d.", $faults['points'], $faults['run'] + $faults['missed'], $faults['run'])
+            $parts[] = sprintf("One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer, a save the database refused, or a queued job that ran a second time, whole or after a save in it was refused. An event with listeners that Laravel found by itself is a place too: nothing failed there, and its listeners ran in the reverse order. Of %d places where those requests send, save, run a job or dispatch such an event, %d were tried and the failure happened in %d.", $faults['points'], $faults['run'] + $faults['missed'], $faults['run'])
                 .match (true) {
                     $faults['findings'] !== [] => " What the app left behind:\n".$this->list(array_map($this->left(...), $faults['findings'])),
                     $faults['run'] === 0 => ' So this says nothing about the change.',
-                    default => ' Each time the app left nothing behind: it had saved nothing before a server error, sent nothing before a save it lost, kept no part of a save it lost, sent or added nothing again in a job that ran twice or was tried again after its save failed, and made no POST or PATCH call again without an idempotency key.',
+                    default => ' Each time the app left nothing behind: it had saved nothing before a server error, sent nothing before a save it lost, kept no part of a save it lost, sent or added nothing again in a job that ran twice or was tried again after its save failed, made no POST or PATCH call again without an idempotency key, and did the same when the listeners of an event ran in the reverse order.',
                 };
         }
 
@@ -367,6 +367,13 @@ abstract class AgentDriver implements ConstructionDriver
             return "{$finding['route']}: when {$finding['failed']}"
                 .($finding['at'] === null ? '' : " at {$finding['at']}")
                 ." got no answer, the request made the same call again with no idempotency key, so the service may do it twice (caused in {$finding['test']})";
+        }
+
+        // Laravel takes found listeners in the order the disk lists their files.
+        if ($finding['kind'] === AppFaults::DEPENDS_ON_ORDER) {
+            return "{$finding['route']}: when the listeners Laravel found for {$finding['failed']}"
+                .($finding['at'] === null ? '' : ", dispatched at {$finding['at']},")
+                ." ran in the reverse order, the request did not do the same: {$finding['what']} (caused in {$finding['test']})";
         }
 
         $did = match ($finding['kind']) {

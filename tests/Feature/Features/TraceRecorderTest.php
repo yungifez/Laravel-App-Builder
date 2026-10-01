@@ -7,6 +7,7 @@ use App\Features\AppTraces;
 use App\Models\User;
 use Closure;
 use Illuminate\Contracts\Debug\ExceptionHandler;
+use Illuminate\Foundation\Support\Providers\EventServiceProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Event;
@@ -20,11 +21,14 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Route;
 use Tests\Fixtures\RecordedApp;
 use Tests\Fixtures\RecordedCarefulJob;
+use Tests\Fixtures\RecordedEvent;
 use Tests\Fixtures\RecordedJob;
 use Tests\Fixtures\RecordedMail;
+use Tests\Fixtures\RecordedMarksReady;
 use Tests\Fixtures\RecordedNotice;
 use Tests\Fixtures\RecordedQueuedNotice;
 use Tests\Fixtures\RecordedResource;
+use Tests\Fixtures\RecordedTellsOwner;
 use Tests\TestCase;
 use TraceRecorder\Provider;
 
@@ -84,11 +88,46 @@ class TraceRecorderTest extends TestCase
      *
      * @return callable(): list<array<string, mixed>>
      */
-    protected function recordWithFailure(int $effect, string $kind): callable
+    protected function recordWithFailure(int $effect, string $kind, ?string $what = null): callable
     {
-        putenv('TRACE_RECORDER_FAULT='.json_encode(['test' => self::class.'::'.$this->name(), 'request' => 1, 'effect' => $effect, 'kind' => $kind]));
+        putenv('TRACE_RECORDER_FAULT='.json_encode(['test' => self::class.'::'.$this->name(), 'request' => 1, 'effect' => $effect, 'kind' => $kind, ...($what === null ? [] : ['what' => $what])]));
 
         return $this->record();
+    }
+
+    /**
+     * Give the app listeners the way Laravel gives it the ones it finds
+     * by itself, in a fixed order: the real search takes the disk's order.
+     *
+     * @param  array<class-string, list<string>>  $found
+     */
+    protected function discover(array $found): void
+    {
+        $this->app->register(new class($this->app, $found) extends EventServiceProvider
+        {
+            /**
+             * @param  array<class-string, list<string>>  $found
+             */
+            public function __construct($app, protected array $found)
+            {
+                parent::__construct($app);
+            }
+
+            public function shouldDiscoverEvents()
+            {
+                return true;
+            }
+
+            public function discoverEvents()
+            {
+                return $this->found;
+            }
+
+            protected function configureEmailVerification()
+            {
+                //
+            }
+        });
     }
 
     /**
@@ -411,6 +450,81 @@ class TraceRecorderTest extends TestCase
 
         $measured = $this->measureFailure($requests, 'job '.RecordedCarefulJob::class);
         $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+    }
+
+    public function test_an_event_whose_found_listeners_run_in_the_reverse_order_shows_what_the_request_did_not_do()
+    {
+        User::factory()->create();
+        Route::post('/_failing/ordered', [RecordedApp::class, 'ordered']);
+        $this->discover([RecordedEvent::class => [RecordedMarksReady::class.'@handle', RecordedTellsOwner::class.'@handle']]);
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'event', what: RecordedEvent::class);
+
+        foreach (range(0, 2) as $request) {
+            User::query()->update(['name' => 'New']);
+            $this->post('/_failing/ordered')->assertNoContent();
+        }
+
+        $requests = $recorded();
+        $did = fn (array $request) => array_map(fn (array $effect) => AppTraces::verb($effect['sql'] ?? '') ?: $effect['kind'], $request['effects']);
+
+        // Only the request the run names has the other order. The one after it has the app's order again.
+        $this->assertSame([['update', 'select', 'mail'], ['select', 'update'], ['update', 'select', 'mail']], array_map($did, $requests));
+        $this->assertSame([null, 0, null], array_map(fn (array $request) => $request['fault'] ?? null, $requests));
+
+        $event = $requests[0]['events'][0];
+        $this->assertSame([1, RecordedEvent::class, [RecordedMarksReady::class.'::handle', RecordedTellsOwner::class.'::handle']], [count($requests[0]['events']), $event['what'], $event['listeners']]);
+        $this->assertStringStartsWith(RecordedApp::PATH.':', $event['at']);
+        $this->assertSame($requests[0]['events'], $requests[1]['events']);
+
+        // The line that dispatches the event is the change's, so the place is too.
+        $points = AppFaults::points([$requests[0]], $this->wholeFilePatch());
+        $this->assertSame([['reorder', 'event '.RecordedEvent::class, true], ['send', 'mail message', false]], array_map(fn (array $point) => [$point['fails'], $point['failed'], $point['own']], $points));
+        $this->assertSame(['request' => 0, 'effect' => 0, 'kind' => 'event', 'what' => RecordedEvent::class], array_diff_key($points[0]['fault'], ['test' => 1]));
+        $points[0]['fault']['request'] = 1;
+
+        $measured = (array) AppFaults::measure($points, [0 => $requests], $this->wholeFilePatch());
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['depends_on_order', 'POST /_failing/ordered', 'event '.RecordedEvent::class, 'missing mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
+    public function test_a_listener_that_fails_in_the_reverse_order_is_still_marked_as_the_place()
+    {
+        User::factory()->create();
+        Route::post('/_failing/ordered', [RecordedApp::class, 'ordered']);
+        $this->discover([RecordedEvent::class => [RecordedMarksReady::class.'@handle', RecordedTellsOwner::class.'@strict']]);
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'event', what: RecordedEvent::class);
+
+        User::query()->update(['name' => 'New']);
+        $this->post('/_failing/ordered')->assertNoContent();
+        User::query()->update(['name' => 'New']);
+        $this->post('/_failing/ordered')->assertStatus(500);
+
+        $requests = $recorded();
+        $this->assertSame([null, 0], [$requests[0]['fault'] ?? null, $requests[1]['fault'] ?? null]);
+
+        $points = AppFaults::points([$requests[0]], $this->wholeFilePatch());
+        $points[0]['fault']['request'] = 1;
+
+        $measured = (array) AppFaults::measure($points, [0 => $requests], $this->wholeFilePatch());
+        $this->assertSame(['answered 500, not 204, missing update users'], array_column($measured['findings'], 'what'));
+    }
+
+    public function test_listeners_the_app_registers_by_hand_keep_their_order_and_are_no_place()
+    {
+        User::factory()->create();
+        Route::post('/_failing/ordered', [RecordedApp::class, 'ordered']);
+        Event::listen(RecordedEvent::class, RecordedMarksReady::class);
+        Event::listen(RecordedEvent::class, RecordedTellsOwner::class.'@handle');
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'event', what: RecordedEvent::class);
+
+        foreach (range(0, 1) as $request) {
+            User::query()->update(['name' => 'New']);
+            $this->post('/_failing/ordered')->assertNoContent();
+        }
+
+        $requests = $recorded();
+        $this->assertSame([['query', 'query', 'mail'], ['query', 'query', 'mail']], array_map(fn (array $request) => array_column($request['effects'], 'kind'), $requests));
+        $this->assertSame([[null, null], [null, null]], array_map(fn (array $request) => [$request['events'] ?? null, $request['fault'] ?? null], $requests));
     }
 
     public function test_an_email_a_test_fakes_is_still_seen_and_the_fake_still_holds_it()

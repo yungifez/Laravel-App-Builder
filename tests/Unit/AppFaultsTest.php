@@ -88,6 +88,44 @@ class AppFaultsTest extends TestCase
     }
 
     /**
+     * Mark a thing as done on the way through a listener.
+     *
+     * @param  array<string, mixed>  $effect
+     * @return array<string, mixed>
+     */
+    protected function heard(array $effect, string $listener): array
+    {
+        return [...$effect, 'phase' => 'listener', 'frames' => ["App\\Listeners\\{$listener}::handle"]];
+    }
+
+    /**
+     * An event the request dispatched, with two listeners Laravel found.
+     *
+     * @return array<string, mixed>
+     */
+    protected function dispatched(?string $at): array
+    {
+        return ['events' => [['what' => 'App\Events\OrderPlaced', 'at' => $at, 'listeners' => ['App\Listeners\MakeInvoice::handle', 'App\Listeners\SendReceipt::handle']]]];
+    }
+
+    /**
+     * Measure an event against the request its listeners ran in the
+     * reverse order in.
+     *
+     * @param  list<array<string, mixed>>  $normal  What the request did in the tests' normal run
+     * @param  list<array<string, mixed>>  $turned  What it did in the reverse order
+     * @param  array<string, mixed>  $extra
+     * @return array<string, mixed>|null
+     */
+    protected function reordered(array $normal, int $status, array $turned, ?string $at = self::NEW.':4', array $extra = []): ?array
+    {
+        $points = AppFaults::points(AppTraces::parse($this->recorded('POST', '/orders', 302, $normal, $this->dispatched($at))), self::PATCH);
+        $point = (int) array_search('reorder', array_column($points, 'fails'), true);
+
+        return AppFaults::measure($points, [$point => AppTraces::parse($this->recorded('POST', '/orders', $status, $turned, ['fault' => 0, ...$extra]))], self::PATCH);
+    }
+
+    /**
      * @param  list<string>  $requests
      * @return list<array<string, mixed>>
      */
@@ -469,6 +507,81 @@ class AppFaultsTest extends TestCase
         ];
 
         $this->assertSame(array_fill(0, 6, [1, []]), array_map(fn (?array $measured) => [$measured['run'] ?? null, $measured['findings'] ?? null], $measured));
+    }
+
+    public function test_an_event_with_found_listeners_is_a_place_named_in_the_fault_and_the_changes_when_it_dispatches_it()
+    {
+        $insert = $this->heard($this->asked('insert into "invoices" ("order_id") values (?)', 'app/Listeners/MakeInvoice.php:12'), 'MakeInvoice');
+        $mail = $this->heard($this->mailed('app/Listeners/SendReceipt.php:14'), 'SendReceipt');
+
+        // No line of the change did anything, but one dispatched the event.
+        $points = $this->points([$this->recorded('POST', '/orders', 302, [$insert, $mail], $this->dispatched(self::NEW.':4'))]);
+
+        $this->assertSame([['reorder', 'event App\Events\OrderPlaced', self::NEW.':4', true], ['send', 'mail App\Mail\Receipt', 'app/Listeners/SendReceipt.php:14', false]], array_map(fn (array $point) => [$point['fails'], $point['failed'], $point['at'], $point['own']], $points));
+        $this->assertSame(['test' => self::TEST, 'request' => 0, 'effect' => 0, 'kind' => 'event', 'what' => 'App\Events\OrderPlaced'], $points[0]['fault']);
+
+        // The app already dispatched it: the place is the change's only when the change wrote what a listener does.
+        $old = fn (array $effects) => $this->points([$this->recorded('POST', '/orders', 302, $effects, $this->dispatched('app/Http/Controllers/OrderController.php:1'))]);
+        $this->assertSame([], $old([$insert, $mail]));
+        // The email is tried first, then the event, then the save in steps.
+        $this->assertSame([['send', false], ['reorder', false], ['save', false]], array_map(fn (array $point) => [$point['fails'], $point['own']], $old([$this->asked('update "orders" set "paid" = ?', self::NEW.':3'), $insert, $mail])));
+        $this->assertSame([['send', true], ['reorder', true]], array_map(fn (array $point) => [$point['fails'], $point['own']], $old([$insert, $this->heard($this->mailed(self::NEW.':4'), 'SendReceipt')])));
+    }
+
+    public function test_an_event_is_found_when_the_request_does_not_do_the_same_in_the_reverse_order()
+    {
+        $insert = $this->heard($this->asked('insert into "invoices" ("order_id") values (?)', 'app/Listeners/MakeInvoice.php:12'), 'MakeInvoice');
+        $asks = $this->heard($this->asked('select * from "invoices" where "order_id" = ?', 'app/Listeners/SendReceipt.php:11'), 'SendReceipt');
+        $mail = $this->heard($this->mailed('app/Listeners/SendReceipt.php:14'), 'SendReceipt');
+
+        // The receipt found no invoice, and was not sent.
+        $measured = $this->reordered([$insert, $asks, $mail], 302, [$asks, $insert]);
+
+        $this->assertSame(['points' => 2, 'run' => 1, 'missed' => 0, 'existing' => 0], array_diff_key((array) $measured, ['findings' => 1]));
+        $this->assertSame([
+            ['kind' => 'depends_on_order', 'route' => 'POST /orders', 'failed' => 'event App\Events\OrderPlaced', 'what' => 'missing mail App\Mail\Receipt', 'at' => self::NEW.':4', 'test' => self::TEST],
+        ], $measured['findings'] ?? null);
+
+        // The receipt failed, so nothing after it ran. A save that was put back is not counted.
+        $failed = $this->reordered([$insert, $asks, $mail], 500, [$asks]);
+        $this->assertSame(['answered 500, not 302, missing insert invoices, missing mail App\Mail\Receipt'], array_column($failed['findings'] ?? [], 'what'));
+
+        // It sent one more from the same line.
+        $more = $this->reordered([$insert, $mail], 302, [$mail, $mail, $insert]);
+        $this->assertSame(['added mail App\Mail\Receipt'], array_column($more['findings'] ?? [], 'what'));
+
+        // The app already dispatched the event and no line of the change is in what changed.
+        $existing = $this->reordered([$this->asked('update "orders" set "paid" = ?', self::NEW.':3'), $insert, $asks, $mail], 302, [$this->asked('update "orders" set "paid" = ?', self::NEW.':3'), $asks, $insert], at: null);
+        $this->assertSame([1, 1, []], [$existing['run'] ?? null, $existing['existing'] ?? null, $existing['findings'] ?? null]);
+    }
+
+    public function test_an_event_is_clean_when_both_orders_do_the_same_and_missed_when_the_shape_cannot_tell()
+    {
+        $insert = $this->heard($this->asked('insert into "invoices" ("order_id") values (?)', 'app/Listeners/MakeInvoice.php:12'), 'MakeInvoice');
+        $asks = $this->heard($this->asked('select * from "invoices" where "order_id" = ?', 'app/Listeners/SendReceipt.php:11'), 'SendReceipt');
+        $reads = $this->heard($this->asked('select * from "customers" where "id" = ?', 'app/Listeners/SendReceipt.php:11'), 'SendReceipt');
+        $mail = $this->heard($this->mailed('app/Listeners/SendReceipt.php:14'), 'SendReceipt');
+
+        // The listeners use no table together: the same shape is the same result.
+        $clean = $this->reordered([$insert, $reads, $mail], 302, [$reads, $mail, $insert]);
+        $this->assertSame(['points' => 2, 'run' => 1, 'missed' => 0, 'existing' => 0, 'findings' => []], $clean);
+
+        // One listener reads the table the other saves to: the email can say something else.
+        $shared = $this->reordered([$insert, $asks, $mail], 302, [$asks, $mail, $insert]);
+        $this->assertSame(['points' => 2, 'run' => 0, 'missed' => 1, 'existing' => 0, 'findings' => []], $shared);
+
+        // They use one table only in the reverse order.
+        $later = $this->reordered([$insert, $reads, $mail], 302, [$asks, $mail, $insert]);
+        $this->assertSame([0, 1], [$later['run'] ?? null, $later['missed'] ?? null]);
+
+        // Two listeners that only read one table do not change it.
+        $both = $this->heard($this->asked('select * from "customers" where "id" = ?', 'app/Listeners/MakeInvoice.php:9'), 'MakeInvoice');
+        $this->assertSame([1, 0], array_values(array_intersect_key((array) $this->reordered([$both, $insert, $reads, $mail], 302, [$reads, $mail, $both, $insert]), ['run' => 1, 'missed' => 1])));
+
+        // A trace that is not whole cannot be compared, and an event that did not come is not the place.
+        $cut = $this->reordered([$insert, $reads, $mail], 302, [$reads, $mail], extra: ['cut' => true]);
+        $away = $this->reordered([$insert, $reads, $mail], 302, [$insert, $reads, $mail], extra: ['fault' => 3]);
+        $this->assertSame([[0, 1, []], [0, 1, []]], array_map(fn (?array $measured) => [$measured['run'] ?? null, $measured['missed'] ?? null, $measured['findings'] ?? null], [$cut, $away]));
     }
 
     public function test_a_job_whose_second_run_is_not_whole_in_the_trace_is_missed()

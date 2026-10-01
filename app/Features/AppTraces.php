@@ -61,8 +61,11 @@ class AppTraces
      * recorder could not tell), and "frames" the app's own code on the way
      * to it, nearest first, as Class::method. A trace from an older
      * recorder has neither.
+     * "events" lists each event the request dispatched that has two or
+     * more listeners Laravel found by itself: the line that dispatched it
+     * and those listeners, in the order they ran, as Class::method.
      *
-     * @return list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, phase?: string, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int}>
+     * @return list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, phase?: string, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, events?: list<array{what: string, at: string|null, listeners: list<string>}>}>
      */
     public static function parse(string $report): array
     {
@@ -99,6 +102,18 @@ class AppTraces
                 ];
             }
 
+            $events = [];
+
+            foreach (is_array($request['events'] ?? null) ? $request['events'] : [] as $event) {
+                if (is_array($event) && is_string($event['what'] ?? null)) {
+                    $events[] = [
+                        'what' => $event['what'],
+                        'at' => is_string($event['at'] ?? null) ? $event['at'] : null,
+                        'listeners' => array_values(array_filter(is_array($event['listeners'] ?? null) ? $event['listeners'] : [], is_string(...))),
+                    ];
+                }
+            }
+
             $requests[] = [
                 'test' => is_string($request['test'] ?? null) ? $request['test'] : null,
                 'method' => $request['method'],
@@ -110,6 +125,7 @@ class AppTraces
                 'cut' => (bool) ($request['cut'] ?? false),
                 ...(is_int($request['n'] ?? null) ? ['n' => $request['n']] : []),
                 ...(is_int($request['fault'] ?? null) ? ['fault' => $request['fault']] : []),
+                ...($events === [] ? [] : ['events' => $events]),
             ];
         }
 
