@@ -5,6 +5,7 @@ namespace Tests\Feature\Previews;
 use App\Actions\Previews\ReadPreviewEmails;
 use App\Actions\Previews\ReadPreviewLog;
 use App\Actions\Projects\CreateProject;
+use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\Project;
 use App\Models\User;
@@ -69,6 +70,30 @@ class PreviewEmailsTest extends TestCase
                 ->where('emails.1.html', fn (string $html) => str_contains($html, '/reset-password/secret-token?email=ada%40example.test') && str_contains($html, '<html'))
                 ->where('emails.1.text', fn (string $text) => str_contains($text, '/reset-password/secret-token') && ! str_contains($text, '<html'))
                 ->where('emails.1.sent_at', fn (?string $time) => $time !== null)));
+    }
+
+    public function test_the_owner_trying_a_change_reads_the_email_its_copy_sent()
+    {
+        $change = FeatureRequest::factory()->generated()->create(['project_id' => $this->project->id, 'user_id' => $this->owner->id]);
+        $appWorkspace = Workspace::factory()->create(['user_id' => $this->owner->id]);
+        $copyWorkspace = Workspace::factory()->create(['user_id' => $this->owner->id]);
+        Preview::factory()->editable()->ready()->create(['project_id' => $this->project->id, 'workspace_id' => $appWorkspace->id]);
+        $copy = Preview::factory()->ready()->create(['project_id' => $this->project->id, 'feature_request_id' => $change->id, 'workspace_id' => $copyWorkspace->id]);
+        $this->driver->files["{$appWorkspace->driver_id}:storage/logs/laravel.log"] = $this->logOf(fn () => Mail::mailer('log')->raw('From the app', fn ($message) => $message->to('ada@example.test')->subject('App')));
+        $this->driver->files["{$copyWorkspace->driver_id}:storage/logs/laravel.log"] = $this->logOf(fn () => Mail::mailer('log')->raw('Confirm your address', fn ($message) => $message->to('grace@example.test')->subject('Verify your email address')));
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', ['project' => $this->project, 'change' => $change->uuid]))
+            ->assertInertia(fn (Assert $page) => $page->missing('change_emails')->reloadOnly('change_emails', fn (Assert $page) => $page
+                ->count('change_emails', 1)
+                ->where('change_emails.0.to', 'grace@example.test')
+                ->where('change_emails.0.subject', 'Verify your email address')));
+
+        // A copy that stopped has sent nothing the owner can follow.
+        $copy->update(['status' => 'stopped']);
+
+        $this->get(route('projects.show', ['project' => $this->project, 'change' => $change->uuid]))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('change_emails', fn (Assert $page) => $page->where('change_emails', [])));
     }
 
     public function test_there_is_no_email_before_the_app_runs_or_sends_any()

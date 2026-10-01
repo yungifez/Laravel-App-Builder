@@ -13,6 +13,8 @@ const props = defineProps<{
     emails: SentEmail[] | undefined;
     // Where the app on show is served. A link there opens in the app.
     origin: string | null;
+    // A change's copy keeps its emails; they are only read here.
+    readonly?: boolean;
 }>();
 
 const emit = defineEmits<{ open: [href: string] }>();
@@ -149,6 +151,7 @@ const pieces = computed(() =>
                         {{ emails.length === 1 ? 'email' : 'emails' }}</span
                     >
                     <button
+                        v-if="!readonly"
                         type="button"
                         class="min-h-11 select-none hover:text-foreground sm:min-h-8"
                         data-test="app-emails-delete-all"
@@ -215,6 +218,7 @@ const pieces = computed(() =>
                         </p>
                     </div>
                     <button
+                        v-if="!readonly"
                         type="button"
                         class="-mr-1 grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground sm:size-8"
                         aria-label="Delete this email"

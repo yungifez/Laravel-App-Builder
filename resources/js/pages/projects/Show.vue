@@ -135,6 +135,7 @@ const props = defineProps<{
     publishing: ProjectPublishing;
     services: AppService[];
     emails?: SentEmail[];
+    change_emails?: SentEmail[];
     people?: PreviewPerson[] | null;
     problems?: AppProblem[];
     data?: SavedTable[] | null;
@@ -482,6 +483,42 @@ onMounted(() => {
     }
 });
 onUnmounted(() => window.removeEventListener('message', onChangeCopyMessage));
+
+// The email the copy sent, such as a link to confirm an email address, so
+// the owner can follow a sign-up through while trying the change.
+const changeEmailsOpen = ref(false);
+const changeCopyOrigin = computed(() =>
+    changeCopy.value === null ? null : new URL(changeCopy.value.url).origin,
+);
+const changeCopyRuns = computed(
+    () => changeCopy.value?.status === 'ready' && !changeCopyLost.value,
+);
+const changeEmailsPoll = usePoll(
+    5000,
+    { only: ['change_emails'] },
+    { autoStart: false },
+);
+watch(
+    () => changeCopy.value?.id,
+    () => (changeEmailsOpen.value = false),
+);
+watch(
+    changeCopyRuns,
+    (runs) => (runs ? changeEmailsPoll.start() : changeEmailsPoll.stop()),
+    { immediate: true },
+);
+watch(
+    changeEmailsOpen,
+    (open) => open && router.reload({ only: ['change_emails'] }),
+);
+
+function openInChangeCopy(href: string): void {
+    changeEmailsOpen.value = false;
+
+    if (changeCopyFrame.value !== null) {
+        changeCopyFrame.value.src = href;
+    }
+}
 
 // A phone shows one thing at a time: the chat, the app with the design
 // panel under it, or just the app.
@@ -2084,6 +2121,22 @@ function sendOnEnter(event: KeyboardEvent): void {
                     >
                         Show it without
                     </button>
+                    <button
+                        v-if="changeCopyRuns"
+                        type="button"
+                        :aria-pressed="changeEmailsOpen"
+                        class="flex min-h-11 items-center gap-1 underline underline-offset-2 select-none hover:text-foreground sm:min-h-0"
+                        data-test="change-copy-emails"
+                        @click="changeEmailsOpen = !changeEmailsOpen"
+                    >
+                        {{ changeEmailsOpen ? 'Back to the app' : 'Emails' }}
+                        <span
+                            v-if="!changeEmailsOpen && change_emails?.length"
+                            class="min-w-4 rounded-full bg-primary px-1 text-center text-[10px] leading-4 text-primary-foreground tabular-nums no-underline"
+                            :aria-label="`${change_emails.length} sent`"
+                            >{{ change_emails.length }}</span
+                        >
+                    </button>
                 </p>
                 <div
                     v-else
@@ -2137,6 +2190,16 @@ function sendOnEnter(event: KeyboardEvent): void {
                     title="Your app with this change"
                     class="size-full bg-background"
                     data-test="change-copy-frame"
+                />
+                <AppEmails
+                    v-if="changeEmailsOpen && changeCopyRuns"
+                    class="absolute inset-0 z-10"
+                    :project-id="project.id"
+                    :emails="change_emails"
+                    :origin="changeCopyOrigin"
+                    readonly
+                    data-test="change-copy-email-list"
+                    @open="openInChangeCopy"
                 />
                 <div
                     v-else-if="changeCopyLost"

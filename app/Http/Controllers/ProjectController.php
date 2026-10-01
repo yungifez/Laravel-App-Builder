@@ -184,6 +184,8 @@ class ProjectController extends Controller
             'element' => Inertia::optional(fn () => $inspectSelection->handle($project, $request->query('target'), $request->boolean('instance'))),
             // The email the app on show has sent, read while the owner looks.
             'emails' => Inertia::optional(fn () => $readPreviewEmails->handle($project)),
+            // And the email the copy of the change on show has sent.
+            'change_emails' => Inertia::optional(fn () => $change === null ? [] : $readPreviewEmails->forChange($change)),
             // Who the owner can sign in to the app on show as, one tap each.
             'people' => Inertia::optional(fn () => $readPreviewPeople->handle($project)),
             // And the problems it ran into while the owner tried it.
