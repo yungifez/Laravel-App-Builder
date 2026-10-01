@@ -474,6 +474,8 @@ export type AppProblem = {
     state: 'new' | 'fixing' | 'fixed' | 'cleared' | 'back';
     /** The change that fixes it, or fixed it. */
     change: string | null;
+    /** The owner's last try to fix it, when that try stopped. */
+    stopped: string | null;
 };
 
 export type InspectedElement = {

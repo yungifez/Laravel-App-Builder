@@ -169,10 +169,13 @@ class PreviewProblemsTest extends TestCase
         $this->assertSame(['fixing', $fix->uuid], $this->stand());
         $fix->update(['dismissed_at' => now()]);
         $this->assertSame(['new', null], $this->stand());
+        // The owner can open the try that stopped to see why.
+        $this->assertSame($stopped->uuid, $this->problems()[0]['stopped']);
         $this->post(route('preview-problem-fixes.store', $this->project), ['problem' => $id]);
         $fix = FeatureRequest::latest('id')->firstOrFail();
         $this->assertNotSame($stopped->id, $fix->id);
         $this->assertSame(['fixing', $fix->uuid], $this->stand());
+        $this->assertNull($this->problems()[0]['stopped']);
 
         // Keeping the fix: it is fixed, until the app runs into it again.
         $this->travel(1)->minute();

@@ -99,6 +99,21 @@ function times(problem: AppProblem): string {
                                     }}
                                     ·
                                 </span>
+                                <template v-if="problem.stopped">
+                                    <Link
+                                        :href="
+                                            showProject(projectId, {
+                                                query: {
+                                                    change: problem.stopped,
+                                                },
+                                            })
+                                        "
+                                        class="underline underline-offset-2 hover:text-foreground"
+                                        data-test="app-problem-stopped"
+                                        >My last try to fix it stopped</Link
+                                    >
+                                    ·
+                                </template>
                                 {{ times(problem) }}
                             </p>
                         </div>

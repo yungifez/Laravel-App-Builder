@@ -17,9 +17,10 @@ class ReadPreviewProblems
     /**
      * Get the problems the app on show ran into while the owner tried it,
      * the most recent first, each with where it stands: new, being fixed,
-     * fixed, cleared by the owner, or back after either.
+     * fixed, cleared by the owner, or back after either, and the owner's
+     * last try to fix it when that try stopped.
      *
-     * @return list<array{id: string, words: string, class: string|null, message: string, place: string|null, trace: list<string>, count: int, first_at: string|null, last_at: string|null, state: string, change: string|null}>
+     * @return list<array{id: string, words: string, class: string|null, message: string, place: string|null, trace: list<string>, count: int, first_at: string|null, last_at: string|null, state: string, change: string|null, stopped: string|null}>
      */
     public function handle(Project $project): array
     {
@@ -31,23 +32,25 @@ class ReadPreviewProblems
         }
 
         $ids = array_column($problems, 'id');
-        $fixes = $project->featureRequests()
+        $asked = $project->featureRequests()
             ->whereIn('live_errors->problem', $ids)
             ->whereNull('dismissed_at')
-            ->whereNotIn('status', [FeatureRequestStatus::Failed, FeatureRequestStatus::Cancelled])
             ->latest('id')
-            ->get()
-            // A fix that stopped is not being fixed: the problem waits again.
-            ->reject(fn (FeatureRequest $fix) => RetryFeatureRequest::retryable($fix))
-            ->unique(fn (FeatureRequest $fix) => $fix->live_errors['problem'] ?? null)
-            ->keyBy(fn (FeatureRequest $fix) => (string) ($fix->live_errors['problem'] ?? ''));
+            ->get();
+        // A fix that stopped is not being fixed: the problem waits again.
+        $stopped = fn (FeatureRequest $fix) => in_array($fix->status, [FeatureRequestStatus::Failed, FeatureRequestStatus::Cancelled], true)
+            || RetryFeatureRequest::retryable($fix);
+        $byProblem = fn (FeatureRequest $fix) => (string) ($fix->live_errors['problem'] ?? '');
+        $fixes = $asked->reject($stopped)->unique($byProblem)->keyBy($byProblem);
+        // The newest try, when it stopped, so the owner can see why.
+        $tries = $asked->unique($byProblem)->filter($stopped)->keyBy($byProblem);
         $cleared = $project->clearedProblems()->whereIn('problem', $ids)->get()->keyBy('problem');
 
-        return array_map(function (array $problem) use ($fixes, $cleared) {
-            $fix = $fixes->get($problem['id']);
-            $clearance = $cleared->get($problem['id']);
+        return array_map(function (array $problem) use ($fixes, $tries, $cleared) {
+            $stand = $this->stand($problem['last_at'], $fixes->get($problem['id']), $cleared->get($problem['id']));
+            $try = in_array($stand['state'], ['new', 'back'], true) ? $tries->get($problem['id']) : null;
 
-            return [...$problem, ...$this->stand($problem['last_at'], $fix, $clearance)];
+            return [...$problem, ...$stand, 'stopped' => $try?->uuid];
         }, $problems);
     }
 
