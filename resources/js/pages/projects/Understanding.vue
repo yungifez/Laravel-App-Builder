@@ -176,7 +176,9 @@ const facts = computed(() =>
     [
         [props.areas.length, 'part', 'parts'],
         [rules.value, 'rule', 'rules'],
-        [props.kept + props.looks, 'change kept', 'changes kept'],
+        // Every click in the design editor is saved; together they count
+        // as one change, as they do before going online.
+        [props.kept + Math.min(props.looks, 1), 'change kept', 'changes kept'],
         [props.decided, 'decision', 'decisions'],
         [
             props.caught,
@@ -878,9 +880,7 @@ function setCompatibility(keep: boolean | null): void {
                                 aria-hidden="true"
                             />
                             <span class="text-muted-foreground"
-                                >And {{ looks }}
-                                {{ looks === 1 ? 'change' : 'changes' }} to how
-                                it looks.</span
+                                >And the changes you made to how it looks.</span
                             >
                         </li>
                     </ol>
