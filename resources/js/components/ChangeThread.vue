@@ -292,6 +292,14 @@ const outcomes: Record<string, { icon: typeof CircleCheck; tone: string }> = {
     not_applicable: { icon: CircleMinus, tone: 'text-muted-foreground' },
 };
 
+// The checks that ran. One that did not apply to the change (no separate
+// checks were written for it) did not run; the proof names that gap.
+const ran = computed(() =>
+    (props.change.verification?.results ?? []).filter(
+        (result) => result.outcome !== 'not_applicable',
+    ),
+);
+
 // A check that failed the same way before the change is the app's old
 // problem, not something the change broke.
 function failedBefore(result: VerificationResult): boolean {
@@ -1384,10 +1392,7 @@ const checks = computed(() => {
                                     </p>
                                 </section>
                                 <section
-                                    v-if="
-                                        change.verification &&
-                                        change.verification.results.length > 0
-                                    "
+                                    v-if="ran.length > 0"
                                     class="space-y-2"
                                 >
                                     <h3
@@ -1396,8 +1401,7 @@ const checks = computed(() => {
                                         Checks I ran
                                     </h3>
                                     <p
-                                        v-for="(result, index) in change
-                                            .verification.results"
+                                        v-for="(result, index) in ran"
                                         :key="index"
                                         class="flex items-center gap-2"
                                     >
