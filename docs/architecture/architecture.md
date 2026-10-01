@@ -1385,9 +1385,18 @@ planned.
 tokenable model (`HasApiTokens` on `Run`). This adds one table:
 `personal_access_tokens`.
 
-- **Abilities:** `task:read`, `task:ask` and `task:submit`.
-- **Expiry:** the run's minute budget (`construction.budgets.minutes`). The
-  token is revoked when the run leaves `implementing`, is cancelled or ends.
+- **Abilities:** one, `task`. It opens only this change's tools.
+- **Expiry:** the token lapses after `agents.workers.minutes`. It is revoked
+  when the run ends or is cancelled, or when the owner makes a new
+  connection. It stays valid while the change is checked and reviewed: the
+  worker calls `check_status` then, and hands back a fix when the change
+  goes back to it.
+- **Notes:** the worker's copy of the app has no `.product-notes`. Its brief
+  tells it to describe each area it changed in its summary, and notes in a
+  handed-back patch are left out, so they never clash with ours.
+- **A new try:** when the change tries a stopped one again, the brief lists
+  what its checks reported and its review's blocking findings. This holds
+  for our own agent too.
 - **Box runs:** the runner gets the token in its environment, like the
   provider keys, never in `task.json`. The box runner's own token
   (`AuthenticateRunner`) stays separate. It opens that runner's commands, not

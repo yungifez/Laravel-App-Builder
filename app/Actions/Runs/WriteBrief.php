@@ -23,7 +23,17 @@ class WriteBrief
      */
     public function handle(Run $run, Plan $plan): string
     {
-        return $this->plan($run, $plan)."\n\n".$this->workingRules();
+        return $this->plan($run, $plan)."\n\n".($this->outside($run) ? $this->outsideRules() : $this->workingRules());
+    }
+
+    /**
+     * Determine if a worker outside our boxes writes the change, such as
+     * the owner's own Claude Code. It works in its own copy of the app,
+     * which has none of the notes we keep.
+     */
+    protected function outside(Run $run): bool
+    {
+        return $run->driver === 'worker';
     }
 
     /**
@@ -66,7 +76,7 @@ class WriteBrief
             "## Acceptance criteria\n\nAdd or update a test for each one: the change is only accepted when every criterion is checked by a test in the change. Only tests under ".Capability::suiteLocation()." are run by the checks, so put them there.\n\n".$this->list($plan->acceptanceCriteria),
         );
 
-        $sections[] = $this->observability();
+        $sections[] = $this->observability($this->outside($run));
         $sections[] = self::compatibility($run->featureRequest->project->keepsOldWorking());
 
         if (($services = $run->featureRequest->project->connectedServices()) !== []) {
@@ -83,6 +93,10 @@ class WriteBrief
             $sections[] = "## Assumptions\n\n".$this->list($plan->assumptions);
         }
 
+        if (($earlier = $this->earlierTry($run)) !== []) {
+            $sections[] = "## An earlier try at this change stopped\n\nIts work is not in the files: start again, and avoid what went wrong.\n\n".$this->list($earlier);
+        }
+
         if ($run->feedback !== null) {
             $sections[] = "## Fix these problems with your earlier attempt\n\nThe files already contain your earlier changes.\n\n".$this->list($run->feedback['details']);
         }
@@ -91,21 +105,50 @@ class WriteBrief
     }
 
     /**
+     * Say what went wrong in the stopped try this change starts again
+     * from: what its checks reported and what its review found. Without
+     * this, a new try, or the owner's own worker it is handed to, makes
+     * the same mistakes again.
+     *
+     * @return list<string>
+     */
+    protected function earlierTry(Run $run): array
+    {
+        $earlier = $run->featureRequest->retryOf?->latestRun;
+
+        if ($earlier === null) {
+            return [];
+        }
+
+        $findings = ($earlier->review['approved'] ?? true) ? [] : array_map(
+            fn (array $finding) => $finding['summary'].($finding['file'] === null ? '' : " ({$finding['file']})"),
+            array_filter($earlier->review['findings'] ?? [], fn (array $finding) => $finding['severity'] !== 'minor'),
+        );
+
+        return array_values(array_unique([...$earlier->feedback['details'] ?? [], ...$findings]));
+    }
+
+    /**
      * How to build so the owner can see what the app does without reading
      * code (§5): the facts live where tools can read them, and the notes say
      * them in the owner's words.
      */
-    protected function observability(): string
+    protected function observability(bool $outside = false): string
     {
         $notes = ProjectNotes::directory();
+        // An outside worker's copy has no notes, so it says the same in its
+        // summary, which the owner reads.
+        [$source, $where] = $outside
+            ? ['the notes kept about the app', 'In your summary, for each area you change']
+            : ["the notes in {$notes}/", 'In the notes for each area you change'];
 
         return <<<TEXT
         ## Make it easy to see what the app does
 
-        The owner does not read code. They find out what the app does from the notes in {$notes}/ and from the code's own settings, enums and test names. Build so both stay true:
+        The owner does not read code. They find out what the app does from {$source} and from the code's own settings, enums and test names. Build so both stay true:
         - Put business settings (amounts, limits, time periods, who may do what) in config or enums, not inline in the code.
         - Name each test as a plain business statement, for example "a manager can cancel a booking".
-        - In the notes for each area you change, say in plain words: who can do the new thing, what it changes, whether it sends an email or message, charges money or calls another service, and what happens automatically. Use the owner's words for things (bookings, customers), never class, table or route names.
+        - {$where}, say in plain words: who can do the new thing, what it changes, whether it sends an email or message, charges money or calls another service, and what happens automatically. Use the owner's words for things (bookings, customers), never class, table or route names.
         - When something fails for a person using the app, tell them what happened and what to do next, in plain words.
         TEXT;
     }
@@ -175,6 +218,24 @@ class WriteBrief
         Before each group of steps, write one or two plain sentences on what you are about to do and why, for a reader who has never seen code: no file names, class names, commands or code. For example: "Only team owners should send invitations, so I am adding that check first."
 
         When you are done, reply with a short summary of what you changed. Your summary is not taken as proof: the change is verified and reviewed independently.
+        RULES;
+    }
+
+    /**
+     * How an outside worker should work. It has its own copy of the app,
+     * so it hands back code only.
+     */
+    protected function outsideRules(): string
+    {
+        $notes = ProjectNotes::directory();
+        $selfChecks = $this->selfChecks();
+
+        return <<<RULES
+        ## How to work
+
+        Follow the app's AGENTS.md and Laravel's conventions. Add or update feature tests for the behaviour you build, run those tests and the existing tests for the areas you change, and fix failures. {$selfChecks}The whole test suite and the other checks run after you hand the change back, and formatting is fixed for you. Never change tests/Acceptance, .env, vendor or .git: those changes are thrown away. Do not create a {$notes}/ folder: the notes are kept apart from your copy, and the owner reads your summary instead.
+
+        When you are done, hand back a short summary of what you changed. Your summary is not taken as proof: the change is verified and reviewed independently.
         RULES;
     }
 

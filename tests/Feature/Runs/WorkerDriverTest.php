@@ -7,6 +7,7 @@ use App\Actions\Runs\GrantWorkerAccess;
 use App\Actions\Runs\StartRun;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
+use App\Context\ProjectNotes;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Jobs\ExecuteRun;
@@ -120,6 +121,53 @@ class WorkerDriverTest extends TestCase
         $this->assertStringNotContainsString('Crew', (string) $run->featureRequest->patch);
     }
 
+    public function test_notes_in_a_handed_back_change_are_left_out_so_they_never_clash_with_ours()
+    {
+        $run = $this->startRun(notes: true);
+        $token = app(GrantWorkerAccess::class)->handle($run);
+
+        $task = $this->tool('get_task', $token)->json('result.content.0.text');
+        $this->assertStringContainsString('Do not create a .product-notes/ folder', $task);
+        $this->assertStringNotContainsString('Keep the notes in', $task);
+
+        $notes = <<<'PATCH'
+            diff --git a/.product-notes/project.md b/.product-notes/project.md
+            new file mode 100644
+            --- /dev/null
+            +++ b/.product-notes/project.md
+            @@ -0,0 +1 @@
+            +# The worker's own notes
+
+            PATCH;
+
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange().$notes, 'summary' => 'Added a description.']);
+
+        $this->assertSame(RunStatus::Verifying, $run->refresh()->status, json_encode($run->events()->where('type', 'worker_patch_refused')->pluck('data')));
+        $this->assertNull($run->featureRequest->note_changes);
+    }
+
+    public function test_a_new_try_hears_what_stopped_the_last_one()
+    {
+        $stopped = FeatureRequest::factory()->create(['prompt' => 'Give teams a description.']);
+        Run::factory()->for($stopped)->create([
+            'status' => RunStatus::Failed,
+            'feedback' => ['reason' => 'verification_failed', 'details' => ['Tests failed: the team page shows no description.']],
+            'review' => ['approved' => false, 'summary' => '', 'findings' => [
+                ['severity' => 'blocking', 'summary' => 'The description is never saved.', 'file' => 'app/Models/Team.php'],
+                ['severity' => 'minor', 'summary' => 'A comment is long.', 'file' => null],
+            ], 'changes' => [], 'classification' => ['requested' => [], 'may_also_affect' => [], 'unexpected' => [], 'unclaimed' => [], 'context_updates' => [], 'targets' => []]],
+        ]);
+
+        $run = $this->startRun(retryOf: $stopped);
+
+        $task = $this->tool('get_task', app(GrantWorkerAccess::class)->handle($run))->json('result.content.0.text');
+
+        $this->assertStringContainsString("## An earlier try at this change stopped\n\nIts work is not in the files", $task);
+        $this->assertStringContainsString('- Tests failed: the team page shows no description.', $task);
+        $this->assertStringContainsString('- The description is never saved. (app/Models/Team.php)', $task);
+        $this->assertStringNotContainsString('A comment is long.', $task);
+    }
+
     public function test_a_change_is_taken_only_while_the_run_waits_for_one()
     {
         $run = $this->startRun();
@@ -158,10 +206,15 @@ class WorkerDriverTest extends TestCase
         Queue::assertPushed(ExecuteRun::class, 1);
     }
 
-    protected function startRun(): Run
+    protected function startRun(bool $notes = false, ?FeatureRequest $retryOf = null): Run
     {
         $project = Project::factory()->create(['source_path' => $this->makeProjectSource()]);
-        $featureRequest = FeatureRequest::factory()->for($project)->create(['prompt' => 'Give teams a description.']);
+
+        if ($notes) {
+            app(ProjectNotes::class)->put($project, 'main', ['project.md' => "# Teams\n\nPeople work in teams.\n"]);
+        }
+
+        $featureRequest = FeatureRequest::factory()->for($project)->create(['prompt' => 'Give teams a description.', 'retry_of_id' => $retryOf?->id]);
 
         return app(StartRun::class)->handle($featureRequest)->refresh();
     }

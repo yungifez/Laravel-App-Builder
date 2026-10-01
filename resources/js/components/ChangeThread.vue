@@ -45,6 +45,7 @@ import {
 } from '@/components/ui/collapsible';
 import { show as showFeatureRequest } from '@/routes/feature-requests';
 import { show as showProject } from '@/routes/projects';
+import { index as developers } from '@/routes/projects/developers';
 import type { ChangeDetail, Run, VerificationResult } from '@/types';
 
 // Roomy when the chat has the whole screen: more air between messages and
@@ -894,6 +895,17 @@ const checks = computed(() => {
                                 </button>
                                 <InputError :message="errors.worker" />
                             </Form>
+                            <Link
+                                :href="
+                                    developers(change.project.id, {
+                                        query: { change: request.id },
+                                    })
+                                "
+                                class="block min-h-11 content-center text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-6"
+                                data-test="ask-developer-after-failure"
+                            >
+                                Ask one of our developers
+                            </Link>
                         </div>
 
                         <p

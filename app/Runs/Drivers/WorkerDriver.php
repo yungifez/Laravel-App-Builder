@@ -2,6 +2,7 @@
 
 namespace App\Runs\Drivers;
 
+use App\Context\ProjectNotes;
 use App\Enums\RunStatus;
 use App\Models\Run;
 use App\Models\RunEvent;
@@ -42,7 +43,9 @@ class WorkerDriver extends SdkDriver
         $this->runWorkspaceCommand->handle($workspace, ['git', 'clean', '-fdq'], 60);
 
         app(WorkspaceManager::class)->driver($workspace->driver)->writeFile((string) $workspace->driver_id, $file, (string) $submission->data['patch']);
-        $result = $this->runWorkspaceCommand->handle($workspace, ['git', 'apply', '--3way', '--whitespace=nowarn', $file], 120);
+        // The notes are ours to keep: a worker's copy has none, so notes in
+        // its patch would only clash with them.
+        $result = $this->runWorkspaceCommand->handle($workspace, ['git', 'apply', '--3way', '--whitespace=nowarn', '--exclude='.ProjectNotes::directory().'/*', $file], 120);
         $this->runWorkspaceCommand->handle($workspace, ['rm', '-f', $file], 30);
 
         if ($result->exit_code !== 0 || $result->timed_out) {

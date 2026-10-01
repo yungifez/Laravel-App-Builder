@@ -263,6 +263,16 @@ class FeatureRequest extends Model
     }
 
     /**
+     * Get the stopped request this one tries again.
+     *
+     * @return BelongsTo<self, $this>
+     */
+    public function retryOf(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'retry_of_id');
+    }
+
+    /**
      * Get the follow-up requests made on this one.
      *
      * @return HasMany<FeatureRequest, $this>
