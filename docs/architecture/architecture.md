@@ -87,8 +87,9 @@ Version 32 makes more of the proof independent of the model
 ([direction 32](direction/32-deterministic-verification-engines.md),
 [§12](#12-verification)): the app is run with and without the change, so a
 test the change added counts only when it fails without the change, and what
-the app saves and sends is recorded while its tests run. None of this keeps
-the owner waiting.
+the app saves and sends is recorded while its tests run. One failure at a
+time is then caused where the change sends or saves, to show what the app
+leaves behind. None of this keeps the owner waiting.
 When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
@@ -1768,6 +1769,49 @@ nothing was found, "We watched what your app saved and sent while its tests
 used the new code 26 times. Nothing was saved by mistake or sent too early."
 A repeated lookup joins the shortcuts above (rule `SL204`), so it is tidied
 after the change is kept and the owner does not wait for it.
+
+**One failure at a time is caused where the change sends or saves**
+(direction 32, the fault engine). A recording shows what the app does when
+everything works. It does not show what the app leaves behind when an email
+cannot be sent or a save fails. Tests rarely check that. So, once the checks
+pass, verification causes those failures (`builder.verification.faults`).
+
+Nothing is random. `AppFaults` reads the recording for the places a failure
+can be caused, in requests that ran the change's code:
+
+- **A send.** Each mail and each outside call of a request.
+- **A save.** The last write of each transaction that a request commits.
+
+For each place, verification runs the one test that made the request again,
+with `TRACE_RECORDER_FAULT` naming the test, the request and the effect. The
+recorder then makes that one effect fail the way it fails in use: the mail
+transport cannot connect, the outside call times out, or the database
+refuses the write. The trace of that request shows what stayed:
+
+- **Saved, then failed.** A send failed, the person got a server error, and
+  a write from before the failure was kept. A second try can save it twice.
+- **Sent, then lost.** A save failed and was rolled back, but a mail, a job
+  or an outside call had left before it.
+- **Saved in part.** A save failed and was rolled back, but a write outside
+  its transaction was kept.
+
+A finding counts against a change only when the failed effect, or what
+stayed, comes from a line the change added. The rest is counted (`existing`)
+and not reported. Places on the change's own lines are tried first. At most
+`points` places are tried, and no place starts after `seconds`, so the
+owner's wait has a limit. A place whose failure did not happen is counted as
+`missed`, never as clean. What a job on the sync queue does is not a place,
+because in use that job runs later on a queue. A fake hides sends here too,
+so a test that fakes mail gives no send place.
+
+The reviewer blocks "sent, then lost" and weighs the other two against the
+plan. The owner reads each in the proof: "If saving fails at /invitations,
+your app has already sent something. People are told about something that
+was not saved." When failures were caused and nothing stayed: "We made things
+go wrong 3 times while your app used the new code, such as an email that
+cannot be sent or a save that fails. Each time, your app left nothing half
+done." On the fixture the reference change has 2 places, both clean, in about
+2 seconds. A copy of it that sends an email before its last save is found.
 
 **Made-up colours are sent back too** (direction 26, the first design check
 that graduated from the contract). The lines a change adds to screen files

@@ -4,6 +4,7 @@ namespace App\Actions\Features;
 
 use App\Actions\Context\ReadProjectContext;
 use App\Enums\VerificationStatus;
+use App\Features\AppFaults;
 use App\Features\AppRoutes;
 use App\Features\AppTraces;
 use App\Features\CodeShortcuts;
@@ -48,7 +49,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->safety($featureRequest), ...$this->access($verification), ...$this->shortcuts($featureRequest, $verification), ...$this->colours($featureRequest), ...$this->pictures($featureRequest), ...$this->screens($featureRequest, $verification), ...$this->code($verification), ...$this->watched($verification), ...$this->reach($featureRequest->latestRun), ...$this->approach($featureRequest->latestRun), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->safety($featureRequest), ...$this->access($verification), ...$this->shortcuts($featureRequest, $verification), ...$this->colours($featureRequest), ...$this->pictures($featureRequest), ...$this->screens($featureRequest, $verification), ...$this->code($verification), ...$this->watched($verification), ...$this->failed($verification), ...$this->reach($featureRequest->latestRun), ...$this->approach($featureRequest->latestRun), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return array_values(collect($lines)->unique('text')->all());
@@ -277,6 +278,54 @@ class DescribeProof
                 'We watched what your app saved and sent while its tests used the new code. Nothing was saved by mistake or sent too early.|We watched what your app saved and sent while its tests used the new code :count times. Nothing was saved by mistake or sent too early.',
                 $traces['reached'],
             )]];
+    }
+
+    /**
+     * Say what the app left behind when one thing was made to fail while
+     * its tests used the change's new code: an email that could not be
+     * sent, an outside service that did not answer, or a save that did
+     * not work. Each kind of thing left behind is a gap the owner reads,
+     * with the address where it happened. That nothing was left behind is
+     * said only when a failure was really caused.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function failed(Verification $verification): array
+    {
+        $faults = $verification->evidence['faults'] ?? null;
+
+        if ($faults === null || $faults['run'] === 0) {
+            return [];
+        }
+
+        $gaps = [
+            AppFaults::SAVED_THEN_FAILED => 'If :failure at :address, the person sees an error, but your app has already saved what they did. They may try again and do it twice.',
+            AppFaults::SENT_THEN_LOST => 'If saving fails at :address, your app has already sent something. People are told about something that was not saved.',
+            AppFaults::SAVED_IN_PART => 'If saving fails at :address, your app keeps one part of what it was saving and loses the rest.',
+        ];
+        // The recording already said that this is sent before saving ends.
+        $said = AppTraces::findings($verification->evidence['traces'] ?? null, AppTraces::SENT_BEFORE_SAVED) !== [];
+        $lines = [];
+
+        foreach ($gaps as $kind => $text) {
+            $found = AppFaults::findings($faults, $kind);
+
+            if ($found !== [] && ! ($said && $kind === AppFaults::SENT_THEN_LOST)) {
+                $lines[] = ['kind' => 'gap', 'text' => __($text, [
+                    'address' => AppRoutes::address($found[0]['route']),
+                    'failure' => str_starts_with($found[0]['failed'], 'mail') ? __('an email cannot be sent') : __('an outside service does not answer'),
+                ])];
+            }
+        }
+
+        if ($lines !== [] || $faults['findings'] !== []) {
+            return $lines;
+        }
+
+        return [['kind' => 'passed', 'text' => trans_choice(
+            'We made one thing go wrong while your app used the new code, such as an email that cannot be sent or a save that fails. Your app left nothing half done.|We made things go wrong :count times while your app used the new code, such as an email that cannot be sent or a save that fails. Each time, your app left nothing half done.',
+            $faults['run'],
+        )]];
     }
 
     /**

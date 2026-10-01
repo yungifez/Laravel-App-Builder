@@ -2,17 +2,22 @@
 
 namespace TraceRecorder;
 
+use Closure;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\Events\TransactionRolledBack;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Http\Kernel;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Events\RequestSending;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Notifications\ChannelManager;
 use Illuminate\Notifications\Events\NotificationSending;
+use Illuminate\Queue\Events\JobExceptionOccurred;
+use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Events\JobQueued;
 use Illuminate\Support\Testing\Fakes\BusFake;
@@ -20,7 +25,9 @@ use Illuminate\Support\Testing\Fakes\EventFake;
 use Illuminate\Support\Testing\Fakes\MailFake;
 use Illuminate\Support\Testing\Fakes\NotificationFake;
 use Illuminate\Support\Testing\Fakes\QueueFake;
+use PDOException;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Mailer\Exception\TransportException;
 use Throwable;
 
 /**
@@ -28,8 +35,14 @@ use Throwable;
  * queues and sends, in order, each with the line of the app's code it came
  * from. One line of JSON is written per request.
  *
- * It only listens. It records no values (queries keep their placeholders)
- * and no times, so the same request on the same code gives the same trace.
+ * It records no values (queries keep their placeholders) and no times, so
+ * the same request on the same code gives the same trace.
+ *
+ * It only listens, with one exception. When TRACE_RECORDER_FAULT names one
+ * thing of one request of one test (the place it has in a trace recorded
+ * before), that thing fails the way it fails in use: the mail cannot be
+ * sent, the outside call gets no answer, the write is refused. The trace
+ * of that request then shows what the app left behind.
  */
 class Recorder
 {
@@ -46,12 +59,22 @@ class Recorder
 
     protected ?string $test;
 
+    /** @var array{request: int, effect: int, kind: string}|null The one thing to make fail, when this test is the one named */
+    protected ?array $fault = null;
+
+    /** How many requests this test has made. */
+    protected int $requests = 0;
+
+    /** How many jobs the sync queue is running now, one inside the other. */
+    protected int $jobs = 0;
+
     protected string $base;
 
     public function __construct(protected Application $app, protected string $directory)
     {
         $this->base = rtrim($app->basePath(), '/').'/';
         $this->test = $this->runningTest();
+        $this->fault = $this->faultToCause();
     }
 
     /**
@@ -63,7 +86,10 @@ class Recorder
     {
         $events = $this->app->make('events');
 
-        $events->listen(QueryExecuted::class, fn (QueryExecuted $query) => $this->effect(['kind' => 'query', 'sql' => $query->sql]));
+        $events->listen(QueryExecuted::class, fn (QueryExecuted $query) => $this->effect(
+            ['kind' => 'query', 'sql' => $query->sql],
+            fails: fn () => new QueryException($query->connectionName, $query->sql, [], new PDOException('SQLSTATE[57014]: Query canceled: canceling statement due to statement timeout')),
+        ));
         $events->listen(TransactionBeginning::class, function (TransactionBeginning $event) {
             // A test that wraps itself in a transaction can open it inside
             // the first request; it is not the request's.
@@ -82,11 +108,23 @@ class Recorder
             // The sync queue runs a job where it is dispatched, without queueing it.
             if ($event->connectionName === 'sync') {
                 $this->effect(['kind' => 'job', 'what' => $event->job->resolveName()]);
+                $this->jobs++;
             }
         });
-        $events->listen(MessageSending::class, fn (MessageSending $event) => $this->effect(['kind' => 'mail', 'what' => (string) ($event->data['__laravel_mailable'] ?? $event->data['__laravel_notification'] ?? 'message')]));
+        $events->listen([JobProcessed::class, JobExceptionOccurred::class], function (JobProcessed|JobExceptionOccurred $event) {
+            if ($event->connectionName === 'sync') {
+                $this->jobs = max(0, $this->jobs - 1);
+            }
+        });
+        $events->listen(MessageSending::class, fn (MessageSending $event) => $this->effect(
+            ['kind' => 'mail', 'what' => (string) ($event->data['__laravel_mailable'] ?? $event->data['__laravel_notification'] ?? 'message')],
+            fails: fn () => new TransportException('Connection could not be established with the mail server.'),
+        ));
         $events->listen(NotificationSending::class, fn (NotificationSending $event) => $this->effect(['kind' => 'notification', 'what' => $event->notification::class]));
-        $events->listen(RequestSending::class, fn (RequestSending $event) => $this->effect(['kind' => 'http', 'what' => $event->request->method().' '.parse_url($event->request->url(), PHP_URL_HOST)]));
+        $events->listen(RequestSending::class, fn (RequestSending $event) => $this->effect(
+            ['kind' => 'http', 'what' => $event->request->method().' '.parse_url($event->request->url(), PHP_URL_HOST)],
+            fails: fn () => new ConnectionException('cURL error 28: Operation timed out'),
+        ));
 
         $this->app->terminating(fn () => $this->finish());
     }
@@ -97,10 +135,13 @@ class Recorder
     public function start($request): void
     {
         $this->finish();
+        $this->requests++;
+        $this->jobs = 0;
 
         $this->baseline = array_map(fn ($connection) => $connection->transactionLevel(), $this->app->make('db')->getConnections());
         $this->operation = [
             'test' => $this->test,
+            'n' => $this->requests - 1,
             'method' => $request->method(),
             'route' => null,
             'status' => null,
@@ -129,6 +170,27 @@ class Recorder
     }
 
     /**
+     * Note that the request ended in an error nothing turned into a
+     * response, and write its trace: nothing after the response will run.
+     */
+    public function fail($request, Throwable $exception): void
+    {
+        if ($this->operation === null) {
+            return;
+        }
+
+        $route = $request->route();
+        $status = method_exists($exception, 'getStatusCode') ? (int) $exception->getStatusCode() : (int) ($exception->status ?? 500);
+
+        $this->operation['route'] = is_object($route) && method_exists($route, 'uri') ? '/'.ltrim($route->uri(), '/') : null;
+        $this->operation['status'] = $status >= 400 ? $status : 500;
+        $this->operation['refused'] = true;
+        $this->operation['blind'] = $this->blind();
+
+        $this->finish();
+    }
+
+    /**
      * Write the trace of the request, once.
      */
     public function finish(): void
@@ -154,14 +216,19 @@ class Recorder
     /**
      * Add one thing the request did, with how many transactions of its own
      * were open around it and the line of the app's code it came from.
+     * What a job on the sync queue does is marked: in use that job runs
+     * later, on a queue.
      *
      * @param  array<string, mixed>  $effect
+     * @param  (Closure(): Throwable)|null  $fails  How this thing fails in use, when it can be made to
      */
-    protected function effect(array $effect, bool $origin = true): void
+    protected function effect(array $effect, bool $origin = true, ?Closure $fails = null): void
     {
         if ($this->operation === null) {
             return;
         }
+
+        $failing = false;
 
         try {
             if (count($this->operation['effects']) >= self::KEPT) {
@@ -176,9 +243,26 @@ class Recorder
                 $effect['at'] = $this->origin();
             }
 
+            if ($this->jobs > 0) {
+                $effect['job'] = true;
+            }
+
+            $place = count($this->operation['effects']);
+            $failing = $fails !== null && $this->fault !== null && ! isset($this->operation['fault'])
+                && $this->fault === ['request' => $this->requests - 1, 'effect' => $place, 'kind' => $effect['kind']];
+
             $this->operation['effects'][] = $effect;
+
+            if ($failing) {
+                $this->operation['fault'] = $place;
+            }
         } catch (Throwable) {
             //
+        }
+
+        // The one failure this run is about: the thing just noted fails.
+        if ($failing) {
+            throw $fails();
         }
     }
 
@@ -279,6 +363,22 @@ class Recorder
         ];
 
         return array_keys(array_filter($fakes, fn (array $fake) => $this->app->resolved($fake[0]) && $this->app->make($fake[0]) instanceof $fake[1]));
+    }
+
+    /**
+     * Read the one thing to make fail, when this test is the one it names.
+     *
+     * @return array{request: int, effect: int, kind: string}|null
+     */
+    protected function faultToCause(): ?array
+    {
+        $fault = json_decode((string) getenv('TRACE_RECORDER_FAULT'), true);
+
+        if (! is_array($fault) || $this->test === null || ($fault['test'] ?? null) !== $this->test || ! is_int($fault['request'] ?? null) || ! is_int($fault['effect'] ?? null) || ! is_string($fault['kind'] ?? null)) {
+            return null;
+        }
+
+        return ['request' => $fault['request'], 'effect' => $fault['effect'], 'kind' => $fault['kind']];
     }
 
     /**

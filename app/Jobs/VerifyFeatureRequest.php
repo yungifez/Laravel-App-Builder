@@ -9,6 +9,7 @@ use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Context\ProjectNotes;
 use App\Enums\VerificationStatus;
 use App\Features\AcceptanceSuite;
+use App\Features\AppFaults;
 use App\Features\AppRoutes;
 use App\Features\AppTraces;
 use App\Features\CodeShortcuts;
@@ -96,7 +97,7 @@ class VerifyFeatureRequest implements ShouldQueue
     /**
      * The requests recorded while the tests used the app, from AppTraces::parse().
      *
-     * @var list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null}>, blind: list<string>, cut: bool}>
+     * @var list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>
      */
     protected array $requests = [];
 
@@ -187,6 +188,7 @@ class VerifyFeatureRequest implements ShouldQueue
 
             if ($checksPassed && in_array($acceptance, [self::OUTCOME_PASSED, self::OUTCOME_NOT_APPLICABLE], true)) {
                 $this->observeScreens($driver, $runWorkspaceCommand, $workspace, $featureRequest);
+                $this->observeFaults($driver, $runWorkspaceCommand, $workspace, $featureRequest);
 
                 // Last: it takes the change out of the workspace and does
                 // not put all of it back.
@@ -782,6 +784,57 @@ class VerifyFeatureRequest implements ShouldQueue
             }
 
             $this->keepEvidence('traces', $measured);
+        });
+    }
+
+    /**
+     * Cause one failure at a time where the change's code sends or saves,
+     * and keep what the app left behind (direction 32). The places come
+     * from the requests recorded in the coverage run. Each place runs its
+     * one test again with one thing made to fail: an email, an outside
+     * call or a save.
+     *
+     * Like the screen check this never changes the checks' result. It
+     * stops starting new places when its time is used up, so a change
+     * with many places does not hold up the owner.
+     */
+    protected function observeFaults(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): void
+    {
+        /** @var array{enabled: bool, points: int, seconds: int, command: list<string>, timeout: int, report: string} $config */
+        $config = config('builder.verification.faults');
+
+        if (! $config['enabled'] || $this->requests === []) {
+            return;
+        }
+
+        rescue(function () use ($driver, $runWorkspaceCommand, $workspace, $featureRequest, $config) {
+            $points = AppFaults::points($this->requests, $featureRequest->patch);
+            $until = now()->addSeconds($config['seconds']);
+            $runs = [];
+
+            foreach (array_slice($points, 0, $config['points']) as $position => $point) {
+                if (now()->greaterThan($until)) {
+                    break;
+                }
+
+                $command = $runWorkspaceCommand->handle(
+                    $workspace,
+                    [...$config['command'], $point['filter']],
+                    $config['timeout'],
+                    ['TRACE_RECORDER_FAULT' => (string) json_encode($point['fault'])],
+                );
+
+                // The workspace is gone: the places left are not tried.
+                if ($command->lost) {
+                    break;
+                }
+
+                $runs[$position] = $this->outcome($command) === self::OUTCOME_PASSED
+                    ? AppTraces::parse((string) rescue(fn () => $driver->readFile((string) $workspace->driver_id, $config['report']), '', report: false))
+                    : [];
+            }
+
+            $this->keepEvidence('faults', AppFaults::measure($points, $runs, $featureRequest->patch));
         });
     }
 

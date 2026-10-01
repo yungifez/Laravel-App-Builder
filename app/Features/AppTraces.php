@@ -49,9 +49,11 @@ class AppTraces
 
     /**
      * Read the recorder's file: one request per line. A line that is not a
-     * request is left out.
+     * request is left out. "n" is the request's place among those its test
+     * made, "fault" the place of the thing that was made to fail in it
+     * (see AppFaults), and "job" marks what a job on the sync queue did.
      *
-     * @return list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null}>, blind: list<string>, cut: bool}>
+     * @return list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>
      */
     public static function parse(string $report): array
     {
@@ -77,6 +79,7 @@ class AppTraces
                     ...(is_string($effect['sql'] ?? null) ? ['sql' => $effect['sql']] : []),
                     ...(is_string($effect['what'] ?? null) ? ['what' => $effect['what']] : []),
                     ...(array_key_exists('at', $effect) ? ['at' => is_string($effect['at']) ? $effect['at'] : null] : []),
+                    ...(($effect['job'] ?? false) === true ? ['job' => true] : []),
                 ];
             }
 
@@ -89,6 +92,8 @@ class AppTraces
                 'effects' => $effects,
                 'blind' => array_values(array_filter(is_array($request['blind'] ?? null) ? $request['blind'] : [], is_string(...))),
                 'cut' => (bool) ($request['cut'] ?? false),
+                ...(is_int($request['n'] ?? null) ? ['n' => $request['n']] : []),
+                ...(is_int($request['fault'] ?? null) ? ['fault' => $request['fault']] : []),
             ];
         }
 
@@ -105,7 +110,7 @@ class AppTraces
      * one the patch adds, or when the change added the request's route
      * and the app's own code did it.
      *
-     * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null}>, blind: list<string>, cut: bool}>  $requests  From parse()
+     * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>  $requests  From parse()
      * @param  list<string>  $addedRoutes  The routes the change added, as AppRoutes names them
      * @param  int  $repeats  How many times one request must run the same lookup from the same line for it to count
      * @return array{requests: int, reached: int, unseen: int, existing: int, findings: list<array{kind: string, route: string, what: string, at: string|null, test: string|null}>, repeats: list<array{path: string, line: int, count: int, route: string}>}|null
@@ -233,27 +238,28 @@ class AppTraces
 
     /**
      * Get the writes of a request that stayed: those not inside a
-     * transaction of its own that was rolled back.
+     * transaction of its own that was rolled back. Each keeps its place
+     * among the things the request did.
      *
-     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null}>  $effects
-     * @return list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null}>
+     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool}>  $effects
+     * @return array<int, array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool}>
      */
-    protected static function saved(array $effects): array
+    public static function saved(array $effects): array
     {
         $levels = [[]];
 
-        foreach ($effects as $effect) {
+        foreach ($effects as $place => $effect) {
             $inner = count($levels) - 1;
 
             if ($effect['kind'] === 'begin') {
                 $levels[] = [];
             } elseif ($effect['kind'] === 'commit' && $inner > 0) {
                 // What an inner transaction saved now waits on the outer one.
-                $levels[$inner - 1] = [...$levels[$inner - 1], ...array_pop($levels)];
+                $levels[$inner - 1] += array_pop($levels);
             } elseif ($effect['kind'] === 'rollback' && $inner > 0) {
                 array_pop($levels);
-            } elseif ($effect['kind'] === 'query' && in_array(self::verb($effect['sql'] ?? ''), self::WRITES, true)) {
-                $levels[$inner][] = $effect;
+            } elseif (self::writes($effect)) {
+                $levels[$inner][$place] = $effect;
             }
         }
 
@@ -261,12 +267,20 @@ class AppTraces
 
         // A transaction still open at the end is the request's to commit.
         foreach ($levels as $level) {
-            foreach ($level as $write) {
-                $saved[] = $write;
-            }
+            $saved += $level;
         }
 
         return $saved;
+    }
+
+    /**
+     * Determine if a thing a request did is a query that changes saved data.
+     *
+     * @param  array{kind: string, sql?: string}  $effect
+     */
+    public static function writes(array $effect): bool
+    {
+        return $effect['kind'] === 'query' && in_array(self::verb($effect['sql'] ?? ''), self::WRITES, true);
     }
 
     /**
@@ -274,7 +288,7 @@ class AppTraces
      * app's code they came from. The same lookup is the same query from
      * the same line.
      *
-     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null}>  $effects
+     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool}>  $effects
      * @return array<string, int>
      */
     protected static function lookups(array $effects): array
@@ -302,7 +316,7 @@ class AppTraces
     /**
      * Say what a query does in two words, such as "update users".
      */
-    protected static function statement(string $sql): string
+    public static function statement(string $sql): string
     {
         return trim(self::verb($sql).' '.(preg_match('/\b(?:into|update|from)\s+[`"\[]?([\w.]+)/i', $sql, $table) === 1 ? $table[1] : ''));
     }
@@ -310,7 +324,7 @@ class AppTraces
     /**
      * Get the first word of a query, in lower case.
      */
-    protected static function verb(string $sql): string
+    public static function verb(string $sql): string
     {
         return strtolower((string) strtok(ltrim($sql, " \t\n\r("), " \t\n\r"));
     }
@@ -320,7 +334,7 @@ class AppTraces
      *
      * @return array<string, list<int>>
      */
-    protected static function addedLines(?string $patch): array
+    public static function addedLines(?string $patch): array
     {
         $added = [];
 
@@ -336,7 +350,7 @@ class AppTraces
      *
      * @param  array<string, list<int>>  $added
      */
-    protected static function onAddedLine(string $at, array $added): bool
+    public static function onAddedLine(string $at, array $added): bool
     {
         return in_array(self::line($at), $added[self::path($at)] ?? [], true);
     }

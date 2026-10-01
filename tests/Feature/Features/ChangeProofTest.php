@@ -442,6 +442,59 @@ class ChangeProofTest extends TestCase
         $this->assertFalse($seen->contains(fn (array $line) => str_contains($line['text'], $clean)));
     }
 
+    public function test_what_the_app_left_behind_when_one_thing_was_made_to_fail_is_said()
+    {
+        $proof = function (array $faults, array $evidence = []) {
+            $request = FeatureRequest::factory()->generated()->create();
+            $this->checked($request, evidence: ['faults' => ['points' => 4, 'run' => 0, 'missed' => 0, 'existing' => 0, 'findings' => [], ...$faults], ...$evidence]);
+
+            return collect(app(DescribeProof::class)->handle($request));
+        };
+        $finding = fn (string $kind, string $route, string $failed) => ['kind' => $kind, 'route' => $route, 'failed' => $failed, 'what' => 'insert orders', 'at' => 'app/Models/Order.php:3', 'test' => 'Tests\Feature\OrderTest::test_customers_order'];
+        $clean = 'left nothing half done';
+
+        // No failure was really caused: nothing is known, so nothing is said.
+        $this->assertFalse($proof(['missed' => 2])->contains(fn (array $line) => str_contains($line['text'], $clean)));
+
+        $this->assertContains(
+            ['kind' => 'passed', 'text' => 'We made things go wrong 3 times while your app used the new code, such as an email that cannot be sent or a save that fails. Each time, your app left nothing half done.'],
+            $proof(['run' => 3])->all(),
+        );
+        $this->assertContains(
+            ['kind' => 'passed', 'text' => 'We made one thing go wrong while your app used the new code, such as an email that cannot be sent or a save that fails. Your app left nothing half done.'],
+            $proof(['run' => 1])->all(),
+        );
+
+        // Each kind of thing left behind is one gap, with the first address it happened at.
+        $left = $proof(['run' => 4, 'findings' => [
+            $finding('saved_then_failed', 'POST /orders', 'mail App\Mail\Receipt'),
+            $finding('saved_then_failed', 'POST /orders/{order}/pay', 'http POST api.stripe.com'),
+            $finding('sent_then_lost', 'POST /invitations', 'insert invitations'),
+            $finding('saved_in_part', 'POST /teams', 'insert team_user'),
+        ]]);
+        $this->assertSame([
+            'If an email cannot be sent at /orders, the person sees an error, but your app has already saved what they did. They may try again and do it twice.',
+            'If saving fails at /invitations, your app has already sent something. People are told about something that was not saved.',
+            'If saving fails at /teams, your app keeps one part of what it was saving and loses the rest.',
+        ], $left->where('kind', 'gap')->pluck('text')->all());
+        $this->assertFalse($left->contains(fn (array $line) => str_contains($line['text'], $clean)));
+
+        $this->assertSame(
+            ['If an outside service does not answer at /orders/{order}/pay, the person sees an error, but your app has already saved what they did. They may try again and do it twice.'],
+            $proof(['run' => 1, 'findings' => [$finding('saved_then_failed', 'POST /orders/{order}/pay', 'http POST api.stripe.com')]])->where('kind', 'gap')->pluck('text')->all(),
+        );
+
+        // The recording already said it sends before saving ends: it is said once.
+        $twice = $proof(['run' => 1, 'findings' => [$finding('sent_then_lost', 'POST /invitations', 'insert invitations')]], ['traces' => ['requests' => 40, 'reached' => 12, 'unseen' => 0, 'existing' => 0, 'repeats' => [], 'findings' => [
+            ['kind' => 'sent_before_saved', 'route' => 'POST /invitations', 'what' => 'mail App\Mail\Invited', 'at' => 'app/Models/Order.php:3', 'test' => null],
+        ]]]);
+        $this->assertSame(
+            ['At /invitations your app sends something before it has finished saving. If saving fails, it is sent anyway.'],
+            $twice->where('kind', 'gap')->pluck('text')->all(),
+        );
+        $this->assertFalse($twice->contains(fn (array $line) => str_contains($line['text'], $clean)));
+    }
+
     public function test_new_code_no_test_runs_is_offered_first_as_the_next_thing_to_ask_for()
     {
         $request = FeatureRequest::factory()->generated()->create();

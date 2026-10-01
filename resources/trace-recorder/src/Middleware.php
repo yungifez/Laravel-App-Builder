@@ -21,7 +21,19 @@ class Middleware
             //
         }
 
-        $response = $next($request);
+        try {
+            $response = $next($request);
+        } catch (Throwable $exception) {
+            // A test can turn off the app's error page. In use the person
+            // gets that page, so the request ended in an error.
+            try {
+                $this->recorder->fail($request, $exception);
+            } catch (Throwable) {
+                //
+            }
+
+            throw $exception;
+        }
 
         try {
             $this->recorder->respond($request, $response);

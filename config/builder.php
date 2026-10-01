@@ -750,6 +750,33 @@ return [
             'repeats' => (int) env('BUILDER_TRACE_REPEATS', 3),
         ],
 
+        // What the app leaves behind when one thing fails (direction 32).
+        // Once the checks pass, the recorder makes one thing fail in one
+        // request of one test: an email that cannot be sent, an outside
+        // service that does not answer, or a save the database refuses.
+        // The places come from the recording above, in requests that ran
+        // the change's code, so nothing is random. Each place runs
+        // "command" once, with the name of its test added after it; the
+        // test may fail, so only a missing "report" counts as not run. At
+        // most "points" places are tried, and no new one starts after
+        // "seconds". It never changes the checks' result.
+        'faults' => [
+            'enabled' => (bool) env('BUILDER_FAULTS', true),
+            'points' => (int) env('BUILDER_FAULT_POINTS', 8),
+            'seconds' => (int) env('BUILDER_FAULT_SECONDS', 180),
+            'command' => ['sh', '-c', implode(' && ', [
+                'test -f '.env('BUILDER_TRACE_RECORDER', '/opt/trace-recorder').'/prepend.php',
+                'rm -rf storage/logs/faults',
+                'mkdir -p storage/logs/faults',
+                'printf \'auto_prepend_file=%s\n\' '.env('BUILDER_TRACE_RECORDER', '/opt/trace-recorder').'/prepend.php > storage/logs/faults/prepend.ini',
+                'export PHP_INI_SCAN_DIR=":$PWD/storage/logs/faults" TRACE_RECORDER_DIR="$PWD/storage/logs/faults"',
+                '{ php artisan test --filter="$1" > /dev/null 2>&1 || true; }',
+                'test -f storage/logs/faults/trace.jsonl',
+            ]), 'sh'],
+            'timeout' => 120,
+            'report' => 'storage/logs/faults/trace.jsonl',
+        ],
+
         // Evidence about the change itself, measured by running the app
         // with and without it once the checks pass. It never changes the
         // checks' result, and it runs last: the change is taken out of the

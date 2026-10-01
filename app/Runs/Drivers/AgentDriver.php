@@ -8,6 +8,7 @@ use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
 use App\Enums\ModelRole;
 use App\Features\AcceptanceSelector;
+use App\Features\AppFaults;
 use App\Features\AppTraces;
 use App\Features\NewTests;
 use App\Models\FeatureRequest;
@@ -267,8 +268,9 @@ abstract class AgentDriver implements ConstructionDriver
     /**
      * Describe what running the app with and without the change showed:
      * the new tests that pass without it, what it did to the addresses the
-     * app answers, how far tests reach into its new code, and what its
-     * code saved and sent in the requests the tests made. These are
+     * app answers, how far tests reach into its new code, what its code
+     * saved and sent in the requests the tests made, and what those
+     * requests left behind when one thing was made to fail. These are
      * measured facts; whether each was wanted is the reviewer's to judge
      * against the plan.
      */
@@ -314,7 +316,37 @@ abstract class AgentDriver implements ConstructionDriver
             .($traces['unseen'] === 0 ? '' : sprintf("\nOf the requests that ran the change's code, %d opened a transaction in a test that fakes mail, jobs or notifications, so what they sent, and when, was not seen.", $traces['unseen']));
         }
 
+        if (isset($measured['faults'])) {
+            $faults = $measured['faults'];
+            $parts[] = sprintf("One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer, or a save the database refused. Of %d places where those requests send or save, %d were tried and the failure happened in %d.", $faults['points'], $faults['run'] + $faults['missed'], $faults['run'])
+                .match (true) {
+                    $faults['findings'] !== [] => " What the app left behind:\n".$this->list(array_map($this->left(...), $faults['findings'])),
+                    $faults['run'] === 0 => ' So this says nothing about the change.',
+                    default => ' Each time the app left nothing behind: it had saved nothing before a server error, sent nothing before a save it lost, and kept no part of a save it lost.',
+                };
+        }
+
         return $parts === [] ? null : "## What running the app with and without the change showed\n\n".implode("\n\n", $parts);
+    }
+
+    /**
+     * Say one thing the app left behind when a failure was caused in the
+     * change's code, for the reviewer.
+     *
+     * @param  array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}  $finding
+     */
+    protected function left(array $finding): string
+    {
+        $did = match ($finding['kind']) {
+            AppFaults::SAVED_THEN_FAILED => 'the request ended in a server error but had already saved',
+            AppFaults::SENT_THEN_LOST => 'the save was rolled back but the request had already sent',
+            AppFaults::SAVED_IN_PART => 'the save was rolled back but the request kept what it had saved outside that transaction',
+            default => $finding['kind'],
+        };
+
+        return "{$finding['route']}: when {$finding['failed']} failed"
+            .($finding['at'] === null ? '' : " at {$finding['at']}")
+            .", {$did}: {$finding['what']} (caused in {$finding['test']})";
     }
 
     /**

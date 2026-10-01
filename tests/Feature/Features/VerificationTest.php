@@ -994,4 +994,74 @@ class VerificationTest extends TestCase
 
         $this->assertArrayNotHasKey('traces', $off->verifications()->sole()->evidence ?? []);
     }
+
+    public function test_one_failure_at_a_time_is_caused_where_the_changes_code_sends_and_what_stayed_is_kept()
+    {
+        $map = ['sh', '-c', 'make the test map'];
+        $fail = ['sh', '-c', 'run one test with one failure', 'sh'];
+        config([
+            'builder.verification.test_map' => [...config('builder.verification.test_map'), 'command' => $map, 'report' => 'covered.txt', 'listing' => 'tests.xml'],
+            'builder.verification.traces' => ['enabled' => true, 'report' => 'trace.jsonl', 'repeats' => 3],
+            'builder.verification.faults' => ['enabled' => true, 'points' => 2, 'seconds' => 60, 'command' => $fail, 'timeout' => 30, 'report' => 'failed.jsonl'],
+        ]);
+        $test = 'Tests\Feature\ArchiveTest::test_owners_archive_teams';
+        $request = fn (int $status, array $effects, array $extra = []) => json_encode(['test' => $test, 'n' => 0, 'method' => 'POST', 'route' => '/teams/{team}/archive', 'status' => $status, 'refused' => $status >= 400, 'effects' => $effects, 'blind' => [], ...$extra]);
+        $saved = ['kind' => 'query', 'sql' => 'update "teams" set "archived_at" = ?', 'open' => 0, 'at' => 'app/Models/Team.php:3'];
+        $mail = ['kind' => 'mail', 'what' => 'App\Mail\TeamArchived', 'open' => 0, 'at' => 'app/Models/Team.php:4'];
+        $hook = ['kind' => 'http', 'what' => 'POST hooks.example.com', 'open' => 0, 'at' => 'app/Models/Team.php:4'];
+        $old = ['kind' => 'http', 'what' => 'POST chat.example.com', 'open' => 0, 'at' => 'app/Support/Old.php:9'];
+        $this->driver->onExec = function (string $workspace, array $command) use ($map, $fail, $request, $saved, $mail, $hook, $old) {
+            if ($command === $map) {
+                $this->driver->files["{$workspace}:covered.txt"] = "/workspace\n<project source=\"/workspace/app\"\n<file name=\"Team.php\" path=\"/Models\"\ncovered by=\"Tests\\Feature\\ArchiveTest::test_owners_archive_teams\"";
+                $this->driver->files["{$workspace}:trace.jsonl"] = $request(302, [$saved, $mail, $hook, $old]);
+            }
+
+            if (array_slice($command, 0, 4) === $fail) {
+                $fault = json_decode((string) (end($this->driver->environments)['TRACE_RECORDER_FAULT'] ?? ''), true);
+
+                // The email fails and the person gets an error. The outside
+                // call's failure does not happen: the test took another way.
+                $this->driver->files["{$workspace}:failed.jsonl"] = $fault['kind'] === 'mail'
+                    ? $request(500, [$saved, $mail], ['fault' => $fault['effect']])
+                    : $request(302, [$saved]);
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        $change = FeatureRequest::factory()->generated()->create(['patch' => $this->changeWithTests()]);
+
+        app(RequestVerification::class)->handle($change);
+
+        $verification = $change->verifications()->sole();
+        $this->assertSame([
+            'points' => 3,
+            'run' => 1,
+            'missed' => 1,
+            'existing' => 0,
+            'findings' => [['kind' => 'saved_then_failed', 'route' => 'POST /teams/{team}/archive', 'failed' => 'mail App\Mail\TeamArchived', 'what' => 'update teams', 'at' => 'app/Models/Team.php:4', 'test' => $test]],
+        ], $verification->evidence['faults']);
+        // It never changes what the checks said.
+        $this->assertSame(VerificationStatus::Unverified, $verification->status);
+
+        // Two places were tried, the change's own first: each ran its one
+        // test again, told what to make fail, while the change was still in.
+        $commands = array_column($this->driver->executed, 'command');
+        $tried = array_keys(array_filter($commands, fn (array $command) => array_slice($command, 0, 4) === $fail));
+        $this->assertSame([[...$fail, 'test_owners_archive_teams'], [...$fail, 'test_owners_archive_teams']], array_values(array_intersect_key($commands, array_flip($tried))));
+        $this->assertSame([
+            ['test' => $test, 'request' => 0, 'effect' => 1, 'kind' => 'mail'],
+            ['test' => $test, 'request' => 0, 'effect' => 2, 'kind' => 'http'],
+        ], array_map(fn (int $position) => json_decode($this->driver->environments[$position]['TRACE_RECORDER_FAULT'], true), $tried));
+        $this->assertLessThan(array_key_first(array_filter($commands, fn (array $command) => in_array('--reverse', $command, true))), max($tried));
+
+        // Switched off, nothing is made to fail.
+        config(['builder.verification.faults.enabled' => false]);
+        $this->driver->executed = [];
+        $off = FeatureRequest::factory()->generated()->create(['patch' => $this->changeWithTests()]);
+
+        app(RequestVerification::class)->handle($off);
+
+        $this->assertArrayNotHasKey('faults', $off->verifications()->sole()->evidence ?? []);
+        $this->assertSame([], array_filter(array_column($this->driver->executed, 'command'), fn (array $command) => array_slice($command, 0, 4) === $fail));
+    }
 }

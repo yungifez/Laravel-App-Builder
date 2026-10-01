@@ -546,6 +546,10 @@ class AgentDriverTest extends TestCase
                 ['kind' => 'saved_on_read', 'route' => 'GET /teams', 'what' => 'update teams', 'at' => 'app/Models/Team.php:12', 'test' => 'Tests\Feature\TeamDescriptionTest::test_the_team_page_loads'],
                 ['kind' => 'sent_before_saved', 'route' => 'POST /teams', 'what' => 'mail App\Mail\TeamCreated', 'at' => null, 'test' => null],
             ]],
+            'faults' => ['points' => 5, 'run' => 3, 'missed' => 1, 'existing' => 1, 'findings' => [
+                ['kind' => 'saved_then_failed', 'route' => 'POST /teams', 'failed' => 'mail App\Mail\TeamCreated', 'what' => 'insert teams, insert team_user', 'at' => 'app/Models/Team.php:13', 'test' => 'Tests\Feature\TeamDescriptionTest::test_owners_create_teams'],
+                ['kind' => 'sent_then_lost', 'route' => 'POST /teams', 'failed' => 'insert team_user', 'what' => 'job App\Jobs\SyncSeats', 'at' => null, 'test' => 'Tests\Feature\TeamDescriptionTest::test_owners_create_teams'],
+            ]],
         ]);
 
         ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, implode("\n\n", [
@@ -559,6 +563,9 @@ class AgentDriverTest extends TestCase
                 ."\n- GET /teams saved data on a request that only reads: update teams at app/Models/Team.php:12 (seen in Tests\Feature\TeamDescriptionTest::test_the_team_page_loads)"
                 ."\n- POST /teams sent this while a database transaction was still open, so it goes out even when the transaction is rolled back: mail App\Mail\TeamCreated"
                 ."\nOf the requests that ran the change's code, 2 opened a transaction in a test that fakes mail, jobs or notifications, so what they sent, and when, was not seen.",
+            "One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer, or a save the database refused. Of 5 places where those requests send or save, 4 were tried and the failure happened in 3. What the app left behind:"
+                ."\n- POST /teams: when mail App\Mail\TeamCreated failed at app/Models/Team.php:13, the request ended in a server error but had already saved: insert teams, insert team_user (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)"
+                ."\n- POST /teams: when insert team_user failed, the save was rolled back but the request had already sent: job App\Jobs\SyncSeats (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)",
         ])));
     }
 
