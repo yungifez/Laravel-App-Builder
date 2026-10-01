@@ -892,7 +892,10 @@ const checks = computed(() => {
                         </Collapsible>
 
                         <div
-                            v-if="request.status === 'generated'"
+                            v-if="
+                                request.status === 'generated' &&
+                                (checking || checks)
+                            "
                             class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
                         >
                             <span
@@ -914,6 +917,29 @@ const checks = computed(() => {
                                 />
                                 {{ checks.label }}
                             </span>
+                        </div>
+                        <!-- Say why, or "Check again" looks like it does nothing. -->
+                        <p
+                            v-if="
+                                !checking &&
+                                change.verification?.status === 'errored' &&
+                                change.verification.error
+                            "
+                            class="text-xs text-muted-foreground"
+                            data-test="verification-error"
+                        >
+                            {{ change.verification.error }}
+                        </p>
+                        <ChangeProof
+                            v-if="request.status === 'generated'"
+                            :proof="change.proof"
+                        />
+                        <!-- The action comes after what it acts on, so it never
+                             sits above the proof's heading on its own. -->
+                        <div
+                            v-if="request.status === 'generated'"
+                            class="text-xs text-muted-foreground"
+                        >
                             <Form
                                 v-if="!checking && !request.commit_sha"
                                 v-bind="
@@ -937,22 +963,6 @@ const checks = computed(() => {
                                 </button>
                             </Form>
                         </div>
-                        <!-- Say why, or "Check again" looks like it does nothing. -->
-                        <p
-                            v-if="
-                                !checking &&
-                                change.verification?.status === 'errored' &&
-                                change.verification.error
-                            "
-                            class="text-xs text-muted-foreground"
-                            data-test="verification-error"
-                        >
-                            {{ change.verification.error }}
-                        </p>
-                        <ChangeProof
-                            v-if="request.status === 'generated'"
-                            :proof="change.proof"
-                        />
 
                         <!-- Deeper answers, for whoever wants them. A change
                              I could not finish has none to give. -->
