@@ -21,6 +21,7 @@ declare module '@inertiajs/core' {
             name: string;
             auth: Auth;
             sidebarOpen: boolean;
+            clock: { locale: string; timeZone: string };
             notifications: Notifications | null;
             [key: string]: unknown;
         };

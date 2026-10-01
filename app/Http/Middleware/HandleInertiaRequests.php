@@ -48,6 +48,13 @@ class HandleInertiaRequests extends Middleware
             // What needs the owner, newest first. Pages poll this on its own.
             'notifications' => fn () => $request->user() === null ? null : $this->notifications($request->user()),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            // How the owner writes dates, so the page drawn on the server
+            // shows them as the browser will and nothing moves once it
+            // loads. The browser leaves its time zone in a cookie.
+            'clock' => [
+                'locale' => str_replace('_', '-', $request->getPreferredLanguage() ?? 'en'),
+                'timeZone' => in_array($zone = $request->cookie('time_zone'), timezone_identifiers_list(), true) ? $zone : 'UTC',
+            ],
         ];
     }
 

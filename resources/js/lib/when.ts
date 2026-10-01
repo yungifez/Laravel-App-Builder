@@ -1,10 +1,20 @@
+import { usePage } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
-// The page is first drawn on the server, which knows neither the owner's
-// language nor their time zone. Until the browser takes the page over,
-// dates are written as the server writes them, so both draw the same page
-// (a day group drawn differently also moves every row after it).
+// The page is first drawn on the server, which knows the owner's language
+// from the request and their time zone from the cookie the browser leaves.
+// Until the browser takes the page over, dates are written as the server
+// writes them, so both draw the same page (a day group drawn differently
+// also moves every row after it). The first visit, before the cookie, is
+// drawn in UTC.
 const settled = ref(false);
+
+/** Remember the owner's time zone, so the server draws dates in it. */
+export function rememberTimeZone(): void {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    document.cookie = `time_zone=${encodeURIComponent(zone)}; path=/; max-age=31536000; SameSite=Lax`;
+}
 
 /** The browser has the page now; dates follow the owner's own settings. */
 export function settleDates(): void {
@@ -21,8 +31,11 @@ export function when(iso: string | null, now: Date = new Date()): string {
     }
 
     const date = new Date(iso);
-    const locale = settled.value ? undefined : 'en';
-    const timeZone = settled.value ? undefined : 'UTC';
+    const clock = settled.value
+        ? undefined
+        : (usePage().props.clock ?? { locale: 'en', timeZone: 'UTC' });
+    const locale = clock?.locale;
+    const timeZone = clock?.timeZone;
     const days = Math.round(
         (calendarDay(now, timeZone) - calendarDay(date, timeZone)) / 86_400_000,
     );
