@@ -33,6 +33,7 @@
         <env name="DB_URL" value="" force="true"/>
         <env name="DB_USERNAME" value="control_plane_test"/>
         <env name="DB_PASSWORD" value="control_plane_test"/>
+        <env name="INERTIA_SSR_ENABLED" value="false"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
