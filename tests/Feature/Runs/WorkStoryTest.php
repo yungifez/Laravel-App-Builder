@@ -36,6 +36,9 @@ class WorkStoryTest extends TestCase
             'I am calling sendInvitation when the form is saved.',
             'I will run php artisan test to check the whole thing.',
             'Let me look.',
+            "Let's update the frontend tests to cover this new display.",
+            'To keep date formatting deterministic regardless of the timezone, let me pin it to UTC.',
+            'Purely formatting changes like attribute wrapping and Tailwind class ordering.',
         ] as $technical) {
             $this->assertNull($narrate->plain($technical), $technical);
         }

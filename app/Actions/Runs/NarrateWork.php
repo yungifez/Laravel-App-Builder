@@ -31,7 +31,7 @@ class NarrateWork
         'TypeScript' => 'Read the screens\' code for mistakes',
     ];
 
-    protected const JARGON = '/\b(prompt|instructions?|acceptance|repository|repo|git|commit|artisan|phpunit|pest|phpstan|larastan|pint|composer|npm|controller|middleware|namespace|migration|eloquent|blade|inertia|livewire|vue|typescript|schema|endpoint|seeder|lint|refactor|diff|stack trace|test suite)\b/i';
+    protected const JARGON = '/\b(prompt|instructions?|acceptance|repository|repo|git|commit|artisan|phpunit|pest|phpstan|larastan|pint|composer|npm|controller|middleware|namespace|migration|eloquent|blade|inertia|livewire|vue|typescript|schema|endpoint|seeder|lint|refactor|diffs?|codebase|css|stack trace|test suite|frontend|backend|vitest|jest|php|json|utc|tailwind|ssr|api|payload|seriali[sz]\w*|pivot|fixtures?|helpers?|describe block|deterministic|regex|sql|attributes?|components?|props|enum|auto-?fixer)\b/i';
 
     /**
      * Tell the owner how the change was made, step by step, in their words:
