@@ -199,4 +199,11 @@ class RecordedApp
 
         return response()->noContent();
     }
+
+    public function worked(): Response
+    {
+        RecordedJob::dispatch();
+
+        return response()->noContent();
+    }
 }

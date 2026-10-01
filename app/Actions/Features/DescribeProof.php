@@ -355,8 +355,9 @@ class DescribeProof
     /**
      * Say what the app left behind when one thing was made to fail while
      * its tests used the change's new code: an email that could not be
-     * sent, an outside service that did not answer, or a save that did
-     * not work. Each kind of thing left behind is a gap the owner reads,
+     * sent, an outside service that did not answer, a save that did not
+     * work, or work the app does later that ran a second time. Each kind
+     * of thing left behind, or done twice, is a gap the owner reads,
      * with the address where it happened. That nothing was left behind is
      * said only when a failure was really caused.
      *
@@ -374,6 +375,7 @@ class DescribeProof
             AppFaults::SAVED_THEN_FAILED => 'If :failure at :address, the person sees an error, but your app has already saved what they did. They may try again and do it twice.',
             AppFaults::SENT_THEN_LOST => 'If saving fails at :address, your app has already sent something. People are told about something that was not saved.',
             AppFaults::SAVED_IN_PART => 'If saving fails at :address, your app keeps one part of what it was saving and loses the rest.',
+            AppFaults::DONE_TWICE => 'Your app does some work on its own after someone uses :address. If that work is cut off and starts over, it sends or adds the same thing twice.',
         ];
         // The recording already said that this is sent before saving ends.
         $said = AppTraces::findings($verification->evidence['traces'] ?? null, AppTraces::SENT_BEFORE_SAVED) !== [];

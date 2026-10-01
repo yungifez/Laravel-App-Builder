@@ -328,11 +328,11 @@ abstract class AgentDriver implements ConstructionDriver
 
         if (isset($measured['faults'])) {
             $faults = $measured['faults'];
-            $parts[] = sprintf("One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer, or a save the database refused. Of %d places where those requests send or save, %d were tried and the failure happened in %d.", $faults['points'], $faults['run'] + $faults['missed'], $faults['run'])
+            $parts[] = sprintf("One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer, a save the database refused, or a queued job that ran a second time. Of %d places where those requests send, save or run a job, %d were tried and the failure happened in %d.", $faults['points'], $faults['run'] + $faults['missed'], $faults['run'])
                 .match (true) {
                     $faults['findings'] !== [] => " What the app left behind:\n".$this->list(array_map($this->left(...), $faults['findings'])),
                     $faults['run'] === 0 => ' So this says nothing about the change.',
-                    default => ' Each time the app left nothing behind: it had saved nothing before a server error, sent nothing before a save it lost, and kept no part of a save it lost.',
+                    default => ' Each time the app left nothing behind: it had saved nothing before a server error, sent nothing before a save it lost, kept no part of a save it lost, and sent or added nothing again in a job that ran twice.',
                 };
         }
 
@@ -347,6 +347,13 @@ abstract class AgentDriver implements ConstructionDriver
      */
     protected function left(array $finding): string
     {
+        // A queue gives a job to a worker at least once: the job is not safe to run again.
+        if ($finding['kind'] === AppFaults::DONE_TWICE) {
+            return "{$finding['route']}: when {$finding['failed']}"
+                .($finding['at'] === null ? '' : ", queued at {$finding['at']},")
+                ." ran a second time, it sent or added the same thing again: {$finding['what']} (caused in {$finding['test']})";
+        }
+
         $did = match ($finding['kind']) {
             AppFaults::SAVED_THEN_FAILED => 'the request ended in a server error but had already saved',
             AppFaults::SENT_THEN_LOST => 'the save was lost but the request had already sent',

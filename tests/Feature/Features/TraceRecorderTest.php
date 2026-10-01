@@ -317,6 +317,32 @@ class TraceRecorderTest extends TestCase
         $this->assertSame(['/_failing/thrown', 500, true, ['query']], [$thrown['route'], $thrown['status'], $thrown['refused'], array_column($thrown['effects'], 'kind')]);
     }
 
+    public function test_a_job_made_to_run_twice_shows_what_it_sent_and_added_both_times()
+    {
+        Route::post('/_failing/worked', [RecordedApp::class, 'worked']);
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'job');
+
+        $this->post('/_failing/worked')->assertNoContent();
+        // The second run is the queue's, not the person's: the request ends as usual.
+        $this->post('/_failing/worked')->assertNoContent();
+        // One job only: the request after it runs as usual.
+        $this->post('/_failing/worked')->assertNoContent();
+
+        $requests = $recorded();
+        $did = fn (array $request) => array_map(fn (array $effect) => [AppTraces::verb($effect['sql'] ?? '') ?: $effect['kind'], $effect['job'] ?? false, $effect['again'] ?? false], $request['effects']);
+        $once = [['job', false, false], ['insert', true, false], ['mail', true, false], ['update', true, false]];
+
+        $this->assertSame([false, true, false], array_map(fn (array $request) => isset($request['fault']), $requests));
+        $this->assertSame([$once, $once], [$did($requests[0]), $did($requests[2])]);
+        $this->assertSame([...$once, ['job', true, true], ...array_slice($once, 1)], $did($requests[1]));
+        $this->assertSame(4, User::query()->where('name', 'Worked')->count());
+
+        $measured = $this->measureFailure($requests, 'job '.RecordedJob::class);
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        // The change to a row is made again, which leaves the row as it was.
+        $this->assertSame([['done_twice', 'POST /_failing/worked', 'job '.RecordedJob::class, 'insert users, mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
     public function test_an_email_a_test_fakes_is_still_seen_and_the_fake_still_holds_it()
     {
         $user = User::factory()->create();

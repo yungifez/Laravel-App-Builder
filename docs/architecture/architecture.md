@@ -1869,13 +1869,18 @@ can be caused, in requests that ran the change's code:
 - **A save in steps.** The last write the app's code makes outside a
   transaction, when the request saved or sent something before it. Most
   requests that save twice have no transaction, so this is the common place.
+- **A job.** Each job the sync queue ran in a request, when the job sent
+  something or added a row that stayed. This place does not fail. The job
+  runs a second time.
 
 For each place, verification runs the one test that made the request again,
 with `TRACE_RECORDER_FAULT` naming the test, the request and the effect. The
 recorder then makes that one effect fail the way it fails in use: the mail
 transport cannot connect, the outside call times out, or the database
-refuses the write before it runs. The trace of that request shows what
-stayed:
+refuses the write before it runs. A job is run again when it is done, the
+way a queue runs it again when a worker stops before it marks the job as
+done. The second run is marked in the trace, and an error in it stays in it.
+The trace of that request shows what stayed:
 
 - **Saved, then failed.** A send failed, the person got a server error, and
   a write from before the failure was kept. A second try can save it twice.
@@ -1883,30 +1888,45 @@ stayed:
   outside call had left before it.
 - **Saved in part.** A save failed and was lost, but a write of the app's
   code from before it was kept: an order without its items.
+- **Done twice.** A job ran twice, and both runs sent the same thing or
+  added the same row from the same line. A queue gives a job to a worker at
+  least once, so a job must be safe to run again.
 
 A save in a transaction is lost when the transaction rolls back. A save in
 steps is lost when the request ends in a server error. An app that catches
 the failure and answers in its own way took the failure in, and nothing is
-said.
+said. The recorder keeps no values, so the two runs of a job are compared by
+shape only. An update, a delete, or an insert that says what to do with a
+row that is there (`on conflict`, `insert ignore`) can be made again, and is
+not held against the job. A job that asks first and stops is clean.
 
 A finding counts against a change only when the failed effect, or what
 stayed, comes from a line the change added. The rest is counted (`existing`)
-and not reported. Places on the change's own lines are tried first. At most
-`points` places are tried, and no place starts after `seconds`, so the
+and not reported. The places are tried in a fixed order (direction 33).
+Places on the change's own lines come first. Next come places on a line or a
+route that `AppTraces` or `AppBoundaries` has a finding about. Then sends
+come before jobs, and jobs before saves: what cannot be taken back is tried
+first. The order comes only from the trace, the patch and those findings. At
+most `points` places are tried, and no place starts after `seconds`, so the
 owner's wait has a limit. A place whose failure did not happen is counted as
-`missed`, never as clean. What a job on the sync queue does is not a place,
-because in use that job runs later on a queue. An email that a test fakes
-is a place too: the stand-in of the fake fails it the same way, before the
-fake takes it.
+`missed`, never as clean. What a job on the sync queue does is not a place
+to fail, because in use that job runs later on a queue. The job as a whole
+is the place. It is the change's when the change queues it or wrote what it
+does. A second run that the trace cut short is missed. An email that a test
+fakes is a place too: the stand-in of the fake fails it the same way, before
+the fake takes it.
 
-The reviewer blocks all three, unless the request or the plan asks for
+The reviewer blocks all four, unless the request or the plan asks for
 exactly that. The owner reads each in the proof: "If saving fails at /invitations,
 your app has already sent something. People are told about something that
 was not saved." When failures were caused and nothing stayed: "We made things
 go wrong 3 times while your app used the new code, such as an email that
 cannot be sent or a save that fails. Each time, your app left nothing half
-done." On the fixture the reference change has 2 places, both clean, in about
-2 seconds. A copy of it that sends an email before its last save is found.
+done." For a job: "Your app does some work on its own after someone uses
+/orders. If that work is cut off and starts over, it sends or adds the same
+thing twice." On the fixture the reference change has 2 places, both clean,
+in about 2 seconds. A copy of it that sends an email before its last save is
+found.
 
 **Made-up colours are sent back too** (direction 26, the first design check
 that graduated from the contract). The lines a change adds to screen files

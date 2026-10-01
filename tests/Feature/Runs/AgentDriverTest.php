@@ -550,9 +550,10 @@ class AgentDriverTest extends TestCase
                 ['kind' => 'changed_while_authorizing', 'route' => 'GET /teams', 'what' => 'update teams', 'at' => 'app/Policies/TeamPolicy.php:9', 'in' => 'App\Policies\TeamPolicy::view', 'test' => 'Tests\Feature\TeamDescriptionTest::test_the_team_page_loads'],
                 ['kind' => 'changed_while_rendering', 'route' => 'GET /teams', 'what' => 'http GET gravatar.com', 'at' => 'app/Models/Team.php:12', 'in' => null, 'test' => null],
             ]],
-            'faults' => ['points' => 5, 'run' => 3, 'missed' => 1, 'existing' => 1, 'findings' => [
+            'faults' => ['points' => 6, 'run' => 4, 'missed' => 1, 'existing' => 1, 'findings' => [
                 ['kind' => 'saved_then_failed', 'route' => 'POST /teams', 'failed' => 'mail App\Mail\TeamCreated', 'what' => 'insert teams, insert team_user', 'at' => 'app/Models/Team.php:13', 'test' => 'Tests\Feature\TeamDescriptionTest::test_owners_create_teams'],
                 ['kind' => 'sent_then_lost', 'route' => 'POST /teams', 'failed' => 'insert team_user', 'what' => 'job App\Jobs\SyncSeats', 'at' => null, 'test' => 'Tests\Feature\TeamDescriptionTest::test_owners_create_teams'],
+                ['kind' => 'done_twice', 'route' => 'POST /teams', 'failed' => 'job App\Jobs\SyncSeats', 'what' => 'insert seats, mail App\Mail\SeatsChanged', 'at' => 'app/Models/Team.php:13', 'test' => 'Tests\Feature\TeamDescriptionTest::test_owners_create_teams'],
             ]],
         ]);
 
@@ -571,9 +572,10 @@ class AgentDriverTest extends TestCase
                 ."\n- GET /teams while Laravel checked whether the person may act: update teams at app/Policies/TeamPolicy.php:9 in App\Policies\TeamPolicy::view (seen in Tests\Feature\TeamDescriptionTest::test_the_team_page_loads)"
                 ."\n- GET /teams while Laravel built the response: http GET gravatar.com at app/Models/Team.php:12"
                 ."\nFor 2 recorded things the part of the request could not be told.",
-            "One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer, or a save the database refused. Of 5 places where those requests send or save, 4 were tried and the failure happened in 3. What the app left behind:"
+            "One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer, a save the database refused, or a queued job that ran a second time. Of 6 places where those requests send, save or run a job, 5 were tried and the failure happened in 4. What the app left behind:"
                 ."\n- POST /teams: when mail App\Mail\TeamCreated failed at app/Models/Team.php:13, the request ended in a server error but had already saved: insert teams, insert team_user (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)"
-                ."\n- POST /teams: when insert team_user failed, the save was lost but the request had already sent: job App\Jobs\SyncSeats (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)",
+                ."\n- POST /teams: when insert team_user failed, the save was lost but the request had already sent: job App\Jobs\SyncSeats (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)"
+                ."\n- POST /teams: when job App\Jobs\SyncSeats, queued at app/Models/Team.php:13, ran a second time, it sent or added the same thing again: insert seats, mail App\Mail\SeatsChanged (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)",
         ])));
     }
 

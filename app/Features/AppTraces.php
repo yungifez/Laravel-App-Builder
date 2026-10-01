@@ -52,13 +52,14 @@ class AppTraces
      * request is left out. "n" is the request's place among those its test
      * made, "fault" the place of the thing that was made to fail in it
      * (see AppFaults), and "job" marks what a job on the sync queue did.
+     * "again" marks where a job was made to run a second time.
      * "phase" is the part of the request a thing happened in (such as
      * authorization, validation, handling or rendering; "unknown" when the
      * recorder could not tell), and "frames" the app's own code on the way
      * to it, nearest first, as Class::method. A trace from an older
      * recorder has neither.
      *
-     * @return list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, phase?: string, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int}>
+     * @return list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, phase?: string, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int}>
      */
     public static function parse(string $report): array
     {
@@ -85,6 +86,7 @@ class AppTraces
                     ...(is_string($effect['what'] ?? null) ? ['what' => $effect['what']] : []),
                     ...(array_key_exists('at', $effect) ? ['at' => is_string($effect['at']) ? $effect['at'] : null] : []),
                     ...(($effect['job'] ?? false) === true ? ['job' => true] : []),
+                    ...(($effect['again'] ?? false) === true ? ['again' => true] : []),
                     ...(is_string($effect['phase'] ?? null) ? [
                         'phase' => $effect['phase'],
                         'frames' => array_values(array_filter(is_array($effect['frames'] ?? null) ? $effect['frames'] : [], is_string(...))),

@@ -44,7 +44,8 @@ use WeakMap;
  * thing of one request of one test (the place it has in a trace recorded
  * before), that thing fails the way it fails in use: the mail cannot be
  * sent, the outside call gets no answer, the write is refused before it
- * is made. The trace of that request then shows what the app left behind.
+ * is made, the job runs a second time when it is done. The trace of that
+ * request then shows what the app left behind.
  */
 class Recorder
 {
@@ -102,6 +103,9 @@ class Recorder
     /** How many jobs the sync queue is running now, one inside the other. */
     protected int $jobs = 0;
 
+    /** @var list<int|null> The place in the trace of each job the sync queue is running now */
+    protected array $running = [];
+
     /** @var array<string, true> The fakes that took work of this request this recorder could not see */
     protected array $hidden = [];
 
@@ -150,6 +154,7 @@ class Recorder
         $events->listen(JobProcessing::class, function (JobProcessing $event) {
             // The sync queue runs a job where it is dispatched, without queueing it.
             if ($event->connectionName === 'sync') {
+                $this->running[] = $this->operation === null ? null : count($this->operation['effects']);
                 $this->effect(['kind' => 'job', 'what' => $event->job->resolveName()]);
                 $this->jobs++;
             }
@@ -157,6 +162,11 @@ class Recorder
         $events->listen([JobProcessed::class, JobExceptionOccurred::class], function (JobProcessed|JobExceptionOccurred $event) {
             if ($event->connectionName === 'sync') {
                 $this->jobs = max(0, $this->jobs - 1);
+                $place = array_pop($this->running);
+
+                if ($event instanceof JobProcessed) {
+                    $this->again($event->job, $place);
+                }
             }
         });
         $events->listen(MessageSending::class, fn (MessageSending $event) => $this->mailed((string) ($event->data['__laravel_mailable'] ?? $event->data['__laravel_notification'] ?? 'message')));
@@ -177,6 +187,7 @@ class Recorder
         $this->finish();
         $this->requests++;
         $this->jobs = 0;
+        $this->running = [];
         $this->hidden = [];
         $this->fakes->standIn();
 
@@ -377,6 +388,34 @@ class Recorder
         // The one failure this run is about: the thing just noted fails.
         if ($failing) {
             throw $fails();
+        }
+    }
+
+    /**
+     * Run a job a second time, when it is the job this run is about. A
+     * queue gives a job to a worker at least once: a worker that stops
+     * after the job's work and before it says so makes the job run again.
+     * The second run is marked in the trace. An error in it stays in it,
+     * because in use it happens on the queue and not in the request.
+     */
+    protected function again(object $job, ?int $place): void
+    {
+        if ($place === null || $this->operation === null || $this->jobs > 0 || isset($this->operation['fault'])
+            || $this->fault !== ['request' => $this->requests - 1, 'effect' => $place, 'kind' => 'job']
+            || ($this->operation['effects'][$place]['kind'] ?? null) !== 'job' || ! method_exists($job, 'fire')) {
+            return;
+        }
+
+        $this->operation['fault'] = $place;
+        $this->jobs++;
+        $this->effect(['kind' => 'job', 'what' => $this->operation['effects'][$place]['what'] ?? 'job', 'again' => true], origin: false);
+
+        try {
+            $job->fire();
+        } catch (Throwable) {
+            //
+        } finally {
+            $this->jobs = max(0, $this->jobs - 1);
         }
     }
 

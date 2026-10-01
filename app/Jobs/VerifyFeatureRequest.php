@@ -815,7 +815,9 @@ class VerifyFeatureRequest implements ShouldQueue
      * and keep what the app left behind (direction 32). The places come
      * from the requests recorded in the coverage run. Each place runs its
      * one test again with one thing made to fail: an email, an outside
-     * call or a save.
+     * call or a save. A job the sync queue ran is made to run twice.
+     * Places on a line or a route the recording already has a finding
+     * about are tried before the rest.
      *
      * Like the screen check this never changes the checks' result. It
      * stops starting new places when its time is used up, so a change
@@ -831,7 +833,14 @@ class VerifyFeatureRequest implements ShouldQueue
         }
 
         rescue(function () use ($driver, $runWorkspaceCommand, $workspace, $featureRequest, $config) {
-            $points = AppFaults::points($this->requests, $featureRequest->patch);
+            // The routes the change added are not known yet, so only what
+            // its own lines did is suspected here.
+            $points = AppFaults::points($this->requests, $featureRequest->patch, [
+                ...(AppTraces::measure($this->requests, $featureRequest->patch)['findings'] ?? []),
+                ...(config('builder.verification.boundaries.enabled')
+                    ? AppBoundaries::measure($this->requests, $featureRequest->patch, phases: config('builder.verification.boundaries.phases'))['findings'] ?? []
+                    : []),
+            ]);
             $until = now()->addSeconds($config['seconds']);
             $runs = [];
 

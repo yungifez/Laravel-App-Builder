@@ -6,8 +6,9 @@ namespace App\Features;
  * What the app leaves behind when one thing it depends on fails while a
  * request runs (direction 32). The recorder in the box makes one thing
  * fail in one request of one test: an email that cannot be sent, an
- * outside service that does not answer, or a save the database refuses.
- * The trace of that request then shows what stayed.
+ * outside service that does not answer, a save the database refuses, or a
+ * job the queue runs a second time. The trace of that request then shows
+ * what stayed.
  *
  * Nothing is random. The places a failure is caused come from the trace of
  * the tests' normal run, so the same change gives the same places. Only
@@ -18,8 +19,16 @@ namespace App\Features;
  * got an error; the app sent something, then lost what it was saving; and
  * the app lost one part of what it was saving but kept another. The last
  * one is how a request that saves in steps, with no transaction around
- * them, is found. What a job on the queue does is left out: in use that
- * job runs later, by itself.
+ * them, is found. What a job on the queue does is left out of these
+ * three: in use that job runs later, by itself.
+ *
+ * A fourth thing is read from a job that ran twice: what it sent or added
+ * both times. A queue gives a job to a worker at least once, so a job
+ * must be safe to run again. The recorder keeps no values, so only the
+ * shape is compared: the same send or the same insert from the same line
+ * in both runs. A change that is made again (an update, a delete, or an
+ * insert that says what to do when the row is there) is not held against
+ * the job.
  */
 class AppFaults
 {
@@ -29,9 +38,13 @@ class AppFaults
 
     public const SAVED_IN_PART = 'saved_in_part';
 
+    public const DONE_TWICE = 'done_twice';
+
     public const SEND = 'send';
 
     public const SAVE = 'save';
+
+    public const AGAIN = 'again';
 
     /**
      * What the recorder can make fail when the app sends it.
@@ -46,6 +59,12 @@ class AppFaults
     protected const SENT = ['job', 'mail', 'http'];
 
     /**
+     * What is tried first when the places are otherwise alike: what cannot
+     * be taken back comes before what the database can put back.
+     */
+    protected const ORDER = ['http' => 0, 'mail' => 0, 'job' => 1, 'query' => 2];
+
+    /**
      * The most findings kept, so one change cannot fill the row.
      */
     protected const KEPT = 40;
@@ -53,15 +72,23 @@ class AppFaults
     /**
      * Find the places where a failure can be caused: each email and outside
      * call a request makes, the last save of each transaction a request
-     * commits, and the last save the app's code makes outside a transaction
-     * once the request has saved or sent something. Only requests that ran
-     * the change's code are used. Places on the change's own lines come
-     * first, so a small budget goes to them.
+     * commits, the last save the app's code makes outside a transaction
+     * once the request has saved or sent something, and each job the sync
+     * queue ran that sent or added something. Only requests that ran the
+     * change's code are used.
      *
-     * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>  $requests  From AppTraces::parse(), of the tests' normal run
+     * The places come in the order to try them, so a small budget goes to
+     * the ones that tell the most: places on the change's own lines, then
+     * places another reading of the change suspects (the same line, or the
+     * same route), then what cannot be taken back before what can. The
+     * order comes only from the trace, the patch and those findings, so
+     * the same change gives the same order.
+     *
+     * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>  $requests  From AppTraces::parse(), of the tests' normal run
+     * @param  list<array{route: string, at?: string|null}>  $suspected  Findings of the other engines about the change, such as AppTraces and AppBoundaries give
      * @return list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string}, own: bool}>
      */
-    public static function points(array $requests, ?string $patch): array
+    public static function points(array $requests, ?string $patch, array $suspected = []): array
     {
         $added = AppTraces::addedLines($patch);
         $new = fn (array $effect): bool => is_string($effect['at'] ?? null) && AppTraces::onAddedLine($effect['at'], $added);
@@ -77,6 +104,7 @@ class AppFaults
             $route = $request['method'].' '.($request['route'] ?? '?');
             $stayed = AppTraces::saved($request['effects']);
             $found = [];
+            $jobs = [];
             $last = null;
             $apart = null;
             $done = false;
@@ -84,6 +112,13 @@ class AppFaults
             foreach ($request['effects'] as $place => $effect) {
                 if ($effect['job'] ?? false) {
                     continue;
+                }
+
+                // A job that ran here: what it did can be done twice.
+                $ran = $effect['kind'] === 'job' ? self::ran($request['effects'], $place) : [];
+
+                if (array_any($ran, fn (array $effect, int $at) => self::repeats($effect, isset($stayed[$at])))) {
+                    $jobs[] = [self::AGAIN, $place, $effect, array_any($ran, $new)];
                 }
 
                 if (in_array($effect['kind'], self::FAILS, true)) {
@@ -103,7 +138,9 @@ class AppFaults
                 $done = $done || in_array($effect['kind'], self::SENT, true) || (isset($stayed[$place]) && is_string($effect['at'] ?? null));
             }
 
-            foreach ([...$found, ...($apart === null ? [] : [$apart])] as [$fails, $at, $failed]) {
+            foreach ([...$found, ...($apart === null ? [] : [$apart]), ...$jobs] as $point) {
+                [$fails, $at, $failed] = $point;
+
                 $points[implode('|', [$fails, $route, self::name($failed), $failed['at'] ?? ''])] ??= [
                     'fails' => $fails,
                     'route' => $route,
@@ -112,14 +149,25 @@ class AppFaults
                     'test' => $request['test'],
                     'filter' => $filter,
                     'fault' => ['test' => $request['test'], 'request' => $request['n'], 'effect' => $at, 'kind' => $failed['kind']],
-                    'own' => $new($failed),
+                    // A job is also the change's when the change wrote what it does.
+                    'own' => $new($failed) || ($point[3] ?? false),
                 ];
             }
         }
 
+        $routes = array_fill_keys(array_column($suspected, 'route'), true);
+        $lines = array_fill_keys(array_filter(array_column($suspected, 'at'), is_string(...)), true);
+        $order = fn (array $point): array => [
+            $point['own'] ? 0 : 1,
+            isset($lines[$point['at'] ?? '']) || isset($routes[$point['route']]) ? 0 : 1,
+            self::ORDER[$point['fault']['kind']] ?? count(self::ORDER),
+        ];
         $points = array_values($points);
 
-        return [...array_filter($points, fn (array $point) => $point['own']), ...array_filter($points, fn (array $point) => ! $point['own'])];
+        // Places that are alike stay in the order the trace gave them.
+        usort($points, fn (array $one, array $other) => $order($one) <=> $order($other));
+
+        return $points;
     }
 
     /**
@@ -131,7 +179,7 @@ class AppFaults
      * a missed place, or about a place that was not tried.
      *
      * @param  list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string}, own: bool}>  $points  From points()
-     * @param  array<int, list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>>  $runs  What was recorded when each place's failure was caused, by the place's position in $points; a place not tried is absent
+     * @param  array<int, list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>>  $runs  What was recorded when each place's failure was caused, by the place's position in $points; a place not tried is absent
      * @return array{points: int, run: int, missed: int, existing: int, findings: list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}>}|null
      */
     public static function measure(array $points, array $runs, ?string $patch): ?array
@@ -149,7 +197,9 @@ class AppFaults
             $point = $points[$position] ?? null;
             $hit = $point === null ? null : array_find($requests, fn (array $request) => $request['test'] === $point['test']
                 && ($request['n'] ?? null) === $point['fault']['request']
-                && ($request['fault'] ?? null) === $point['fault']['effect']);
+                && ($request['fault'] ?? null) === $point['fault']['effect']
+                // A second run that is not whole in the trace cannot be compared.
+                && ! ($point['fails'] === self::AGAIN && $request['cut']));
 
             if ($point === null || $hit === null) {
                 continue;
@@ -202,12 +252,17 @@ class AppFaults
      * Get what a request left behind after its failure that the failure
      * should have stopped or undone, by the kind of problem it is.
      *
-     * @param  array{status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool}>, fault?: int}  $hit  The request the failure was caused in
-     * @return array<string, list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool}>>
+     * @param  array{status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool}>, fault?: int}  $hit  The request the failure was caused in
+     * @return array<string, list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool}>>
      */
     protected static function left(string $fails, array $hit): array
     {
         $place = $hit['fault'] ?? 0;
+
+        if ($fails === self::AGAIN) {
+            return array_filter([self::DONE_TWICE => self::twice($hit['effects'], $place)]);
+        }
+
         $before = fn (array $effect, int $at): bool => $at < $place && ! ($effect['job'] ?? false);
         $stayed = AppTraces::saved($hit['effects']);
         // What the framework or a package saved by itself is not part of
@@ -238,6 +293,72 @@ class AppFaults
         $sent = array_values(array_filter($hit['effects'], fn (array $effect, int $at) => $before($effect, $at) && in_array($effect['kind'], self::SENT, true), ARRAY_FILTER_USE_BOTH));
 
         return array_filter([self::SENT_THEN_LOST => $sent, self::SAVED_IN_PART => $kept]);
+    }
+
+    /**
+     * Get what a job did in both of its runs that must happen once: the
+     * same send, or the same insert that stayed, from the same line.
+     *
+     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool}>  $effects
+     * @return list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool}>
+     */
+    protected static function twice(array $effects, int $place): array
+    {
+        $first = self::ran($effects, $place);
+        $marker = array_key_last($first) === null ? $place + 1 : array_key_last($first) + 1;
+
+        if (! ($effects[$marker]['again'] ?? false)) {
+            return [];
+        }
+
+        $stayed = AppTraces::saved($effects);
+        $once = [];
+
+        foreach ($first as $at => $effect) {
+            if (self::repeats($effect, isset($stayed[$at]))) {
+                $once[self::name($effect).'|'.($effect['at'] ?? '')] = true;
+            }
+        }
+
+        return array_values(array_filter(
+            self::ran($effects, $marker),
+            fn (array $effect, int $at) => self::repeats($effect, isset($stayed[$at])) && isset($once[self::name($effect).'|'.($effect['at'] ?? '')]),
+            ARRAY_FILTER_USE_BOTH,
+        ));
+    }
+
+    /**
+     * Get what one run of a job on the sync queue did: the things marked
+     * as a job's right after the job, up to where it was made to run
+     * again. Each keeps its place among the things the request did.
+     *
+     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool}>  $effects
+     * @return array<int, array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool}>
+     */
+    protected static function ran(array $effects, int $place): array
+    {
+        $ran = [];
+
+        for ($at = $place + 1; ($effects[$at]['job'] ?? false) && ! ($effects[$at]['again'] ?? false); $at++) {
+            $ran[$at] = $effects[$at];
+        }
+
+        return $ran;
+    }
+
+    /**
+     * Determine if a thing is done twice when the job that did it runs
+     * twice: a send, or an insert that stayed and says nothing about a row
+     * that is already there.
+     *
+     * @param  array{kind: string, sql?: string}  $effect
+     */
+    protected static function repeats(array $effect, bool $stayed): bool
+    {
+        $sql = $effect['sql'] ?? '';
+
+        return in_array($effect['kind'], self::SENT, true)
+            || ($stayed && AppTraces::verb($sql) === 'insert' && preg_match('/\bon\s+(conflict|duplicate\s+key)\b|^\s*insert\s+(or\s+)?ignore\b|^\s*insert\s+or\s+replace\b/i', $sql) !== 1);
     }
 
     /**

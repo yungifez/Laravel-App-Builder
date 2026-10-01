@@ -773,6 +773,7 @@ return [
         // request of one test: an email that cannot be sent, an outside
         // service that does not answer, or a save the database refuses
         // (in a transaction, or after an earlier step of a save in steps).
+        // A job the sync queue ran is made to run a second time instead.
         // The places come from the recording above, in requests that ran
         // the change's code, so nothing is random. Each place runs
         // "command" once, with the name of its test added after it; the
