@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { Form, usePoll } from '@inertiajs/vue3';
-import { CircleAlert, CircleCheck, CircleDot, LoaderCircle } from '@lucide/vue';
+import {
+    CircleAlert,
+    CircleCheck,
+    CircleDot,
+    ExternalLink,
+    LoaderCircle,
+} from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import DeploymentController from '@/actions/App/Http/Controllers/DeploymentController';
 import LiveErrorFixController from '@/actions/App/Http/Controllers/LiveErrorFixController';
@@ -266,10 +272,15 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                         :href="publishing.address"
                         target="_blank"
                         rel="noopener"
-                        class="mt-1 inline-flex min-h-11 items-center text-sm font-medium break-all underline-offset-4 hover:underline sm:min-h-0"
+                        class="mt-1 inline-flex min-h-11 items-center gap-1.5 text-sm font-medium break-all underline-offset-4 hover:underline sm:min-h-0"
                         data-test="live-address"
                     >
                         {{ publishing.address.replace(/^https?:\/\//, '') }}
+                        <!-- Says it opens the app online, so the address
+                             does not read as a stray line of text. -->
+                        <ExternalLink
+                            class="size-3.5 shrink-0 text-muted-foreground"
+                        />
                     </a>
                 </div>
             </div>
