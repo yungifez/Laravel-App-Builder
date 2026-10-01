@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\VisualEdit;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\ElementName;
 use App\VisualEditing\FormattedRevisions;
 use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TailwindClasses;
@@ -121,6 +122,8 @@ class ApplyVisualEdit
             default => '',
         };
 
-        return "Change how <{$element->tag}> looks{$on}\n\nIn {$location}.";
+        $name = ElementName::for($element->tag);
+
+        return "Change how {$name} looks{$on}\n\nIn {$location}.";
     }
 }

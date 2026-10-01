@@ -4,6 +4,7 @@ namespace App\Actions\VisualEditing;
 
 use App\Models\User;
 use App\Models\VisualEdit;
+use App\VisualEditing\ElementName;
 use Illuminate\Validation\ValidationException;
 
 class RevertVisualEdit
@@ -26,6 +27,9 @@ class RevertVisualEdit
             throw ValidationException::withMessages(['edit' => __('This change was already undone.')]);
         }
 
+        $name = ElementName::for($edit->tag);
+        $picture = $edit->tag === 'img' ? 'the new picture' : "the new picture in {$name}";
+
         // A move, new words, a new link address, a new picture, a copy or a
         // removal put back the whole file; a new look puts back only the
         // element's classes.
@@ -35,14 +39,14 @@ class RevertVisualEdit
                 $edit->commit_sha,
                 $edit->base_revision,
                 match ($edit->kind()) {
-                    'move' => "Undo moving <{$edit->tag}>",
-                    'link' => "Undo where <{$edit->tag}> goes",
-                    'picture' => "Undo the new picture in <{$edit->tag}>",
+                    'move' => "Undo moving {$name}",
+                    'link' => "Undo where {$name} goes",
+                    'picture' => "Undo {$picture}",
                     'theme' => "Undo a change to the app's colours",
-                    'duplicate' => "Undo copying <{$edit->tag}>",
-                    'add' => "Undo adding <{$edit->tag}>",
-                    'remove' => "Undo removing <{$edit->tag}>",
-                    default => "Undo new words in <{$edit->tag}>",
+                    'duplicate' => "Undo copying {$name}",
+                    'add' => "Undo adding {$name}",
+                    'remove' => "Undo removing {$name}",
+                    default => "Undo new words in {$name}",
                 }."\n\nThis undoes commit {$edit->commit_sha}.",
                 $owner,
             )
@@ -50,7 +54,7 @@ class RevertVisualEdit
                 $edit,
                 $edit->classes_after,
                 $edit->classes_before,
-                "Undo a change to how <{$edit->tag}> looks\n\nThis undoes commit {$edit->commit_sha}.",
+                "Undo a change to how {$name} looks\n\nThis undoes commit {$edit->commit_sha}.",
                 $owner,
             );
 

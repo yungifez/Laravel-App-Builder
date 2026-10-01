@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\VisualEdit;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\ElementName;
 use App\VisualEditing\FormattedRevisions;
 use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TemplateElement;
@@ -69,12 +70,15 @@ class ChangeVisualPicture
         $address = TemplatePicture::address($path);
         $changed = substr_replace($contents, TemplateLink::written($address), $source['offset'], $source['length']);
 
+        // A picture on its own is just "a picture"; one inside a part says which.
+        $subject = $element->tag === 'img' ? 'Show a new picture' : 'Show a new picture in '.ElementName::for($element->tag);
+
         try {
             $sha = $this->repository->commitFiles(
                 $project,
                 $revision,
                 [$path => $file, $location->file => $changed],
-                "Show a new picture in <{$element->tag}>\n\nIn {$location}.",
+                "{$subject}\n\nIn {$location}.",
                 ['name' => $owner->name, 'email' => $owner->email],
             );
         } catch (RepositoryConflict $exception) {

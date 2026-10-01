@@ -189,7 +189,7 @@ class VisualEditingTest extends TestCase
         $this->assertSame($preview->revision, $edit->base_revision);
         $this->assertSame('flex gap-4 p-4 text-sm', $edit->classes_before);
         $this->assertSame('Ada Owner', $this->repository->log($this->project)[0]['author']);
-        $this->assertSame('Change how <div> looks on tablets and up', $this->repository->log($this->project)[0]['subject']);
+        $this->assertSame('Change how a box looks on tablets and up', $this->repository->log($this->project)[0]['subject']);
 
         Queue::assertPushed(RebuildPreview::class, fn (RebuildPreview $job) => $job->preview->is($preview));
     }
@@ -253,7 +253,7 @@ class VisualEditingTest extends TestCase
         $this->assertNotNull($edit->reverted_at);
         $this->assertSame($this->repository->head($this->project), $edit->revert_sha);
         $this->assertSame($before, $this->repository->show($this->project, $this->repository->head($this->project), 'resources/js/pages/Plans.vue'));
-        $this->assertSame('Undo a change to how <div> looks', $this->repository->log($this->project, 1)[0]['subject']);
+        $this->assertSame('Undo a change to how a box looks', $this->repository->log($this->project, 1)[0]['subject']);
         Queue::assertPushed(RebuildPreview::class, 2);
 
         $this->actingAs($this->owner)
@@ -338,7 +338,7 @@ class VisualEditingTest extends TestCase
         $this->assertNull($edit->reverted_at);
         $this->assertSame($this->repository->head($this->project), $edit->commit_sha);
         $this->assertStringContainsString('<div class="flex gap-6 p-4 text-sm">', (string) $this->repository->show($this->project, $edit->commit_sha, 'resources/js/pages/Plans.vue'));
-        $this->assertSame('Redo a change to how <div> looks', $this->repository->log($this->project, 1)[0]['subject']);
+        $this->assertSame('Redo a change to how a box looks', $this->repository->log($this->project, 1)[0]['subject']);
 
         $this->actingAs($this->owner)
             ->delete(route('visual-edits.reversion.destroy', $edit))

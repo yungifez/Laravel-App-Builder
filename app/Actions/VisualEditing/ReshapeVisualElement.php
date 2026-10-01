@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\VisualEdit;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\ElementName;
 use App\VisualEditing\FormattedRevisions;
 use App\VisualEditing\NewPart;
 use App\VisualEditing\SourceLocation;
@@ -88,9 +89,9 @@ class ReshapeVisualElement
                 $revision,
                 [$location->file => $changed['contents']],
                 match ($change) {
-                    VisualEdit::DUPLICATE => "Copy <{$element->tag}>",
-                    VisualEdit::ADD => "Add <{$tag}> after <{$element->tag}>",
-                    default => "Remove <{$element->tag}>",
+                    VisualEdit::DUPLICATE => 'Copy '.ElementName::for($element->tag),
+                    VisualEdit::ADD => 'Add '.ElementName::for($tag).' after '.ElementName::for($element->tag),
+                    default => 'Remove '.ElementName::for($element->tag),
                 }."\n\nIn {$location}.",
                 ['name' => $owner->name, 'email' => $owner->email],
             );

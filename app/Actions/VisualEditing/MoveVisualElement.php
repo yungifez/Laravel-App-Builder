@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\VisualEdit;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\ElementName;
 use App\VisualEditing\FormattedRevisions;
 use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TemplateElement;
@@ -78,12 +79,14 @@ class MoveVisualElement
         [$line, $column] = TemplateOrder::position($moved['contents'], $moved['offset']);
         $now = new SourceLocation($location->file, $line, $column, $location->instance);
 
+        $name = ElementName::for($element->tag);
+
         try {
             $sha = $this->repository->commitFiles(
                 $project,
                 $revision,
                 [$location->file => $moved['contents']],
-                "Move <{$element->tag}> {$placement} another part\n\nIn {$location}, now at {$now}.",
+                "Move {$name} {$placement} another part\n\nIn {$location}, now at {$now}.",
                 ['name' => $owner->name, 'email' => $owner->email],
             );
         } catch (RepositoryConflict $exception) {

@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\VisualEdit;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\ElementName;
 use App\VisualEditing\FormattedRevisions;
 use App\VisualEditing\QuotedWords;
 use App\VisualEditing\SourceLocation;
@@ -78,12 +79,14 @@ class ChangeVisualText
 
         $changed = substr_replace($contents, TemplateText::written($after), $words['offset'], $words['length']);
 
+        $name = ElementName::for($element->tag);
+
         try {
             $sha = $this->repository->commitFiles(
                 $project,
                 $revision,
                 [$location->file => $changed],
-                "Change the words in <{$element->tag}>\n\nIn {$location}.",
+                "Change the words in {$name}\n\nIn {$location}.",
                 ['name' => $owner->name, 'email' => $owner->email],
             );
         } catch (RepositoryConflict $exception) {
@@ -144,12 +147,14 @@ class ChangeVisualText
             $line = substr_count($prefix, "\n") + 1;
             $column = $words['offset'] - (int) strrpos("\n".$prefix, "\n") + 1;
 
+            $name = ElementName::for($element->tag);
+
             try {
                 $sha = $this->repository->commitFiles(
                     $project,
                     $revision,
                     [$file => substr_replace((string) $contents, $after, $words['offset'], $words['length'])],
-                    "Change the words shown in <{$element->tag}>\n\nIn {$file}:{$line}:{$column}, shown by {$location}.",
+                    "Change the words shown in {$name}\n\nIn {$file}:{$line}:{$column}, shown by {$location}.",
                     ['name' => $owner->name, 'email' => $owner->email],
                 );
             } catch (RepositoryConflict $exception) {

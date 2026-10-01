@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\VisualEdit;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\ElementName;
 use App\VisualEditing\FormattedRevisions;
 use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TemplateElement;
@@ -63,12 +64,14 @@ class ChangeVisualLink
 
         $changed = substr_replace($contents, TemplateLink::written($after), $link['offset'], $link['length']);
 
+        $name = ElementName::for($element->tag);
+
         try {
             $sha = $this->repository->commitFiles(
                 $project,
                 $revision,
                 [$location->file => $changed],
-                "Change where <{$element->tag}> goes\n\nIn {$location}.",
+                "Change where {$name} goes\n\nIn {$location}.",
                 ['name' => $owner->name, 'email' => $owner->email],
             );
         } catch (RepositoryConflict $exception) {

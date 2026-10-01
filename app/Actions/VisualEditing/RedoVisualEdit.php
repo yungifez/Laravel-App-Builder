@@ -4,6 +4,7 @@ namespace App\Actions\VisualEditing;
 
 use App\Models\User;
 use App\Models\VisualEdit;
+use App\VisualEditing\ElementName;
 use Illuminate\Validation\ValidationException;
 
 class RedoVisualEdit
@@ -25,6 +26,9 @@ class RedoVisualEdit
             throw ValidationException::withMessages(['edit' => __('This change is already in place.')]);
         }
 
+        $name = ElementName::for($edit->tag);
+        $picture = $edit->tag === 'img' ? 'the new picture' : "the new picture in {$name}";
+
         // A move, new words, a new link address, a new picture, a copy or a
         // removal put back the whole file; a new look puts back only the
         // element's classes.
@@ -34,14 +38,14 @@ class RedoVisualEdit
                 (string) $edit->revert_sha,
                 $edit->commit_sha,
                 match ($edit->kind()) {
-                    'move' => "Redo moving <{$edit->tag}>",
-                    'link' => "Redo where <{$edit->tag}> goes",
-                    'picture' => "Redo the new picture in <{$edit->tag}>",
+                    'move' => "Redo moving {$name}",
+                    'link' => "Redo where {$name} goes",
+                    'picture' => "Redo {$picture}",
                     'theme' => "Redo a change to the app's colours",
-                    'duplicate' => "Redo copying <{$edit->tag}>",
-                    'add' => "Redo adding <{$edit->tag}>",
-                    'remove' => "Redo removing <{$edit->tag}>",
-                    default => "Redo new words in <{$edit->tag}>",
+                    'duplicate' => "Redo copying {$name}",
+                    'add' => "Redo adding {$name}",
+                    'remove' => "Redo removing {$name}",
+                    default => "Redo new words in {$name}",
                 }."\n\nThis makes commit {$edit->commit_sha} again.",
                 $owner,
             )
@@ -49,7 +53,7 @@ class RedoVisualEdit
                 $edit,
                 $edit->classes_before,
                 $edit->classes_after,
-                "Redo a change to how <{$edit->tag}> looks\n\nThis makes commit {$edit->commit_sha} again.",
+                "Redo a change to how {$name} looks\n\nThis makes commit {$edit->commit_sha} again.",
                 $owner,
             );
 
