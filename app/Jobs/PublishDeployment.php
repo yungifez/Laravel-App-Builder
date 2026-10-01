@@ -111,7 +111,8 @@ class PublishDeployment implements ShouldQueue
 
     /**
      * Run the setup steps, stopping at the first failure, then every check,
-     * and record each result on the deployment.
+     * and record each result on the deployment as it finishes, so the owner
+     * sees which check runs.
      */
     protected function passes(RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace): bool
     {
@@ -127,10 +128,9 @@ class PublishDeployment implements ShouldQueue
         foreach ($setup as $step) {
             $command = $runWorkspaceCommand->handle($workspace, $step['command'], $step['timeout']);
             $results[] = ['name' => $step['name'], 'passed' => $command->exit_code === 0 && ! $command->timed_out];
+            $this->deployment->update(['checks' => $results]);
 
             if (! end($results)['passed']) {
-                $this->deployment->update(['checks' => $results]);
-
                 return false;
             }
         }
@@ -139,9 +139,8 @@ class PublishDeployment implements ShouldQueue
             $command = $runWorkspaceCommand->handle($workspace, $step['command'], $step['timeout']);
             $results[] = ['name' => $step['name'], 'passed' => $command->exit_code === 0 && ! $command->timed_out];
             $passed = $passed && end($results)['passed'];
+            $this->deployment->update(['checks' => $results]);
         }
-
-        $this->deployment->update(['checks' => $results]);
 
         return $passed;
     }

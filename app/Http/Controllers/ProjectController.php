@@ -17,6 +17,7 @@ use App\Actions\Projects\StartProjectFromTemplate;
 use App\Actions\Projects\SummarizeChanges;
 use App\Actions\Projects\SummarizeProjectTelemetry;
 use App\Actions\Publishing\DescribeUnpublished;
+use App\Actions\Runs\DescribeRunProgress;
 use App\Actions\VisualEditing\InspectSelection;
 use App\Actions\VisualEditing\ReadAppColors;
 use App\Enums\DeploymentStatus;
@@ -257,6 +258,8 @@ class ProjectController extends Controller
                         'status' => $deployment->status->value,
                         'commit' => $deployment->commit_sha,
                         'checks' => $deployment->checks ?? [],
+                        // Which check runs now, while it is checked first.
+                        'doing' => $deployment->status === DeploymentStatus::Checking ? DescribeRunProgress::checks(count($deployment->checks ?? [])) : null,
                         'error' => $deployment->error,
                         'health' => $deployment->health ?? [],
                         // A count only: the error text is for operators.

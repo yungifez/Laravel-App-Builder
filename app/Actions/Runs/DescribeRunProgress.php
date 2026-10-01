@@ -179,25 +179,35 @@ class DescribeRunProgress
             return null;
         }
 
+        $done = collect($verification->results ?? [])->countBy('stage');
+
+        $text = self::checks((int) ($done['setup'] ?? 0) + (int) ($done['checks'] ?? 0)) ?? __('Trying it the way you asked for it');
+
+        return ['text' => (string) $text, 'changed' => 0];
+    }
+
+    /**
+     * Say which check runs once :done of the setup steps and checks, in
+     * that order, have finished, or null once all have. Changes and
+     * publishing run the same checks, so they say it the same way.
+     */
+    public static function checks(int $done): ?string
+    {
         /** @var list<array{name: string}> $setup */
         $setup = config('builder.verification.setup', []);
         /** @var list<array{name: string}> $checks */
         $checks = config('builder.verification.checks', []);
-        $done = collect($verification->results ?? [])->countBy('stage');
-        $set = (int) ($done['setup'] ?? 0);
-        $checked = (int) ($done['checks'] ?? 0);
+        $checked = $done - count($setup);
 
-        $text = match (true) {
-            $set < count($setup) => __('Getting a fresh copy of your app ready to check'),
-            $checked < count($checks) => __(':check, check :number of :count', [
+        return match (true) {
+            $checked < 0 => (string) __('Getting a fresh copy of your app ready to check'),
+            $checked < count($checks) => (string) __(':check, check :number of :count', [
                 'check' => isset(self::CHECKS[$checks[$checked]['name']]) ? __(self::CHECKS[$checks[$checked]['name']]) : __('Running “:name”', ['name' => $checks[$checked]['name']]),
                 'number' => $checked + 1,
                 'count' => count($checks),
             ]),
-            default => __('Trying it the way you asked for it'),
+            default => null,
         };
-
-        return ['text' => (string) $text, 'changed' => 0];
     }
 
     /**

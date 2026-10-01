@@ -674,6 +674,8 @@ export type DeploymentSummary = {
         | 'failed';
     commit: string;
     checks: { name: string; passed: boolean }[];
+    /** Which check runs now, while it is checked before going online. */
+    doing: string | null;
     error: string | null;
     health: {
         path: string;

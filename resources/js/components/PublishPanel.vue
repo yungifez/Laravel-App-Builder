@@ -101,7 +101,9 @@ const status = computed(() => {
                 icon: LoaderCircle,
                 tone: 'animate-spin text-muted-foreground',
                 title: 'Checking your app first…',
-                detail: 'This takes a few minutes. You can close this.',
+                detail: latest.value.doing
+                    ? `${latest.value.doing}. This takes a few minutes. You can close this.`
+                    : 'This takes a few minutes. You can close this.',
             };
         case latest.value?.status === 'pushing':
             return {
