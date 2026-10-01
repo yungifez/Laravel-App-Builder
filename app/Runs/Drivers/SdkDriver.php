@@ -157,7 +157,9 @@ class SdkDriver extends AgentDriver
         return $run->events()
             ->where('type', 'model_call')
             ->where('data->role', 'coder')
-            ->where('data->status', AgentOutcomeStatus::Completed->value)
+            // A pass that ran out of turns or budget is gone on from too,
+            // when the owner asks it to keep trying.
+            ->where(fn ($query) => $query->where('data->status', AgentOutcomeStatus::Completed->value)->orWhereIn('data->error_kind', self::BUDGET_ERRORS))
             ->reorder('sequence', 'desc')
             ->first();
     }

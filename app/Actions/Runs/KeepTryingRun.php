@@ -12,9 +12,10 @@ class KeepTryingRun
 {
     /**
      * Stops the owner can ask the change to keep working past: it ran out
-     * of attempts to fix what the checks or the second look found.
+     * of attempts to fix what the checks or the second look found, or of
+     * turns or time while it built the change.
      */
-    public const STOPS = ['verification_failed', 'review_findings'];
+    public const STOPS = ['verification_failed', 'review_findings', 'budget_exhausted'];
 
     public function __construct(private TransitionRun $transitionRun) {}
 
@@ -31,12 +32,13 @@ class KeepTryingRun
             && $run->question === null
             && in_array($run->stop_reason, self::STOPS, true)
             && $run->feedback !== null
+            && $run->plan !== null
             && $run->workspace_id !== null;
     }
 
     /**
      * Go on from the work so far and fix what stopped it, with as many
-     * attempts again as it had at the start. The owner decides when a change
+     * attempts, turns and time again as it had at the start. The owner decides when a change
      * is worth more work, not a fixed limit.
      *
      * @throws ValidationException when the change did not stop that way.

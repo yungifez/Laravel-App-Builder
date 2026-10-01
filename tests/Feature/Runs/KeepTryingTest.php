@@ -52,6 +52,8 @@ class KeepTryingTest extends TestCase
         // The next pass is told what to fix, and has as many tries again.
         $this->assertSame(["Tests failed:\nthe count is wrong."], $run->feedback['details']);
         $this->assertSame(2, $run->repairLimit());
+        // Its time and tool operations count again from now.
+        $this->assertTrue($run->budgetSince()?->isAfter(now()->subMinute()));
         Queue::assertPushed(ExecuteRun::class);
 
         $this->actingAs($request->user)
@@ -64,7 +66,7 @@ class KeepTryingTest extends TestCase
     public function test_only_a_change_that_ran_out_of_tries_can_keep_trying()
     {
         $run = $this->outOfTries();
-        $run->update(['stop_reason' => 'budget_exhausted']);
+        $run->update(['stop_reason' => 'no_changes']);
         $request = $run->featureRequest;
 
         $this->actingAs($request->user)
@@ -95,6 +97,8 @@ class KeepTryingTest extends TestCase
             'status' => RunStatus::Verifying,
             'driver' => 'worker',
             'repairs' => 1,
+            'started_at' => now()->subHour(),
+            'plan' => ['summary' => 'Each class shows how many places are left.', 'acceptance_criteria' => ['Each class shows its places left.'], 'assumptions' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null],
             'workspace_id' => Workspace::factory()->create()->id,
         ]);
 

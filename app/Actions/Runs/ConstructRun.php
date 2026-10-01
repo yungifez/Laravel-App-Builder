@@ -93,7 +93,12 @@ class ConstructRun
         } catch (WaitingForWorker) {
             // The change is written outside; handing it back runs this again.
         } catch (BudgetExhausted $exception) {
-            $this->stopForDecision($run, $lease, $exception->getMessage(), 'budget_exhausted');
+            // What is left to do is kept so the owner can ask it to keep
+            // trying: whatever it was fixing, and finishing the change.
+            $this->stopForDecision($run, $lease, $exception->getMessage(), 'budget_exhausted', ['feedback' => [
+                'reason' => 'budget_exhausted',
+                'details' => [...($run->feedback['details'] ?? []), __('You stopped before you finished. Finish the change.')],
+            ]]);
         } catch (ProvidersUnavailable $exception) {
             $this->stopForDecision($run, $lease, $exception->getMessage(), 'providers_unavailable');
         } catch (ConstructionFailed $exception) {

@@ -5,6 +5,7 @@ namespace Tests\Feature\Runs;
 use App\Actions\Runs\AcquireRunLease;
 use App\Actions\Runs\CancelRun;
 use App\Actions\Runs\CompleteRunVerification;
+use App\Actions\Runs\KeepTryingRun;
 use App\Actions\Runs\StartRun;
 use App\Actions\Runs\WriteBrief;
 use App\Ai\Agents\ChangeReviewer;
@@ -211,6 +212,29 @@ class SdkDriverTest extends TestCase
 
         $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
         $this->assertSame('budget_exhausted', $run->events()->where('type', 'status')->get()->last()?->data['reason']);
+    }
+
+    public function test_a_change_out_of_turns_keeps_trying_in_the_same_session_when_the_owner_asks()
+    {
+        $this->agent('claude', 'anthropic', function (Workspace $workspace, AgentTask $task) {
+            $first = count($this->agents['claude']->tasks) === 1;
+            File::put($this->path($workspace, 'app/Team.php'), "<?php\n// half done\n");
+
+            return new AgentOutcome('claude', 'anthropic', null, $first ? AgentOutcomeStatus::Failed : AgentOutcomeStatus::Completed, $first ? null : 'Done.', $first ? 'error_max_turns' : null, session: 'session-1', resumed: $task->resume !== null);
+        });
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
+        $this->assertTrue(KeepTryingRun::possible($run->featureRequest));
+
+        app(KeepTryingRun::class)->handle($run->featureRequest);
+
+        // It goes on in the session that ran out, told only to finish.
+        $again = $this->agents['claude']->tasks[1];
+        $this->assertSame('session-1', $again->resume['session'] ?? null);
+        $this->assertStringContainsString('You stopped before you finished. Finish the change.', $again->resume['prompt'] ?? '');
+        $this->assertSame(RunStatus::Verifying, $run->refresh()->status);
     }
 
     public function test_when_no_provider_can_serve_the_task_the_run_stops_for_the_owner_with_the_workspace_untouched()

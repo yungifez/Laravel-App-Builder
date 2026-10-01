@@ -199,11 +199,15 @@ class ToolExecutor
         $operations = (int) config('builder.construction.budgets.operations');
         $minutes = (int) config('builder.construction.budgets.minutes');
 
-        if ($run->operations()->count() >= $operations) {
+        // Counted since the run started, or since the owner last asked it to
+        // keep trying.
+        $since = $run->budgetSince();
+
+        if ($run->operations()->when($since !== null, fn ($query) => $query->where('created_at', '>=', $since))->count() >= $operations) {
             throw new BudgetExhausted(__('The run used all :count of its tool operations.', ['count' => $operations]));
         }
 
-        if ($run->started_at !== null && $run->started_at->copy()->addMinutes($minutes)->isPast()) {
+        if ($since !== null && $since->addMinutes($minutes)->isPast()) {
             throw new BudgetExhausted(__('The run used all :count minutes of its time.', ['count' => $minutes]));
         }
     }
