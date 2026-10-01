@@ -528,6 +528,28 @@ class ChangeProofTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('proof.1', ['kind' => 'gap', 'text' => 'Only the tests it wrote for itself tried what it does.']));
     }
 
+    public function test_a_change_that_only_failed_where_the_app_failed_before_still_says_what_it_proved()
+    {
+        $request = FeatureRequest::factory()->generated()->create();
+        $this->checked($request, VerificationStatus::Failed);
+        $verification = $request->verifications()->sole();
+        $results = $verification->results;
+        $results[1] = [...$results[1], 'outcome' => 'failed', 'at_start' => 'failed', 'new_problems' => []];
+        $results[1]['tests'][2]['outcome'] = 'failed';
+        $verification->update(['results' => $results]);
+
+        $proof = collect(app(DescribeProof::class)->handle($request->refresh()));
+
+        $this->assertContains(['kind' => 'passed', 'text' => '2 of the app\'s own tests still pass.'], $proof->all());
+        $this->assertContains(['kind' => 'gap', 'text' => 'One test was already failing before this change. Ask me to fix it.'], $proof->all());
+
+        // A problem new with the change takes every claim back.
+        $results[1]['new_problems'] = ['test_seats_follow_members'];
+        $verification->update(['results' => $results]);
+
+        $this->assertSame([], app(DescribeProof::class)->handle($request->refresh()));
+    }
+
     public function test_nothing_is_claimed_until_the_checks_pass()
     {
         $request = FeatureRequest::factory()->generated()->create();

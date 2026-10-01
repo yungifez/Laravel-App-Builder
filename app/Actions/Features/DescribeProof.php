@@ -3,6 +3,7 @@
 namespace App\Actions\Features;
 
 use App\Actions\Context\ReadProjectContext;
+use App\Actions\Runs\CompleteRunVerification;
 use App\Enums\VerificationStatus;
 use App\Features\AppFaults;
 use App\Features\AppRoutes;
@@ -45,7 +46,11 @@ class DescribeProof
     {
         $verification = $featureRequest->verifications()->latest('id')->first();
 
-        if (! in_array($verification?->status, [VerificationStatus::Passed, VerificationStatus::Unverified], true)) {
+        // A check that failed just as it did before the change is the app's
+        // old problem: the change broke nothing, so what it proved still
+        // stands and is said.
+        if (! in_array($verification?->status, [VerificationStatus::Passed, VerificationStatus::Unverified], true)
+            && ($verification?->status !== VerificationStatus::Failed || app(CompleteRunVerification::class)->failures($verification) !== [])) {
             return [];
         }
 
@@ -64,6 +69,7 @@ class DescribeProof
     protected function checks(Verification $verification): array
     {
         $tests = 0;
+        $old = 0;
         $others = 0;
         $separate = false;
         $audited = false;
@@ -75,6 +81,14 @@ class DescribeProof
             if ($result['stage'] === 'security') {
                 $audited = $audited || in_array($result['outcome'], ['passed', 'failed'], true);
                 $warned = $warned || $result['outcome'] === 'failed';
+
+                continue;
+            }
+
+            // Failing before the change too: its other tests still pass.
+            if ($result['outcome'] === 'failed' && $result['stage'] === 'checks' && isset($result['tests'])) {
+                $tests += count(array_filter($result['tests'], fn (array $test) => $test['outcome'] === 'passed'));
+                $old += count(array_filter($result['tests'], fn (array $test) => $test['outcome'] === 'failed'));
 
                 continue;
             }
@@ -93,7 +107,9 @@ class DescribeProof
         }
 
         return array_values(array_filter([
-            $tests > 0 ? ['kind' => 'passed', 'text' => trans_choice('The app\'s own test still passes.|All :count of the app\'s own tests still pass.', $tests)] : null,
+            $tests > 0 && $old === 0 ? ['kind' => 'passed', 'text' => trans_choice('The app\'s own test still passes.|All :count of the app\'s own tests still pass.', $tests)] : null,
+            $tests > 0 && $old > 0 ? ['kind' => 'passed', 'text' => trans_choice(':count of the app\'s own tests still passes.|:count of the app\'s own tests still pass.', $tests)] : null,
+            $old > 0 ? ['kind' => 'gap', 'text' => trans_choice('One test was already failing before this change. Ask me to fix it.|:count tests were already failing before this change. Ask me to fix them.', $old)] : null,
             $others > 0 ? ['kind' => 'passed', 'text' => trans_choice(':count more check on the code passed.|:count more checks on the code passed.', $others)] : null,
             $separate ? ['kind' => 'passed', 'text' => __('Separate checks, written before the work began, pass too.'), 'evidence' => true] : null,
             // No separate checks were written for this change, so only its own
