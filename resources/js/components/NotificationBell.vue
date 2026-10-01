@@ -19,6 +19,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { when } from '@/lib/when';
 import type { OwnerNotification } from '@/types';
 
 const page = usePage();
@@ -144,6 +145,21 @@ async function allow(): Promise<void> {
                         <span
                             class="block truncate text-xs text-muted-foreground"
                             >{{ item.body }}</span
+                        >
+                        <span
+                            v-if="item.app || item.created_at"
+                            class="mt-0.5 block truncate text-xs text-muted-foreground/70"
+                            data-test="notification-where"
+                            >{{
+                                [
+                                    item.app,
+                                    item.created_at
+                                        ? when(item.created_at)
+                                        : null,
+                                ]
+                                    .filter(Boolean)
+                                    .join(' · ')
+                            }}</span
                         >
                     </span>
                 </Link>

@@ -5,6 +5,7 @@ namespace Tests\Feature\Runs;
 use App\Actions\Runs\TransitionRun;
 use App\Enums\RunStatus;
 use App\Models\FeatureRequest;
+use App\Models\Project;
 use App\Models\Run;
 use App\Models\User;
 use App\Notifications\ChangeNeedsYou;
@@ -64,6 +65,32 @@ class OwnerNotificationTest extends TestCase
             ->assertRedirect(route('projects.show', ['project' => $run->featureRequest->project, 'change' => $run->featureRequest->uuid]));
 
         $this->assertNotNull($notification->fresh()->read_at);
+    }
+
+    public function test_trying_a_stopped_change_again_replaces_its_unread_note()
+    {
+        $first = Run::factory()->implementing()->create();
+        $owner = $first->featureRequest->user;
+        app(TransitionRun::class)->handle($first, RunStatus::Failed);
+
+        $again = FeatureRequest::factory()->for($first->featureRequest->project)->for($owner)->create(['retry_of_id' => $first->feature_request_id]);
+        app(TransitionRun::class)->handle(Run::factory()->implementing()->for($again)->create(), RunStatus::Failed);
+
+        $this->assertSame($again->id, $owner->notifications()->sole()->data['feature_request_id']);
+    }
+
+    public function test_each_notification_names_the_app_it_is_about_and_when()
+    {
+        $owner = User::factory()->create();
+        $project = Project::factory()->for($owner, 'owner')->create(['name' => 'Studio Classes']);
+        $run = Run::factory()->implementing()->for(FeatureRequest::factory()->for($project)->for($owner))->create();
+        app(TransitionRun::class)->handle($run, RunStatus::Failed);
+
+        $this->actingAs($owner)
+            ->get(route('projects.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('notifications.items.0.app', 'Studio Classes')
+                ->whereType('notifications.items.0.created_at', 'string'));
     }
 
     public function test_looking_at_the_change_or_marking_all_read_clears_the_notifications()

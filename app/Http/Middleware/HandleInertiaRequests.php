@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Arr;
@@ -45,18 +46,32 @@ class HandleInertiaRequests extends Middleware
                 'operator' => (bool) $request->user()?->can('viewOperations'),
             ],
             // What needs the owner, newest first. Pages poll this on its own.
-            'notifications' => fn () => $request->user() === null ? null : [
-                'unread' => $request->user()->unreadNotifications()->count(),
-                'items' => $request->user()->notifications()->latest()->limit(8)->get()
-                    ->map(fn (DatabaseNotification $notification) => [
-                        'id' => $notification->id,
-                        // What it says only: the numbers it keeps stay here.
-                        ...Arr::only($notification->data, ['kind', 'title', 'body']),
-                        'read' => $notification->read_at !== null,
-                        'created_at' => $notification->created_at?->toIso8601String(),
-                    ]),
-            ],
+            'notifications' => fn () => $request->user() === null ? null : $this->notifications($request->user()),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+        ];
+    }
+
+    /**
+     * Get what needs the owner, newest first, each named with the app it
+     * is about, as one list holds every app's news.
+     *
+     * @return array{unread: int, items: array<int, array<mixed>>}
+     */
+    protected function notifications(User $user): array
+    {
+        $notifications = $user->notifications()->latest()->limit(8)->get();
+        $apps = $user->projects()->whereIn('id', $notifications->pluck('data.project_id')->filter())->pluck('name', 'id');
+
+        return [
+            'unread' => $user->unreadNotifications()->count(),
+            'items' => $notifications->map(fn (DatabaseNotification $notification) => [
+                'id' => $notification->id,
+                // What it says only: the numbers it keeps stay here.
+                ...Arr::only($notification->data, ['kind', 'title', 'body']),
+                'app' => $apps->get($notification->data['project_id'] ?? null),
+                'read' => $notification->read_at !== null,
+                'created_at' => $notification->created_at?->toIso8601String(),
+            ])->values()->all(),
         ];
     }
 }

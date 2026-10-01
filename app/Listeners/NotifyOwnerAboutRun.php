@@ -4,6 +4,7 @@ namespace App\Listeners;
 
 use App\Enums\RunStatus;
 use App\Events\RunStatusChanged;
+use App\Models\FeatureRequest;
 use App\Notifications\ChangeNeedsYou;
 
 class NotifyOwnerAboutRun
@@ -27,13 +28,36 @@ class NotifyOwnerAboutRun
             return;
         }
 
-        // One note per change: a newer one replaces any the owner has not read.
+        // One note per change: a newer one replaces any the owner has not
+        // read. Trying a stopped change again is the same change.
+        $tries = $this->tries($featureRequest);
         $owner->unreadNotifications()
             ->where('type', ChangeNeedsYou::class)
             ->get()
-            ->filter(fn ($notification) => ($notification->data['feature_request_id'] ?? null) === $featureRequest->id)
+            ->filter(fn ($notification) => in_array($notification->data['feature_request_id'] ?? null, $tries, true))
             ->each->delete();
 
         $owner->notify(new ChangeNeedsYou($featureRequest, $event->to));
+    }
+
+    /**
+     * Get the change and every earlier try of it that it tries again.
+     *
+     * @return list<int>
+     */
+    protected function tries(FeatureRequest $featureRequest): array
+    {
+        $tries = [$featureRequest->id];
+
+        while ($featureRequest->retry_of_id !== null && ! in_array($featureRequest->retry_of_id, $tries, true)) {
+            $tries[] = $featureRequest->retry_of_id;
+            $featureRequest = FeatureRequest::query()->find($featureRequest->retry_of_id);
+
+            if ($featureRequest === null) {
+                break;
+            }
+        }
+
+        return $tries;
     }
 }
