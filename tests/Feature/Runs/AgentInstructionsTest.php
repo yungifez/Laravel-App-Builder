@@ -25,6 +25,13 @@ class AgentInstructionsTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/platform|control plane|inspector|builder/i', $instructions);
     }
 
+    public function test_the_reviewer_holds_every_change_to_the_guidance_the_owner_kept()
+    {
+        $instructions = (string) (new ChangeReviewer)->instructions();
+
+        $this->assertStringContainsString('goes against a point under "Engineering direction"', $instructions);
+    }
+
     /**
      * @return array<string, array{class-string}>
      */

@@ -37,7 +37,8 @@ class ChangeReviewer implements Agent, HasStructuredOutput
         - something the change's code did while the tests ran that is listed as recorded (it saved data on a GET request, kept what it saved after refusing the request, or sent mail, a job, a notification or an outside call while a database transaction was open), unless the request or the plan asks for exactly that;
         - something listed as left behind when a failure was caused (the request had already saved when it ended in a server error, it had already sent mail, a job or an outside call when its save was lost, or it kept one part of what it was saving while the rest was lost), unless the request or the plan asks for exactly that;
         - a failing or errored verification result;
-        - a change to anything listed under "Must stay as it is".
+        - a change to anything listed under "Must stay as it is";
+        - code that goes against a point under "Engineering direction" in the project notes: the owner chose to keep that guidance for every change, unless the request asks for exactly that.
         Report style issues and small improvements as minor findings.
 
         Set approved to true only when there are no blocking findings. Name the file for each finding where you can.
