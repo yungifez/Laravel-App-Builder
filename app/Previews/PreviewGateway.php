@@ -110,7 +110,9 @@ class PreviewGateway
 
         // The owner can have the app open in the builder and in a tab of its
         // own at once, so a new session does not end the ones before it.
-        $sessions = collect(Cache::get(self::sessionsKey($preview), []))
+        /** @var array<string, int> $open */
+        $open = Cache::get(self::sessionsKey($preview), []);
+        $sessions = collect($open)
             ->filter(fn (int $expires) => $expires > now()->getTimestamp())
             ->put(hash('sha256', $secret), now()->addMinutes($minutes)->getTimestamp())
             ->sortDesc()
