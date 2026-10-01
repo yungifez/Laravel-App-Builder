@@ -1379,7 +1379,19 @@ const checks = computed(() => {
                             </template>
                             <template v-else>
                                 <CircleCheck class="size-4 text-green-600" />
-                                <span>Kept. It's part of your app.</span>
+                                <span
+                                    >Kept. It's part of your app.<span
+                                        v-if="request.tests_added > 0"
+                                        class="ml-1 text-muted-foreground"
+                                        data-test="change-kept-tests"
+                                    >
+                                        {{
+                                            request.tests_added === 1
+                                                ? 'Its test now runs on every change, so it keeps working.'
+                                                : `Its ${request.tests_added} tests now run on every change, so it keeps working.`
+                                        }}</span
+                                    ></span
+                                >
                                 <Form
                                     v-bind="
                                         FeatureRequestReversionController.store.form(

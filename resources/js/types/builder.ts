@@ -156,6 +156,7 @@ export type FeatureRequestDetail = {
     steps: ChangeStep[];
     files: ChangedFile[];
     commit_sha: string | null;
+    tests_added: number;
     accepted_at: string | null;
     revert_sha: string | null;
     reverted_at: string | null;

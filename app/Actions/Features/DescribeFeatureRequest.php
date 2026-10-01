@@ -56,6 +56,9 @@ class DescribeFeatureRequest
                 'steps' => $featureRequest->steps ?? [],
                 'files' => $this->files($featureRequest),
                 'commit_sha' => $featureRequest->commit_sha,
+                // Tests it adds keep what it does working through every
+                // later change; said when it is kept.
+                'tests_added' => count(PatchSummary::addedTests($featureRequest->patch)),
                 'accepted_at' => $featureRequest->accepted_at?->toIso8601String(),
                 'revert_sha' => $featureRequest->revert_sha,
                 'reverted_at' => $featureRequest->reverted_at?->toIso8601String(),
