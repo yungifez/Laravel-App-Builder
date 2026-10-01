@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\VisualEdit;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\FormattedRevisions;
 use App\VisualEditing\QuotedWords;
 use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TemplateElement;
@@ -18,6 +19,7 @@ class ChangeVisualText
     public function __construct(
         private ProjectRepository $repository,
         private FollowLocation $followLocation,
+        private FormattedRevisions $formatted,
     ) {}
 
     /**
@@ -41,6 +43,8 @@ class ChangeVisualText
     public function handle(Preview $preview, User $owner, SourceLocation $location, string $before, string $after, string $revision, array $places = []): VisualEdit
     {
         $project = $preview->project;
+        // Formatting since the owner's version changed nothing they see.
+        $revision = $this->formatted->latest($project, $revision);
 
         if (! $preview->editable) {
             throw ValidationException::withMessages(['edit' => __('This preview cannot be edited.')]);

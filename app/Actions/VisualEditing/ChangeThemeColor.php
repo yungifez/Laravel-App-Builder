@@ -7,12 +7,16 @@ use App\Models\User;
 use App\Models\VisualEdit;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\FormattedRevisions;
 use App\VisualEditing\ThemeColors;
 use Illuminate\Validation\ValidationException;
 
 class ChangeThemeColor
 {
-    public function __construct(private ProjectRepository $repository) {}
+    public function __construct(
+        private ProjectRepository $repository,
+        private FormattedRevisions $formatted,
+    ) {}
 
     /**
      * Change one of the app's theme colours for its light or dark look and
@@ -27,6 +31,8 @@ class ChangeThemeColor
     public function handle(Preview $preview, User $owner, string $mode, string $token, string $after, string $revision): VisualEdit
     {
         $project = $preview->project;
+        // Formatting since the owner's version changed nothing they see.
+        $revision = $this->formatted->latest($project, $revision);
 
         if (! $preview->editable) {
             throw ValidationException::withMessages(['edit' => __('This preview cannot be edited.')]);

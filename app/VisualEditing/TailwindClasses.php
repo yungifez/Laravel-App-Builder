@@ -248,6 +248,21 @@ class TailwindClasses
     }
 
     /**
+     * Whether two class lists are the same classes. Order is ignored: it
+     * does not change how Tailwind styles the element, and the app's
+     * formatter may sort them.
+     */
+    public static function same(string $first, string $second): bool
+    {
+        $first = explode(' ', self::normalize($first));
+        $second = explode(' ', self::normalize($second));
+        sort($first);
+        sort($second);
+
+        return $first === $second;
+    }
+
+    /**
      * Get the utility for a spacing value in pixels, without a prefix:
      * 16 is "4", 15 is "3.75", 1 is "px" and 12.5 is "[12.5px]".
      */

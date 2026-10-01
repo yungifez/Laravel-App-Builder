@@ -831,6 +831,17 @@ return [
             'quiet_ms' => 150,
             'timeout' => 60,
         ],
+        // Design changes are written without the app's formatting. Once an
+        // editable preview shows them, the files they changed are put
+        // through the app's own formatters (construction.formatters) in the
+        // preview's workspace, "after_seconds" after the last change, and
+        // the result is committed. An edit made on the version before such
+        // a commit continues on it for "remember_days".
+        'format' => [
+            'enabled' => (bool) env('BUILDER_PREVIEW_FORMAT', true),
+            'after_seconds' => (int) env('BUILDER_PREVIEW_FORMAT_AFTER_SECONDS', 10),
+            'remember_days' => 7,
+        ],
         'overlay' => resource_path('preview-tools/overlay.js'),
 
         // The app's log inside the workspace. Email the app sends is written

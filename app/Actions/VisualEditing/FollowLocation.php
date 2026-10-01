@@ -4,6 +4,7 @@ namespace App\Actions\VisualEditing;
 
 use App\Models\Project;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\FormattedRevisions;
 use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TemplateElement;
 use App\VisualEditing\TemplateOrder;
@@ -13,7 +14,10 @@ class FollowLocation
     /** The most commits to follow a part through, one at a time. */
     protected const MAX_STEPS = 20;
 
-    public function __construct(private ProjectRepository $repository) {}
+    public function __construct(
+        private ProjectRepository $repository,
+        private FormattedRevisions $formatted,
+    ) {}
 
     /**
      * Find where an element written at a place in one version of the app is
@@ -85,6 +89,10 @@ class FollowLocation
         }
 
         $element = TemplateElement::at($before, $location->line, $location->column);
+
+        if ($this->formatted->after($project, $from) === $to) {
+            return $element === null ? null : self::sameInOrder($before, $after, $element, $location);
+        }
         $whole = $element === null ? null : collect(TemplateOrder::elements($before))->firstWhere('start', $element->start);
 
         if ($element === null || $whole === null) {
@@ -115,6 +123,28 @@ class FollowLocation
 
         return $followed !== null && $followed->tag === $element->tag
             ? new SourceLocation($location->file, (int) $line, $location->column, $location->instance)
+            : null;
+    }
+
+    /**
+     * Find the element in a formatted version of its file: formatting
+     * moves and rewrites lines, but keeps every element, in order.
+     */
+    protected static function sameInOrder(string $before, string $after, TemplateElement $element, SourceLocation $location): ?SourceLocation
+    {
+        $elements = TemplateOrder::elements($before);
+        $index = collect($elements)->search(fn (array $candidate) => $candidate['start'] === $element->start);
+        $formatted = TemplateOrder::elements($after);
+
+        if ($index === false || count($formatted) !== count($elements)) {
+            return null;
+        }
+
+        [$line, $column] = TemplateOrder::position($after, $formatted[$index]['start']);
+        $followed = TemplateElement::at($after, $line, $column);
+
+        return $followed !== null && $followed->tag === $element->tag
+            ? new SourceLocation($location->file, $line, $column, $location->instance)
             : null;
     }
 

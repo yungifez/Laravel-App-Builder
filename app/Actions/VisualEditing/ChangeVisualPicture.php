@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\VisualEdit;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\FormattedRevisions;
 use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TemplateElement;
 use App\VisualEditing\TemplateLink;
@@ -19,6 +20,7 @@ class ChangeVisualPicture
     public function __construct(
         private ProjectRepository $repository,
         private FollowLocation $followLocation,
+        private FormattedRevisions $formatted,
     ) {}
 
     /**
@@ -35,6 +37,8 @@ class ChangeVisualPicture
     public function handle(Preview $preview, User $owner, SourceLocation $location, string $before, UploadedFile $picture, string $revision): VisualEdit
     {
         $project = $preview->project;
+        // Formatting since the owner's version changed nothing they see.
+        $revision = $this->formatted->latest($project, $revision);
 
         if (! $preview->editable) {
             throw ValidationException::withMessages(['edit' => __('This preview cannot be edited.')]);

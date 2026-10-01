@@ -28,6 +28,14 @@ class TailwindClassesTest extends TestCase
         $this->assertSame(['columns' => 3], $values['lg']);
     }
 
+    public function test_the_same_classes_in_another_order_are_the_same()
+    {
+        $this->assertTrue(TailwindClasses::same('flex gap-4  p-4', ' p-4 flex gap-4'));
+        $this->assertTrue(TailwindClasses::same('', '  '));
+        $this->assertFalse(TailwindClasses::same('flex gap-4', 'flex gap-6'));
+        $this->assertFalse(TailwindClasses::same('flex', 'flex flex'));
+    }
+
     public function test_sides_that_differ_read_as_mixed()
     {
         $values = TailwindClasses::read('pt-2 pb-4 px-[15px] -mx-2');

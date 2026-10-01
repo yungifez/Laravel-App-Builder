@@ -1829,6 +1829,22 @@ clean.
 Edits collect on a visual-session branch, commit on save, and get light
 verification.
 
+Direct edits are written without the app's formatting, so the preview shows
+them in about a second. When the editable preview shows the newest version,
+`FormatEditedFiles` waits `builder.preview.format.after_seconds` (10 s). Then
+it runs the app's own formatters (`builder.construction.formatters`) on the
+changed files. The formatters work on copies in the preview's workspace, so
+the running build does not see them. The job commits the result. If the owner
+changed the app meanwhile, it does nothing; the next rebuild asks again.
+
+Formatting moves the app on while the owner may still be editing. So
+`FormattedRevisions` remembers each formatting commit. An edit sent on the
+version before one continues on the formatted version. `FollowLocation` finds
+the element there by its place in the order, because formatting keeps every
+element and its order. Class lists are compared without order, because
+Tailwind ignores order and the formatter may sort the classes. Undo follows the
+element from the edit's commit to the newest version.
+
 ### Both users
 
 Target A: text, size, spacing, alignment, appearance, show/hide, "What this

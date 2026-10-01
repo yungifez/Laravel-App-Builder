@@ -6,13 +6,17 @@ use App\Models\User;
 use App\Models\VisualEdit;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TailwindClasses;
 use App\VisualEditing\TemplateElement;
 use Illuminate\Validation\ValidationException;
 
 class SwapElementClasses
 {
-    public function __construct(private ProjectRepository $repository) {}
+    public function __construct(
+        private ProjectRepository $repository,
+        private FollowLocation $followLocation,
+    ) {}
 
     /**
      * Put back one side of a saved edit (undo or redo) with a new commit.
@@ -35,11 +39,14 @@ class SwapElementClasses
 
         $head = $this->repository->head($project, $branch);
         $contents = $this->repository->show($project, $head, $edit->file);
-        $element = $contents === null ? null : TemplateElement::at($contents, $edit->line, $edit->column);
+        // Later commits, such as formatting, may have moved the element.
+        $location = new SourceLocation($edit->file, $edit->line, $edit->column);
+        $location = $this->followLocation->handle($project, $edit->commit_sha, $head, $location) ?? $location;
+        $element = $contents === null ? null : TemplateElement::at($contents, $location->line, $location->column);
 
         if ($element === null
             || $element->tag !== $edit->tag
-            || TailwindClasses::normalize($element->classes['value'] ?? '') !== TailwindClasses::normalize($from)) {
+            || ! TailwindClasses::same($element->classes['value'] ?? '', $from)) {
             throw ValidationException::withMessages(['edit' => __('This part was changed since, so going back would lose that change.')]);
         }
 

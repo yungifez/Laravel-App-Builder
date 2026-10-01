@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\VisualEdit;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\FormattedRevisions;
 use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TailwindClasses;
 use App\VisualEditing\TemplateElement;
@@ -18,6 +19,7 @@ class ApplyVisualEdit
     public function __construct(
         private ProjectRepository $repository,
         private FollowLocation $followLocation,
+        private FormattedRevisions $formatted,
         private ReadAppColors $readAppColors,
         private ReadAppTheme $readAppTheme,
     ) {}
@@ -41,6 +43,8 @@ class ApplyVisualEdit
     public function handle(Preview $preview, User $owner, SourceLocation $location, string $revision, string $expected, string $device, array $changes): VisualEdit
     {
         $project = $preview->project;
+        // Formatting since the owner's version changed nothing they see.
+        $revision = $this->formatted->latest($project, $revision);
 
         if (! $preview->editable) {
             throw ValidationException::withMessages(['edit' => __('This preview cannot be edited.')]);
@@ -63,7 +67,7 @@ class ApplyVisualEdit
 
         $before = $element->classes['value'] ?? '';
 
-        if (TailwindClasses::normalize($before) !== TailwindClasses::normalize($expected)) {
+        if (! TailwindClasses::same($before, $expected)) {
             throw ValidationException::withMessages(['edit' => __('This part was changed since you picked it. Pick it again to see how it looks now.')]);
         }
 

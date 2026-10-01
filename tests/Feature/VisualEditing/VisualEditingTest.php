@@ -3,7 +3,9 @@
 namespace Tests\Feature\VisualEditing;
 
 use App\Actions\Projects\CreateProject;
+use App\Actions\Workspaces\FormatAppFiles;
 use App\Enums\PreviewStatus;
+use App\Jobs\FormatEditedFiles;
 use App\Jobs\RebuildPreview;
 use App\Jobs\StartPreview;
 use App\Models\Preview;
@@ -11,6 +13,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\FormattedRevisions;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
@@ -496,6 +499,8 @@ class VisualEditingTest extends TestCase
 
     public function test_a_watching_preview_is_rebuilt_by_moving_the_marked_files_in_at_once()
     {
+        // Formatting afterwards is not part of the rebuild.
+        Queue::fake([FormatEditedFiles::class]);
         $preview = $this->runningPreview(['watching' => true]);
         Event::fakeFor(fn () => $this->repository->commitFiles($this->project, (string) $preview->revision, ['resources/js/pages/Plans.vue' => "<template><div class=\"gap-8\" /></template>\n"], 'Edit', null));
         $this->repository->git($this->project, ['rm', '-q', 'resources/js/pages/Home.vue']);
@@ -535,6 +540,108 @@ class VisualEditingTest extends TestCase
         $preview->refresh();
         $this->assertFalse($preview->watching);
         $this->assertSame($this->repository->head($this->project), $preview->revision);
+    }
+
+    public function test_once_the_preview_shows_a_design_change_its_files_are_formatted_by_the_apps_formatters_and_committed()
+    {
+        Queue::fake([FormatEditedFiles::class]);
+        config(['builder.construction.formatters' => [['name' => 'Frontend', 'command' => ['fmt'], 'extensions' => ['vue']]]]);
+        $preview = $this->runningPreview();
+        $old = (string) $preview->revision;
+        Event::fakeFor(fn () => $this->repository->commitFiles($this->project, $old, ['resources/js/pages/Plans.vue' => "<template><div class=\"p-4 flex\" /></template>\n", 'README.md' => "Hi\n"], 'Edit', null));
+        $edited = $this->repository->head($this->project);
+
+        RebuildPreview::dispatchSync($preview);
+
+        Queue::assertPushed(FormatEditedFiles::class, fn (FormatEditedFiles $job) => $job->revision === $edited && $job->delay !== null);
+
+        $workspace = (string) $preview->workspace->driver_id;
+        $this->driver->onExec = function (string $id, array $command) {
+            foreach (array_slice($command, 1) as $path) {
+                if ($command[0] === 'fmt' && isset($this->driver->files["{$id}:{$path}"])) {
+                    $this->driver->files["{$id}:{$path}"] = str_replace('p-4 flex', 'flex p-4', $this->driver->files["{$id}:{$path}"]);
+                }
+            }
+
+            return new CommandResult(exitCode: 0, output: '', errorOutput: '', durationMs: 5);
+        };
+
+        (new FormatEditedFiles($preview, $edited))->handle($this->repository, app(FormatAppFiles::class), app(FormattedRevisions::class));
+
+        $head = $this->repository->head($this->project);
+        $this->assertNotSame($edited, $head);
+        $this->assertSame('Format the code of recent design changes', $this->repository->log($this->project, 1)[0]['subject']);
+        $this->assertSame("<template><div class=\"flex p-4\" /></template>\n", $this->repository->show($this->project, $head, 'resources/js/pages/Plans.vue'));
+        $this->assertSame($head, app(FormattedRevisions::class)->after($this->project, $edited));
+
+        // Formatted as copies in a directory of ours, removed afterwards.
+        $format = collect($this->driver->executed)->pluck('command')->firstWhere(0, 'fmt');
+        $this->assertCount(2, $format);
+        $this->assertStringStartsWith('node_modules/.cache/preview-watch/format/', $format[1]);
+        $this->assertStringEndsWith('/resources/js/pages/Plans.vue', $format[1]);
+        $this->assertContains(['rm', '-rf', '--', substr($format[1], 0, -strlen('/resources/js/pages/Plans.vue'))], collect($this->driver->executed)->pluck('command')->all());
+        // The commit rebuilds the preview, like any other.
+        $this->assertSame("<template><div class=\"flex p-4\" /></template>\n", $this->driver->files["{$workspace}:resources/js/pages/Plans.vue"]);
+        $this->assertSame($head, $preview->fresh()->revision);
+    }
+
+    public function test_files_are_not_formatted_once_the_app_has_moved_on_from_the_version_the_preview_shows()
+    {
+        Queue::fake([FormatEditedFiles::class]);
+        config(['builder.construction.formatters' => [['name' => 'Frontend', 'command' => ['fmt'], 'extensions' => ['vue']]]]);
+        $preview = $this->runningPreview();
+        $old = (string) $preview->revision;
+        Event::fakeFor(fn () => $this->repository->commitFiles($this->project, $old, ['resources/js/pages/Plans.vue' => "<template />\n"], 'Edit', null));
+        $edited = $this->repository->head($this->project);
+        RebuildPreview::dispatchSync($preview);
+        $this->assertSame($edited, $preview->fresh()->revision);
+        Event::fakeFor(fn () => $this->repository->commitFiles($this->project, $edited, ['README.md' => "Hi\n"], 'Another change', null));
+        $newest = $this->repository->head($this->project);
+        $this->driver->executed = [];
+
+        (new FormatEditedFiles($preview, $edited))->handle($this->repository, app(FormatAppFiles::class), app(FormattedRevisions::class));
+
+        $this->assertSame([], $this->driver->executed);
+        $this->assertSame($newest, $this->repository->head($this->project));
+    }
+
+    public function test_an_edit_sent_on_the_version_before_formatting_continues_on_the_formatted_version()
+    {
+        Queue::fake();
+        $preview = $this->runningPreview();
+        $old = (string) $preview->revision;
+        $formatted = str_replace(
+            '<div class="flex gap-4 p-4 text-sm">',
+            "<div\n            class=\"text-sm flex p-4 gap-4\"\n        >",
+            self::CARD,
+        );
+        Event::fakeFor(fn () => $this->repository->commitFiles($this->project, $old, ['resources/js/pages/Plans.vue' => $formatted], 'Format the code of recent design changes', null));
+        $head = $this->repository->head($this->project);
+        app(FormattedRevisions::class)->record($this->project, $old, $head);
+
+        $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
+            'preview' => $preview->uuid,
+            'target' => 'resources/js/pages/Plans.vue:2:5',
+            'revision' => $old,
+            'expected' => 'flex gap-4 p-4 text-sm',
+            'device' => 'base',
+            'changes' => ['gap' => 24],
+        ])->assertSessionHasNoErrors();
+
+        $edit = $this->project->visualEdits()->sole();
+        $this->assertSame($head, $edit->base_revision);
+        $this->assertStringContainsString('class="text-sm flex p-4 gap-6"', (string) $this->repository->show($this->project, $this->repository->head($this->project), 'resources/js/pages/Plans.vue'));
+
+        // Formatting again sorts the classes; undo still finds the part.
+        $edited = $this->repository->head($this->project);
+        $sorted = str_replace('text-sm flex p-4 gap-6', 'flex gap-6 p-4 text-sm', (string) $this->repository->show($this->project, $edited, 'resources/js/pages/Plans.vue'));
+        Event::fakeFor(fn () => $this->repository->commitFiles($this->project, $edited, ['resources/js/pages/Plans.vue' => "<!-- formatted -->\n".$sorted], 'Format the code of recent design changes', null));
+
+        $this->actingAs($this->owner)
+            ->post(route('visual-edits.reversion.store', $edit))
+            ->assertSessionHasNoErrors();
+
+        $this->assertStringContainsString('class="text-sm flex p-4 gap-4"', (string) $this->repository->show($this->project, $this->repository->head($this->project), 'resources/js/pages/Plans.vue'));
     }
 
     public function test_any_new_commit_brings_the_editable_preview_up_to_date()

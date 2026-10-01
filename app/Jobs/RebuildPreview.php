@@ -128,6 +128,9 @@ class RebuildPreview implements ShouldQueue
 
             $preview->update(['revision' => $head, 'rebuilt_at' => now(), 'error' => null]);
             $record->update(['status' => 'rebuilt', 'finished_at' => now()]);
+
+            // The rebuild is done either way; formatting is a later tidy-up.
+            rescue(fn () => FormatEditedFiles::after($preview, $head, array_keys(array_filter($changed, fn (bool $deleted) => ! $deleted))));
         } catch (Throwable $exception) {
             report($exception);
 
