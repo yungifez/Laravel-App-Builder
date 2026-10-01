@@ -42,9 +42,10 @@ class DescribeUnpublished
         $commits = array_values(array_filter(explode("\n", trim($result->output()))));
 
         // A request kept and undone since the online version changes nothing
-        // online, so it is left out of both lists.
-        $added = $project->featureRequests()->whereIn('commit_sha', $commits)->whereNull('reverted_at')->orderBy('accepted_at')->get();
-        $undone = $project->featureRequests()->whereIn('revert_sha', $commits)->whereNotIn('commit_sha', $commits)->orderBy('reverted_at')->get();
+        // online, so it is left out of both lists. Requests kept or undone
+        // in the same moment stay in the order they were made.
+        $added = $project->featureRequests()->whereIn('commit_sha', $commits)->whereNull('reverted_at')->orderBy('accepted_at')->orderBy('id')->get();
+        $undone = $project->featureRequests()->whereIn('revert_sha', $commits)->whereNotIn('commit_sha', $commits)->orderBy('reverted_at')->orderBy('id')->get();
 
         $asked = fn (FeatureRequest $featureRequest) => ['id' => $featureRequest->uuid, 'asked' => $featureRequest->prompt];
 
