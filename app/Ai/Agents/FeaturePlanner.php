@@ -32,7 +32,7 @@ class FeaturePlanner implements Agent, HasStructuredOutput
         - current_behavior: what the application does now in the part the request is about, in plain words, from the project notes and files. Write "New" when nothing like it exists yet.
         - summary: one or two plain sentences the owner can understand.
         - commit_subject: the git commit subject the application's own developer would write for this change: imperative, under 60 characters, about the code, for example "Add a phone number to the contact form". Do not quote the request.
-        - acceptance_criteria: observable behaviour that must hold when the change is done, including who may and may not do things.
+        - acceptance_criteria: observable behaviour that must hold when the change is done, including who may and may not do things. The owner reads them, so write what a person sees or can do, without code words: "A team with no description shows only its name", not "A team with a null description".
         - assumptions: decisions you made where the request was silent. Prefer the conventional Laravel choice.
         - tasks: concrete, ordered instructions for a developer who will make the change with file tools. Name the files and Laravel features to use (migrations, models, policies, form requests, actions, notifications, Inertia pages, tests).
         - preserve: what must stay as it is, each with the key of the area it belongs to (or null). Take them from the rules and behaviours in the project notes for the areas the change is about and the areas they may also affect, for example "Owners can still refund any amount". List only what a careless change could plausibly break.
