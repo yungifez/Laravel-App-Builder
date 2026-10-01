@@ -16,14 +16,16 @@ import type { ProofLine } from '@/types';
 // shows a change looks right; this shows why to trust it.
 const props = defineProps<{ proof: ProofLine[] }>();
 
-// Passes lead: the first one shows, and the rest fold behind a count so
-// the list stays short. Everything else (problems caught, how far the
-// tests reached, gaps) always shows after them; a gap is never folded.
+// Gaps lead, right under the verdict that counts them, so what is not
+// checked never hides between passes. Then the passes: the first one
+// shows, and the rest fold behind a count so the list stays short. The
+// rest (problems caught, how far the tests reached) always shows last.
+const gaps = computed(() => props.proof.filter((line) => line.kind === 'gap'));
 const passes = computed(() =>
     props.proof.filter((line) => line.kind === 'passed'),
 );
 const others = computed(() =>
-    props.proof.filter((line) => line.kind !== 'passed'),
+    props.proof.filter((line) => line.kind !== 'passed' && line.kind !== 'gap'),
 );
 
 // Each picture keeps roughly its device's shape: phone, tablet, computer.
@@ -39,16 +41,14 @@ const pictures = computed(
 // §10): a gap outranks everything, and "well checked" needs a line that
 // shows the change itself was tried.
 const verdict = computed(() => {
-    const gaps = others.value.filter((line) => line.kind === 'gap').length;
-
-    if (gaps > 0) {
+    if (gaps.value.length > 0) {
         return {
             title: 'Checked, with gaps',
             tone: 'text-amber-600',
             detail:
-                gaps === 1
+                gaps.value.length === 1
                     ? 'One thing below is not checked yet.'
-                    : `${gaps} things below are not checked yet.`,
+                    : `${gaps.value.length} things below are not checked yet.`,
         };
     }
 
@@ -89,6 +89,30 @@ const icons = {
         <p v-if="verdict.detail" class="text-xs text-muted-foreground">
             {{ verdict.detail }}
         </p>
+        <ul
+            v-if="gaps.length > 0"
+            class="space-y-1"
+            data-test="change-proof-gaps"
+        >
+            <li
+                v-for="line in gaps"
+                :key="line.text"
+                class="flex items-start gap-2 text-xs text-muted-foreground"
+            >
+                <CircleDashed class="mt-px size-3.5 shrink-0 text-amber-600" />
+                <div>
+                    {{ line.text }}
+                    <ul
+                        v-if="line.items?.length"
+                        class="mt-0.5 list-disc space-y-0.5 pl-4 marker:text-muted-foreground"
+                    >
+                        <li v-for="item in line.items" :key="item">
+                            {{ item }}
+                        </li>
+                    </ul>
+                </div>
+            </li>
+        </ul>
         <p
             v-if="passes.length > 0"
             class="flex items-start gap-2 text-xs text-muted-foreground"
