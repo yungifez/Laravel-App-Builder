@@ -248,7 +248,10 @@ class ProjectController extends Controller
             ],
             'project' => fn () => [
                 'id' => $project->uuid,
-                ...$project->only('name', 'source_path'),
+                'name' => $project->name,
+                // Where an app brought in came from. An app started here
+                // came from our own template, whose place is ours to keep.
+                'source_path' => $project->started_here ? null : $project->source_path,
                 'published_at' => $this->publishedAt($project),
                 // How many of the app's own tests guard it, as last run.
                 'tests' => TestObservation::latestFor($project)?->testCount(),

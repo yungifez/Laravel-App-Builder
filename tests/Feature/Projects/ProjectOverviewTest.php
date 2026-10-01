@@ -90,6 +90,22 @@ class ProjectOverviewTest extends TestCase
                 ->where('preview.updating', false));
     }
 
+    public function test_only_an_app_brought_in_says_where_it_came_from()
+    {
+        $broughtIn = Project::factory()->create(['source_path' => '/srv/acme']);
+        $startedHere = Project::factory()->create(['started_here' => true]);
+
+        $this->actingAs($broughtIn->owner)
+            ->get(route('projects.show', $broughtIn))
+            ->assertInertia(fn (Assert $page) => $page->where('project.source_path', '/srv/acme'));
+
+        // An app started here came from our own template, whose place on
+        // our servers is not the owner's business.
+        $this->actingAs($startedHere->owner)
+            ->get(route('projects.show', $startedHere))
+            ->assertInertia(fn (Assert $page) => $page->where('project.source_path', null));
+    }
+
     public function test_the_apps_list_says_what_waits_and_when_it_went_live()
     {
         $user = User::factory()->create();

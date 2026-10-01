@@ -3,7 +3,7 @@ import Heading from '@/components/Heading.vue';
 import type { ProjectCommit, ProjectTelemetry } from '@/types';
 
 defineProps<{
-    sourcePath: string;
+    sourcePath: string | null;
     telemetry: ProjectTelemetry;
     history: ProjectCommit[];
 }>();
@@ -22,7 +22,7 @@ function dollars(amount: number | null): string {
 
 <template>
     <div class="space-y-6 text-sm" data-test="project-details">
-        <p class="text-muted-foreground">
+        <p v-if="sourcePath" class="text-muted-foreground">
             Imported from
             <span class="font-mono break-all">{{ sourcePath }}</span>
         </p>

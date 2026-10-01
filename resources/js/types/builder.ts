@@ -8,7 +8,8 @@ export type FeatureRequestStatus =
 export type ProjectSummary = {
     id: string;
     name: string;
-    source_path: string;
+    /** Where an app brought in came from; null for one started here. */
+    source_path: string | null;
     published_at: string | null;
     /** How many of the app's own tests guard it, as last run. */
     tests: number | null;

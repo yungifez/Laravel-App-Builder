@@ -1186,7 +1186,11 @@ function sendOnEnter(event: KeyboardEvent): void {
             <DialogHeader>
                 <DialogTitle>Details for your developer</DialogTitle>
                 <DialogDescription>
-                    Where the app came from, what changes cost, and its history.
+                    {{
+                        project.source_path
+                            ? 'Where the app came from, what changes cost, and its history.'
+                            : 'What changes cost, and the app’s history.'
+                    }}
                 </DialogDescription>
             </DialogHeader>
             <ProjectDetails
