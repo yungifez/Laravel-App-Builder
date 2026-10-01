@@ -439,8 +439,13 @@ function submitOnShortcut(event: KeyboardEvent): void {
                                         <template v-if="project.offline > 0">
                                             <span aria-hidden="true">·</span>
                                             <span data-test="app-offline"
-                                                >{{ project.offline }} not
-                                                online yet</span
+                                                >{{ project.offline }}
+                                                {{
+                                                    project.offline === 1
+                                                        ? 'change'
+                                                        : 'changes'
+                                                }}
+                                                not live yet</span
                                             >
                                         </template>
                                     </span>
@@ -450,24 +455,29 @@ function submitOnShortcut(event: KeyboardEvent): void {
                             <span
                                 class="mt-auto flex items-center justify-between gap-3 text-xs text-muted-foreground tabular-nums"
                             >
-                                <span
-                                    v-if="project.tests"
-                                    class="flex items-center gap-1.5"
-                                    data-test="app-tests"
-                                >
-                                    <ShieldCheck
-                                        class="size-3.5 text-green-600"
-                                    />
-                                    {{ project.tests }}
-                                    {{ project.tests === 1 ? 'test' : 'tests' }}
+                                <span class="flex items-center gap-3">
+                                    <span
+                                        v-if="project.edited_at"
+                                        data-test="app-edited"
+                                        >Edited
+                                        {{ when(project.edited_at) }}</span
+                                    >
+                                    <span
+                                        v-if="project.tests"
+                                        class="flex items-center gap-1.5"
+                                        data-test="app-tests"
+                                    >
+                                        <ShieldCheck
+                                            class="size-3.5 text-green-600"
+                                        />
+                                        {{ project.tests }}
+                                        {{
+                                            project.tests === 1
+                                                ? 'test'
+                                                : 'tests'
+                                        }}
+                                    </span>
                                 </span>
-                                <span
-                                    v-else-if="project.changed_at"
-                                    class="first-letter:uppercase"
-                                    >Changed
-                                    {{ when(project.changed_at) }}</span
-                                >
-                                <span v-else>No changes yet</span>
                                 <span
                                     v-if="project.waiting > 0"
                                     class="rounded-full bg-primary/15 px-2 py-0.5 font-medium text-foreground"

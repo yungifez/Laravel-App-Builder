@@ -34,6 +34,7 @@ use App\Projects\DesignDirection;
 use App\Projects\ProjectRepository;
 use App\Projects\Starter;
 use App\VisualEditing\TailwindClasses;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
@@ -52,16 +53,16 @@ class ProjectController extends Controller
     {
         return Inertia::render('projects/Index', [
             // The app worked on last comes first, as the owner most likely
-            // wants to go back to it.
-            'projects' => $request->user()->projects()->withMax('featureRequests', 'created_at')->get()
-                ->sortByDesc(fn (Project $project) => (string) ($project->getAttribute('feature_requests_max_created_at') ?? $project->created_at?->toDateTimeString()))
+            // wants to go back to it. A design edit counts as work as much as
+            // a request does.
+            'projects' => $request->user()->projects()->withMax('featureRequests', 'created_at')->withMax('visualEdits', 'created_at')->get()
+                ->sortByDesc(fn (Project $project) => $this->editedAt($project))
                 ->values()
                 ->map(fn (Project $project) => [
                     'id' => $project->uuid,
                     'name' => $project->name,
+                    'edited_at' => $this->editedAt($project),
                     'published_at' => $this->publishedAt($project),
-                    'changed_at' => $project->featureRequests()->whereNotNull('commit_sha')->whereNull('reverted_at')
-                        ->latest('accepted_at')->first()?->accepted_at?->toIso8601String(),
                     'waiting' => $summarizeChanges->waiting($project),
                     // Kept changes the version online does not have yet.
                     'offline' => $this->offline($describeUnpublished->handle($project, $repository->exists($project) ? ($repository->head($project, Experiment::mainBranch()) ?: null) : null)),
@@ -73,6 +74,21 @@ class ProjectController extends Controller
             'designs' => array_map(fn (DesignDirection $design) => $design->preview(), DesignDirection::all()),
             'starters' => array_map(fn (Starter $starter) => $starter->toArray(), Starter::all()),
         ]);
+    }
+
+    /**
+     * Get when the owner last worked on the app: asked for a change, edited
+     * the design, or made it.
+     */
+    protected function editedAt(Project $project): ?string
+    {
+        $times = array_filter([
+            $project->getAttribute('feature_requests_max_created_at'),
+            $project->getAttribute('visual_edits_max_created_at'),
+            $project->created_at,
+        ]);
+
+        return $times === [] ? null : collect($times)->map(fn ($time) => CarbonImmutable::parse($time))->max()?->toIso8601String();
     }
 
     /**
@@ -104,13 +120,14 @@ class ProjectController extends Controller
 
     /**
      * Count the changes waiting to go online: requests kept or undone since
-     * the online version, and edits made by hand.
+     * the online version, and the design changes as one, however many
+     * clicks they took.
      *
      * @param  array{added: list<array{id: string, asked: string}>, undone: list<array{id: string, asked: string}>, edits: int}|null  $unpublished
      */
     protected function offline(?array $unpublished): int
     {
-        return $unpublished === null ? 0 : count($unpublished['added']) + count($unpublished['undone']) + $unpublished['edits'];
+        return $unpublished === null ? 0 : count($unpublished['added']) + count($unpublished['undone']) + min($unpublished['edits'], 1);
     }
 
     /**

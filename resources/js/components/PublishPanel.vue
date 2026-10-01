@@ -254,11 +254,10 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                                 v-if="publishing.unpublished?.edits"
                                 class="text-muted-foreground"
                             >
-                                {{
-                                    publishing.unpublished.edits === 1
-                                        ? 'One change you made by hand'
-                                        : `${publishing.unpublished.edits} changes you made by hand`
-                                }}
+                                <!-- Every click in the design editor is
+                                     saved, so their number means nothing
+                                     to the owner -->
+                                Design changes you made
                             </li>
                         </ul>
                     </div>

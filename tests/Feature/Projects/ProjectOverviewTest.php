@@ -103,7 +103,7 @@ class ProjectOverviewTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('projects.0.waiting', 2)
                 ->whereType('projects.0.published_at', 'string')
-                ->whereType('projects.0.changed_at', 'string')
+                ->whereType('projects.0.edited_at', 'string')
                 ->missing('projects.0.source_path'));
     }
 
@@ -117,6 +117,6 @@ class ProjectOverviewTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('projects.0.waiting', 0)
                 ->where('projects.0.published_at', null)
-                ->where('projects.0.changed_at', null));
+                ->whereType('projects.0.edited_at', 'string'));
     }
 }

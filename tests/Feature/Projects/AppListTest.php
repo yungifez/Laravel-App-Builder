@@ -8,6 +8,7 @@ use App\Models\Project;
 use App\Models\TestObservation;
 use App\Models\User;
 use App\Models\Verification;
+use App\Models\VisualEdit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -30,6 +31,23 @@ class AppListTest extends TestCase
                 ->where('projects.0.name', 'Old')
                 ->where('projects.1.name', 'New')
                 ->where('projects.2.name', 'Untouched'));
+    }
+
+    public function test_the_app_worked_on_last_comes_first_even_when_the_work_was_a_design_edit()
+    {
+        $this->freezeSecond();
+        $user = User::factory()->create();
+        $asked = Project::factory()->for($user, 'owner')->create(['name' => 'Asked', 'created_at' => now()->subDays(5)]);
+        FeatureRequest::factory()->for($asked)->create(['created_at' => now()->subDays(2)]);
+        $edited = Project::factory()->for($user, 'owner')->create(['name' => 'Edited', 'created_at' => now()->subDays(5)]);
+        VisualEdit::factory()->create(['project_id' => $edited->id, 'user_id' => $user->id, 'created_at' => now()->subDay()]);
+
+        $this->actingAs($user)
+            ->get(route('projects.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('projects.0.name', 'Edited')
+                ->where('projects.0.edited_at', now()->subDay()->toIso8601String())
+                ->where('projects.1.name', 'Asked'));
     }
 
     public function test_each_app_says_how_many_of_its_own_tests_guard_it()

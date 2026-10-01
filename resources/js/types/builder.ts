@@ -26,7 +26,8 @@ export type ProjectListItem = {
     id: string;
     name: string;
     published_at: string | null;
-    changed_at: string | null;
+    // When the owner last asked for a change, edited the design, or made it.
+    edited_at: string | null;
     waiting: number;
     // Kept changes the version online does not have yet.
     offline: number;
@@ -729,6 +730,8 @@ export type OwnerNotification = {
     kind: 'ready' | 'answered' | 'question' | 'failed';
     title: string;
     body: string;
+    // The app it is about; null once that app is gone.
+    app: string | null;
     read: boolean;
     created_at: string | null;
 };

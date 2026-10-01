@@ -48,6 +48,7 @@ class UnpublishedChangesTest extends TestCase
         $both = $this->kept($this->commit('c.txt', 'Add c'), 'Try a darker page');
         $both->forceFill(['revert_sha' => $this->commit('c.txt', 'Undo c', null), 'reverted_at' => now()])->save();
         VisualEdit::factory()->create(['project_id' => $this->project->id, 'user_id' => $this->owner->id, 'commit_sha' => $this->commit('d.txt', 'Edit the look')]);
+        VisualEdit::factory()->create(['project_id' => $this->project->id, 'user_id' => $this->owner->id, 'commit_sha' => $this->commit('e.txt', 'Edit the look again')]);
         VisualEdit::factory()->create(['project_id' => $this->project->id, 'user_id' => $this->owner->id, 'commit_sha' => $online]);
 
         $this->actingAs($this->owner)
@@ -55,10 +56,11 @@ class UnpublishedChangesTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('publishing.unpublished', [
                 'added' => [['id' => $added->uuid, 'asked' => 'Show prices next to each item', 'data' => []]],
                 'undone' => [['id' => $taken->uuid, 'asked' => 'Show the opening hours']],
-                'edits' => 1,
+                'edits' => 2,
             ]));
 
-        // The apps list counts the same: one kept, one undone, one edit.
+        // The apps list counts one kept, one undone, and the design changes
+        // as one, however many clicks they took.
         $this->actingAs($this->owner)
             ->get(route('projects.index'))
             ->assertInertia(fn (Assert $page) => $page->where('projects.0.offline', 3));
