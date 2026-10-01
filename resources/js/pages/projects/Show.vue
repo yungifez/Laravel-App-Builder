@@ -455,6 +455,16 @@ const phoneView = computed<'chat' | 'design' | 'app'>({
     },
 });
 
+// Picking a screen size is asking to see the app at that size, so the app
+// comes into view when the chat or the code had the screen.
+function showAt(device: typeof app.device): void {
+    showing.value = 'app';
+    app.device = device;
+    pane.value = 'app';
+    chat.full = false;
+    codeFull.value = false;
+}
+
 // The address says when the design side is open, so reloading the page
 // opens it again instead of dropping the owner back in the chat.
 watch(panel, (value) => {
@@ -1062,10 +1072,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                                 : 'text-muted-foreground hover:text-foreground',
                         ]"
                         :data-test="`screen-${screen.key}`"
-                        @click="
-                            showing = 'app';
-                            app.device = screen.key;
-                        "
+                        @click="showAt(screen.key)"
                     >
                         <component :is="screen.icon" class="size-4" />
                     </button>
