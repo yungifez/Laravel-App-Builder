@@ -11,6 +11,7 @@ use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Database\QueryException;
+use Illuminate\Events\Dispatcher as Events;
 use Illuminate\Foundation\Http\Kernel;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Events\RequestSending;
@@ -51,6 +52,32 @@ class Recorder
      * The most things kept for one request, so one request cannot fill the file.
      */
     protected const KEPT = 400;
+
+    /**
+     * The most of the app's own code named for one thing a request did.
+     */
+    protected const FRAMES = 6;
+
+    /**
+     * The framework's calls that say which part of a request runs:
+     * asking if the person may, checking what they sent, the route's own
+     * code, building the answer, a model's hooks, a listener, a job, and
+     * the handling of an error. A call that is not here says nothing.
+     */
+    protected const PHASES = [
+        'Illuminate\\Auth\\Access\\Gate::raw' => 'authorization',
+        'Illuminate\\Foundation\\Http\\FormRequest::passesAuthorization' => 'authorization',
+        'Illuminate\\Foundation\\Http\\FormRequest::validateResolved' => 'validation',
+        'Illuminate\\Validation\\Validator::passes' => 'validation',
+        'Illuminate\\View\\View::render' => 'rendering',
+        'Illuminate\\Http\\Resources\\Json\\JsonResource::resolve' => 'rendering',
+        'Inertia\\Response::toResponse' => 'rendering',
+        'Illuminate\\Events\\Dispatcher::dispatch' => 'listener',
+        'Illuminate\\Queue\\CallQueuedHandler::call' => 'job',
+        'Illuminate\\Foundation\\Exceptions\\Handler::report' => 'error',
+        'Illuminate\\Foundation\\Exceptions\\Handler::render' => 'error',
+        'Illuminate\\Routing\\Route::run' => 'handling',
+    ];
 
     /** @var array<string, mixed>|null */
     protected ?array $operation = null;
@@ -302,7 +329,7 @@ class Recorder
 
     /**
      * Add one thing the request did, with how many transactions of its own
-     * were open around it and the line of the app's code it came from.
+     * were open around it and the code of the app it came from.
      * What a job on the sync queue does is marked: in use that job runs
      * later, on a queue.
      *
@@ -327,7 +354,7 @@ class Recorder
             $effect['open'] = $this->open();
 
             if ($origin) {
-                $effect['at'] = $this->origin();
+                $effect = [...$effect, ...$this->cause()];
             }
 
             if ($this->jobs > 0) {
@@ -430,38 +457,129 @@ class Recorder
     }
 
     /**
-     * Find the line of the app's own code that caused what happens now,
-     * or null when the framework or a package did it by itself. What the
-     * test's own code does inside a request, such as a second person
-     * saving at the same moment, is not the app's either.
+     * Find what caused the thing that happens now, from the calls that led
+     * to it:
+     *
+     * - "at": the nearest line of the app's own code, or null when the
+     *   framework or a package did it by itself. What the test's own code
+     *   does inside a request, such as a second person saving at the same
+     *   moment, is not the app's either.
+     * - "frames": the app's own code on the way, nearest first, each as
+     *   Class::method (or the file, for code outside a class).
+     * - "phase": the part of the request it happened in (see PHASES).
+     *
+     * @return array{at: string|null, phase: string, frames?: list<string>}
      */
-    protected function origin(): ?string
+    protected function cause(): array
     {
         $frames = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 80);
+        $at = null;
+        $own = [];
+        $phase = null;
+        $nearest = true;
+        $delivered = false;
 
         foreach ($frames as $position => $frame) {
+            $class = $frame['class'] ?? '';
             $file = $frame['file'] ?? '';
 
             // Below this frame is whatever sent the request, such as a test.
-            if (($frame['class'] ?? '') === Middleware::class) {
-                return null;
+            if ($class === Middleware::class || ($phase !== null && count($own) >= self::FRAMES)) {
+                break;
+            }
+
+            // The first frames only bring the news to this recorder.
+            $delivered = $delivered || ($class !== '' && $class !== Events::class && ! str_starts_with($class, __NAMESPACE__.'\\'));
+
+            if ($delivered) {
+                $phase ??= $this->phase($frames, $position);
             }
 
             // A middleware that passes the request on did not cause it, and
             // neither did this recorder, wherever its files are.
-            if (str_ends_with($frame['class'] ?? '', '\\Pipeline') || str_starts_with($file, __DIR__.DIRECTORY_SEPARATOR)) {
+            if (str_ends_with($class, '\\Pipeline') || str_starts_with($file, __DIR__.DIRECTORY_SEPARATOR)) {
                 continue;
             }
 
             if (str_starts_with($file, $this->base) && ! str_starts_with($file, $this->base.'vendor/') && ! str_starts_with($file, $this->base.'storage/') && ! str_starts_with($file, $this->base.'public/')) {
                 // The frame after this one names the code this line is in.
-                $in = $frames[$position + 1]['class'] ?? '';
+                $in = $frames[$position + 1] ?? [];
 
-                return $file === $this->testFile || ($in !== '' && is_a($in, TestCase::class, true)) ? null : substr($file, strlen($this->base)).':'.($frame['line'] ?? 0);
+                if ($file === $this->testFile || (($in['class'] ?? '') !== '' && is_a($in['class'], TestCase::class, true))) {
+                    if ($nearest) {
+                        return ['at' => null, 'phase' => 'unknown'];
+                    }
+
+                    break;
+                }
+
+                $name = $this->frameName($in, $file);
+
+                if ($nearest) {
+                    $at = substr($file, strlen($this->base)).':'.($frame['line'] ?? 0);
+                    $nearest = false;
+                }
+
+                if (count($own) < self::FRAMES && end($own) !== $name) {
+                    $own[] = $name;
+                }
             }
         }
 
-        return null;
+        return ['at' => $at, 'phase' => $phase ?? 'unknown', ...($own === [] ? [] : ['frames' => $own])];
+    }
+
+    /**
+     * Name the part of a request a call belongs to, or null when the call
+     * says nothing. The search goes from the thing that happened outward,
+     * so the nearest part wins: a policy asked from a controller is
+     * "authorization", not "handling".
+     *
+     * @param  list<array<string, mixed>>  $frames
+     */
+    protected function phase(array $frames, int $position): ?string
+    {
+        $frame = $frames[$position];
+        $phase = self::PHASES[($frame['class'] ?? '').'::'.$frame['function']] ?? null;
+
+        // A model tells its observers and hooks through the same events.
+        if ($phase === 'listener') {
+            foreach (array_slice($frames, $position + 1, 3) as $behind) {
+                if (($behind['class'] ?? '').'::'.$behind['function'] === 'Illuminate\\Database\\Eloquent\\Model::fireModelEvent') {
+                    return 'model';
+                }
+            }
+        }
+
+        // A pipeline runs each middleware by its "handle".
+        if ($phase === null && $frame['function'] === 'handle' && str_ends_with(str_replace('\\', '/', $frame['file'] ?? ''), '/Illuminate/Pipeline/Pipeline.php')) {
+            return 'middleware';
+        }
+
+        return $phase;
+    }
+
+    /**
+     * Name the app's code a call was made in: its class and method. A
+     * closure is named as the method it is written in when PHP says which,
+     * and code outside a class is named by its file.
+     *
+     * @param  array<string, mixed>  $in  The frame of the code the call was made in
+     */
+    protected function frameName(array $in, string $file): string
+    {
+        $class = (string) ($in['class'] ?? '');
+        $function = (string) ($in['function'] ?? '');
+
+        if ($class === '' || str_starts_with($function, '{closure:'.$this->base)) {
+            return substr($file, strlen($this->base));
+        }
+
+        if (str_contains($function, '{closure')) {
+            $function = preg_match('/::(\w+)\(\):\d+\}/', $function, $found) === 1 ? $found[1] : '{closure}';
+        }
+
+        return $class.'::'.$function;
     }
 
     /**

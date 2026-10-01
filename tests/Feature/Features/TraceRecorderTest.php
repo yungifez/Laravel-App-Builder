@@ -6,10 +6,12 @@ use App\Features\AppFaults;
 use App\Features\AppTraces;
 use App\Models\User;
 use Closure;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
@@ -20,6 +22,7 @@ use Tests\Fixtures\RecordedApp;
 use Tests\Fixtures\RecordedJob;
 use Tests\Fixtures\RecordedMail;
 use Tests\Fixtures\RecordedNotice;
+use Tests\Fixtures\RecordedResource;
 use Tests\TestCase;
 use TraceRecorder\Provider;
 
@@ -250,6 +253,42 @@ class TraceRecorderTest extends TestCase
 
         // Only what the app kept is held against it.
         $this->assertSame(['update users'], array_column(AppTraces::measure([$request], null, ['POST /_recorded/full/{user}'])['findings'], 'what'));
+    }
+
+    public function test_each_thing_names_the_part_of_the_request_it_happened_in_and_the_apps_code_on_the_way()
+    {
+        $user = User::factory()->create();
+        Route::post('/_recorded/parts/{user}', [RecordedApp::class, 'parts'])->middleware('web');
+        Route::post('/_failing/queued', [RecordedApp::class, 'queued']);
+        Route::post('/_failing/thrown', [RecordedApp::class, 'thrown']);
+        Gate::define('record', [RecordedApp::class, 'allowed']);
+        User::saved([RecordedApp::class, 'watched']);
+        Event::listen('recorded', [RecordedApp::class, 'heard']);
+        $this->app->make(ExceptionHandler::class)->reportable(Closure::fromCallable([new RecordedApp, 'reported']));
+        $recorded = $this->record();
+
+        $this->actingAs($user)->post("/_recorded/parts/{$user->id}", ['name' => $user->name])->assertOk();
+        $this->post('/_failing/queued')->assertNoContent();
+        $this->post('/_failing/thrown')->assertStatus(500);
+
+        [$parts, $queued, $thrown] = $recorded();
+        $app = fn (string ...$methods) => array_map(fn (string $method) => RecordedApp::class.'::'.$method, $methods);
+        $seen = fn (array $request) => array_map(fn (array $effect) => [$effect['phase'], AppTraces::verb($effect['sql'] ?? '') ?: $effect['kind'], $effect['frames']], array_values(array_filter($request['effects'], fn (array $effect) => isset($effect['phase']))));
+
+        $this->assertSame([
+            // The framework finds the person of the route by itself.
+            ['middleware', 'select', []],
+            ['authorization', 'select', $app('allowed', 'parts')],
+            ['validation', 'select', $app('parts')],
+            ['handling', 'update', $app('parts')],
+            ['model', 'select', $app('watched', 'parts')],
+            // A closure is named as the method it is written in.
+            ['listener', 'select', $app('heard', 'parts')],
+            // The answer is built after the route's own code has returned.
+            ['rendering', 'select', [RecordedResource::class.'::toArray']],
+        ], $seen($parts));
+        $this->assertSame([['handling', 'job', $app('queued')], ['job', 'select', $app('queued')], ['handling', 'select', $app('queued')]], $seen($queued));
+        $this->assertSame([['handling', 'update', $app('thrown')], ['error', 'select', $app('reported')]], $seen($thrown));
     }
 
     public function test_nothing_fails_for_another_test_or_another_kind_of_thing()

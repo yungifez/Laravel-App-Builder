@@ -1738,6 +1738,17 @@ transactions the request had open. What the test's own code does inside a
 request has no line: a test can play a second person who saves at the same
 moment, and that save is not the app's.
 
+Each query, job, mail, notification and outside call also says where in the
+request it happened (direction 33). `frames` is the app's own code on the way
+to it, nearest first, as `Class::method`, at most six. `phase` is the part of
+the request: `middleware`, `authorization`, `validation`, `handling` (the
+route's own code), `rendering`, `model` (a model's hooks and observers),
+`listener`, `job` or `error`. The recorder reads the phase from a fixed list
+of the framework's calls, from the effect outward, and the nearest one wins.
+A policy that a controller asks is `authorization`, and a value that the
+answer reads late is `rendering`. A call chain that matches nothing is
+`unknown`, never a guess. The boundary rules read these two fields.
+
 The recorder changes no file of the app. The coverage command sets PHP's
 `auto_prepend_file` in an ini file under `storage/logs/test-map/trace`. That
 file gives Laravel a copy of its package list with the recorder's provider

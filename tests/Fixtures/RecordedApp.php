@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use RuntimeException;
@@ -156,6 +157,40 @@ class RecordedApp
         Http::post('https://outside.example/hook', ['user' => $user->id]);
 
         return response()->noContent();
+    }
+
+    /**
+     * Asks if the person may, checks what they sent, saves, tells a
+     * listener, and answers with a resource that reads.
+     */
+    public function parts(User $user, Request $request): RecordedResource
+    {
+        Gate::authorize('record');
+        $request->validate(['name' => 'exists:users,name']);
+        $user->update(['name' => 'Parts']);
+        event('recorded');
+
+        return new RecordedResource($user);
+    }
+
+    public function allowed(User $user): bool
+    {
+        return User::query()->whereKey($user->id)->exists();
+    }
+
+    public function watched(User $user): void
+    {
+        User::query()->whereKey($user->id)->exists();
+    }
+
+    public function heard(): void
+    {
+        array_map(fn () => User::query()->count(), [1]);
+    }
+
+    public function reported(RuntimeException $exception): void
+    {
+        User::query()->count();
     }
 
     public function ran(): Response
