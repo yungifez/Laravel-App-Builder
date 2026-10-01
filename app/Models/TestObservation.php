@@ -91,6 +91,12 @@ class TestObservation extends Model
             $groups[TestMap::describe(Str::beforeLast(basename((string) $test['file']), 'Test.php'))][] = $check;
         }
 
+        // The starter kits' "Example" file names nothing the owner knows,
+        // so its checks go last, as the rest.
+        if (isset($groups['Example'])) {
+            $groups = [...array_diff_key($groups, ['Example' => true]), __('Other checks') => $groups['Example']];
+        }
+
         return array_map(fn (string $name, array $checks) => ['name' => $name, 'checks' => array_values(array_unique($checks))], array_keys($groups), array_values($groups));
     }
 

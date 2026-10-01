@@ -386,6 +386,8 @@ class ProjectUnderstandingTest extends TestCase
             ['id' => 'Tests\\Feature\\PlanTest::test_plans_are_listed', 'file' => 'tests/Feature/PlanTest.php', 'groups' => []],
             // A placeholder that checks nothing about the app.
             ['id' => 'Tests\\Unit\\ExampleTest::test_that_true_is_true', 'file' => 'tests/Unit/ExampleTest.php', 'groups' => []],
+            ['id' => 'Tests\\Feature\\ExampleTest::test_returns_a_successful_response', 'file' => 'tests/Feature/ExampleTest.php', 'groups' => []],
+            ['id' => 'Tests\\Feature\\TeamTest::test_teams_are_listed', 'file' => 'tests/Feature/TeamTest.php', 'groups' => []],
         ]]);
 
         $this->actingAs($this->owner)
@@ -393,6 +395,8 @@ class ProjectUnderstandingTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('checks', [
                 ['name' => 'Password reset', 'checks' => ['Reset password link can be requested', 'Password can be reset with valid token']],
                 ['name' => 'Plan', 'checks' => ['Plans are listed']],
+                ['name' => 'Team', 'checks' => ['Teams are listed']],
+                ['name' => 'Other checks', 'checks' => ['Returns a successful response']],
             ]));
     }
 
