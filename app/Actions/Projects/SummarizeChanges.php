@@ -22,7 +22,7 @@ class SummarizeChanges
      * owner. Otherwise a kept request wins, so a kept follow-up does not
      * leave its parent "waiting" for ever.
      *
-     * @return list<array{id: string, prompt: string, background: bool, summary: string|null, state: string, asks: bool, question: string|null, proved: int, dismissable: bool, updated_at: string|null}>
+     * @return list<array{id: string, prompt: string, background: bool, summary: string|null, state: string, stopped_by_owner: bool, asks: bool, question: string|null, proved: int, dismissable: bool, updated_at: string|null}>
      */
     public function handle(Project $project): array
     {
@@ -55,6 +55,8 @@ class SummarizeChanges
                     'background' => $root->tidy !== null,
                     'summary' => $shown->summary,
                     'state' => $state->value,
+                    // The owner stopped it themselves: nothing went wrong.
+                    'stopped_by_owner' => $state === ChangeState::Stopped && ($shown->status === FeatureRequestStatus::Cancelled || $shown->latestRun?->status === RunStatus::Cancelled),
                     // Waiting on an answer rather than on a look at the result.
                     'asks' => $asks = $state === ChangeState::Waiting && $shown->status === FeatureRequestStatus::Generating,
                     // What the owner is asked, so the list says what to do.
@@ -83,7 +85,7 @@ class SummarizeChanges
     /**
      * What the app's card says about its changes: how many wait for the
      * owner, and whether the newest ask is being made or stopped. A stopped
-     * one the owner set aside no longer counts.
+     * one the owner set aside, or stopped themselves, does not count.
      *
      * @return array{waiting: int, now: 'working'|'stopped'|null}
      */
@@ -96,7 +98,7 @@ class SummarizeChanges
             'waiting' => $changes->where('state', ChangeState::Waiting->value)->count(),
             'now' => match ($newest['state'] ?? null) {
                 ChangeState::Working->value => 'working',
-                ChangeState::Stopped->value => 'stopped',
+                ChangeState::Stopped->value => $newest['stopped_by_owner'] ? null : 'stopped',
                 default => null,
             },
         ];

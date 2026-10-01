@@ -143,11 +143,16 @@ class AppListTest extends TestCase
         $ask($made('Stopped', 2), RunStatus::NeedsUserDecision);
         // Set aside by the owner, so it is nothing to act on.
         $ask($made('Set aside', 3), RunStatus::NeedsUserDecision, ['dismissed_at' => now()]);
+        // Stopped by the owner, so nothing went wrong.
+        $ask($made('Stopped by the owner', 4), RunStatus::Cancelled, ['status' => FeatureRequestStatus::Cancelled]);
+        $ask($made('Stopped by the owner while checked', 5), RunStatus::Cancelled, ['status' => FeatureRequestStatus::Generated, 'patch' => 'diff']);
 
         $this->actingAs($owner)->get(route('projects.index'))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('projects.0.now', 'working')
                 ->where('projects.1.now', 'stopped')
-                ->where('projects.2.now', null));
+                ->where('projects.2.now', null)
+                ->where('projects.3.now', null)
+                ->where('projects.4.now', null));
     }
 }

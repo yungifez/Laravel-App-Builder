@@ -79,6 +79,8 @@ export type ChangeItem = {
     background: boolean;
     summary: string | null;
     state: ChangeState;
+    /** Stopped by the owner, not by something going wrong. */
+    stopped_by_owner: boolean;
     /** Waiting on the owner's answer to a question. */
     asks: boolean;
     /** The question it waits on, when it asks. */

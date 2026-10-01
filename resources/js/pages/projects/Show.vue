@@ -1731,13 +1731,19 @@ function sendOnEnter(event: KeyboardEvent): void {
                                                     'mt-0.5 size-4 shrink-0',
                                                     // The heading says these wait;
                                                     // one amber word per row is enough.
-                                                    item.state === 'waiting'
+                                                    // So is a change the owner
+                                                    // stopped: nothing went wrong.
+                                                    item.state === 'waiting' ||
+                                                    item.stopped_by_owner
                                                         ? 'text-muted-foreground'
                                                         : states[item.state]
                                                               .tone,
                                                 ]"
                                                 :aria-label="
-                                                    states[item.state].label
+                                                    item.stopped_by_owner
+                                                        ? 'You stopped it'
+                                                        : states[item.state]
+                                                              .label
                                                 "
                                             />
                                             <span class="min-w-0 flex-1">
