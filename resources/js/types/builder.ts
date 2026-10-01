@@ -356,6 +356,8 @@ export type ProofLine = {
     evidence?: boolean;
     /** Things listed under the line, such as the rules a part must keep. */
     items?: string[];
+    /** What a passed line checked, in a word or two ("safety", "sign-in"). */
+    topic?: string;
 };
 
 // Everything about one change, as its page and the workspace chat show it.

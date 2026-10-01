@@ -35,6 +35,25 @@ const others = computed(() =>
     props.proof.filter((line) => line.kind !== 'passed' && line.kind !== 'gap'),
 );
 
+// What the folded passes checked, so the fold says it ("such as safety,
+// sign-in and speed") instead of hiding it behind a bare count.
+const folded = computed(() => {
+    const topics = [
+        ...new Set(
+            passes.value
+                .slice(1)
+                // Its pictures already show above the fold.
+                .filter((line) => !line.pictures?.length)
+                .map((line) => line.topic)
+                .filter((topic) => topic !== undefined),
+        ),
+    ].slice(0, 3);
+
+    return topics.length < 2
+        ? topics.join('')
+        : `${topics.slice(0, -1).join(', ')} and ${topics.at(-1)}`;
+});
+
 // Each picture keeps roughly its device's shape: phone, tablet, computer.
 const sizes = ['w-11', 'w-22', 'w-34'];
 
@@ -166,7 +185,10 @@ const icons = {
                 <CircleCheck class="size-3.5 shrink-0 text-green-600" />
                 <span class="underline-offset-2 group-hover:underline">
                     {{ passes.length - 1 }} more
-                    {{ passes.length === 2 ? 'check' : 'checks' }} passed
+                    {{ passes.length === 2 ? 'check' : 'checks' }}
+                    passed<template v-if="folded"
+                        >, such as {{ folded }}</template
+                    >
                 </span>
             </summary>
             <ul class="mt-1 space-y-1 pl-5.5">

@@ -80,7 +80,7 @@ class ChangeProofTest extends TestCase
                 ['kind' => 'passed', 'text' => 'All 3 of the app\'s own tests still pass.'],
                 ['kind' => 'passed', 'text' => '2 more checks on the code passed.'],
                 ['kind' => 'passed', 'text' => 'Separate checks, written before the work began, pass too.', 'evidence' => true],
-                ['kind' => 'passed', 'text' => 'Its code was checked for common safety mistakes, such as unsafe text on a page or unsafe database lookups. None were found.'],
+                ['kind' => 'passed', 'text' => 'Its code was checked for common safety mistakes, such as unsafe text on a page or unsafe database lookups. None were found.', 'topic' => 'safety'],
                 ['kind' => 'reach', 'text' => '3 of those tests run the code this change touched, in Billing and Teams.', 'evidence' => true],
                 // Gaps are said as plainly as passes.
                 ['kind' => 'gap', 'text' => 'Some of the new code is not run by any test yet.'],
@@ -151,7 +151,7 @@ class ChangeProofTest extends TestCase
 
         $this->actingAs($themed->project->owner)
             ->get(route('feature-requests.show', $themed))
-            ->assertInertia(fn (Assert $page) => $page->where('proof.4', ['kind' => 'passed', 'text' => 'Its screens take their colours from your app\'s theme. None were made up.']));
+            ->assertInertia(fn (Assert $page) => $page->where('proof.4', ['kind' => 'passed', 'text' => 'Its screens take their colours from your app\'s theme. None were made up.', 'topic' => 'your colours']));
         // A made-up colour left in is never called clean.
         $this->actingAs($madeUp->project->owner)
             ->get(route('feature-requests.show', $madeUp))
@@ -180,7 +180,7 @@ class ChangeProofTest extends TestCase
 
         $this->actingAs($clean->project->owner)
             ->get(route('feature-requests.show', $clean))
-            ->assertInertia(fn (Assert $page) => $page->where('proof', fn ($proof) => collect($proof)->contains(['kind' => 'passed', 'text' => $said])));
+            ->assertInertia(fn (Assert $page) => $page->where('proof', fn ($proof) => collect($proof)->contains(['kind' => 'passed', 'text' => $said, 'topic' => 'speed'])));
         // A shortcut left in, or code the analyser never read, is never called clean.
         foreach ([$shortcut, $unread] as $request) {
             $this->actingAs($request->project->owner)
@@ -203,7 +203,7 @@ class ChangeProofTest extends TestCase
 
         $this->actingAs($request->project->owner)
             ->get(route('feature-requests.show', $request))
-            ->assertInertia(fn (Assert $page) => $page->where('proof.5', ['kind' => 'passed', 'text' => 'The pictures it added say what they show, for people who cannot see the screen.']));
+            ->assertInertia(fn (Assert $page) => $page->where('proof.5', ['kind' => 'passed', 'text' => 'The pictures it added say what they show, for people who cannot see the screen.', 'topic' => 'pictures']));
     }
 
     public function test_a_change_whose_screens_fit_every_width_says_so()
@@ -342,7 +342,7 @@ class ChangeProofTest extends TestCase
         // Nothing about the app's addresses changed: nothing to say.
         $this->assertFalse($texts([])->contains('text', $kept));
 
-        $this->assertContains(['kind' => 'passed', 'text' => $kept], $texts([
+        $this->assertContains(['kind' => 'passed', 'text' => $kept, 'topic' => 'sign-in'], $texts([
             'added' => [['route' => 'POST /teams/{team}/archive', 'middleware' => ['web', 'auth']]],
             'removed' => [],
             'changed' => [['route' => 'GET /teams', 'lost' => [], 'gained' => ['verified']]],
@@ -429,13 +429,13 @@ class ChangeProofTest extends TestCase
         $this->assertFalse($proof([])->contains(fn (array $line) => str_contains($line['text'], $clean)));
 
         $this->assertContains(
-            ['kind' => 'passed', 'text' => "We watched what your app saved and sent while its tests used the new code 12 times. {$clean}"],
+            ['kind' => 'passed', 'text' => "We watched what your app saved and sent while its tests used the new code 12 times. {$clean}", 'topic' => 'what it saves'],
             $proof(['reached' => 12])->all(),
         );
 
         // Tests that fake what is sent hide when it is sent, so only the saving is vouched for.
         $this->assertContains(
-            ['kind' => 'passed', 'text' => 'We watched what your app saved while its tests used the new code 12 times. Nothing was saved by mistake. Its tests only pretend to send emails and messages, so we could not watch when it sends them.'],
+            ['kind' => 'passed', 'text' => 'We watched what your app saved while its tests used the new code 12 times. Nothing was saved by mistake. Its tests only pretend to send emails and messages, so we could not watch when it sends them.', 'topic' => 'what it saves'],
             $proof(['reached' => 12, 'unseen' => 2])->all(),
         );
 
@@ -469,11 +469,11 @@ class ChangeProofTest extends TestCase
         $this->assertFalse($proof(['missed' => 2])->contains(fn (array $line) => str_contains($line['text'], $clean)));
 
         $this->assertContains(
-            ['kind' => 'passed', 'text' => 'We made things go wrong 3 times while your app used the new code, such as an email that cannot be sent or a save that fails. Each time, your app left nothing half done.'],
+            ['kind' => 'passed', 'text' => 'We made things go wrong 3 times while your app used the new code, such as an email that cannot be sent or a save that fails. Each time, your app left nothing half done.', 'topic' => 'what goes wrong'],
             $proof(['run' => 3])->all(),
         );
         $this->assertContains(
-            ['kind' => 'passed', 'text' => 'We made one thing go wrong while your app used the new code, such as an email that cannot be sent or a save that fails. Your app left nothing half done.'],
+            ['kind' => 'passed', 'text' => 'We made one thing go wrong while your app used the new code, such as an email that cannot be sent or a save that fails. Your app left nothing half done.', 'topic' => 'what goes wrong'],
             $proof(['run' => 1])->all(),
         );
 

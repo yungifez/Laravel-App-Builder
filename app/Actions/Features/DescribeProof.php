@@ -40,7 +40,7 @@ class DescribeProof
      * marked as evidence shows the change's own behaviour was tried (not
      * only that the rest still works); the owner's verdict rests on it.
      *
-     * @return list<array{kind: string, text: string, pictures?: list<array{url: string, label: string}>, evidence?: bool}>
+     * @return list<array{kind: string, text: string, pictures?: list<array{url: string, label: string}>, evidence?: bool, topic?: string}>
      */
     public function handle(FeatureRequest $featureRequest): array
     {
@@ -54,10 +54,22 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->safety($featureRequest), ...$this->access($verification), ...$this->shortcuts($featureRequest, $verification), ...$this->colours($featureRequest), ...$this->pictures($featureRequest), ...$this->screens($featureRequest, $verification), ...$this->code($verification), ...$this->watched($verification), ...$this->failed($verification), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('what goes wrong'), $this->failed($verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return array_values(collect($lines)->unique('text')->all());
+    }
+
+    /**
+     * Name what the passed lines checked, in a word or two, so the folded
+     * passes can say what they cover ("safety, sign-in and speed").
+     *
+     * @param  list<array{kind: string, text: string, pictures?: list<array{url: string, label: string}>, evidence?: bool}>  $lines
+     * @return list<array{kind: string, text: string, pictures?: list<array{url: string, label: string}>, evidence?: bool, topic?: string}>
+     */
+    protected function about(string $topic, array $lines): array
+    {
+        return array_map(fn (array $line) => $line['kind'] === 'passed' ? [...$line, 'topic' => $topic] : $line, $lines);
     }
 
     /**
