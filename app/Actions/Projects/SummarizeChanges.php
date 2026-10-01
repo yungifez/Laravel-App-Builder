@@ -166,6 +166,15 @@ class SummarizeChanges
             return [ChangeState::Kept, $kept];
         }
 
+        // A follow-up that failed leaves the change it built on as it was:
+        // that one still waits to be tried, rather than the whole ask
+        // reading as stopped.
+        $waiting = $thread->first(fn (FeatureRequest $request) => $request->status === FeatureRequestStatus::Generated && $request->commit_sha === null && $request->reverted_at === null);
+
+        if ($newest->status === FeatureRequestStatus::Failed && $waiting !== null) {
+            return [ChangeState::Waiting, $waiting];
+        }
+
         $undone = $thread->first(fn (FeatureRequest $request) => $request->reverted_at !== null);
 
         return $undone !== null ? [ChangeState::Undone, $undone] : [ChangeState::Stopped, $newest];

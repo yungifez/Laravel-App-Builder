@@ -71,6 +71,22 @@ class ProjectOverviewTest extends TestCase
                 ->where('changes.0.question', 'Who can invite?'));
     }
 
+    public function test_a_follow_up_that_failed_leaves_the_change_it_built_on_to_try()
+    {
+        $project = Project::factory()->create();
+        $first = FeatureRequest::factory()->for($project)->create(['status' => FeatureRequestStatus::Generated]);
+        $frontPage = FeatureRequest::factory()->for($project)->create(['parent_id' => $first->id, 'status' => FeatureRequestStatus::Generated]);
+        FeatureRequest::factory()->for($project)->create(['parent_id' => $frontPage->id, 'status' => FeatureRequestStatus::Failed]);
+
+        $this->actingAs($project->owner)
+            ->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('changes', 1)
+                ->where('changes.0.id', $frontPage->uuid)
+                ->where('changes.0.state', 'waiting')
+                ->where('changes.0.prompt', $first->prompt));
+    }
+
     public function test_a_change_to_try_says_how_many_of_its_tests_fail_without_it()
     {
         $project = Project::factory()->create();
