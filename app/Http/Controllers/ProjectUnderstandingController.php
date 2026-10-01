@@ -55,6 +55,10 @@ class ProjectUnderstandingController extends Controller
             'project' => ['id' => $project->uuid, 'name' => $project->name],
             // The count the builder's header links here with.
             'tests' => TestObservation::countFor($project),
+            // What those tests check, by file, for an app whose parts are
+            // not described yet: the header's "see what they check" lands
+            // on them rather than on nothing.
+            'checks' => fn () => TestObservation::checksFor($project),
             'revision' => $revision,
             'about' => [
                 'introduction' => $notes->introduction,

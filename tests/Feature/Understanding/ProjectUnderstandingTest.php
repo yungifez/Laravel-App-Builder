@@ -378,6 +378,24 @@ class ProjectUnderstandingTest extends TestCase
                 ->where('areas.1.checks', []));
     }
 
+    public function test_the_owner_sees_what_the_apps_tests_check_grouped_by_what_they_cover()
+    {
+        TestObservation::create(['project_id' => $this->project->id, 'files' => [], 'tests' => [
+            ['id' => 'Tests\\Feature\\Auth\\PasswordResetTest::test_reset_password_link_can_be_requested', 'file' => 'tests/Feature/Auth/PasswordResetTest.php', 'groups' => []],
+            ['id' => 'Tests\\Feature\\Auth\\PasswordResetTest::test_password_can_be_reset_with_valid_token', 'file' => 'tests/Feature/Auth/PasswordResetTest.php', 'groups' => []],
+            ['id' => 'Tests\\Feature\\PlanTest::test_plans_are_listed', 'file' => 'tests/Feature/PlanTest.php', 'groups' => []],
+            // A placeholder that checks nothing about the app.
+            ['id' => 'Tests\\Unit\\ExampleTest::test_that_true_is_true', 'file' => 'tests/Unit/ExampleTest.php', 'groups' => []],
+        ]]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('checks', [
+                ['name' => 'Password reset', 'checks' => ['Reset password link can be requested', 'Password can be reset with valid token']],
+                ['name' => 'Plan', 'checks' => ['Plans are listed']],
+            ]));
+    }
+
     public function test_a_link_the_notes_and_the_tests_both_show_is_said_once_with_both_reasons()
     {
         // Two team tests run the plan model: the tests link plans to teams,

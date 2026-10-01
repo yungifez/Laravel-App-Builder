@@ -60,24 +60,61 @@ class TestObservation extends Model
     }
 
     /**
-     * Count the tests the app itself has, for the owner. Until a change is
+     * Count the tests the app itself has, for the owner.
+     */
+    public static function countFor(Project $project): ?int
+    {
+        $tests = self::appTests($project);
+
+        return $tests === null ? null : count($tests);
+    }
+
+    /**
+     * Group the app's own tests by the file they are in, each said in
+     * plain words, so the owner can see what they check ("Password reset":
+     * "Reset password link can be requested", …).
+     *
+     * @return list<array{name: string, checks: list<string>}>
+     */
+    public static function checksFor(Project $project): array
+    {
+        $groups = [];
+
+        foreach (self::appTests($project) ?? [] as $test) {
+            $check = TestMap::describe(Str::afterLast($test['id'], '::'));
+
+            // The starter kits' placeholder checks nothing about the app.
+            if ($check === 'That true is true') {
+                continue;
+            }
+
+            $groups[TestMap::describe(Str::beforeLast(basename((string) $test['file']), 'Test.php'))][] = $check;
+        }
+
+        return array_map(fn (string $name, array $checks) => ['name' => $name, 'checks' => array_values(array_unique($checks))], array_keys($groups), array_values($groups));
+    }
+
+    /**
+     * Get the tests the app itself has, as last run. Until a change is
      * kept, the latest map is from a change still waiting, and the tests
      * that change added are not in the app: they are left out, so the
      * owner is never told that tests guard what they have not kept.
+     *
+     * @return list<array{id: string, file: string|null, groups: list<string>}>|null
      */
-    public static function countFor(Project $project): ?int
+    protected static function appTests(Project $project): ?array
     {
         $observation = self::latestFor($project);
         $request = $observation?->featureRequest;
 
         if ($observation === null || $request === null || $request->isAccepted()) {
-            return $observation?->testCount();
+            return $observation?->tests;
         }
 
         $added = PatchSummary::addedTests($request->patch);
         $touched = array_column(PatchSummary::files($request->patch), 'path');
 
-        return count(array_filter($observation->tests, fn (array $test) => ! in_array($test['file'], $touched, true)
+        return array_values(array_filter($observation->tests, fn (array $test) => ! in_array($test['file'], $touched, true)
             || ! in_array(TestMap::describe(Str::afterLast($test['id'], '::')), $added, true)));
     }
 

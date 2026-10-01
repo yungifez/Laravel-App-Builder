@@ -41,6 +41,8 @@ const props = defineProps<{
     // The app's own tests, as last run; the builder's header links here
     // with this count.
     tests: number | null;
+    // What those tests check, by file, while no parts are described.
+    checks: { name: string; checks: string[] }[];
     revision: string | null;
     about: { introduction: string; sections: NotesSection[] };
     guidance: string | null;
@@ -499,12 +501,53 @@ function setCompatibility(keep: boolean | null): void {
                     >
                 </h2>
 
-                <p
-                    v-if="areas.length === 0"
-                    class="text-sm text-muted-foreground"
-                >
-                    No parts are described yet.
-                </p>
+                <template v-if="areas.length === 0">
+                    <p class="text-sm text-muted-foreground">
+                        No parts are described yet.<template
+                            v-if="checks.length"
+                        >
+                            Your app's tests already check these.</template
+                        >
+                    </p>
+                    <!-- Until parts are described, the tests say what the
+                         app does, so "see what they check" has an answer -->
+                    <ul
+                        v-if="checks.length"
+                        class="divide-y border-y"
+                        data-test="app-checks"
+                    >
+                        <li v-for="group in checks" :key="group.name">
+                            <details class="group text-sm">
+                                <summary
+                                    class="flex min-h-11 cursor-pointer list-none items-center gap-1.5 select-none hover:text-foreground"
+                                >
+                                    <ChevronRight
+                                        class="size-3.5 text-muted-foreground transition-transform group-open:rotate-90"
+                                    />
+                                    {{ group.name }}
+                                    <span
+                                        class="text-muted-foreground tabular-nums"
+                                        >{{ group.checks.length }}</span
+                                    >
+                                </summary>
+                                <ul
+                                    class="space-y-1.5 pb-3 pl-5 text-muted-foreground"
+                                >
+                                    <li
+                                        v-for="check in group.checks"
+                                        :key="check"
+                                        class="flex gap-2"
+                                    >
+                                        <CircleCheck
+                                            class="mt-1 size-3 shrink-0 text-green-600"
+                                        />
+                                        {{ check }}
+                                    </li>
+                                </ul>
+                            </details>
+                        </li>
+                    </ul>
+                </template>
 
                 <template v-else>
                     <!-- More than four parts crowd a phone-sized ring; the rows
