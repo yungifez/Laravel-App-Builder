@@ -25,6 +25,7 @@ import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/Feat
 import FeatureRequestRetryController from '@/actions/App/Http/Controllers/FeatureRequestRetryController';
 import FeatureRequestReversionController from '@/actions/App/Http/Controllers/FeatureRequestReversionController';
 import FeatureRequestVerificationController from '@/actions/App/Http/Controllers/FeatureRequestVerificationController';
+import FeatureRequestWorkerController from '@/actions/App/Http/Controllers/FeatureRequestWorkerController';
 import PreviewController from '@/actions/App/Http/Controllers/PreviewController';
 import RunCancellationController from '@/actions/App/Http/Controllers/RunCancellationController';
 import DetailLevelController from '@/actions/App/Http/Controllers/Settings/DetailLevelController';
@@ -34,6 +35,7 @@ import ElapsedTime from '@/components/ElapsedTime.vue';
 import MessageImages from '@/components/MessageImages.vue';
 import InputError from '@/components/InputError.vue';
 import WorkStepLine from '@/components/WorkStepLine.vue';
+import WorkYourself from '@/components/WorkYourself.vue';
 import { Button } from '@/components/ui/button';
 import {
     Collapsible,
@@ -322,6 +324,18 @@ const working = computed(
         (run.value === null && request.value.status === 'generating'),
 );
 
+// The owner's own Claude Code or Codex has the change, and we wait for it.
+const theirs = computed(() => run.value?.yours?.waiting === true);
+
+// The owner can take over a change we are still making.
+const takeOver = computed(
+    () =>
+        request.value.can_work_yourself &&
+        run.value !== null &&
+        run.value.yours === null &&
+        ['queued', 'planning', 'implementing'].includes(run.value.status),
+);
+
 const checking = computed(
     () =>
         props.change.verification?.status === 'queued' ||
@@ -582,6 +596,14 @@ const checks = computed(() => {
                             </li>
                         </TransitionGroup>
 
+                        <WorkYourself
+                            v-if="theirs && run?.yours"
+                            :request-id="request.id"
+                            :run-id="run.id"
+                            :address="run.yours.address"
+                            :name="run.yours.name"
+                        />
+
                         <div
                             v-if="working"
                             class="flex items-center gap-2 text-muted-foreground"
@@ -590,8 +612,10 @@ const checks = computed(() => {
                             <LoaderCircle class="size-4 animate-spin" />
                             <span data-test="thread-progress"
                                 >{{
-                                    run?.progress?.text ??
-                                    steps[run?.status ?? 'queued']
+                                    theirs && run?.status === 'implementing'
+                                        ? 'Waiting for your change'
+                                        : (run?.progress?.text ??
+                                          steps[run?.status ?? 'queued'])
                                 }}…</span
                             >
                             <!-- Seconds counting up show the work has not
@@ -622,6 +646,28 @@ const checks = computed(() => {
                                 </Button>
                             </Form>
                         </div>
+
+                        <!-- Depth for those who code: their own agent writes
+                             it, and we still check what it hands back. -->
+                        <Form
+                            v-if="takeOver"
+                            v-bind="
+                                FeatureRequestWorkerController.store.form(
+                                    request.id,
+                                )
+                            "
+                            v-slot="{ errors, processing }"
+                        >
+                            <button
+                                type="submit"
+                                :disabled="processing"
+                                class="min-h-11 text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-6"
+                                data-test="work-yourself-button"
+                            >
+                                Use my own Claude Code or Codex
+                            </button>
+                            <InputError :message="errors.worker" />
+                        </Form>
 
                         <!-- A question to answer before going on -->
                         <div
@@ -784,6 +830,25 @@ const checks = computed(() => {
                                 <InputError
                                     :message="errors.retry ?? errors.step"
                                 />
+                            </Form>
+                            <Form
+                                v-if="request.can_work_yourself"
+                                v-bind="
+                                    FeatureRequestWorkerController.store.form(
+                                        request.id,
+                                    )
+                                "
+                                v-slot="{ errors, processing }"
+                            >
+                                <button
+                                    type="submit"
+                                    :disabled="processing"
+                                    class="min-h-11 text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-6"
+                                    data-test="work-yourself-after-failure"
+                                >
+                                    Use my own Claude Code or Codex
+                                </button>
+                                <InputError :message="errors.worker" />
                             </Form>
                         </div>
 

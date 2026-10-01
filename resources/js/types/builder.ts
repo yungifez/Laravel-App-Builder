@@ -165,6 +165,8 @@ export type FeatureRequestDetail = {
     can_accept: boolean;
     can_retry: boolean;
     can_continue: boolean;
+    /** Whether the owner can write it with their own Claude Code or Codex. */
+    can_work_yourself: boolean;
 };
 
 export type VerificationStatus =
@@ -234,6 +236,9 @@ export type Run = {
         answer: string;
         decided_by: 'owner' | 'builder';
     }[];
+    /** Set when the owner's own Claude Code or Codex writes the change:
+     * whether it still waits for their change, and where it connects. */
+    yours: { waiting: boolean; address: string; name: string } | null;
     plan: {
         summary: string;
         /** The reply when the owner only asked about the app. */

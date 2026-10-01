@@ -14,6 +14,7 @@ use App\Features\PatchSummary;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\RunEvent;
+use App\Runs\Drivers\WorkerDriver;
 use App\Runs\Plan;
 use Illuminate\Support\Str;
 
@@ -68,6 +69,7 @@ class DescribeFeatureRequest
                     && $featureRequest->latestRun?->status === RunStatus::Completed,
                 'can_retry' => RetryFeatureRequest::retryable($featureRequest),
                 'can_continue' => RequestFollowUp::continuable($featureRequest),
+                'can_work_yourself' => HandChangeToOwner::available($featureRequest),
             ],
             'parent' => $parent === null ? null : ['id' => $parent->uuid, 'prompt' => $parent->prompt],
             'earlier' => $this->earlier($featureRequest),
@@ -179,6 +181,17 @@ class DescribeFeatureRequest
                 : OwnerWording::message($run->error),
             'question' => $run->status === RunStatus::NeedsUserDecision ? $run->question : null,
             'answers' => $run->answers ?? [],
+            // The owner's own Claude Code or Codex writes the change. Until it
+            // hands the change back, the thread says how to connect it.
+            'yours' => $run->driver !== 'worker' ? null : [
+                // From the hand-over until their change arrives, so they can
+                // connect while the change is still being planned.
+                'waiting' => in_array($run->status, [RunStatus::Queued, RunStatus::Planning, RunStatus::Implementing], true)
+                    && app(WorkerDriver::class)->submission($run) === null,
+                'address' => route('mcp.task'),
+                // What their tool calls the connection: the app's own name.
+                'name' => Str::slug($featureRequest->project->name) ?: 'app',
+            ],
             'plan' => $run->plan === null ? null : [
                 'summary' => $run->plan['summary'],
                 'answer' => $run->plan['answer'] ?? null,

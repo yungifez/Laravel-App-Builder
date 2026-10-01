@@ -16,6 +16,7 @@ use App\Http\Controllers\FeatureRequestRetryController;
 use App\Http\Controllers\FeatureRequestReversionController;
 use App\Http\Controllers\FeatureRequestStepChangeController;
 use App\Http\Controllers\FeatureRequestVerificationController;
+use App\Http\Controllers\FeatureRequestWorkerController;
 use App\Http\Controllers\LiveErrorFixController;
 use App\Http\Controllers\NewPartController;
 use App\Http\Controllers\NewProjectController;
@@ -114,6 +115,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('feature-requests/{featureRequest}/acceptance', [FeatureRequestAcceptanceController::class, 'store'])->name('feature-requests.acceptance.store');
     Route::post('feature-requests/{featureRequest}/answers', [FeatureRequestAnswerController::class, 'store'])->name('feature-requests.answers.store');
     Route::post('feature-requests/{featureRequest}/retries', [FeatureRequestRetryController::class, 'store'])->name('feature-requests.retries.store');
+    Route::post('feature-requests/{featureRequest}/worker', [FeatureRequestWorkerController::class, 'store'])->name('feature-requests.worker.store');
     Route::post('feature-requests/{featureRequest}/reversion', [FeatureRequestReversionController::class, 'store'])->name('feature-requests.reversion.store');
     Route::post('feature-requests/{featureRequest}/dismissal', [FeatureRequestDismissalController::class, 'store'])->name('feature-requests.dismissal.store');
     Route::delete('feature-requests/{featureRequest}/dismissal', [FeatureRequestDismissalController::class, 'destroy'])->name('feature-requests.dismissal.destroy');

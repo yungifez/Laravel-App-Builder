@@ -1478,10 +1478,13 @@ Each comes back only when the experiment shows the need.
       three-way on a clean baseline. A patch that does not apply goes back to
       the worker with git's reason. `runs:reconcile` leaves a waiting run
       alone.
+    - "Use my own Claude Code or Codex" (`HandChangeToOwner`) is offered on a
+      change we are making or one that stopped. The change starts again with
+      the `worker` driver. The thread shows the connect command and what to
+      ask, once. "Connect again" closes the earlier token.
 - **Next:**
     1. Point our own runner at the token and the tools.
-    2. Add "Work on this yourself".
-    3. Add `ask_about_product` and `ask_owner`.
+    2. Add `ask_about_product` and `ask_owner`.
 - **Open:**
     - A waiting run has no time limit yet; the owner can cancel it.
     - A worker's change is reviewed by the default reviewer, which is logged
