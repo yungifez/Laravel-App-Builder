@@ -413,11 +413,21 @@ const checks = computed(() => {
                       label: 'Checks passed, with gaps',
                   };
         case 'failed':
-            return {
-                icon: CircleAlert,
-                tone: 'text-red-600',
-                label: 'A check failed',
-            };
+            // Every failure was there before the change: it broke nothing,
+            // and saying "failed" would blame it for the app's old problem.
+            return props.change.verification.results
+                .filter((result) => result.outcome === 'failed')
+                .every(failedBefore)
+                ? {
+                      icon: CircleMinus,
+                      tone: 'text-muted-foreground',
+                      label: 'Broke nothing that worked before',
+                  }
+                : {
+                      icon: CircleAlert,
+                      tone: 'text-red-600',
+                      label: 'A check failed',
+                  };
         case 'errored':
             return {
                 icon: CircleAlert,
