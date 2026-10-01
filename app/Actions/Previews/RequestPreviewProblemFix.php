@@ -4,6 +4,7 @@ namespace App\Actions\Previews;
 
 use App\Actions\Features\RequestFeature;
 use App\Actions\Features\RequestFollowUp;
+use App\Actions\Features\RetryFeatureRequest;
 use App\Enums\FeatureRequestStatus;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -44,7 +45,9 @@ class RequestPreviewProblemFix
             ->whereNull('dismissed_at')
             ->whereNotIn('status', [FeatureRequestStatus::Failed, FeatureRequestStatus::Cancelled])
             ->latest('id')
-            ->first();
+            ->get()
+            // A fix that stopped is asked for again, not reopened.
+            ->first(fn (FeatureRequest $fix) => ! RetryFeatureRequest::retryable($fix));
 
         if ($asked !== null) {
             return $asked;

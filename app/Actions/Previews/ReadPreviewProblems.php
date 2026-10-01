@@ -2,6 +2,7 @@
 
 namespace App\Actions\Previews;
 
+use App\Actions\Features\RetryFeatureRequest;
 use App\Enums\FeatureRequestStatus;
 use App\Models\ClearedProblem;
 use App\Models\FeatureRequest;
@@ -36,6 +37,8 @@ class ReadPreviewProblems
             ->whereNotIn('status', [FeatureRequestStatus::Failed, FeatureRequestStatus::Cancelled])
             ->latest('id')
             ->get()
+            // A fix that stopped is not being fixed: the problem waits again.
+            ->reject(fn (FeatureRequest $fix) => RetryFeatureRequest::retryable($fix))
             ->unique(fn (FeatureRequest $fix) => $fix->live_errors['problem'] ?? null)
             ->keyBy(fn (FeatureRequest $fix) => (string) ($fix->live_errors['problem'] ?? ''));
         $cleared = $project->clearedProblems()->whereIn('problem', $ids)->get()->keyBy('problem');

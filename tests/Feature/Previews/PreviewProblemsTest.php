@@ -6,9 +6,11 @@ use App\Actions\Previews\ReadPreviewProblems;
 use App\Actions\Projects\CreateProject;
 use App\Actions\Runs\StartRun;
 use App\Enums\FeatureRequestStatus;
+use App\Enums\RunStatus;
 use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\Project;
+use App\Models\Run;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Projects\ProjectRepository;
@@ -154,6 +156,22 @@ class PreviewProblemsTest extends TestCase
         // Asking for a fix: it is being fixed.
         $this->actingAs($this->owner)->post(route('preview-problem-fixes.store', $this->project), ['problem' => $id]);
         $fix = FeatureRequest::sole();
+        $this->assertSame(['fixing', $fix->uuid], $this->stand());
+
+        // A fix that stopped, here because no AI could take it, is not
+        // being fixed: the problem waits again, and a click asks anew.
+        $stopped = FeatureRequest::factory()->create([
+            'project_id' => $this->project->id,
+            'user_id' => $this->owner->id,
+            'live_errors' => $fix->live_errors,
+        ]);
+        Run::factory()->create(['feature_request_id' => $stopped->id, 'status' => RunStatus::NeedsUserDecision]);
+        $this->assertSame(['fixing', $fix->uuid], $this->stand());
+        $fix->update(['dismissed_at' => now()]);
+        $this->assertSame(['new', null], $this->stand());
+        $this->post(route('preview-problem-fixes.store', $this->project), ['problem' => $id]);
+        $fix = FeatureRequest::latest('id')->firstOrFail();
+        $this->assertNotSame($stopped->id, $fix->id);
         $this->assertSame(['fixing', $fix->uuid], $this->stand());
 
         // Keeping the fix: it is fixed, until the app runs into it again.
