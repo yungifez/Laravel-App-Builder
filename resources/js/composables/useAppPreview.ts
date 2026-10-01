@@ -154,6 +154,10 @@ export function useAppPreview(source: Source) {
     // a part to a new place in the app.
     const nextDrawn = ref(false);
     const holding = ref(false);
+    // Whether the app has opened and answers clicks. A click before that
+    // reaches nothing, so the design panel says to wait. A later rebuild
+    // keeps the open app in front, so this stays on.
+    const opened = ref(false);
     const framePath = ref('/');
 
     // The page of the app the owner was on, kept in this browser, so the
@@ -863,6 +867,7 @@ export function useAppPreview(source: Source) {
         }
 
         if (data.type === 'ready') {
+            opened.value = true;
             holding.value = false;
             setUp(frame.value?.contentWindow);
         }
@@ -1035,7 +1040,12 @@ export function useAppPreview(source: Source) {
 
     const editable = computed(() => element.value?.editable === true);
 
-    onMounted(() => window.addEventListener('message', onMessage));
+    // The app can open before this page listens, and its "ready" is then
+    // lost; ask for it again, or the first clicks in it reach nothing.
+    onMounted(() => {
+        window.addEventListener('message', onMessage);
+        post({ type: 'hello' });
+    });
     onBeforeUnmount(() => window.removeEventListener('message', onMessage));
 
     watch(source.designing, (editing) => {
@@ -2469,6 +2479,7 @@ export function useAppPreview(source: Source) {
         frame,
         frames,
         drawn,
+        opened,
         bind,
         frameWidth,
         // The address of the app page on show, as in "/login".

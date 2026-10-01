@@ -828,12 +828,24 @@ const recent = computed(() => {
     <div class="flex min-h-0 flex-col" data-test="inspector">
         <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto">
             <div
-                v-if="!preview || preview.status !== 'ready' || state.lost"
+                v-if="
+                    !preview ||
+                    preview.status !== 'ready' ||
+                    state.lost ||
+                    !state.opened
+                "
                 class="flex items-center justify-center gap-2 p-4 text-sm text-muted-foreground lg:flex-col lg:py-16"
             >
                 <MousePointerClick class="size-5 lg:size-8" />
-                <!-- The app says it is starting; this says what comes next. -->
-                <template v-if="preview?.status === 'starting' && !state.lost">
+                <!-- The app is starting or still opening; this says what
+                     comes next, so a click too early is not a surprise. -->
+                <template
+                    v-if="
+                        (preview?.status === 'starting' ||
+                            preview?.status === 'ready') &&
+                        !state.lost
+                    "
+                >
                     <span class="pointer-coarse:hidden"
                         >Click any part once it opens</span
                     >

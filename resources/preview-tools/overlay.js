@@ -1737,6 +1737,14 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
 
         const message = event.data;
 
+        // The builder page can start to listen after the app said it was
+        // ready (the app opened first); it then asks again.
+        if (message.type === 'hello') {
+            send({ type: 'ready', path: location.pathname });
+
+            return;
+        }
+
         // Go to another page of the app, as following a link would.
         if (message.type === 'go' && typeof message.href === 'string') {
             const to = new URL(message.href, location.href);
