@@ -259,6 +259,7 @@ export type Run = {
 export type WorkStep = {
     kind:
         | 'thought'
+        | 'thinking'
         | 'read'
         | 'changed'
         | 'tested'

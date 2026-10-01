@@ -90,7 +90,7 @@ final readonly class AgentOutcome
             $kind = is_array($entry) ? ($entry['kind'] ?? null) : null;
 
             $entries[] = match (true) {
-                $kind === 'said' && is_string($entry['text'] ?? null) => ['kind' => 'said', 'text' => Str::limit($entry['text'], 1000)],
+                in_array($kind, ['said', 'thinking'], true) && is_string($entry['text'] ?? null) => ['kind' => $kind, 'text' => Str::limit($entry['text'], 1000)],
                 in_array($kind, ['read', 'changed'], true) && is_string($entry['file'] ?? null) => ['kind' => $kind, 'file' => Str::limit($entry['file'], 500, '')],
                 $kind === 'testing' => ['kind' => 'testing'],
                 default => null,

@@ -3,7 +3,10 @@
 namespace Tests\Feature\Runs;
 
 use App\Actions\Runs\DescribeRunProgress;
+use App\Enums\RunStatus;
+use App\Enums\VerificationStatus;
 use App\Models\Run;
+use App\Models\Verification;
 use App\Runs\Agents\RunnerAgent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -42,6 +45,30 @@ class RunProgressTest extends TestCase
         $this->actingAs($run->featureRequest->project->owner)
             ->get(route('projects.show', ['project' => $run->featureRequest->project, 'change' => $run->featureRequest->uuid]))
             ->assertInertia(fn (Assert $page) => $page->where('change.run.progress.text', 'Trying it out'));
+    }
+
+    public function test_the_owner_sees_which_check_runs_and_how_far_the_checks_have_come()
+    {
+        config(['builder.verification.setup' => [['name' => 'Install PHP dependencies']], 'builder.verification.checks' => [
+            ['name' => 'Tests'], ['name' => 'Static analysis'], ['name' => 'Their own check'],
+        ]]);
+        $run = Run::factory()->create(['status' => RunStatus::Verifying]);
+        $verification = Verification::factory()->create(['feature_request_id' => $run->feature_request_id, 'run_id' => $run->id, 'status' => VerificationStatus::Running, 'results' => []]);
+
+        $this->assertSame(['text' => 'Getting a fresh copy of your app ready to check', 'changed' => 0], $this->progress($run));
+
+        $verification->update(['results' => [['name' => 'Install PHP dependencies', 'stage' => 'setup', 'outcome' => 'passed']]]);
+        $this->assertSame('Running your app\'s tests, check 1 of 3', $this->progress($run)['text']);
+
+        $verification->update(['results' => [...$verification->results, ['name' => 'Tests', 'stage' => 'checks', 'outcome' => 'passed'], ['name' => 'Static analysis', 'stage' => 'checks', 'outcome' => 'failed']]]);
+        $this->assertSame('Running “Their own check”, check 3 of 3', $this->progress($run)['text']);
+
+        $verification->update(['results' => [...$verification->results, ['name' => 'Their own check', 'stage' => 'checks', 'outcome' => 'passed']]]);
+        $this->assertSame('Trying it the way you asked for it', $this->progress($run)['text']);
+
+        // Between checks, the stage alone is said.
+        $verification->update(['status' => VerificationStatus::Passed]);
+        $this->assertNull($this->progress($run));
     }
 
     /**

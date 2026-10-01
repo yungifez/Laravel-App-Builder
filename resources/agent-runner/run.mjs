@@ -18,7 +18,7 @@
 // While the agent works, progress.json next to the task file says what it
 // is doing, so the owner can follow along:
 // {"doing":"reading|changing|testing","last":"path","read":[...],"changed":[...],
-//  "story":[{"kind":"said","text":"..."}|{"kind":"read|changed","file":"path"}|{"kind":"testing"}]}
+//  "story":[{"kind":"said|thinking","text":"..."}|{"kind":"read|changed","file":"path"}|{"kind":"testing"}]}
 // The story is what the agent did and said, in order; the result line
 // carries it too, so it outlives the task files.
 // Credentials come from the environment (ANTHROPIC_API_KEY, OPENAI_API_KEY,
@@ -73,6 +73,19 @@ function say(text) {
 
     if (said !== '') {
         tell({ kind: 'said', text: said });
+        write();
+    }
+}
+
+/**
+ * Keep what the agent thinks before it acts, so the owner sees its reasons
+ * while it works, as they would in a chat with it.
+ */
+function think(text) {
+    const thought = (text ?? '').trim().slice(0, 1000);
+
+    if (thought !== '') {
+        tell({ kind: 'thinking', text: thought });
         write();
     }
 }
@@ -185,6 +198,10 @@ async function runClaude(task, session, prompt) {
                 : []) {
                 if (block.type === 'text') {
                     say(block.text);
+                }
+
+                if (block.type === 'thinking') {
+                    think(block.thinking);
                 }
 
                 if (block.type !== 'tool_use') {
@@ -318,6 +335,11 @@ async function runCodex(task, session, prompt) {
             ) {
                 summary = event.item.text;
                 say(event.item.text);
+            } else if (
+                event.type === 'item.completed' &&
+                event.item.type === 'reasoning'
+            ) {
+                think(event.item.text);
             } else if (event.type === 'turn.completed') {
                 usage = event.usage;
             } else if (event.type === 'turn.failed') {

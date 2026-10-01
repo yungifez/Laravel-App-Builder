@@ -88,6 +88,9 @@ class WorkStoryTest extends TestCase
         File::put($path, (string) json_encode(['doing' => 'reading', 'last' => null, 'read' => [], 'changed' => [], 'story' => [
             ['kind' => 'said', 'text' => 'First I want to understand how teams work today.'],
             ['kind' => 'read', 'file' => 'routes/web.php'],
+            // Its reasons show too, as plainly as what it says.
+            ['kind' => 'thinking', 'text' => "The owner wants only team owners to invite people. I should check `TeamPolicy` first.\nThat keeps members from inviting strangers."],
+            ['kind' => 'thinking', 'text' => 'Let me read app/Policies/TeamPolicy.php.'],
         ]]));
         Cache::flush();
 
@@ -96,6 +99,7 @@ class WorkStoryTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('change.run.work', [
                 ['kind' => 'thought', 'text' => 'First I want to understand how teams work today.'],
                 ['kind' => 'read', 'text' => 'Looked around your app'],
+                ['kind' => 'thinking', 'text' => 'The owner wants only team owners to invite people. That keeps members from inviting strangers.'],
             ]));
     }
 

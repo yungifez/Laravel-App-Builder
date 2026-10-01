@@ -70,6 +70,8 @@ class NarrateWork
     {
         $line = match ($entry['kind']) {
             'said' => ($text = $this->plain($entry['text'] ?? '')) === null ? null : ['kind' => 'thought', 'names' => [], 'text' => $text],
+            // Its reasons before it acts, kept as plainly as what it says.
+            'thinking' => ($text = $this->plain($entry['text'] ?? '')) === null ? null : ['kind' => 'thinking', 'names' => [], 'text' => $text],
             'read' => ['kind' => 'read', 'names' => $this->names($run, $entry['file'] ?? '', steps: false)],
             'changed' => $this->changed($run, $entry['file'] ?? ''),
             'testing' => ['kind' => 'tried', 'names' => []],
@@ -82,13 +84,15 @@ class NarrateWork
 
         $last = array_key_last($lines);
 
-        if ($last !== null && $lines[$last]['kind'] === $line['kind'] && $line['kind'] !== 'thought') {
+        $words = in_array($line['kind'], ['thought', 'thinking'], true);
+
+        if ($last !== null && $lines[$last]['kind'] === $line['kind'] && ! $words) {
             $lines[$last]['names'] = array_values(array_unique([...$lines[$last]['names'], ...$line['names']]));
 
             return;
         }
 
-        if ($last !== null && $line['kind'] === 'thought' && ($lines[$last]['text'] ?? null) === ($line['text'] ?? null)) {
+        if ($last !== null && $words && ($lines[$last]['text'] ?? null) === ($line['text'] ?? null)) {
             return;
         }
 
@@ -139,7 +143,7 @@ class NarrateWork
      */
     protected function render(array $line): array
     {
-        if (in_array($line['kind'], ['thought', 'stage'], true)) {
+        if (in_array($line['kind'], ['thought', 'thinking', 'stage'], true)) {
             return ['kind' => $line['kind'], 'text' => $line['text'] ?? ''];
         }
 

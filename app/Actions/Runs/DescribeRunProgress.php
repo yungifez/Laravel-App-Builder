@@ -4,6 +4,7 @@ namespace App\Actions\Runs;
 
 use App\Context\ProjectNotes;
 use App\Enums\RunStatus;
+use App\Enums\VerificationStatus;
 use App\Models\Run;
 use App\Runs\Agents\AgentOutcome;
 use App\Runs\Agents\RunnerAgent;
@@ -14,6 +15,17 @@ use Illuminate\Support\Str;
 
 class DescribeRunProgress
 {
+    /**
+     * What each check does, in the owner's words.
+     */
+    protected const CHECKS = [
+        'Tests' => 'Running your app\'s tests',
+        'Static analysis' => 'Reading the code for mistakes',
+        'PHP formatting' => 'Checking the code is tidy',
+        'Frontend format and lint' => 'Checking the screens\' code is tidy',
+        'TypeScript' => 'Reading the screens\' code for mistakes',
+    ];
+
     public function __construct(private WorkspaceManager $workspaces) {}
 
     /**
@@ -26,6 +38,10 @@ class DescribeRunProgress
      */
     public function handle(Run $run): ?array
     {
+        if ($run->status === RunStatus::Verifying) {
+            return $this->checking($run);
+        }
+
         $progress = $this->live($run);
 
         return $progress === null ? null : $this->describe($run, $progress);
@@ -97,6 +113,41 @@ class DescribeRunProgress
         };
 
         return ['text' => (string) $text, 'changed' => count($changed)];
+    }
+
+    /**
+     * Say which check runs now, and how far the checks have come. Checking
+     * takes minutes; the owner should see it move.
+     *
+     * @return array{text: string, changed: int}|null
+     */
+    protected function checking(Run $run): ?array
+    {
+        $verification = $run->verifications()->latest('id')->first();
+
+        if ($verification === null || $verification->status !== VerificationStatus::Running) {
+            return null;
+        }
+
+        /** @var list<array{name: string}> $setup */
+        $setup = config('builder.verification.setup', []);
+        /** @var list<array{name: string}> $checks */
+        $checks = config('builder.verification.checks', []);
+        $done = collect($verification->results ?? [])->countBy('stage');
+        $set = (int) ($done['setup'] ?? 0);
+        $checked = (int) ($done['checks'] ?? 0);
+
+        $text = match (true) {
+            $set < count($setup) => __('Getting a fresh copy of your app ready to check'),
+            $checked < count($checks) => __(':check, check :number of :count', [
+                'check' => isset(self::CHECKS[$checks[$checked]['name']]) ? __(self::CHECKS[$checks[$checked]['name']]) : __('Running “:name”', ['name' => $checks[$checked]['name']]),
+                'number' => $checked + 1,
+                'count' => count($checks),
+            ]),
+            default => __('Trying it the way you asked for it'),
+        };
+
+        return ['text' => (string) $text, 'changed' => 0];
     }
 
     /**

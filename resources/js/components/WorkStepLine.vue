@@ -10,7 +10,7 @@ import {
 import type { WorkStep } from '@/types';
 
 // One step of how a change was made. The agent's own plain words read as
-// speech, each stage of the work as a heading, and what was done as a
+// speech, its reasons before it acts as quieter asides, each stage of the work as a heading, and what was done as a
 // quieter note with an icon.
 defineProps<{ step: WorkStep }>();
 
@@ -25,6 +25,12 @@ const icons = {
 
 <template>
     <p v-if="step.kind === 'thought'" class="leading-relaxed">
+        {{ step.text }}
+    </p>
+    <p
+        v-else-if="step.kind === 'thinking'"
+        class="leading-relaxed text-muted-foreground italic"
+    >
         {{ step.text }}
     </p>
     <p
