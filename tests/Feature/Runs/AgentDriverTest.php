@@ -524,6 +524,44 @@ class AgentDriverTest extends TestCase
         $this->assertSame([['rule' => 'SL107', 'path' => 'app/Models/Team.php', 'line' => 7]], $run->verifications()->latest('id')->first()->shortcuts);
     }
 
+    public function test_the_reviewer_reads_what_running_the_app_with_and_without_the_change_showed()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]));
+        ChangeReviewer::fake([['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]]]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, evidence: [
+            'new_tests' => [
+                ['file' => 'tests/Feature/TeamDescriptionTest.php', 'name' => 'teams have a nullable description', 'without_change' => 'failed'],
+                ['file' => 'tests/Feature/TeamDescriptionTest.php', 'name' => 'the team page loads', 'without_change' => 'passed'],
+            ],
+            'routes' => [
+                'added' => [['route' => 'POST /teams/{team}/archive', 'middleware' => ['web']]],
+                'removed' => ['GET /old'],
+                'changed' => [['route' => 'GET /teams', 'lost' => ['auth'], 'gained' => ['throttle:6,1']]],
+            ],
+            'new_code' => ['lines' => 10, 'run' => 8, 'own_tests_only' => 5, 'unrun' => ['app/Models/Team.php' => [12, 13]]],
+            'traces' => ['requests' => 40, 'reached' => 6, 'unseen' => 2, 'existing' => 1, 'repeats' => [], 'findings' => [
+                ['kind' => 'saved_on_read', 'route' => 'GET /teams', 'what' => 'update teams', 'at' => 'app/Models/Team.php:12', 'test' => 'Tests\Feature\TeamDescriptionTest::test_the_team_page_loads'],
+                ['kind' => 'sent_before_saved', 'route' => 'POST /teams', 'what' => 'mail App\Mail\TeamCreated', 'at' => null, 'test' => null],
+            ]],
+        ]);
+
+        ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, implode("\n\n", [
+            '## What running the app with and without the change showed',
+            "The change added 2 tests. Tests that fail without its code, as a test of new behaviour must: 1. These pass without it, so they do not check what it does:\n- tests/Feature/TeamDescriptionTest.php: the team page loads",
+            "Routes it added, with their middleware:\n- POST /teams/{team}/archive [web]",
+            "Routes whose middleware it changed:\n- GET /teams lost auth gained throttle:6,1",
+            "Routes it removed:\n- GET /old",
+            "Of its 10 new lines of PHP that can run, tests ran 8; 5 of those only its own tests ran. No test ran:\n- app/Models/Team.php: line 12, 13",
+            'While the tests ran, 40 requests to the app were recorded: their queries, transactions and what they sent. 6 ran code the change added. Recorded from the code the change added:'
+                ."\n- GET /teams saved data on a request that only reads: update teams at app/Models/Team.php:12 (seen in Tests\Feature\TeamDescriptionTest::test_the_team_page_loads)"
+                ."\n- POST /teams sent this while a database transaction was still open, so it goes out even when the transaction is rolled back: mail App\Mail\TeamCreated"
+                ."\nOf the requests that ran the change's code, 2 opened a transaction in a test that fakes mail, jobs or notifications, so what they sent, and when, was not seen.",
+        ])));
+    }
+
     public function test_a_named_test_that_did_not_run_is_not_evidence_and_sends_the_change_back()
     {
         FeaturePlanner::fake([$this->plan()]);
@@ -878,14 +916,15 @@ class AgentDriverTest extends TestCase
      *
      * @param  list<array{file: string, name: string, outcome: string}>|null  $tests
      * @param  list<array{rule: string, path: string, line: int}>|null  $shortcuts
+     * @param  array<string, mixed>|null  $evidence
      */
-    protected function passVerification(Run $run, ?array $tests = null, ?array $screens = null, ?array $shortcuts = null): void
+    protected function passVerification(Run $run, ?array $tests = null, ?array $screens = null, ?array $shortcuts = null, ?array $evidence = null): void
     {
         $tests ??= [['file' => '/workspace/tests/Feature/TeamDescriptionTest.php', 'name' => 'teams have a nullable description', 'outcome' => 'passed']];
         $verification = $run->verifications()->latest('id')->firstOrFail();
         $verification->update(['status' => VerificationStatus::Passed, 'results' => [
             ['name' => 'Tests', 'stage' => 'checks', 'outcome' => 'passed', 'exit_code' => 0, 'timed_out' => false, 'duration_ms' => 10, 'output' => 'OK', 'tests' => $tests],
-        ], 'screens' => $screens, 'shortcuts' => $shortcuts, 'finished_at' => now()]);
+        ], 'screens' => $screens, 'shortcuts' => $shortcuts, 'evidence' => $evidence, 'finished_at' => now()]);
 
         app(CompleteRunVerification::class)->handle($verification);
     }

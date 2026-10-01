@@ -695,21 +695,35 @@ return [
         // A test in a "behavior:<key>" group proves that behaviour. The run
         // never changes the checks' result; without a coverage driver it
         // records nothing. The command writes the condensed coverage
-        // ("report") and PHPUnit's test list ("listing"), using PHPUnit's
-        // documented report formats only.
+        // ("report"), PHPUnit's test list ("listing") and, from the Clover
+        // report of the same run, each line that can run with how many
+        // times it ran ("lines"), using PHPUnit's documented report formats
+        // only. The lines say which of a change's new lines no test ran,
+        // and which only its own tests ran. The same run records what
+        // each request of a test did ("traces" below), so nothing more
+        // runs for it.
         'test_map' => [
             'enabled' => (bool) env('BUILDER_TEST_MAP', true),
             'command' => ['sh', '-c', implode(' && ', [
                 'rm -rf storage/logs/test-map',
                 'mkdir -p storage/logs/test-map',
-                'php -d pcov.enabled=1 artisan test --coverage-xml=storage/logs/test-map/coverage > /dev/null',
+                ...(env('BUILDER_TRACES', true) ? [implode(' ', [
+                    'if [ -f '.env('BUILDER_TRACE_RECORDER', '/opt/trace-recorder').'/prepend.php ]; then',
+                    'mkdir -p storage/logs/test-map/trace',
+                    '&& printf \'auto_prepend_file=%s\n\' '.env('BUILDER_TRACE_RECORDER', '/opt/trace-recorder').'/prepend.php > storage/logs/test-map/trace/prepend.ini',
+                    '&& export PHP_INI_SCAN_DIR=":$PWD/storage/logs/test-map/trace" TRACE_RECORDER_DIR="$PWD/storage/logs/test-map/trace";',
+                    'fi',
+                ])] : []),
+                'php -d pcov.enabled=1 artisan test --coverage-xml=storage/logs/test-map/coverage --coverage-clover=storage/logs/test-map/clover.xml > /dev/null',
                 'test -f storage/logs/test-map/coverage/index.xml',
                 '(php artisan test --list-tests-xml=storage/logs/test-map/tests.xml > /dev/null || true)',
                 '{ pwd; grep -o \'<project source="[^"]*"\' storage/logs/test-map/coverage/index.xml; grep -rhoE \'<file name="[^"]*" path="[^"]*"|<line nr="[0-9]+"|covered by="[^"]*"\' --include=\'*.php.xml\' storage/logs/test-map/coverage || true; } > storage/logs/test-map/covered.txt',
+                '{ pwd; grep -oE \'<file name="[^"]*"|<line num="[0-9]+" type="stmt" count="[0-9]+"\' storage/logs/test-map/clover.xml || true; } > storage/logs/test-map/lines.txt',
             ])],
             'timeout' => 900,
             'report' => 'storage/logs/test-map/covered.txt',
             'listing' => 'storage/logs/test-map/tests.xml',
+            'lines' => 'storage/logs/test-map/lines.txt',
 
             // Code most tests run (the user model, middleware, providers) is
             // the app's foundation: it would tie every area to every other,
@@ -718,6 +732,49 @@ return [
             // it, once the suite has at least "foundation_min_tests" tests.
             'foundation_share' => (float) env('BUILDER_FOUNDATION_SHARE', 0.5),
             'foundation_min_tests' => (int) env('BUILDER_FOUNDATION_MIN_TESTS', 10),
+        ],
+
+        // What the app did while its tests used it (direction 32). A
+        // recorder in the box image (BUILDER_TRACE_RECORDER, never added to
+        // the app) is loaded into the coverage run above by PHP's
+        // auto_prepend_file
+        // and a copy of Laravel's package list, both kept under
+        // storage/logs. It writes one line per request to "report": its
+        // queries, transactions, and what it queued and sent, each with
+        // the line of the app's code it came from. Where the recorder is
+        // missing, nothing is recorded. A lookup that one request runs
+        // "repeats" times from one new line is kept as a shortcut.
+        'traces' => [
+            'enabled' => (bool) env('BUILDER_TRACES', true),
+            'report' => 'storage/logs/test-map/trace/trace.jsonl',
+            'repeats' => (int) env('BUILDER_TRACE_REPEATS', 3),
+        ],
+
+        // Evidence about the change itself, measured by running the app
+        // with and without it once the checks pass. It never changes the
+        // checks' result, and it runs last: the change is taken out of the
+        // workspace for it. "routes" lists the addresses the app answers
+        // on both sides, as the framework names them, to show which ones
+        // the change added, removed or left with other middleware. "tests"
+        // runs the test files the change touched with its code taken out
+        // and only its tests put back: a new test that still passes says
+        // nothing about the change. The files are added after the command,
+        // which writes a JUnit report to "report". The owner is told how
+        // many of the change's new lines of code a test ran; when more
+        // than "unrun_gap_share" of them were run by none, that is a gap.
+        'change_evidence' => [
+            'enabled' => (bool) env('BUILDER_CHANGE_EVIDENCE', true),
+            'unrun_gap_share' => (float) env('BUILDER_UNRUN_GAP_SHARE', 0.2),
+            'routes' => [
+                'command' => ['sh', '-c', 'mkdir -p storage/logs && php artisan route:list --json > storage/logs/routes.json'],
+                'timeout' => 60,
+                'report' => 'storage/logs/routes.json',
+            ],
+            'tests' => [
+                'command' => ['php', 'artisan', 'test', '--log-junit=storage/logs/new-tests.xml'],
+                'timeout' => 300,
+                'report' => 'storage/logs/new-tests.xml',
+            ],
         ],
 
         // A check with "files" runs only on the files the change added or

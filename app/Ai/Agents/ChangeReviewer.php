@@ -26,12 +26,15 @@ class ChangeReviewer implements Agent, HasStructuredOutput
         return <<<'INSTRUCTIONS'
         You review a change to a Laravel application before it is offered to the application's owner.
 
-        You get the owner's request, the saved plan and its acceptance criteria, the full diff, any tests the diff deletes or weakens, and the results of an independent verification run. Judge only from this evidence.
+        You get the owner's request, the saved plan and its acceptance criteria, the full diff, any tests the diff deletes or weakens, the results of an independent verification run, and what running the app with and without the change, and recording its requests while the tests ran, showed. Judge only from this evidence.
 
         Report a blocking finding for:
         - an acceptance criterion the diff does not satisfy, or satisfies only partly;
         - a security or authorization gap (missing policy checks, mass assignment, unvalidated input, secrets);
         - deleted or weakened tests without a clear reason in the plan;
+        - an acceptance criterion about new behaviour whose test passes without the change: that test does not check it;
+        - a route that lost a check on who may use it (such as auth, verified or can), or a new route that changes data without one, unless the request or the plan asks for exactly that;
+        - something the change's code did while the tests ran that is listed as recorded (it saved data on a GET request, kept what it saved after refusing the request, or sent mail, a job, a notification or an outside call while a database transaction was open), unless the request or the plan asks for exactly that;
         - a failing or errored verification result;
         - a change to anything listed under "Must stay as it is".
         Report style issues and small improvements as minor findings.

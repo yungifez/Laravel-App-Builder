@@ -9,7 +9,11 @@ use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Context\ProjectNotes;
 use App\Enums\VerificationStatus;
 use App\Features\AcceptanceSuite;
+use App\Features\AppRoutes;
+use App\Features\AppTraces;
 use App\Features\CodeShortcuts;
+use App\Features\NewCode;
+use App\Features\NewTests;
 use App\Features\PatchSummary;
 use App\Features\ScreenCheck;
 use App\Features\TestMap;
@@ -81,6 +85,20 @@ class VerifyFeatureRequest implements ShouldQueue
      * @var array<string, bool>
      */
     protected array $touched = [];
+
+    /**
+     * What running the app showed about the change itself, by kind.
+     *
+     * @var array<string, mixed>
+     */
+    protected array $evidence = [];
+
+    /**
+     * The requests recorded while the tests used the app, from AppTraces::parse().
+     *
+     * @var list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null}>, blind: list<string>, cut: bool}>
+     */
+    protected array $requests = [];
 
     /**
      * Files whose change alters what setup installs. A check cannot be run
@@ -169,7 +187,13 @@ class VerifyFeatureRequest implements ShouldQueue
 
             if ($checksPassed && in_array($acceptance, [self::OUTCOME_PASSED, self::OUTCOME_NOT_APPLICABLE], true)) {
                 $this->observeScreens($driver, $runWorkspaceCommand, $workspace, $featureRequest);
+
+                // Last: it takes the change out of the workspace and does
+                // not put all of it back.
+                $this->observeChange($driver, $runWorkspaceCommand, $workspace, $featureRequest);
             }
+
+            $this->observeTraces($featureRequest);
 
             $this->finish(match (true) {
                 $acceptance === self::OUTCOME_ERRORED => VerificationStatus::Errored,
@@ -333,15 +357,17 @@ class VerifyFeatureRequest implements ShouldQueue
 
     /**
      * Apply one change of the lineage to the workspace, or take it out.
+     * More `git apply` flags narrow which of its files are touched.
      *
      * @param  list<FeatureRequest>  $lineage
+     * @param  list<string>  $flags
      */
-    protected function applyPatch(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, array $lineage, int $position, bool $reverse = false): bool
+    protected function applyPatch(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, array $lineage, int $position, bool $reverse = false, array $flags = []): bool
     {
         $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);
         $driver->writeFile((string) $workspace->driver_id, $patch, (string) $lineage[$position]->patch);
 
-        $command = $runWorkspaceCommand->handle($workspace, ['git', 'apply', '--whitespace=nowarn', ...($reverse ? ['--reverse'] : []), ...CopyExclusions::applyFlags(), $patch], 120);
+        $command = $runWorkspaceCommand->handle($workspace, ['git', 'apply', '--whitespace=nowarn', ...($reverse ? ['--reverse'] : []), ...CopyExclusions::applyFlags(), ...$flags, $patch], 120);
 
         if ($command->lost) {
             throw new CommandLost($command->error_output);
@@ -511,7 +537,7 @@ class VerifyFeatureRequest implements ShouldQueue
      */
     protected function observeTests(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): void
     {
-        /** @var array{enabled: bool, command: list<string>, timeout: int, report: string, listing: string} $config */
+        /** @var array{enabled: bool, command: list<string>, timeout: int, report: string, listing: string, lines?: string} $config */
         $config = config('builder.verification.test_map');
         $suite = collect($this->results)->firstWhere('name', config('builder.verification.suite_check'));
 
@@ -523,6 +549,17 @@ class VerifyFeatureRequest implements ShouldQueue
             $command = $runWorkspaceCommand->handle($workspace, $config['command'], $config['timeout']);
             $read = fn (string $path) => rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), null, report: false);
             $map = $this->outcome($command) === self::OUTCOME_PASSED ? TestMap::parse((string) $read($config['report']), $read($config['listing'])) : null;
+            $lines = $map !== null && isset($config['lines']) ? $read($config['lines']) : null;
+
+            // Read now and measured last, once the routes the change
+            // added are known.
+            if ($map !== null && config('builder.verification.traces.enabled')) {
+                $this->requests = AppTraces::parse((string) $read((string) config('builder.verification.traces.report')));
+            }
+
+            if ($map !== null && is_string($lines)) {
+                $this->keepEvidence('new_code', NewCode::measure($map, NewCode::parse($lines), $featureRequest->patch, array_keys(NewTests::files(array_map(fn (FeatureRequest $request) => $request->patch, $featureRequest->lineage())))));
+            }
 
             TestObservation::create([
                 'project_id' => $featureRequest->project_id,
@@ -631,6 +668,134 @@ class VerifyFeatureRequest implements ShouldQueue
         }
 
         return $shots;
+    }
+
+    /**
+     * When the checks pass, measure two things about the change itself by
+     * running the app with and without it. The addresses the app answers
+     * are listed on both sides, and the tests the change added are run with
+     * its code taken out and only its tests left in: one that still passes
+     * says nothing about the change.
+     *
+     * Like the screen check this never changes the checks' result, and
+     * what cannot be measured is not kept. A change to the packages is not
+     * measured: the starting commit would need other packages installed.
+     */
+    protected function observeChange(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): void
+    {
+        /** @var array{enabled: bool, routes: array{command: list<string>, timeout: int, report: string}, tests: array{command: list<string>, timeout: int, report: string}} $config */
+        $config = config('builder.verification.change_evidence');
+        $lineage = $featureRequest->lineage();
+        $suite = (array) config('builder.verification.suite_paths');
+        $app = array_filter(array_keys($this->touched), fn (string $path) => ! Str::startsWith($path, $suite) && ! str_starts_with($path, ProjectNotes::directory().'/'));
+        $code = array_any($app, fn (string $path) => str_ends_with($path, '.php'));
+        // A change that only adds tests has no code to take out: its tests
+        // pass without it by design.
+        $tests = $app === [] ? [] : NewTests::files(array_map(fn (FeatureRequest $request) => $request->patch, $lineage));
+
+        if (! $config['enabled'] || ($tests === [] && ! $code) || array_intersect(array_keys($this->touched), self::PACKAGE_FILES) !== []) {
+            return;
+        }
+
+        rescue(function () use ($driver, $runWorkspaceCommand, $workspace, $config, $lineage, $suite, $tests, $code) {
+            $read = fn (string $path) => (string) rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), '', report: false);
+            $routes = function () use ($runWorkspaceCommand, $workspace, $config, $read) {
+                $command = $runWorkspaceCommand->handle($workspace, $config['routes']['command'], $config['routes']['timeout']);
+
+                return $this->outcome($command) === self::OUTCOME_PASSED ? AppRoutes::parse($read($config['routes']['report'])) : null;
+            };
+            $run = function (array $files) use ($runWorkspaceCommand, $workspace, $config, $read) {
+                $runWorkspaceCommand->handle($workspace, ['rm', '-f', $config['tests']['report']], 30);
+                $runWorkspaceCommand->handle($workspace, [...$config['tests']['command'], ...array_values($files)], $config['tests']['timeout']);
+
+                return TestReport::fromJunit($read($config['tests']['report']));
+            };
+            // The protected tests replaced whatever the change put there.
+            $kept = ['--exclude='.AcceptanceSuite::WORKSPACE_DIRECTORY.'/*'];
+
+            $after = $code ? $routes() : null;
+
+            foreach (array_reverse(array_keys($lineage)) as $position) {
+                if (! $this->applyPatch($driver, $runWorkspaceCommand, $workspace, $lineage, $position, reverse: true, flags: $kept)) {
+                    return;
+                }
+            }
+
+            $before = $after !== null ? $routes() : null;
+
+            if ($after !== null && $before !== null) {
+                $this->keepEvidence('routes', AppRoutes::changes($before, $after) ?? []);
+            }
+
+            if ($tests === []) {
+                return;
+            }
+
+            $old = array_keys(array_filter($tests));
+            $ranBefore = $old === [] ? [] : $run($old);
+            $only = array_values(array_map(fn (string $path) => '--include='.rtrim($path, '/').'/*', $suite));
+
+            // Put back only what the change did under the tests' folders:
+            // its tests and the helpers they use.
+            foreach ($lineage as $position => $request) {
+                $touchesTests = array_any(PatchSummary::files($request->patch), fn (array $file) => Str::startsWith($file['path'], $suite));
+
+                if ($touchesTests && ! $this->applyPatch($driver, $runWorkspaceCommand, $workspace, $lineage, $position, flags: [...$kept, ...$only])) {
+                    return;
+                }
+            }
+
+            $ranWithout = $run(array_keys($tests));
+
+            // No report means the tests could not start without the change,
+            // which says nothing about any one of them.
+            if ($ranWithout !== []) {
+                $this->keepEvidence('new_tests', NewTests::found($tests, $ranBefore, $ranWithout));
+            }
+        }, report: false);
+    }
+
+    /**
+     * Measure what the app did while its tests used it against the change:
+     * what the change's own lines saved, kept and sent that the shape of a
+     * trace shows to be a problem (direction 32). The requests were
+     * recorded in the coverage run, so nothing runs here. A lookup one
+     * request repeated from a new line joins the shortcuts, which are
+     * dealt with after the owner keeps the change.
+     */
+    protected function observeTraces(FeatureRequest $featureRequest): void
+    {
+        rescue(function () use ($featureRequest) {
+            $measured = AppTraces::measure(
+                $this->requests,
+                $featureRequest->patch,
+                array_column($this->evidence['routes']['added'] ?? [], 'route'),
+                (int) config('builder.verification.traces.repeats'),
+            );
+
+            if ($measured === null) {
+                return;
+            }
+
+            if ($measured['repeats'] !== [] && config('builder.verification.shortcuts.enabled')) {
+                $this->verification->update(['shortcuts' => AppTraces::withRepeats($this->verification->shortcuts, $measured['repeats'])]);
+            }
+
+            $this->keepEvidence('traces', $measured);
+        });
+    }
+
+    /**
+     * Keep one kind of evidence about the change with the verification.
+     */
+    protected function keepEvidence(string $kind, mixed $evidence): void
+    {
+        if ($evidence === null) {
+            return;
+        }
+
+        $this->evidence[$kind] = $evidence;
+        $this->verification->update(['evidence' => $this->evidence]);
     }
 
     /**

@@ -741,4 +741,257 @@ class VerificationTest extends TestCase
         $this->assertNotContains(['pint', '--test'], array_column($this->driver->executed, 'command'));
         $this->assertCount(1, $this->driver->destroyed);
     }
+
+    /**
+     * A change to the team model that adds one test file and changes
+     * another the app already had.
+     */
+    protected function changeWithTests(): string
+    {
+        return implode("\n", [
+            'diff --git a/app/Models/Team.php b/app/Models/Team.php',
+            '--- a/app/Models/Team.php',
+            '+++ b/app/Models/Team.php',
+            '@@ -1,2 +1,4 @@',
+            ' <?php',
+            ' // Team',
+            '+$team->archive();',
+            '+$team->notify();',
+            'diff --git a/tests/Feature/ArchiveTest.php b/tests/Feature/ArchiveTest.php',
+            'new file mode 100644',
+            '--- /dev/null',
+            '+++ b/tests/Feature/ArchiveTest.php',
+            '@@ -0,0 +1 @@',
+            '+// Archive tests',
+            'diff --git a/tests/Feature/TeamTest.php b/tests/Feature/TeamTest.php',
+            '--- a/tests/Feature/TeamTest.php',
+            '+++ b/tests/Feature/TeamTest.php',
+            '@@ -1 +1,2 @@',
+            ' <?php',
+            '+// One more team test',
+        ]);
+    }
+
+    public function test_a_passing_change_is_run_without_its_code_to_see_what_its_tests_and_routes_show()
+    {
+        $routes = ['sh', '-c', 'list the routes'];
+        $tests = ['php', 'artisan', 'test', '--log-junit=new-tests.xml'];
+        config(['builder.verification.change_evidence' => [
+            'enabled' => true,
+            'routes' => ['command' => $routes, 'timeout' => 60, 'report' => 'routes.json'],
+            'tests' => ['command' => $tests, 'timeout' => 300, 'report' => 'new-tests.xml'],
+        ]]);
+        $route = fn (string $method, string $uri, array $middleware) => ['domain' => null, 'method' => $method, 'uri' => $uri, 'middleware' => $middleware];
+        $case = fn (string $file, string $name, bool $passed) => "<testcase name=\"{$name}\" file=\"/workspace/tests/Feature/{$file}\">".($passed ? '' : '<failure/>').'</testcase>';
+        $without = false;
+        $this->driver->onExec = function (string $workspace, array $command) use ($routes, $tests, $route, $case, &$without) {
+            $without = $without || in_array('--reverse', $command, true);
+
+            if ($command === $routes) {
+                $this->driver->files["{$workspace}:routes.json"] = json_encode($without
+                    ? [$route('GET|HEAD', 'teams', ['web', 'auth'])]
+                    : [$route('GET|HEAD', 'teams', ['web']), $route('POST', 'teams/{team}/archive', ['web', 'auth'])]);
+            }
+
+            if ($command === ['rm', '-f', 'new-tests.xml']) {
+                unset($this->driver->files["{$workspace}:new-tests.xml"]);
+            }
+
+            if (array_slice($command, 0, 4) === $tests) {
+                $this->driver->files["{$workspace}:new-tests.xml"] = '<testsuites>'.implode('', in_array('tests/Feature/ArchiveTest.php', $command, true) ? [
+                    $case('ArchiveTest.php', 'test_owners_archive_teams', false),
+                    $case('ArchiveTest.php', 'test_the_team_page_loads', true),
+                    $case('TeamTest.php', 'test_owners_rename_teams', true),
+                    $case('TeamTest.php', 'test_archived_teams_are_hidden', false),
+                ] : [
+                    $case('TeamTest.php', 'test_owners_rename_teams', true),
+                ]).'</testsuites>';
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        $request = FeatureRequest::factory()->generated()->create(['patch' => $this->changeWithTests()]);
+
+        app(RequestVerification::class)->handle($request);
+
+        $verification = $request->verifications()->sole();
+        $this->assertSame(VerificationStatus::Unverified, $verification->status);
+        $this->assertSame([
+            'added' => [['route' => 'POST /teams/{team}/archive', 'middleware' => ['web', 'auth']]],
+            'removed' => [],
+            'changed' => [['route' => 'GET /teams', 'lost' => ['auth'], 'gained' => []]],
+        ], $verification->evidence['routes']);
+        $this->assertSame([
+            ['file' => 'tests/Feature/ArchiveTest.php', 'name' => 'test_owners_archive_teams', 'without_change' => 'failed'],
+            ['file' => 'tests/Feature/ArchiveTest.php', 'name' => 'test_the_team_page_loads', 'without_change' => 'passed'],
+            ['file' => 'tests/Feature/TeamTest.php', 'name' => 'test_archived_teams_are_hidden', 'without_change' => 'failed'],
+        ], $verification->evidence['new_tests']);
+
+        // The whole change is taken out, then only what it did under tests/ is put back.
+        $commands = array_column($this->driver->executed, 'command');
+        $applies = array_values(array_filter($commands, fn (array $command) => array_slice($command, 0, 2) === ['git', 'apply']));
+        $this->assertCount(3, $applies);
+        $this->assertContains('--reverse', $applies[1]);
+        $this->assertNotContains('--include=tests/*', $applies[1]);
+        $this->assertNotContains('--reverse', $applies[2]);
+        $this->assertContains('--include=tests/*', $applies[2]);
+        $this->assertContains('--exclude=tests/Acceptance/*', $applies[2]);
+
+        // Before the tests are put back, only the file the app already had is run.
+        $runs = array_values(array_filter($commands, fn (array $command) => array_slice($command, 0, 4) === $tests));
+        $this->assertSame([[...$tests, 'tests/Feature/TeamTest.php'], [...$tests, 'tests/Feature/ArchiveTest.php', 'tests/Feature/TeamTest.php']], $runs);
+
+        // Measuring is never one of the checks.
+        $this->assertSame(["Apply change #{$request->id}", 'Install', 'Key', 'Tests', 'Lint', 'Protected acceptance tests'], array_column($verification->results, 'name'));
+    }
+
+    public function test_the_change_is_not_run_without_its_code_when_that_would_say_nothing()
+    {
+        $withoutCode = fn () => array_filter(array_column($this->driver->executed, 'command'), fn (array $command) => in_array('--reverse', $command, true));
+        $verify = function (array $state) {
+            $request = FeatureRequest::factory()->generated()->create($state);
+            app(RequestVerification::class)->handle($request);
+
+            return $request->verifications()->sole();
+        };
+
+        // A change that only adds tests has no code to take out.
+        $this->assertNull($verify(['patch' => "diff --git a/tests/Feature/ArchiveTest.php b/tests/Feature/ArchiveTest.php\nnew file mode 100644\n--- /dev/null\n+++ b/tests/Feature/ArchiveTest.php\n@@ -0,0 +1 @@\n+// Tests"])->evidence);
+        // A screen with no test has no routes of its own and no tests to run.
+        $this->assertNull($verify(['patch' => "diff --git a/resources/js/pages/Teams.vue b/resources/js/pages/Teams.vue\n--- a/resources/js/pages/Teams.vue\n+++ b/resources/js/pages/Teams.vue\n@@ -1 +1,2 @@\n <p />\n+<p>Teams</p>"])->evidence);
+        // The starting commit would need other packages installed.
+        $this->assertNull($verify(['patch' => $this->changeWithTests()."\ndiff --git a/composer.json b/composer.json\n--- a/composer.json\n+++ b/composer.json\n@@ -1 +1,2 @@\n {\n+\n"])->evidence);
+
+        config(['builder.verification.change_evidence.enabled' => false]);
+        $this->assertNull($verify(['patch' => $this->changeWithTests()])->evidence);
+        $this->assertEmpty($withoutCode());
+
+        // Nor when a check failed: there is nothing to add evidence to.
+        config(['builder.verification.change_evidence.enabled' => true]);
+        $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(exitCode: $command === ['pint', '--test'] ? 1 : 0, output: 'ok', errorOutput: '', durationMs: 5);
+        $failed = $verify(['patch' => $this->changeWithTests()]);
+        $this->assertSame(VerificationStatus::Failed, $failed->status);
+        $this->assertNull($failed->evidence);
+    }
+
+    public function test_what_cannot_be_measured_without_the_change_is_not_kept_and_never_fails_it()
+    {
+        // The change cannot be taken out, the route list is not one, and no report is written.
+        $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(exitCode: in_array('--reverse', $command, true) ? 1 : 0, output: 'ok', errorOutput: '', durationMs: 5);
+        $stuck = FeatureRequest::factory()->generated()->create(['patch' => $this->changeWithTests()]);
+
+        app(RequestVerification::class)->handle($stuck);
+
+        $this->assertSame(VerificationStatus::Unverified, $stuck->verifications()->sole()->status);
+        $this->assertNull($stuck->verifications()->sole()->evidence);
+
+        // The tests cannot start without the change: that says nothing about any one of them.
+        $this->driver->onExec = null;
+        $silent = FeatureRequest::factory()->generated()->create(['patch' => $this->changeWithTests()]);
+
+        app(RequestVerification::class)->handle($silent);
+
+        $this->assertSame(VerificationStatus::Unverified, $silent->verifications()->sole()->status);
+        $this->assertNull($silent->verifications()->sole()->evidence);
+    }
+
+    public function test_the_new_lines_of_code_are_measured_from_the_suites_line_report()
+    {
+        $map = ['sh', '-c', 'make the test map'];
+        config(['builder.verification.test_map' => [...config('builder.verification.test_map'), 'command' => $map, 'report' => 'covered.txt', 'listing' => 'tests.xml', 'lines' => 'lines.txt']]);
+        $this->driver->onExec = function (string $workspace, array $command) use ($map) {
+            if ($command === $map) {
+                $this->driver->files["{$workspace}:covered.txt"] = implode("\n", [
+                    '/workspace',
+                    '<project source="/workspace/app"',
+                    '<file name="Team.php" path="/Models"',
+                    '<line nr="3"',
+                    'covered by="Tests\Feature\ArchiveTest::test_owners_archive_teams"',
+                ]);
+                $this->driver->files["{$workspace}:tests.xml"] = '<?xml version="1.0"?><testSuite xmlns="https://xml.phpunit.de/testSuite"><tests><testClass name="Tests\Feature\ArchiveTest" file="/workspace/tests/Feature/ArchiveTest.php"><testMethod id="Tests\Feature\ArchiveTest::test_owners_archive_teams" name="test_owners_archive_teams"/></testClass></tests></testSuite>';
+                $this->driver->files["{$workspace}:lines.txt"] = implode("\n", [
+                    '/workspace',
+                    '<file name="/workspace/app/Models/Team.php"',
+                    '<line num="3" type="stmt" count="1"',
+                    '<line num="4" type="stmt" count="0"',
+                ]);
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        $request = FeatureRequest::factory()->generated()->create(['patch' => $this->changeWithTests()]);
+
+        app(RequestVerification::class)->handle($request);
+
+        $this->assertSame(
+            ['lines' => 2, 'run' => 1, 'own_tests_only' => 1, 'unrun' => ['app/Models/Team.php' => [4]]],
+            $request->verifications()->sole()->evidence['new_code'],
+        );
+    }
+
+    public function test_what_the_changes_code_did_in_the_requests_of_the_tests_is_measured_from_the_recording()
+    {
+        $map = ['sh', '-c', 'make the test map'];
+        $scan = ['sh', '-c', 'scan for shortcuts'];
+        config([
+            'builder.verification.test_map' => [...config('builder.verification.test_map'), 'command' => $map, 'report' => 'covered.txt', 'listing' => 'tests.xml'],
+            'builder.verification.traces' => ['enabled' => true, 'report' => 'trace.jsonl', 'repeats' => 3],
+            'builder.verification.shortcuts' => [...config('builder.verification.shortcuts'), 'enabled' => true, 'command' => $scan, 'report' => 'shortcuts.json'],
+            'builder.verification.change_evidence.routes' => ['command' => ['sh', '-c', 'list the routes'], 'timeout' => 60, 'report' => 'routes.json'],
+        ]);
+        $request = fn (string $method, string $route, array $effects) => json_encode(['test' => 'Tests\Feature\ArchiveTest::test_owners_archive_teams', 'method' => $method, 'route' => $route, 'status' => 200, 'refused' => false, 'effects' => $effects, 'blind' => []]);
+        $lookup = ['kind' => 'query', 'sql' => 'select * from "users" where "id" = ? limit 1', 'open' => 0, 'at' => 'app/Models/Team.php:4'];
+        $without = false;
+        $this->driver->onExec = function (string $workspace, array $command) use ($map, $scan, $request, $lookup, &$without) {
+            $without = $without || in_array('--reverse', $command, true);
+
+            if ($command === $map) {
+                $this->driver->files["{$workspace}:covered.txt"] = "/workspace\n<project source=\"/workspace/app\"\n<file name=\"Team.php\" path=\"/Models\"\ncovered by=\"Tests\\Feature\\ArchiveTest::test_owners_archive_teams\"";
+                $this->driver->files["{$workspace}:trace.jsonl"] = implode("\n", [
+                    // A page that saves from a line the change added.
+                    $request('GET', '/teams', [['kind' => 'query', 'sql' => 'update "teams" set "seen_at" = ?', 'open' => 0, 'at' => 'app/Models/Team.php:3']]),
+                    // The same lookup three times from one new line.
+                    $request('GET', '/teams/{team}', [$lookup, $lookup, $lookup]),
+                    // Old code on a route the change added.
+                    $request('GET', '/teams/{team}/archive', [['kind' => 'query', 'sql' => 'delete from "teams" where "id" = ?', 'open' => 0, 'at' => 'app/Support/Old.php:9']]),
+                ]);
+            }
+
+            if (array_slice($command, 0, 3) === $scan) {
+                $this->driver->files["{$workspace}:shortcuts.json"] = json_encode(['schema' => 1, 'tool' => 'sloppy', 'findings' => []]);
+            }
+
+            if ($command === ['sh', '-c', 'list the routes']) {
+                $this->driver->files["{$workspace}:routes.json"] = json_encode($without ? [] : [['domain' => null, 'method' => 'GET|HEAD', 'uri' => 'teams/{team}/archive', 'middleware' => ['web', 'auth']]]);
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        $change = FeatureRequest::factory()->generated()->create(['patch' => $this->changeWithTests()]);
+
+        app(RequestVerification::class)->handle($change);
+
+        $verification = $change->verifications()->sole();
+        $traces = $verification->evidence['traces'];
+        $this->assertSame([3, 3, 0, 0], [$traces['requests'], $traces['reached'], $traces['unseen'], $traces['existing']]);
+        $this->assertSame([
+            ['kind' => 'saved_on_read', 'route' => 'GET /teams', 'what' => 'update teams', 'at' => 'app/Models/Team.php:3', 'test' => 'Tests\Feature\ArchiveTest::test_owners_archive_teams'],
+            ['kind' => 'saved_on_read', 'route' => 'GET /teams/{team}/archive', 'what' => 'delete teams', 'at' => 'app/Support/Old.php:9', 'test' => 'Tests\Feature\ArchiveTest::test_owners_archive_teams'],
+        ], $traces['findings']);
+
+        // The repeated lookup joins the shortcuts, which never hold the change back.
+        $this->assertSame([['rule' => 'SL204', 'path' => 'app/Models/Team.php', 'line' => 4]], $verification->shortcuts);
+        $this->assertSame(VerificationStatus::Unverified, $verification->status);
+
+        // Nothing more ran for it: the recording comes from the coverage run.
+        $this->assertSame(1, collect($this->driver->executed)->where('command', $map)->count());
+
+        // Without a recording nothing is kept, and switching it off reads none.
+        config(['builder.verification.traces.enabled' => false]);
+        $off = FeatureRequest::factory()->generated()->create(['patch' => $this->changeWithTests()]);
+
+        app(RequestVerification::class)->handle($off);
+
+        $this->assertArrayNotHasKey('traces', $off->verifications()->sole()->evidence ?? []);
+    }
 }

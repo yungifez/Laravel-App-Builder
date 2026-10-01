@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Features;
 
+use App\Actions\Features\DescribeProof;
 use App\Enums\VerificationStatus;
 use App\Models\FeatureRequest;
 use App\Models\Run;
@@ -17,14 +18,18 @@ class ChangeProofTest extends TestCase
 
     /**
      * Record checks for the change: the app's tests (all passing), two more
-     * checks on the code, and the separate checks.
+     * checks on the code, and the separate checks. Evidence is what running
+     * the app with and without the change showed.
+     *
+     * @param  array<string, mixed>|null  $evidence
      */
-    protected function checked(FeatureRequest $request, VerificationStatus $status = VerificationStatus::Passed): void
+    protected function checked(FeatureRequest $request, VerificationStatus $status = VerificationStatus::Passed, ?array $evidence = null): void
     {
         $result = fn (string $name, string $stage, array $extra = []) => ['name' => $name, 'stage' => $stage, 'outcome' => 'passed', 'exit_code' => 0, 'timed_out' => false, 'duration_ms' => 5, 'output' => '', ...$extra];
 
         Verification::factory()->for($request)->create([
             'status' => $status,
+            'evidence' => $evidence,
             'results' => [
                 $result('Install PHP dependencies', 'setup'),
                 $result('Tests', 'checks', ['tests' => [
@@ -280,6 +285,161 @@ class ChangeProofTest extends TestCase
                 'text' => 'It added 4 tests that keep this checked from now on, such as "Owners can archive teams".',
                 'evidence' => true,
             ]));
+    }
+
+    public function test_new_tests_that_fail_without_the_change_are_what_shows_it_works()
+    {
+        $patch = implode("\n", [
+            'diff --git a/tests/Feature/ArchiveTest.php b/tests/Feature/ArchiveTest.php',
+            '--- /dev/null',
+            '+++ b/tests/Feature/ArchiveTest.php',
+            '@@ -0,0 +1,2 @@',
+            '+    public function test_owners_can_archive_teams()',
+            '+    public function test_the_team_page_loads()',
+        ]);
+        $proof = function (array $tests) use ($patch) {
+            $request = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
+            $this->checked($request, evidence: ['new_tests' => $tests]);
+
+            return $this->actingAs($request->project->owner)->get(route('feature-requests.show', $request));
+        };
+        $test = fn (string $name, string $without, string $file = 'tests/Feature/ArchiveTest.php') => ['file' => $file, 'name' => $name, 'without_change' => $without];
+
+        // Only the test that fails without the change is counted and named.
+        $proof([$test('test_the_team_page_loads', 'passed'), $test('test_owners_can_archive_teams', 'failed')])
+            ->assertInertia(fn (Assert $page) => $page->where('proof.3', [
+                'kind' => 'passed',
+                'text' => 'It added a test that fails without this change and passes with it: "Owners can archive teams".',
+                'evidence' => true,
+            ]));
+
+        // Tests that pass either way show nothing about the change: a gap, not evidence.
+        $proof([$test('test_the_team_page_loads', 'passed'), $test('test_owners_can_archive_teams', 'passed')])
+            ->assertInertia(fn (Assert $page) => $page->where('proof.3', [
+                'kind' => 'gap',
+                'text' => 'The 2 tests it added pass without this change too, so they do not show that the change works.',
+            ]));
+
+        // Tests an earlier change of the conversation added are not this one's.
+        $proof([$test('test_members_see_invitations', 'passed', 'tests/Feature/InviteTest.php')])
+            ->assertInertia(fn (Assert $page) => $page->where('proof.3', [
+                'kind' => 'passed',
+                'text' => 'It added 2 tests that keep this checked from now on, such as "Owners can archive teams".',
+                'evidence' => true,
+            ]));
+    }
+
+    public function test_a_change_to_who_may_use_a_part_of_the_app_is_said()
+    {
+        $texts = function (array $routes) {
+            $request = FeatureRequest::factory()->generated()->create();
+            $this->checked($request, evidence: ['routes' => $routes]);
+
+            return collect(app(DescribeProof::class)->handle($request));
+        };
+        $kept = 'Every part of your app that asks people to sign in still does.';
+
+        // Nothing about the app's addresses changed: nothing to say.
+        $this->assertFalse($texts([])->contains('text', $kept));
+
+        $this->assertContains(['kind' => 'passed', 'text' => $kept], $texts([
+            'added' => [['route' => 'POST /teams/{team}/archive', 'middleware' => ['web', 'auth']]],
+            'removed' => [],
+            'changed' => [['route' => 'GET /teams', 'lost' => [], 'gained' => ['verified']]],
+        ])->all());
+
+        // Nothing that ran can tell whether the owner wanted this, so it is a gap they see.
+        $opened = $texts(['added' => [], 'removed' => [], 'changed' => [['route' => 'GET /teams/{team}', 'lost' => ['auth', 'verified'], 'gained' => []]]]);
+        $this->assertContains(['kind' => 'gap', 'text' => 'A part of your app no longer checks who may use it: /teams/{team}. Make sure you wanted that.'], $opened->all());
+        $this->assertFalse($opened->contains('text', $kept));
+
+        // An address that lost middleware of the app's own is not guessed at, either way.
+        $unknown = $texts(['added' => [], 'removed' => [], 'changed' => [['route' => 'GET /teams', 'lost' => ['App\\Http\\Middleware\\EnsureAdmin'], 'gained' => []]]]);
+        $this->assertFalse($unknown->contains('text', $kept));
+        $this->assertFalse($unknown->contains('kind', 'gap'));
+    }
+
+    public function test_how_many_of_the_new_lines_of_code_a_test_ran_is_said()
+    {
+        $proof = function (array $code, ?array $observed = null) {
+            $request = FeatureRequest::factory()->generated()->create();
+            $this->checked($request, evidence: ['new_code' => $code]);
+
+            if ($observed !== null) {
+                $this->reviewed($request, $observed);
+            }
+
+            return [$request, app(DescribeProof::class)->handle($request)];
+        };
+        $gap = ['kind' => 'gap', 'text' => 'Some of the new code is not run by any test yet.'];
+
+        [, $all] = $proof(['lines' => 12, 'run' => 12, 'own_tests_only' => 12, 'unrun' => []]);
+        $this->assertContains(['kind' => 'reach', 'text' => 'Tests ran every one of its 12 new lines of code.', 'evidence' => true], $all);
+        $this->assertNotContains($gap, $all);
+
+        // One line no test ran is common and harmless.
+        [$request, $most] = $proof(['lines' => 123, 'run' => 122, 'own_tests_only' => 106, 'unrun' => ['app/Models/TeamInvitation.php' => [90]]]);
+        $this->assertContains(['kind' => 'reach', 'text' => 'Tests ran 122 of its 123 new lines of code.', 'evidence' => true], $most);
+        $this->assertNotContains($gap, $most);
+
+        // A large share is a gap, said once even when a whole file is unrun too,
+        // and closing it is offered first as the next thing to ask for.
+        [$request, $some] = $proof(
+            ['lines' => 10, 'run' => 6, 'own_tests_only' => 6, 'unrun' => ['app/Support/Money.php' => [4, 5, 6, 7]]],
+            ['areas' => ['teams' => 1], 'tests' => 1, 'unmapped' => ['app/Support/Money.php'], 'foundation' => [], 'by_line' => []],
+        );
+        $this->assertContains(['kind' => 'reach', 'text' => 'Tests ran 6 of its 10 new lines of code.', 'evidence' => true], $some);
+        $this->assertCount(1, array_filter($some, fn (array $line) => $line === $gap));
+
+        // New code no test ran at all is not evidence of anything.
+        [$request, $none] = $proof(['lines' => 4, 'run' => 0, 'own_tests_only' => 0, 'unrun' => ['app/Support/Money.php' => [4, 5, 6, 7]]], ['areas' => [], 'tests' => 0, 'unmapped' => [], 'foundation' => [], 'by_line' => []]);
+        $this->assertFalse(collect($none)->contains(fn (array $line) => str_starts_with($line['text'], 'Tests ran')));
+        $this->assertContains($gap, $none);
+        $request->runs()->sole()->update(['plan' => (new Plan('Archive teams.', next: ['Let owners archive teams']))->toArray()]);
+
+        $this->actingAs($request->project->owner)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page->where('run.plan.next.0', 'Add tests for the new code nothing checks yet'));
+    }
+
+    public function test_what_the_app_was_seen_to_do_while_its_tests_ran_is_said()
+    {
+        $proof = function (array $traces) {
+            $request = FeatureRequest::factory()->generated()->create();
+            $this->checked($request, evidence: ['traces' => ['requests' => 40, 'reached' => 0, 'unseen' => 0, 'existing' => 0, 'findings' => [], 'repeats' => [], ...$traces]]);
+
+            return collect(app(DescribeProof::class)->handle($request));
+        };
+        $finding = fn (string $kind, string $route) => ['kind' => $kind, 'route' => $route, 'what' => 'update teams', 'at' => 'app/Models/Team.php:3', 'test' => null];
+        $clean = 'Nothing was saved by mistake or sent too early.';
+
+        // No recorded request ran the new code: the recording says nothing about it.
+        $this->assertFalse($proof([])->contains(fn (array $line) => str_contains($line['text'], $clean)));
+
+        $this->assertContains(
+            ['kind' => 'passed', 'text' => "We watched what your app saved and sent while its tests used the new code 12 times. {$clean}"],
+            $proof(['reached' => 12])->all(),
+        );
+
+        // Tests that fake what is sent hide when it is sent, so only the saving is vouched for.
+        $this->assertContains(
+            ['kind' => 'passed', 'text' => 'We watched what your app saved while its tests used the new code 12 times. Nothing was saved by mistake. Its tests only pretend to send emails and messages, so we could not watch when it sends them.'],
+            $proof(['reached' => 12, 'unseen' => 2])->all(),
+        );
+
+        // Each kind of thing seen is one gap, with the first address it was seen at.
+        $seen = $proof(['reached' => 12, 'findings' => [
+            $finding('saved_on_read', 'GET /teams/{team}'),
+            $finding('saved_on_read', 'GET /teams'),
+            $finding('kept_after_refusal', 'POST /invitations'),
+            $finding('sent_before_saved', 'POST /teams'),
+        ]]);
+        $this->assertSame([
+            'Opening /teams/{team} changes what your app has saved. A page that only shows things should leave them as they are. Make sure you wanted that.',
+            'When your app says no at /invitations, it still keeps part of what was sent. Make sure you wanted that.',
+            'At /teams your app sends something before it has finished saving. If saving fails, it is sent anyway.',
+        ], $seen->where('kind', 'gap')->pluck('text')->all());
+        $this->assertFalse($seen->contains(fn (array $line) => str_contains($line['text'], $clean)));
     }
 
     public function test_new_code_no_test_runs_is_offered_first_as_the_next_thing_to_ask_for()

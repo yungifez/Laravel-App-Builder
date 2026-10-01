@@ -8,6 +8,8 @@ use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
 use App\Enums\ModelRole;
 use App\Features\AcceptanceSelector;
+use App\Features\AppTraces;
+use App\Features\NewTests;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Runs\Contracts\ConstructionDriver;
@@ -257,8 +259,81 @@ abstract class AgentDriver implements ConstructionDriver
             $evidence->plan->preserve !== [] ? "## Must stay as it is\n\n".$this->list(array_column($evidence->plan->preserve, 'statement')) : null,
             "## Verification: {$evidence->verificationStatus}\n\n".implode("\n", $results),
             "## Tests deleted or weakened by the diff\n\n".($evidence->weakenedTests === [] ? 'None.' : $this->json($evidence->weakenedTests)),
+            $this->changeEvidence($evidence),
             "## Diff\n\n```diff\n".$this->bounded($evidence->patch)."\n```",
         ]));
+    }
+
+    /**
+     * Describe what running the app with and without the change showed:
+     * the new tests that pass without it, what it did to the addresses the
+     * app answers, how far tests reach into its new code, and what its
+     * code saved and sent in the requests the tests made. These are
+     * measured facts; whether each was wanted is the reviewer's to judge
+     * against the plan.
+     */
+    protected function changeEvidence(ReviewEvidence $evidence): ?string
+    {
+        $measured = $evidence->changeEvidence;
+        $parts = [];
+
+        if (isset($measured['new_tests'])) {
+            $passing = array_values(array_filter($measured['new_tests'], fn (array $test) => $test['without_change'] === NewTests::PASSED));
+            $parts[] = sprintf('The change added %d tests. Tests that fail without its code, as a test of new behaviour must: %d.', count($measured['new_tests']), count($measured['new_tests']) - count($passing))
+                .($passing === [] ? '' : " These pass without it, so they do not check what it does:\n".$this->list(array_map(fn (array $test) => "{$test['file']}: {$test['name']}", $passing)));
+        }
+
+        $routes = $measured['routes'] ?? [];
+
+        if (($routes['added'] ?? []) !== []) {
+            $parts[] = "Routes it added, with their middleware:\n".$this->list(array_map(fn (array $route) => $route['route'].' ['.implode(', ', $route['middleware']).']', $routes['added']));
+        }
+
+        if (($routes['changed'] ?? []) !== []) {
+            $parts[] = "Routes whose middleware it changed:\n".$this->list(array_map(fn (array $route) => $route['route'].($route['lost'] === [] ? '' : ' lost '.implode(', ', $route['lost'])).($route['gained'] === [] ? '' : ' gained '.implode(', ', $route['gained'])), $routes['changed']));
+        }
+
+        if (($routes['removed'] ?? []) !== []) {
+            $parts[] = "Routes it removed:\n".$this->list($routes['removed']);
+        }
+
+        if (isset($measured['new_code'])) {
+            $code = $measured['new_code'];
+            $parts[] = sprintf('Of its %d new lines of PHP that can run, tests ran %d; %d of those only its own tests ran.', $code['lines'], $code['run'], $code['own_tests_only'])
+                .($code['unrun'] === [] ? '' : " No test ran:\n".$this->list(array_map(fn (string $path, array $lines) => $path.': line '.implode(', ', $lines), array_keys($code['unrun']), $code['unrun'])));
+        }
+
+        if (isset($measured['traces'])) {
+            $traces = $measured['traces'];
+            $parts[] = sprintf('While the tests ran, %d requests to the app were recorded: their queries, transactions and what they sent. %d ran code the change added.', $traces['requests'], $traces['reached'])
+                .match (true) {
+                    $traces['findings'] !== [] => " Recorded from the code the change added:\n".$this->list(array_map($this->recorded(...), $traces['findings'])),
+                    $traces['reached'] === 0 => ' So the recording says nothing about the change.',
+                    default => ' The code the change added saved nothing on a GET request, kept nothing after refusing a request, and sent nothing while a transaction was open.',
+                }
+            .($traces['unseen'] === 0 ? '' : sprintf("\nOf the requests that ran the change's code, %d opened a transaction in a test that fakes mail, jobs or notifications, so what they sent, and when, was not seen.", $traces['unseen']));
+        }
+
+        return $parts === [] ? null : "## What running the app with and without the change showed\n\n".implode("\n\n", $parts);
+    }
+
+    /**
+     * Say one thing the recorder saw the change's code do, for the reviewer.
+     *
+     * @param  array{kind: string, route: string, what: string, at: string|null, test: string|null}  $finding
+     */
+    protected function recorded(array $finding): string
+    {
+        $did = match ($finding['kind']) {
+            AppTraces::SAVED_ON_READ => 'saved data on a request that only reads',
+            AppTraces::KEPT_AFTER_REFUSAL => 'refused the request but kept what it had saved',
+            AppTraces::SENT_BEFORE_SAVED => 'sent this while a database transaction was still open, so it goes out even when the transaction is rolled back',
+            default => $finding['kind'],
+        };
+
+        return "{$finding['route']} {$did}: {$finding['what']}"
+            .($finding['at'] === null ? '' : " at {$finding['at']}")
+            .($finding['test'] === null ? '' : " (seen in {$finding['test']})");
     }
 
     /**

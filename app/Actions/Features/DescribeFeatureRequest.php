@@ -8,6 +8,7 @@ use App\Context\ProjectContext;
 use App\Context\ProjectNotes;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Features\NewCode;
 use App\Features\OwnerWording;
 use App\Features\PatchSummary;
 use App\Models\FeatureRequest;
@@ -151,7 +152,9 @@ class DescribeFeatureRequest
     {
         $ideas = $run->plan['next'] ?? [];
 
-        if (($run->review['classification']['observed']['unmapped'] ?? []) !== []) {
+        $newCode = $run->featureRequest->verifications()->latest('id')->first()?->evidence['new_code'] ?? null;
+
+        if (($run->review['classification']['observed']['unmapped'] ?? []) !== [] || ($newCode !== null && NewCode::gap($newCode))) {
             $ideas = [__('Add tests for the new code nothing checks yet'), ...$ideas];
         }
 

@@ -1,7 +1,7 @@
 # The image of a workspace box: the language toolchains (from Sail's PHP and
 # Node image), the box runner, the coding agent runner, the preview tools,
-# the screen check with its browser and the shortcut scan. Nothing else of the
-# control plane goes in. Build it with `vendor/bin/sail build box` (the
+# the screen check with its browser, the shortcut scan and the trace
+# recorder. Nothing else of the control plane goes in. Build it with `vendor/bin/sail build box` (the
 # context is resources/).
 FROM sail-8.4/app
 
@@ -29,6 +29,11 @@ COPY agent-runner/run.mjs /opt/agent-runner/run.mjs
 COPY box-runner/runner.mjs /opt/box-runner/runner.mjs
 COPY preview-tools/ /opt/preview-tools/
 COPY screen-check/check.mjs /opt/screen-check/check.mjs
+
+# The trace recorder notes what each request of a test asks, saves and sends.
+# It is loaded from here when the coverage run asks for it, so nothing is
+# added to the app itself.
+COPY trace-recorder/ /opt/trace-recorder/
 
 RUN mkdir -p /workspaces
 

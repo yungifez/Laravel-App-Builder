@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 31.** This document consolidates the direction in [direction/](direction/)
+**Version 32.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -83,6 +83,12 @@ behind one boundary ([direction 31](direction/31-external-workers.md),
 [§11](#workers-one-boundary-for-ours-and-theirs)): a brief that is written
 to be read, and a few MCP tools scoped to one change by a token. The secret
 is our machinery, not the owner's knowledge of their own app.
+Version 32 makes more of the proof independent of the model
+([direction 32](direction/32-deterministic-verification-engines.md),
+[§12](#12-verification)): the app is run with and without the change, so a
+test the change added counts only when it fails without the change, and what
+the app saves and sends is recorded while its tests run. None of this keeps
+the owner waiting.
 When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
@@ -1664,6 +1670,101 @@ analyser is missing, nothing is read or said. The owner sees the clean result
 as one line of the change's proof.
 `builder.verification.shortcuts` turns it off. No first-party Laravel package
 reads code for these shortcuts; Larastan checks types, not these.
+
+**The change is run without its code** (direction 32). A coder can misread
+a request, build the misreading and write tests that match it. No check that
+runs can find the misreading. But the checks can measure how much the
+change's tests say. When the checks pass, verification measures three things
+(`builder.verification.change_evidence`), and keeps them on the verification
+(`verifications.evidence`):
+
+- **New tests** (`NewTests`). The whole change is taken out with
+  `git apply --reverse`. Then only what it did under the tests' folders is put
+  back, and the test files it touched run again. A new test that fails there
+  tried what the change does. A new test that passes there says nothing about
+  the change. A change that only adds tests is not measured: its tests pass
+  without it by design.
+- **Routes** (`AppRoutes`). `route:list --json` runs with the change and
+  without it. The framework lists the routes itself, so routes from packages,
+  attributes and providers are there too. The difference names each route the
+  change added, removed, or whose middleware it changed.
+- **New code** (`NewCode`). The test map's coverage run also writes a line
+  report. Each new line of PHP that can run is one of three kinds: a test the
+  app already had runs it, only the change's own tests run it, or no test
+  runs it.
+
+These are measurements, not checks. They never change the result of the
+checks, and what cannot be measured is not kept. Nothing here sends a change
+back by itself, because what a measurement means depends on what the owner
+asked for: a route that lost `auth` can be the request or a mistake. The
+reviewer reads all three with the plan. It blocks a criterion about new
+behaviour whose test passes without the change, a route that lost a check on
+who may use it, and a new route that changes data without one, unless the
+request asks for exactly that. The owner reads them in the proof, in plain
+words: "It added 3 tests that fail without this change and pass with it",
+"A part of your app no longer checks who may use it: /teams. Make sure you
+wanted that." and "Tests ran 122 of its 123 new lines of code." Tests that
+pass with and without the change are a gap, and so is new code when more than
+`unrun_gap_share` of its lines are run by no test. Only Laravel's own
+middleware for who may use a route (`auth`, `verified`, `can`, `signed`,
+`password.confirm`) are read as such; an app's own middleware is not guessed
+at. A change to the package files is not measured, as the starting commit
+would need other packages installed. On the fixture, all three took about 8
+seconds.
+
+**What the app does is recorded while its tests run** (direction 32). Tests
+check what their author thought of. Some mistakes are wrong in every app,
+whatever the request, so they need no author. A recorder
+(`resources/trace-recorder`, in the box image at `/opt/trace-recorder`) writes
+one line for each request a test makes: the route, the status, whether the app
+refused it, and each effect in order. An effect is a query, a transaction that
+starts, commits or rolls back, a job, a mail, a notification or an outside
+call. Each effect has the nearest line of the app's own code and the number of
+transactions the request had open.
+
+The recorder changes no file of the app. The coverage command sets PHP's
+`auto_prepend_file` in an ini file under `storage/logs/test-map/trace`. That
+file gives Laravel a copy of its package list with the recorder's provider
+added, and keeps the copy in the same folder, so `bootstrap/cache` stays as it
+was. The recorder has a neutral name and holds nothing of ours. It rides the
+coverage run that the test map already needs, so the suite does not run again.
+On the fixture it added about 1% to that run, and two runs gave the same
+lines. A box image without the recorder records nothing, and nothing is said.
+
+`AppTraces` reads the lines for four shapes
+(`builder.verification.traces`):
+
+- **Saved on a read.** A GET request committed a write.
+- **Kept after a refusal.** The app refused a request (a status of 400 or
+  more, or validation errors) and still committed a write.
+- **Sent before saved.** A job, a mail, a notification or an outside call
+  left while a transaction was open. If the transaction fails, it is sent
+  anyway.
+- **Repeated lookup.** One line ran the same select `repeats` times or more
+  in one request.
+
+A write that a rollback undoes is not counted. A transaction that the test
+tools open is not counted as the request's own. A shape counts against a
+change only when its effect comes from a line the change added, or from the
+app's code on a route the change added. The same shape in code the app
+already had is counted (`existing`) and not reported.
+
+A test that fakes mail, jobs, notifications or events hides what is sent. A
+request that ran the change's code and opened a transaction under such a fake
+is counted as not seen (`unseen`), never as clean. The proof then speaks only
+for what was saved: "Its tests only pretend to send emails and messages, so we
+could not watch when it sends them." On the fixture, fakes were active in 28%
+of requests. Only requests that tests make are recorded, so code that no test
+reaches says nothing here; the new-code measurement shows that gap.
+
+Like the other measurements, these never send a change back by themselves.
+The first three go to the reviewer, which blocks them unless the request or
+the plan asks for exactly that, and to the owner's proof: "Opening /reports
+changes what your app has saved…", or, when the tests reached the new code and
+nothing was found, "We watched what your app saved and sent while its tests
+used the new code 26 times. Nothing was saved by mistake or sent too early."
+A repeated lookup joins the shortcuts above (rule `SL204`), so it is tidied
+after the change is kept and the owner does not wait for it.
 
 **Made-up colours are sent back too** (direction 26, the first design check
 that graduated from the contract). The lines a change adds to screen files

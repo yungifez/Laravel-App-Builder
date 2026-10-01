@@ -4,8 +4,12 @@ namespace App\Actions\Features;
 
 use App\Actions\Context\ReadProjectContext;
 use App\Enums\VerificationStatus;
+use App\Features\AppRoutes;
+use App\Features\AppTraces;
 use App\Features\CodeShortcuts;
 use App\Features\InventedColours;
+use App\Features\NewCode;
+use App\Features\NewTests;
 use App\Features\PatchSummary;
 use App\Features\ScreenCheck;
 use App\Features\UndescribedImages;
@@ -44,7 +48,10 @@ class DescribeProof
             return [];
         }
 
-        return [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest), ...$this->safety($featureRequest), ...$this->shortcuts($featureRequest, $verification), ...$this->colours($featureRequest), ...$this->pictures($featureRequest), ...$this->screens($featureRequest, $verification), ...$this->reach($featureRequest->latestRun), ...$this->approach($featureRequest->latestRun), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->safety($featureRequest), ...$this->access($verification), ...$this->shortcuts($featureRequest, $verification), ...$this->colours($featureRequest), ...$this->pictures($featureRequest), ...$this->screens($featureRequest, $verification), ...$this->code($verification), ...$this->watched($verification), ...$this->reach($featureRequest->latestRun), ...$this->approach($featureRequest->latestRun), ...$this->rules($featureRequest)];
+
+        // Two measurements can find the same gap; it is said once.
+        return array_values(collect($lines)->unique('text')->all());
     }
 
     /**
@@ -121,10 +128,27 @@ class DescribeProof
      * Name the tests the change added to the app, which keep what it does
      * checked on every later change. One is named, in its own words.
      *
+     * When the new tests were also run without the change, only those that
+     * failed there are evidence: they tried what the change does. When
+     * none failed there, that is said as a gap: a test that passes with
+     * and without a change does not show the change works.
+     *
      * @return list<array{kind: string, text: string, evidence?: bool}>
      */
-    protected function added(FeatureRequest $featureRequest): array
+    protected function added(FeatureRequest $featureRequest, Verification $verification): array
     {
+        $measured = $verification->evidence['new_tests'] ?? [];
+        $proving = NewTests::ending($measured, NewTests::FAILED, $featureRequest->patch);
+        $passing = NewTests::ending($measured, NewTests::PASSED, $featureRequest->patch);
+
+        if ($proving !== []) {
+            return [['kind' => 'passed', 'text' => trans_choice('It added a test that fails without this change and passes with it: ":test".|It added :count tests that fail without this change and pass with it, such as ":test".', count($proving), ['test' => $proving[0]]), 'evidence' => true]];
+        }
+
+        if ($passing !== []) {
+            return [['kind' => 'gap', 'text' => trans_choice('The test it added passes without this change too, so it does not show that the change works.|The :count tests it added pass without this change too, so they do not show that the change works.', count($passing))]];
+        }
+
         $tests = PatchSummary::addedTests($featureRequest->patch);
 
         if ($tests === []) {
@@ -147,6 +171,112 @@ class DescribeProof
         }
 
         return [['kind' => 'passed', 'text' => __('Its code was checked for common safety mistakes, such as unsafe text on a page or unsafe database lookups. None were found.')]];
+    }
+
+    /**
+     * Say what the change did to who may use the app's addresses, when it
+     * changed which addresses the app answers. The list comes from the
+     * running framework, before and after the change.
+     *
+     * An address that lost a check on who may use it is a gap: nothing
+     * that ran can tell whether the owner wanted that. When every changed
+     * address kept its checks, that is said, but only for the checks
+     * Laravel names itself; an address that lost other middleware is left
+     * unsaid.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function access(Verification $verification): array
+    {
+        $routes = $verification->evidence['routes'] ?? [];
+
+        if ($routes === []) {
+            return [];
+        }
+
+        $opened = AppRoutes::opened($routes);
+
+        if ($opened !== []) {
+            return [['kind' => 'gap', 'text' => trans_choice('A part of your app no longer checks who may use it: :address. Make sure you wanted that.|:count parts of your app no longer check who may use them, such as :address. Make sure you wanted that.', count($opened), ['address' => AppRoutes::address($opened[0]['route'])])]];
+        }
+
+        if (array_any($routes['changed'] ?? [], fn (array $route) => $route['lost'] !== [])) {
+            return [];
+        }
+
+        return [['kind' => 'passed', 'text' => __('Every part of your app that asks people to sign in still does.')]];
+    }
+
+    /**
+     * Say how many of the change's new lines of code a test ran, from the
+     * line-by-line coverage of the suite. When a large share was run by no
+     * test, that is a gap.
+     *
+     * @return list<array{kind: string, text: string, evidence?: bool}>
+     */
+    protected function code(Verification $verification): array
+    {
+        $code = $verification->evidence['new_code'] ?? null;
+
+        if ($code === null) {
+            return [];
+        }
+
+        return array_values(array_filter([
+            $code['run'] > 0 ? ['kind' => 'reach', 'text' => $code['run'] === $code['lines']
+                ? trans_choice('Tests ran its one new line of code.|Tests ran every one of its :count new lines of code.', $code['lines'])
+                : __('Tests ran :run of its :lines new lines of code.', ['run' => $code['run'], 'lines' => $code['lines']]), 'evidence' => true] : null,
+            NewCode::gap($code) ? ['kind' => 'gap', 'text' => __('Some of the new code is not run by any test yet.')] : null,
+        ]));
+    }
+
+    /**
+     * Say what the app was seen to do while its tests used the change's
+     * new code: each request was recorded, with what it saved and sent.
+     * Three things the record shows by itself are gaps the owner reads,
+     * each with the address where it happened, because only the owner
+     * knows whether it was wanted. A clean record is said only when a
+     * recorded request ran the new code.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function watched(Verification $verification): array
+    {
+        $traces = $verification->evidence['traces'] ?? null;
+
+        if ($traces === null || $traces['reached'] === 0) {
+            return [];
+        }
+
+        $gaps = [
+            AppTraces::SAVED_ON_READ => 'Opening :address changes what your app has saved. A page that only shows things should leave them as they are. Make sure you wanted that.',
+            AppTraces::KEPT_AFTER_REFUSAL => 'When your app says no at :address, it still keeps part of what was sent. Make sure you wanted that.',
+            AppTraces::SENT_BEFORE_SAVED => 'At :address your app sends something before it has finished saving. If saving fails, it is sent anyway.',
+        ];
+        $lines = [];
+
+        foreach ($gaps as $kind => $text) {
+            $found = AppTraces::findings($traces, $kind);
+
+            if ($found !== []) {
+                $lines[] = ['kind' => 'gap', 'text' => __($text, ['address' => AppRoutes::address($found[0]['route'])])];
+            }
+        }
+
+        if ($lines !== []) {
+            return $lines;
+        }
+
+        // A test that only pretends to send hides when the app would send.
+        return [['kind' => 'passed', 'text' => $traces['unseen'] > 0
+            ? trans_choice(
+                'We watched what your app saved while its tests used the new code. Nothing was saved by mistake. Its tests only pretend to send emails and messages, so we could not watch when it sends them.|We watched what your app saved while its tests used the new code :count times. Nothing was saved by mistake. Its tests only pretend to send emails and messages, so we could not watch when it sends them.',
+                $traces['reached'],
+            )
+            : trans_choice(
+                'We watched what your app saved and sent while its tests used the new code. Nothing was saved by mistake or sent too early.|We watched what your app saved and sent while its tests used the new code :count times. Nothing was saved by mistake or sent too early.',
+                $traces['reached'],
+            )]];
     }
 
     /**
