@@ -83,6 +83,8 @@ export type ChangeItem = {
     asks: boolean;
     /** The question it waits on, when it asks. */
     question: string | null;
+    /** How many of its tests fail without it, for a change to try. */
+    proved: number;
     /** Nothing of it is kept, so it can be marked as not needed. */
     dismissable: boolean;
     updated_at: string | null;

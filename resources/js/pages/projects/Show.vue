@@ -1604,6 +1604,21 @@ function sendOnEnter(event: KeyboardEvent): void {
                                                         'I have a question for you.'
                                                     }}</span
                                                 >
+                                                <!-- What sets a change apart
+                                                 before it is opened: tests
+                                                 that fail without it. -->
+                                                <span
+                                                    v-else-if="item.proved > 0"
+                                                    class="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground"
+                                                    data-test="change-proved"
+                                                    ><ShieldCheck
+                                                        class="size-3 text-green-600"
+                                                    />{{
+                                                        item.proved === 1
+                                                            ? '1 test proves it works'
+                                                            : `${item.proved} tests prove it works`
+                                                    }}</span
+                                                >
                                             </span>
                                             <!-- Amber only where the owner
                                                  holds a change up. -->

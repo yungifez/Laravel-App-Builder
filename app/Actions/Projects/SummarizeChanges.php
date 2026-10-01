@@ -6,6 +6,7 @@ use App\Actions\Features\RetryFeatureRequest;
 use App\Enums\ChangeState;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Features\NewTests;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use Illuminate\Support\Collection;
@@ -21,7 +22,7 @@ class SummarizeChanges
      * owner. Otherwise a kept request wins, so a kept follow-up does not
      * leave its parent "waiting" for ever.
      *
-     * @return list<array{id: string, prompt: string, background: bool, summary: string|null, state: string, asks: bool, question: string|null, dismissable: bool, updated_at: string|null}>
+     * @return list<array{id: string, prompt: string, background: bool, summary: string|null, state: string, asks: bool, question: string|null, proved: int, dismissable: bool, updated_at: string|null}>
      */
     public function handle(Project $project): array
     {
@@ -58,6 +59,9 @@ class SummarizeChanges
                     'asks' => $asks = $state === ChangeState::Waiting && $shown->status === FeatureRequestStatus::Generating,
                     // What the owner is asked, so the list says what to do.
                     'question' => $asks ? ($shown->latestRun?->question['text'] ?? null) : null,
+                    // A change to try says how many of its tests fail
+                    // without it, so the list shows it was proved, not only made.
+                    'proved' => $state === ChangeState::Waiting && ! $asks ? $this->proved($shown) : 0,
                     // The ask can be marked as not needed: nothing of it is kept.
                     'dismissable' => $state !== ChangeState::Kept,
                     'updated_at' => ($shown->reverted_at ?? $shown->accepted_at ?? $shown->updated_at)?->toIso8601String(),
@@ -96,6 +100,16 @@ class SummarizeChanges
                 default => null,
             },
         ];
+    }
+
+    /**
+     * Count the tests a change added that fail without it and pass with it.
+     */
+    protected function proved(FeatureRequest $request): int
+    {
+        $measured = $request->verifications()->latest('id')->first()?->evidence['new_tests'] ?? [];
+
+        return count(NewTests::ending($measured, NewTests::FAILED, $request->patch));
     }
 
     /**

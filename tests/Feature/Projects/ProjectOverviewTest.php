@@ -11,6 +11,7 @@ use App\Models\Preview;
 use App\Models\Project;
 use App\Models\Run;
 use App\Models\User;
+use App\Models\Verification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -68,6 +69,31 @@ class ProjectOverviewTest extends TestCase
                 ->where('changes.0.state', 'waiting')
                 ->where('changes.0.asks', true)
                 ->where('changes.0.question', 'Who can invite?'));
+    }
+
+    public function test_a_change_to_try_says_how_many_of_its_tests_fail_without_it()
+    {
+        $project = Project::factory()->create();
+        $patch = implode("\n", [
+            'diff --git a/tests/Feature/ClassTest.php b/tests/Feature/ClassTest.php',
+            'new file mode 100644',
+            '--- /dev/null',
+            '+++ b/tests/Feature/ClassTest.php',
+            '@@ -0,0 +1,2 @@',
+            '+    public function test_classes_show_places_left()',
+            '+    public function test_the_page_loads()',
+        ]);
+        $waiting = FeatureRequest::factory()->for($project)->create(['status' => FeatureRequestStatus::Generated, 'patch' => $patch]);
+        $test = fn (string $name, string $without) => ['file' => 'tests/Feature/ClassTest.php', 'name' => $name, 'without_change' => $without];
+        // Only a test that fails without the change shows it works.
+        Verification::factory()->for($waiting)->create(['evidence' => ['new_tests' => [
+            $test('test_classes_show_places_left', 'failed'),
+            $test('test_the_page_loads', 'passed'),
+        ]]]);
+
+        $this->actingAs($project->owner)
+            ->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page->where('changes.0.proved', 1));
     }
 
     public function test_a_change_that_could_not_finish_is_not_still_being_worked_on()
