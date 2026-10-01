@@ -35,7 +35,7 @@ class ChangeReviewer implements Agent, HasStructuredOutput
         - an acceptance criterion about new behaviour whose test passes without the change: that test does not check it;
         - a route that lost a check on who may use it (such as auth, verified or can), or a new route that changes data without one, unless the request or the plan asks for exactly that;
         - something the change's code did while the tests ran that is listed as recorded (it saved data on a GET request, kept what it saved after refusing the request, or sent mail, a job, a notification or an outside call while a database transaction was open), unless the request or the plan asks for exactly that;
-        - something listed as left behind when a failure was caused: the request had already sent mail, a job or an outside call when the save it belongs to was rolled back. When the listed thing is a save kept before a server error, or one part of a save kept while the rest was rolled back, it is blocking only if the request or the plan needs both to happen together; otherwise report it as minor;
+        - something listed as left behind when a failure was caused (the request had already saved when it ended in a server error, it had already sent mail, a job or an outside call when its save was rolled back, or it kept one part of a save while the rest was rolled back), unless the request or the plan asks for exactly that;
         - a failing or errored verification result;
         - a change to anything listed under "Must stay as it is".
         Report style issues and small improvements as minor findings.

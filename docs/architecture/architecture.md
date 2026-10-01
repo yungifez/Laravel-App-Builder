@@ -1804,8 +1804,8 @@ owner's wait has a limit. A place whose failure did not happen is counted as
 because in use that job runs later on a queue. A fake hides sends here too,
 so a test that fakes mail gives no send place.
 
-The reviewer blocks "sent, then lost" and weighs the other two against the
-plan. The owner reads each in the proof: "If saving fails at /invitations,
+The reviewer blocks all three, unless the request or the plan asks for
+exactly that. The owner reads each in the proof: "If saving fails at /invitations,
 your app has already sent something. People are told about something that
 was not saved." When failures were caused and nothing stayed: "We made things
 go wrong 3 times while your app used the new code, such as an email that
