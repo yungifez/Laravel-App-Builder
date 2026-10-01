@@ -73,6 +73,21 @@ class RunProgressTest extends TestCase
         $this->assertNull($this->progress($run));
     }
 
+    public function test_a_waiting_change_says_how_many_changes_go_first()
+    {
+        $making = Run::factory()->create(['status' => RunStatus::Implementing]);
+        Run::factory()->create(['status' => RunStatus::Verifying]);
+        $waiting = Run::factory()->create(['status' => RunStatus::Queued]);
+        $after = Run::factory()->create(['status' => RunStatus::Queued]);
+
+        // A change being checked does not hold up the next one.
+        $this->assertSame(['text' => 'Waiting its turn, 1 change ahead', 'changed' => 0], $this->progress($waiting));
+        $this->assertSame('Waiting its turn, 2 changes ahead', $this->progress($after)['text']);
+
+        $making->update(['status' => RunStatus::Completed]);
+        $this->assertNull($this->progress($waiting));
+    }
+
     public function test_the_owner_sees_which_part_of_planning_runs()
     {
         $run = Run::factory()->create(['status' => RunStatus::Planning]);

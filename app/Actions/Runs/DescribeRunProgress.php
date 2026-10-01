@@ -39,6 +39,10 @@ class DescribeRunProgress
      */
     public function handle(Run $run): ?array
     {
+        if ($run->status === RunStatus::Queued) {
+            return $this->waiting($run);
+        }
+
         if ($run->status === RunStatus::Planning) {
             return $this->planning($run);
         }
@@ -118,6 +122,23 @@ class DescribeRunProgress
         };
 
         return ['text' => (string) $text, 'changed' => count($changed)];
+    }
+
+    /**
+     * Say how many changes go before this one. Changes are made one at a
+     * time, so a change can wait minutes behind another; "Getting started"
+     * alone would look stuck.
+     *
+     * @return array{text: string, changed: int}|null
+     */
+    protected function waiting(Run $run): ?array
+    {
+        $ahead = Run::query()
+            ->where('id', '<', $run->id)
+            ->whereIn('status', [RunStatus::Queued, RunStatus::Planning, RunStatus::Implementing, RunStatus::Reviewing])
+            ->count();
+
+        return $ahead === 0 ? null : ['text' => trans_choice('Waiting its turn, 1 change ahead|Waiting its turn, :count changes ahead', $ahead), 'changed' => 0];
     }
 
     /**
