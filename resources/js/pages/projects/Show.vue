@@ -1390,19 +1390,36 @@ function sendOnEnter(event: KeyboardEvent): void {
                             class="flex h-full flex-col justify-end gap-3 pb-2"
                             data-test="chat-empty"
                         >
-                            <p class="text-lg font-semibold tracking-tight">
-                                What should your app do next?
-                            </p>
-                            <!-- What sets this apart, said once, before the
-                                 first change: nothing reaches the app
-                                 unchecked, and nothing stays unless kept. -->
-                            <p
-                                class="-mt-2 text-sm text-muted-foreground"
-                                data-test="chat-promise"
-                            >
-                                I check each change in your app before you see
-                                it. You keep it, or undo it any time.
-                            </p>
+                            <!-- In an idea, the owner is told where the
+                                 changes go, so trying one feels safe. -->
+                            <template v-if="ideas.current">
+                                <p class="text-lg font-semibold tracking-tight">
+                                    What should this idea try?
+                                </p>
+                                <p
+                                    class="-mt-2 text-sm text-muted-foreground"
+                                    data-test="chat-idea-promise"
+                                >
+                                    Changes you ask for here stay in
+                                    {{ ideas.current.name }}. Your app stays as
+                                    it is until you use the idea.
+                                </p>
+                            </template>
+                            <template v-else>
+                                <p class="text-lg font-semibold tracking-tight">
+                                    What should your app do next?
+                                </p>
+                                <!-- What sets this apart, said once, before
+                                     the first change: nothing reaches the app
+                                     unchecked, and nothing stays unless kept. -->
+                                <p
+                                    class="-mt-2 text-sm text-muted-foreground"
+                                    data-test="chat-promise"
+                                >
+                                    I check each change in your app before you
+                                    see it. You keep it, or undo it any time.
+                                </p>
+                            </template>
                             <div class="flex flex-wrap gap-2">
                                 <button
                                     v-for="suggestion in suggestions"

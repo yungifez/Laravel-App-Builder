@@ -59,6 +59,19 @@ it('tells a new owner that each change is checked and can be undone', function (
         ->assertNoJavaScriptErrors();
 });
 
+it('tells an owner in a new idea that its changes stay there', function () {
+    $this->actingAs($this->owner);
+
+    visit(route('projects.show', $this->project))
+        ->click('@app-menu')
+        ->click('@idea-new')
+        ->fill('name', 'Brighter colours')
+        ->click('@idea-start')
+        ->assertSeeIn('@chat-idea-promise', 'Changes you ask for here stay in Brighter colours. Your app stays as it is until you use the idea.')
+        ->assertMissing('@chat-promise')
+        ->assertNoJavaScriptErrors();
+});
+
 it('builds a change the owner asks for, keeps it, then undoes it', function () {
     $this->actingAs($this->owner);
 
