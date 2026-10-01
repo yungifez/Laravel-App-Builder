@@ -84,6 +84,7 @@ The owner's words, 2026-10-01:
 > Look particularly at ideas from:
 >
 > ### Testing
+>
 > - mutation testing
 > - property-based testing
 > - fuzzing
@@ -98,6 +99,7 @@ The owner's words, 2026-10-01:
 > - concolic/symbolic execution
 >
 > ### Distributed systems
+>
 > - chaos engineering
 > - linearizability testing
 > - Jepsen-style verification
@@ -109,6 +111,7 @@ The owner's words, 2026-10-01:
 > - retry/idempotency analysis
 >
 > ### Databases
+>
 > - invariant checking
 > - transaction isolation testing
 > - constraint inference
@@ -117,6 +120,7 @@ The owner's words, 2026-10-01:
 > - migration safety analysis
 >
 > ### Security
+>
 > - authorization matrix testing
 > - taint analysis
 > - confused-deputy detection
@@ -126,6 +130,7 @@ The owner's words, 2026-10-01:
 > - capability security
 >
 > ### Compilers/static analysis
+>
 > - abstract interpretation
 > - dataflow analysis
 > - control-flow analysis
@@ -137,6 +142,7 @@ The owner's words, 2026-10-01:
 > - dependency graphs
 >
 > ### Reliability engineering
+>
 > - SLO verification
 > - fault trees
 > - failure mode analysis
@@ -144,6 +150,7 @@ The owner's words, 2026-10-01:
 > - recovery testing
 >
 > ### Agent systems
+>
 > - independent verifier agents
 > - action constraints
 > - tool schemas
@@ -286,6 +293,7 @@ The owner's words, 2026-10-01:
 > Investigate whether we can define generic primitives such as:
 >
 > ### Operations
+>
 > - read
 > - write
 > - create
@@ -298,6 +306,7 @@ The owner's words, 2026-10-01:
 > - call external service
 >
 > ### Effects
+>
 > - database mutation
 > - queue dispatch
 > - email
@@ -308,6 +317,7 @@ The owner's words, 2026-10-01:
 > - authentication/session mutation
 >
 > ### Faults
+>
 > - timeout
 > - unavailable
 > - duplicate
@@ -318,6 +328,7 @@ The owner's words, 2026-10-01:
 > - exception
 >
 > ### Properties
+>
 > - exactly once
 > - at most once
 > - at least once
