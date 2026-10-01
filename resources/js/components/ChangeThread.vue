@@ -1554,9 +1554,11 @@ const checks = computed(() => {
                                         )
                                     "
                                     :options="{ preserveScroll: true }"
-                                    class="ml-auto"
+                                    class="-mt-3 ml-auto sm:-mt-1"
                                     v-slot="{ processing, errors }"
                                 >
+                                    <!-- Pulled up by half its extra height, so
+                                         its word sits on the first line. -->
                                     <Button
                                         variant="ghost"
                                         size="sm"
