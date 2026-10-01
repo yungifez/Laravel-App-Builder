@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Form } from '@inertiajs/vue3';
+import type { FormDataConvertible } from '@inertiajs/core';
 import { Pencil } from '@lucide/vue';
 import { ref } from 'vue';
 import ProjectUnderstandingController from '@/actions/App/Http/Controllers/ProjectUnderstandingController';
@@ -16,14 +17,29 @@ const props = withDefaults(
         rows?: number;
         hint?: string;
         placeholder?: string;
+        // Turns what the owner typed back into the stored notes, when the
+        // editor shows them in a friendlier form than they are kept in.
+        toNotes?: (body: string) => string;
         // "icon" puts a pencil in the corner instead of a text button, for
         // places where many parts sit side by side.
         variant?: 'text' | 'icon';
     }>(),
-    { rows: 4, hint: undefined, placeholder: undefined, variant: 'text' },
+    {
+        rows: 4,
+        hint: undefined,
+        placeholder: undefined,
+        toNotes: undefined,
+        variant: 'text',
+    },
 );
 
 const editing = ref(false);
+
+function transform(data: Record<string, FormDataConvertible>) {
+    return props.toNotes
+        ? { ...data, body: props.toNotes(String(data.body ?? '')) }
+        : data;
+}
 </script>
 
 <template>
@@ -69,6 +85,7 @@ const editing = ref(false);
             v-bind="ProjectUnderstandingController.update.form(props.projectId)"
             class="space-y-3"
             :options="{ preserveScroll: true }"
+            :transform="transform"
             @success="editing = false"
             v-slot="{ errors, processing }"
         >

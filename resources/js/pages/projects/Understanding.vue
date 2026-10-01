@@ -155,6 +155,40 @@ function entries(body: string): Entry[] {
         });
 }
 
+// The editor shows each named entry as "Name: what it means", without the
+// list marks and bold the notes keep, and puts them back on save. An
+// unchanged entry comes back exactly as it was stored.
+function editable(body: string): string {
+    return body
+        .replace(/\n(?!\s*[-*]\s)\s*/g, ' ')
+        .split('\n')
+        .map((line) => line.replace(/^\s*[-*]\s+/, '').trim())
+        .filter((line) => line !== '')
+        .map((line) => {
+            const named = line.match(/^\*\*(.+?)\*\*\s*[:—–-]\s*(.+)$/);
+
+            return named ? `${named[1]}: ${named[2]}` : line;
+        })
+        .join('\n');
+}
+
+function toNotes(body: string): string {
+    return body
+        .split('\n')
+        .map((line) => line.replace(/^\s*[-*]\s+/, '').trim())
+        .filter((line) => line !== '')
+        .map((line) => {
+            const named = line.match(
+                /^(?:\*\*)?([^:*]{1,60}?)(?:\*\*)?\s*:\s*(.+)$/,
+            );
+
+            return named
+                ? `- **${named[1].trim()}**: ${named[2].trim()}`
+                : `- ${line}`;
+        })
+        .join('\n');
+}
+
 function capitalise(text: string): string {
     return text.charAt(0).toUpperCase() + text.slice(1);
 }
@@ -771,9 +805,19 @@ function setCompatibility(keep: boolean | null): void {
                         :project-id="project.id"
                         :revision="revision"
                         :part="`section:${section.heading}`"
-                        :text="section.body"
+                        :text="
+                            section.tiles
+                                ? editable(section.body)
+                                : section.body
+                        "
+                        :to-notes="section.tiles ? toNotes : undefined"
                         :label="section.heading.toLowerCase()"
                         :rows="6"
+                        :hint="
+                            section.tiles
+                                ? 'One per line, as Name: what it means.'
+                                : undefined
+                        "
                         variant="icon"
                     >
                         <template #heading>
