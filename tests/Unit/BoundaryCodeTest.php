@@ -201,6 +201,32 @@ class BoundaryCodeTest extends TestCase
         });
 
         $this->assertSame(['app/Policies/PostPolicy.php'], $read);
-        $this->assertSame(['app/Policies/PostPolicy.php:7'], array_column($found, 'at'));
+        $this->assertSame(['app/Policies/PostPolicy.php:7'], array_column($found['read'], 'at'));
+        // Before the change the policy had no save.
+        $this->assertSame([], $found['before']);
+    }
+
+    public function test_what_the_file_had_before_the_change_is_read_from_the_file_and_its_diff()
+    {
+        // The change moved the save down a line, under a new comment.
+        $patch = <<<'DIFF'
+            diff --git a/app/Policies/PostPolicy.php b/app/Policies/PostPolicy.php
+            --- a/app/Policies/PostPolicy.php
+            +++ b/app/Policies/PostPolicy.php
+            @@ -6,3 +6,4 @@
+                 {
+            -        $post->increment('views');
+            +        // Count the visit.
+            +        $post->increment('views');
+                     return true;
+            DIFF;
+        $code = "<?php\nnamespace App\\Policies;\nclass PostPolicy\n{\n    public function view(\$user, \$post): bool\n    {\n        // Count the visit.\n        \$post->increment('views');\n        return true;\n    }\n}\n";
+
+        $found = BoundaryCode::inPatch($patch, fn () => $code);
+
+        $this->assertSame(['app/Policies/PostPolicy.php:8'], array_column($found['read'], 'at'));
+        $this->assertSame(['app/Policies/PostPolicy.php:7'], array_column($found['before'], 'at'));
+        $this->assertSame(BoundaryCode::identity($found['read'][0]), BoundaryCode::identity($found['before'][0]));
+        $this->assertSame(BoundaryCode::identity(['kind' => 'changed_while_authorizing', 'what' => 'update posts', 'in' => 'App\Policies\PostPolicy::view']), BoundaryCode::identity($found['before'][0]));
     }
 }

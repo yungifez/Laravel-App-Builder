@@ -114,6 +114,58 @@ class PatchSummary
     }
 
     /**
+     * Rebuild a file as it was before its diff, from the file as the diff
+     * leaves it. Null when the diff adds the file, or when it does not fit
+     * the file it is said to have made.
+     */
+    public static function before(string $after, string $diff): ?string
+    {
+        if (str_contains($diff, "\nnew file mode ") || str_contains($diff, "\n--- /dev/null")) {
+            return null;
+        }
+
+        $new = explode("\n", $after);
+        $old = [];
+        $next = 1;
+        $inHunk = false;
+
+        foreach (explode("\n", $diff) as $line) {
+            if (preg_match('/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/', $line, $hunk) === 1) {
+                // A hunk that only removes lines starts after the line it names.
+                $start = (int) $hunk[1] + (($hunk[2] ?? null) === '0' ? 1 : 0);
+
+                if ($start < $next) {
+                    return null;
+                }
+
+                array_push($old, ...array_slice($new, $next - 1, $start - $next));
+                $next = $start;
+                $inHunk = true;
+
+                continue;
+            }
+
+            if (! $inHunk || str_starts_with($line, '\\')) {
+                continue;
+            }
+
+            if (str_starts_with($line, '-')) {
+                $old[] = substr($line, 1);
+            } elseif (str_starts_with($line, '+') || str_starts_with($line, ' ') || $line === '') {
+                if (! str_starts_with($line, '+')) {
+                    $old[] = substr($line, 1);
+                }
+
+                $next++;
+            }
+        }
+
+        array_push($old, ...array_slice($new, $next - 1));
+
+        return implode("\n", $old);
+    }
+
+    /**
      * Get the lines a file's diff adds, numbered as in the new file, each
      * with the line above it (added or kept), where a comment about it
      * would sit.

@@ -155,14 +155,17 @@ class BoundaryCode
 
     /**
      * Find the boundary findings in every PHP file a patch changes, given a
-     * reader of each file as the change leaves it.
+     * reader of each file as the change leaves it: those on the lines the
+     * change added ("read"), and every one the file had before the change
+     * ("before"), so a finding that only moved is not the change's.
      *
      * @param  callable(string): ?string  $contents
-     * @return list<array{kind: string, what: string, at: string, in: string}>
+     * @return array{read: list<array{kind: string, what: string, at: string, in: string}>, before: list<array{kind: string, what: string, at: string, in: string}>}
      */
     public static function inPatch(?string $patch, callable $contents): array
     {
-        $found = [];
+        $read = [];
+        $before = [];
 
         foreach (PatchSummary::files($patch) as $file) {
             if (! str_ends_with($file['path'], '.php') || str_starts_with($file['path'], 'tests/') || str_contains($file['diff'], "\ndeleted file mode ")) {
@@ -172,12 +175,34 @@ class BoundaryCode
             $lines = array_column(PatchSummary::addedLines($file['diff']), 'line');
             $code = $lines === [] ? null : $contents($file['path']);
 
-            if (is_string($code)) {
-                array_push($found, ...self::read($file['path'], $code, $lines));
+            if (! is_string($code)) {
+                continue;
+            }
+
+            array_push($read, ...self::read($file['path'], $code, $lines));
+            $old = PatchSummary::before($code, $file['diff']);
+
+            if ($old !== null) {
+                array_push($before, ...self::read($file['path'], $old, range(1, substr_count($old, "\n") + 1)));
             }
         }
 
-        return $found;
+        return ['read' => $read, 'before' => $before];
+    }
+
+    /**
+     * Name a finding by what it is, not where: the rule, the method and
+     * what it does. A finding the recorder saw is named by the nearest
+     * method of the app on the way to it.
+     *
+     * @param  array{kind: string, what: string, in: string|null}  $finding
+     */
+    public static function identity(array $finding): string
+    {
+        $what = strtok($finding['what'], ' ');
+        $what = in_array($what, ['insert', 'update', 'delete', 'replace'], true) ? 'save' : $what;
+
+        return implode('|', [$finding['kind'], $finding['in'] ?? '', $what]);
     }
 
     /**

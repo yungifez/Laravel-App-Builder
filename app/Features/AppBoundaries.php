@@ -129,26 +129,38 @@ class AppBoundaries
     /**
      * Add what reading the change's code found (BoundaryCode) to what the
      * recording showed, as "read". A line the recording already holds
-     * against the change is said once, as seen. Null when neither found
-     * anything to say.
+     * against the change is said once, as seen. A finding the code had
+     * before the change, by what it is rather than by line, only moved:
+     * it is counted as existing and not held against the change, unless
+     * the change added more of the same. Null when neither found anything
+     * to say.
      *
      * @param  array{phased: int, unknown: int, existing: int, findings: list<array{kind: string, route: string, what: string, at: string|null, in: string|null, test: string|null}>}|null  $measured  From measure()
-     * @param  list<array{kind: string, what: string, at: string, in: string}>  $read  From BoundaryCode::inPatch()
+     * @param  array{read: list<array{kind: string, what: string, at: string, in: string}>, before: list<array{kind: string, what: string, at: string, in: string}>}  $code  From BoundaryCode::inPatch()
      * @param  list<string>|null  $phases  The phases to check, all when null; the app's start is always read
      * @return array{phased: int, unknown: int, existing: int, findings: list<array{kind: string, route: string, what: string, at: string|null, in: string|null, test: string|null}>, read: list<array{kind: string, what: string, at: string, in: string}>}|null
      */
-    public static function withRead(?array $measured, array $read, ?array $phases = null): ?array
+    public static function withRead(?array $measured, array $code, ?array $phases = null): ?array
     {
+        $before = array_count_values(array_map(BoundaryCode::identity(...), $code['before']));
+        $moved = 0;
+
+        $findings = self::unmoved($measured['findings'] ?? [], $before, $moved);
         $seen = array_column($measured['findings'] ?? [], 'at');
         $checked = [...array_values(array_intersect_key(self::PHASES, array_flip($phases ?? array_keys(self::PHASES)))), self::CHANGED_WHILE_BOOTING];
-        $read = array_values(array_filter($read, fn (array $finding) => in_array($finding['kind'], $checked, true) && ! in_array($finding['at'], $seen, true)));
+        $read = array_values(array_filter($code['read'], fn (array $finding) => in_array($finding['kind'], $checked, true) && ! in_array($finding['at'], $seen, true)));
+        $read = self::unmoved($read, $before, $moved);
 
-        if ($measured === null && $read === []) {
+        if ($measured === null && $read === [] && $moved === 0) {
             return null;
         }
 
+        $measured ??= ['phased' => 0, 'unknown' => 0, 'existing' => 0, 'findings' => []];
+
         return [
-            ...($measured ?? ['phased' => 0, 'unknown' => 0, 'existing' => 0, 'findings' => []]),
+            ...$measured,
+            'existing' => $measured['existing'] + $moved,
+            'findings' => $findings,
             'read' => array_slice($read, 0, self::KEPT),
         ];
     }
@@ -162,6 +174,34 @@ class AppBoundaries
     public static function findings(?array $measured, string $kind): array
     {
         return array_values(array_filter($measured['findings'] ?? [], fn (array $finding) => $finding['kind'] === $kind));
+    }
+
+    /**
+     * Keep what the change has more of than the code had before it. A
+     * finding the code already had uses up one of those and only moved.
+     *
+     * @template TFinding of array{kind: string, what: string, in: string|null}
+     *
+     * @param  list<TFinding>  $findings
+     * @param  array<string, int>  $before  How many of each finding the code had, by identity
+     * @return list<TFinding>
+     */
+    protected static function unmoved(array $findings, array &$before, int &$moved): array
+    {
+        $kept = [];
+
+        foreach ($findings as $finding) {
+            $identity = BoundaryCode::identity($finding);
+
+            if (($before[$identity] ?? 0) > 0) {
+                $before[$identity]--;
+                $moved++;
+            } else {
+                $kept[] = $finding;
+            }
+        }
+
+        return $kept;
     }
 
     /**

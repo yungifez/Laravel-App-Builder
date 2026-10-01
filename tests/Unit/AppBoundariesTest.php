@@ -120,24 +120,44 @@ class AppBoundariesTest extends TestCase
         ])], self::PATCH);
         $read = fn (string $kind, string $at) => ['kind' => $kind, 'what' => 'save', 'at' => $at, 'in' => 'App\Policies\PostPolicy::view'];
 
-        $merged = AppBoundaries::withRead($measured, [
+        $merged = AppBoundaries::withRead($measured, ['read' => [
             $read(AppBoundaries::CHANGED_WHILE_AUTHORIZING, self::NEW.':3'),
             $read(AppBoundaries::CHANGED_WHILE_AUTHORIZING, self::NEW.':9'),
             $read(AppBoundaries::CHANGED_WHILE_BOOTING, 'app/Providers/AppServiceProvider.php:14'),
-        ], ['rendering']);
+        ], 'before' => []], ['rendering']);
 
         // Seen is said as seen; a phase not asked for is left out; the app's start is always read.
         $this->assertCount(1, $merged['findings']);
         $this->assertSame(['app/Providers/AppServiceProvider.php:14'], array_column($merged['read'], 'at'));
-        $this->assertSame([self::NEW.':9', 'app/Providers/AppServiceProvider.php:14'], array_column(AppBoundaries::withRead($measured, [
+        $this->assertSame([self::NEW.':9', 'app/Providers/AppServiceProvider.php:14'], array_column(AppBoundaries::withRead($measured, ['read' => [
             $read(AppBoundaries::CHANGED_WHILE_AUTHORIZING, self::NEW.':3'),
             $read(AppBoundaries::CHANGED_WHILE_AUTHORIZING, self::NEW.':9'),
             $read(AppBoundaries::CHANGED_WHILE_BOOTING, 'app/Providers/AppServiceProvider.php:14'),
-        ])['read'], 'at'));
+        ], 'before' => []])['read'], 'at'));
 
         // Without a recording, what was read is still kept; with neither, nothing is said.
-        $this->assertSame(0, AppBoundaries::withRead(null, [$read(AppBoundaries::CHANGED_WHILE_BOOTING, 'app/Providers/AppServiceProvider.php:14')])['phased']);
-        $this->assertNull(AppBoundaries::withRead(null, []));
+        $this->assertSame(0, AppBoundaries::withRead(null, ['read' => [$read(AppBoundaries::CHANGED_WHILE_BOOTING, 'app/Providers/AppServiceProvider.php:14')], 'before' => []])['phased']);
+        $this->assertNull(AppBoundaries::withRead(null, ['read' => [], 'before' => []]));
+    }
+
+    public function test_a_finding_the_code_had_before_the_change_only_moved_unless_the_change_added_more()
+    {
+        $view = 'App\Policies\PostPolicy::view';
+        $measured = AppBoundaries::measure([$this->recorded('GET', '/posts', [
+            $this->asked('update "posts" set "views" = ?', self::NEW.':3', 'authorization'),
+        ])], self::PATCH);
+        $read = fn (string $at, string $what = 'save') => ['kind' => AppBoundaries::CHANGED_WHILE_AUTHORIZING, 'what' => $what, 'at' => $at, 'in' => $view];
+
+        // The policy saved before the change too: the change only moved it, seen or read.
+        $moved = AppBoundaries::withRead($measured, ['read' => [$read(self::NEW.':4', 'http')], 'before' => [$read('app/Policies/PostPolicy.php:12'), $read('app/Policies/PostPolicy.php:13', 'http')]]);
+        $this->assertSame([], $moved['findings']);
+        $this->assertSame([], $moved['read']);
+        $this->assertSame(2, $moved['existing']);
+
+        // A second save of the same kind in the same method is the change's.
+        $more = AppBoundaries::withRead(null, ['read' => [$read(self::NEW.':3'), $read(self::NEW.':4')], 'before' => [$read('app/Policies/PostPolicy.php:12')]]);
+        $this->assertCount(1, $more['read']);
+        $this->assertSame(1, $more['existing']);
     }
 
     public function test_only_the_phases_asked_for_are_checked()

@@ -108,9 +108,9 @@ class VerifyFeatureRequest implements ShouldQueue
      * from BoundaryCode::inPatch(), read while the change is still in the
      * workspace.
      *
-     * @var list<array{kind: string, what: string, at: string, in: string}>
+     * @var array{read: list<array{kind: string, what: string, at: string, in: string}>, before: list<array{kind: string, what: string, at: string, in: string}>}
      */
-    protected array $boundaryCode = [];
+    protected array $boundaryCode = ['read' => [], 'before' => []];
 
     /**
      * Files whose change alters what setup installs. A check cannot be run
@@ -840,7 +840,7 @@ class VerifyFeatureRequest implements ShouldQueue
         $this->boundaryCode = rescue(fn () => BoundaryCode::inPatch(
             $featureRequest->patch,
             fn (string $path) => rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), null, report: false),
-        ), []);
+        ), ['read' => [], 'before' => []]);
     }
 
     /**

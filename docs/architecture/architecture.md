@@ -1851,7 +1851,12 @@ any query too. A closure that `boot` only registers runs later and is not
 counted. It reads one method at a time and does not follow calls, so each
 finding is likely, not proven. These go to the reviewer as "read from the
 code, not seen running" (`read`), never to the owner's proof. A line the
-recording already holds against the change is said once, as seen. The
+recording already holds against the change is said once, as seen. A finding is
+also named by what it is, not by its line: the rule, the method and the
+kind of effect. The file as it was before the change is rebuilt from the
+file and its diff and read the same way. A finding it already had only
+moved, for example when the change reformats a policy, and is counted as
+`existing`, seen or read. The change is held only to what it has more of. The
 app's start is a fourth rule, read only: a query there runs for every
 request, command and queue worker, and before a database may exist.
 
