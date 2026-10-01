@@ -68,6 +68,10 @@ class NarrateWork
                 $lines[] = ['kind' => 'stage', 'names' => [], 'text' => $text];
             }
 
+            if ($event->type === 'review' && ! ($event->data['approved'] ?? false)) {
+                array_push($lines, ...$this->caught($event->data['findings'] ?? []));
+            }
+
             if ($event->type === 'status' && ($event->data['to'] ?? null) === RunStatus::Verifying->value && ($verification = $verifications->shift()) !== null) {
                 array_push($lines, ...$this->checks($verification));
             }
@@ -207,6 +211,32 @@ class NarrateWork
         }
 
         return $lines;
+    }
+
+    /**
+     * Say what the second look caught, where the owner can read it: the
+     * first sentence of each problem that sent the change back. Most
+     * are about missing tests, which the checks above already show; only
+     * problems with what the app does are told.
+     *
+     * @param  list<array{severity?: string, summary?: string}>  $findings
+     * @return list<array{kind: string, names: list<string>, text: string}>
+     */
+    protected function caught(array $findings): array
+    {
+        $lines = [];
+
+        foreach ($findings as $finding) {
+            // Only the first sentence says what is wrong; a later one read
+            // alone ("It is missing") makes no sense.
+            $first = ($finding['severity'] ?? null) === 'blocking' ? $this->plain(preg_split('/(?<=[.!?])\s+/', trim((string) ($finding['summary'] ?? '')))[0] ?? '') : null;
+
+            if ($first !== null && preg_match('/\b(tests?|tested|criteri(on|a)|verif\w*|plan|evidence)\b/i', $first) !== 1) {
+                $lines[] = ['kind' => 'failed', 'names' => [], 'text' => $first];
+            }
+        }
+
+        return array_slice($lines, 0, 3);
     }
 
     /**

@@ -138,6 +138,23 @@ class WorkStoryTest extends TestCase
         ], app(NarrateWork::class)->handle($run->refresh()));
     }
 
+    public function test_the_story_tells_what_the_second_look_caught_in_plain_words()
+    {
+        [$run] = $this->implementingRun();
+        $run->recordEvent('review', ['approved' => false, 'findings' => [
+            ['severity' => 'blocking', 'file' => null, 'summary' => 'The count is beside the “Team name” label, while the team’s name appears separately in the input below it. The new test checks adjacency to the label.'],
+            // Missing tests show in the checks; code is not for the owner.
+            ['severity' => 'blocking', 'file' => null, 'summary' => 'No test in the change checks: owners can still rename the team.'],
+            ['severity' => 'blocking', 'file' => 'app/Models/Team.php', 'summary' => 'The `members_count` query runs once per team in the switcher list.'],
+            ['severity' => 'minor', 'file' => null, 'summary' => 'The switcher spacing looks slightly uneven between the team rows.'],
+        ]]);
+
+        $this->assertSame([
+            ['kind' => 'stage', 'text' => 'I found something to fix'],
+            ['kind' => 'failed', 'text' => 'The count is beside the “Team name” label, while the team’s name appears separately in the input below it.'],
+        ], app(NarrateWork::class)->handle($run->refresh()));
+    }
+
     public function test_a_change_made_without_a_story_shows_none()
     {
         [$run] = $this->implementingRun();
