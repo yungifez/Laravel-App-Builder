@@ -222,6 +222,20 @@ class RecordedApp
     }
 
     /**
+     * Carries on as if the job it queued is done.
+     */
+    public function waited(): Response
+    {
+        RecordedCarefulJob::dispatch();
+
+        if (DB::table('users')->where('name', 'Told')->exists()) {
+            Mail::raw('Told', fn ($message) => $message->to('owner@example.com'));
+        }
+
+        return response()->noContent();
+    }
+
+    /**
      * Dispatches an event that listeners hear.
      */
     public function ordered(): Response

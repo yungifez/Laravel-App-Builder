@@ -50,6 +50,9 @@ use WeakMap;
  *
  * It can also name an event. The listeners Laravel found for that event by
  * itself then run in the reverse order for that one request.
+ *
+ * And it can name a job the sync queue runs. That job is then held back
+ * until the response is made, the way a real queue runs it later.
  */
 class Recorder
 {
@@ -122,6 +125,12 @@ class Recorder
     /** @var list<int|null> The place in the trace of each job the sync queue is running now */
     protected array $running = [];
 
+    /** @var list<Closure(): mixed> The jobs held back until the response is made */
+    protected array $held = [];
+
+    /** Whether a job that was held back runs now. */
+    protected bool $releasing = false;
+
     /** @var array<string, true> The fakes that took work of this request this recorder could not see */
     protected array $hidden = [];
 
@@ -147,6 +156,15 @@ class Recorder
     {
         $events = $this->events = $this->app->make('events');
 
+        // A run about a job that waits needs a sync queue that can hold it back.
+        if (($this->fault['kind'] ?? null) === 'later') {
+            try {
+                $this->app->make('queue')->addConnector('sync', fn () => LaterQueue::connector($this));
+            } catch (Throwable) {
+                //
+            }
+        }
+
         $events->listen(QueryExecuted::class, function (QueryExecuted $query) {
             $this->watch($query->connection);
             $this->effect(['kind' => 'query', 'sql' => $query->sql]);
@@ -170,8 +188,14 @@ class Recorder
         $events->listen(JobProcessing::class, function (JobProcessing $event) {
             // The sync queue runs a job where it is dispatched, without queueing it.
             if ($event->connectionName === 'sync') {
-                $this->running[] = $this->operation === null ? null : count($this->operation['effects']);
-                $this->effect(['kind' => 'job', 'what' => $event->job->resolveName(), ...($this->delivers($event->job) ? ['delivers' => true] : [])]);
+                // A job that was held back is noted where it was dispatched.
+                $noted = $this->releasing && $this->jobs === 0;
+                $this->running[] = $this->operation === null || $noted ? null : count($this->operation['effects']);
+
+                if (! $noted) {
+                    $this->effect(['kind' => 'job', 'what' => $event->job->resolveName(), ...($this->delivers($event->job) ? ['delivers' => true] : [])]);
+                }
+
                 $this->jobs++;
             }
         });
@@ -206,6 +230,7 @@ class Recorder
         $this->requests++;
         $this->jobs = 0;
         $this->running = [];
+        $this->held = [];
         $this->hidden = [];
         $this->fakes->standIn();
         $this->follow();
@@ -235,6 +260,8 @@ class Recorder
             return;
         }
 
+        $this->release();
+
         $route = $request->route();
         $status = method_exists($response, 'getStatusCode') ? (int) $response->getStatusCode() : 0;
 
@@ -253,6 +280,9 @@ class Recorder
         if ($this->operation === null) {
             return;
         }
+
+        // The queue had the job before the error: it still runs.
+        $this->release();
 
         $route = $request->route();
         $status = method_exists($exception, 'getStatusCode') ? (int) $exception->getStatusCode() : (int) ($exception->status ?? 500);
@@ -501,6 +531,61 @@ class Recorder
             //
         } finally {
             $this->jobs = max(0, $this->jobs - 1);
+        }
+    }
+
+    /**
+     * Hold back a job the sync queue is about to run, when it is the job
+     * this run is about. In use the job waits on a queue and runs after
+     * the response, so here it runs when the response is made. A job the
+     * app sends to the sync queue by name runs in place in use too, and
+     * is not held.
+     *
+     * @param  Closure(): object  $queued  Makes the job as the queue sees it
+     * @param  Closure(): mixed  $run  Runs the job
+     */
+    public function hold(mixed $job, Closure $queued, Closure $run): bool
+    {
+        if ($this->operation === null || $this->releasing || $this->jobs > 0 || isset($this->operation['fault'])
+            || $this->fault !== ['request' => $this->requests - 1, 'effect' => count($this->operation['effects']), 'kind' => 'later']
+            || (is_object($job) && ($job->connection ?? null) !== null)) {
+            return false;
+        }
+
+        $place = count($this->operation['effects']);
+        $queued = $queued();
+        $this->effect(['kind' => 'job', 'what' => $queued->resolveName(), ...($this->delivers($queued) ? ['delivers' => true] : []), 'later' => true]);
+
+        if (count($this->operation['effects']) !== $place + 1) {
+            return false;
+        }
+
+        $this->operation['fault'] = $place;
+        $this->held[] = $run;
+
+        return true;
+    }
+
+    /**
+     * Run the jobs that were held back. An error in one stays in it,
+     * because in use it happens on the queue and not in the request.
+     */
+    protected function release(): void
+    {
+        $held = $this->held;
+        $this->held = [];
+        $this->releasing = true;
+
+        try {
+            foreach ($held as $run) {
+                try {
+                    $run();
+                } catch (Throwable) {
+                    //
+                }
+            }
+        } finally {
+            $this->releasing = false;
         }
     }
 

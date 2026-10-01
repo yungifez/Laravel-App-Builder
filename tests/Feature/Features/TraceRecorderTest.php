@@ -452,6 +452,52 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
     }
 
+    public function test_a_job_held_back_until_the_response_shows_what_the_request_did_not_do_without_it()
+    {
+        User::factory()->create(['name' => 'Careful']);
+        Route::post('/_failing/waited', [RecordedApp::class, 'waited']);
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'later');
+
+        $this->post('/_failing/waited')->assertNoContent();
+        User::query()->where('name', 'Told')->update(['name' => 'Careful']);
+        $this->post('/_failing/waited')->assertNoContent();
+
+        $requests = $recorded();
+        $did = fn (array $request) => array_map(fn (array $effect) => [AppTraces::verb($effect['sql'] ?? '') ?: $effect['kind'], $effect['job'] ?? false], $request['effects']);
+        $job = [['select', true], ['mail', true], ['update', true]];
+
+        $this->assertSame([
+            [['job', false], ...$job, ['select', false], ['mail', false]],
+            // The job ran when the response was made: the request found nothing to tell of.
+            [['job', false], ['select', false], ...$job],
+        ], array_map($did, $requests));
+        $this->assertSame([null, 0], [$requests[0]['fault'] ?? null, $requests[1]['fault'] ?? null]);
+        $this->assertSame($requests[0]['effects'][0], $requests[1]['effects'][0]);
+        // The job still ran: later, not never.
+        $this->assertSame(1, User::query()->where('name', 'Told')->count());
+
+        $points = AppFaults::points([$requests[0]], $this->wholeFilePatch());
+        $this->assertSame([['send', 5, 'mail'], ['again', 0, 'job'], ['retry', 3, 'query'], ['later', 0, 'later']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
+        $points[3]['fault']['request'] = 1;
+
+        $measured = (array) AppFaults::measure($points, [3 => $requests], $this->wholeFilePatch());
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['needs_job_done', 'POST /_failing/waited', 'job '.RecordedCarefulJob::class, 'missing mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
+    public function test_a_job_the_app_sends_to_the_sync_queue_by_name_is_not_held_back()
+    {
+        Route::post('/_failing/ran', [RecordedApp::class, 'ran']);
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'later');
+
+        $this->post('/_failing/ran')->assertNoContent();
+        $this->post('/_failing/ran')->assertNoContent();
+
+        $requests = $recorded();
+        $this->assertSame(['job', 'query', 'mail', 'query'], array_column($requests[1]['effects'], 'kind'));
+        $this->assertSame([[null, $requests[0]['effects']]], [[$requests[1]['fault'] ?? null, $requests[1]['effects']]]);
+    }
+
     public function test_an_event_whose_found_listeners_run_in_the_reverse_order_shows_what_the_request_did_not_do()
     {
         User::factory()->create();

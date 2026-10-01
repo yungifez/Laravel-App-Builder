@@ -1898,6 +1898,12 @@ can be caused, in requests that ran the change's code:
 - **A save in a job.** The last save a job makes after it sent something.
   The save is refused, and the job is run again, the way a queue tries a
   failed job again.
+- **A job that waits.** Each job the sync queue ran in a request, when the
+  job did something and the app's code did something after it. This place
+  does not fail. Tests run a queued job where it is dispatched. In use it
+  waits on a queue and runs after the response. So the job is held back and
+  runs when the response is made. A job the app sends to the sync queue by
+  name (`dispatch_sync`) runs in place in use too, and is never held.
 - **An event.** Each event a request dispatches that has two or more
   listeners Laravel found by itself (event discovery). This place does not
   fail. The found listeners run in the reverse order. Laravel takes found
@@ -1912,7 +1918,9 @@ transport cannot connect, the outside call times out, or the database
 refuses the write before it runs. A job is run again when it is done, the
 way a queue runs it again when a worker stops before it marks the job as
 done. The second run is marked in the trace, and an error in it stays in it.
-For an event, the fault also names the event. The recorder puts its found
+For a job that waits, the recorder puts a sync queue in place that asks it
+before each job, and only in that run. For an event, the fault also names
+the event. The recorder puts its found
 listeners in the reverse order for that one request, and gives them their
 order back when the request ends.
 The trace of that request shows what stayed:
@@ -1933,6 +1941,9 @@ The trace of that request shows what stayed:
 - **Called again.** An outside call got no answer, and the request made the
   same call again from the same line. A call that got no answer can still
   have arrived, so the service can do it twice: a payment taken twice.
+- **Needs its job done.** A job ran after the response and not where it
+  was dispatched, and the request did not do the same. What the request
+  does after it dispatches a job only works when the job is done.
 - **Depends on order.** The found listeners of an event ran in the reverse
   order, and the request did not do the same. A send, or a save of the
   app's code that stayed, is missing or new from its line, or the answer
@@ -1960,7 +1971,10 @@ same lines, with the same answer, is clean when the listeners use no table
 together. When two of them use one table and one of them saves to it, the
 shape cannot say what stayed there: the place is `missed`. A query is a
 listener's when the listener is among the app's code on the way to it
-(`frames`). What a listener changes only in memory is not seen.
+(`frames`). What a listener changes only in memory is not seen. A job that
+waits is compared the same way. The two groups are what jobs did and what
+the app's code did after the job was dispatched. A request that reads the
+table its job saves to, with the same shape in both runs, is `missed`.
 
 A finding counts against a change only when the failed effect, or what
 stayed, comes from a line the change added. The rest is counted (`existing`)
@@ -1975,7 +1989,9 @@ owner's wait has a limit. A place whose failure did not happen is counted as
 of the request, because in use that job runs later on a queue. The job as a
 whole is the place, and the save after its send is a second place of the
 job. Both are tried with the jobs, before the saves of the request. They
-are the change's when the change queues the job or wrote what it does. An
+are the change's when the change queues the job or wrote what it does. A
+job that waits is the job's third place, and is the change's too when the
+change wrote what the request does after the job. An
 event is tried with the jobs too. It is the change's when the change
 dispatches it or wrote what one of its listeners does. A
 job that takes the failure of its save in is not tried again, and nothing
@@ -1983,7 +1999,7 @@ is said. A second run that the trace cut short is missed. An email that a test
 fakes is a place too: the stand-in of the fake fails it the same way, before
 the fake takes it.
 
-The reviewer blocks all seven, unless the request or the plan asks for
+The reviewer blocks all eight, unless the request or the plan asks for
 exactly that. The owner reads each in the proof: "If saving fails at /invitations,
 your app has already sent something. People are told about something that
 was not saved." When failures were caused and nothing stayed: "We made things
@@ -1998,7 +2014,10 @@ answer at /orders/{order}/pay, your app asks it again. The service may then
 do the same thing twice, such as take a payment twice." For an event: "When
 someone uses /orders, your app does a few things one after the other, and
 nothing says which comes first. When they happen the other way round, your
-app does not do the same things." On the fixture the reference change has 2 places, both clean,
+app does not do the same things." For a job that waits: "Your app does some
+work on its own after someone uses /orders, and does not wait for it. But
+what your app does next only goes right when that work is already done."
+On the fixture the reference change has 2 places, both clean,
 in about 2 seconds. A copy of it that sends an email before its last save is
 found.
 

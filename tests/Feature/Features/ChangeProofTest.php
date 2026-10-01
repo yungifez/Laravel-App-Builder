@@ -571,6 +571,11 @@ class ChangeProofTest extends TestCase
             $proof(['run' => 1, 'findings' => [$finding('depends_on_order', 'POST /orders', 'event App\Events\OrderPlaced')]])->where('kind', 'gap')->pluck('text')->all(),
         );
 
+        $this->assertSame(
+            ['Your app does some work on its own after someone uses /orders, and does not wait for it. But what your app does next only goes right when that work is already done.'],
+            $proof(['run' => 1, 'findings' => [$finding('needs_job_done', 'POST /orders', 'job App\Jobs\SendReceipt')]])->where('kind', 'gap')->pluck('text')->all(),
+        );
+
         // The recording already said it sends before saving ends: it is said once.
         $twice = $proof(['run' => 1, 'findings' => [$finding('sent_then_lost', 'POST /invitations', 'insert invitations')]], ['traces' => ['requests' => 40, 'reached' => 12, 'unseen' => 0, 'existing' => 0, 'repeats' => [], 'findings' => [
             ['kind' => 'sent_before_saved', 'route' => 'POST /invitations', 'what' => 'mail App\Mail\Invited', 'at' => 'app/Models/Order.php:3', 'test' => null],
