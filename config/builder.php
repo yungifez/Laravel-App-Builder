@@ -942,6 +942,14 @@ return [
         ],
     ],
 
+    'developer_reviews' => [
+        // The change's code is shown up to this size; the rest is in the
+        // code download.
+        'max_patch_kb' => (int) env('BUILDER_DEVELOPER_REVIEW_MAX_PATCH_KB', 96),
+        // How many kept changes in the same areas the developer sees.
+        'recent_changes' => (int) env('BUILDER_DEVELOPER_REVIEW_RECENT_CHANGES', 8),
+    ],
+
     'notifications' => [
         // Also email the owner when a change is ready, has a question or
         // did not work. They are always told in the builder itself.

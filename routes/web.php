@@ -3,6 +3,8 @@
 use App\Http\Controllers\ClearedProblemController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeploymentController;
+use App\Http\Controllers\DeveloperReviewController;
+use App\Http\Controllers\DeveloperReviewGuidanceController;
 use App\Http\Controllers\ExperimentController;
 use App\Http\Controllers\ExperimentMergeController;
 use App\Http\Controllers\FeatureRequestAcceptanceController;
@@ -25,6 +27,7 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\NotificationReadController;
 use App\Http\Controllers\Operations\AttentionController;
 use App\Http\Controllers\Operations\ChangeController as OperationsChangeController;
+use App\Http\Controllers\Operations\DeveloperReviewController as OperationsDeveloperReviewController;
 use App\Http\Controllers\PageConsistencyController;
 use App\Http\Controllers\PreviewController;
 use App\Http\Controllers\PreviewDataController;
@@ -69,6 +72,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('projects/{project}/download', ProjectDownloadController::class)->name('projects.download');
     Route::get('projects/{project}/understanding', [ProjectUnderstandingController::class, 'show'])->name('projects.understanding.show');
     Route::put('projects/{project}/understanding', [ProjectUnderstandingController::class, 'update'])->name('projects.understanding.update');
+    Route::get('projects/{project}/developers', [DeveloperReviewController::class, 'index'])->name('projects.developers.index');
+    Route::post('projects/{project}/developers', [DeveloperReviewController::class, 'store'])->name('projects.developers.store');
+    Route::delete('developer-reviews/{developerReview}', [DeveloperReviewController::class, 'destroy'])->name('developer-reviews.destroy');
+    Route::post('developer-reviews/{developerReview}/guidance', [DeveloperReviewGuidanceController::class, 'store'])->name('developer-reviews.guidance.store');
     Route::post('projects/{project}/notes-draft', [ProjectNotesDraftController::class, 'store'])->name('projects.notes-draft.store');
     Route::delete('projects/{project}/notes-draft', [ProjectNotesDraftController::class, 'destroy'])->name('projects.notes-draft.destroy');
     Route::patch('projects/{project}/name', [ProjectNameController::class, 'update'])->name('projects.name.update');
@@ -134,6 +141,13 @@ Route::middleware(['auth', 'verified', 'can:viewOperations'])->prefix('operation
     Route::get('/', AttentionController::class)->name('attention');
     Route::get('changes', [OperationsChangeController::class, 'index'])->name('changes.index');
     Route::get('changes/{featureRequest}', [OperationsChangeController::class, 'show'])->name('changes.show');
+    // Our own developers answer the owners who asked for one.
+    Route::get('developer-reviews', [OperationsDeveloperReviewController::class, 'index'])->name('developer-reviews.index');
+    Route::get('developer-reviews/{developerReview}', [OperationsDeveloperReviewController::class, 'show'])->name('developer-reviews.show');
+    Route::put('developer-reviews/{developerReview}', [OperationsDeveloperReviewController::class, 'update'])->name('developer-reviews.update');
+    Route::get('developer-reviews/{developerReview}/request.md', [OperationsDeveloperReviewController::class, 'request'])->name('developer-reviews.request');
+    Route::get('developer-reviews/{developerReview}/code', [OperationsDeveloperReviewController::class, 'code'])->name('developer-reviews.code');
+    Route::get('developer-reviews/{developerReview}/change.patch', [OperationsDeveloperReviewController::class, 'change'])->name('developer-reviews.change');
 });
 
 require __DIR__.'/settings.php';

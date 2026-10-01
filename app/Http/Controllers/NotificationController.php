@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\DeveloperReview;
 use App\Models\FeatureRequest;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,7 +17,13 @@ class NotificationController extends Controller
         $notification = $request->user()->notifications()->findOrFail($notification);
         $notification->markAsRead();
 
-        // Built now, not kept: the address names the change by its UUID.
+        // Built now, not kept: the address names the app or change by its UUID.
+        $review = DeveloperReview::query()->whereKey($notification->data['developer_review_id'] ?? null)->first();
+
+        if ($review !== null) {
+            return to_route('projects.developers.index', $review->project);
+        }
+
         $featureRequest = FeatureRequest::query()->whereKey($notification->data['feature_request_id'] ?? null)->first();
 
         return $featureRequest === null

@@ -19,6 +19,7 @@ void createInertiaApp({
             case name === 'projects/Show':
                 return WorkspaceLayout;
             case name === 'projects/Understanding':
+            case name === 'projects/Developers':
             case name === 'feature-requests/Show':
             case name.startsWith('operations/'):
                 return AppPageLayout;

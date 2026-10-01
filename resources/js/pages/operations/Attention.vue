@@ -6,6 +6,7 @@ import { duration, stamp, usd, words } from '@/lib/operations';
 import { attention as attentionRoute } from '@/routes/operations';
 import { index as projectsIndex } from '@/routes/projects';
 import { index as changesIndex } from '@/routes/operations/changes';
+import { index as developerReviewsIndex } from '@/routes/operations/developer-reviews';
 import type { Attention } from '@/types';
 
 // Hosts bill in cents, in their own currency.
@@ -72,13 +73,23 @@ const completeness = computed(
                     {{ days === 1 ? '24 hours' : `${days} days` }}
                 </Link>
             </div>
-            <Link
-                :href="changesIndex().url"
-                class="flex min-h-11 items-center gap-1 text-sm font-medium text-primary select-none sm:min-h-9"
-                data-test="all-changes"
-            >
-                All changes <ChevronRight class="size-4" />
-            </Link>
+            <div class="flex gap-4">
+                <Link
+                    :href="developerReviewsIndex().url"
+                    class="flex min-h-11 items-center gap-1 text-sm font-medium text-primary select-none sm:min-h-9"
+                    data-test="developer-questions"
+                >
+                    Questions for developers
+                    <ChevronRight class="size-4" />
+                </Link>
+                <Link
+                    :href="changesIndex().url"
+                    class="flex min-h-11 items-center gap-1 text-sm font-medium text-primary select-none sm:min-h-9"
+                    data-test="all-changes"
+                >
+                    All changes <ChevronRight class="size-4" />
+                </Link>
+            </div>
         </nav>
 
         <!-- The answer first: what is wrong right now. -->

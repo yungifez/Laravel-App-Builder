@@ -137,6 +137,16 @@ class Project extends Model
     }
 
     /**
+     * Get the times the owner asked a developer to look at the app.
+     *
+     * @return HasMany<DeveloperReview, $this>
+     */
+    public function developerReviews(): HasMany
+    {
+        return $this->hasMany(DeveloperReview::class);
+    }
+
+    /**
      * Get the project's previews, including those of its feature requests.
      *
      * @return HasMany<Preview, $this>

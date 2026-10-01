@@ -16,12 +16,15 @@ class PackProject
      * is theirs, so a developer can take it over without asking us. Only
      * the files go: the history, and the notes, which are ours (§19), stay.
      *
+     * A revision packs the code as it was then, so a developer asked to
+     * look at it reads the same code however the app moves on.
+     *
      * @return string|null The path of a temporary zip file, which the caller
      *                     deletes, or null when the app has no code yet.
      */
-    public function handle(Project $project): ?string
+    public function handle(Project $project, ?string $revision = null): ?string
     {
-        $head = $this->repository->exists($project) ? $this->repository->head($project, Experiment::mainBranch()) : '';
+        $head = $this->repository->exists($project) ? ($revision ?? $this->repository->head($project, Experiment::mainBranch())) : '';
 
         if ($head === '') {
             return null;

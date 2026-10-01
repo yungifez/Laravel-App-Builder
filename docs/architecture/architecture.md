@@ -3632,6 +3632,35 @@ Only what the notes already support:
   so its history is visible.
 - **The reviewer checks changes against it**, because the reviewer already
   receives the project notes.
+- **"Ask a developer" brings in one of our own developers**
+  ([direction 26](direction/26-evolution-loop-and-design-contract.md),
+  "Human-in-the-loop: tiny V1 version"). The test is whether one hour of
+  engineering judgment changes later AI work. The owner asks in their own
+  words, about the whole app or about one change (app menu, or a link that
+  names the change). The developers are in-house: they answer as operators
+  (`viewOperations`) under "Questions for developers", so no account,
+  invitation or role is added for them.
+    - **What they read is written once, without a model**
+      (`WriteReviewRequest`, kept in `developer_reviews.bundle`): the
+      question, what the app is for, its rules, decisions and guidance so far.
+      For the app, each area with its code paths, rules and how many tests
+      run it. For a change, how it was understood, what must stay, the
+      assumptions, the notes of its areas, what the checks showed and what
+      nothing checks yet, the problems still open, its code, and the kept
+      changes in the same areas. It names the commit (`revision`), and the
+      code download (`PackProject`) is taken at that commit, so the review
+      reads the same code however the app moves on. It holds no scores,
+      routing or other machinery, because it can be downloaded and passed on.
+    - **The answer has three parts:** a short answer, what they noticed, and
+      guidance, one rule per line. The owner is told once in the builder.
+    - **Only the owner makes guidance part of the app.** They choose which
+      points to keep. Each kept point joins "Engineering direction" with the
+      developer's name and the date. The review keeps the commit it was given
+      on, so stale guidance can be found later (§30.3). Kept guidance fixes
+      the answer.
+    - **Not in V1:** our developers writing code here (an owner who wants
+      that uses "Use my own Claude Code or Codex", §11), showing in a change
+      which guidance it followed, asking before risky changes, payment.
 
 Grandma sees none of the vocabulary: no "architecture consultation", no
 "audit". Where V1 shows anything, it says "Guidance from your developer".
@@ -3640,12 +3669,12 @@ Grandma sees none of the vocabulary: no "architecture consultation", no
 
 In order, each built on the notes rather than beside them:
 
-1. **Review packet**: a page generated from the notes (business, main goal,
-   important rules, the change, what it may touch, open questions, and the
-   **unconfirmed assumptions the design rests on**) so an expert spends the
-   hour on judgment, not on reverse-engineering. "These assumptions decide the
-   tenancy model" is the kind of catch the packet exists for. It is a
-   view, not a new store.
+1. **Review packet**: built in V1 as what "Ask a developer" writes (§29.3).
+   Still to come: the **unconfirmed assumptions the design rests on**, once
+   assumptions are kept in the notes (§30.3). "These assumptions decide the
+   tenancy model" is the kind of catch the packet exists for. Then: say in a
+   change which kept guidance it followed, only where the second look
+   weighed that point.
 2. **"Ask a developer to review it first"** beside "Continue", offered before
    high-consequence changes (permissions, stored data, billing, destructive
    changes), from the same flags as §28.5 (2).
@@ -3655,8 +3684,10 @@ In order, each built on the notes rather than beside them:
 4. **A marketplace for judgment, not for feature work** ("lend your judgment to
    my software"), with levels from general developer to specialist.
 
-The developer access model (accounts, permissions, payment) is not designed
-yet, and V1 has no invitations or roles (see AGENTS.md: later gates).
+The developers are our own staff, so V1 uses operator accounts. Access for
+the owner's own or hired developers (accounts, permissions, payment) is not
+designed yet, and V1 has no invitations or roles (see AGENTS.md: later
+gates).
 
 ## 30. Software stewardship (version 19)
 

@@ -85,6 +85,7 @@ import { morph } from '@/lib/morph';
 import { when } from '@/lib/when';
 import { show as showPreview } from '@/routes/previews';
 import { download, index, show as showProject } from '@/routes/projects';
+import { index as developers } from '@/routes/projects/developers';
 import { show as showUnderstanding } from '@/routes/projects/understanding';
 import type {
     ChangeDetail,
@@ -1006,6 +1007,14 @@ function sendOnEnter(event: KeyboardEvent): void {
                     @select="renaming = true"
                 >
                     Rename…
+                </DropdownMenuItem>
+                <DropdownMenuItem as-child>
+                    <Link
+                        :href="developers(project.id).url"
+                        data-test="ask-developer-open"
+                    >
+                        Ask a developer
+                    </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                     data-test="details-open"
