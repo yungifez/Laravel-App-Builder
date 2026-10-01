@@ -5,6 +5,7 @@ namespace App\Actions\Runs;
 use App\Context\ProjectNotes;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
+use App\Enums\WorkspaceStatus;
 use App\Models\Run;
 use App\Runs\Agents\AgentOutcome;
 use App\Runs\Agents\RunnerAgent;
@@ -38,6 +39,10 @@ class DescribeRunProgress
      */
     public function handle(Run $run): ?array
     {
+        if ($run->status === RunStatus::Planning) {
+            return $this->planning($run);
+        }
+
         if ($run->status === RunStatus::Verifying) {
             return $this->checking($run);
         }
@@ -113,6 +118,26 @@ class DescribeRunProgress
         };
 
         return ['text' => (string) $text, 'changed' => count($changed)];
+    }
+
+    /**
+     * Say which part of planning runs now. Planning first gets a copy of
+     * the app, then reads how it is put together, then decides what to
+     * change; each part leaves an event behind when it is done.
+     *
+     * @return array{text: string, changed: int}
+     */
+    protected function planning(Run $run): array
+    {
+        $last = $run->events()->whereIn('type', ['status', 'workspace_ready', 'compatibility'])->reorder('sequence', 'desc')->value('type');
+
+        $text = match (true) {
+            $last === 'compatibility' => __('Deciding what to change, and how to prove it works'),
+            $last === 'workspace_ready', $run->workspace?->status === WorkspaceStatus::Ready => __('Reading how your app is put together'),
+            default => __('Getting a copy of your app ready'),
+        };
+
+        return ['text' => (string) $text, 'changed' => 0];
     }
 
     /**

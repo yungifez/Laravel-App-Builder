@@ -5,8 +5,10 @@ namespace Tests\Feature\Runs;
 use App\Actions\Runs\DescribeRunProgress;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
+use App\Enums\WorkspaceStatus;
 use App\Models\Run;
 use App\Models\Verification;
+use App\Models\Workspace;
 use App\Runs\Agents\RunnerAgent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -69,6 +71,25 @@ class RunProgressTest extends TestCase
         // Between checks, the stage alone is said.
         $verification->update(['status' => VerificationStatus::Passed]);
         $this->assertNull($this->progress($run));
+    }
+
+    public function test_the_owner_sees_which_part_of_planning_runs()
+    {
+        $run = Run::factory()->create(['status' => RunStatus::Planning]);
+        $run->recordEvent('status', ['from' => 'queued', 'to' => 'planning']);
+
+        $this->assertSame(['text' => 'Getting a copy of your app ready', 'changed' => 0], $this->progress($run));
+
+        $run->recordEvent('workspace_ready', ['workspace_id' => 1]);
+        $this->assertSame('Reading how your app is put together', $this->progress($run)['text']);
+
+        $run->recordEvent('compatibility', ['keep_old_working' => true, 'chosen_by_owner' => false]);
+        $this->assertSame('Deciding what to change, and how to prove it works', $this->progress($run)['text']);
+
+        // Planning again after the owner answers a question reuses the copy.
+        $run->update(['workspace_id' => Workspace::factory()->create(['status' => WorkspaceStatus::Ready])->id]);
+        $run->recordEvent('status', ['from' => 'needs_user_decision', 'to' => 'planning']);
+        $this->assertSame('Reading how your app is put together', $this->progress($run)['text']);
     }
 
     /**

@@ -30,6 +30,7 @@ import RunCancellationController from '@/actions/App/Http/Controllers/RunCancell
 import DetailLevelController from '@/actions/App/Http/Controllers/Settings/DetailLevelController';
 import ChangeCode from '@/components/ChangeCode.vue';
 import ChangeProof from '@/components/ChangeProof.vue';
+import ElapsedTime from '@/components/ElapsedTime.vue';
 import MessageImages from '@/components/MessageImages.vue';
 import InputError from '@/components/InputError.vue';
 import WorkStepLine from '@/components/WorkStepLine.vue';
@@ -615,6 +616,14 @@ const checks = computed(() => {
                                     steps[run?.status ?? 'queued']
                                 }}…</span
                             >
+                            <!-- Seconds counting up show the work has not
+                                 stalled, even while one step runs long -->
+                            <ElapsedTime
+                                v-if="run?.started_at"
+                                :since="run.started_at"
+                                class="text-xs"
+                                data-test="thread-elapsed"
+                            />
                             <Form
                                 v-if="run && run.status !== 'cancelling'"
                                 v-bind="
