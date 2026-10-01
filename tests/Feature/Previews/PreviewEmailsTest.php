@@ -15,12 +15,14 @@ use App\Workspaces\CommandResult;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Process;
 use Inertia\Testing\AssertableInertia as Assert;
 use Mockery;
+use RuntimeException;
 use Tests\Concerns\FakesWorkspaces;
 use Tests\Concerns\PreparesRuns;
 use Tests\Fakes\FakeWorkspaceDriver;
@@ -134,6 +136,36 @@ class PreviewEmailsTest extends TestCase
 
         $this->assertSame('recent log', app(ReadPreviewLog::class)->handle($preview));
         $this->assertSame('recent log', app(ReadPreviewLog::class)->handle($preview));
+    }
+
+    public function test_a_poll_while_the_log_is_being_read_gets_the_last_log_and_holds_no_worker()
+    {
+        $workspace = Workspace::factory()->create(['user_id' => $this->owner->id]);
+        $preview = Preview::factory()->editable()->ready()->create(['project_id' => $this->project->id, 'workspace_id' => $workspace->id]);
+        $driver = Mockery::mock(FakeWorkspaceDriver::class);
+        $driver->shouldReceive('readFile')->once()->andReturn('first log');
+        app(WorkspaceManager::class)->extend('fake', fn () => $driver);
+        $this->assertSame('first log', app(ReadPreviewLog::class)->handle($preview));
+
+        Cache::forget("previews:{$preview->id}:log");
+        $reading = Cache::lock("previews:{$preview->id}:log:reading", 90);
+        $reading->get();
+
+        $this->assertSame('first log', app(ReadPreviewLog::class)->handle($preview));
+        $reading->release();
+    }
+
+    public function test_a_log_read_that_failed_is_not_tried_again_on_the_next_poll()
+    {
+        $workspace = Workspace::factory()->create(['user_id' => $this->owner->id]);
+        $preview = Preview::factory()->editable()->ready()->create(['project_id' => $this->project->id, 'workspace_id' => $workspace->id]);
+        $driver = Mockery::mock(FakeWorkspaceDriver::class);
+        $driver->shouldReceive('readFile')->once()->andThrow(new RuntimeException('The workspace could not read: '));
+        app(WorkspaceManager::class)->extend('fake', fn () => $driver);
+
+        $this->assertSame('', app(ReadPreviewLog::class)->handle($preview));
+        $this->travel(5)->seconds();
+        $this->assertSame('', app(ReadPreviewLog::class)->handle($preview));
     }
 
     public function test_the_owner_deletes_one_email_or_all_of_them_with_a_mark_in_the_app_log()

@@ -47,12 +47,41 @@ class ReadPreviewLog
             return '';
         }
 
-        // The builder asks every few seconds while the owner looks; the
-        // workspace is read at most once in that time.
-        return Cache::remember("previews:{$preview->id}:log", now()->addSeconds(2), fn () => (string) rescue(
-            fn () => $this->workspaces->driver($workspace->driver)->readFile((string) $workspace->driver_id, Config::string('builder.preview.log'), self::TAIL_BYTES),
-            '',
-            report: false,
-        ));
+        $fresh = "previews:{$preview->id}:log";
+        $last = "previews:{$preview->id}:log:last";
+
+        if (Cache::has($fresh)) {
+            return (string) Cache::get($last, '');
+        }
+
+        // The builder asks every few seconds from each open page, and a read
+        // holds a web worker until the runner answers. Only one read runs
+        // per app; the other pages get the log as last read. So the reads
+        // cannot take every worker and keep the runner from claiming them.
+        $lock = Cache::lock("previews:{$preview->id}:log:reading", 90);
+
+        if (! $lock->get()) {
+            return (string) Cache::get($last, '');
+        }
+
+        try {
+            $log = rescue(
+                fn () => $this->workspaces->driver($workspace->driver)->readFile((string) $workspace->driver_id, Config::string('builder.preview.log'), self::TAIL_BYTES),
+                null,
+                report: false,
+            );
+
+            if ($log !== null) {
+                Cache::put($last, $log, now()->addMinutes(10));
+            }
+
+            // A read that failed is not tried again for a few polls: a runner
+            // that is behind gets time to catch up.
+            Cache::put($fresh, true, now()->addSeconds($log === null ? 10 : 2));
+
+            return (string) ($log ?? Cache::get($last, ''));
+        } finally {
+            $lock->release();
+        }
     }
 }
