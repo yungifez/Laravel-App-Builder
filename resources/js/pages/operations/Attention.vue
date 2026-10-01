@@ -19,7 +19,10 @@ function money(cents: number | null, currency: string | null): string {
           }).format(cents / 100);
 }
 
-const props = defineProps<{ attention: Attention }>();
+const props = defineProps<{
+    attention: Attention;
+    waitingQuestions: number;
+}>();
 
 setLayoutProps({
     breadcrumbs: [
@@ -76,15 +79,21 @@ const completeness = computed(
             <div class="flex gap-4">
                 <Link
                     :href="developerReviewsIndex().url"
-                    class="flex min-h-11 items-center gap-1 text-sm font-medium text-primary select-none sm:min-h-9"
+                    class="flex min-h-11 items-center gap-1 text-sm font-medium text-foreground/80 select-none hover:text-foreground sm:min-h-9"
                     data-test="developer-questions"
                 >
                     Questions for developers
+                    <span
+                        v-if="waitingQuestions > 0"
+                        class="text-amber-600"
+                        data-test="questions-waiting"
+                        >· {{ waitingQuestions }} waiting</span
+                    >
                     <ChevronRight class="size-4" />
                 </Link>
                 <Link
                     :href="changesIndex().url"
-                    class="flex min-h-11 items-center gap-1 text-sm font-medium text-primary select-none sm:min-h-9"
+                    class="flex min-h-11 items-center gap-1 text-sm font-medium text-foreground/80 select-none hover:text-foreground sm:min-h-9"
                     data-test="all-changes"
                 >
                     All changes <ChevronRight class="size-4" />

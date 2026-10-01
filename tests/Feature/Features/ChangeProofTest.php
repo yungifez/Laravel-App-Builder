@@ -3,6 +3,7 @@
 namespace Tests\Feature\Features;
 
 use App\Actions\Features\DescribeProof;
+use App\Context\ProjectNotes;
 use App\Enums\VerificationStatus;
 use App\Models\FeatureRequest;
 use App\Models\Run;
@@ -112,6 +113,25 @@ class ChangeProofTest extends TestCase
         $this->actingAs($request->project->owner)
             ->get(route('feature-requests.show', $request))
             ->assertInertia(fn (Assert $page) => $page->where('proof.4', ['kind' => 'reach', 'text' => 'It changed code the whole app shares, so every part of the app was tested.', 'evidence' => true]));
+    }
+
+    public function test_a_change_the_second_look_passed_says_it_was_held_to_the_guidance_the_owner_kept()
+    {
+        $request = FeatureRequest::factory()->generated()->create();
+        $this->checked($request);
+        $this->reviewed($request, null);
+
+        $guidance = fn () => collect(app(DescribeProof::class)->handle($request))->pluck('text')->filter(fn (string $text) => str_contains($text, 'guidance'))->values()->all();
+
+        $this->assertSame([], $guidance());
+
+        app(ProjectNotes::class)->put($request->project, 'main', ['project.md' => "# Teams\n\n## Engineering direction\n\n- Keep every payment in one place. (Ada, Thu, Oct 1, 2026)\n- Queue every email. (Ada, Thu, Oct 1, 2026)\n"]);
+
+        $this->assertSame(['A second look checked it against the 2 points of guidance you kept from your developer.'], $guidance());
+
+        $request->latestRun->update(['review' => [...$request->latestRun->review, 'approved' => false]]);
+
+        $this->assertSame([], $guidance());
     }
 
     public function test_problems_caught_along_the_way_are_counted()

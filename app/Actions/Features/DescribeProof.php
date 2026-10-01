@@ -3,7 +3,9 @@
 namespace App\Actions\Features;
 
 use App\Actions\Context\ReadProjectContext;
+use App\Actions\Context\UpdateProjectNotes;
 use App\Actions\Runs\CompleteRunVerification;
+use App\Context\NotesDocument;
 use App\Enums\VerificationStatus;
 use App\Features\AppFaults;
 use App\Features\AppRoutes;
@@ -54,7 +56,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('what goes wrong'), $this->failed($verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('what goes wrong'), $this->failed($verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return array_values(collect($lines)->unique('text')->all());
@@ -525,6 +527,25 @@ class DescribeProof
         }
 
         return $lines;
+    }
+
+    /**
+     * Say that the second look held the change to the guidance the owner
+     * kept from our developer, when there is some and it passed. The second
+     * look is told to stop a change that goes against it, so this is what
+     * it judged, not what a test proved: never evidence.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function guidance(FeatureRequest $featureRequest): array
+    {
+        if (($featureRequest->latestRun->review['approved'] ?? false) !== true) {
+            return [];
+        }
+
+        $points = count(NotesDocument::parse($this->readProjectContext->current($featureRequest->project)->project ?? '')->items(UpdateProjectNotes::GUIDANCE_SECTION));
+
+        return $points === 0 ? [] : [['kind' => 'passed', 'text' => trans_choice('A second look checked it against the guidance you kept from your developer.|A second look checked it against the :count points of guidance you kept from your developer.', $points)]];
     }
 
     /**

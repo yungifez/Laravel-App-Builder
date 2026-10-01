@@ -18,6 +18,12 @@ class NotificationController extends Controller
         $notification->markAsRead();
 
         // Built now, not kept: the address names the app or change by its UUID.
+        $asked = DeveloperReview::query()->whereKey($notification->data['asked_review_id'] ?? null)->first();
+
+        if ($asked !== null && $request->user()->can('viewOperations')) {
+            return to_route('operations.developer-reviews.show', $asked);
+        }
+
         $review = DeveloperReview::query()->whereKey($notification->data['developer_review_id'] ?? null)->first();
 
         if ($review !== null) {

@@ -168,6 +168,25 @@ class AskDeveloperTest extends TestCase
         Notification::assertSentToTimes($this->project->owner, DeveloperAnswered::class, 1);
     }
 
+    public function test_our_developers_hear_when_an_owner_asks_and_open_the_question_from_the_bell()
+    {
+        $this->actingAs($this->project->owner)
+            ->post(route('projects.developers.store', $this->project), ['question' => 'Is the way bookings are paid still sound?']);
+
+        $review = $this->project->developerReviews()->sole();
+        $notification = $this->developer->notifications()->sole();
+
+        $this->assertSame('question', $notification->data['kind']);
+        $this->assertSame('An owner asked a developer: Bright Cleaning', $notification->data['title']);
+        $this->assertSame(0, $this->project->owner->notifications()->count());
+
+        $this->actingAs($this->developer)
+            ->get(route('notifications.show', $notification->id))
+            ->assertRedirect(route('operations.developer-reviews.show', $review));
+        $this->get(route('operations.attention'))
+            ->assertInertia(fn (Assert $page) => $page->where('waitingQuestions', 1));
+    }
+
     public function test_only_our_developers_open_the_questions()
     {
         $review = DeveloperReview::factory()->for($this->project)->create(['user_id' => $this->project->user_id]);

@@ -1414,9 +1414,10 @@ line of work. No tool takes an identifier, so there is nothing to walk. An
 expansion returns one named area's rules and decisions, capped, and at most
 `workers.expansions` per run. Every call is logged and throttled. No query
 can reach another project, and tests prove it. Inside the project, a worker
-can at most rebuild the notes the owner can already read. For a hired
-developer who is not the owner, the workspace gets only the target areas'
-notes, not the whole `.product-notes` copy.
+can at most rebuild the notes the owner can already read. Only the owner
+can make a connection, so every worker works for the owner. Our own
+developers do not use these tools: they read an owner's question in
+operations ([§29.3](#29-human-judgment-where-it-has-leverage-version-18)).
 
 **Models, values and runtime state.**
 
@@ -3672,7 +3673,9 @@ Only what the notes already support:
   words, about the whole app or about one change (app menu, or a link that
   names the change). The developers are in-house: they answer as operators
   (`viewOperations`) under "Questions for developers", so no account,
-  invitation or role is added for them.
+  invitation or role is added for them. Every operator but the asker is
+  told of a new question (`DeveloperAsked`), and operations counts the
+  questions still waiting.
     - **What they read is written once, without a model**
       (`WriteReviewRequest`, kept in `developer_reviews.bundle`): the
       question, what the app is for, its rules, decisions and guidance so far.
@@ -3690,10 +3693,14 @@ Only what the notes already support:
       points to keep. Each kept point joins "Engineering direction" with the
       developer's name and the date. The review keeps the commit it was given
       on, so stale guidance can be found later (§30.3). Kept guidance fixes
-      the answer.
+      the answer, and only the kept points show afterwards.
+    - **Every later change is held to it.** The coder reads it in the
+      project notes. The second look reports a blocking finding for code
+      that goes against it, and a change it passed says so among its proof.
     - **Not in V1:** our developers writing code here (an owner who wants
-      that uses "Use my own Claude Code or Codex", §11), showing in a change
-      which guidance it followed, asking before risky changes, payment.
+      that uses "Use my own Claude Code or Codex", §11), naming in a change
+      which point of guidance it followed, asking before risky changes,
+      payment.
 
 Grandma sees none of the vocabulary: no "architecture consultation", no
 "audit". Where V1 shows anything, it says "Guidance from your developer".
