@@ -474,6 +474,40 @@ class ChangeProofTest extends TestCase
         $this->assertFalse($seen->contains(fn (array $line) => str_contains($line['text'], $clean)));
     }
 
+    public function test_what_the_new_code_saved_while_the_app_checked_or_built_a_page_is_said()
+    {
+        $proof = function (array $boundaries, int $reached = 12) {
+            $request = FeatureRequest::factory()->generated()->create();
+            $this->checked($request, evidence: [
+                'traces' => ['requests' => 40, 'reached' => $reached, 'unseen' => 0, 'existing' => 0, 'findings' => [], 'repeats' => []],
+                'boundaries' => ['phased' => 30, 'unknown' => 0, 'existing' => 0, 'findings' => [], ...$boundaries],
+            ]);
+
+            return collect(app(DescribeProof::class)->handle($request));
+        };
+        $finding = fn (string $kind, string $route) => ['kind' => $kind, 'route' => $route, 'what' => 'update posts', 'at' => 'app/Policies/PostPolicy.php:3', 'in' => 'App\Policies\PostPolicy::view', 'test' => null];
+        $clean = 'While its tests used the new code, your app never saved or sent anything while checking who may do something, checking what was filled in, or putting a page together.';
+
+        $this->assertContains(['kind' => 'passed', 'text' => $clean, 'topic' => 'when it saves'], $proof([])->all());
+
+        // Nothing ran the new code, or the recorder could not tell the parts apart: nothing is vouched for.
+        $this->assertFalse($proof([], reached: 0)->contains('text', $clean));
+        $this->assertFalse($proof(['unknown' => 30])->contains('text', $clean));
+
+        $seen = $proof(['findings' => [
+            $finding('changed_while_authorizing', 'GET /posts'),
+            $finding('changed_while_authorizing', 'GET /posts/{post}'),
+            $finding('changed_while_validating', 'POST /posts'),
+            $finding('changed_while_rendering', 'GET /drafts'),
+        ]]);
+        $this->assertSame([
+            'At /posts your app saves or sends something while it checks who may do something. That check can run many times, for example once for each item on a page, so it happens again each time.',
+            'At /posts your app saves or sends something while it checks what was filled in. If it then says no, what it saved or sent stays.',
+            'At /drafts your app saves or sends something while it puts the page together. That can happen more than once each time the page opens.',
+        ], $seen->where('kind', 'gap')->pluck('text')->all());
+        $this->assertFalse($seen->contains('text', $clean));
+    }
+
     public function test_what_the_app_left_behind_when_one_thing_was_made_to_fail_is_said()
     {
         $proof = function (array $faults, array $evidence = []) {

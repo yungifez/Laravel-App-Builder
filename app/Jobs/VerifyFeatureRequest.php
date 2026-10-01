@@ -9,6 +9,7 @@ use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Context\ProjectNotes;
 use App\Enums\VerificationStatus;
 use App\Features\AcceptanceSuite;
+use App\Features\AppBoundaries;
 use App\Features\AppFaults;
 use App\Features\AppRoutes;
 use App\Features\AppTraces;
@@ -196,6 +197,7 @@ class VerifyFeatureRequest implements ShouldQueue
             }
 
             $this->observeTraces($featureRequest);
+            $this->observeBoundaries($featureRequest);
 
             $this->finish(match (true) {
                 $acceptance === self::OUTCOME_ERRORED => VerificationStatus::Errored,
@@ -785,6 +787,27 @@ class VerifyFeatureRequest implements ShouldQueue
 
             $this->keepEvidence('traces', $measured);
         });
+    }
+
+    /**
+     * Find what the change's code saved or sent while Laravel was checking
+     * who may act, checking what was sent, or building the answer
+     * (direction 33). The recorder names the phase of each thing a request
+     * did, so this reads the requests recorded in the coverage run and
+     * runs nothing. Like the traces, it never changes the checks' result.
+     */
+    protected function observeBoundaries(FeatureRequest $featureRequest): void
+    {
+        if (! config('builder.verification.boundaries.enabled')) {
+            return;
+        }
+
+        rescue(fn () => $this->keepEvidence('boundaries', AppBoundaries::measure(
+            $this->requests,
+            $featureRequest->patch,
+            array_column($this->evidence['routes']['added'] ?? [], 'route'),
+            config('builder.verification.boundaries.phases'),
+        )));
     }
 
     /**

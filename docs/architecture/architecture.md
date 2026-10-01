@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 32.** This document consolidates the direction in [direction/](direction/)
+**Version 33.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -90,6 +90,12 @@ test the change added counts only when it fails without the change, and what
 the app saves and sends is recorded while its tests run. One failure at a
 time is then caused where the change sends or saves, to show what the app
 leaves behind. None of this keeps the owner waiting.
+Version 33 adds the boundary rules
+([direction 33](direction/33-architecture-boundaries-and-chaos.md),
+[§12](#12-verification)): the recorder names the part of the request each
+effect ran in, and the change's code may not save or send while Laravel
+checks who may act, checks the input or builds the answer. The files that
+decide how the app is checked are protected from coding workers.
 When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
@@ -1803,6 +1809,50 @@ nothing was found, "We watched what your app saved and sent while its tests
 used the new code 26 times. Nothing was saved by mistake or sent too early."
 A repeated lookup joins the shortcuts above (rule `SL204`), so it is tidied
 after the change is kept and the owner does not wait for it.
+
+**Three parts of a request must not change anything** (direction 33, the
+boundary rules). Laravel runs code in phases, and the rules follow the phase,
+not the class or folder, so they hold whatever style the app is written in. A
+policy method that saves is a problem only when it runs as a check; the same
+method called by the controller is not. `AppBoundaries` reads `phase` from
+the same recording (`builder.verification.boundaries`) and finds a write, a
+job, a mail, a notification or an outside call in one of these phases:
+
+- **While authorizing.** A check of who may act can run many times per page,
+  for example once per row, so what it saves repeats.
+- **While validating.** It runs before the app decides to act, so what it
+  saves or sends stays when the request is refused.
+- **While rendering.** Views, resources and Inertia props can run more than
+  once per request, and after the route's code has returned.
+
+Reads are allowed in all three. A phase of `unknown` is never held against a
+change. The finding is held to the change the same way as the shapes above:
+by a line the change added, or by a route the change added. A rendering
+effect has no controller in its `frames`, so it is held by the resource's or
+the view's own line. A query in a compiled Blade view has no line yet and is
+not counted. Each finding was seen to happen, but only on the paths the
+tests take. It goes to the reviewer ("GET /posts while Laravel checked
+whether the person may act: update posts at app/Policies/PostPolicy.php:9 in
+App\Policies\PostPolicy::view") and to the owner's proof ("At /posts your
+app saves or sends something while it checks who may do something…"). When
+the recorder named the phases and the tests reached the new code without a
+finding, the proof says so. Like the other measurements, it never changes
+the checks' result by itself.
+
+**The files that decide how the app is checked are protected** (direction
+33). `phpunit.xml`, `tests/Pest.php`, `phpstan.neon` (and their `.dist`
+forms) and `.github` join the protected paths
+(`builder.construction.protected_paths`). A coding worker's tools refuse to
+write them, and anything the worker changed there is put back before the
+change is taken, as with the protected acceptance tests. A change therefore
+cannot pass its checks by changing how they run. Changing these files is a
+person's decision.
+
+The full design, with what comes after this first step (static effect
+analysis, a ratchet by finding identity, debt and exceptions, strict mode,
+and faults derived from effect signatures), is the proposal in
+[docs/research/boundaries-and-chaos.md](../research/boundaries-and-chaos.md).
+Only what this section describes is built.
 
 **One failure at a time is caused where the change sends or saves**
 (direction 32, the fault engine). A recording shows what the app does when

@@ -7,6 +7,7 @@ use App\Actions\Context\UpdateProjectNotes;
 use App\Actions\Runs\CompleteRunVerification;
 use App\Context\NotesDocument;
 use App\Enums\VerificationStatus;
+use App\Features\AppBoundaries;
 use App\Features\AppFaults;
 use App\Features\AppRoutes;
 use App\Features\AppTraces;
@@ -56,7 +57,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('what goes wrong'), $this->failed($verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($verification)), ...$this->about(__('what goes wrong'), $this->failed($verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return array_values(collect($lines)->unique('text')->all());
@@ -308,6 +309,47 @@ class DescribeProof
                 'We watched what your app saved and sent while its tests used the new code. Nothing was saved by mistake or sent too early.|We watched what your app saved and sent while its tests used the new code :count times. Nothing was saved by mistake or sent too early.',
                 $traces['reached'],
             )]];
+    }
+
+    /**
+     * Say whether the change's new code saved or sent anything while the
+     * app was checking who may do something, checking what was filled in,
+     * or putting a page together (direction 33). Those parts can run many
+     * times, or before the app says no, so what they save or send repeats
+     * or stays. Each kind found is a gap with the address where it
+     * happened. A clean line is said only when the recorder named those
+     * parts and a recorded request ran the new code.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function steady(Verification $verification): array
+    {
+        $boundaries = $verification->evidence['boundaries'] ?? null;
+
+        if ($boundaries === null || ($verification->evidence['traces']['reached'] ?? 0) === 0) {
+            return [];
+        }
+
+        $gaps = [
+            AppBoundaries::CHANGED_WHILE_AUTHORIZING => 'At :address your app saves or sends something while it checks who may do something. That check can run many times, for example once for each item on a page, so it happens again each time.',
+            AppBoundaries::CHANGED_WHILE_VALIDATING => 'At :address your app saves or sends something while it checks what was filled in. If it then says no, what it saved or sent stays.',
+            AppBoundaries::CHANGED_WHILE_RENDERING => 'At :address your app saves or sends something while it puts the page together. That can happen more than once each time the page opens.',
+        ];
+        $lines = [];
+
+        foreach ($gaps as $kind => $text) {
+            $found = AppBoundaries::findings($boundaries, $kind);
+
+            if ($found !== []) {
+                $lines[] = ['kind' => 'gap', 'text' => __($text, ['address' => AppRoutes::address($found[0]['route'])])];
+            }
+        }
+
+        if ($lines !== [] || $boundaries['phased'] === $boundaries['unknown']) {
+            return $lines;
+        }
+
+        return [['kind' => 'passed', 'text' => __('While its tests used the new code, your app never saved or sent anything while checking who may do something, checking what was filled in, or putting a page together.')]];
     }
 
     /**

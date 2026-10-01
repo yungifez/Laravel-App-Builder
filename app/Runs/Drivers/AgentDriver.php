@@ -8,6 +8,7 @@ use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
 use App\Enums\ModelRole;
 use App\Features\AcceptanceSelector;
+use App\Features\AppBoundaries;
 use App\Features\AppFaults;
 use App\Features\AppTraces;
 use App\Features\NewTests;
@@ -316,6 +317,15 @@ abstract class AgentDriver implements ConstructionDriver
             .($traces['unseen'] === 0 ? '' : sprintf("\nOf the requests that ran the change's code, %d opened a transaction in a test that fakes mail, jobs or notifications, so what they sent, and when, was not seen.", $traces['unseen']));
         }
 
+        if (isset($measured['boundaries'])) {
+            $boundaries = $measured['boundaries'];
+            $parts[] = 'The recording also says in which part of a request each thing ran: while Laravel checked who may act, checked the input, handled the request or built the response. Checks and responses can run many times per request and before the request is refused, so nothing in them may save, queue or send.'
+                .($boundaries['findings'] === []
+                    ? ' The code the change added saved and sent nothing in those parts.'
+                    : " Saved, queued or sent by the code the change added in those parts:\n".$this->list(array_map($this->crossed(...), $boundaries['findings'])))
+                .($boundaries['unknown'] === 0 ? '' : sprintf("\nFor %d recorded things the part of the request could not be told.", $boundaries['unknown']));
+        }
+
         if (isset($measured['faults'])) {
             $faults = $measured['faults'];
             $parts[] = sprintf("One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer, or a save the database refused. Of %d places where those requests send or save, %d were tried and the failure happened in %d.", $faults['points'], $faults['run'] + $faults['missed'], $faults['run'])
@@ -365,6 +375,27 @@ abstract class AgentDriver implements ConstructionDriver
 
         return "{$finding['route']} {$did}: {$finding['what']}"
             .($finding['at'] === null ? '' : " at {$finding['at']}")
+            .($finding['test'] === null ? '' : " (seen in {$finding['test']})");
+    }
+
+    /**
+     * Say one thing the change's code saved or sent in a part of a request
+     * that must not change anything, for the reviewer.
+     *
+     * @param  array{kind: string, route: string, what: string, at: string|null, in: string|null, test: string|null}  $finding
+     */
+    protected function crossed(array $finding): string
+    {
+        $while = match ($finding['kind']) {
+            AppBoundaries::CHANGED_WHILE_AUTHORIZING => 'while Laravel checked whether the person may act',
+            AppBoundaries::CHANGED_WHILE_VALIDATING => 'while Laravel checked the input',
+            AppBoundaries::CHANGED_WHILE_RENDERING => 'while Laravel built the response',
+            default => $finding['kind'],
+        };
+
+        return "{$finding['route']} {$while}: {$finding['what']}"
+            .($finding['at'] === null ? '' : " at {$finding['at']}")
+            .($finding['in'] === null ? '' : " in {$finding['in']}")
             .($finding['test'] === null ? '' : " (seen in {$finding['test']})");
     }
 

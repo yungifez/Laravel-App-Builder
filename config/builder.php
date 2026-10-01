@@ -371,8 +371,11 @@ return [
         ],
 
         // Paths tools may never change. Protected acceptance tests are also
-        // replaced from the platform's copy before they run.
-        'protected_paths' => ['tests/Acceptance', '.git', 'vendor', 'node_modules', '.env'],
+        // replaced from the platform's copy before they run. The files that
+        // decide how the app's tests and type checks run, and its CI, are
+        // here too, so a change cannot pass its checks by changing them
+        // (direction 33); changing them is a decision for a person.
+        'protected_paths' => ['tests/Acceptance', '.git', 'vendor', 'node_modules', '.env', 'phpunit.xml', 'phpunit.xml.dist', 'tests/Pest.php', 'phpstan.neon', 'phpstan.neon.dist', '.github'],
 
         // Commands run in the workspace after the project is copied in and
         // before the driver starts, for example installing dependencies so
@@ -752,6 +755,17 @@ return [
             'enabled' => (bool) env('BUILDER_TRACES', true),
             'report' => 'storage/logs/test-map/trace/trace.jsonl',
             'repeats' => (int) env('BUILDER_TRACE_REPEATS', 3),
+        ],
+
+        // What the change's code saved or sent where Laravel expects nothing
+        // to change (direction 33): while it checks who may act, checks
+        // what was sent, or builds the answer. Read from the recording
+        // above, which names the phase of each thing a request did. The
+        // reviewer holds each finding against the plan; it never changes
+        // the checks' result.
+        'boundaries' => [
+            'enabled' => (bool) env('BUILDER_BOUNDARIES', true),
+            'phases' => ['authorization', 'validation', 'rendering'],
         ],
 
         // What the app leaves behind when one thing fails (direction 32).

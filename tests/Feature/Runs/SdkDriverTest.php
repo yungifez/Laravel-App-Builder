@@ -273,6 +273,8 @@ class SdkDriverTest extends TestCase
         $this->agent('claude', 'anthropic', function (Workspace $workspace) {
             File::put($this->path($workspace, 'tests/Acceptance/Contract.php'), "<?php // weakened\n");
             File::put($this->path($workspace, 'tests/Acceptance/New.php'), "<?php\n");
+            // How the app is checked is not the change's to decide.
+            File::put($this->path($workspace, 'phpstan.neon'), "parameters:\n    level: 0\n");
             File::put($this->path($workspace, 'app/Real.php'), "<?php\n");
 
             return $this->outcome('claude', 'anthropic', AgentOutcomeStatus::Completed, summary: 'Done.');
@@ -283,6 +285,7 @@ class SdkDriverTest extends TestCase
         $patch = (string) $featureRequest->refresh()->patch;
         $this->assertStringContainsString('app/Real.php', $patch);
         $this->assertStringNotContainsString('tests/Acceptance', $patch);
+        $this->assertStringNotContainsString('phpstan.neon', $patch);
     }
 
     public function test_work_the_agent_commits_itself_is_still_part_of_the_change()
