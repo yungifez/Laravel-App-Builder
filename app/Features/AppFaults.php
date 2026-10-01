@@ -30,6 +30,12 @@ namespace App\Features;
  * insert that says what to do when the row is there) is not held against
  * the job. A job of the framework that delivers one email, notification
  * or broadcast is not run twice: it has no code of the app to make safe.
+ *
+ * A fifth thing is read when an outside call gets no answer: the app
+ * makes the same call again. A call that got no answer may still have
+ * arrived, so the service can do it twice (a payment taken twice). It is
+ * a finding for a POST or a PATCH that does not say which call it is
+ * (an idempotency key). A GET, a PUT and a DELETE can be made again.
  */
 class AppFaults
 {
@@ -40,6 +46,8 @@ class AppFaults
     public const SAVED_IN_PART = 'saved_in_part';
 
     public const DONE_TWICE = 'done_twice';
+
+    public const CALLED_AGAIN = 'called_again';
 
     public const SEND = 'send';
 
@@ -85,9 +93,9 @@ class AppFaults
      * order comes only from the trace, the patch and those findings, so
      * the same change gives the same order.
      *
-     * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>  $requests  From AppTraces::parse(), of the tests' normal run
+     * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>  $requests  From AppTraces::parse(), of the tests' normal run
      * @param  list<array{route: string, at?: string|null}>  $suspected  Findings of the other engines about the change, such as AppTraces and AppBoundaries give
-     * @return list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string}, own: bool}>
+     * @return list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string}, times: int, own: bool}>
      */
     public static function points(array $requests, ?string $patch, array $suspected = []): array
     {
@@ -150,6 +158,7 @@ class AppFaults
                     'test' => $request['test'],
                     'filter' => $filter,
                     'fault' => ['test' => $request['test'], 'request' => $request['n'], 'effect' => $at, 'kind' => $failed['kind']],
+                    'times' => count(self::same($request['effects'], $failed)),
                     // A job is also the change's when the change wrote what it does.
                     'own' => $new($failed) || ($point[3] ?? false),
                 ];
@@ -179,8 +188,8 @@ class AppFaults
      * took another way this time, or could not run. Nothing is known about
      * a missed place, or about a place that was not tried.
      *
-     * @param  list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string}, own: bool}>  $points  From points()
-     * @param  array<int, list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>>  $runs  What was recorded when each place's failure was caused, by the place's position in $points; a place not tried is absent
+     * @param  list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string}, times: int, own: bool}>  $points  From points()
+     * @param  array<int, list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, blind: list<string>, cut: bool, n?: int, fault?: int}>>  $runs  What was recorded when each place's failure was caused, by the place's position in $points; a place not tried is absent
      * @return array{points: int, run: int, missed: int, existing: int, findings: list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}>}|null
      */
     public static function measure(array $points, array $runs, ?string $patch): ?array
@@ -208,7 +217,7 @@ class AppFaults
 
             $run++;
 
-            foreach (self::left($point['fails'], $hit) as $kind => $effects) {
+            foreach (self::left($point['fails'], $hit, $point['times']) as $kind => $effects) {
                 $key = implode('|', [$kind, $point['route'], $point['failed'], $point['at'] ?? '']);
                 $own = $point['own'] || array_any($effects, fn (array $effect) => is_string($effect['at'] ?? null) && AppTraces::onAddedLine($effect['at'], $added));
 
@@ -253,10 +262,11 @@ class AppFaults
      * Get what a request left behind after its failure that the failure
      * should have stopped or undone, by the kind of problem it is.
      *
-     * @param  array{status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool}>, fault?: int}  $hit  The request the failure was caused in
-     * @return array<string, list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool}>>
+     * @param  array{status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, fault?: int}  $hit  The request the failure was caused in
+     * @param  int  $times  How many times the request did the same thing from the same line in the tests' normal run
+     * @return array<string, list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>>
      */
-    protected static function left(string $fails, array $hit): array
+    protected static function left(string $fails, array $hit, int $times): array
     {
         $place = $hit['fault'] ?? 0;
 
@@ -271,9 +281,12 @@ class AppFaults
         $kept = array_values(array_filter($stayed, fn (array $effect, int $at) => $before($effect, $at) && is_string($effect['at'] ?? null), ARRAY_FILTER_USE_BOTH));
 
         if ($fails === self::SEND) {
-            // The person got an error page, but what the request saved
-            // before the failure is still there.
-            return $hit['status'] >= 500 && $kept !== [] ? [self::SAVED_THEN_FAILED => $kept] : [];
+            return array_filter([
+                // The person got an error page, but what the request saved
+                // before the failure is still there.
+                self::SAVED_THEN_FAILED => $hit['status'] >= 500 ? $kept : [],
+                self::CALLED_AGAIN => self::calledAgain($hit['effects'], $place, $times),
+            ]);
         }
 
         $failed = $hit['effects'][$place] ?? null;
@@ -297,11 +310,47 @@ class AppFaults
     }
 
     /**
+     * Get the outside calls a request made again after the same call got
+     * no answer. More calls than in the tests' normal run means a new
+     * try, and not the next turn of a loop that carried on. A call that
+     * says which call it is can be made again.
+     *
+     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>  $effects
+     * @return list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>
+     */
+    protected static function calledAgain(array $effects, int $place, int $times): array
+    {
+        $failed = $effects[$place] ?? null;
+
+        if ($failed === null || preg_match('/^http (POST|PATCH) /', self::name($failed)) !== 1) {
+            return [];
+        }
+
+        $calls = self::same($effects, $failed);
+        $again = array_filter($calls, fn (array $effect, int $at) => $at > $place && ! ($effect['keyed'] ?? false), ARRAY_FILTER_USE_BOTH);
+
+        return count($calls) > $times ? array_slice(array_values($again), 0, 1) : [];
+    }
+
+    /**
+     * Get the things a request did that are the same as one thing: the
+     * same name from the same line. Each keeps its place.
+     *
+     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>  $effects
+     * @param  array{kind: string, sql?: string, what?: string, at?: string|null}  $one
+     * @return array<int, array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>
+     */
+    protected static function same(array $effects, array $one): array
+    {
+        return array_filter($effects, fn (array $effect) => $effect['kind'] === $one['kind'] && self::name($effect) === self::name($one) && ($effect['at'] ?? null) === ($one['at'] ?? null));
+    }
+
+    /**
      * Get what a job did in both of its runs that must happen once: the
      * same send, or the same insert that stayed, from the same line.
      *
-     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool}>  $effects
-     * @return list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool}>
+     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>  $effects
+     * @return list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>
      */
     protected static function twice(array $effects, int $place): array
     {
@@ -333,8 +382,8 @@ class AppFaults
      * as a job's right after the job, up to where it was made to run
      * again. Each keeps its place among the things the request did.
      *
-     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool}>  $effects
-     * @return array<int, array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool}>
+     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>  $effects
+     * @return array<int, array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>
      */
     protected static function ran(array $effects, int $place): array
     {

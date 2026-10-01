@@ -423,6 +423,43 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([['saved_then_failed', 'http POST outside.example', 'update users']], array_map(fn (array $finding) => [$finding['kind'], $finding['failed'], $finding['what']], $measured['findings']));
     }
 
+    public function test_an_outside_call_the_app_makes_again_after_no_answer_is_found()
+    {
+        Route::post('/_faked/retried', [RecordedApp::class, 'retried']);
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'http');
+        Http::fake();
+
+        $this->post('/_faked/retried')->assertNoContent();
+        $this->post('/_faked/retried')->assertNoContent();
+
+        $requests = $recorded();
+        $this->assertSame([['http'], ['http', 'http']], array_map(fn (array $request) => array_column($request['effects'], 'kind'), $requests));
+        $this->assertSame([[], []], array_map(fn (array $request) => array_column($request['effects'], 'keyed'), $requests));
+        // The first try got no answer; the second try reached the fake.
+        Http::assertSentCount(2);
+
+        $measured = $this->measureFailure($requests, 'http POST outside.example');
+        $this->assertSame([['called_again', 'http POST outside.example', 'http POST outside.example']], array_map(fn (array $finding) => [$finding['kind'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
+    public function test_an_outside_call_that_says_which_call_it_is_is_marked_and_can_be_made_again()
+    {
+        Route::post('/_faked/retried', [RecordedApp::class, 'retried']);
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'http');
+        Http::fake();
+
+        $this->post('/_faked/retried', ['keyed' => 1])->assertNoContent();
+        $this->post('/_faked/retried', ['keyed' => 1])->assertNoContent();
+
+        $requests = $recorded();
+        $this->assertSame([[true], [true, true]], array_map(fn (array $request) => array_column($request['effects'], 'keyed'), $requests));
+        // Only the name of the header is read: its value is not in the trace.
+        $this->assertStringNotContainsString('charge-1', File::get("{$this->directory}/trace.jsonl"));
+
+        $measured = $this->measureFailure($requests, 'http POST outside.example');
+        $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+    }
+
     public function test_a_notification_a_test_fakes_is_seen_as_the_email_it_sends_and_that_email_can_fail()
     {
         $user = User::factory()->create();

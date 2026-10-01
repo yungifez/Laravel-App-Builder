@@ -1909,6 +1909,9 @@ The trace of that request shows what stayed:
 - **Done twice.** A job ran twice, and both runs sent the same thing or
   added the same row from the same line. A queue gives a job to a worker at
   least once, so a job must be safe to run again.
+- **Called again.** An outside call got no answer, and the request made the
+  same call again from the same line. A call that got no answer can still
+  have arrived, so the service can do it twice: a payment taken twice.
 
 A save in a transaction is lost when the transaction rolls back. A save in
 steps is lost when the request ends in a server error. An app that catches
@@ -1917,6 +1920,13 @@ said. The recorder keeps no values, so the two runs of a job are compared by
 shape only. An update, a delete, or an insert that says what to do with a
 row that is there (`on conflict`, `insert ignore`) can be made again, and is
 not held against the job. A job that asks first and stops is clean.
+
+A call made again is a finding only for a POST or a PATCH with no
+idempotency key. The recorder marks a call that has a header or a field
+named for idempotency (`keyed`). It reads the name, never the value. A GET,
+a PUT and a DELETE can be made again. More calls from the line than in the
+normal run means a new try. The same number means a loop that carried on
+with its next call, and nothing is said.
 
 A finding counts against a change only when the failed effect, or what
 stayed, comes from a line the change added. The rest is counted (`existing`)
@@ -1934,7 +1944,7 @@ does. A second run that the trace cut short is missed. An email that a test
 fakes is a place too: the stand-in of the fake fails it the same way, before
 the fake takes it.
 
-The reviewer blocks all four, unless the request or the plan asks for
+The reviewer blocks all five, unless the request or the plan asks for
 exactly that. The owner reads each in the proof: "If saving fails at /invitations,
 your app has already sent something. People are told about something that
 was not saved." When failures were caused and nothing stayed: "We made things
@@ -1942,7 +1952,9 @@ go wrong 3 times while your app used the new code, such as an email that
 cannot be sent or a save that fails. Each time, your app left nothing half
 done." For a job: "Your app does some work on its own after someone uses
 /orders. If that work is cut off and starts over, it sends or adds the same
-thing twice." On the fixture the reference change has 2 places, both clean,
+thing twice." For a call made again: "If an outside service is slow to
+answer at /orders/{order}/pay, your app asks it again. The service may then
+do the same thing twice, such as take a payment twice." On the fixture the reference change has 2 places, both clean,
 in about 2 seconds. A copy of it that sends an email before its last save is
 found.
 

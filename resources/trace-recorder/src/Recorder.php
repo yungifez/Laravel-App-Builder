@@ -172,7 +172,7 @@ class Recorder
         $events->listen(MessageSending::class, fn (MessageSending $event) => $this->mailed((string) ($event->data['__laravel_mailable'] ?? $event->data['__laravel_notification'] ?? 'message')));
         $events->listen(NotificationSending::class, fn (NotificationSending $event) => $this->effect(['kind' => 'notification', 'what' => $event->notification::class]));
         $events->listen(RequestSending::class, fn (RequestSending $event) => $this->effect(
-            ['kind' => 'http', 'what' => $event->request->method().' '.parse_url($event->request->url(), PHP_URL_HOST)],
+            ['kind' => 'http', 'what' => $event->request->method().' '.parse_url($event->request->url(), PHP_URL_HOST), ...($this->keyed($event->request) ? ['keyed' => true] : [])],
             fails: fn () => new ConnectionException('cURL error 28: Operation timed out'),
         ));
 
@@ -389,6 +389,22 @@ class Recorder
         if ($failing) {
             throw $fails();
         }
+    }
+
+    /**
+     * Determine if an outside call says which call it is, so the service
+     * that gets it twice can do it once: a header or a field whose name
+     * says idempotency. Only the name is read, never the value.
+     */
+    protected function keyed(object $request): bool
+    {
+        try {
+            $names = [...array_keys($request->headers()), ...array_keys((array) $request->data())];
+        } catch (Throwable) {
+            return false;
+        }
+
+        return array_any($names, fn ($name) => stripos((string) $name, 'idempoten') !== false || strcasecmp((string) $name, 'PayPal-Request-Id') === 0);
     }
 
     /**

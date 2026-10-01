@@ -333,7 +333,7 @@ abstract class AgentDriver implements ConstructionDriver
                 .match (true) {
                     $faults['findings'] !== [] => " What the app left behind:\n".$this->list(array_map($this->left(...), $faults['findings'])),
                     $faults['run'] === 0 => ' So this says nothing about the change.',
-                    default => ' Each time the app left nothing behind: it had saved nothing before a server error, sent nothing before a save it lost, kept no part of a save it lost, and sent or added nothing again in a job that ran twice.',
+                    default => ' Each time the app left nothing behind: it had saved nothing before a server error, sent nothing before a save it lost, kept no part of a save it lost, sent or added nothing again in a job that ran twice, and made no POST or PATCH call again without an idempotency key.',
                 };
         }
 
@@ -353,6 +353,13 @@ abstract class AgentDriver implements ConstructionDriver
             return "{$finding['route']}: when {$finding['failed']}"
                 .($finding['at'] === null ? '' : ", queued at {$finding['at']},")
                 ." ran a second time, it sent or added the same thing again: {$finding['what']} (caused in {$finding['test']})";
+        }
+
+        // A call that got no answer may still have arrived at the service.
+        if ($finding['kind'] === AppFaults::CALLED_AGAIN) {
+            return "{$finding['route']}: when {$finding['failed']}"
+                .($finding['at'] === null ? '' : " at {$finding['at']}")
+                ." got no answer, the request made the same call again with no idempotency key, so the service may do it twice (caused in {$finding['test']})";
         }
 
         $did = match ($finding['kind']) {

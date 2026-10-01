@@ -357,7 +357,7 @@ class DescribeProof
      * its tests used the change's new code: an email that could not be
      * sent, an outside service that did not answer, a save that did not
      * work, or work the app does later that ran a second time. Each kind
-     * of thing left behind, or done twice, is a gap the owner reads,
+     * of thing left behind, done twice, or asked for twice, is a gap the owner reads,
      * with the address where it happened. That nothing was left behind is
      * said only when a failure was really caused.
      *
@@ -376,6 +376,7 @@ class DescribeProof
             AppFaults::SENT_THEN_LOST => 'If saving fails at :address, your app has already sent something. People are told about something that was not saved.',
             AppFaults::SAVED_IN_PART => 'If saving fails at :address, your app keeps one part of what it was saving and loses the rest.',
             AppFaults::DONE_TWICE => 'Your app does some work on its own after someone uses :address. If that work is cut off and starts over, it sends or adds the same thing twice.',
+            AppFaults::CALLED_AGAIN => 'If an outside service is slow to answer at :address, your app asks it again. The service may then do the same thing twice, such as take a payment twice.',
         ];
         // The recording already said that this is sent before saving ends.
         $said = AppTraces::findings($verification->evidence['traces'] ?? null, AppTraces::SENT_BEFORE_SAVED) !== [];

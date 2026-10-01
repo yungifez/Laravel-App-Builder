@@ -57,6 +57,16 @@ class AppFaultsTest extends TestCase
     }
 
     /**
+     * A call to an outside service, from a line of the app's code.
+     *
+     * @return array<string, mixed>
+     */
+    protected function called(?string $at, string $method = 'POST', bool $keyed = false): array
+    {
+        return ['kind' => 'http', 'what' => "{$method} pay.example", 'open' => 0, 'at' => $at, ...($keyed ? ['keyed' => true] : [])];
+    }
+
+    /**
      * A job the sync queue ran, from the line of the app's code that queued it.
      *
      * @return array<string, mixed>
@@ -357,6 +367,43 @@ class AppFaultsTest extends TestCase
         $undone = $this->measure($normal, 302, [...$normal, $again, $asks, $this->done(['kind' => 'begin', 'open' => 1]), [...$run[1], 'open' => 1], $this->done(['kind' => 'rollback', 'open' => 0])]);
 
         $this->assertSame([[1, []], [1, []], [1, []]], array_map(fn (array $measured) => [$measured['run'], $measured['findings']], [$stopped, $other, $undone]));
+    }
+
+    public function test_an_outside_call_made_again_after_no_answer_is_found()
+    {
+        $call = $this->called(self::NEW.':4');
+
+        $this->assertSame([[
+            'kind' => 'called_again', 'route' => 'POST /orders', 'failed' => 'http POST pay.example', 'what' => 'http POST pay.example', 'at' => self::NEW.':4', 'test' => self::TEST,
+        ]], $this->measure([$call], 302, [$call, $call])['findings']);
+
+        // The person also got an error after the app saved: both are said.
+        $order = $this->asked('insert into "orders" ("total") values (?)', self::NEW.':3');
+        $this->assertSame(['saved_then_failed', 'called_again'], array_column($this->measure([$order, $call], 500, [$order, $call, $call])['findings'], 'kind'));
+    }
+
+    public function test_an_outside_call_made_again_is_no_finding_when_the_service_can_take_it_twice()
+    {
+        $call = $this->called(self::NEW.':4');
+        $keyed = $this->called(self::NEW.':4', keyed: true);
+        $read = $this->called(self::NEW.':4', 'GET');
+        $put = $this->called(self::NEW.':4', 'PUT');
+
+        $measured = [
+            // The call says which call it is.
+            $this->measure([$keyed], 302, [$keyed, $keyed]),
+            // A call that only reads, and a call that puts the same thing there again.
+            $this->measure([$read], 302, [$read, $read]),
+            $this->measure([$put], 302, [$put, $put]),
+            // A loop that carried on with the next call makes no more calls than before.
+            $this->measure([$call, $call], 302, [$call, $call]),
+            // The app did not try again.
+            $this->measure([$call], 500, [$call]),
+            // The call after it is another call, from another line.
+            $this->measure([$call, $this->called(self::NEW.':5')], 302, [$call, $this->called(self::NEW.':5')]),
+        ];
+
+        $this->assertSame(array_fill(0, 6, [1, []]), array_map(fn (?array $measured) => [$measured['run'] ?? null, $measured['findings'] ?? null], $measured));
     }
 
     public function test_a_job_whose_second_run_is_not_whole_in_the_trace_is_missed()

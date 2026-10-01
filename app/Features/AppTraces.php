@@ -54,14 +54,15 @@ class AppTraces
      * (see AppFaults), and "job" marks what a job on the sync queue did.
      * "again" marks where a job was made to run a second time, and
      * "delivers" a job of the framework that only delivers one email,
-     * notification or broadcast.
+     * notification or broadcast. "keyed" marks an outside call that says
+     * which call it is (an idempotency key).
      * "phase" is the part of the request a thing happened in (such as
      * authorization, validation, handling or rendering; "unknown" when the
      * recorder could not tell), and "frames" the app's own code on the way
      * to it, nearest first, as Class::method. A trace from an older
      * recorder has neither.
      *
-     * @return list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, phase?: string, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int}>
+     * @return list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, phase?: string, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int}>
      */
     public static function parse(string $report): array
     {
@@ -90,6 +91,7 @@ class AppTraces
                     ...(($effect['job'] ?? false) === true ? ['job' => true] : []),
                     ...(($effect['again'] ?? false) === true ? ['again' => true] : []),
                     ...(($effect['delivers'] ?? false) === true ? ['delivers' => true] : []),
+                    ...(($effect['keyed'] ?? false) === true ? ['keyed' => true] : []),
                     ...(is_string($effect['phase'] ?? null) ? [
                         'phase' => $effect['phase'],
                         'frames' => array_values(array_filter(is_array($effect['frames'] ?? null) ? $effect['frames'] : [], is_string(...))),

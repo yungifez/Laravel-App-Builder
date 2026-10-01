@@ -213,4 +213,16 @@ class RecordedApp
 
         return response()->noContent();
     }
+
+    /**
+     * Asks an outside service again when it gets no answer.
+     */
+    public function retried(Request $request): Response
+    {
+        Http::retry(2, 0)
+            ->withHeaders($request->boolean('keyed') ? ['Idempotency-Key' => 'charge-1'] : [])
+            ->post('https://outside.example/charge', ['amount' => 5]);
+
+        return response()->noContent();
+    }
 }
