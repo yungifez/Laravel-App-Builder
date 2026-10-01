@@ -118,4 +118,41 @@ class RecordedApp
     {
         return response()->noContent();
     }
+
+    public function welcome(User $user): Response
+    {
+        DB::table('users')->where('id', $user->id)->update(['name' => 'Welcomed']);
+        Mail::to('guest@example.com')->send(new RecordedMail);
+
+        return response()->noContent();
+    }
+
+    public function noticed(User $user, Request $request): Response
+    {
+        DB::table('users')->where('id', $user->id)->update(['name' => 'Noticed']);
+        $user->notify(new RecordedNotice([$request->string('channel', 'mail')->toString()]));
+
+        return response()->noContent();
+    }
+
+    /**
+     * Queues one job at once and one that waits for the transaction.
+     */
+    public function later(): Response
+    {
+        DB::transaction(function () {
+            RecordedJob::dispatch();
+            RecordedJob::dispatch()->afterCommit();
+            User::query()->count();
+        });
+
+        return response()->noContent();
+    }
+
+    public function ran(): Response
+    {
+        dispatch_sync(new RecordedJob);
+
+        return response()->noContent();
+    }
 }

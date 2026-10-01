@@ -3,8 +3,9 @@
 namespace TraceRecorder;
 
 use Closure;
-use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Database\Events\TransactionCommitted;
@@ -14,17 +15,11 @@ use Illuminate\Foundation\Http\Kernel;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Events\RequestSending;
 use Illuminate\Mail\Events\MessageSending;
-use Illuminate\Notifications\ChannelManager;
 use Illuminate\Notifications\Events\NotificationSending;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Events\JobQueued;
-use Illuminate\Support\Testing\Fakes\BusFake;
-use Illuminate\Support\Testing\Fakes\EventFake;
-use Illuminate\Support\Testing\Fakes\MailFake;
-use Illuminate\Support\Testing\Fakes\NotificationFake;
-use Illuminate\Support\Testing\Fakes\QueueFake;
 use PDOException;
 use PHPUnit\Framework\TestCase;
 use ReflectionObject;
@@ -39,6 +34,10 @@ use WeakMap;
  *
  * It records no values (queries keep their placeholders) and no times, so
  * the same request on the same code gives the same trace.
+ *
+ * A test can put a fake in place of the mail, the notifications, the queue
+ * or the jobs. Nothing is sent through a fake, so the recorder stands in
+ * for each of them (see Fakes) and still sees what the app tried to send.
  *
  * It only listens, with one exception. When TRACE_RECORDER_FAULT names one
  * thing of one request of one test (the place it has in a trace recorded
@@ -76,12 +75,18 @@ class Recorder
     /** How many jobs the sync queue is running now, one inside the other. */
     protected int $jobs = 0;
 
+    /** @var array<string, true> The fakes that took work of this request this recorder could not see */
+    protected array $hidden = [];
+
+    protected Fakes $fakes;
+
     protected string $base;
 
     public function __construct(protected Application $app, protected string $directory)
     {
         $this->base = rtrim($app->basePath(), '/').'/';
         $this->watched = new WeakMap;
+        $this->fakes = new Fakes($app, $this);
         $this->test = $this->runningTest();
         $this->fault = $this->faultToCause();
     }
@@ -114,7 +119,7 @@ class Recorder
         });
         $events->listen(TransactionCommitted::class, fn () => $this->effect(['kind' => 'commit'], origin: false));
         $events->listen(TransactionRolledBack::class, fn () => $this->effect(['kind' => 'rollback'], origin: false));
-        $events->listen(JobQueued::class, fn (JobQueued $event) => $this->effect(['kind' => 'job', 'what' => is_object($event->job) ? $event->job::class : (string) $event->job]));
+        $events->listen(JobQueued::class, fn (JobQueued $event) => $this->effect(['kind' => 'job', 'what' => $this->jobName($event->job)]));
         $events->listen(JobProcessing::class, function (JobProcessing $event) {
             // The sync queue runs a job where it is dispatched, without queueing it.
             if ($event->connectionName === 'sync') {
@@ -127,10 +132,7 @@ class Recorder
                 $this->jobs = max(0, $this->jobs - 1);
             }
         });
-        $events->listen(MessageSending::class, fn (MessageSending $event) => $this->effect(
-            ['kind' => 'mail', 'what' => (string) ($event->data['__laravel_mailable'] ?? $event->data['__laravel_notification'] ?? 'message')],
-            fails: fn () => new TransportException('Connection could not be established with the mail server.'),
-        ));
+        $events->listen(MessageSending::class, fn (MessageSending $event) => $this->mailed((string) ($event->data['__laravel_mailable'] ?? $event->data['__laravel_notification'] ?? 'message')));
         $events->listen(NotificationSending::class, fn (NotificationSending $event) => $this->effect(['kind' => 'notification', 'what' => $event->notification::class]));
         $events->listen(RequestSending::class, fn (RequestSending $event) => $this->effect(
             ['kind' => 'http', 'what' => $event->request->method().' '.parse_url($event->request->url(), PHP_URL_HOST)],
@@ -148,6 +150,8 @@ class Recorder
         $this->finish();
         $this->requests++;
         $this->jobs = 0;
+        $this->hidden = [];
+        $this->fakes->standIn();
 
         $connections = $this->app->make('db')->getConnections();
         array_map($this->watch(...), $connections);
@@ -180,7 +184,7 @@ class Recorder
         $this->operation['route'] = is_object($route) && method_exists($route, 'uri') ? '/'.ltrim($route->uri(), '/') : null;
         $this->operation['status'] = $status;
         $this->operation['refused'] = $status >= 400 || $this->invalid($request);
-        $this->operation['blind'] = $this->blind();
+        $this->operation['blind'] = $this->fakes->hiding($this->hidden);
     }
 
     /**
@@ -199,7 +203,7 @@ class Recorder
         $this->operation['route'] = is_object($route) && method_exists($route, 'uri') ? '/'.ltrim($route->uri(), '/') : null;
         $this->operation['status'] = $status >= 400 ? $status : 500;
         $this->operation['refused'] = true;
-        $this->operation['blind'] = $this->blind();
+        $this->operation['blind'] = $this->fakes->hiding($this->hidden);
 
         $this->finish();
     }
@@ -224,6 +228,75 @@ class Recorder
             file_put_contents(rtrim($this->directory, '/').'/trace.jsonl', json_encode($operation, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE)."\n", FILE_APPEND | LOCK_EX);
         } catch (Throwable) {
             //
+        }
+    }
+
+    /**
+     * Note an email the app sends now. It is the one thing this run makes
+     * fail when the run names it.
+     */
+    public function mailed(string $what): void
+    {
+        $this->effect(['kind' => 'mail', 'what' => $what], fails: fn () => new TransportException('Connection could not be established with the mail server.'));
+    }
+
+    /**
+     * Note a job a test's fake took in place of the queue. A queue that
+     * waits for the open transaction takes the job when that transaction
+     * commits, so the job is noted then.
+     */
+    public function queued(mixed $job): void
+    {
+        if ($this->operation === null) {
+            return;
+        }
+
+        // Noting a job never fails, so nothing of the app's is caught here.
+        try {
+            $note = fn () => $this->effect(['kind' => 'job', 'what' => $this->jobName($job)]);
+
+            $this->waitsForCommit($job) && $this->app->bound('db.transactions')
+                ? $this->app->make('db.transactions')->addCallback($note)
+                : $note();
+        } catch (Throwable) {
+            //
+        }
+    }
+
+    /**
+     * Note a notification a test's fake took, as the app would have sent
+     * it: on the queue, or now to each channel. Only the email channel is
+     * known well enough to stand in for; another channel stays hidden.
+     *
+     * @param  array<array-key, mixed>  $channels
+     */
+    public function notified(object $notification, array $channels): void
+    {
+        if ($notification instanceof ShouldQueue) {
+            $this->queued($notification);
+
+            return;
+        }
+
+        foreach ($channels as $channel) {
+            $this->effect(['kind' => 'notification', 'what' => $notification::class]);
+
+            if ($channel === 'mail') {
+                $this->mailed($notification::class);
+            } elseif ($channel !== 'broadcast') {
+                $this->hide('notifications');
+            }
+        }
+    }
+
+    /**
+     * Note that a fake took work of this request that this recorder could
+     * not see, such as a job the app runs before it answers.
+     */
+    public function hide(string $fake): void
+    {
+        if ($this->operation !== null) {
+            $this->hidden[$fake] = true;
         }
     }
 
@@ -407,22 +480,41 @@ class Recorder
     }
 
     /**
-     * Name what a test replaced with a fake. What goes through a fake is
-     * not sent, so this recorder does not see it.
-     *
-     * @return list<string>
+     * Name a job the way the sync queue names it when it runs.
      */
-    protected function blind(): array
+    protected function jobName(mixed $job): string
     {
-        $fakes = [
-            'events' => ['events', EventFake::class],
-            'mail' => ['mail.manager', MailFake::class],
-            'queue' => ['queue', QueueFake::class],
-            'jobs' => [Dispatcher::class, BusFake::class],
-            'notifications' => [ChannelManager::class, NotificationFake::class],
-        ];
+        try {
+            return match (true) {
+                $job instanceof Closure => 'Closure',
+                is_object($job) => method_exists($job, 'displayName') ? (string) $job->displayName() : $job::class,
+                default => (string) $job,
+            };
+        } catch (Throwable) {
+            return 'job';
+        }
+    }
 
-        return array_keys(array_filter($fakes, fn (array $fake) => $this->app->resolved($fake[0]) && $this->app->make($fake[0]) instanceof $fake[1]));
+    /**
+     * Determine if the queue takes a job only when the open transaction
+     * commits: the job says so, or the queue it goes to is set that way.
+     */
+    protected function waitsForCommit(mixed $job): bool
+    {
+        if (is_object($job) && ! $job instanceof Closure) {
+            if ($job instanceof ShouldQueueAfterCommit) {
+                return ($job->afterCommit ?? null) !== false;
+            }
+
+            if (isset($job->afterCommit)) {
+                return (bool) $job->afterCommit;
+            }
+        }
+
+        $config = $this->app->make('config');
+        $connection = is_object($job) && ! $job instanceof Closure && is_string($job->connection ?? null) ? $job->connection : $config->get('queue.default');
+
+        return (bool) $config->get("queue.connections.{$connection}.after_commit", false);
     }
 
     /**

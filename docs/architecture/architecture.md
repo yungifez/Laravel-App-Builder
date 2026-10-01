@@ -1764,13 +1764,24 @@ change only when its effect comes from a line the change added, or from the
 app's code on a route the change added. The same shape in code the app
 already had is counted (`existing`) and not reported.
 
-A test that fakes mail, jobs, notifications or events hides what is sent. A
-request that ran the change's code and opened a transaction under such a fake
-is counted as not seen (`unseen`), never as clean. The proof then speaks only
-for what was saved: "Its tests only pretend to send emails and messages, so we
-could not watch when it sends them." On the fixture, fakes were active in 28%
-of requests. Only requests that tests make are recorded, so code that no test
-reaches says nothing here; the new-code measurement shows that gap.
+A test can put a fake in place of the mail, the notifications, the queue or
+the jobs. Nothing goes out through a fake. When a request starts, the
+recorder puts a stand-in where each of these fakes is. The stand-in is the
+same fake with the same memory: it notes each send, then does what the fake
+does, so the test's own assertions hold. A faked notification is noted as the
+app would send it: on the queue, or as the email it sends now. A job that
+waits for the transaction is noted when the transaction commits, as the queue
+would take it.
+
+Some sends stay hidden: everything under a fake of events, a notification to
+a channel that is not email, and a job the app runs before it answers, which
+did not run under the fake. A request that ran the change's code and opened a
+transaction with sends hidden is counted as not seen (`unseen`), never as
+clean. The proof then speaks only for what was saved: "Its tests only pretend
+to send emails and messages, so we could not watch when it sends them." On
+the fixture, fakes were active in 28% of requests. Only requests that tests
+make are recorded, so code that no test reaches says nothing here; the
+new-code measurement shows that gap.
 
 Like the other measurements, these never send a change back by themselves.
 The first three go to the reviewer, which blocks them unless the request or
@@ -1822,8 +1833,9 @@ and not reported. Places on the change's own lines are tried first. At most
 `points` places are tried, and no place starts after `seconds`, so the
 owner's wait has a limit. A place whose failure did not happen is counted as
 `missed`, never as clean. What a job on the sync queue does is not a place,
-because in use that job runs later on a queue. A fake hides sends here too,
-so a test that fakes mail gives no send place.
+because in use that job runs later on a queue. An email that a test fakes
+is a place too: the stand-in of the fake fails it the same way, before the
+fake takes it.
 
 The reviewer blocks all three, unless the request or the plan asks for
 exactly that. The owner reads each in the proof: "If saving fails at /invitations,

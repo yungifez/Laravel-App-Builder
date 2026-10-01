@@ -7,11 +7,18 @@ use App\Features\AppTraces;
 use App\Models\User;
 use Closure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Route;
 use Tests\Fixtures\RecordedApp;
+use Tests\Fixtures\RecordedJob;
+use Tests\Fixtures\RecordedMail;
+use Tests\Fixtures\RecordedNotice;
 use Tests\TestCase;
 use TraceRecorder\Provider;
 
@@ -270,15 +277,100 @@ class TraceRecorderTest extends TestCase
         $this->assertSame(['/_failing/thrown', 500, true, ['query']], [$thrown['route'], $thrown['status'], $thrown['refused'], array_column($thrown['effects'], 'kind')]);
     }
 
+    public function test_an_email_a_test_fakes_is_still_seen_and_the_fake_still_holds_it()
+    {
+        $user = User::factory()->create();
+        Route::post('/_faked/welcome/{user}', [RecordedApp::class, 'welcome'])->middleware('web');
+        $recorded = $this->record();
+        $fake = Mail::fake();
+
+        $this->post("/_faked/welcome/{$user->id}")->assertNoContent();
+
+        [$request] = $recorded();
+        $this->assertSame([['query', null], ['mail', RecordedMail::class]], array_map(fn (array $effect) => [$effect['kind'], $effect['what'] ?? null], array_slice($request['effects'], -2)));
+        $this->assertStringStartsWith(RecordedApp::PATH.':', $request['effects'][array_key_last($request['effects'])]['at']);
+        $this->assertSame([], $request['blind']);
+
+        // The test's own assertions read the same fake, by the facade and by the one it kept.
+        Mail::assertSent(RecordedMail::class, 'guest@example.com');
+        $fake->assertSentCount(1);
+    }
+
+    public function test_an_email_made_to_fail_under_a_fake_ends_the_request_in_an_error_and_what_it_saved_stays()
+    {
+        $user = User::factory()->create();
+        Route::post('/_faked/welcome/{user}', [RecordedApp::class, 'welcome'])->middleware('web');
+        $recorded = $this->recordWithFailure(effect: 2, kind: 'mail');
+        Mail::fake();
+
+        $this->post("/_faked/welcome/{$user->id}")->assertNoContent();
+        $this->post("/_faked/welcome/{$user->id}")->assertStatus(500);
+
+        $requests = $recorded();
+        $this->assertSame(['query', 'query', 'mail'], array_column($requests[0]['effects'], 'kind'));
+        $this->assertSame(2, $requests[1]['fault']);
+        // The email that failed never reached the fake.
+        Mail::assertSentCount(1);
+
+        $measured = $this->measureFailure($requests, 'mail '.RecordedMail::class);
+        $this->assertSame([['saved_then_failed', 'mail '.RecordedMail::class, 'update users']], array_map(fn (array $finding) => [$finding['kind'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
+    public function test_a_notification_a_test_fakes_is_seen_as_the_email_it_sends_and_that_email_can_fail()
+    {
+        $user = User::factory()->create();
+        Route::post('/_faked/noticed/{user}', [RecordedApp::class, 'noticed'])->middleware('web');
+        $recorded = $this->recordWithFailure(effect: 3, kind: 'mail');
+        Notification::fake();
+
+        $this->post("/_faked/noticed/{$user->id}")->assertNoContent();
+        $this->post("/_faked/noticed/{$user->id}")->assertStatus(500);
+        // A channel that saves is not stood in for: the fake hid that save.
+        $this->post("/_faked/noticed/{$user->id}", ['channel' => 'database'])->assertNoContent();
+
+        $requests = $recorded();
+        $this->assertSame([['query', 'query', 'notification', 'mail'], ['query', 'query', 'notification', 'mail'], ['query', 'query', 'notification']], array_map(fn (array $request) => array_column($request['effects'], 'kind'), $requests));
+        $this->assertSame([[], [], ['notifications']], array_column($requests, 'blind'));
+        Notification::assertSentTo($user, RecordedNotice::class);
+
+        $measured = $this->measureFailure($requests, 'mail '.RecordedNotice::class);
+        $this->assertSame([['saved_then_failed', 'mail '.RecordedNotice::class, 'update users']], array_map(fn (array $finding) => [$finding['kind'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
+    public function test_a_job_a_test_fakes_is_seen_when_the_queue_takes_it()
+    {
+        Route::post('/_faked/later', [RecordedApp::class, 'later']);
+        $recorded = $this->record();
+        Queue::fake();
+
+        $this->post('/_faked/later')->assertNoContent();
+        Bus::fake();
+        $this->post('/_faked/later')->assertNoContent();
+
+        // The job that waits for the transaction is taken when it commits, as the queue takes it.
+        $expected = [['begin', 1], ['job', 1], ['query', 1], ['job', 0], ['commit', 0]];
+        [$queue, $bus] = $recorded();
+        $this->assertSame([$expected, $expected], array_map(fn (array $request) => array_map(fn (array $effect) => [$effect['kind'], $effect['open']], $request['effects']), [$queue, $bus]));
+        $this->assertSame([RecordedJob::class, []], [$queue['effects'][1]['what'], $queue['blind']]);
+        $this->assertSame([RecordedJob::class, []], [$bus['effects'][1]['what'], $bus['blind']]);
+        Queue::assertPushed(RecordedJob::class, 2);
+        Bus::assertDispatched(RecordedJob::class, 2);
+    }
+
     public function test_a_fake_that_hides_what_is_sent_is_named()
     {
         Route::post('/_recorded/quiet', [RecordedApp::class, 'quiet']);
+        Route::post('/_faked/ran', [RecordedApp::class, 'ran']);
         $recorded = $this->record();
-        Notification::fake();
+        Event::fake();
 
         $this->post('/_recorded/quiet')->assertNoContent();
+        // A job the app runs before it answers did not run under the fake.
+        Bus::fake();
+        $this->post('/_recorded/quiet')->assertNoContent();
+        $this->post('/_faked/ran')->assertNoContent();
 
-        $this->assertSame(['notifications'], $recorded()[0]['blind']);
+        $this->assertSame([['events'], ['events'], ['events', 'jobs']], array_column($recorded(), 'blind'));
     }
 
     public function test_the_startup_file_adds_the_recorder_to_a_copy_of_the_package_list_and_leaves_the_app_alone()
