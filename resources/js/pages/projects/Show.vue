@@ -941,7 +941,10 @@ function sendOnEnter(event: KeyboardEvent): void {
                     <span class="truncate font-semibold">{{
                         project.name
                     }}</span>
-                    <ChevronDown class="size-4 shrink-0 opacity-60" />
+                    <!-- On a phone the room goes to the name. -->
+                    <ChevronDown
+                        class="hidden size-4 shrink-0 opacity-60 sm:block"
+                    />
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" class="w-64">
@@ -1018,19 +1021,18 @@ function sendOnEnter(event: KeyboardEvent): void {
         </DropdownMenu>
 
         <!-- What guards the app, in sight while the owner works: each
-             kept change adds tests that run on every later change. -->
+             kept change adds tests that run on every later change. A
+             phone has no room for it beside the app's name; the app menu
+             leads there. -->
         <Link
             v-if="project.tests"
             :href="showUnderstanding(project.id)"
             :title="`${project.tests} ${project.tests === 1 ? 'test runs' : 'tests run'} on every change, so what works keeps working. See what they check.`"
-            class="flex h-11 shrink-0 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground tabular-nums select-none hover:bg-muted hover:text-foreground sm:h-9"
+            class="hidden h-9 shrink-0 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground tabular-nums select-none hover:bg-muted hover:text-foreground sm:flex"
             data-test="app-guard"
         >
             <ShieldCheck class="size-3.5 text-green-600" />
-            {{ project.tests }}
-            <span class="hidden sm:inline">{{
-                project.tests === 1 ? 'test' : 'tests'
-            }}</span>
+            {{ project.tests }} {{ project.tests === 1 ? 'test' : 'tests' }}
         </Link>
 
         <IdeaMenu
