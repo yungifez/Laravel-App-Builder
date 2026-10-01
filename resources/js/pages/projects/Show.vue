@@ -886,16 +886,24 @@ const thread = computed(() => {
         item.state === 'waiting' || item.state === 'working';
 
     // A stopped change asked again later is the same ask: show the latest.
-    const history = oldestFirst.filter(
-        (item, index) =>
-            !open(item) &&
-            (item.state !== 'stopped' ||
-                !oldestFirst
-                    .slice(index + 1)
-                    .some(
-                        (later) => later.prompt.trim() === item.prompt.trim(),
-                    )),
-    );
+    // Finished changes go in the order they finished, the time their day
+    // is named by, so a day is never said twice. The sort keeps the order
+    // of the asks for changes finished at the same time.
+    const finished = (item: ChangeItem) =>
+        item.updated_at === null ? 0 : Date.parse(item.updated_at);
+    const history = oldestFirst
+        .filter(
+            (item, index) =>
+                !open(item) &&
+                (item.state !== 'stopped' ||
+                    !oldestFirst
+                        .slice(index + 1)
+                        .some(
+                            (later) =>
+                                later.prompt.trim() === item.prompt.trim(),
+                        )),
+        )
+        .sort((a, b) => finished(a) - finished(b));
 
     const groups: { label: string; items: ChangeItem[] }[] = [];
 
