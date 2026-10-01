@@ -3,8 +3,10 @@
 namespace Tests\Feature\Runs;
 
 use App\Actions\Runs\CompleteRunVerification;
+use App\Actions\Runs\KeepTryingRun;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
+use App\Enums\WorkspaceStatus;
 use App\Jobs\ExecuteRun;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\FeatureRequest;
@@ -63,6 +65,27 @@ class KeepTryingTest extends TestCase
                 ->where('run.work', fn ($work) => collect($work)->contains('text', 'You asked me to keep trying, so I went back to fix it')));
     }
 
+    public function test_a_change_that_stopped_before_its_feedback_was_kept_works_it_out_from_the_review()
+    {
+        $run = $this->outOfTries();
+        $run->update([
+            'stop_reason' => 'review_findings',
+            // From an earlier repair: it says nothing about why it stopped.
+            'feedback' => ['reason' => 'verification_failed', 'details' => ['An old failure.']],
+            'review' => ['approved' => false, 'summary' => 'Not yet.', 'findings' => [
+                ['severity' => 'blocking', 'file' => 'app/Models/Booking.php', 'summary' => 'A full class still takes bookings.'],
+                ['severity' => 'minor', 'file' => null, 'summary' => 'The label could be bolder.'],
+            ], 'changes' => []],
+        ]);
+
+        $this->actingAs($run->featureRequest->user)
+            ->post(route('feature-requests.keep-trying.store', $run->featureRequest))
+            ->assertRedirect();
+
+        $this->assertSame(['reason' => 'review_findings', 'details' => ['app/Models/Booking.php: A full class still takes bookings.']], $run->refresh()->feedback);
+        $this->assertSame(RunStatus::Implementing, $run->status);
+    }
+
     public function test_only_a_change_that_ran_out_of_tries_can_keep_trying()
     {
         $run = $this->outOfTries();
@@ -74,6 +97,14 @@ class KeepTryingTest extends TestCase
             ->assertSessionHasErrors('keep_trying');
 
         $this->assertSame(RunStatus::NeedsUserDecision, $run->refresh()->status);
+    }
+
+    public function test_a_change_whose_work_so_far_was_cleaned_up_can_only_start_over()
+    {
+        $run = $this->outOfTries();
+        $run->workspace->update(['status' => WorkspaceStatus::Destroyed]);
+
+        $this->assertFalse(KeepTryingRun::possible($run->featureRequest->refresh()));
     }
 
     public function test_only_people_who_may_ask_for_changes_can_keep_one_trying()

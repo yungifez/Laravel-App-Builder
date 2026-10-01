@@ -119,7 +119,7 @@ class CompleteRunVerification
      *
      * @return list<string>
      */
-    protected function failures(Verification $verification): array
+    public function failures(Verification $verification): array
     {
         $failures = [];
         $failedBefore = 0;

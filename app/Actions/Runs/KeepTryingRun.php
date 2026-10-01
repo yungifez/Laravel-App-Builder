@@ -3,6 +3,7 @@
 namespace App\Actions\Runs;
 
 use App\Enums\RunStatus;
+use App\Enums\WorkspaceStatus;
 use App\Jobs\ExecuteRun;
 use App\Models\FeatureRequest;
 use App\Models\Run;
@@ -31,9 +32,40 @@ class KeepTryingRun
             && $run->status === RunStatus::NeedsUserDecision
             && $run->question === null
             && in_array($run->stop_reason, self::STOPS, true)
-            && $run->feedback !== null
+            && self::feedback($run) !== null
             && $run->plan !== null
-            && $run->workspace_id !== null;
+            // Its work so far must still be there to build on.
+            && $run->workspace !== null
+            && $run->workspace->status !== WorkspaceStatus::Destroyed;
+    }
+
+    /**
+     * Get what the next pass must do: what was kept when the change stopped,
+     * or, for a change that stopped before that was kept, the same worked
+     * out again from its last checks or review. Feedback from an earlier
+     * repair says nothing about why it stopped, so it is not used.
+     *
+     * @return array{reason: string, details: list<string>}|null
+     */
+    protected static function feedback(Run $run): ?array
+    {
+        if (($run->feedback['reason'] ?? null) === $run->stop_reason) {
+            return $run->feedback;
+        }
+
+        $details = match ($run->stop_reason) {
+            'verification_failed' => ($verification = $run->verifications()->reorder('id', 'desc')->first()) === null
+                ? []
+                : app(CompleteRunVerification::class)->failures($verification),
+            'review_findings' => array_values(array_map(
+                fn (array $finding) => trim(($finding['file'] !== null ? "{$finding['file']}: " : '').$finding['summary']),
+                array_filter($run->review['findings'] ?? [], fn (array $finding) => $finding['severity'] === 'blocking'),
+            )),
+            'budget_exhausted' => [__('You stopped before you finished. Finish the change.')],
+            default => [],
+        };
+
+        return $details === [] ? null : ['reason' => (string) $run->stop_reason, 'details' => $details];
     }
 
     /**
@@ -53,6 +85,7 @@ class KeepTryingRun
 
         $this->transitionRun->handle($run, RunStatus::Implementing, attributes: [
             'repairs' => $run->repairs + 1,
+            'feedback' => self::feedback($run),
             'error' => null,
         ], details: ['reason' => 'kept_trying', 'stopped' => $run->stop_reason]);
 
