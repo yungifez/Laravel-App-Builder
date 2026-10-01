@@ -54,7 +54,7 @@ class ProjectUnderstandingController extends Controller
         return Inertia::render('projects/Understanding', [
             'project' => ['id' => $project->uuid, 'name' => $project->name],
             // The count the builder's header links here with.
-            'tests' => $observation?->testCount(),
+            'tests' => TestObservation::countFor($project),
             'revision' => $revision,
             'about' => [
                 'introduction' => $notes->introduction,

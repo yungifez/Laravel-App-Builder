@@ -69,7 +69,7 @@ class ProjectController extends Controller
                     // Kept changes the version online does not have yet.
                     'offline' => $this->offline($describeUnpublished->handle($project, $repository->exists($project) ? ($repository->head($project, Experiment::mainBranch()) ?: null) : null)),
                     // How many of the app's own tests guard it, as last run.
-                    'tests' => TestObservation::latestFor($project)?->testCount(),
+                    'tests' => TestObservation::countFor($project),
                     'picture' => $this->picture($project),
                 ]),
             'canStartNew' => StartProjectFromTemplate::template() !== null,
@@ -256,7 +256,7 @@ class ProjectController extends Controller
                 'source_path' => $project->started_here ? null : $project->source_path,
                 'published_at' => $this->publishedAt($project),
                 // How many of the app's own tests guard it, as last run.
-                'tests' => TestObservation::latestFor($project)?->testCount(),
+                'tests' => TestObservation::countFor($project),
             ],
             'changes' => fn () => $summarizeChanges->handle($project),
             'preview' => fn () => $describePreview->handle($project),

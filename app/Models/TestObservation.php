@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use App\Features\PatchSummary;
 use App\Features\TestMap;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 /**
  * What one run of the project's suite with code coverage showed: which
@@ -55,6 +57,28 @@ class TestObservation extends Model
             ->whereHas('featureRequest', fn (Builder $query) => $query->whereNotNull('accepted_at')->whereNull('reverted_at'))
             ->first()
             ?? self::query()->tap($usable)->first();
+    }
+
+    /**
+     * Count the tests the app itself has, for the owner. Until a change is
+     * kept, the latest map is from a change still waiting, and the tests
+     * that change added are not in the app: they are left out, so the
+     * owner is never told that tests guard what they have not kept.
+     */
+    public static function countFor(Project $project): ?int
+    {
+        $observation = self::latestFor($project);
+        $request = $observation?->featureRequest;
+
+        if ($observation === null || $request === null || $request->isAccepted()) {
+            return $observation?->testCount();
+        }
+
+        $added = PatchSummary::addedTests($request->patch);
+        $touched = array_column(PatchSummary::files($request->patch), 'path');
+
+        return count(array_filter($observation->tests, fn (array $test) => ! in_array($test['file'], $touched, true)
+            || ! in_array(TestMap::describe(Str::afterLast($test['id'], '::')), $added, true)));
     }
 
     /**

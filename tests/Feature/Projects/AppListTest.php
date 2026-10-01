@@ -69,6 +69,44 @@ class AppListTest extends TestCase
                 ->where('projects.1.tests', null));
     }
 
+    public function test_the_tests_a_change_still_waiting_added_are_not_counted_as_the_apps()
+    {
+        $owner = User::factory()->create();
+        $project = Project::factory()->for($owner, 'owner')->create();
+        $patch = implode("\n", [
+            'diff --git a/tests/Feature/PlanTest.php b/tests/Feature/PlanTest.php',
+            '--- a/tests/Feature/PlanTest.php',
+            '+++ b/tests/Feature/PlanTest.php',
+            '@@ -1,1 +1,2 @@',
+            '+    public function test_plans_can_be_paused()',
+            'diff --git a/tests/Feature/ClassTest.php b/tests/Feature/ClassTest.php',
+            'new file mode 100644',
+            '--- /dev/null',
+            '+++ b/tests/Feature/ClassTest.php',
+            '@@ -0,0 +1,1 @@',
+            '+    public function test_classes_can_be_booked()',
+        ]);
+        $waiting = FeatureRequest::factory()->for($project)->create(['status' => FeatureRequestStatus::Generated, 'patch' => $patch]);
+        $test = fn (string $id, string $file) => ['id' => $id, 'file' => $file, 'groups' => []];
+        TestObservation::create(['project_id' => $project->id, 'feature_request_id' => $waiting->id, 'files' => [], 'tests' => [
+            $test('Tests\\Feature\\PlanTest::test_plans_can_be_made', 'tests/Feature/PlanTest.php'),
+            $test('Tests\\Feature\\PlanTest::test_plans_can_be_paused', 'tests/Feature/PlanTest.php'),
+            $test('Tests\\Feature\\ClassTest::test_classes_can_be_booked', 'tests/Feature/ClassTest.php'),
+            $test('Tests\\Unit\\ExampleTest::test_that_true_is_true', 'tests/Unit/ExampleTest.php'),
+        ]]);
+
+        $this->actingAs($owner)
+            ->get(route('projects.index'))
+            ->assertInertia(fn (Assert $page) => $page->where('projects.0.tests', 2));
+
+        // Once kept, they are the app's.
+        $waiting->update(['commit_sha' => str_repeat('a', 40), 'accepted_at' => now()]);
+
+        $this->actingAs($owner)
+            ->get(route('projects.index'))
+            ->assertInertia(fn (Assert $page) => $page->where('projects.0.tests', 4));
+    }
+
     public function test_each_app_shows_a_picture_of_its_front_page_from_its_latest_kept_or_waiting_change()
     {
         $owner = User::factory()->create();
