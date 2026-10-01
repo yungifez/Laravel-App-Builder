@@ -26,6 +26,7 @@ import {
 import { when } from '@/lib/when';
 import { index, show } from '@/routes/projects';
 import { update as updateCompatibility } from '@/routes/projects/compatibility';
+import { index as developers } from '@/routes/projects/developers';
 import { show as showUnderstanding } from '@/routes/projects/understanding';
 import type {
     CheckFinding,
@@ -775,16 +776,18 @@ function setCompatibility(keep: boolean | null): void {
                         :rows="6"
                         variant="icon"
                     >
-                        <h2
-                            class="mb-4 flex items-baseline gap-2 text-xl font-semibold tracking-[-0.02em]"
-                        >
-                            {{ section.heading }}
-                            <span
-                                v-if="section.tiles"
-                                class="font-normal text-muted-foreground tabular-nums"
-                                >{{ section.items.length }}</span
+                        <template #heading>
+                            <h2
+                                class="mb-4 flex items-baseline gap-2 text-xl font-semibold tracking-[-0.02em]"
                             >
-                        </h2>
+                                {{ section.heading }}
+                                <span
+                                    v-if="section.tiles"
+                                    class="font-normal text-muted-foreground tabular-nums"
+                                    >{{ section.items.length }}</span
+                                >
+                            </h2>
+                        </template>
                         <dl v-if="section.tiles" class="divide-y border-y">
                             <div
                                 v-for="item in section.items"
@@ -821,16 +824,19 @@ function setCompatibility(keep: boolean | null): void {
                         :revision="revision"
                         :part="`section:Engineering direction`"
                         :text="guidance ?? ''"
-                        label="the guidance"
+                        label="guidance"
                         :rows="6"
                         hint="One point per line works well."
+                        placeholder="For example: Keep all payments in one place, so changing the payment company later is easy."
                         :variant="guidance ? 'icon' : 'text'"
                     >
-                        <h2
-                            class="mb-4 text-xl font-semibold tracking-[-0.02em]"
-                        >
-                            Guidance from your developer
-                        </h2>
+                        <template #heading>
+                            <h2
+                                class="mb-4 text-xl font-semibold tracking-[-0.02em]"
+                            >
+                                Guidance from your developer
+                            </h2>
+                        </template>
                         <p
                             v-if="guidance"
                             class="max-w-prose whitespace-pre-line"
@@ -842,6 +848,15 @@ function setCompatibility(keep: boolean | null): void {
                             change.
                         </p>
                     </NotesPart>
+                    <!-- Guidance can also come from one of our developers,
+                         and what the owner keeps of it lands here. -->
+                    <Link
+                        :href="developers(project.id).url"
+                        class="-ml-3 inline-flex h-11 items-center rounded-md px-3 text-sm text-muted-foreground transition-colors select-none hover:bg-accent hover:text-foreground sm:h-8"
+                        data-test="guidance-ask-developer"
+                    >
+                        Ask a developer
+                    </Link>
                 </section>
 
                 <section data-test="what-changed">

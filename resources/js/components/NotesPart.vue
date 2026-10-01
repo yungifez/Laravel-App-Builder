@@ -15,11 +15,12 @@ const props = withDefaults(
         label: string;
         rows?: number;
         hint?: string;
+        placeholder?: string;
         // "icon" puts a pencil in the corner instead of a text button, for
         // places where many parts sit side by side.
         variant?: 'text' | 'icon';
     }>(),
-    { rows: 4, hint: undefined, variant: 'text' },
+    { rows: 4, hint: undefined, placeholder: undefined, variant: 'text' },
 );
 
 const editing = ref(false);
@@ -31,6 +32,7 @@ const editing = ref(false);
             v-if="!editing && variant === 'icon'"
             class="group/part relative min-w-0"
         >
+            <slot name="heading" />
             <slot />
             <Button
                 variant="ghost"
@@ -46,6 +48,7 @@ const editing = ref(false);
         </div>
 
         <template v-else-if="!editing">
+            <slot name="heading" />
             <slot />
             <Button
                 variant="ghost"
@@ -58,8 +61,11 @@ const editing = ref(false);
             </Button>
         </template>
 
+        <!-- The heading stays while editing, so the owner still sees
+             what they are writing. -->
+        <slot v-if="editing" name="heading" />
         <Form
-            v-else
+            v-if="editing"
             v-bind="ProjectUnderstandingController.update.form(props.projectId)"
             class="space-y-3"
             :options="{ preserveScroll: true }"
@@ -74,6 +80,7 @@ const editing = ref(false);
                 name="body"
                 :rows="rows"
                 :value="text"
+                :placeholder="placeholder"
                 class="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
             />
             <p v-if="hint" class="text-xs text-muted-foreground">{{ hint }}</p>
