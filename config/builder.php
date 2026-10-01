@@ -576,6 +576,10 @@ return [
             ['name' => 'Generate app key', 'command' => ['php', 'artisan', 'key:generate', '--no-interaction'], 'timeout' => 60],
             ['name' => 'Install Node dependencies', 'command' => ['npm', 'ci', '--no-audit', '--no-fund'], 'timeout' => 600],
             ['name' => 'Generate route helpers', 'command' => ['php', 'artisan', 'wayfinder:generate', '--with-form'], 'timeout' => 120],
+            // Tests that open a page need the built screens, as in the
+            // starter kits' own CI; without them every such test fails on
+            // a missing Vite manifest and blames the app for our setup.
+            ['name' => 'Build the screens', 'command' => ['npm', 'run', 'build'], 'timeout' => 600],
         ],
 
         // The check that runs the project's whole test suite. When it passes,
