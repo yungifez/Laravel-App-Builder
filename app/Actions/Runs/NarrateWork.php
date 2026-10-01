@@ -229,7 +229,10 @@ class NarrateWork
         foreach ($findings as $finding) {
             // Only the first sentence says what is wrong; a later one read
             // alone ("It is missing") makes no sense.
-            $first = ($finding['severity'] ?? null) === 'blocking' ? $this->plain(preg_split('/(?<=[.!?])\s+/', trim((string) ($finding['summary'] ?? '')))[0] ?? '') : null;
+            // Where it is ("Line 13 of resources/js/Welcome.vue") means
+            // nothing to the owner, and would hide what is wrong.
+            $summary = preg_replace(['/^Line \d+ of \S+\s+/i', '/\s*\([^)]*\/[^)]*\)/'], ['The change ', ''], trim((string) ($finding['summary'] ?? ''))) ?? '';
+            $first = ($finding['severity'] ?? null) === 'blocking' ? $this->plain(preg_split('/(?<=[.!?])\s+/', $summary)[0] ?? '') : null;
 
             if ($first !== null && preg_match('/\b(tests?|tested|criteri(on|a)|verif\w*|plan|evidence)\b/i', $first) !== 1) {
                 $lines[] = ['kind' => 'failed', 'names' => [], 'text' => $first];

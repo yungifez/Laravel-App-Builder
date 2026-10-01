@@ -149,12 +149,14 @@ class WorkStoryTest extends TestCase
             // Missing tests show in the checks; code is not for the owner.
             ['severity' => 'blocking', 'file' => null, 'summary' => 'No test in the change checks: owners can still rename the team.'],
             ['severity' => 'blocking', 'file' => 'app/Models/Team.php', 'summary' => 'The `members_count` query runs once per team in the switcher list.'],
+            ['severity' => 'blocking', 'file' => null, 'summary' => 'Line 13 of resources/js/pages/Welcome.vue makes up a colour instead of using one of the app’s theme colours, so it will not follow the theme. Use a colour from the theme.'],
             ['severity' => 'minor', 'file' => null, 'summary' => 'The switcher spacing looks slightly uneven between the team rows.'],
         ]]);
 
         $this->assertSame([
             ['kind' => 'stage', 'text' => 'I found something to fix'],
             ['kind' => 'failed', 'text' => 'The count is beside the “Team name” label, while the team’s name appears separately in the input below it.'],
+            ['kind' => 'failed', 'text' => 'The change makes up a colour instead of using one of the app’s theme colours, so it will not follow the theme.'],
         ], app(NarrateWork::class)->handle($run->refresh()));
     }
 
