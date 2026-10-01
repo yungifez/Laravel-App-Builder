@@ -34,7 +34,15 @@ import {
 } from '@lucide/vue';
 import { useResizeObserver } from '@vueuse/core';
 import { useScreen } from '@/composables/useScreen';
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import {
+    computed,
+    nextTick,
+    onMounted,
+    onUnmounted,
+    reactive,
+    ref,
+    watch,
+} from 'vue';
 import { toast } from 'vue-sonner';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
 import FeatureRequestDismissalController from '@/actions/App/Http/Controllers/FeatureRequestDismissalController';
@@ -468,17 +476,27 @@ function showAt(device: typeof app.device): void {
 
 // The address says when the design side is open, so reloading the page
 // opens it again instead of dropping the owner back in the chat.
-watch(panel, (value) => {
+function keepPanelInAddress(): void {
     const url = new URL(window.location.href);
 
-    if (value === 'design') {
+    if ((url.searchParams.get('design') === '1') === designing.value) {
+        return;
+    }
+
+    if (designing.value) {
         url.searchParams.set('design', '1');
     } else {
         url.searchParams.delete('design');
     }
 
     window.history.replaceState(window.history.state, '', url);
-});
+}
+
+watch(panel, keepPanelInAddress);
+
+// A request sent before the switch, such as opening the app again, comes
+// back with the address it was sent from.
+onUnmounted(router.on('navigate', keepPanelInAddress));
 
 // Switching what the screen shows morphs from one layout to the next.
 function show(to: 'chat' | 'design'): void {
