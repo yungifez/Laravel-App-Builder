@@ -562,52 +562,22 @@ const checks = computed(() => {
                         </p>
 
                         <!-- How it is being made, step by step -->
-                        <template
-                            v-if="
-                                working ? liveWork.length > 0 : work.length > 0
-                            "
+                        <!-- Each step slides in as it happens -->
+                        <TransitionGroup
+                            v-if="working && liveWork.length > 0"
+                            tag="ol"
+                            class="space-y-1.5"
+                            enter-active-class="transition duration-base ease-settle"
+                            enter-from-class="opacity-0 translate-y-1"
+                            data-test="thread-work"
                         >
-                            <!-- Each step slides in as it happens -->
-                            <TransitionGroup
-                                v-if="working"
-                                tag="ol"
-                                class="space-y-1.5"
-                                enter-active-class="transition duration-base ease-settle"
-                                enter-from-class="opacity-0 translate-y-1"
-                                data-test="thread-work"
+                            <li
+                                v-for="(step, index) in liveWork"
+                                :key="work.length - liveWork.length + index"
                             >
-                                <li
-                                    v-for="(step, index) in liveWork"
-                                    :key="work.length - liveWork.length + index"
-                                >
-                                    <WorkStepLine :step="step" />
-                                </li>
-                            </TransitionGroup>
-                            <Collapsible v-else>
-                                <CollapsibleTrigger
-                                    class="group flex min-h-11 items-center gap-1 text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-6"
-                                    data-test="thread-work-toggle"
-                                >
-                                    <ChevronRight
-                                        class="size-3.5 transition-transform group-data-[state=open]:rotate-90"
-                                    />
-                                    How I did it
-                                </CollapsibleTrigger>
-                                <CollapsibleContent>
-                                    <ol
-                                        class="mt-1.5 space-y-1.5"
-                                        data-test="thread-work"
-                                    >
-                                        <li
-                                            v-for="(step, index) in work"
-                                            :key="index"
-                                        >
-                                            <WorkStepLine :step="step" />
-                                        </li>
-                                    </ol>
-                                </CollapsibleContent>
-                            </Collapsible>
-                        </template>
+                                <WorkStepLine :step="step" />
+                            </li>
+                        </TransitionGroup>
 
                         <div
                             v-if="working"
@@ -893,6 +863,33 @@ const checks = computed(() => {
                                         {{ assumption }}
                                     </li>
                                 </ul>
+                            </CollapsibleContent>
+                        </Collapsible>
+
+                        <!-- How it was made, once it is made: kept
+                             after what it made, for those who ask. -->
+                        <Collapsible v-if="!working && work.length > 0">
+                            <CollapsibleTrigger
+                                class="group flex min-h-11 items-center gap-1 text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-6"
+                                data-test="thread-work-toggle"
+                            >
+                                <ChevronRight
+                                    class="size-3.5 transition-transform group-data-[state=open]:rotate-90"
+                                />
+                                How I did it
+                            </CollapsibleTrigger>
+                            <CollapsibleContent>
+                                <ol
+                                    class="mt-1.5 space-y-1.5"
+                                    data-test="thread-work"
+                                >
+                                    <li
+                                        v-for="(step, index) in work"
+                                        :key="index"
+                                    >
+                                        <WorkStepLine :step="step" />
+                                    </li>
+                                </ol>
                             </CollapsibleContent>
                         </Collapsible>
 
