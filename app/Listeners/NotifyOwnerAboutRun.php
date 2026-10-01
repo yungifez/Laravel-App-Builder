@@ -37,7 +37,13 @@ class NotifyOwnerAboutRun
             ->filter(fn ($notification) => in_array($notification->data['feature_request_id'] ?? null, $tries, true))
             ->each->delete();
 
-        $owner->notify(new ChangeNeedsYou($featureRequest, $event->to));
+        // A run stops for the owner without a question when it could not
+        // finish; that is told as a change that did not work.
+        $status = $event->to === RunStatus::NeedsUserDecision && $event->run->question === null
+            ? RunStatus::Failed
+            : $event->to;
+
+        $owner->notify(new ChangeNeedsYou($featureRequest, $status));
     }
 
     /**

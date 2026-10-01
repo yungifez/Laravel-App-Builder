@@ -26,7 +26,9 @@ class OwnerNotificationTest extends TestCase
         app(TransitionRun::class)->handle($run, RunStatus::Verifying);
         $this->assertSame(0, $owner->notifications()->count());
 
-        app(TransitionRun::class)->handle($run, RunStatus::NeedsUserDecision);
+        app(TransitionRun::class)->handle($run, RunStatus::NeedsUserDecision, attributes: [
+            'question' => ['text' => 'Who can invite?', 'why' => '', 'options' => ['Owners', 'Everyone'], 'recommended' => null],
+        ]);
         $notification = $owner->notifications()->sole();
         $this->assertSame('question', $notification->data['kind']);
         $this->assertSame('I have a question about your change', $notification->data['title']);
@@ -36,6 +38,19 @@ class OwnerNotificationTest extends TestCase
         app(TransitionRun::class)->handle($run, RunStatus::Implementing);
         app(TransitionRun::class)->handle($run, RunStatus::Failed);
         $this->assertSame('failed', $owner->notifications()->sole()->data['kind']);
+    }
+
+    public function test_a_change_that_stops_without_a_question_is_told_as_not_working()
+    {
+        $run = Run::factory()->implementing()->create();
+
+        app(TransitionRun::class)->handle($run, RunStatus::NeedsUserDecision, attributes: [
+            'error' => 'The run finished without changing the project.',
+        ]);
+
+        $notification = $run->featureRequest->user->notifications()->sole();
+        $this->assertSame('failed', $notification->data['kind']);
+        $this->assertSame('Your change did not work', $notification->data['title']);
     }
 
     public function test_opening_a_notification_marks_it_read_and_goes_to_the_change()

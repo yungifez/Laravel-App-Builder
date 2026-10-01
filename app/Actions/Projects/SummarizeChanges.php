@@ -4,6 +4,7 @@ namespace App\Actions\Projects;
 
 use App\Enums\ChangeState;
 use App\Enums\FeatureRequestStatus;
+use App\Enums\RunStatus;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use Illuminate\Support\Collection;
@@ -98,7 +99,15 @@ class SummarizeChanges
         $newest = $thread->first();
 
         if ($newest->status === FeatureRequestStatus::Generating) {
-            return [$newest->latestRun?->question !== null ? ChangeState::Waiting : ChangeState::Working, $newest];
+            $run = $newest->latestRun;
+
+            if ($run?->question !== null) {
+                return [ChangeState::Waiting, $newest];
+            }
+
+            // A run that stopped without a question could not finish: the
+            // owner tries it again, so it is not still being worked on.
+            return [in_array($run?->status, [RunStatus::NeedsUserDecision, RunStatus::Failed], true) ? ChangeState::Stopped : ChangeState::Working, $newest];
         }
 
         if ($newest->status === FeatureRequestStatus::Answered) {

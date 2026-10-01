@@ -70,6 +70,22 @@ class ProjectOverviewTest extends TestCase
                 ->where('changes.0.question', 'Who can invite?'));
     }
 
+    public function test_a_change_that_could_not_finish_is_not_still_being_worked_on()
+    {
+        $project = Project::factory()->create();
+        $stuck = FeatureRequest::factory()->for($project)->create();
+        Run::factory()->for($stuck)->create([
+            'status' => RunStatus::NeedsUserDecision,
+            'error' => 'The run finished without changing the project.',
+        ]);
+
+        $this->actingAs($project->owner)
+            ->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('changes.0.state', 'stopped')
+                ->where('changes.0.asks', false));
+    }
+
     public function test_the_app_page_shows_the_running_app_next_to_the_conversation()
     {
         $project = Project::factory()->create();
