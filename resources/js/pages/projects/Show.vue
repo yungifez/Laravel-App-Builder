@@ -1405,6 +1405,7 @@ function sendOnEnter(event: KeyboardEvent): void {
         v-model:open="sharing"
         :project-id="project.id"
         :share="project.share"
+        :days="project.share_days"
     />
     <ServicesDialog
         v-model:open="connecting"

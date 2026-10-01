@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 const props = defineProps<{
     projectId: string;
     share: { url: string; expires_at: string } | null;
+    days: number;
 }>();
 
 const open = defineModel<boolean>('open', { required: true });
@@ -55,17 +56,22 @@ async function copy(): Promise<void> {
                 </DialogDescription>
             </DialogHeader>
 
-            <div v-if="share" class="flex flex-col gap-3" data-test="share">
+            <!-- The same rows with or without a link, so the dialog keeps
+                 its place when the link is made. -->
+            <div class="flex flex-col gap-3" data-test="share">
                 <div class="flex gap-2">
                     <Input
-                        :model-value="share.url"
+                        :model-value="share?.url ?? ''"
                         readonly
+                        :disabled="share === null"
+                        placeholder="No link yet"
                         aria-label="Link to your app"
                         class="h-11 sm:h-9"
                         data-test="share-url"
                         @focus="($event.target as HTMLInputElement).select()"
                     />
                     <Button
+                        v-if="share"
                         class="h-11 shrink-0 select-none sm:h-9"
                         data-test="share-copy"
                         @click="copy"
@@ -73,21 +79,40 @@ async function copy(): Promise<void> {
                         <component :is="copied ? Check : Copy" class="size-4" />
                         {{ copied ? 'Copied' : 'Copy' }}
                     </Button>
+                    <Form
+                        v-else
+                        v-bind="ProjectShareController.store.form(projectId)"
+                        :options="{ preserveScroll: true, preserveState: true }"
+                        v-slot="{ processing }"
+                        class="shrink-0"
+                    >
+                        <Button
+                            :disabled="processing"
+                            class="h-11 select-none sm:h-9"
+                            data-test="share-make"
+                        >
+                            Make a link
+                        </Button>
+                    </Form>
                 </div>
                 <p class="text-sm text-muted-foreground">
-                    Works until {{ until }}. What people add, such as their
-                    sign-ups, is saved in your app's test data, which you see
-                    under Saved data.
+                    {{
+                        share
+                            ? `Works until ${until}.`
+                            : `A link works for ${days} ${days === 1 ? 'day' : 'days'}.`
+                    }}
+                    What people add, such as their sign-ups, is saved in your
+                    app's test data, which you see under Saved data.
                 </p>
                 <Form
                     v-bind="ProjectShareController.destroy.form(projectId)"
                     :options="{ preserveScroll: true, preserveState: true }"
                     v-slot="{ processing }"
-                    class="self-start"
+                    :class="['self-start', { invisible: share === null }]"
                 >
                     <Button
                         variant="ghost"
-                        :disabled="processing"
+                        :disabled="processing || share === null"
                         class="-ml-3 h-11 text-muted-foreground select-none sm:h-9"
                         data-test="share-stop"
                     >
@@ -95,22 +120,6 @@ async function copy(): Promise<void> {
                     </Button>
                 </Form>
             </div>
-
-            <Form
-                v-else
-                v-bind="ProjectShareController.store.form(projectId)"
-                :options="{ preserveScroll: true, preserveState: true }"
-                v-slot="{ processing }"
-                class="self-end"
-            >
-                <Button
-                    :disabled="processing"
-                    class="h-11 select-none sm:h-9"
-                    data-test="share-make"
-                >
-                    Make a link
-                </Button>
-            </Form>
         </DialogContent>
     </Dialog>
 </template>

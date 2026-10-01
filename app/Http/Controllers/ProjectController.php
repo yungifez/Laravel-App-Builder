@@ -265,6 +265,7 @@ class ProjectController extends Controller
                     'url' => ShareApp::url((string) $project->share_token),
                     'expires_at' => $project->share_expires_at->toIso8601String(),
                 ] : null,
+                'share_days' => (int) config('builder.preview.share_days'),
             ],
             'changes' => fn () => $summarizeChanges->handle($project),
             'preview' => fn () => $describePreview->handle($project),
