@@ -464,22 +464,58 @@ const changeCopy = computed(() => {
 // be drawn before it listens, so it asks the copy once it does.
 const changeCopyFrame = ref<HTMLIFrameElement | null>(null);
 const changeCopyLost = ref(false);
+
+// The pages of the copy the owner went through, so back, forward and the
+// page list move the copy as they move the app.
+const copyVisited = ref<string[]>(['/']);
+const copyVisitedAt = ref(0);
 watch(
     () => changeCopy.value?.id,
-    () => (changeCopyLost.value = false),
+    () => {
+        changeCopyLost.value = false;
+        copyVisited.value = ['/'];
+        copyVisitedAt.value = 0;
+    },
 );
 
 function onChangeCopyMessage(event: MessageEvent): void {
     const copy = changeCopy.value;
 
     if (
-        copy !== null &&
-        event.source === changeCopyFrame.value?.contentWindow &&
-        event.origin === new URL(copy.url).origin &&
-        event.data?.builder === true &&
-        event.data.type === 'lost'
+        copy === null ||
+        event.source !== changeCopyFrame.value?.contentWindow ||
+        event.origin !== new URL(copy.url).origin ||
+        event.data?.builder !== true
     ) {
+        return;
+    }
+
+    if (event.data.type === 'lost') {
         changeCopyLost.value = true;
+    }
+
+    // A page the owner went to, not one back or forward moved to.
+    const path = event.data.path;
+
+    if (
+        (event.data.type === 'ready' || event.data.type === 'page') &&
+        typeof path === 'string' &&
+        path !== copyVisited.value[copyVisitedAt.value]
+    ) {
+        copyVisited.value = [
+            ...copyVisited.value.slice(0, copyVisitedAt.value + 1),
+            path,
+        ];
+        copyVisitedAt.value = copyVisited.value.length - 1;
+    }
+}
+
+function browseCopy(by: -1 | 1): void {
+    const to = copyVisited.value[copyVisitedAt.value + by];
+
+    if (to !== undefined) {
+        copyVisitedAt.value += by;
+        openInChangeCopy(changeCopyOrigin.value + to);
     }
 }
 
@@ -549,6 +585,32 @@ function openInChangeCopy(href: string): void {
         changeCopyFrame.value.src = href;
     }
 }
+
+// Back, forward, reload and the page on show, for the app or for the copy
+// of the change the owner tries.
+const browsing = computed(() =>
+    copy.value === null
+        ? {
+              path: app.path,
+              canGoBack: app.canGoBack,
+              canGoForward: app.canGoForward,
+              back: app.back,
+              forward: app.forward,
+              reload: app.reload,
+          }
+        : {
+              path: copyVisited.value[copyVisitedAt.value] ?? '/',
+              canGoBack: copyVisitedAt.value > 0,
+              canGoForward: copyVisitedAt.value < copyVisited.value.length - 1,
+              back: () => browseCopy(-1),
+              forward: () => browseCopy(1),
+              reload: () =>
+                  openInChangeCopy(
+                      changeCopyOrigin.value +
+                          (copyVisited.value[copyVisitedAt.value] ?? '/'),
+                  ),
+          },
+);
 
 // A phone shows one thing at a time: the chat, the app with the design
 // panel under it, or just the app.
@@ -1234,7 +1296,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                     <SignInAs
                         :project-id="project.id"
                         :people="people"
-                        :path="app.path"
+                        :path="browsing.path"
                         :copy="copy"
                         @open="openInApp"
                     />
@@ -1994,13 +2056,13 @@ function sendOnEnter(event: KeyboardEvent): void {
                         variant="ghost"
                         size="icon"
                         class="size-9"
-                        :disabled="!app.canGoBack"
+                        :disabled="!browsing.canGoBack"
                         aria-label="Back"
                         title="Back"
                         data-test="preview-back"
                         @click="
                             showing = 'app';
-                            app.back();
+                            browsing.back();
                         "
                     >
                         <ArrowLeft class="size-4" />
@@ -2009,13 +2071,13 @@ function sendOnEnter(event: KeyboardEvent): void {
                         variant="ghost"
                         size="icon"
                         class="size-9"
-                        :disabled="!app.canGoForward"
+                        :disabled="!browsing.canGoForward"
                         aria-label="Forward"
                         title="Forward"
                         data-test="preview-forward"
                         @click="
                             showing = 'app';
-                            app.forward();
+                            browsing.forward();
                         "
                     >
                         <ArrowRight class="size-4" />
@@ -2029,7 +2091,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                         data-test="preview-reload"
                         @click="
                             showing = 'app';
-                            app.reload();
+                            browsing.reload();
                         "
                     >
                         <RotateCw class="size-4" />
@@ -2043,11 +2105,13 @@ function sendOnEnter(event: KeyboardEvent): void {
                             <button
                                 type="button"
                                 class="ml-1 flex h-9 w-24 shrink-0 items-center justify-between gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground sm:w-auto sm:max-w-48 sm:justify-start"
-                                :title="app.path"
+                                :title="browsing.path"
                                 data-test="preview-path"
                             >
                                 <span class="truncate">{{
-                                    app.path === '/' ? 'Home' : app.path
+                                    browsing.path === '/'
+                                        ? 'Home'
+                                        : browsing.path
                                 }}</span>
                                 <ChevronDown class="size-3.5 shrink-0" />
                             </button>
@@ -2097,7 +2161,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                     <SignInAs
                         :project-id="project.id"
                         :people="people"
-                        :path="app.path"
+                        :path="browsing.path"
                         :copy="copy"
                         @open="openInApp"
                     />

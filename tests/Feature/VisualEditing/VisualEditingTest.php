@@ -716,7 +716,7 @@ class VisualEditingTest extends TestCase
         $this->assertSame('frame-ancestors http://builder.test', $response->headers->get('Content-Security-Policy'));
     }
 
-    public function test_the_gateway_leaves_other_responses_and_ordinary_previews_alone()
+    public function test_the_gateway_leaves_other_responses_alone_and_only_reports_the_page_of_ordinary_previews()
     {
         $editable = $this->runningPreview(['session_hash' => hash('sha256', 'secret'), 'session_expires_at' => now()->addHour()]);
         $ordinary = Preview::factory()->ready()->create(['session_hash' => hash('sha256', 'other'), 'session_expires_at' => now()->addHour()]);
@@ -726,9 +726,12 @@ class VisualEditingTest extends TestCase
         $this->assertSame('console.log("</body>")', $script->getContent());
 
         $page = $this->call('GET', "http://{$ordinary->host}.preview.test/", [], ['builder_preview' => 'other'], [], ['HTTP_COOKIE' => 'builder_preview=other']);
-        // An ordinary preview gets no overlay, but the builder may still frame
-        // it so the owner can use a change's copy.
-        $this->assertSame('<body></body>', $page->getContent());
+        // An ordinary preview gets no overlay, only what says which page is
+        // on show, and the builder may still frame it so the owner can use a
+        // change's copy.
+        $this->assertStringStartsWith('<body><script data-builder-origin="http://builder.test">', (string) $page->getContent());
+        $this->assertStringContainsString("send('page')", (string) $page->getContent());
+        $this->assertStringNotContainsString('data-builder-source', (string) $page->getContent());
         $this->assertSame('frame-ancestors http://builder.test', $page->headers->get('Content-Security-Policy'));
     }
 

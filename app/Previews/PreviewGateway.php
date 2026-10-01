@@ -236,6 +236,8 @@ class PreviewGateway
 
         if ($preview->editable) {
             $this->prepareForEditing($response);
+        } else {
+            $this->reportPages($response);
         }
 
         return $response;
@@ -264,8 +266,24 @@ class PreviewGateway
      */
     protected function prepareForEditing(Response $response): void
     {
-        $origin = self::builderOrigin();
+        $this->addScript($response, File::get((string) config('builder.preview.overlay')));
+    }
 
+    /**
+     * Let the builder follow the pages of a preview that is not edited,
+     * such as a change the owner tries: each page says where it is, and
+     * the builder's back, forward and page list move it.
+     */
+    protected function reportPages(Response $response): void
+    {
+        $this->addScript($response, File::get(resource_path('preview-tools/pages.js')));
+    }
+
+    /**
+     * Add a script for the builder to the end of an HTML page.
+     */
+    protected function addScript(Response $response, string $script): void
+    {
         $body = (string) $response->getContent();
         $position = strripos($body, '</body>');
         $encoded = ! in_array(strtolower((string) $response->headers->get('Content-Encoding', 'identity')), ['', 'identity'], true);
@@ -274,9 +292,9 @@ class PreviewGateway
             return;
         }
 
-        $overlay = '<script data-builder-origin="'.e($origin).'">'.File::get((string) config('builder.preview.overlay')).'</script>';
+        $tag = '<script data-builder-origin="'.e(self::builderOrigin()).'">'.$script.'</script>';
 
-        $response->setContent(substr_replace($body, $overlay, $position, 0));
+        $response->setContent(substr_replace($body, $tag, $position, 0));
         $response->headers->remove('Content-Length');
     }
 
