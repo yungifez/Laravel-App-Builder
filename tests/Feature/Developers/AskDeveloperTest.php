@@ -92,6 +92,21 @@ class AskDeveloperTest extends TestCase
         }
     }
 
+    public function test_a_change_that_stopped_before_it_was_understood_still_shows_the_app()
+    {
+        $change = FeatureRequest::factory()->for($this->project)->create(['prompt' => 'Add a duck to the login page.']);
+        Run::factory()->for($change)->create(['status' => RunStatus::Failed, 'plan' => null, 'context' => null]);
+
+        $this->actingAs($this->project->owner)
+            ->post(route('projects.developers.store', $this->project), ['question' => 'Is the duck safe?', 'change' => $change->uuid]);
+
+        $bundle = $this->project->developerReviews()->sole()->bundle;
+
+        foreach (['Add a duck to the login page.', '- Customers are never charged twice.', '## Areas of the app', '### Bookings', '- A booking has one cleaner.'] as $text) {
+            $this->assertStringContainsString($text, $bundle);
+        }
+    }
+
     public function test_what_the_developer_reads_holds_nothing_of_how_we_work()
     {
         $this->actingAs($this->project->owner)->post(route('projects.developers.store', $this->project), ['question' => 'Is it sound?']);
@@ -180,6 +195,7 @@ class AskDeveloperTest extends TestCase
         $this->assertSame(['Make every payment safe to retry. (Ada, '.now()->toFormattedDayDateString().')'], $notes->items('Engineering direction'));
         $this->assertSame(['Customers are never charged twice.'], $notes->items('Rules'));
         $this->assertNotNull($review->refresh()->guidance_kept_at);
+        $this->assertSame(['Make every payment safe to retry.'], $review->kept_guidance);
 
         // Kept guidance is part of the app's record now.
         $this->actingAs($this->developer)

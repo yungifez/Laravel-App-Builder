@@ -35,6 +35,7 @@ const props = defineProps<{
         answered_at: string | null;
         withdrawn: boolean;
         guidance_kept: boolean;
+        kept_guidance: string[] | null;
     };
 }>();
 
@@ -54,7 +55,7 @@ watch(
 const field =
     'w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30';
 const download =
-    'inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-primary select-none sm:min-h-9';
+    'inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-foreground/80 select-none hover:text-foreground sm:min-h-9';
 </script>
 
 <template>
@@ -111,7 +112,8 @@ const download =
                     v-else-if="review.guidance_kept"
                     class="mt-2 text-sm text-muted-foreground"
                 >
-                    The owner kept the guidance, so the answer stays as it is.
+                    The owner kept the guidance below, so the answer stays as it
+                    is.
                 </p>
                 <p
                     v-else-if="review.answered_at"
@@ -128,7 +130,9 @@ const download =
                     v-slot="{ errors, processing }"
                 >
                     <label class="block space-y-1.5">
-                        <span class="text-sm font-medium">Your answer</span>
+                        <span class="text-sm font-medium"
+                            >What you would tell the owner</span
+                        >
                         <textarea
                             name="summary"
                             rows="6"
@@ -192,11 +196,11 @@ const download =
                         {{ review.answer.summary }}
                     </p>
                     <ul
-                        v-if="review.answer.guidance.length"
+                        v-if="review.kept_guidance?.length"
                         class="mt-3 list-disc space-y-1 pl-5 text-sm"
                     >
                         <li
-                            v-for="(point, at) in review.answer.guidance"
+                            v-for="(point, at) in review.kept_guidance"
                             :key="at"
                         >
                             {{ point }}

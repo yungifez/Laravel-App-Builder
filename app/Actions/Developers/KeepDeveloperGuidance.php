@@ -48,7 +48,7 @@ class KeepDeveloperGuidance
             $section = trim(($notes->section(UpdateProjectNotes::GUIDANCE_SECTION) ?? '')."\n".implode("\n", $lines));
 
             $this->notes->put($project, $branch, [ProjectContext::PROJECT_FILE => $notes->withSection(UpdateProjectNotes::GUIDANCE_SECTION, $section)->toMarkdown()]);
-            $review->update(['guidance_kept_at' => now()]);
+            $review->update(['guidance_kept_at' => now(), 'kept_guidance' => $kept]);
         });
 
         return $review;

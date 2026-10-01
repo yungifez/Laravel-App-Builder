@@ -67,6 +67,7 @@ class DeveloperReviewController extends Controller
                 'answered_at' => $developerReview->answered_at?->toIso8601String(),
                 'withdrawn' => $developerReview->withdrawn_at !== null,
                 'guidance_kept' => $developerReview->guidance_kept_at !== null,
+                'kept_guidance' => $developerReview->kept_guidance,
             ],
         ]);
     }

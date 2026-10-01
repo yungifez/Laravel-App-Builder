@@ -44,6 +44,7 @@ class DeveloperReviewController extends Controller
                     'answer' => $review->answer,
                     'answered_at' => $review->answered_at?->toIso8601String(),
                     'guidance_kept_at' => $review->guidance_kept_at?->toIso8601String(),
+                    'kept_guidance' => $review->kept_guidance,
                 ])->all(),
         ]);
     }

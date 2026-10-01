@@ -28,11 +28,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property array{summary: string, findings: list<string>, guidance: list<string>}|null $answer
  * @property CarbonImmutable|null $answered_at
  * @property CarbonImmutable|null $guidance_kept_at
+ * @property list<string>|null $kept_guidance The points the owner kept, as they went into the notes
  * @property CarbonImmutable|null $withdrawn_at The owner took the question back before it was answered
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['user_id', 'feature_request_id', 'question', 'revision', 'bundle', 'answered_by', 'answer', 'answered_at', 'guidance_kept_at', 'withdrawn_at'])]
+#[Fillable(['user_id', 'feature_request_id', 'question', 'revision', 'bundle', 'answered_by', 'answer', 'answered_at', 'guidance_kept_at', 'kept_guidance', 'withdrawn_at'])]
 class DeveloperReview extends Model
 {
     /** @use HasFactory<DeveloperReviewFactory> */
@@ -51,6 +52,7 @@ class DeveloperReview extends Model
             'answer' => 'array',
             'answered_at' => 'datetime',
             'guidance_kept_at' => 'datetime',
+            'kept_guidance' => 'array',
             'withdrawn_at' => 'datetime',
         ];
     }

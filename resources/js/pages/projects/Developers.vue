@@ -28,6 +28,7 @@ type Review = {
     } | null;
     answered_at: string | null;
     guidance_kept_at: string | null;
+    kept_guidance: string[] | null;
 };
 
 const props = defineProps<{
@@ -121,15 +122,15 @@ watch(
                 </Form>
             </section>
 
-            <section v-if="reviews.length" class="space-y-10">
-                <h2 class="text-xl font-semibold tracking-[-0.02em]">
-                    Who you asked
+            <section v-if="reviews.length">
+                <h2 class="mb-4 text-xl font-semibold tracking-[-0.02em]">
+                    Your questions
                 </h2>
 
                 <article
                     v-for="review in reviews"
                     :key="review.id"
-                    class="space-y-4 border-t pt-6"
+                    class="space-y-4 border-t pt-6 not-first-of-type:mt-10"
                     data-test="review"
                 >
                     <div>
@@ -190,8 +191,9 @@ watch(
                                 class="mt-1.5 list-disc space-y-1 pl-5 text-sm"
                             >
                                 <li
-                                    v-for="(point, at) in review.answer
-                                        .guidance"
+                                    v-for="(
+                                        point, at
+                                    ) in review.kept_guidance ?? []"
                                     :key="at"
                                 >
                                     {{ point }}

@@ -72,6 +72,39 @@ class WriteReviewRequest
     protected function app(Project $project, NotesDocument $notes, array $capabilities): array
     {
         $observation = TestObservation::latestFor($project);
+
+        return [
+            $this->about($notes),
+            ...$this->rules($notes),
+            $this->areas($capabilities, $observation),
+            $this->services($project),
+            "## Tests\n\n".($observation === null ? 'The app\'s tests have not been run with coverage yet.' : trans_choice('{1} The app has 1 test.|[2,*] The app has :count tests.', $observation->testCount())),
+            $this->recent($project, null, $capabilities),
+        ];
+    }
+
+    /**
+     * The rules, decisions and guidance every change in the app follows.
+     *
+     * @return list<string|null>
+     */
+    protected function rules(NotesDocument $notes): array
+    {
+        return [
+            $this->items('Important rules', $notes->items('Rules')),
+            $this->items('Decisions the owner made', $notes->items(RecordDecision::SECTION)),
+            $this->items('Guidance the app already follows', $notes->items(UpdateProjectNotes::GUIDANCE_SECTION)),
+        ];
+    }
+
+    /**
+     * List the app's areas: what each is for, its code, how well it is
+     * tested and its rules.
+     *
+     * @param  array<string, Capability>  $capabilities
+     */
+    protected function areas(array $capabilities, ?TestObservation $observation): ?string
+    {
         $map = $observation?->map();
 
         $areas = array_map(function (Capability $capability) use ($map) {
@@ -87,16 +120,7 @@ class WriteReviewRequest
             return $line.($capability->rules() === [] ? '' : "\n\n".$this->items('#### Its rules', $capability->rules(), 4));
         }, array_values($capabilities));
 
-        return [
-            $this->about($notes),
-            $this->items('Important rules', $notes->items('Rules')),
-            $this->items('Decisions the owner made', $notes->items(RecordDecision::SECTION)),
-            $this->items('Guidance the app already follows', $notes->items(UpdateProjectNotes::GUIDANCE_SECTION)),
-            $areas === [] ? null : "## Areas of the app\n\n".implode("\n\n", $areas),
-            $this->services($project),
-            "## Tests\n\n".($observation === null ? 'The app\'s tests have not been run with coverage yet.' : trans_choice('{1} The app has 1 test.|[2,*] The app has :count tests.', $observation->testCount())),
-            $this->recent($project, null, $capabilities),
-        ];
+        return $areas === [] ? null : "## Areas of the app\n\n".implode("\n\n", $areas);
     }
 
     /**
@@ -123,7 +147,12 @@ class WriteReviewRequest
             $this->items('What it should do when done', $plan['acceptance_criteria'] ?? []),
             $this->items('Assumptions made without asking the owner', $plan['assumptions'] ?? []),
             $this->items('Questions the owner answered', array_map(fn (array $answer) => "{$answer['question']} {$answer['answer']}", $run->answers ?? [])),
-            $this->items('Areas it touches', array_values(array_filter(array_map(fn (string $key) => $capabilities[$key]->name ?? null, $targets)))),
+            ...$this->rules($notes),
+            // A change that stopped before it was understood names no
+            // areas, so the developer gets the whole app to find their way.
+            $targets === []
+                ? $this->areas($capabilities, TestObservation::latestFor($featureRequest->project))
+                : $this->items('Areas it touches', array_values(array_filter(array_map(fn (string $key) => $capabilities[$key]->name ?? null, $targets)))),
             filled($run?->context['text'] ?? null) ? "## Notes on those areas\n\n".$this->demote((string) $run->context['text']) : null,
             $this->items('What the checks showed', $proof->where('kind', '!=', 'gap')->pluck('text')->values()->all()),
             $this->items('What nothing checks yet', $proof->where('kind', 'gap')->pluck('text')->values()->all()),
@@ -242,7 +271,7 @@ class WriteReviewRequest
             return "## The code\n\nThe app has no code yet.";
         }
 
-        return "## The code\n\nDownload it above. It is the app as of commit `".substr($revision, 0, 12).'`.'
+        return "## The code\n\nDownload it from the question's page. It is the app as of commit `".substr($revision, 0, 12).'`.'
             .($changeApart ? ' The change is not in it yet: download it too, and apply it with `git apply`.' : '');
     }
 
