@@ -1002,7 +1002,10 @@ function setCompatibility(keep: boolean | null): void {
                                 aria-hidden="true"
                             />
                             <span class="text-muted-foreground"
-                                >And the changes you made to how it looks.</span
+                                >{{
+                                    changes.length ? 'And the' : 'The'
+                                }}
+                                changes you made to how it looks.</span
                             >
                         </li>
                     </ol>
