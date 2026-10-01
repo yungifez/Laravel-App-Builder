@@ -78,7 +78,7 @@ class FormatEditedFiles implements ShouldQueue
 
         $project = $preview->project;
 
-        if ($repository->head($project) !== $this->revision) {
+        if ($repository->head($project, $preview->branch()) !== $this->revision) {
             return;
         }
 
@@ -101,7 +101,7 @@ class FormatEditedFiles implements ShouldQueue
 
         if ($changed !== []) {
             try {
-                $sha = $repository->commitFiles($project, $this->revision, $changed, 'Format the code of recent design changes', null);
+                $sha = $repository->commitFiles($project, $this->revision, $changed, 'Format the code of recent design changes', null, $preview->branch());
 
                 // An edit the owner sends on the version before continues.
                 $formatted->record($project, $this->revision, $sha);

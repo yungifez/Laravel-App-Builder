@@ -2122,6 +2122,20 @@ clean.
 Edits collect on a visual-session branch, commit on save, and get light
 verification.
 
+**Designing a change before it is kept.** A change that waits to be kept has
+its own branch, `changes/{id}` (`OpenChangeForDesign`). The branch holds the
+change's base, the changes it follows up on, and then the change itself.
+`design_base` marks the commit where the change's own code starts. The copy of
+the change is an editable preview that runs from this branch, so the owner
+designs "After" as they design the app. `Preview::branch()` names the branch
+that design edits, undo, formatting and rebuilds use. Each edit records its
+change in `visual_edits.feature_request_id`. After each commit on the branch,
+`FollowDesignedChange` reads the change's patch back from `design_base` to the
+branch head (`AmendChangeFromDesign`) and rebuilds the copy. So keeping the
+change keeps the edits, and the app does not move until then. The design panel
+lists only the edits of what is on show. A copy started before this has no
+branch; design mode then shows the app without the change.
+
 Direct edits are written without the app's formatting, so the preview shows
 them in about a second. When the editable preview shows the newest version,
 `FormatEditedFiles` waits `builder.preview.format.after_seconds` (10 s). Then

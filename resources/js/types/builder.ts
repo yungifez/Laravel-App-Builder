@@ -349,6 +349,11 @@ export type Preview = {
     error: string | null;
     url: string;
     expires_at: string | null;
+    // A copy of a change the owner can design on, as they do the app.
+    editable: boolean;
+    origin: string;
+    revision: string | null;
+    updating: boolean;
 };
 
 // A picture the owner attached to a message, to show what they mean.

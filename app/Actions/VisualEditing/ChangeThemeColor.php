@@ -57,6 +57,7 @@ class ChangeThemeColor
                     [$file => (string) ThemeColors::write($contents, $mode, $token, $after)],
                     "Change the app's {$token} colour\n\nFor its {$mode} look, in {$file}.",
                     ['name' => $owner->name, 'email' => $owner->email],
+                    $preview->branch(),
                 );
             } catch (RepositoryConflict $exception) {
                 throw ValidationException::withMessages(['edit' => $exception->getMessage()]);
@@ -65,6 +66,7 @@ class ChangeThemeColor
             // The new commit rebuilds the editable preview (ProjectCommitted).
             return $project->visualEdits()->create([
                 'experiment_id' => $project->experiment_id,
+                'feature_request_id' => $preview->feature_request_id,
                 'user_id' => $owner->id,
                 'file' => $file,
                 'line' => substr_count(substr($contents, 0, $found['offset']), "\n") + 1,

@@ -205,7 +205,11 @@ class ProjectController extends Controller
             // And the rows of one table, when the owner opens it.
             'rows' => Inertia::optional(fn () => $request->filled('table') ? $readPreviewRows->handle($project, $request->string('table')->toString()) : null),
             'change' => fn () => $change === null ? null : $describeFeatureRequest->handle($change),
-            'edits' => fn () => $project->visualEdits()->where('experiment_id', $project->experiment_id)->latest('id')->limit(10)->get()
+            // The design edits made on what is on show: the change's copy
+            // while the owner tries one, else the app.
+            'edits' => fn () => $project->visualEdits()->where('experiment_id', $project->experiment_id)
+                ->where('feature_request_id', is_string($request->query('copy')) && Str::isUuid($request->query('copy')) ? $project->featureRequests()->where('uuid', $request->query('copy'))->value('id') : null)
+                ->latest('id')->limit(10)->get()
                 ->map(fn (VisualEdit $edit) => [
                     'id' => $edit->uuid,
                     'tag' => $edit->tag,

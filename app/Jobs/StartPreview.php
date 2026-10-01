@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Actions\Features\OpenChangeForDesign;
 use App\Actions\Previews\AllocatePreviewPort;
 use App\Actions\Previews\StopPreview;
 use App\Actions\Workspaces\ProvisionWorkspace;
@@ -63,6 +64,7 @@ class StartPreview implements ShouldQueue
         StopPreview $stopPreview,
         ProjectRepository $repository,
         WorkspaceFiles $workspaceFiles,
+        OpenChangeForDesign $openChangeForDesign,
     ): void {
         if ($this->preview->fresh()?->status !== PreviewStatus::Starting) {
             return;
@@ -76,9 +78,15 @@ class StartPreview implements ShouldQueue
             $this->preview->update(['workspace_id' => $workspace->id]);
 
             $driver = $workspaces->driver($workspace->driver);
-            $repository->withCheckout($project, $featureRequest === null ? $this->preview->revision : $featureRequest->base_revision, fn (string $source) => $driver->copyDirectory((string) $workspace->driver_id, $source));
+            // A change the owner can design on runs from its own branch, which
+            // already holds the change, the ones it follows and their edits.
+            if ($featureRequest !== null && $this->preview->editable) {
+                $this->preview->update(['revision' => $openChangeForDesign->handle($featureRequest)]);
+            }
 
-            foreach ($featureRequest?->lineage() ?? [] as $position => $request) {
+            $repository->withCheckout($project, $featureRequest === null || $this->preview->editable ? $this->preview->revision : $featureRequest->base_revision, fn (string $source) => $driver->copyDirectory((string) $workspace->driver_id, $source));
+
+            foreach ($featureRequest === null || $this->preview->editable ? [] : $featureRequest->lineage() as $position => $request) {
                 $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);
                 $driver->writeFile((string) $workspace->driver_id, $patch, (string) $request->patch);
 

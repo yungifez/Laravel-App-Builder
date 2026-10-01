@@ -96,6 +96,16 @@ class Preview extends Model
     }
 
     /**
+     * Get the branch the preview runs and design edits on it go to: the
+     * change's design branch for a copy of a change, else the branch the
+     * owner works on.
+     */
+    public function branch(): string
+    {
+        return $this->featureRequest?->designBranch() ?? $this->project->branch();
+    }
+
+    /**
      * Get the workspace the preview runs in.
      *
      * @return BelongsTo<Workspace, $this>

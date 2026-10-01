@@ -73,7 +73,7 @@ class RebuildPreview implements ShouldQueue
     }
 
     /**
-     * Bring a running editable preview up to the project's latest commit:
+     * Bring a running editable preview up to its branch's latest commit:
      * copy in the files that changed, mark them for point-and-edit again,
      * and rebuild the frontend (only what changed, when the build watches). Several quick edits share one rebuild,
      * because each rebuild goes to whatever the latest commit is then.
@@ -87,7 +87,7 @@ class RebuildPreview implements ShouldQueue
         }
 
         $project = $preview->project;
-        $head = $repository->head($project);
+        $head = $repository->head($project, $preview->branch());
 
         if ($head === $preview->revision) {
             return;

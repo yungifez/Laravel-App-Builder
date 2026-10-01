@@ -88,6 +88,7 @@ class ChangeVisualText
                 [$location->file => $changed],
                 "Change the words in {$name}\n\nIn {$location}.",
                 ['name' => $owner->name, 'email' => $owner->email],
+                $preview->branch(),
             );
         } catch (RepositoryConflict $exception) {
             throw ValidationException::withMessages(['edit' => $exception->getMessage()]);
@@ -98,6 +99,7 @@ class ChangeVisualText
         // The new commit rebuilds the editable preview (ProjectCommitted).
         return $project->visualEdits()->create([
             'experiment_id' => $project->experiment_id,
+            'feature_request_id' => $preview->feature_request_id,
             'user_id' => $owner->id,
             'file' => $location->file,
             'line' => $location->line,
@@ -156,6 +158,7 @@ class ChangeVisualText
                     [$file => substr_replace((string) $contents, $after, $words['offset'], $words['length'])],
                     "Change the words shown in {$name}\n\nIn {$file}:{$line}:{$column}, shown by {$location}.",
                     ['name' => $owner->name, 'email' => $owner->email],
+                    $preview->branch(),
                 );
             } catch (RepositoryConflict $exception) {
                 throw ValidationException::withMessages(['edit' => $exception->getMessage()]);
@@ -167,6 +170,7 @@ class ChangeVisualText
             // puts that file back.
             return $project->visualEdits()->create([
                 'experiment_id' => $project->experiment_id,
+                'feature_request_id' => $preview->feature_request_id,
                 'user_id' => $owner->id,
                 'file' => $file,
                 'line' => $line,

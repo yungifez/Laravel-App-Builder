@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\FeatureRequestStatus;
 use App\Models\Concerns\HasPublicId;
 use Carbon\CarbonImmutable;
 use Database\Factories\VisualEditFactory;
@@ -18,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $uuid Names the row in links and requests
  * @property int $project_id
  * @property int|null $experiment_id The idea it was made in; null is the main app
+ * @property int|null $feature_request_id The change it was made on while that waited to be kept
  * @property int $user_id
  * @property string $file
  * @property int $line
@@ -34,7 +36,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['experiment_id', 'user_id', 'file', 'line', 'column', 'tag', 'device', 'changes', 'classes_before', 'classes_after', 'base_revision', 'commit_sha', 'revert_sha', 'reverted_at'])]
+#[Fillable(['experiment_id', 'feature_request_id', 'user_id', 'file', 'line', 'column', 'tag', 'device', 'changes', 'classes_before', 'classes_after', 'base_revision', 'commit_sha', 'revert_sha', 'reverted_at'])]
 class VisualEdit extends Model
 {
     /** @use HasFactory<VisualEditFactory> */
@@ -199,11 +201,26 @@ class VisualEdit extends Model
     }
 
     /**
+     * Get the change the edit was made on, if any.
+     *
+     * @return BelongsTo<FeatureRequest, $this>
+     */
+    public function featureRequest(): BelongsTo
+    {
+        return $this->belongsTo(FeatureRequest::class);
+    }
+
+    /**
      * Get the branch the edit lives on now, or null when its idea was
-     * thrown away.
+     * thrown away. An edit on a change lives on the change's design branch
+     * only while the change waits; once kept, it is in the change's commit.
      */
     public function branch(): ?string
     {
+        if ($this->featureRequest !== null) {
+            return $this->featureRequest->status === FeatureRequestStatus::Generated ? $this->featureRequest->designBranch() : null;
+        }
+
         return Experiment::branchOf($this->experiment);
     }
 

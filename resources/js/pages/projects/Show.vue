@@ -43,6 +43,7 @@ import {
     reactive,
     ref,
     watch,
+    watchEffect,
 } from 'vue';
 import { toast } from 'vue-sonner';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
@@ -214,9 +215,13 @@ const besideChat = computed(() =>
         : undefined,
 );
 
+// While the owner designs a change they are trying, the designer works on
+// its copy instead of the app; set below, once the change is known.
+const designedCopy = ref<EditorPreview | null>(null);
+
 const app = useAppPreview({
     projectId: () => props.project.id,
-    preview: () => props.preview,
+    preview: () => designedCopy.value ?? props.preview,
     element: () => props.element,
     edits: () => props.edits,
     colors: () => props.colors ?? [],
@@ -416,7 +421,7 @@ const showingTabs = computed(() => [
 // Any page of the app is one pick away, as in a browser's address bar,
 // read from the app when the owner looks.
 function openPage(path: string): void {
-    if (copy.value !== null) {
+    if (copyFrameOnShow.value) {
         openInChangeCopy(changeCopyOrigin.value + path);
 
         return;
@@ -429,7 +434,7 @@ function openPage(path: string): void {
 // A link from beside the app, in an email or a sign-in, opens its page in
 // the app.
 function openInApp(href: string): void {
-    if (copy.value !== null) {
+    if (copyFrameOnShow.value) {
         openInChangeCopy(href);
 
         return;
@@ -443,7 +448,9 @@ function openInApp(href: string): void {
 // they are deciding on without opening anything. They can look at their
 // app without it, and its copy can be started again once it has stopped.
 const decidingOn = computed(() =>
-    props.change?.featureRequest.can_accept && !designing.value
+    props.change?.featureRequest.can_accept &&
+    // A copy started before copies could be designed shows the app instead.
+    (!designing.value || props.change.preview?.editable !== false)
         ? props.change
         : null,
 );
@@ -546,6 +553,25 @@ const changeCopyRuns = computed(
 const copy = computed(() =>
     changeCopyRuns.value ? decidingOn.value!.featureRequest.id : null,
 );
+watchEffect(() => {
+    const preview = changeCopy.value;
+
+    designedCopy.value =
+        designing.value && preview !== null && preview.editable
+            ? {
+                  id: preview.id,
+                  status: preview.status,
+                  error: preview.error,
+                  origin: preview.origin,
+                  revision: preview.revision,
+                  updating: preview.updating,
+              }
+            : null;
+});
+// The copy's own frame shows it unless the designer has it.
+const copyFrameOnShow = computed(
+    () => copy.value !== null && designedCopy.value === null,
+);
 watch(
     copy,
     (value) => {
@@ -592,7 +618,7 @@ function openInChangeCopy(href: string): void {
 // Back, forward, reload and the page on show, for the app or for the copy
 // of the change the owner tries.
 const browsing = computed(() =>
-    copy.value === null
+    !copyFrameOnShow.value
         ? {
               path: app.path,
               canGoBack: app.canGoBack,
@@ -1582,7 +1608,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                 v-if="designing"
                 class="flex-1"
                 :project-id="project.id"
-                :preview="preview"
+                :preview="designedCopy ?? preview"
                 :edits="edits"
                 :state="app"
             />
@@ -2277,7 +2303,7 @@ function sendOnEnter(event: KeyboardEvent): void {
             />
             <div
                 v-if="changeCopy"
-                v-show="showing === 'app' || !changeCopyRuns"
+                v-show="(showing === 'app' || !changeCopyRuns) && !designedCopy"
                 class="relative min-h-0 flex-1 overflow-hidden rounded-lg border bg-muted/40"
                 data-test="change-copy"
             >
@@ -2399,12 +2425,12 @@ function sendOnEnter(event: KeyboardEvent): void {
                 @open="openInApp"
             />
             <div
-                v-show="!changeCopy && showing === 'app'"
+                v-show="(!changeCopy || designedCopy) && showing === 'app'"
                 class="min-h-0 flex-1"
             >
                 <AppPreview
                     :project-id="project.id"
-                    :preview="preview"
+                    :preview="designedCopy ?? preview"
                     :state="app"
                 />
             </div>
@@ -2412,7 +2438,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                 v-if="designing && pane === 'app'"
                 class="h-[45svh] shrink-0 rounded-lg border lg:hidden"
                 :project-id="project.id"
-                :preview="preview"
+                :preview="designedCopy ?? preview"
                 :edits="edits"
                 :state="app"
             />

@@ -41,6 +41,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $solution_key
  * @property string|null $summary
  * @property string|null $patch The code change; notes are not part of it
+ * @property string|null $design_base The commit on its design branch where the change's own code starts
  * @property array<string, array{before: string|null, after: string|null}>|null $note_changes The notes the change rewrote, by path, as they were and as it left them
  * @property list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>|null $steps
  * @property list<string>|null $acceptance Protected acceptance test files that apply to the change
@@ -54,7 +55,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['experiment_id', 'project_id', 'user_id', 'parent_id', 'retry_of_id', 'prompt', 'selection', 'images', 'live_errors', 'tidy', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'note_changes', 'steps', 'acceptance', 'error', 'decision_model_calls', 'base_revision', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at', 'dismissed_at'])]
+#[Fillable(['experiment_id', 'project_id', 'user_id', 'parent_id', 'retry_of_id', 'prompt', 'selection', 'images', 'live_errors', 'tidy', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'note_changes', 'steps', 'acceptance', 'error', 'decision_model_calls', 'base_revision', 'design_base', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at', 'dismissed_at'])]
 class FeatureRequest extends Model
 {
     /**
@@ -221,6 +222,16 @@ class FeatureRequest extends Model
     public function experiment(): BelongsTo
     {
         return $this->belongsTo(Experiment::class);
+    }
+
+    /**
+     * Get the branch the owner designs the change on while it waits to be
+     * kept: its base, the changes it follows up on, then its own code and
+     * the owner's design edits. Named by number only, as ideas are.
+     */
+    public function designBranch(): string
+    {
+        return "changes/{$this->id}";
     }
 
     /**

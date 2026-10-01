@@ -41,7 +41,7 @@ class InspectElement
     public function handle(Preview $preview, SourceLocation $location): array
     {
         $project = $preview->project;
-        $head = $this->repository->head($project);
+        $head = $this->repository->head($project, $preview->branch());
         $contents = $this->repository->show($project, $head, $location->file);
         $followed = $preview->revision === null ? $location : $this->followLocation->handle($project, $preview->revision, $head, $location);
         $stale = $contents !== null && $followed === null;

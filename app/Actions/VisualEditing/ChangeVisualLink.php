@@ -73,6 +73,7 @@ class ChangeVisualLink
                 [$location->file => $changed],
                 "Change where {$name} goes\n\nIn {$location}.",
                 ['name' => $owner->name, 'email' => $owner->email],
+                $preview->branch(),
             );
         } catch (RepositoryConflict $exception) {
             throw ValidationException::withMessages(['edit' => $exception->getMessage()]);
@@ -83,6 +84,7 @@ class ChangeVisualLink
         // The new commit rebuilds the editable preview (ProjectCommitted).
         return $project->visualEdits()->create([
             'experiment_id' => $project->experiment_id,
+            'feature_request_id' => $preview->feature_request_id,
             'user_id' => $owner->id,
             'file' => $location->file,
             'line' => $location->line,

@@ -107,6 +107,23 @@ class ProjectRepository
     }
 
     /**
+     * Determine whether the branch exists.
+     */
+    public function hasBranch(Project $project, string $branch): bool
+    {
+        return $this->git($project, ['rev-parse', '--verify', '--quiet', "refs/heads/{$branch}"], throw: false)->successful();
+    }
+
+    /**
+     * Get the code changed from one commit to another as a patch, the way a
+     * change keeps its code: binary files included, the notes left out.
+     */
+    public function patch(Project $project, string $from, string $to): string
+    {
+        return $this->git($project, ['diff', '--binary', '--no-color', '--no-ext-diff', $from, $to, '--', '.', ':(exclude)'.ProjectNotes::directory()])->output();
+    }
+
+    /**
      * Start a branch at a commit.
      *
      * @throws RuntimeException when the branch exists or the name is not allowed.

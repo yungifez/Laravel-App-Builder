@@ -8,6 +8,7 @@ use App\Actions\Runs\NarrateWork;
 use App\Context\ProjectContext;
 use App\Context\ProjectNotes;
 use App\Enums\FeatureRequestStatus;
+use App\Enums\PreviewStatus;
 use App\Enums\RunStatus;
 use App\Features\NewCode;
 use App\Features\OwnerWording;
@@ -15,6 +16,7 @@ use App\Features\PatchSummary;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\RunEvent;
+use App\Projects\ProjectRepository;
 use App\Runs\Drivers\WorkerDriver;
 use App\Runs\Plan;
 use Illuminate\Support\Str;
@@ -25,6 +27,7 @@ class DescribeFeatureRequest
         private DescribeRunProgress $describeRunProgress,
         private NarrateWork $narrateWork,
         private DescribeProof $describeProof,
+        private ProjectRepository $repository,
     ) {}
 
     /**
@@ -298,7 +301,9 @@ class DescribeFeatureRequest
     }
 
     /**
-     * Get the latest preview for the page.
+     * Get the latest preview for the page. A copy the owner can design on
+     * also says which version of the change it runs and whether an edit is
+     * still going in, as the app's own preview does.
      *
      * @return array<string, mixed>|null
      */
@@ -312,6 +317,12 @@ class DescribeFeatureRequest
             'error' => OwnerWording::message($preview->error),
             'url' => $preview->url(),
             'expires_at' => $preview->expires_at?->toIso8601String(),
+            'editable' => $preview->editable,
+            'origin' => rtrim($preview->url(), '/'),
+            'revision' => $preview->revision,
+            'updating' => $preview->editable && $preview->status === PreviewStatus::Ready && $preview->error === null
+                && $this->repository->hasBranch($featureRequest->project, $featureRequest->designBranch())
+                && $preview->revision !== $this->repository->head($featureRequest->project, $featureRequest->designBranch()),
         ];
     }
 }
