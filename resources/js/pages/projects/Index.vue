@@ -66,6 +66,25 @@ function useStarter(picked: Starter): void {
     purposeField.value.focus();
 }
 
+// Leaving a starter takes back the words it filled in, but keeps any the
+// owner changed, as those are theirs.
+function clearStarter(): void {
+    if (starter.value === null) {
+        return;
+    }
+
+    if (purposeField.value?.value.trim() === starter.value.purpose) {
+        purposeField.value.value = '';
+    }
+
+    if (nameField.value?.value.trim() === starter.value.name) {
+        nameField.value.value = '';
+    }
+
+    starter.value = null;
+    purposeField.value?.focus();
+}
+
 const query = ref('');
 const shown = computed(() => {
     const words = query.value.trim().toLowerCase();
@@ -270,7 +289,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
                             type="button"
                             class="min-h-11 text-sm text-muted-foreground underline-offset-4 select-none hover:text-foreground hover:underline sm:min-h-0"
                             data-test="starter-clear"
-                            @click="starter = null"
+                            @click="clearStarter"
                         >
                             Start from something else
                         </button>
