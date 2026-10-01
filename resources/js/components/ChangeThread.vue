@@ -1502,17 +1502,23 @@ const checks = computed(() => {
                         <!-- Kept or undone -->
                         <div
                             v-if="request.commit_sha"
-                            class="flex items-center gap-2"
+                            class="flex items-start gap-2"
                             data-test="change-decision"
                         >
+                            <!-- The icon keeps its size beside long text,
+                                 and sits on the first line. -->
                             <template v-if="request.reverted_at">
-                                <Undo2 class="size-4 text-muted-foreground" />
+                                <Undo2
+                                    class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                                />
                                 <span class="text-muted-foreground"
                                     >You undid this change.</span
                                 >
                             </template>
                             <template v-else>
-                                <CircleCheck class="size-4 text-green-600" />
+                                <CircleCheck
+                                    class="mt-0.5 size-4 shrink-0 text-green-600"
+                                />
                                 <span
                                     >Kept. It's part of your app.<span
                                         v-if="request.tests_added > 0"
