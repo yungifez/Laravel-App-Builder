@@ -107,6 +107,8 @@ const props = defineProps<{
     preview: EditorPreview | null;
     edits: VisualEditSummary[];
     state: AppPreviewState;
+    // The designer works on a change the owner has not kept yet.
+    onChange?: boolean;
 }>();
 
 const asking = ref(false);
@@ -2361,7 +2363,13 @@ const recent = computed(() => {
                 data-test="saved"
             >
                 <Check class="size-3.5" />
-                {{ state.upToDate ? 'Saved · in your app' : 'Saved' }}
+                {{
+                    !state.upToDate
+                        ? 'Saved'
+                        : onChange
+                          ? 'Saved · in this change'
+                          : 'Saved · in your app'
+                }}
             </p>
         </footer>
     </div>

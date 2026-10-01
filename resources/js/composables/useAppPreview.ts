@@ -1165,9 +1165,16 @@ export function useAppPreview(source: Source) {
     );
 
     // Open the app once it is running, and reload it after each rebuild.
+    // Another app on show, as a change's copy is when the designer takes
+    // it, opens fresh through the builder, not behind the one before.
     watch(
-        () => [source.preview()?.status, source.preview()?.revision] as const,
-        ([status], previous) => {
+        () =>
+            [
+                source.preview()?.status,
+                source.preview()?.revision,
+                source.preview()?.id,
+            ] as const,
+        ([status, , id], previous) => {
             const preview = source.preview();
 
             if (status !== 'ready' || preview === null) {
@@ -1176,7 +1183,14 @@ export function useAppPreview(source: Source) {
                 return;
             }
 
-            if (frames.value.length === 0) {
+            if (frames.value.length === 0 || previous?.[2] !== id) {
+                // A part picked on the app before is not on this one.
+                if (previous?.[2] !== undefined && previous[2] !== id) {
+                    deselect();
+                    head.value = null;
+                    last.value = null;
+                }
+
                 alike = null;
                 frames.value = [
                     {
