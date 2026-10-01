@@ -37,6 +37,7 @@
     30. [Backwards compatibility](direction/30-backwards-compatibility.md)
     31. [External workers](direction/31-external-workers.md)
     32. [Deterministic verification engines](direction/32-deterministic-verification-engines.md)
+    33. [Architectural boundaries and the chaos engine](direction/33-architecture-boundaries-and-chaos.md)
 - **[source/](source/)**: the original planning documents.
     - [Implementation plan v1](source/implementation-plan-v1.md): gates G0–G6,
       the invitation contract and the pilot plan.
