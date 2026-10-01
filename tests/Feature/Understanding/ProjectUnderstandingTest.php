@@ -367,6 +367,8 @@ class ProjectUnderstandingTest extends TestCase
         $this->actingAs($this->owner)
             ->get(route('projects.understanding.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page
+                // The same count the builder's header shows for the app.
+                ->where('tests', 2)
                 ->where('areas.0.key', 'plans')
                 ->where('areas.0.checked_by', 2)
                 // What they check, in the tests' own words.

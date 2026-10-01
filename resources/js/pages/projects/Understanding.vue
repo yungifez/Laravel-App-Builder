@@ -37,6 +37,9 @@ import type {
 
 const props = defineProps<{
     project: Pick<ProjectSummary, 'id' | 'name'>;
+    // The app's own tests, as last run; the builder's header links here
+    // with this count.
+    tests: number | null;
     revision: string | null;
     about: { introduction: string; sections: NotesSection[] };
     guidance: string | null;
@@ -171,8 +174,24 @@ const rules = computed(() =>
     props.areas.reduce((total, area) => total + area.rules.length, 0),
 );
 
-// How much I know, said in one quiet line under the heading.
-const facts = computed(() =>
+// The header's count leads, in the same words, and how many of those tests
+// the kept changes added follows it.
+const tests = computed(() => {
+    const added = props.proven.tests;
+
+    if (props.tests === null) {
+        return added > 0
+            ? [`${added} ${added === 1 ? 'test' : 'tests'} added`]
+            : [];
+    }
+
+    const total = `${props.tests} ${props.tests === 1 ? 'test' : 'tests'}`;
+
+    return [added > 0 ? `${total}, ${added} added by changes` : total];
+});
+
+// The other counts, each said only when there is something to count.
+const counts = computed(() =>
     [
         [props.areas.length, 'part', 'parts'],
         [rules.value, 'rule', 'rules'],
@@ -190,7 +209,6 @@ const facts = computed(() =>
             'thing tidied in the background',
             'things tidied in the background',
         ],
-        [props.proven.tests, 'test added', 'tests added'],
         [
             props.proven.screens,
             'screen checked on a phone',
@@ -199,9 +217,11 @@ const facts = computed(() =>
     ]
         // Zeros say nothing the empty sections below don't already say.
         .filter(([count]) => count !== 0)
-        .map(([count, one, many]) => `${count} ${count === 1 ? one : many}`)
-        .join(' · '),
+        .map(([count, one, many]) => `${count} ${count === 1 ? one : many}`),
 );
+
+// How much I know, said in one quiet line under the heading.
+const facts = computed(() => [...tests.value, ...counts.value].join(' · '));
 
 // Linking a part to another scrolls there and briefly marks it, so the
 // owner sees which card the link meant.

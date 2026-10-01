@@ -42,8 +42,9 @@ class ProjectUnderstandingController extends Controller
         $context = $revision === null ? null : $readProjectContext->current($project);
         $notes = NotesDocument::parse($context->project ?? '');
         $names = array_map(fn (Capability $capability) => $capability->name, $context->capabilities ?? []);
-        // Which of the app's tests run each area's own code, as last seen.
-        $map = $context === null ? null : TestObservation::latestFor($project)?->map();
+        // The app's own tests, as last run, and which run each area's code.
+        $observation = TestObservation::latestFor($project);
+        $map = $context === null ? null : $observation?->map();
         $askedFor = $context === null ? [] : $describeAskedFor->handle($project, $repository->head($project) ?: null);
         $kept = $project->featureRequests()->whereNotNull('accepted_at')->whereNull('reverted_at');
         // The owner's last look, before this one moves it on.
@@ -52,6 +53,8 @@ class ProjectUnderstandingController extends Controller
 
         return Inertia::render('projects/Understanding', [
             'project' => ['id' => $project->uuid, 'name' => $project->name],
+            // The count the builder's header links here with.
+            'tests' => $observation?->testCount(),
             'revision' => $revision,
             'about' => [
                 'introduction' => $notes->introduction,
