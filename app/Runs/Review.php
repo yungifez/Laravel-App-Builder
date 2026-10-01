@@ -4,6 +4,7 @@ namespace App\Runs;
 
 use App\Runs\Exceptions\ConstructionFailed;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 
 /**
  * A reviewer's verdict on a verified change, with findings tied to evidence,
@@ -34,6 +35,7 @@ final readonly class Review
      */
     public static function fromModelOutput(array $data): self
     {
+        $data = self::shortened($data);
         $validator = Validator::make($data, [
             'approved' => ['required', 'boolean'],
             'summary' => ['required', 'string', 'max:2000'],
@@ -81,6 +83,38 @@ final readonly class Review
         ], $valid['verify'] ?? []));
 
         return new self((bool) $valid['approved'] && $blocking === [], $valid['summary'], $findings, $changes, $verify);
+    }
+
+    /**
+     * Shorten the words that are only shown, so one long sentence does not
+     * throw away a change that took minutes to make and check. What the
+     * review decides (approval, severity, which test proves what) is still
+     * checked as it came.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected static function shortened(array $data): array
+    {
+        $shorten = fn (mixed $text, int $max) => is_string($text) ? Str::limit($text, $max - 1, '…') : $text;
+
+        $data['summary'] = $shorten($data['summary'] ?? null, 2000);
+
+        foreach (['findings' => ['summary' => 2000], 'changes' => ['behavior' => 200, 'before' => 1000, 'now' => 1000]] as $list => $fields) {
+            if (! is_array($data[$list] ?? null)) {
+                continue;
+            }
+
+            foreach ($data[$list] as $index => $item) {
+                foreach ($fields as $field => $max) {
+                    if (is_array($item) && array_key_exists($field, $item)) {
+                        $data[$list][$index][$field] = $shorten($item[$field], $max);
+                    }
+                }
+            }
+        }
+
+        return $data;
     }
 
     /**

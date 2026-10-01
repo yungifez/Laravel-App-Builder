@@ -132,6 +132,17 @@ class ModelOutputTest extends TestCase
         Review::fromModelOutput(['approved' => 'yes', 'summary' => 'Fine.', 'findings' => [['severity' => 'critical', 'summary' => 'x']]]);
     }
 
+    public function test_a_review_with_a_sentence_too_long_to_show_is_shortened_not_refused()
+    {
+        $review = Review::fromModelOutput(['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'changes' => [
+            ['area' => 'Teams', 'behavior' => str_repeat('Members see a count. ', 20), 'before' => 'No count.', 'now' => 'A count.'],
+        ]]);
+
+        $this->assertTrue($review->approved);
+        $this->assertSame(200, mb_strlen($review->changes[0]['behavior']));
+        $this->assertStringEndsWith('…', $review->changes[0]['behavior']);
+    }
+
     public function test_deleted_and_weakened_tests_are_found()
     {
         $patch = implode("\n", [
