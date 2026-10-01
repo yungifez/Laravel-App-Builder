@@ -8,6 +8,7 @@ use App\Models\Project;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Str;
 
 class ReadPreviewLog
 {
@@ -19,11 +20,17 @@ class ReadPreviewLog
     public function __construct(private WorkspaceManager $workspaces) {}
 
     /**
-     * Get the app on show, when it runs.
+     * Get the app on show, when it runs. While the owner tries a change, the
+     * request names it as the copy, and the builder's tools read and change
+     * that copy instead of the app.
      */
     public function preview(Project $project): ?Preview
     {
-        $preview = $project->previews()->whereNull('feature_request_id')->where('editable', true)->latest('id')->first();
+        $copy = request()->query('copy');
+
+        $preview = is_string($copy) && Str::isUuid($copy)
+            ? $project->featureRequests()->where('uuid', $copy)->first()?->previews()->latest('id')->first()
+            : $project->previews()->whereNull('feature_request_id')->where('editable', true)->latest('id')->first();
 
         return $preview?->status === PreviewStatus::Ready && $preview->workspace !== null ? $preview : null;
     }

@@ -83,17 +83,27 @@ class PreviewEmailsTest extends TestCase
         $this->driver->files["{$copyWorkspace->driver_id}:storage/logs/laravel.log"] = $this->logOf(fn () => Mail::mailer('log')->raw('Confirm your address', fn ($message) => $message->to('grace@example.test')->subject('Verify your email address')));
 
         $this->actingAs($this->owner)
-            ->get(route('projects.show', ['project' => $this->project, 'change' => $change->uuid]))
-            ->assertInertia(fn (Assert $page) => $page->missing('change_emails')->reloadOnly('change_emails', fn (Assert $page) => $page
-                ->count('change_emails', 1)
-                ->where('change_emails.0.to', 'grace@example.test')
-                ->where('change_emails.0.subject', 'Verify your email address')));
+            ->get(route('projects.show', ['project' => $this->project, 'change' => $change->uuid, 'copy' => $change->uuid]))
+            ->assertInertia(fn (Assert $page) => $page->missing('emails')->reloadOnly('emails', fn (Assert $page) => $page
+                ->count('emails', 1)
+                ->where('emails.0.to', 'grace@example.test')
+                ->where('emails.0.subject', 'Verify your email address')));
+
+        // Without the copy named, the app's own email shows.
+        $this->get(route('projects.show', ['project' => $this->project, 'change' => $change->uuid]))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('emails', fn (Assert $page) => $page->where('emails.0.subject', 'App')));
+
+        // Another app's change names no copy here.
+        $elsewhere = FeatureRequest::factory()->generated()->create(['user_id' => $this->owner->id]);
+
+        $this->get(route('projects.show', ['project' => $this->project, 'copy' => $elsewhere->uuid]))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('emails', fn (Assert $page) => $page->where('emails', [])));
 
         // A copy that stopped has sent nothing the owner can follow.
         $copy->update(['status' => 'stopped']);
 
-        $this->get(route('projects.show', ['project' => $this->project, 'change' => $change->uuid]))
-            ->assertInertia(fn (Assert $page) => $page->reloadOnly('change_emails', fn (Assert $page) => $page->where('change_emails', [])));
+        $this->get(route('projects.show', ['project' => $this->project, 'change' => $change->uuid, 'copy' => $change->uuid]))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('emails', fn (Assert $page) => $page->where('emails', [])));
     }
 
     public function test_there_is_no_email_before_the_app_runs_or_sends_any()

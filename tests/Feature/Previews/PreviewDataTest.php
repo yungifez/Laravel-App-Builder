@@ -3,6 +3,7 @@
 namespace Tests\Feature\Previews;
 
 use App\Actions\Projects\CreateProject;
+use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\Project;
 use App\Models\User;
@@ -144,6 +145,22 @@ class PreviewDataTest extends TestCase
         $changes = collect($this->driver->executed)->where('command.1', '-r')->values();
         $this->assertSame(['--', 'members', '7', 'name', '0', 'Ada Lovelace'], array_slice($changes[0]['command'], 3));
         $this->assertSame(['--', 'members', '7', 'bio', '1', ''], array_slice($changes[1]['command'], 3));
+    }
+
+    public function test_while_the_owner_tries_a_change_a_value_is_changed_in_its_copy()
+    {
+        $change = FeatureRequest::factory()->generated()->create(['project_id' => $this->project->id, 'user_id' => $this->owner->id]);
+        $copy = Workspace::factory()->create(['user_id' => $this->owner->id]);
+        Preview::factory()->ready()->create(['project_id' => $this->project->id, 'feature_request_id' => $change->id, 'workspace_id' => $copy->id]);
+        $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(exitCode: 0, output: $command[1] === '-r'
+            ? json_encode(['changed' => 1, 'refused' => false])
+            : json_encode(['tables' => [['table' => 'users', 'rows' => 1]]]), errorOutput: '', durationMs: 5);
+
+        $this->actingAs($this->owner)
+            ->patch(route('preview-rows.update', ['project' => $this->project, 'copy' => $change->uuid]), ['table' => 'users', 'row' => '1', 'column' => 'role', 'value' => 'trainer'])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame([$copy->driver_id], collect($this->driver->executed)->where('command.1', '-r')->pluck('workspace')->all());
     }
 
     public function test_a_value_the_app_refuses_is_told_and_what_visitors_sign_in_with_is_never_changed()

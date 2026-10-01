@@ -10,6 +10,8 @@ import type { ScheduledTask } from '@/types';
 defineProps<{
     projectId: string;
     schedule: ScheduledTask[] | null | undefined;
+    // The change the owner is trying, when the tools work on its copy.
+    copy?: string | null;
 }>();
 
 const emit = defineEmits<{ ran: [] }>();
@@ -89,7 +91,12 @@ function next(iso: string | null): string {
                 </div>
                 <Form
                     v-bind="
-                        PreviewScheduledTaskRunController.store.form(projectId)
+                        PreviewScheduledTaskRunController.store.form(
+                            projectId,
+                            {
+                                query: { copy },
+                            },
+                        )
                     "
                     :transform="() => ({ task: task.name })"
                     :options="{

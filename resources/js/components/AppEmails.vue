@@ -13,8 +13,8 @@ const props = defineProps<{
     emails: SentEmail[] | undefined;
     // Where the app on show is served. A link there opens in the app.
     origin: string | null;
-    // A change's copy keeps its emails; they are only read here.
-    readonly?: boolean;
+    // The change the owner is trying, when the tools work on its copy.
+    copy?: string | null;
 }>();
 
 const emit = defineEmits<{ open: [href: string] }>();
@@ -36,20 +36,25 @@ function remove(ids: string[]): void {
         chosenId.value = null;
     }
 
-    router.delete(PreviewEmailController.destroy.url(props.projectId), {
-        data: { emails: ids },
-        only: ['emails'],
-        preserveScroll: true,
-        preserveState: true,
-        onError: (errors) => {
-            deleting.value = new Set(
-                [...deleting.value].filter((id) => !ids.includes(id)),
-            );
-            toast.error(
-                errors.app ?? 'The emails could not be deleted. Try again.',
-            );
+    router.delete(
+        PreviewEmailController.destroy.url(props.projectId, {
+            query: { copy: props.copy },
+        }),
+        {
+            data: { emails: ids },
+            only: ['emails'],
+            preserveScroll: true,
+            preserveState: true,
+            onError: (errors) => {
+                deleting.value = new Set(
+                    [...deleting.value].filter((id) => !ids.includes(id)),
+                );
+                toast.error(
+                    errors.app ?? 'The emails could not be deleted. Try again.',
+                );
+            },
         },
-    });
+    );
 }
 
 // A wide screen shows the list and an email side by side, the newest
@@ -151,7 +156,6 @@ const pieces = computed(() =>
                         {{ emails.length === 1 ? 'email' : 'emails' }}</span
                     >
                     <button
-                        v-if="!readonly"
                         type="button"
                         class="min-h-11 select-none hover:text-foreground sm:min-h-8"
                         data-test="app-emails-delete-all"
@@ -218,7 +222,6 @@ const pieces = computed(() =>
                         </p>
                     </div>
                     <button
-                        v-if="!readonly"
                         type="button"
                         class="-mr-1 grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground sm:size-8"
                         aria-label="Delete this email"

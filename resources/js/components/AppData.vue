@@ -16,6 +16,8 @@ const props = defineProps<{
     data: SavedTable[] | null | undefined;
     rows: SavedRows | null | undefined;
     files: StoredFile[] | null | undefined;
+    // The change the owner is trying, when the tools work on its copy.
+    copy?: string | null;
 }>();
 
 const emit = defineEmits<{ restarted: [] }>();
@@ -90,22 +92,27 @@ function remove(id: string): void {
     deleting.value = new Set([...deleting.value, key]);
 
     // The count changes, and the rows are read again from it.
-    router.delete(PreviewRowController.destroy.url(props.projectId), {
-        data: { table, row: id },
-        only: ['data'],
-        preserveScroll: true,
-        preserveState: true,
-        onError: (errors) => {
-            deleting.value = new Set(
-                [...deleting.value].filter((kept) => kept !== key),
-            );
-            toast.error(
-                errors.app ??
-                    errors.table ??
-                    'Your app could not delete it. This is our fault. Try again.',
-            );
+    router.delete(
+        PreviewRowController.destroy.url(props.projectId, {
+            query: { copy: props.copy },
+        }),
+        {
+            data: { table, row: id },
+            only: ['data'],
+            preserveScroll: true,
+            preserveState: true,
+            onError: (errors) => {
+                deleting.value = new Set(
+                    [...deleting.value].filter((kept) => kept !== key),
+                );
+                toast.error(
+                    errors.app ??
+                        errors.table ??
+                        'Your app could not delete it. This is our fault. Try again.',
+                );
+            },
         },
-    });
+    );
 }
 
 // A changed value shows at once, until the rows are read again; it goes
@@ -180,12 +187,17 @@ function change(before: string | null): void {
     changed.value = new Map(changed.value).set(key, value);
 
     router.patch(
-        PreviewRowController.update.url(props.projectId),
+        PreviewRowController.update.url(props.projectId, {
+            query: { copy: props.copy },
+        }),
         { table: opened.value, row: now.id, column: now.column, value },
         {
             only: ['rows'],
             preserveScroll: true,
             preserveState: true,
+            // The answer reads the table named in the page address, which
+            // an earlier reload can have left out.
+            onSuccess: () => shown.value === undefined && readRows(),
             onError: (errors) => {
                 const kept = new Map(changed.value);
                 kept.delete(key);
@@ -203,7 +215,7 @@ function change(before: string | null): void {
 
 function fileUrl(file: StoredFile): string {
     return PreviewFileController.show.url(props.projectId, {
-        query: { path: file.path },
+        query: { path: file.path, copy: props.copy },
     });
 }
 
@@ -497,7 +509,11 @@ function rows(table: SavedTable): string {
             </details>
 
             <Form
-                v-bind="PreviewDataController.update.form(projectId)"
+                v-bind="
+                    PreviewDataController.update.form(projectId, {
+                        query: { copy },
+                    })
+                "
                 :transform="() => ({ with: asking })"
                 :options="{
                     preserveScroll: true,

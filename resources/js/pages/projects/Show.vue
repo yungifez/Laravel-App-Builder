@@ -135,7 +135,6 @@ const props = defineProps<{
     publishing: ProjectPublishing;
     services: AppService[];
     emails?: SentEmail[];
-    change_emails?: SentEmail[];
     people?: PreviewPerson[] | null;
     problems?: AppProblem[];
     data?: SavedTable[] | null;
@@ -414,6 +413,12 @@ const showingTabs = computed(() => [
 // Any page of the app is one pick away, as in a browser's address bar,
 // read from the app when the owner looks.
 function openPage(path: string): void {
+    if (copy.value !== null) {
+        openInChangeCopy(changeCopyOrigin.value + path);
+
+        return;
+    }
+
     showing.value = 'app';
     app.follow(path);
 }
@@ -421,6 +426,12 @@ function openPage(path: string): void {
 // A link from beside the app, in an email or a sign-in, opens its page in
 // the app.
 function openInApp(href: string): void {
+    if (copy.value !== null) {
+        openInChangeCopy(href);
+
+        return;
+    }
+
     showing.value = 'app';
     app.visit(href);
 }
@@ -484,36 +495,55 @@ onMounted(() => {
 });
 onUnmounted(() => window.removeEventListener('message', onChangeCopyMessage));
 
-// The email the copy sent, such as a link to confirm an email address, so
-// the owner can follow a sign-up through while trying the change.
-const changeEmailsOpen = ref(false);
+// While the owner tries a change, the tools beside the app work on its
+// copy: its emails, problems, saved data and schedule. The page address
+// names the copy, so every reload of them reads it.
 const changeCopyOrigin = computed(() =>
     changeCopy.value === null ? null : new URL(changeCopy.value.url).origin,
 );
 const changeCopyRuns = computed(
     () => changeCopy.value?.status === 'ready' && !changeCopyLost.value,
 );
-const changeEmailsPoll = usePoll(
-    5000,
-    { only: ['change_emails'] },
-    { autoStart: false },
+const copy = computed(() =>
+    changeCopyRuns.value ? decidingOn.value!.featureRequest.id : null,
 );
 watch(
-    () => changeCopy.value?.id,
-    () => (changeEmailsOpen.value = false),
-);
-watch(
-    changeCopyRuns,
-    (runs) => (runs ? changeEmailsPoll.start() : changeEmailsPoll.stop()),
+    copy,
+    (value) => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+
+        const url = new URL(window.location.href);
+
+        if (value === null) {
+            url.searchParams.delete('copy');
+        } else {
+            url.searchParams.set('copy', value);
+        }
+
+        if (url.href !== window.location.href) {
+            window.history.replaceState(window.history.state, '', url);
+            router.reload({
+                only: [
+                    'emails',
+                    'problems',
+                    'people',
+                    'pages',
+                    ...(showing.value === 'data'
+                        ? ['data', 'files']
+                        : showing.value === 'schedule'
+                          ? ['schedule']
+                          : []),
+                ],
+            });
+        }
+    },
     { immediate: true },
-);
-watch(
-    changeEmailsOpen,
-    (open) => open && router.reload({ only: ['change_emails'] }),
 );
 
 function openInChangeCopy(href: string): void {
-    changeEmailsOpen.value = false;
+    showing.value = 'app';
 
     if (changeCopyFrame.value !== null) {
         changeCopyFrame.value.src = href;
@@ -1205,6 +1235,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                         :project-id="project.id"
                         :people="people"
                         :path="app.path"
+                        :copy="copy"
                         @open="openInApp"
                     />
                 </div>
@@ -2067,13 +2098,14 @@ function sendOnEnter(event: KeyboardEvent): void {
                         :project-id="project.id"
                         :people="people"
                         :path="app.path"
+                        :copy="copy"
                         @open="openInApp"
                     />
                 </div>
                 <!-- On a phone the tabs take a line of their own, so none
                      hides past the edge. -->
                 <div
-                    v-if="!changeCopy"
+                    v-if="!changeCopy || changeCopyRuns"
                     class="flex min-w-0 basis-full [scrollbar-width:none] items-center gap-1 overflow-x-auto sm:ml-auto sm:basis-auto"
                 >
                     <button
@@ -2121,22 +2153,6 @@ function sendOnEnter(event: KeyboardEvent): void {
                     >
                         Show it without
                     </button>
-                    <button
-                        v-if="changeCopyRuns"
-                        type="button"
-                        :aria-pressed="changeEmailsOpen"
-                        class="flex min-h-11 items-center gap-1 underline underline-offset-2 select-none hover:text-foreground sm:min-h-0"
-                        data-test="change-copy-emails"
-                        @click="changeEmailsOpen = !changeEmailsOpen"
-                    >
-                        {{ changeEmailsOpen ? 'Back to the app' : 'Emails' }}
-                        <span
-                            v-if="!changeEmailsOpen && change_emails?.length"
-                            class="min-w-4 rounded-full bg-primary px-1 text-center text-[10px] leading-4 text-primary-foreground tabular-nums no-underline"
-                            :aria-label="`${change_emails.length} sent`"
-                            >{{ change_emails.length }}</span
-                        >
-                    </button>
                 </p>
                 <div
                     v-else
@@ -2179,6 +2195,7 @@ function sendOnEnter(event: KeyboardEvent): void {
             </template>
             <div
                 v-if="changeCopy"
+                v-show="showing === 'app' || !changeCopyRuns"
                 class="relative min-h-0 flex-1 overflow-hidden rounded-lg border bg-muted/40"
                 data-test="change-copy"
             >
@@ -2191,18 +2208,8 @@ function sendOnEnter(event: KeyboardEvent): void {
                     class="size-full bg-background"
                     data-test="change-copy-frame"
                 />
-                <AppEmails
-                    v-if="changeEmailsOpen && changeCopyRuns"
-                    class="absolute inset-0 z-10"
-                    :project-id="project.id"
-                    :emails="change_emails"
-                    :origin="changeCopyOrigin"
-                    readonly
-                    data-test="change-copy-email-list"
-                    @open="openInChangeCopy"
-                />
                 <div
-                    v-else-if="changeCopyLost"
+                    v-if="changeCopyLost"
                     class="flex h-full flex-col items-center justify-center gap-3 p-6 text-center"
                     data-test="change-copy-lost"
                 >
@@ -2272,33 +2279,41 @@ function sendOnEnter(event: KeyboardEvent): void {
             <!-- Hidden, not removed, while a change shows, so the app does
                  not reload. -->
             <AppProblems
-                v-if="showing === 'problems' && !changeCopy"
+                v-if="showing === 'problems' && (!changeCopy || changeCopyRuns)"
                 class="min-h-0 flex-1"
                 :project-id="project.id"
                 :problems="problems"
+                :copy="copy"
             />
             <AppSchedule
-                v-if="showing === 'schedule' && !changeCopy"
+                v-if="showing === 'schedule' && (!changeCopy || changeCopyRuns)"
                 class="min-h-0 flex-1"
                 :project-id="project.id"
                 :schedule="schedule"
+                :copy="copy"
                 @ran="router.reload({ only: ['emails', 'problems'] })"
             />
             <AppData
-                v-if="showing === 'data' && !changeCopy"
+                v-if="showing === 'data' && (!changeCopy || changeCopyRuns)"
                 class="min-h-0 flex-1"
                 :project-id="project.id"
                 :data="data"
                 :rows="rows"
                 :files="files"
-                @restarted="app.reload()"
+                :copy="copy"
+                @restarted="
+                    copy === null
+                        ? app.reload()
+                        : openInChangeCopy(changeCopy!.url)
+                "
             />
             <AppEmails
-                v-if="showing === 'emails' && !changeCopy"
+                v-if="showing === 'emails' && (!changeCopy || changeCopyRuns)"
                 class="min-h-0 flex-1"
                 :project-id="project.id"
                 :emails="emails"
-                :origin="preview?.origin ?? null"
+                :origin="changeCopyOrigin ?? preview?.origin ?? null"
+                :copy="copy"
                 @open="openInApp"
             />
             <div

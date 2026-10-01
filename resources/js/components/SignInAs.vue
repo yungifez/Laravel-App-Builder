@@ -19,6 +19,8 @@ const props = defineProps<{
     people: PreviewPerson[] | null | undefined;
     // The page of the app on show, to stay on once signed in.
     path: string;
+    // The change the owner is trying, when the tools work on its copy.
+    copy?: string | null;
 }>();
 
 const emit = defineEmits<{ open: [href: string] }>();
@@ -45,7 +47,9 @@ async function signInAs(person: PreviewPerson): Promise<void> {
 
     try {
         const { url } = (await signIn.post(
-            PreviewSignInController.store.url(props.projectId),
+            PreviewSignInController.store.url(props.projectId, {
+                query: { copy: props.copy },
+            }),
         )) as { url: string };
 
         emit('open', url);

@@ -13,6 +13,8 @@ import type { AppProblem } from '@/types';
 const props = defineProps<{
     projectId: string;
     problems: AppProblem[] | undefined;
+    // The change the owner is trying, when the tools work on its copy.
+    copy?: string | null;
 }>();
 
 // Problems still to deal with, and those fixed or cleared, which stay out
@@ -114,7 +116,10 @@ function times(problem: AppProblem): string {
                             <LoaderCircle class="size-3.5 animate-spin" />
                             Being fixed
                         </Link>
-                        <div v-else class="flex shrink-0 items-start gap-1">
+                        <div
+                            v-else-if="!copy"
+                            class="flex shrink-0 items-start gap-1"
+                        >
                             <Form
                                 v-bind="
                                     ClearedProblemController.store.form(
