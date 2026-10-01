@@ -1186,15 +1186,11 @@ function sendOnEnter(event: KeyboardEvent): void {
     </Dialog>
 
     <Dialog v-model:open="detailsOpen">
-        <DialogContent class="max-h-[85svh] overflow-y-auto">
+        <DialogContent class="max-h-[85svh] overflow-y-auto sm:max-w-xl">
             <DialogHeader>
                 <DialogTitle>Details for your developer</DialogTitle>
                 <DialogDescription>
-                    {{
-                        project.source_path
-                            ? 'Where the app came from, what changes cost, and its history.'
-                            : 'What changes cost, and the app’s history.'
-                    }}
+                    What building this app has cost, and each change you kept.
                 </DialogDescription>
             </DialogHeader>
             <ProjectDetails
