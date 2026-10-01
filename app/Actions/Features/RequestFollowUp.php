@@ -35,10 +35,11 @@ class RequestFollowUp
      *
      * @param  array{file: string, line: int, column: int, tag: string, text: string|null, area: string|null}|null  $selection  The element the owner pointed at
      * @param  list<array{path: string, name: string}>  $images  Pictures the owner attached, already kept
+     * @param  array<string, mixed>|null  $liveErrors  A problem the change's copy ran into, for a fix
      *
      * @throws ValidationException when there is nothing to build on.
      */
-    public function handle(FeatureRequest $parent, User $requester, string $prompt, ?string $stepKey = null, ?array $selection = null, array $images = []): FeatureRequest
+    public function handle(FeatureRequest $parent, User $requester, string $prompt, ?string $stepKey = null, ?array $selection = null, array $images = [], ?array $liveErrors = null): FeatureRequest
     {
         if (! self::continuable($parent)) {
             throw ValidationException::withMessages([
@@ -60,6 +61,7 @@ class RequestFollowUp
             'selection' => $selection,
             'images' => $images === [] ? null : $images,
             'target_step' => $stepKey,
+            'live_errors' => $liveErrors,
             'status' => FeatureRequestStatus::Generating,
             'generator' => $parent->generator,
             'base_revision' => $built !== null && $built->commit_sha === null ? $built->base_revision : $this->latest($parent),

@@ -14,6 +14,7 @@ use App\Models\Workspace;
 use App\Projects\ProjectRepository;
 use ErrorException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -100,6 +101,31 @@ class PreviewProblemsTest extends TestCase
         $this->post(route('preview-problem-fixes.store', $this->project), ['problem' => $problem['id']])
             ->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $fix->uuid]));
         $this->assertSame(1, FeatureRequest::count());
+    }
+
+    public function test_a_problem_in_a_change_the_owner_tries_is_fixed_in_that_change()
+    {
+        $change = FeatureRequest::factory()->generated()->create(['project_id' => $this->project->id, 'user_id' => $this->owner->id]);
+        $this->workspace = Workspace::factory()->create(['user_id' => $this->owner->id]);
+        Preview::factory()->ready()->create(['project_id' => $this->project->id, 'feature_request_id' => $change->id, 'workspace_id' => $this->workspace->id]);
+        $this->writeLog(fn () => report(new ErrorException('Undefined array key "plan"')));
+        // The tools read the copy the page names.
+        $this->app->instance('request', Request::create('/?copy='.$change->uuid));
+        $problem = $this->problems();
+        $this->assertCount(1, $problem);
+
+        $this->actingAs($this->owner)->post(route('preview-problem-fixes.store', ['project' => $this->project, 'copy' => $change->uuid]), ['problem' => $problem[0]['id']])
+            ->assertSessionHasNoErrors();
+
+        $fix = FeatureRequest::query()->latest('id')->firstOrFail();
+        $this->assertSame($change->id, $fix->parent_id);
+        $this->assertSame('Fix this problem I ran into while trying this change: The app used something that was not there.', $fix->prompt);
+        $this->assertSame($problem[0]['id'], $fix->live_errors['problem']);
+
+        // A second click opens the same fix.
+        $this->post(route('preview-problem-fixes.store', ['project' => $this->project, 'copy' => $change->uuid]), ['problem' => $problem[0]['id']])
+            ->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $fix->uuid]));
+        $this->assertSame(2, FeatureRequest::count());
     }
 
     public function test_a_problem_not_in_the_app_or_from_someone_else_is_not_fixed()

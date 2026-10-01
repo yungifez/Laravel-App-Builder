@@ -116,11 +116,11 @@ function times(problem: AppProblem): string {
                             <LoaderCircle class="size-3.5 animate-spin" />
                             Being fixed
                         </Link>
-                        <div
-                            v-else-if="!copy"
-                            class="flex shrink-0 items-start gap-1"
-                        >
+                        <div v-else class="flex shrink-0 items-start gap-1">
+                            <!-- A cleared problem is put away for the app,
+                                 so the copy of a change only asks a fix. -->
                             <Form
+                                v-if="!copy"
                                 v-bind="
                                     ClearedProblemController.store.form(
                                         projectId,
@@ -148,6 +148,7 @@ function times(problem: AppProblem): string {
                                 v-bind="
                                     PreviewProblemFixController.store.form(
                                         projectId,
+                                        { query: { copy } },
                                     )
                                 "
                                 :transform="() => ({ problem: problem.id })"
