@@ -813,6 +813,27 @@ const composer = ref<HTMLTextAreaElement | null>(null);
 const continuing = computed(
     () => props.change?.featureRequest.can_continue === true,
 );
+// A new change starts from the app as kept. A change still waiting to be
+// tried is not in it, so the owner is told before asking, not surprised
+// later when the new change knows nothing of it.
+const notKept = computed(
+    () =>
+        props.changes.filter((item) => item.state === 'waiting' && !item.asks)
+            .length,
+);
+const composerHint = computed(() => {
+    if (continuing.value) {
+        return 'Continues this chat';
+    }
+
+    if (notKept.value > 0) {
+        return notKept.value === 1
+            ? 'Starts a new change, without the one you have not kept yet'
+            : `Starts a new change, without the ${notKept.value} you have not kept yet`;
+    }
+
+    return props.change ? 'Starts a new change' : '';
+});
 const composerForm = computed(() =>
     props.change && continuing.value
         ? FeatureRequestFollowUpController.store.form(
@@ -1761,15 +1782,10 @@ function sendOnEnter(event: KeyboardEvent): void {
                             <span
                                 class="pl-1 text-xs text-muted-foreground"
                                 data-test="composer-hint"
-                                >{{
-                                    continuing
-                                        ? 'Continues this chat'
-                                        : change
-                                          ? 'Starts a new change'
-                                          : ''
+                                >{{ composerHint
                                 }}<span class="hidden sm:inline"
-                                    >{{ change ? ' · ' : '' }}Shift + Enter for
-                                    a new line</span
+                                    >{{ composerHint ? ' · ' : '' }}Shift +
+                                    Enter for a new line</span
                                 ></span
                             >
                             <Button
