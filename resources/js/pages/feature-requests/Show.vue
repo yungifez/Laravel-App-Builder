@@ -923,7 +923,13 @@ function lineClass(line: string): string {
                             }}
                         </p>
 
-                        <Alert v-if="preview?.error" variant="destructive">
+                        <!-- A copy stopped for sitting idle did start; only
+                             one that failed says so. -->
+                        <Alert
+                            v-if="preview?.status === 'failed' && preview.error"
+                            variant="destructive"
+                            data-test="preview-error"
+                        >
                             <AlertTitle>Your app could not start</AlertTitle>
                             <AlertDescription class="whitespace-pre-wrap">{{
                                 preview.error
