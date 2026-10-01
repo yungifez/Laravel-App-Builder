@@ -5,6 +5,7 @@ namespace Tests\Feature\Runs;
 use App\Actions\Runs\NarrateWork;
 use App\Context\ProjectNotes;
 use App\Models\Run;
+use App\Models\Verification;
 use App\Runs\Agents\RunnerAgent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -101,6 +102,40 @@ class WorkStoryTest extends TestCase
                 ['kind' => 'read', 'text' => 'Looked around your app'],
                 ['kind' => 'thinking', 'text' => 'The owner wants only team owners to invite people. That keeps members from inviting strangers.'],
             ]));
+    }
+
+    public function test_each_finished_check_says_what_it_found_in_the_story()
+    {
+        [$run] = $this->implementingRun();
+        $check = fn (string $name, string $stage, string $outcome, array $extra = []) => ['name' => $name, 'stage' => $stage, 'outcome' => $outcome, 'exit_code' => 0, 'timed_out' => false, 'duration_ms' => 10, 'output' => '', ...$extra];
+
+        $run->recordEvent('status', ['from' => 'implementing', 'to' => 'verifying']);
+        Verification::factory()->create(['feature_request_id' => $run->feature_request_id, 'run_id' => $run->id, 'results' => [
+            $check('Install PHP dependencies', 'setup', 'passed'),
+            $check('Tests', 'checks', 'failed', ['tests' => [['file' => 'tests/A.php', 'name' => 'a', 'outcome' => 'failed']]]),
+            $check('Static analysis', 'checks', 'failed', ['at_start' => 'failed', 'new_problems' => []]),
+            $check('Their own check', 'checks', 'skipped'),
+        ]]);
+        $run->recordEvent('status', ['from' => 'verifying', 'to' => 'implementing', 'reason' => 'verification_failed']);
+        $run->recordEvent('status', ['from' => 'implementing', 'to' => 'verifying']);
+        // The second check is still running: what has finished shows.
+        Verification::factory()->create(['feature_request_id' => $run->feature_request_id, 'run_id' => $run->id, 'results' => [
+            $check('Tests', 'checks', 'passed', ['tests' => [['file' => 'tests/A.php', 'name' => 'a', 'outcome' => 'passed'], ['file' => 'tests/B.php', 'name' => 'b', 'outcome' => 'passed']]]),
+            $check('Their own check', 'checks', 'passed'),
+            $check('Invite', 'acceptance', 'passed'),
+            $check('Invite again', 'acceptance', 'passed'),
+        ]]);
+
+        $this->assertSame([
+            ['kind' => 'stage', 'text' => 'Checking it works'],
+            ['kind' => 'failed', 'text' => 'Ran your app\'s tests: it found a problem'],
+            ['kind' => 'known', 'text' => 'Read the code for mistakes: it found a problem that was there before this change'],
+            ['kind' => 'stage', 'text' => 'Some checks failed, so I went back to fix them'],
+            ['kind' => 'stage', 'text' => 'Checking it works'],
+            ['kind' => 'passed', 'text' => 'Ran your app\'s tests: all 2 pass'],
+            ['kind' => 'passed', 'text' => 'Ran “Their own check”'],
+            ['kind' => 'passed', 'text' => 'Tried it the way you asked for it, and it works'],
+        ], app(NarrateWork::class)->handle($run->refresh()));
     }
 
     public function test_a_change_made_without_a_story_shows_none()

@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import {
+    CircleAlert,
+    CircleCheck,
     CircleDot,
+    CircleMinus,
     Eye,
     FlaskConical,
     NotebookPen,
     Pencil,
     Play,
 } from '@lucide/vue';
+import type { LucideIcon } from '@lucide/vue';
 import type { WorkStep } from '@/types';
 
 // One step of how a change was made. The agent's own plain words read as
@@ -14,12 +18,20 @@ import type { WorkStep } from '@/types';
 // quieter note with an icon.
 defineProps<{ step: WorkStep }>();
 
-const icons = {
-    read: Eye,
-    changed: Pencil,
-    tested: FlaskConical,
-    tried: Play,
-    noted: NotebookPen,
+// A finished check shows what it found: passed, failed, or failed as it
+// did before the change, which is the app's old problem, not a new one.
+const icons: Record<
+    Exclude<WorkStep['kind'], 'thought' | 'thinking' | 'stage'>,
+    { icon: LucideIcon; tone?: string }
+> = {
+    read: { icon: Eye },
+    changed: { icon: Pencil },
+    tested: { icon: FlaskConical },
+    tried: { icon: Play },
+    noted: { icon: NotebookPen },
+    passed: { icon: CircleCheck, tone: 'text-green-600' },
+    failed: { icon: CircleAlert, tone: 'text-red-600' },
+    known: { icon: CircleMinus },
 };
 </script>
 
@@ -41,7 +53,10 @@ const icons = {
         {{ step.text }}
     </p>
     <p v-else class="flex items-center gap-2 text-xs text-muted-foreground">
-        <component :is="icons[step.kind]" class="size-3.5 shrink-0" />
+        <component
+            :is="icons[step.kind].icon"
+            :class="['size-3.5 shrink-0', icons[step.kind].tone]"
+        />
         {{ step.text }}
     </p>
 </template>

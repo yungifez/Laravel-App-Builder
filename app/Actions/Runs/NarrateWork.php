@@ -3,8 +3,11 @@
 namespace App\Actions\Runs;
 
 use App\Context\ProjectNotes;
+use App\Enums\RunStatus;
 use App\Features\OwnerWording;
+use App\Jobs\VerifyFeatureRequest;
 use App\Models\Run;
+use App\Models\Verification;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 
@@ -16,6 +19,17 @@ class NarrateWork
      * sentence is left out rather than half translated.
      */
     protected const CODE = '/`|::|->|\$|\(\)|\{|\}|[\w-]+\/[\w.-]+|\b[\w-]+\.(php|js|ts|mjs|vue|json|md|env|ya?ml|css|blade|xml|lock|sh)\b|\b[a-z]+_[a-z_]+\b|\b[a-z]+[A-Z]\w*\b|\b[A-Z][a-z]+[A-Z]\w*\b/';
+
+    /**
+     * What each check did, in the owner's words, once it has run.
+     */
+    protected const CHECKS = [
+        'Tests' => 'Ran your app\'s tests',
+        'Static analysis' => 'Read the code for mistakes',
+        'PHP formatting' => 'Checked the code is tidy',
+        'Frontend format and lint' => 'Checked the screens\' code is tidy',
+        'TypeScript' => 'Read the screens\' code for mistakes',
+    ];
 
     protected const JARGON = '/\b(prompt|instructions?|acceptance|repository|repo|git|commit|artisan|phpunit|pest|phpstan|larastan|pint|composer|npm|controller|middleware|namespace|migration|eloquent|blade|inertia|livewire|vue|typescript|schema|endpoint|seeder|lint|refactor|diff|stack trace|test suite)\b/i';
 
@@ -34,6 +48,9 @@ class NarrateWork
     public function handle(Run $run, ?array $live = null): array
     {
         $lines = [];
+        // Each time the change is checked, a new verification records each
+        // check as it finishes; the n-th check stage gets the n-th one.
+        $verifications = $run->verifications()->oldest('id')->get();
 
         foreach ($run->events()->whereIn('type', ['status', 'review', 'agent_story'])->get() as $event) {
             if ($event->type === 'agent_story') {
@@ -49,6 +66,10 @@ class NarrateWork
 
             if ($text !== null && ($last === null || ($lines[$last]['text'] ?? null) !== $text)) {
                 $lines[] = ['kind' => 'stage', 'names' => [], 'text' => $text];
+            }
+
+            if ($event->type === 'status' && ($event->data['to'] ?? null) === RunStatus::Verifying->value && ($verification = $verifications->shift()) !== null) {
+                array_push($lines, ...$this->checks($verification));
             }
         }
 
@@ -138,12 +159,63 @@ class NarrateWork
     }
 
     /**
+     * Say what each finished check found, so checking reads as work done
+     * rather than a wait: the app's tests with how many pass, each check
+     * on the code, and trying the change as the owner asked, as one line.
+     *
+     * @return list<array{kind: string, names: list<string>, text: string}>
+     */
+    protected function checks(Verification $verification): array
+    {
+        $lines = [];
+        $tried = null;
+
+        foreach ($verification->results ?? [] as $result) {
+            if (! in_array($result['outcome'], [VerifyFeatureRequest::OUTCOME_PASSED, VerifyFeatureRequest::OUTCOME_FAILED], true)) {
+                continue;
+            }
+
+            $passed = $result['outcome'] === VerifyFeatureRequest::OUTCOME_PASSED;
+
+            if ($result['stage'] === 'acceptance') {
+                $tried = ($tried ?? true) && $passed;
+
+                continue;
+            }
+
+            if ($result['stage'] !== 'checks') {
+                continue;
+            }
+
+            $did = isset(self::CHECKS[$result['name']]) ? __(self::CHECKS[$result['name']]) : __('Ran “:name”', ['name' => $result['name']]);
+            $count = count(array_filter($result['tests'] ?? [], fn (array $test) => $test['outcome'] === 'passed'));
+
+            // A check that failed the same way before the change is the
+            // app's old problem, not something the change broke.
+            $old = ! $passed && ($result['at_start'] ?? null) === VerifyFeatureRequest::OUTCOME_FAILED && ($result['new_problems'] ?? []) === [];
+
+            $lines[] = match (true) {
+                $passed && $count > 0 => ['kind' => 'passed', 'names' => [], 'text' => trans_choice(':did: the one test passes|:did: all :count pass', $count, ['did' => $did])],
+                $passed => ['kind' => 'passed', 'names' => [], 'text' => $did],
+                $old => ['kind' => 'known', 'names' => [], 'text' => __(':did: it found a problem that was there before this change', ['did' => $did])],
+                default => ['kind' => 'failed', 'names' => [], 'text' => __(':did: it found a problem', ['did' => $did])],
+            };
+        }
+
+        if ($tried !== null) {
+            $lines[] = ['kind' => $tried ? 'passed' : 'failed', 'names' => [], 'text' => (string) ($tried ? __('Tried it the way you asked for it, and it works') : __('Tried it the way you asked for it, and it did not work yet'))];
+        }
+
+        return $lines;
+    }
+
+    /**
      * @param  array{kind: string, names: list<string>, text?: string}  $line
      * @return array{kind: string, text: string}
      */
     protected function render(array $line): array
     {
-        if (in_array($line['kind'], ['thought', 'thinking', 'stage'], true)) {
+        if (in_array($line['kind'], ['thought', 'thinking', 'stage', 'passed', 'failed', 'known'], true)) {
             return ['kind' => $line['kind'], 'text' => $line['text'] ?? ''];
         }
 

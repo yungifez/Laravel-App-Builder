@@ -265,7 +265,10 @@ export type WorkStep = {
         | 'tested'
         | 'tried'
         | 'noted'
-        | 'stage';
+        | 'stage'
+        | 'passed'
+        | 'failed'
+        | 'known';
     text: string;
 };
 
