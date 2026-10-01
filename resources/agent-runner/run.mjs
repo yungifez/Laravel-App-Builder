@@ -183,6 +183,10 @@ async function runClaude(task, session, prompt) {
                 disallowedTools: ['WebFetch', 'WebSearch'],
                 settingSources: ['project'],
                 systemPrompt: { type: 'preset', preset: 'claude_code' },
+                // Without this the CLI leaves its thinking out of SDK
+                // sessions, and the owner sees no "thinking" steps. Only
+                // the display is set; the model still picks how to think.
+                extraArgs: { 'thinking-display': 'summarized' },
             },
         })) {
             sessionId = message.session_id ?? sessionId;
