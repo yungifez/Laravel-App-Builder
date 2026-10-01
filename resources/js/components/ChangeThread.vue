@@ -77,9 +77,12 @@ const liveWork = computed(() => {
 });
 
 // What the owner might ask for next, one tap each, as in any chat. Offered
-// only while the chat can go on and nothing has been asked after this yet.
+// only while the chat can go on and nothing has been asked after this yet,
+// and not after a stop: they build on a change that was not made.
 const nextIdeas = computed(() =>
-    request.value.can_continue && props.change.followUps.length === 0
+    request.value.can_continue &&
+    !failed.value &&
+    props.change.followUps.length === 0
         ? (run.value?.plan?.next ?? [])
         : [],
 );
