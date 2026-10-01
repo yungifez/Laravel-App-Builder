@@ -453,6 +453,20 @@ const phoneView = computed<'chat' | 'design' | 'app'>({
     },
 });
 
+// The address says when the design side is open, so reloading the page
+// opens it again instead of dropping the owner back in the chat.
+watch(panel, (value) => {
+    const url = new URL(window.location.href);
+
+    if (value === 'design') {
+        url.searchParams.set('design', '1');
+    } else {
+        url.searchParams.delete('design');
+    }
+
+    window.history.replaceState(window.history.state, '', url);
+});
+
 // Switching what the screen shows morphs from one layout to the next.
 function show(to: 'chat' | 'design'): void {
     morph(() => (panel.value = to));
@@ -646,31 +660,40 @@ const thread = computed(() => {
     }
 
     const working = oldestFirst.filter((item) => item.state === 'working');
-    const waiting = oldestFirst.filter((item) => item.state === 'waiting');
+    const toTry = oldestFirst.filter(
+        (item) => item.state === 'waiting' && !item.asks,
+    );
+    // A question holds its change up, so questions sit last, next to the
+    // box the owner answers in.
+    const toAnswer = oldestFirst.filter(
+        (item) => item.state === 'waiting' && item.asks,
+    );
 
     return [
         ...groups,
         ...(working.length ? [{ label: 'Working on it', items: working }] : []),
-        ...(waiting.length
-            ? [{ label: waitingLabel(waiting), items: waiting }]
+        ...(toTry.length
+            ? [
+                  {
+                      label: count(toTry.length, 'change') + ' to try',
+                      items: toTry,
+                  },
+              ]
+            : []),
+        ...(toAnswer.length
+            ? [
+                  {
+                      label: count(toAnswer.length, 'question') + ' to answer',
+                      items: toAnswer,
+                  },
+              ]
             : []),
     ];
 });
 const threadEnd = ref<HTMLElement | null>(null);
 
-// Says what is waiting, so the owner knows the job before opening a row.
-function waitingLabel(items: ChangeItem[]): string {
-    const questions = items.filter((item) => item.asks).length;
-    const changes = items.length - questions;
-
-    return [
-        questions > 0 &&
-            `${questions} ${questions === 1 ? 'question' : 'questions'} to answer`,
-        changes > 0 &&
-            `${changes} ${changes === 1 ? 'change' : 'changes'} to try`,
-    ]
-        .filter(Boolean)
-        .join(' · ');
+function count(amount: number, noun: string): string {
+    return `${amount} ${noun}${amount === 1 ? '' : 's'}`;
 }
 
 const waiting = computed(
@@ -1479,13 +1502,18 @@ function sendOnEnter(event: KeyboardEvent): void {
                                                     }}</span
                                                 >
                                             </span>
+                                            <!-- Amber only where the owner
+                                                 holds a change up. -->
                                             <span
                                                 v-if="item.state === 'waiting'"
-                                                class="mt-0.5 shrink-0 text-xs font-medium text-amber-600 dark:text-amber-400"
-                                                >{{
+                                                :class="[
+                                                    'mt-0.5 shrink-0 text-xs font-medium',
                                                     item.asks
-                                                        ? 'Answer'
-                                                        : 'Review'
+                                                        ? 'text-amber-600 dark:text-amber-400'
+                                                        : 'text-muted-foreground group-hover:text-foreground',
+                                                ]"
+                                                >{{
+                                                    item.asks ? 'Answer' : 'Try'
                                                 }}</span
                                             >
                                         </Link>

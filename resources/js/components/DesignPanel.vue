@@ -832,7 +832,16 @@ const recent = computed(() => {
                 class="flex items-center justify-center gap-2 p-4 text-sm text-muted-foreground lg:flex-col lg:py-16"
             >
                 <MousePointerClick class="size-5 lg:size-8" />
-                Open your app first
+                <!-- The app says it is starting; this says what comes next. -->
+                <template v-if="preview?.status === 'starting' && !state.lost">
+                    <span class="pointer-coarse:hidden"
+                        >Click any part once it opens</span
+                    >
+                    <span class="hidden pointer-coarse:inline"
+                        >Tap any part once it opens</span
+                    >
+                </template>
+                <template v-else>Open your app first</template>
             </div>
 
             <template v-else-if="state.selected === null">
