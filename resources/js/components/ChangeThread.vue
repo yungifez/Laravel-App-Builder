@@ -1415,7 +1415,10 @@ const checks = computed(() => {
                                                 too</span
                                             ></span
                                         >
+                                        <!-- A check that was skipped or took
+                                             no time shows none, not "0.0 s". -->
                                         <span
+                                            v-if="result.duration_ms >= 50"
                                             class="shrink-0 text-xs text-muted-foreground tabular-nums"
                                             >{{
                                                 (
