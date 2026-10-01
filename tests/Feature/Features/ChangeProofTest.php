@@ -377,6 +377,18 @@ class ChangeProofTest extends TestCase
         $this->assertContains(['kind' => 'reach', 'text' => 'Tests ran every one of its 12 new lines of code.', 'evidence' => true], $all);
         $this->assertNotContains($gap, $all);
 
+        // The review's map missed a file, but the checks later saw every
+        // line run: the later answer is said, and nothing is offered.
+        [$request, $mapped] = $proof(
+            ['lines' => 12, 'run' => 12, 'own_tests_only' => 12, 'unrun' => []],
+            ['areas' => [], 'tests' => 0, 'unmapped' => ['app/Models/Booking.php'], 'foundation' => [], 'by_line' => []],
+        );
+        $this->assertNotContains($gap, $mapped);
+        $request->runs()->sole()->update(['plan' => (new Plan('Book classes.', next: ['Let members cancel']))->toArray()]);
+        $this->actingAs($request->project->owner)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page->where('run.plan.next', ['Let members cancel']));
+
         // One line no test ran is common and harmless.
         [$request, $most] = $proof(['lines' => 123, 'run' => 122, 'own_tests_only' => 106, 'unrun' => ['app/Models/TeamInvitation.php' => [90]]]);
         $this->assertContains(['kind' => 'reach', 'text' => 'Tests ran 122 of its 123 new lines of code.', 'evidence' => true], $most);

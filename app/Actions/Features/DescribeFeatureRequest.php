@@ -158,7 +158,9 @@ class DescribeFeatureRequest
 
         $newCode = $run->featureRequest->verifications()->latest('id')->first()?->evidence['new_code'] ?? null;
 
-        if (($run->review['classification']['observed']['unmapped'] ?? []) !== [] || ($newCode !== null && NewCode::gap($newCode))) {
+        // The checks measure the new code after the review's map, so their
+        // answer wins when there is one.
+        if ($newCode !== null ? NewCode::gap($newCode) : ($run->review['classification']['observed']['unmapped'] ?? []) !== []) {
             $ideas = [__('Add tests for the new code nothing checks yet'), ...$ideas];
         }
 

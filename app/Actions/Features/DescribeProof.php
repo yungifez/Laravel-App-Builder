@@ -54,7 +54,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->safety($featureRequest), ...$this->access($verification), ...$this->shortcuts($featureRequest, $verification), ...$this->colours($featureRequest), ...$this->pictures($featureRequest), ...$this->screens($featureRequest, $verification), ...$this->code($verification), ...$this->watched($verification), ...$this->failed($verification), ...$this->reach($featureRequest->latestRun), ...$this->approach($featureRequest->latestRun), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->safety($featureRequest), ...$this->access($verification), ...$this->shortcuts($featureRequest, $verification), ...$this->colours($featureRequest), ...$this->pictures($featureRequest), ...$this->screens($featureRequest, $verification), ...$this->code($verification), ...$this->watched($verification), ...$this->failed($verification), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return array_values(collect($lines)->unique('text')->all());
@@ -480,7 +480,7 @@ class DescribeProof
      *
      * @return list<array{kind: string, text: string, evidence?: bool}>
      */
-    protected function reach(?Run $run): array
+    protected function reach(?Run $run, Verification $verification): array
     {
         $review = $run?->review;
 
@@ -502,7 +502,9 @@ class DescribeProof
                 : trans_choice(':count of those tests runs the code this change touched, in :areas.|:count of those tests run the code this change touched, in :areas.', $observed['tests'], ['areas' => $this->join($areas)]), 'evidence' => true];
         }
 
-        if ($observed !== null && $observed['unmapped'] !== []) {
+        // The map is from the review; the checks measured the new code
+        // since, line by line, and that later answer is the one said.
+        if ($observed !== null && $observed['unmapped'] !== [] && ($verification->evidence['new_code'] ?? null) === null) {
             $lines[] = ['kind' => 'gap', 'text' => __('Some of the new code is not run by any test yet.')];
         }
 
