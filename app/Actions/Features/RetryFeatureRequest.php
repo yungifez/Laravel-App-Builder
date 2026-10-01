@@ -68,20 +68,27 @@ class RetryFeatureRequest
 
     /**
      * Ask for the same change again on the app as it is now, whatever state
-     * the request is in.
+     * the request is in. The asks it builds on that are not kept yet are
+     * asked again with it, in the order they were asked, as one request.
+     *
+     * @param  list<FeatureRequest>  $before
      */
-    public function rebuild(FeatureRequest $featureRequest, User $requester): FeatureRequest
+    public function rebuild(FeatureRequest $featureRequest, User $requester, array $before = []): FeatureRequest
     {
-        $parent = $featureRequest->parent;
+        $asks = [...$before, $featureRequest];
+        $first = $asks[0];
+        $parent = $first->parent;
+        $prompt = implode("\n\n", array_map(fn (FeatureRequest $ask) => $ask->prompt, $asks));
+        $images = array_merge(...array_map(fn (FeatureRequest $ask) => $ask->images ?? [], $asks));
 
         $retry = match (true) {
-            $parent !== null && $featureRequest->target_step !== null => $this->requestStepChange->handle($parent, $requester, $featureRequest->target_step, $featureRequest->prompt),
+            $before === [] && $parent !== null && $featureRequest->target_step !== null => $this->requestStepChange->handle($parent, $requester, $featureRequest->target_step, $featureRequest->prompt),
             // A message in a chat is tried again in that chat while there is
             // still something there to build on.
-            $parent !== null && RequestFollowUp::continuable($parent) => $this->requestFollowUp->handle($parent, $requester, $featureRequest->prompt, selection: $featureRequest->selection, images: $featureRequest->images ?? []),
+            $parent !== null && RequestFollowUp::continuable($parent) => $this->requestFollowUp->handle($parent, $requester, $prompt, selection: $featureRequest->selection, images: $images),
             // Tried again where it was asked: in its idea while that is
             // open, otherwise in the main app.
-            default => $this->requestFeature->handle($featureRequest->project, $requester, $featureRequest->prompt, $featureRequest->selection, $featureRequest->experiment?->status === ExperimentStatus::Open ? $featureRequest->experiment : null, images: $featureRequest->images ?? []),
+            default => $this->requestFeature->handle($first->project, $requester, $prompt, $featureRequest->selection, $first->experiment?->status === ExperimentStatus::Open ? $first->experiment : null, images: $images),
         };
 
         $retry->update(['retry_of_id' => $featureRequest->id]);

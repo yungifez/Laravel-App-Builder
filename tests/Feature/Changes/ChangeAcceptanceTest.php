@@ -201,23 +201,32 @@ class ChangeAcceptanceTest extends TestCase
         Queue::assertPushed(ExecuteRun::class);
     }
 
-    public function test_a_follow_up_checked_on_an_older_app_is_refused_and_the_repository_is_left_clean()
+    public function test_a_follow_up_checked_on_an_older_app_is_asked_again_with_what_it_builds_on()
     {
+        Queue::fake([ExecuteRun::class]);
         $other = $this->completedChange(self::ADD_TEAMS_COMMENT);
-        $parent = $this->completedChange(self::ADD_COMMENT);
-        $followUp = $this->completedChange(self::ADD_SECOND_COMMENT, ['parent_id' => $parent->id, 'target_step' => 'permission']);
+        $parent = $this->completedChange(self::ADD_COMMENT, ['prompt' => 'Make the first version.']);
+        $followUp = $this->completedChange(self::ADD_SECOND_COMMENT, ['parent_id' => $parent->id, 'target_step' => 'permission', 'prompt' => 'Give it its own front page.']);
 
         $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $other));
         $head = $this->repository->head($this->project);
 
-        $this->actingAs($this->owner)
+        $response = $this->actingAs($this->owner)
             ->post(route('feature-requests.acceptance.store', $followUp))
-            ->assertSessionHasErrors(['change' => 'The app changed after this change was checked. Ask for it again to build it on the current app.']);
+            ->assertSessionHasNoErrors();
 
+        // The two asks waiting to be kept are built again together on the
+        // app as it is now, in the order they were asked.
+        $rebuild = $this->project->featureRequests()->latest('id')->firstOrFail();
+        $response->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $rebuild->uuid]));
+        $this->assertSame($followUp->id, $rebuild->retry_of_id);
+        $this->assertNull($rebuild->parent_id);
+        $this->assertSame("Make the first version.\n\nGive it its own front page.", $rebuild->prompt);
         $this->assertNull($followUp->refresh()->commit_sha);
         $this->assertNull($parent->refresh()->commit_sha);
         $this->assertSame($head, $this->repository->head($this->project));
         $this->assertSame('', trim($this->repository->git($this->project, ['status', '--porcelain'])->output()));
+        Queue::assertPushed(ExecuteRun::class);
     }
 
     public function test_only_a_completed_change_can_be_accepted_and_only_once()

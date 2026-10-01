@@ -30,8 +30,9 @@ class AcceptChange
      * did to the notes is saved to our database, never to the repository.
      *
      * Only the state that was checked is committed. When the app changed
-     * after the change was checked, the same request is built and checked
-     * again on the app as it is now, and that new request is returned.
+     * after the change was checked, the same request (with the asks it
+     * builds on that are not kept yet) is built and checked again on the
+     * app as it is now, and that new request is returned.
      *
      * @throws ValidationException when the change cannot be accepted.
      */
@@ -62,14 +63,10 @@ class AcceptChange
         $base = $accepted !== [] ? (string) end($accepted)->commit_sha : ($featureRequest->base_revision ?? $this->repository->root($project));
 
         if ($this->repository->head($project, $branch) !== $base) {
-            // Built on its own from the app as it is now; a change that
-            // builds on others waiting to be kept would only rebuild on
-            // their old state again.
-            if (count($pending) === 1) {
-                return $this->retryFeatureRequest->rebuild($featureRequest, $owner);
-            }
-
-            throw ValidationException::withMessages(['change' => __('The app changed after this change was checked. Ask for it again to build it on the current app.')]);
+            // Built again from the app as it is now. A change that builds
+            // on others waiting to be kept is asked for with them, as one
+            // request, so it does not rebuild on their old state.
+            return $this->retryFeatureRequest->rebuild($featureRequest, $owner, array_slice($pending, 0, -1));
         }
 
         try {
