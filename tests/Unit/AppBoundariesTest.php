@@ -113,6 +113,33 @@ class AppBoundariesTest extends TestCase
         $this->assertCount(1, AppBoundaries::measure($requests, self::PATCH, ['GET /posts'])['findings']);
     }
 
+    public function test_what_reading_the_code_found_joins_what_was_seen_once()
+    {
+        $measured = AppBoundaries::measure([$this->recorded('GET', '/posts', [
+            $this->asked('update "posts" set "views" = ?', self::NEW.':3', 'authorization'),
+        ])], self::PATCH);
+        $read = fn (string $kind, string $at) => ['kind' => $kind, 'what' => 'save', 'at' => $at, 'in' => 'App\Policies\PostPolicy::view'];
+
+        $merged = AppBoundaries::withRead($measured, [
+            $read(AppBoundaries::CHANGED_WHILE_AUTHORIZING, self::NEW.':3'),
+            $read(AppBoundaries::CHANGED_WHILE_AUTHORIZING, self::NEW.':9'),
+            $read(AppBoundaries::CHANGED_WHILE_BOOTING, 'app/Providers/AppServiceProvider.php:14'),
+        ], ['rendering']);
+
+        // Seen is said as seen; a phase not asked for is left out; the app's start is always read.
+        $this->assertCount(1, $merged['findings']);
+        $this->assertSame(['app/Providers/AppServiceProvider.php:14'], array_column($merged['read'], 'at'));
+        $this->assertSame([self::NEW.':9', 'app/Providers/AppServiceProvider.php:14'], array_column(AppBoundaries::withRead($measured, [
+            $read(AppBoundaries::CHANGED_WHILE_AUTHORIZING, self::NEW.':3'),
+            $read(AppBoundaries::CHANGED_WHILE_AUTHORIZING, self::NEW.':9'),
+            $read(AppBoundaries::CHANGED_WHILE_BOOTING, 'app/Providers/AppServiceProvider.php:14'),
+        ])['read'], 'at'));
+
+        // Without a recording, what was read is still kept; with neither, nothing is said.
+        $this->assertSame(0, AppBoundaries::withRead(null, [$read(AppBoundaries::CHANGED_WHILE_BOOTING, 'app/Providers/AppServiceProvider.php:14')])['phased']);
+        $this->assertNull(AppBoundaries::withRead(null, []));
+    }
+
     public function test_only_the_phases_asked_for_are_checked()
     {
         $requests = [$this->recorded('GET', '/posts', [

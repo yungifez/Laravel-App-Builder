@@ -549,6 +549,8 @@ class AgentDriverTest extends TestCase
             'boundaries' => ['phased' => 30, 'unknown' => 2, 'existing' => 0, 'findings' => [
                 ['kind' => 'changed_while_authorizing', 'route' => 'GET /teams', 'what' => 'update teams', 'at' => 'app/Policies/TeamPolicy.php:9', 'in' => 'App\Policies\TeamPolicy::view', 'test' => 'Tests\Feature\TeamDescriptionTest::test_the_team_page_loads'],
                 ['kind' => 'changed_while_rendering', 'route' => 'GET /teams', 'what' => 'http GET gravatar.com', 'at' => 'app/Models/Team.php:12', 'in' => null, 'test' => null],
+            ], 'read' => [
+                ['kind' => 'changed_while_booting', 'what' => 'query', 'at' => 'app/Providers/AppServiceProvider.php:14', 'in' => 'App\Providers\AppServiceProvider::boot'],
             ]],
             'faults' => ['points' => 6, 'run' => 4, 'missed' => 1, 'existing' => 1, 'findings' => [
                 ['kind' => 'saved_then_failed', 'route' => 'POST /teams', 'failed' => 'mail App\Mail\TeamCreated', 'what' => 'insert teams, insert team_user', 'at' => 'app/Models/Team.php:13', 'test' => 'Tests\Feature\TeamDescriptionTest::test_owners_create_teams'],
@@ -571,7 +573,9 @@ class AgentDriverTest extends TestCase
             'The recording also says in which part of a request each thing ran: while Laravel checked who may act, checked the input, handled the request or built the response. Checks and responses can run many times per request and before the request is refused, so nothing in them may save, queue or send. Saved, queued or sent by the code the change added in those parts:'
                 ."\n- GET /teams while Laravel checked whether the person may act: update teams at app/Policies/TeamPolicy.php:9 in App\Policies\TeamPolicy::view (seen in Tests\Feature\TeamDescriptionTest::test_the_team_page_loads)"
                 ."\n- GET /teams while Laravel built the response: http GET gravatar.com at app/Models/Team.php:12"
-                ."\nFor 2 recorded things the part of the request could not be told.",
+                ."\nFor 2 recorded things the part of the request could not be told."
+                ."\nRead from the code the change added, not seen running; each is likely, so check the method before you hold it against the change:"
+                ."\n- App\Providers\AppServiceProvider::boot queries the database at app/Providers/AppServiceProvider.php:14, and Laravel runs it while it starts the app, for every request, command and queue worker",
             "One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer, a save the database refused, or a queued job that ran a second time. Of 6 places where those requests send, save or run a job, 5 were tried and the failure happened in 4. What the app left behind:"
                 ."\n- POST /teams: when mail App\Mail\TeamCreated failed at app/Models/Team.php:13, the request ended in a server error but had already saved: insert teams, insert team_user (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)"
                 ."\n- POST /teams: when insert team_user failed, the save was lost but the request had already sent: job App\Jobs\SyncSeats (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)"

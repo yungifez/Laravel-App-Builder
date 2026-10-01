@@ -13,6 +13,7 @@ use App\Features\AppBoundaries;
 use App\Features\AppFaults;
 use App\Features\AppRoutes;
 use App\Features\AppTraces;
+use App\Features\BoundaryCode;
 use App\Features\CodeShortcuts;
 use App\Features\NewCode;
 use App\Features\NewTests;
@@ -103,6 +104,15 @@ class VerifyFeatureRequest implements ShouldQueue
     protected array $requests = [];
 
     /**
+     * What reading the change's code found against the boundary rules,
+     * from BoundaryCode::inPatch(), read while the change is still in the
+     * workspace.
+     *
+     * @var list<array{kind: string, what: string, at: string, in: string}>
+     */
+    protected array $boundaryCode = [];
+
+    /**
      * Files whose change alters what setup installs. A check cannot be run
      * on the starting commit with the change's packages, so a change to one
      * of these is judged on its own result.
@@ -186,6 +196,7 @@ class VerifyFeatureRequest implements ShouldQueue
             // only ever holds the project's own tests.
             $this->observeTests($driver, $runWorkspaceCommand, $workspace, $featureRequest);
             $acceptance = $this->runAcceptance($driver, $runWorkspaceCommand, $workspace, $featureRequest);
+            $this->readBoundaryCode($driver, $workspace, $featureRequest);
 
             if ($checksPassed && in_array($acceptance, [self::OUTCOME_PASSED, self::OUTCOME_NOT_APPLICABLE], true)) {
                 $this->observeScreens($driver, $runWorkspaceCommand, $workspace, $featureRequest);
@@ -802,12 +813,34 @@ class VerifyFeatureRequest implements ShouldQueue
             return;
         }
 
-        rescue(fn () => $this->keepEvidence('boundaries', AppBoundaries::measure(
-            $this->requests,
-            $featureRequest->patch,
-            array_column($this->evidence['routes']['added'] ?? [], 'route'),
+        rescue(fn () => $this->keepEvidence('boundaries', AppBoundaries::withRead(
+            AppBoundaries::measure(
+                $this->requests,
+                $featureRequest->patch,
+                array_column($this->evidence['routes']['added'] ?? [], 'route'),
+                config('builder.verification.boundaries.phases'),
+            ),
+            $this->boundaryCode,
             config('builder.verification.boundaries.phases'),
         )));
+    }
+
+    /**
+     * Read the PHP files the change touched, as it leaves them, for calls
+     * that break a boundary rule (direction 33). This covers what the
+     * recording cannot: code no test runs, and the app's start. It runs
+     * before anything takes the change out of the workspace.
+     */
+    protected function readBoundaryCode(WorkspaceDriver $driver, Workspace $workspace, FeatureRequest $featureRequest): void
+    {
+        if (! config('builder.verification.boundaries.enabled')) {
+            return;
+        }
+
+        $this->boundaryCode = rescue(fn () => BoundaryCode::inPatch(
+            $featureRequest->patch,
+            fn (string $path) => rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), null, report: false),
+        ), []);
     }
 
     /**

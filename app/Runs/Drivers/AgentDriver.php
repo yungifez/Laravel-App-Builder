@@ -323,7 +323,8 @@ abstract class AgentDriver implements ConstructionDriver
                 .($boundaries['findings'] === []
                     ? ' The code the change added saved and sent nothing in those parts.'
                     : " Saved, queued or sent by the code the change added in those parts:\n".$this->list(array_map($this->crossed(...), $boundaries['findings'])))
-                .($boundaries['unknown'] === 0 ? '' : sprintf("\nFor %d recorded things the part of the request could not be told.", $boundaries['unknown']));
+                .($boundaries['unknown'] === 0 ? '' : sprintf("\nFor %d recorded things the part of the request could not be told.", $boundaries['unknown']))
+                .(($boundaries['read'] ?? []) === [] ? '' : "\nRead from the code the change added, not seen running; each is likely, so check the method before you hold it against the change:\n".$this->list(array_map($this->read(...), $boundaries['read'])));
         }
 
         if (isset($measured['faults'])) {
@@ -404,6 +405,36 @@ abstract class AgentDriver implements ConstructionDriver
             .($finding['at'] === null ? '' : " at {$finding['at']}")
             .($finding['in'] === null ? '' : " in {$finding['in']}")
             .($finding['test'] === null ? '' : " (seen in {$finding['test']})");
+    }
+
+    /**
+     * Say one call the change's code makes in a method Laravel runs where
+     * nothing may change, read from the code, for the reviewer.
+     *
+     * @param  array{kind: string, what: string, at: string, in: string}  $finding
+     */
+    protected function read(array $finding): string
+    {
+        $while = match ($finding['kind']) {
+            AppBoundaries::CHANGED_WHILE_AUTHORIZING => 'checks whether the person may act',
+            AppBoundaries::CHANGED_WHILE_VALIDATING => 'checks the input',
+            AppBoundaries::CHANGED_WHILE_RENDERING => 'builds the response',
+            AppBoundaries::CHANGED_WHILE_BOOTING => 'starts the app, for every request, command and queue worker',
+            default => $finding['kind'],
+        };
+
+        $does = match ($finding['what']) {
+            'save' => 'saves',
+            'mail' => 'sends mail',
+            'notification' => 'sends a notification',
+            'http' => 'calls another service',
+            'job' => 'queues a job',
+            'event' => 'fires an event',
+            'query' => 'queries the database',
+            default => $finding['what'],
+        };
+
+        return "{$finding['in']} {$does} at {$finding['at']}, and Laravel runs it while it {$while}";
     }
 
     /**

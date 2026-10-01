@@ -30,6 +30,14 @@ class AppBoundaries
     public const CHANGED_WHILE_RENDERING = 'changed_while_rendering';
 
     /**
+     * A query or an outside call while the app starts, read from the code
+     * only (BoundaryCode): the recorder never sees the app start. It runs
+     * for every request, command and queue worker, and before a database
+     * may exist at all.
+     */
+    public const CHANGED_WHILE_BOOTING = 'changed_while_booting';
+
+    /**
      * The phases that must not change anything, and the finding for each.
      */
     protected const PHASES = [
@@ -115,6 +123,33 @@ class AppBoundaries
             'unknown' => $unknown,
             'existing' => count($existing),
             'findings' => array_slice(array_values($findings), 0, self::KEPT),
+        ];
+    }
+
+    /**
+     * Add what reading the change's code found (BoundaryCode) to what the
+     * recording showed, as "read". A line the recording already holds
+     * against the change is said once, as seen. Null when neither found
+     * anything to say.
+     *
+     * @param  array{phased: int, unknown: int, existing: int, findings: list<array{kind: string, route: string, what: string, at: string|null, in: string|null, test: string|null}>}|null  $measured  From measure()
+     * @param  list<array{kind: string, what: string, at: string, in: string}>  $read  From BoundaryCode::inPatch()
+     * @param  list<string>|null  $phases  The phases to check, all when null; the app's start is always read
+     * @return array{phased: int, unknown: int, existing: int, findings: list<array{kind: string, route: string, what: string, at: string|null, in: string|null, test: string|null}>, read: list<array{kind: string, what: string, at: string, in: string}>}|null
+     */
+    public static function withRead(?array $measured, array $read, ?array $phases = null): ?array
+    {
+        $seen = array_column($measured['findings'] ?? [], 'at');
+        $checked = [...array_values(array_intersect_key(self::PHASES, array_flip($phases ?? array_keys(self::PHASES)))), self::CHANGED_WHILE_BOOTING];
+        $read = array_values(array_filter($read, fn (array $finding) => in_array($finding['kind'], $checked, true) && ! in_array($finding['at'], $seen, true)));
+
+        if ($measured === null && $read === []) {
+            return null;
+        }
+
+        return [
+            ...($measured ?? ['phased' => 0, 'unknown' => 0, 'existing' => 0, 'findings' => []]),
+            'read' => array_slice($read, 0, self::KEPT),
         ];
     }
 

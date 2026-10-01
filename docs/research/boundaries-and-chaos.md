@@ -2,7 +2,9 @@
 
 Answer to [direction 33](../architecture/direction/33-architecture-boundaries-and-chaos.md).
 Status: the owner adopted the MVP (§20) on 2026-10-01. Built so far: phase
-and frames per effect, the phase rules (`AppBoundaries`) and the protected
+and frames per effect, the phase rules (`AppBoundaries`), the same rules read
+from the code (`BoundaryCode`, including the app's start), the job that runs
+twice, fault places ordered by boundary findings, and the protected
 verification inputs, described in architecture.md §12. The rest is proposal.
 When parts are adopted, they are folded into the existing sections of
 [architecture.md](../architecture/architecture.md) (§12 Verification, §26.4

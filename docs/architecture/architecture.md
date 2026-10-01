@@ -1839,6 +1839,22 @@ the recorder named the phases and the tests reached the new code without a
 finding, the proof says so. Like the other measurements, it never changes
 the checks' result by itself.
 
+The recording only shows what the tests run, and it never shows the app
+start. So `BoundaryCode` also reads the PHP files the change touched, as the
+change leaves them, before anything takes the change out of the workspace.
+It names the methods Laravel itself runs in each phase: every public method
+of a policy, a form request's `authorize`, `rules` and validation hooks, a
+resource's `toArray`, and a service provider's `boot` and `register`. On
+the lines the change added, it finds a save, a job, a mail, a notification,
+an event or an outside call in those methods, and, while the app starts,
+any query too. A closure that `boot` only registers runs later and is not
+counted. It reads one method at a time and does not follow calls, so each
+finding is likely, not proven. These go to the reviewer as "read from the
+code, not seen running" (`read`), never to the owner's proof. A line the
+recording already holds against the change is said once, as seen. The
+app's start is a fourth rule, read only: a query there runs for every
+request, command and queue worker, and before a database may exist.
+
 **The files that decide how the app is checked are protected** (direction
 33). `phpunit.xml`, `tests/Pest.php`, `phpstan.neon` (and their `.dist`
 forms) and `.github` join the protected paths
@@ -1871,7 +1887,9 @@ can be caused, in requests that ran the change's code:
   requests that save twice have no transaction, so this is the common place.
 - **A job.** Each job the sync queue ran in a request, when the job sent
   something or added a row that stayed. This place does not fail. The job
-  runs a second time.
+  runs a second time. A job of the framework that only delivers one email,
+  notification or broadcast is not a place: it has no code of the app to
+  make safe.
 
 For each place, verification runs the one test that made the request again,
 with `TRACE_RECORDER_FAULT` naming the test, the request and the effect. The

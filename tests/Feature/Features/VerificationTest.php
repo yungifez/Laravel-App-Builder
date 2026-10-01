@@ -995,6 +995,58 @@ class VerificationTest extends TestCase
         $this->assertArrayNotHasKey('traces', $off->verifications()->sole()->evidence ?? []);
     }
 
+    public function test_saves_where_laravel_checks_or_starts_are_seen_in_the_recording_and_read_from_the_code()
+    {
+        $map = ['sh', '-c', 'make the test map'];
+        config([
+            'builder.verification.test_map' => [...config('builder.verification.test_map'), 'command' => $map, 'report' => 'covered.txt', 'listing' => 'tests.xml'],
+            'builder.verification.traces' => ['enabled' => true, 'report' => 'trace.jsonl', 'repeats' => 3],
+            'builder.verification.boundaries' => ['enabled' => true, 'phases' => ['authorization', 'validation', 'rendering']],
+        ]);
+        $policy = "<?php\nnamespace App\\Policies;\nclass PostPolicy\n{\n    public function view(\$user, \$post): bool\n    {\n        \$post->increment('views');\n        \$post->author->notify(new \\App\\Notifications\\Viewed);\n        return true;\n    }\n}\n";
+        $provider = "<?php\nnamespace App\\Providers;\nuse Illuminate\\Support\\ServiceProvider;\nclass AppServiceProvider extends ServiceProvider\n{\n    public function boot(): void\n    {\n        \\Illuminate\\Support\\Facades\\View::share('categories', \\App\\Models\\Category::all());\n    }\n}\n";
+        $added = fn (string $path, string $code) => implode("\n", [
+            "diff --git a/{$path} b/{$path}",
+            'new file mode 100644',
+            '--- /dev/null',
+            "+++ b/{$path}",
+            '@@ -0,0 +1,'.substr_count($code, "\n").' @@',
+            ...array_map(fn (string $line) => '+'.$line, explode("\n", rtrim($code, "\n"))),
+        ]);
+        $this->driver->onExec = function (string $workspace, array $command) use ($map, $policy, $provider) {
+            $this->driver->files["{$workspace}:app/Policies/PostPolicy.php"] = $policy;
+            $this->driver->files["{$workspace}:app/Providers/AppServiceProvider.php"] = $provider;
+
+            if ($command === $map) {
+                $this->driver->files["{$workspace}:trace.jsonl"] = json_encode(['test' => 'Tests\Feature\PostTest::test_people_read_posts', 'method' => 'GET', 'route' => '/posts', 'status' => 200, 'refused' => false, 'blind' => [], 'effects' => [
+                    ['kind' => 'query', 'sql' => 'update "posts" set "views" = "views" + 1', 'open' => 0, 'at' => 'app/Policies/PostPolicy.php:7', 'phase' => 'authorization', 'frames' => ['App\Policies\PostPolicy::view']],
+                ]]);
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        $change = FeatureRequest::factory()->generated()->create(['patch' => $added('app/Policies/PostPolicy.php', $policy)."\n".$added('app/Providers/AppServiceProvider.php', $provider)."\n".$this->changeWithTests()]);
+
+        app(RequestVerification::class)->handle($change);
+
+        $boundaries = $change->verifications()->sole()->evidence['boundaries'];
+        // The save was seen, so it is said once, as seen.
+        $this->assertSame([['kind' => 'changed_while_authorizing', 'route' => 'GET /posts', 'what' => 'update posts', 'at' => 'app/Policies/PostPolicy.php:7', 'in' => 'App\Policies\PostPolicy::view', 'test' => 'Tests\Feature\PostTest::test_people_read_posts']], $boundaries['findings']);
+        // What no test ran, and the app's start, are read from the code.
+        $this->assertSame([
+            ['kind' => 'changed_while_authorizing', 'what' => 'notification', 'at' => 'app/Policies/PostPolicy.php:8', 'in' => 'App\Policies\PostPolicy::view'],
+            ['kind' => 'changed_while_booting', 'what' => 'query', 'at' => 'app/Providers/AppServiceProvider.php:8', 'in' => 'App\Providers\AppServiceProvider::boot'],
+        ], $boundaries['read']);
+
+        // Switched off, nothing is read or kept.
+        config(['builder.verification.boundaries.enabled' => false]);
+        $off = FeatureRequest::factory()->generated()->create(['patch' => $change->patch]);
+
+        app(RequestVerification::class)->handle($off);
+
+        $this->assertArrayNotHasKey('boundaries', $off->verifications()->sole()->evidence ?? []);
+    }
+
     public function test_one_failure_at_a_time_is_caused_where_the_changes_code_sends_and_what_stayed_is_kept()
     {
         $map = ['sh', '-c', 'make the test map'];
