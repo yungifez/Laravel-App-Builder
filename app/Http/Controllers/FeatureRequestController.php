@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Features\AskForChange;
 use App\Actions\Features\DescribeFeatureRequest;
-use App\Actions\Features\RequestFeature;
 use App\Actions\Features\StoreRequestImages;
 use App\Http\Requests\FeatureRequestStoreRequest;
 use App\Models\FeatureRequest;
@@ -16,11 +16,12 @@ use Inertia\Response;
 class FeatureRequestController extends Controller
 {
     /**
-     * Request a feature for the project.
+     * Request a feature for the project, on top of the change the owner has
+     * not kept yet, if any.
      */
-    public function store(FeatureRequestStoreRequest $request, Project $project, RequestFeature $requestFeature, StoreRequestImages $storeRequestImages): RedirectResponse
+    public function store(FeatureRequestStoreRequest $request, Project $project, AskForChange $askForChange, StoreRequestImages $storeRequestImages): RedirectResponse
     {
-        $featureRequest = $requestFeature->handle(
+        $featureRequest = $askForChange->handle(
             $project,
             $request->user(),
             $request->validated('prompt'),

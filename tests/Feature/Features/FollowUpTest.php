@@ -6,6 +6,7 @@ use App\Actions\Features\RetryFeatureRequest;
 use App\Actions\Runs\StartRun;
 use App\Enums\FeatureRequestStatus;
 use App\Models\FeatureRequest;
+use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -44,6 +45,38 @@ class FollowUpTest extends TestCase
                 ->where('change.earlier.0.summary', 'Owners can invite people.')
                 ->where('change.featureRequest.can_continue', false)
                 ->has('changes', 1));
+    }
+
+    public function test_a_new_ask_builds_on_the_newest_change_the_owner_has_not_kept_yet()
+    {
+        $project = Project::factory()->create();
+        FeatureRequest::factory()->for($project)->generated()->create();
+        $newest = FeatureRequest::factory()->for($project)->generated()->create(['base_revision' => 'abc123']);
+
+        $response = $this->actingAs($project->owner)
+            ->post(route('feature-requests.store', $project), ['prompt' => 'Show places left on each class.']);
+
+        $ask = $newest->followUps()->sole();
+        $response->assertRedirect(route('projects.show', ['project' => $project, 'change' => $ask->uuid]));
+        $this->assertSame('Show places left on each class.', $ask->prompt);
+        $this->assertSame('abc123', $ask->base_revision);
+        $this->assertSame(3, $project->featureRequests()->count());
+    }
+
+    public function test_a_new_ask_starts_from_the_kept_app_when_no_change_waits_to_be_tried()
+    {
+        $project = Project::factory()->create();
+        FeatureRequest::factory()->for($project)->generated()->create(['commit_sha' => 'def456', 'accepted_at' => now()]);
+        FeatureRequest::factory()->for($project)->generated()->create(['reverted_at' => now()]);
+        FeatureRequest::factory()->for($project)->generated()->create(['dismissed_at' => now()]);
+        FeatureRequest::factory()->for($project)->create(['status' => FeatureRequestStatus::Failed]);
+
+        $this->actingAs($project->owner)
+            ->post(route('feature-requests.store', $project), ['prompt' => 'Show places left on each class.']);
+
+        $ask = $project->featureRequests()->latest('id')->first();
+        $this->assertSame('Show places left on each class.', $ask->prompt);
+        $this->assertNull($ask->parent_id);
     }
 
     public function test_a_change_with_nothing_to_build_on_cannot_be_continued()

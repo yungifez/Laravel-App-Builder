@@ -978,9 +978,8 @@ const composer = ref<HTMLTextAreaElement | null>(null);
 const continuing = computed(
     () => props.change?.featureRequest.can_continue === true,
 );
-// A new change starts from the app as kept. A change still waiting to be
-// tried is not in it, so the owner is told before asking, not surprised
-// later when the new change knows nothing of it.
+// A new ask builds on the newest change still waiting to be tried, so it
+// starts from the app the owner last saw. Keeping it keeps both.
 const notKept = computed(
     () =>
         props.changes.filter((item) => item.state === 'waiting' && !item.asks)
@@ -993,8 +992,8 @@ const composerHint = computed(() => {
 
     if (notKept.value > 0) {
         return notKept.value === 1
-            ? 'Starts a new change, without the one you have not kept yet'
-            : `Starts a new change, without the ${notKept.value} you have not kept yet`;
+            ? 'Builds on your change to try'
+            : 'Builds on your newest change to try';
     }
 
     return props.change ? 'Starts a new change' : '';
