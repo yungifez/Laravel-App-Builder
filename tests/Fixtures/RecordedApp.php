@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use RuntimeException;
 
@@ -145,6 +146,14 @@ class RecordedApp
             RecordedJob::dispatch()->afterCommit();
             User::query()->count();
         });
+
+        return response()->noContent();
+    }
+
+    public function called(User $user): Response
+    {
+        DB::table('users')->where('id', $user->id)->update(['name' => 'Called']);
+        Http::post('https://outside.example/hook', ['user' => $user->id]);
 
         return response()->noContent();
     }

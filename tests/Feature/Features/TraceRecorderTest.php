@@ -10,6 +10,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Process;
@@ -314,6 +315,26 @@ class TraceRecorderTest extends TestCase
 
         $measured = $this->measureFailure($requests, 'mail '.RecordedMail::class);
         $this->assertSame([['saved_then_failed', 'mail '.RecordedMail::class, 'update users']], array_map(fn (array $finding) => [$finding['kind'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
+    public function test_an_outside_call_a_test_fakes_gets_no_answer_and_what_the_request_saved_stays()
+    {
+        $user = User::factory()->create();
+        Route::post('/_faked/called/{user}', [RecordedApp::class, 'called'])->middleware('web');
+        $recorded = $this->recordWithFailure(effect: 2, kind: 'http');
+        Http::fake();
+
+        $this->post("/_faked/called/{$user->id}")->assertNoContent();
+        $this->post("/_faked/called/{$user->id}")->assertStatus(500);
+
+        $requests = $recorded();
+        $this->assertSame([['query', 'query', 'http'], ['query', 'query', 'http']], array_map(fn (array $request) => array_column($request['effects'], 'kind'), $requests));
+        $this->assertSame([[], []], array_column($requests, 'blind'));
+        // The call that got no answer never reached the fake.
+        Http::assertSentCount(1);
+
+        $measured = $this->measureFailure($requests, 'http POST outside.example');
+        $this->assertSame([['saved_then_failed', 'http POST outside.example', 'update users']], array_map(fn (array $finding) => [$finding['kind'], $finding['failed'], $finding['what']], $measured['findings']));
     }
 
     public function test_a_notification_a_test_fakes_is_seen_as_the_email_it_sends_and_that_email_can_fail()
