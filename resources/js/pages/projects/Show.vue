@@ -59,6 +59,7 @@ import AppProblems from '@/components/AppProblems.vue';
 import AppSchedule from '@/components/AppSchedule.vue';
 import AppPreview from '@/components/AppPreview.vue';
 import BesidePanel from '@/components/BesidePanel.vue';
+import ChangeCopySwitch from '@/components/ChangeCopySwitch.vue';
 import ChangeThread from '@/components/ChangeThread.vue';
 import ChatList from '@/components/ChatList.vue';
 import SignInAs from '@/components/SignInAs.vue';
@@ -613,6 +614,21 @@ const browsing = computed(() =>
                   ),
           },
 );
+
+// The bar over the app shows while the app runs.
+const toolbarShown = computed(
+    () => app.running && !app.lost && props.preview !== null,
+);
+
+function changeCopySwitch(change: NonNullable<typeof decidingOn.value>) {
+    return {
+        featureRequestId: change.featureRequest.id,
+        withChange: changeCopy.value !== null,
+        copyStarted:
+            change.preview?.status === 'ready' ||
+            change.preview?.status === 'starting',
+    };
+}
 
 // A new tab opens the page on show, of the copy while the owner tries
 // one, so it carries on from where they are.
@@ -2062,7 +2078,7 @@ function sendOnEnter(event: KeyboardEvent): void {
         >
             <!-- The app, and what it does behind the page. -->
             <nav
-                v-if="app.running && !app.lost && preview"
+                v-if="toolbarShown"
                 class="-mb-1 flex shrink-0 flex-wrap items-center gap-1 sm:flex-nowrap"
                 aria-label="What to show"
             >
@@ -2195,6 +2211,14 @@ function sendOnEnter(event: KeyboardEvent): void {
                         </a>
                     </Button>
                 </div>
+                <!-- Before and after sit in the bar, between moving around
+                     the app and what it does behind the page. -->
+                <ChangeCopySwitch
+                    v-if="decidingOn"
+                    class="order-last mx-auto sm:order-none sm:mx-0 sm:ml-2"
+                    v-bind="changeCopySwitch(decidingOn)"
+                    @show="withoutChange = !$event"
+                />
                 <div class="ml-auto sm:hidden">
                     <SignInAs
                         :project-id="project.id"
@@ -2240,83 +2264,12 @@ function sendOnEnter(event: KeyboardEvent): void {
                     </button>
                 </div>
             </nav>
-            <!-- One switch in one place, with or without the change, so
-                 trying it and going back never moves what is around it. -->
-            <div
-                v-if="decidingOn"
-                class="flex items-center justify-center gap-2 text-xs"
-                data-test="change-copy-switch"
-            >
-                <div
-                    class="flex items-center rounded-md bg-muted p-0.5"
-                    role="group"
-                    aria-label="Show your app"
-                >
-                    <button
-                        type="button"
-                        :aria-pressed="!changeCopy"
-                        :class="[
-                            'min-h-11 rounded px-3 select-none sm:min-h-8',
-                            !changeCopy
-                                ? 'bg-background shadow-sm'
-                                : 'text-muted-foreground hover:text-foreground',
-                        ]"
-                        data-test="change-copy-hide"
-                        @click="withoutChange = true"
-                    >
-                        Without the change
-                    </button>
-                    <button
-                        v-if="
-                            decidingOn.preview?.status === 'ready' ||
-                            decidingOn.preview?.status === 'starting'
-                        "
-                        type="button"
-                        :aria-pressed="!!changeCopy"
-                        :class="[
-                            'min-h-11 rounded px-3 select-none sm:min-h-8',
-                            changeCopy
-                                ? 'bg-background shadow-sm'
-                                : 'text-muted-foreground hover:text-foreground',
-                        ]"
-                        data-test="change-copy-show"
-                        @click="withoutChange = false"
-                    >
-                        With the change
-                    </button>
-                    <Form
-                        v-else
-                        v-bind="
-                            FeatureRequestPreviewController.store.form(
-                                decidingOn.featureRequest.id,
-                            )
-                        "
-                        :options="{ preserveScroll: true, preserveState: true }"
-                        v-slot="{ processing }"
-                        class="contents"
-                        @success="withoutChange = false"
-                    >
-                        <button
-                            :aria-pressed="false"
-                            class="min-h-11 rounded px-3 text-muted-foreground select-none hover:text-foreground disabled:opacity-50 sm:min-h-8"
-                            :disabled="processing"
-                            data-test="change-copy-start"
-                        >
-                            With the change
-                        </button>
-                    </Form>
-                </div>
-                <span
-                    :class="[
-                        'text-muted-foreground transition-opacity',
-                        changeCopy ? 'opacity-100' : 'opacity-0',
-                    ]"
-                    :aria-hidden="!changeCopy"
-                    data-test="change-copy-not-kept"
-                >
-                    Not kept yet
-                </span>
-            </div>
+            <ChangeCopySwitch
+                v-if="decidingOn && !toolbarShown"
+                class="self-center"
+                v-bind="changeCopySwitch(decidingOn)"
+                @show="withoutChange = !$event"
+            />
             <div
                 v-if="changeCopy"
                 v-show="showing === 'app' || !changeCopyRuns"
