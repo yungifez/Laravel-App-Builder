@@ -306,14 +306,15 @@ class PreviewTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_an_unreachable_app_is_reported_as_a_bad_gateway()
+    public function test_an_unreachable_change_copy_is_reported_as_a_bad_gateway_and_tells_the_builder()
     {
         $preview = $this->previewWithSession('secret-value');
         Http::fake(fn () => throw new ConnectionException('Connection refused'));
 
+        // The builder shows a change's copy too, and offers to open it again.
         $this->previewRequest('GET', "http://{$preview->host}.preview.test/", ['builder_preview' => 'secret-value'])
             ->assertStatus(502)
-            ->assertDontSee('type:"lost"', false);
+            ->assertSee('parent.postMessage({builder:true,type:"lost"},"'.PreviewGateway::builderOrigin().'")', false);
     }
 
     public function test_an_editable_app_that_stopped_tells_the_builder_so_it_can_start_it_again()
@@ -324,7 +325,9 @@ class PreviewTest extends TestCase
 
         $this->previewRequest('GET', "http://{$preview->host}.preview.test/", ['builder_preview' => 'secret-value'])
             ->assertStatus(502)
-            ->assertSee('parent.postMessage({builder:true,type:"lost"},"'.PreviewGateway::builderOrigin().'")', false);
+            ->assertSee('parent.postMessage({builder:true,type:"lost"},"'.PreviewGateway::builderOrigin().'")', false)
+            // A builder that starts to listen later says hello and hears it again.
+            ->assertSee('e.data.type==="hello"', false);
     }
 
     public function test_the_owner_can_stop_a_preview_and_its_session_ends()

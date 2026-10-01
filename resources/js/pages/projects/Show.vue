@@ -447,6 +447,42 @@ const changeCopy = computed(() => {
         : null;
 });
 
+// The copy stopped under a preview still marked as running, as when the
+// machine restarts; it says so, and the owner opens it again. The page can
+// be drawn before it listens, so it asks the copy once it does.
+const changeCopyFrame = ref<HTMLIFrameElement | null>(null);
+const changeCopyLost = ref(false);
+watch(
+    () => changeCopy.value?.id,
+    () => (changeCopyLost.value = false),
+);
+
+function onChangeCopyMessage(event: MessageEvent): void {
+    const copy = changeCopy.value;
+
+    if (
+        copy !== null &&
+        event.source === changeCopyFrame.value?.contentWindow &&
+        event.origin === new URL(copy.url).origin &&
+        event.data?.builder === true &&
+        event.data.type === 'lost'
+    ) {
+        changeCopyLost.value = true;
+    }
+}
+
+onMounted(() => {
+    window.addEventListener('message', onChangeCopyMessage);
+
+    if (changeCopy.value !== null) {
+        changeCopyFrame.value?.contentWindow?.postMessage(
+            { builder: true, type: 'hello' },
+            new URL(changeCopy.value.url).origin,
+        );
+    }
+});
+onUnmounted(() => window.removeEventListener('message', onChangeCopyMessage));
+
 // A phone shows one thing at a time: the chat, the app with the design
 // panel under it, or just the app.
 const phoneViews = [
@@ -2094,13 +2130,43 @@ function sendOnEnter(event: KeyboardEvent): void {
                 data-test="change-copy"
             >
                 <iframe
-                    v-if="changeCopy.status === 'ready'"
+                    v-if="changeCopy.status === 'ready' && !changeCopyLost"
+                    ref="changeCopyFrame"
                     :key="changeCopy.id"
                     :src="PreviewController.show.url(changeCopy.id)"
                     title="Your app with this change"
                     class="size-full bg-background"
                     data-test="change-copy-frame"
                 />
+                <div
+                    v-else-if="changeCopyLost"
+                    class="flex h-full flex-col items-center justify-center gap-3 p-6 text-center"
+                    data-test="change-copy-lost"
+                >
+                    <p class="text-lg font-medium">
+                        Your app with this change stopped
+                    </p>
+                    <p class="max-w-xs text-sm text-muted-foreground">
+                        Your work is safe.
+                    </p>
+                    <Form
+                        v-bind="
+                            FeatureRequestPreviewController.store.form(
+                                decidingOn!.featureRequest.id,
+                            )
+                        "
+                        :options="{ preserveScroll: true, preserveState: true }"
+                        v-slot="{ processing }"
+                    >
+                        <Button
+                            :disabled="processing"
+                            class="h-11 select-none"
+                            data-test="change-copy-again"
+                        >
+                            Open it again
+                        </Button>
+                    </Form>
+                </div>
                 <div
                     v-else
                     class="flex h-full flex-col items-center justify-center gap-3 p-6 text-center"

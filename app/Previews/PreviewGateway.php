@@ -220,7 +220,7 @@ class PreviewGateway
         try {
             $upstream = $pending->send($request->getMethod(), rtrim((string) $preview->upstream_url, '/').$request->getRequestUri(), $options);
         } catch (ConnectionException) {
-            return $this->page(502, __('The preview is not responding. Start it again from the builder.'), tellBuilder: $preview->editable);
+            return $this->page(502, __('The preview is not responding. Start it again from the builder.'), tellBuilder: true);
         }
 
         $response = new Response($upstream->body(), $upstream->status());
@@ -357,9 +357,13 @@ class PreviewGateway
     protected function page(int $status, string $message, bool $tellBuilder = false): Response
     {
         // A builder showing the app hears that it stopped, so it can offer
-        // to start it again instead of showing this page.
+        // to start it again instead of showing this page. The builder page
+        // can load this frame before it listens, as when it was drawn on the
+        // server; it then says hello, and hears it again.
+        $origin = json_encode(self::builderOrigin(), JSON_UNESCAPED_SLASHES);
         $script = $tellBuilder
-            ? '<script>parent.postMessage({builder:true,type:"lost"},'.json_encode(self::builderOrigin(), JSON_UNESCAPED_SLASHES).')</script>'
+            ? '<script>parent.postMessage({builder:true,type:"lost"},'.$origin.');'
+                .'addEventListener("message",function(e){if(e.origin==='.$origin.'&&e.source===parent&&e.data&&e.data.builder===true&&e.data.type==="hello"){parent.postMessage({builder:true,type:"lost"},'.$origin.')}})</script>'
             : '';
 
         return new Response(
