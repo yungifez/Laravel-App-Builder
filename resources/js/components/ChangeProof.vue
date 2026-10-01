@@ -18,12 +18,19 @@ const props = defineProps<{ proof: ProofLine[] }>();
 
 // Gaps lead, right under the verdict that counts them, so what is not
 // checked never hides between passes. Then the passes: the first one
-// shows, and the rest fold behind a count so the list stays short. The
-// rest (problems caught, how far the tests reached) always shows last.
+// shows, and the rest fold behind a count so the list stays short. A pass
+// that tried the change itself (a new test that fails without it) leads,
+// as it says more than "the old tests still pass". The rest (problems
+// caught, how far the tests reached) always shows last.
 const gaps = computed(() => props.proof.filter((line) => line.kind === 'gap'));
-const passes = computed(() =>
-    props.proof.filter((line) => line.kind === 'passed'),
-);
+const passes = computed(() => {
+    const passed = props.proof.filter((line) => line.kind === 'passed');
+
+    return [
+        ...passed.filter((line) => line.evidence),
+        ...passed.filter((line) => !line.evidence),
+    ];
+});
 const others = computed(() =>
     props.proof.filter((line) => line.kind !== 'passed' && line.kind !== 'gap'),
 );
