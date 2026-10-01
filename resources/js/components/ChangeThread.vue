@@ -708,11 +708,14 @@ const checks = computed(() => {
                                         name="more_questions"
                                         :value="moreQuestions ? 1 : 0"
                                     />
+                                    <!-- A way out, not a fourth answer: quiet
+                                         like "Ask me more", so the answers
+                                         above stay the choice. -->
                                     <Button
                                         variant="ghost"
                                         size="sm"
                                         :disabled="processing"
-                                        class="-ml-2 h-11 select-none sm:h-7"
+                                        class="-ml-2 h-11 text-xs font-normal text-muted-foreground select-none hover:text-foreground sm:h-7"
                                         data-test="answer-you-decide"
                                     >
                                         You decide
