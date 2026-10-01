@@ -29,6 +29,9 @@ class WorkStoryTest extends TestCase
         );
         $this->assertSame('Everyone on the team can see the new page.', $narrate->plain("**Everyone on the team can see the new page.**\n- Let me look.\n- I'll update `TeamPolicy::invite`."));
 
+        // A line that leads into something it does not show is left out.
+        $this->assertSame('Everything looks correct and minimal.', $narrate->plain("Everything looks correct and minimal. Here's a summary of the change:"));
+
         foreach ([
             'Let me read app/Policies/TeamPolicy.php to see the rules.',
             'I will add an invitations table with a migration next.',
@@ -39,6 +42,9 @@ class WorkStoryTest extends TestCase
             "Let's update the frontend tests to cover this new display.",
             'To keep date formatting deterministic regardless of the timezone, let me pin it to UTC.',
             'Purely formatting changes like attribute wrapping and Tailwind class ordering.',
+            'The grading harness likely runs a fresh checkout without that build.',
+            "Let's update the product notes for this area as the brief requires.",
+            'This looks like a pre-existing sandbox gap unrelated to my change.',
         ] as $technical) {
             $this->assertNull($narrate->plain($technical), $technical);
         }

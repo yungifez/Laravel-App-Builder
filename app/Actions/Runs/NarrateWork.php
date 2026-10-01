@@ -31,6 +31,13 @@ class NarrateWork
         'TypeScript' => 'Read the screens\' code for mistakes',
     ];
 
+    /**
+     * Words the agent uses when it guesses at how it is run and checked
+     * ("the grading harness", "as the brief requires"). How we work is
+     * ours, so these lines never reach the owner.
+     */
+    protected const OURS = '/\b(harness|grad(ing|ed|er)|the brief|sandbox(ed)?|evaluator|benchmark)\b/i';
+
     protected const JARGON = '/\b(prompt|instructions?|acceptance|repository|repo|git|commit|artisan|phpunit|pest|phpstan|larastan|pint|composer|npm|controller|middleware|namespace|migration|eloquent|blade|inertia|livewire|vue|typescript|schema|endpoint|seeder|lint|refactor|diffs?|codebase|css|stack trace|test suite|frontend|backend|vitest|jest|php|json|utc|tailwind|ssr|api|payload|seriali[sz]\w*|pivot|fixtures?|helpers?|describe block|deterministic|regex|sql|attributes?|components?|props|enum|auto-?fixer)\b/i';
 
     /**
@@ -280,7 +287,7 @@ class NarrateWork
             $sentence = preg_replace('/^(now|ok(ay)?|great|perfect|good|excellent|alright|all right|done)\b[,!.]?\s*/i', '', $sentence) ?? '';
             $sentence = preg_replace('/\*\*|__/', '', $sentence) ?? '';
 
-            if (str_word_count($sentence) < 5 || mb_strlen($sentence) > 240 || preg_match(self::CODE, $sentence) === 1 || preg_match(self::JARGON, $sentence) === 1) {
+            if (str_word_count($sentence) < 5 || mb_strlen($sentence) > 240 || preg_match(self::CODE, $sentence) === 1 || preg_match(self::JARGON, $sentence) === 1 || preg_match(self::OURS, $sentence) === 1 || str_ends_with($sentence, ':')) {
                 continue;
             }
 
