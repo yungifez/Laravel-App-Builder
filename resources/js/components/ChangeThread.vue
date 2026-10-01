@@ -1512,13 +1512,8 @@ const checks = computed(() => {
             ]"
             data-test="change-decision"
         >
-            <p
-                v-if="change.preview?.status === 'starting'"
-                class="flex items-center gap-1.5 text-xs text-muted-foreground"
-            >
-                <LoaderCircle class="size-3.5 animate-spin" /> Getting a copy
-                ready to try…
-            </p>
+            <!-- Both buttons keep their places while the copy starts, so
+                 nothing jumps under the owner's hand. -->
             <div class="flex gap-2">
                 <Button
                     v-if="change.preview?.status === 'ready'"
@@ -1535,8 +1530,18 @@ const checks = computed(() => {
                         Try it <ExternalLink class="size-3.5" />
                     </a>
                 </Button>
+                <Button
+                    v-else-if="change.preview?.status === 'starting'"
+                    variant="outline"
+                    disabled
+                    class="h-11 flex-1 gap-1.5 select-none sm:h-9"
+                    data-test="preview-starting"
+                >
+                    <LoaderCircle class="size-3.5 animate-spin" />
+                    Getting it ready…
+                </Button>
                 <Form
-                    v-else-if="change.preview?.status !== 'starting'"
+                    v-else
                     v-bind="
                         FeatureRequestPreviewController.store.form(request.id)
                     "
