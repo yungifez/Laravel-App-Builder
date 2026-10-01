@@ -793,6 +793,10 @@ export type SavedRows = {
     key: string | null;
     /** Each row's name in that column, in the order of the rows. */
     ids: (string | null)[];
+    /** The columns whose values can be changed. */
+    changeable: string[];
+    /** For each row, the places of values shown cut short. */
+    cut: number[][];
     rows: (string | null)[][];
     /** True when the table holds more rows than are shown. */
     more: boolean;

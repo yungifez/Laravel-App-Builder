@@ -79,6 +79,8 @@ class PreviewDataTest extends TestCase
                 ->where('rows.rows.0', ['51', 'Member 51', '••••••', str_repeat('a', 200).'...', null])
                 ->where('rows.key', 'id')
                 ->where('rows.ids.0', '51')
+                ->where('rows.changeable', ['name', 'bio', 'deleted_at'])
+                ->where('rows.cut.0', [3])
                 ->where('rows.more', true)));
 
         // The table's name is passed to the app, never written into code.
@@ -122,6 +124,47 @@ class PreviewDataTest extends TestCase
         $this->actingAs($this->owner)
             ->delete(route('preview-rows.destroy', $this->project), ['table' => 'members', 'row' => '7'])
             ->assertSessionHasErrors(['app' => 'Your app kept it, because other saved data still points to it. Delete that first.']);
+    }
+
+    public function test_the_owner_changes_one_value_through_the_app()
+    {
+        $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(exitCode: 0, output: $command[1] === '-r'
+            ? json_encode(['changed' => 1, 'refused' => false])
+            : json_encode(['tables' => [['table' => 'members', 'rows' => 2]]]), errorOutput: '', durationMs: 5);
+
+        $this->actingAs($this->owner)
+            ->from(route('projects.show', ['project' => $this->project, 'table' => 'members']))
+            ->patch(route('preview-rows.update', $this->project), ['table' => 'members', 'row' => '7', 'column' => 'name', 'value' => 'Ada Lovelace'])
+            ->assertRedirect(route('projects.show', ['project' => $this->project, 'table' => 'members']))
+            ->assertSessionHasNoErrors();
+        // An empty value is saved as nothing.
+        $this->patch(route('preview-rows.update', $this->project), ['table' => 'members', 'row' => '7', 'column' => 'bio', 'value' => ''])
+            ->assertSessionHasNoErrors();
+
+        $changes = collect($this->driver->executed)->where('command.1', '-r')->values();
+        $this->assertSame(['--', 'members', '7', 'name', '0', 'Ada Lovelace'], array_slice($changes[0]['command'], 3));
+        $this->assertSame(['--', 'members', '7', 'bio', '1', ''], array_slice($changes[1]['command'], 3));
+    }
+
+    public function test_a_value_the_app_refuses_is_told_and_what_visitors_sign_in_with_is_never_changed()
+    {
+        $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(exitCode: 0, output: $command[1] === '-r'
+            ? json_encode(['changed' => 0, 'refused' => true])
+            : json_encode(['tables' => [['table' => 'members', 'rows' => 2]]]), errorOutput: '', durationMs: 5);
+
+        $this->actingAs($this->owner)
+            ->patch(route('preview-rows.update', $this->project), ['table' => 'members', 'row' => '7', 'column' => 'age', 'value' => 'old'])
+            ->assertSessionHasErrors(['value' => 'Your app cannot save that here. Check it is the right kind, such as a number or a date.']);
+        $this->patch(route('preview-rows.update', $this->project), ['table' => 'members', 'row' => '7', 'column' => 'name', 'value' => null])
+            ->assertSessionHasErrors(['value' => 'Your app needs something here.']);
+
+        $before = count($this->driver->executed);
+        $this->patch(route('preview-rows.update', $this->project), ['table' => 'members', 'row' => '7', 'column' => 'password', 'value' => 'x'])
+            ->assertSessionHasErrors('column');
+        $this->actingAs(User::factory()->create())
+            ->patch(route('preview-rows.update', $this->project), ['table' => 'members', 'row' => '7', 'column' => 'name', 'value' => 'x'])
+            ->assertForbidden();
+        $this->assertCount($before, $this->driver->executed);
     }
 
     public function test_only_the_owner_deletes_and_only_from_the_apps_own_tables()

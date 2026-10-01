@@ -80,6 +80,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('projects/{project}/preview-emails', [PreviewEmailController::class, 'destroy'])->name('preview-emails.destroy');
     Route::post('projects/{project}/cleared-problems', [ClearedProblemController::class, 'store'])->name('cleared-problems.store');
     Route::delete('projects/{project}/cleared-problems/{problem}', [ClearedProblemController::class, 'destroy'])->name('cleared-problems.destroy');
+    Route::patch('projects/{project}/preview-rows', [PreviewRowController::class, 'update'])->name('preview-rows.update');
     Route::delete('projects/{project}/preview-rows', [PreviewRowController::class, 'destroy'])->name('preview-rows.destroy');
     Route::put('projects/{project}/preview-data', [PreviewDataController::class, 'update'])->name('preview-data.update');
     Route::post('projects/{project}/preview-schedule-runs', [PreviewScheduledTaskRunController::class, 'store'])->name('preview-schedule-runs.store');

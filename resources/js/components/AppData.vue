@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Form, router } from '@inertiajs/vue3';
 import { ArrowLeft, ChevronRight, Database, File, Trash2 } from '@lucide/vue';
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import PreviewDataController from '@/actions/App/Http/Controllers/PreviewDataController';
 import PreviewFileController from '@/actions/App/Http/Controllers/PreviewFileController';
@@ -59,6 +59,7 @@ const shownRows = computed(() =>
     (shown.value?.rows ?? [])
         .map((values, index) => ({
             values,
+            index,
             id: shown.value?.ids[index] ?? null,
         }))
         .filter(
@@ -91,6 +92,99 @@ function remove(id: string): void {
             );
         },
     });
+}
+
+// A changed value shows at once, until the rows are read again; it goes
+// back if the app refuses it.
+const changed = ref<Map<string, string | null>>(new Map());
+const changing = ref<{ id: string; column: string; draft: string } | null>(
+    null,
+);
+const changingInput = ref<HTMLInputElement[]>([]);
+
+watch(
+    () => props.rows,
+    () => (changed.value = new Map()),
+);
+
+function place(id: string, column: string): string {
+    return `${opened.value}:${id}:${column}`;
+}
+
+function valueOf(id: string | null, at: number, value: string | null) {
+    const column = shown.value?.columns[at];
+
+    if (id === null || column === undefined) {
+        return value;
+    }
+
+    const key = place(id, column);
+
+    return changed.value.has(key) ? changed.value.get(key)! : value;
+}
+
+function canChange(index: number, at: number): boolean {
+    const column = shown.value?.columns[at];
+
+    return (
+        column !== undefined &&
+        (shown.value?.changeable.includes(column) ?? false) &&
+        !(shown.value?.cut[index] ?? []).includes(at)
+    );
+}
+
+function startChanging(id: string, at: number, value: string | null): void {
+    const column = shown.value?.columns[at];
+
+    if (column === undefined) {
+        return;
+    }
+
+    changing.value = { id, column, draft: value ?? '' };
+    nextTick(() => changingInput.value[0]?.select());
+}
+
+function isChanging(id: string | null, at: number): boolean {
+    return (
+        id !== null &&
+        changing.value?.id === id &&
+        changing.value.column === shown.value?.columns[at]
+    );
+}
+
+function change(before: string | null): void {
+    const now = changing.value;
+    changing.value = null;
+
+    if (now === null || now.draft === (before ?? '')) {
+        return;
+    }
+
+    const key = place(now.id, now.column);
+    const value = now.draft === '' ? null : now.draft;
+
+    changed.value = new Map(changed.value).set(key, value);
+
+    router.patch(
+        PreviewRowController.update.url(props.projectId),
+        { table: opened.value, row: now.id, column: now.column, value },
+        {
+            only: ['rows'],
+            preserveScroll: true,
+            preserveState: true,
+            onError: (errors) => {
+                const kept = new Map(changed.value);
+                kept.delete(key);
+                changed.value = kept;
+                toast.error(
+                    errors.value ??
+                        errors.app ??
+                        errors.table ??
+                        'Your app could not change it. This is our fault. Try again.',
+                );
+            },
+        },
+    );
 }
 
 function fileUrl(file: StoredFile): string {
@@ -183,22 +277,69 @@ function rows(table: SavedTable): string {
                         </thead>
                         <tbody>
                             <tr
-                                v-for="(row, index) in shownRows"
-                                :key="row.id ?? index"
+                                v-for="row in shownRows"
+                                :key="row.id ?? row.index"
                                 class="group border-b"
                             >
                                 <td
                                     v-for="(value, at) in row.values"
                                     :key="at"
-                                    class="max-w-60 truncate px-3 py-2 whitespace-nowrap"
-                                    :title="value ?? ''"
+                                    class="max-w-60 p-0"
                                 >
-                                    <span
-                                        v-if="value === null"
-                                        class="text-muted-foreground"
-                                        >—</span
+                                    <input
+                                        v-if="isChanging(row.id, at)"
+                                        ref="changingInput"
+                                        v-model="changing!.draft"
+                                        class="w-full min-w-24 bg-muted px-3 py-2 outline-none"
+                                        :aria-label="`New ${shown.columns[at]}`"
+                                        data-test="app-data-change-input"
+                                        @keydown.enter.prevent="change(value)"
+                                        @keydown.escape.prevent="
+                                            changing = null
+                                        "
+                                        @blur="change(value)"
+                                    />
+                                    <button
+                                        v-else-if="
+                                            row.id !== null &&
+                                            canChange(row.index, at)
+                                        "
+                                        type="button"
+                                        class="block w-full truncate px-3 py-2 text-left whitespace-nowrap hover:bg-muted/60"
+                                        :title="`Change ${shown.columns[at]}`"
+                                        :data-test="`app-data-change-${row.id}-${shown.columns[at]}`"
+                                        @click="
+                                            startChanging(
+                                                row.id,
+                                                at,
+                                                valueOf(row.id, at, value),
+                                            )
+                                        "
                                     >
-                                    <template v-else>{{ value }}</template>
+                                        <span
+                                            v-if="
+                                                valueOf(row.id, at, value) ===
+                                                null
+                                            "
+                                            class="text-muted-foreground"
+                                            >—</span
+                                        >
+                                        <template v-else>{{
+                                            valueOf(row.id, at, value)
+                                        }}</template>
+                                    </button>
+                                    <span
+                                        v-else
+                                        class="block truncate px-3 py-2 whitespace-nowrap"
+                                        :title="value ?? ''"
+                                    >
+                                        <span
+                                            v-if="value === null"
+                                            class="text-muted-foreground"
+                                            >—</span
+                                        >
+                                        <template v-else>{{ value }}</template>
+                                    </span>
                                 </td>
                                 <td
                                     v-if="shown.key"

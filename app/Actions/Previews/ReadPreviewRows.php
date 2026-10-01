@@ -16,7 +16,12 @@ class ReadPreviewRows
      * Columns whose values are never shown: what a visitor signs in with,
      * and keys the app keeps.
      */
-    protected const HIDDEN = '/password|token|secret|remember|two_factor|api_key|private_key/i';
+    public const HIDDEN = '/password|token|secret|remember|two_factor|api_key|private_key/i';
+
+    /**
+     * How long a shown value is, at most.
+     */
+    protected const SHOWN = 200;
 
     /**
      * Read the rows through the app itself, as it saved them. Only the
@@ -43,7 +48,7 @@ class ReadPreviewRows
      * Get the rows of one table the app on show saved, or null when it is
      * not one of its tables or the app does not run.
      *
-     * @return array{name: string, words: string, columns: list<string>, key: string|null, ids: list<string|null>, rows: list<list<string|null>>, more: bool}|null
+     * @return array{name: string, words: string, columns: list<string>, key: string|null, ids: list<string|null>, changeable: list<string>, cut: list<list<int>>, rows: list<list<string|null>>, more: bool}|null
      */
     public function handle(Project $project, string $table): ?array
     {
@@ -64,8 +69,11 @@ class ReadPreviewRows
         /** @var list<string> $columns */
         $columns = array_values(array_filter(is_array($data) ? (array) ($data['columns'] ?? []) : [], is_string(...)));
         $rows = is_array($data) ? (array) ($data['rows'] ?? []) : [];
+        $more = count($rows) > self::LIMIT;
         // A row can be deleted when the table names it by one column.
         $key = is_array($data) && is_string($data['key'] ?? null) && in_array($data['key'], $columns, true) ? $data['key'] : null;
+
+        $rows = array_slice($rows, 0, self::LIMIT);
 
         return [
             'name' => $table,
@@ -74,13 +82,21 @@ class ReadPreviewRows
             'key' => $key,
             'ids' => array_values(array_map(
                 fn ($row) => $key !== null && is_array($row) && is_scalar($row[$key] ?? null) ? (string) $row[$key] : null,
-                array_slice($rows, 0, self::LIMIT),
+                $rows,
+            )),
+            // A value can be changed in a row that can be named, but never
+            // the name itself or what is hidden.
+            'changeable' => $key === null ? [] : array_values(array_filter($columns, fn (string $column) => $column !== $key && preg_match(self::HIDDEN, $column) !== 1)),
+            // Values shown cut short, by place, are changed only in full.
+            'cut' => array_values(array_map(
+                fn ($row) => array_keys(array_filter($columns, fn (string $column) => is_array($row) && mb_strwidth($this->text($row[$column] ?? null) ?? '', 'UTF-8') > self::SHOWN)),
+                $rows,
             )),
             'rows' => array_values(array_map(
                 fn ($row) => array_map(fn (string $column) => $this->shown($column, is_array($row) ? ($row[$column] ?? null) : null), $columns),
-                array_slice($rows, 0, self::LIMIT),
+                $rows,
             )),
-            'more' => count($rows) > self::LIMIT,
+            'more' => $more,
         ];
     }
 
@@ -89,7 +105,9 @@ class ReadPreviewRows
      */
     protected function shown(string $column, mixed $value): ?string
     {
-        if ($value === null) {
+        $text = $this->text($value);
+
+        if ($text === null) {
             return null;
         }
 
@@ -97,8 +115,18 @@ class ReadPreviewRows
             return '••••••';
         }
 
-        $text = is_scalar($value) ? (is_bool($value) ? ($value ? 'true' : 'false') : (string) $value) : (string) json_encode($value);
+        return Str::limit($text, self::SHOWN);
+    }
 
-        return Str::limit($text, 200);
+    /**
+     * A value as the text it holds.
+     */
+    protected function text(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        return is_scalar($value) ? (is_bool($value) ? ($value ? 'true' : 'false') : (string) $value) : (string) json_encode($value);
     }
 }
