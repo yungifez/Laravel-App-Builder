@@ -497,30 +497,9 @@ function lineClass(line: string): string {
                     : 'I stopped before finishing'
             }}</AlertTitle>
             <AlertDescription>
-                <!-- A failure already says whose fault it was and what to
-                     do, so it is the text itself, not hidden in details. -->
-                <p v-if="run.status === 'failed'" data-test="run-failed-reason">
-                    {{ run.error }}
-                </p>
-                <template v-else>
-                    <p>
-                        This change needed more work than I am allowed to do in
-                        one go. Nothing in your app has changed. Try again, or
-                        ask in other words.
-                    </p>
-                    <Collapsible>
-                        <CollapsibleTrigger
-                            class="min-h-11 text-xs underline-offset-4 select-none hover:underline sm:min-h-0"
-                        >
-                            Details
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                            <p class="font-mono text-xs break-words">
-                                {{ run.error }}
-                            </p>
-                        </CollapsibleContent>
-                    </Collapsible>
-                </template>
+                <!-- The reason already says whose fault it was and what to
+                     do next, so it is the text itself. -->
+                <p data-test="run-failed-reason">{{ run.error }}</p>
             </AlertDescription>
         </Alert>
 

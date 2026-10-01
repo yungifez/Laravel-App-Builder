@@ -28,10 +28,38 @@ class FailureWordingTest extends TestCase
         $this->actingAs($request->user)
             ->get(route('feature-requests.show', $request))
             ->assertInertia(fn (Assert $page) => $page
-                ->where('featureRequest.error', 'This is our fault: something went wrong on our side while I worked on this. Nothing in your app changed. Try again.')
-                ->where('run.error', 'This is our fault: something went wrong on our side while I worked on this. Nothing in your app changed. Try again.'));
+                ->where('featureRequest.error', 'This is our fault: when I looked over the change, I found problems I could not fix, so I stopped. Nothing in your app changed. Try again, or ask in other words.')
+                ->where('run.error', 'This is our fault: when I looked over the change, I found problems I could not fix, so I stopped. Nothing in your app changed. Try again, or ask in other words.'));
 
         $this->assertSame('The review found problems this run cannot fix: Still missing authorization.', $run->refresh()->error);
+    }
+
+    public function test_a_stop_after_failing_checks_says_so()
+    {
+        $request = FeatureRequest::factory()->create();
+        Run::factory()->for($request)->create([
+            'status' => RunStatus::NeedsUserDecision,
+            'error' => 'Verification did not pass, and this run cannot repair the change.',
+        ]);
+
+        $this->actingAs($request->user)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('run.error', "This is our fault: your app's checks still failed after I tried to fix them, so I stopped. Nothing in your app changed. Try again, or ask in other words."));
+    }
+
+    public function test_an_unknown_failure_says_it_is_our_fault_without_the_detail()
+    {
+        $request = FeatureRequest::factory()->create();
+        Run::factory()->for($request)->create([
+            'status' => RunStatus::Failed,
+            'error' => 'The run stopped unexpectedly.',
+        ]);
+
+        $this->actingAs($request->user)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('run.error', 'This is our fault: something went wrong on our side while I worked on this. Nothing in your app changed. Try again.'));
     }
 
     public function test_a_stop_that_already_says_whose_fault_is_shown_as_it_is()

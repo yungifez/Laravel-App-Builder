@@ -20,6 +20,18 @@ class OwnerWording
     protected const INTERNAL = '/\b(planner|coder|reviewer|models?|providers?|drivers?|workers?|lease|fencing|tokens?|adapters?|agents?|prompts?|budgets?|operations?|tools?|workspaces?|platform|builder|control plane|acceptance|reference solutions?|patch(es)?|containers?|docker|runner)\b/i';
 
     /**
+     * Why a change stopped, by the start of the message the run kept.
+     */
+    protected const STOPS = [
+        '/^Verification did not pass/' => 'This is our fault: your app\'s checks still failed after I tried to fix them, so I stopped. Nothing in your app changed. Try again, or ask in other words.',
+        '/^The review found problems/' => 'This is our fault: when I looked over the change, I found problems I could not fix, so I stopped. Nothing in your app changed. Try again, or ask in other words.',
+        '/^The run finished without changing/' => 'This is our fault: I finished without changing anything in your app. Try again, or ask in other words.',
+        '/^The checks could not run/' => 'This is our fault: your app\'s checks could not run because of a problem on our side. Nothing in your app changed. Try again.',
+        '/^(The run used all|The agent used up)/' => 'This is our fault: this change needed more work than I can do in one go, so I stopped. Nothing in your app changed. Try again, or ask for a smaller part first.',
+        '/^No AI provider could take/' => 'This is our fault: the AI service we use is busy right now. Nothing in your app changed. Try again in a few minutes.',
+    ];
+
+    /**
      * Keep a message the owner can read, or replace one that shows how
      * changes are made.
      */
@@ -45,9 +57,19 @@ class OwnerWording
             return null;
         }
 
-        return str_starts_with($message, __('This is our fault'))
-            ? $message
-            : __('This is our fault: something went wrong on our side while I worked on this. Nothing in your app changed. Try again.');
+        if (str_starts_with($message, __('This is our fault'))) {
+            return $message;
+        }
+
+        // A known stop says what happened, so the owner knows whether to
+        // try again now, later, or in other words.
+        foreach (self::STOPS as $pattern => $said) {
+            if (preg_match($pattern, $message) === 1) {
+                return __($said);
+            }
+        }
+
+        return __('This is our fault: something went wrong on our side while I worked on this. Nothing in your app changed. Try again.');
     }
 
     /**
