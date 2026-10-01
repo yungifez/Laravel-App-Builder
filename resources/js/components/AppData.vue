@@ -25,6 +25,14 @@ const laravel = computed(() =>
     (props.data ?? []).filter((table) => !table.own),
 );
 
+// Emptying an app that has nothing of the owner's saved does nothing they
+// would see, so it is not offered.
+const saved = computed(
+    () =>
+        own.value.some((table) => table.rows !== 0) ||
+        (props.files?.length ?? 0) > 0,
+);
+
 // Clearing what was saved cannot be undone, so it is asked for twice, in
 // place, where the owner's eyes already are.
 const asking = ref<'examples' | 'empty' | null>(null);
@@ -208,7 +216,7 @@ function rows(table: SavedTable): string {
         return '';
     }
 
-    return table.rows === 1 ? '1 row' : `${table.rows.toLocaleString()} rows`;
+    return table.rows === 0 ? 'Empty' : `${table.rows.toLocaleString()} saved`;
 }
 </script>
 
@@ -504,6 +512,7 @@ function rows(table: SavedTable): string {
                         >Start again with examples</Button
                     >
                     <Button
+                        v-if="saved"
                         type="button"
                         size="sm"
                         variant="ghost"

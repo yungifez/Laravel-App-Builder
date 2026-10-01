@@ -93,7 +93,8 @@ async function signInAs(person: PreviewPerson): Promise<void> {
                 class="px-2 py-1.5 text-sm text-muted-foreground"
                 data-test="sign-in-as-nobody"
             >
-                Nobody has signed up yet.
+                Nobody has signed up yet. Sign up in your app, and you can come
+                back here to be anyone who did, with no password.
             </p>
             <template v-else>
                 <DropdownMenuItem
