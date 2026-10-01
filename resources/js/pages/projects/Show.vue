@@ -720,6 +720,27 @@ onMounted(toEnd);
 watch(() => props.changes.length, toEnd);
 watch(panel, (value) => value === 'chat' && toEnd());
 
+// Back from a change, the list opens where the owner left it: at the row
+// they opened, not at the top.
+watch(
+    () => props.change?.featureRequest.id,
+    (open, closed) => {
+        if (open || !closed) {
+            return;
+        }
+
+        nextTick(() => {
+            const row = document.querySelector(`[data-change="${closed}"]`);
+
+            if (row) {
+                row.scrollIntoView({ block: 'center' });
+            } else {
+                toEnd();
+            }
+        });
+    },
+);
+
 const states: Record<
     ChangeState,
     { label: string; icon: typeof Monitor; tone: string }
@@ -1438,6 +1459,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                                     <li
                                         v-for="item in group.items"
                                         :key="item.id"
+                                        :data-change="item.id"
                                         :data-test="`change-${item.state}`"
                                         class="group relative flex items-start"
                                     >
