@@ -497,27 +497,30 @@ function lineClass(line: string): string {
                     : 'I stopped before finishing'
             }}</AlertTitle>
             <AlertDescription>
-                <p>
-                    {{
-                        run.status === 'failed'
-                            ? 'Something went wrong while I was making this change.'
-                            : 'This change needed more work than I am allowed to do in one go.'
-                    }}
-                    Nothing in your app has changed. Try again, or ask in other
-                    words.
+                <!-- A failure already says whose fault it was and what to
+                     do, so it is the text itself, not hidden in details. -->
+                <p v-if="run.status === 'failed'" data-test="run-failed-reason">
+                    {{ run.error }}
                 </p>
-                <Collapsible>
-                    <CollapsibleTrigger
-                        class="min-h-11 text-xs underline-offset-4 select-none hover:underline sm:min-h-0"
-                    >
-                        Details
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                        <p class="font-mono text-xs break-words">
-                            {{ run.error }}
-                        </p>
-                    </CollapsibleContent>
-                </Collapsible>
+                <template v-else>
+                    <p>
+                        This change needed more work than I am allowed to do in
+                        one go. Nothing in your app has changed. Try again, or
+                        ask in other words.
+                    </p>
+                    <Collapsible>
+                        <CollapsibleTrigger
+                            class="min-h-11 text-xs underline-offset-4 select-none hover:underline sm:min-h-0"
+                        >
+                            Details
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                            <p class="font-mono text-xs break-words">
+                                {{ run.error }}
+                            </p>
+                        </CollapsibleContent>
+                    </Collapsible>
+                </template>
             </AlertDescription>
         </Alert>
 
