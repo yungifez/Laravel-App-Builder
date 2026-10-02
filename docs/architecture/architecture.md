@@ -2838,6 +2838,21 @@ so knowledge of one stack stays in one place:
 
 A stack not in the list still works, with fewer of these aids.
 
+The database is the one the app asks for in its `.env`. SQLite needs no
+server. For MySQL, MariaDB or PostgreSQL, the "Start the database" setup step
+(`resources/preview-tools/start-database.sh`, sent as one `sh -c` script so
+no file of ours lands in the app) starts a server private to the workspace:
+it listens only on a socket in the workspace's temp folder and lets in any
+user, so the app keeps the names and passwords it was written with. Each
+database the app or its test settings name is created. The socket goes into
+`.env` (`DB_SOCKET`, or `DB_HOST` for PostgreSQL) and into
+`.git/environment`. The box runner is meant to give that file's variables to
+every command, so tests that read a committed `.env.testing` also find the
+server; that runner part is not built yet. The box image holds the server
+programs; no server starts unless an app asks for one. SQLite is not used in
+place of the app's own database: an app's migrations may use what only its
+own database understands.
+
 1. Read-only introspection and a conformance report: supported as-is; harmless
    variation, recorded as the project's own conventions so agents follow them;
    problematic structure (missing authorization, unsafe patterns, abandoned

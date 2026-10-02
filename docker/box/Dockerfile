@@ -23,6 +23,15 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends iptables \
     && rm -rf /var/lib/apt/lists/*
 
+# An app that asks for MySQL or PostgreSQL gets a server of its own, started
+# in its workspace only when it asks (preview-tools/start-database.sh). Only
+# the server programs go in: no service starts with the box.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends mysql-server-core-8.0 mysql-client-core-8.0 postgresql libnss-wrapper \
+    && rm -rf /var/lib/apt/lists/* \
+    && (service postgresql stop || true) \
+    && rm -rf /var/lib/postgresql/*/main /etc/postgresql/*/main
+
 # The shortcut scan reads the PHP a change touched with the Sloppy analyser.
 # It lives here, pinned and checked, so nothing is added to the app itself.
 ARG SLOPPY_VERSION=1.1.1
