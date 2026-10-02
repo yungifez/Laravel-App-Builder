@@ -1145,14 +1145,18 @@ Before the coding agent starts, `ScaffoldDataShape` writes the migration,
 model, factory and store form request for each record the app does not
 have yet (`App\Scaffolding\Scaffold`, with the type table in `FieldType`).
 It follows the app's own way of naming fillable fields, never writes over a
-file, and skips a record whose model or create migration exists. The form
-request asks the model's policy, so nobody may create one until a policy
-says who may. The brief lists the files under "Files already written from
+file, and skips a record whose model or create migration exists. Each
+record may also say who may view, create, update and delete it: `everyone`,
+`signed_in`, or `creator` (only the person who added it, through its first
+link to `User`). Then the scaffold also writes the policy and a test per
+rule that checks it through the gate ("a guest cannot see a booking", "only
+the person who added a booking can change it"). The form request asks the
+policy, so without access in the shape nobody may create one until the
+agent writes a policy. The brief lists the files under "Files already written from
 the data shape", and the run records them as a `scaffolded` event. A worker
 outside our boxes gets no scaffold, since it works in its own copy. Not built
-yet: who may create, change or remove a record, and so the policy, routes and
-access tests; showing the owner the shape in plain words; small-model
-repairs.
+yet: routes and controllers; showing the owner the shape in plain words;
+small-model repairs.
 
 **Rejected: sub-agents by file type.** "A small agent writes the request
 class" moves the risk to the hand-off. To brief it, the larger agent must

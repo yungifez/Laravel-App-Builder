@@ -97,7 +97,7 @@ class WriteBrief
         );
 
         if (($scaffolded = $this->scaffolded($run)) !== []) {
-            $sections[] = "## Files already written from the data shape\n\nThese hold the new records the plan stores: the migration, model, factory and form request, with names and rules taken from one shape so they agree. Build on them rather than writing them again, and change them where the request needs it. Each form request asks the model's policy, so write the policy that says who may.\n\n".$this->list($scaffolded);
+            $sections[] = "## Files already written from the data shape\n\nThese hold the new records the plan stores: the migration, model, factory and form request, and where the plan says who may do what, the policy and the tests that guard it. Names, rules and access come from one shape, so they agree. Build on them rather than writing them again, and change them where the request needs it. Each form request asks the model's policy: where no policy was written, write one.\n\n".$this->list($scaffolded);
         }
 
         $sections[] = $this->observability($this->outside($run));

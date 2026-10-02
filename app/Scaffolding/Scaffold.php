@@ -8,17 +8,30 @@ use Illuminate\Support\Str;
 /**
  * Write the parts a data shape fixes, with no model (§9, delegation by
  * certainty): for each new record, its migration, model, factory and form
- * request. Every name and rule comes from the one shape, so they cannot
+ * request, and when the shape says who may do what, its policy and the
+ * tests that guard it. Every name and rule comes from the one shape, so they cannot
  * drift apart. The coding agent builds on the result as ordinary code.
  *
  * Only new records are written. A record whose model the app already has is
  * left to the coding agent, since changing it means reading what is there.
  *
  * @phpstan-type Field array{name: string, type: string, required: bool, choices: list<string>, of: string|null}
- * @phpstan-type Record array{name: string, fields: list<Field>}
+ * @phpstan-type Access array{view: string, create: string, update: string, delete: string}
+ * @phpstan-type Record array{name: string, fields: list<Field>, access?: Access|null}
  */
 class Scaffold
 {
+    /**
+     * What a person may do with a record.
+     */
+    public const ACTIONS = ['view', 'create', 'update', 'delete'];
+
+    /**
+     * Who may do it: anyone, anyone signed in, or only the person who made
+     * the record.
+     */
+    public const WHO = ['everyone', 'signed_in', 'creator'];
+
     /**
      * Get the files for the shape's new records, by path.
      *
@@ -45,6 +58,11 @@ class Scaffold
             $files["app/Models/{$record['name']}.php"] = $this->model($record, $attributes);
             $files["database/factories/{$record['name']}Factory.php"] = $this->factory($record);
             $files["app/Http/Requests/Store{$record['name']}Request.php"] = $this->request($record);
+
+            if (($record['access'] ?? null) !== null) {
+                $files["app/Policies/{$record['name']}Policy.php"] = $this->policy($record, $record['access']);
+                $files["tests/Feature/{$record['name']}AccessTest.php"] = $this->accessTest($record, $record['access']);
+            }
         }
 
         return $files;
@@ -306,6 +324,7 @@ class Scaffold
             use App\Models\\{$name};
             use Illuminate\Contracts\Validation\ValidationRule;
             use Illuminate\Foundation\Http\FormRequest;
+            use Illuminate\Support\Facades\Gate;
 
             class Store{$name}Request extends FormRequest
             {
@@ -314,7 +333,7 @@ class Scaffold
                  */
                 public function authorize(): bool
                 {
-                    return \$this->user()?->can('create', {$name}::class) ?? false;
+                    return Gate::allows('create', {$name}::class);
                 }
 
                 /**
@@ -331,6 +350,185 @@ class Scaffold
             }
 
             PHP;
+    }
+
+    /**
+     * Get the field that says who made the record: its first link to a user.
+     *
+     * @param  list<Field>  $fields
+     */
+    public static function creator(array $fields): ?string
+    {
+        foreach ($fields as $field) {
+            if ($field['type'] === FieldType::BelongsTo->value && $field['of'] === 'User') {
+                return $field['name'].'_id';
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Write the policy from who may do what. Laravel finds it by its name.
+     *
+     * @param  Record  $record
+     * @param  Access  $access
+     */
+    protected function policy(array $record, array $access): string
+    {
+        $name = $record['name'];
+        $variable = Str::camel($name);
+        $creator = self::creator($record['fields']);
+        $methods = [];
+
+        foreach (['viewAny' => 'view', 'view' => 'view', 'create' => 'create', 'update' => 'update', 'delete' => 'delete'] as $method => $action) {
+            $who = $access[$action];
+            $one = ! in_array($method, ['viewAny', 'create'], true);
+            $user = $who === 'everyone' ? '?User $user' : 'User $user';
+            $parameters = $one ? "{$user}, {$name} \${$variable}" : $user;
+
+            // A list or a new record has no creator yet: anyone signed in.
+            $answer = match (true) {
+                $who === 'everyone', $who === 'signed_in', ! $one => 'true',
+                default => "\${$variable}->{$this->relation($creator)}()->is(\$user)",
+            };
+
+            // Only the creator may see each one, so a list holds only theirs.
+            $note = $method === 'viewAny' && $who === 'creator' ? "\n     *\n     * The list holds only the {$this->words($name)} records the user added." : '';
+
+            $methods[] = <<<PHP
+                    /**
+                     * Determine whether the user can {$this->ability($method, $name)}.{$note}
+                     */
+                    public function {$method}({$parameters}): bool
+                    {
+                        return {$answer};
+                    }
+                PHP;
+        }
+
+        $body = implode("\n\n", $methods);
+
+        return <<<PHP
+            <?php
+
+            namespace App\Policies;
+
+            use App\Models\\{$name};
+            use App\Models\User;
+
+            class {$name}Policy
+            {
+            {$body}
+            }
+
+            PHP;
+    }
+
+    /**
+     * Write the tests that guard who may do what, through the policy.
+     *
+     * @param  Record  $record
+     * @param  Access  $access
+     */
+    protected function accessTest(array $record, array $access): string
+    {
+        $name = $record['name'];
+        $words = $this->words($name);
+        $plural = Str::plural($words);
+        $creator = self::creator($record['fields']);
+        $tests = [];
+
+        foreach (self::ACTIONS as $action) {
+            $ability = $action === 'view' ? 'view' : $action;
+            $who = $access[$action];
+            $subject = $action === 'create' ? "{$name}::class" : '$record';
+            $verb = ['view' => 'see', 'create' => 'add', 'update' => 'change', 'delete' => 'remove'][$action];
+            $object = $action === 'create' ? $plural : "a {$words}";
+
+            if ($who === 'everyone') {
+                $tests[] = $this->test("test_anyone_can_{$verb}_{$this->snake($object)}", [
+                    ...($action === 'create' ? [] : ["\$record = {$name}::factory()->create();"]),
+                    "\$this->assertTrue(Gate::forUser(null)->allows('{$ability}', {$subject}));",
+                ]);
+
+                continue;
+            }
+
+            $tests[] = $this->test("test_a_guest_cannot_{$verb}_{$this->snake($object)}", [
+                ...($action === 'create' ? [] : ["\$record = {$name}::factory()->create();"]),
+                "\$this->assertFalse(Gate::forUser(null)->allows('{$ability}', {$subject}));",
+            ]);
+
+            if ($who === 'creator' && $action !== 'create') {
+                $tests[] = $this->test("test_only_the_person_who_added_{$this->snake("a {$words}")}_can_{$verb}_it", [
+                    "\$record = {$name}::factory()->create();",
+                    "\$this->assertTrue(Gate::forUser(\$record->{$this->relation($creator)})->allows('{$ability}', \$record));",
+                    "\$this->assertFalse(Gate::forUser(User::factory()->create())->allows('{$ability}', \$record));",
+                ]);
+            } else {
+                $tests[] = $this->test("test_anyone_signed_in_can_{$verb}_{$this->snake($object)}", [
+                    ...($action === 'create' ? [] : ["\$record = {$name}::factory()->create();"]),
+                    "\$this->assertTrue(Gate::forUser(User::factory()->create())->allows('{$ability}', {$subject}));",
+                ]);
+            }
+        }
+
+        $body = implode("\n\n", $tests);
+
+        return <<<PHP
+            <?php
+
+            namespace Tests\Feature;
+
+            use App\Models\\{$name};
+            use App\Models\User;
+            use Illuminate\Foundation\Testing\RefreshDatabase;
+            use Illuminate\Support\Facades\Gate;
+            use Tests\TestCase;
+
+            class {$name}AccessTest extends TestCase
+            {
+                use RefreshDatabase;
+
+            {$body}
+            }
+
+            PHP;
+    }
+
+    /**
+     * @param  list<string>  $lines
+     */
+    protected function test(string $name, array $lines): string
+    {
+        return "    public function {$name}(): void\n    {\n".$this->lines($lines, 8)."\n    }";
+    }
+
+    protected function ability(string $method, string $name): string
+    {
+        $words = $this->words($name);
+
+        return match ($method) {
+            'viewAny' => 'see the list of '.Str::plural($words),
+            'view' => "see the {$words}",
+            'create' => "add a {$words}",
+            'update' => "change the {$words}",
+            default => "remove the {$words}",
+        };
+    }
+
+    /**
+     * Get the relation a creator column belongs to, such as user for user_id.
+     */
+    protected function relation(?string $column): string
+    {
+        return Str::camel(Str::beforeLast((string) $column, '_id'));
+    }
+
+    protected function snake(string $words): string
+    {
+        return str_replace(' ', '_', $words);
     }
 
     /**

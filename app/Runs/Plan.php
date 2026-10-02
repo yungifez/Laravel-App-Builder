@@ -4,6 +4,7 @@ namespace App\Runs;
 
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Scaffolding\FieldType;
+use App\Scaffolding\Scaffold;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -16,6 +17,8 @@ use Illuminate\Validation\Rule;
  *
  * The protected acceptance suites are chosen by the platform, never by the
  * model that writes the plan.
+ *
+ * @phpstan-import-type Record from Scaffold
  */
 final readonly class Plan
 {
@@ -32,7 +35,7 @@ final readonly class Plan
      * @param  string|null  $answer  The reply when the owner only asked about the app, so nothing is built
      * @param  list<string>  $next  What the owner might ask for next, in their words, offered as one-tap follow-ups
      * @param  string|null  $goal  How the change serves the goal the owner wrote in the notes, if it does
-     * @param  list<array{name: string, fields: list<array{name: string, type: string, required: bool, choices: list<string>, of: string|null}>}>  $dataShape  The records the change stores, stated once so every part agrees (§9)
+     * @param  list<Record>  $dataShape  The records the change stores, stated once so every part agrees (§9)
      */
     public function __construct(
         public string $summary,
@@ -148,7 +151,7 @@ final readonly class Plan
      * together is dropped, not refused: the coding agent then writes those
      * parts itself, as it would without a shape.
      *
-     * @return list<array{name: string, fields: list<array{name: string, type: string, required: bool, choices: list<string>, of: string|null}>}>
+     * @return list<Record>
      */
     public static function dataShape(mixed $shape): array
     {
@@ -163,13 +166,17 @@ final readonly class Plan
             'records.*.fields.*.choices' => ['present', 'array', 'max:20'],
             'records.*.fields.*.choices.*' => ['string', 'regex:/^[a-z0-9_]{1,60}$/'],
             'records.*.fields.*.of' => ['present', 'nullable', 'string', $name],
+            'records.*.access' => ['sometimes', 'nullable', 'array:'.implode(',', Scaffold::ACTIONS)],
+            ...collect(Scaffold::ACTIONS)->mapWithKeys(fn (string $action) => [
+                "records.*.access.{$action}" => ['required_with:records.*.access', Rule::in(Scaffold::WHO)],
+            ])->all(),
         ]);
 
         if ($validator->fails()) {
             return [];
         }
 
-        /** @var list<array{name: string, fields: list<array{name: string, type: string, required: bool, choices: list<string>, of: string|null}>}> $records */
+        /** @var list<Record> $records */
         $records = array_values($validator->validated()['records']);
         $read = [];
 
@@ -198,7 +205,19 @@ final readonly class Plan
                 return [];
             }
 
-            $read[] = ['name' => $record['name'], 'fields' => array_values($fields)];
+            $access = $record['access'] ?? null;
+
+            // Only the person who made a record can be its creator, so the
+            // record must say who made it.
+            if ($access !== null && in_array('creator', $access, true) && Scaffold::creator(array_values($fields)) === null) {
+                return [];
+            }
+
+            $read[] = [
+                'name' => $record['name'],
+                'fields' => array_values($fields),
+                'access' => $access === null ? null : array_map(strval(...), array_intersect_key($access, array_flip(Scaffold::ACTIONS))),
+            ];
         }
 
         return $read;
@@ -334,7 +353,7 @@ final readonly class Plan
     /**
      * Restore a plan saved on a run.
      *
-     * @param  array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>, understood_as?: string|null, current_behavior?: string|null, preserve?: list<array{area: string|null, statement: string}>, commit_subject?: string|null, answer?: string|null, next?: list<string>, goal?: string|null, data_shape?: list<array{name: string, fields: list<array{name: string, type: string, required: bool, choices: list<string>, of: string|null}>}>}  $data
+     * @param  array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>, understood_as?: string|null, current_behavior?: string|null, preserve?: list<array{area: string|null, statement: string}>, commit_subject?: string|null, answer?: string|null, next?: list<string>, goal?: string|null, data_shape?: list<Record>}  $data
      */
     public static function fromArray(array $data): self
     {
@@ -361,7 +380,7 @@ final readonly class Plan
     /**
      * Get the plan as stored on the run.
      *
-     * @return array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities: list<string>, understood_as: string|null, current_behavior: string|null, preserve: list<array{area: string|null, statement: string}>, commit_subject: string|null, answer: string|null, next: list<string>, goal: string|null, data_shape: list<array{name: string, fields: list<array{name: string, type: string, required: bool, choices: list<string>, of: string|null}>}>}
+     * @return array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities: list<string>, understood_as: string|null, current_behavior: string|null, preserve: list<array{area: string|null, statement: string}>, commit_subject: string|null, answer: string|null, next: list<string>, goal: string|null, data_shape: list<Record>}
      */
     public function toArray(): array
     {
