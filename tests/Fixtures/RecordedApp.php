@@ -454,6 +454,23 @@ class RecordedApp
     }
 
     /**
+     * Deletes a file from a disk, then the row that names it. A careful
+     * request deletes the row first.
+     */
+    public function removed(Request $request): Response
+    {
+        if ($request->boolean('careful')) {
+            DB::table('users')->where('id', 0)->delete();
+            Storage::disk('recorded')->delete('notes/note.txt');
+        } else {
+            Storage::disk('recorded')->delete('notes/note.txt');
+            DB::table('users')->where('id', 0)->delete();
+        }
+
+        return response()->noContent();
+    }
+
+    /**
      * Catches a save that fails and answers as if it saved.
      */
     public function swallowed(): Response

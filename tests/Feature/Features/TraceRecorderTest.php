@@ -1501,6 +1501,41 @@ class TraceRecorderTest extends TestCase
         $this->assertSame(['query'], array_column($recorded()[0]['effects'], 'kind'));
     }
 
+    public function test_a_file_deleted_before_a_save_that_fails_is_gone_and_what_was_kept_still_names_it()
+    {
+        Route::post('/_stored/removed', [RecordedApp::class, 'removed']);
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'query');
+        Storage::fake('recorded');
+
+        $this->post('/_stored/removed')->assertNoContent();
+        Storage::disk('recorded')->put('notes/note.txt', 'A note');
+        $this->post('/_stored/removed')->assertStatus(500);
+        // The row was not deleted, and its file is gone.
+        Storage::disk('recorded')->assertMissing('notes/note.txt');
+
+        $requests = $recorded();
+        $this->assertSame([['file', 'delete'], ['query', null]], array_map(fn (array $effect) => [$effect['kind'], $effect['what'] ?? null], $requests[0]['effects']));
+        $this->assertStringNotContainsString('note.txt', File::get("{$this->directory}/trace.jsonl"));
+
+        $measured = $this->measureFailure($requests, 'delete users');
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['file_gone', 'POST /_stored/removed', 'delete users', 'file delete']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
+    public function test_a_file_deleted_after_the_save_is_no_place()
+    {
+        Route::post('/_stored/removed', [RecordedApp::class, 'removed']);
+        $recorded = $this->record();
+        Storage::fake('recorded');
+
+        $this->post('/_stored/removed?careful=1')->assertNoContent();
+
+        $requests = $recorded();
+        $this->assertSame(['query', 'file'], array_column($requests[0]['effects'], 'kind'));
+        // The delete of a file is not made to fail, and no save comes after it.
+        $this->assertSame([], AppFaults::points($requests, $this->wholeFilePatch()));
+    }
+
     public function test_what_a_json_answer_tells_the_person_is_read_by_its_names_at_every_depth()
     {
         Route::post('/_hidden/screen', [RecordedApp::class, 'screened']);

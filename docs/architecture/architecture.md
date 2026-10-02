@@ -2087,7 +2087,8 @@ can be caused, in requests that ran the change's code:
   disk with a driver of the app's own is not seen. Only that a file was
   written is recorded, never its name. A file is not counted among what the
   app sent: a file that stays after a save was lost is not held against the
-  change.
+  change. Each file a request deletes is recorded too. A delete is not made
+  to fail.
 - **An answer.** Each outside call the app's code makes itself, when the
   app's code sends or saves something after it. The call does not fail. It
   is made, and a server error is given as its answer. Laravel's HTTP client
@@ -2097,7 +2098,7 @@ can be caused, in requests that ran the change's code:
 - **A save in a transaction.** The last write of each transaction that a
   request commits.
 - **A save in steps.** The last write the app's code makes outside a
-  transaction, when the request saved or sent something before it. Most
+  transaction, when the request saved, sent or deleted a file before it. Most
   requests that save twice have no transaction, so this is the common place.
 - **A job.** Each job the sync queue ran in a request, when the job sent
   something or added a row that stayed. This place does not fail. The job
@@ -2157,6 +2158,10 @@ The trace of that request shows what stayed:
   outside call had left before it.
 - **Saved in part.** A save failed and was lost, but a write of the app's
   code from before it was kept: an order without its items.
+- **File gone.** A save failed and was lost, but the app had deleted a file
+  from a disk before it. Nothing puts a deleted file back, not a
+  transaction either. What the app kept still points to a file that is
+  gone. The coder is told to delete the file after the save is kept.
 - **Done twice.** A job ran twice, and both runs sent the same thing or
   added the same row from the same line. A queue gives a job to a worker at
   least once, so a job must be safe to run again. An outside call the
@@ -2330,7 +2335,7 @@ is said. A second run that the trace cut short is missed. An email that a test
 fakes is a place too: the stand-in of the fake fails it the same way, before
 the fake takes it.
 
-Each of the thirteen sends the change back for a fix by itself, as the safety
+Each of the fourteen sends the change back for a fix by itself, as the safety
 scan does (`builder.verification.faults.send_back`). No model decides it:
 the failure was caused, and the trace shows what stayed. The coder is told
 what stayed and how to avoid it ("…A queue gives a job to a worker at least
@@ -2365,7 +2370,9 @@ at /news. If an email cannot be sent for one of them, your app stops there,
 and the people after them get nothing." For a file: "If a file cannot be
 stored at /photos, your app carries on as if it worked. The person sees the
 same as when it works, and nothing is written down, so you would not find
-out." For a call made again: "If an outside service is slow to
+out." For a deleted file: "If saving fails at /documents/{document}, your
+app has already deleted a file. What it kept still points to that file, and
+the file is gone." For a call made again: "If an outside service is slow to
 answer at /orders/{order}/pay, your app asks it again. The service may then
 do the same thing twice, such as take a payment twice." For an answer that
 is not checked: "If an outside service says it could not do what your app

@@ -57,13 +57,14 @@ class AppFaultsTest extends TestCase
     }
 
     /**
-     * A file the app wrote to a disk, from a line of the app's code.
+     * A file the app wrote to a disk or deleted from it, from a line of
+     * the app's code.
      *
      * @return array<string, mixed>
      */
-    protected function stored(?string $at): array
+    protected function stored(?string $at, string $what = 'write', int $open = 0): array
     {
-        return ['kind' => 'file', 'what' => 'write', 'open' => 0, 'at' => $at];
+        return ['kind' => 'file', 'what' => $what, 'open' => $open, 'at' => $at];
     }
 
     /**
@@ -477,6 +478,37 @@ class AppFaultsTest extends TestCase
             $this->measure([$file, $marks], 302, [$file], extra: ['quiet' => true, 'shape' => ['flash problem', 'to /orders/{order}']], was: $shape),
             $this->measure([$file, $marks], 302, [$file, $marks], extra: $shape, was: $shape),
         ]));
+    }
+
+    public function test_a_file_deleted_before_a_save_that_is_lost_is_found()
+    {
+        $gone = $this->stored(self::NEW.':3', 'delete');
+        $save = $this->asked('delete from "orders" where "id" = ?', self::NEW.':4');
+
+        // The delete of a file is not made to fail. The save after it is a place, as it is after a send.
+        $this->assertSame([['save', 'delete orders', 'query']], array_map(fn (array $point) => [$point['fails'], $point['failed'], $point['fault']['kind']], $this->points([$this->recorded('POST', '/orders', 302, [$gone, $save])])));
+        // A save before the delete of the file is no place.
+        $this->assertSame([], $this->points([$this->recorded('POST', '/orders', 302, [$save, $this->stored(self::NEW.':5', 'delete')])]));
+
+        // The save was refused and the person got an error: the row stays, and its file is gone.
+        $steps = $this->measure([$gone, $save], 500, [$gone, $save]);
+        $this->assertSame([
+            ['kind' => 'file_gone', 'route' => 'POST /orders', 'failed' => 'delete orders', 'what' => 'file delete', 'at' => self::NEW.':4', 'test' => self::TEST],
+        ], $steps['findings'] ?? null);
+        $this->assertSame(
+            'POST /orders: when delete orders failed at '.self::NEW.':4, the save was lost but the request had already deleted a file, and nothing puts it back: file delete (caused in '.self::TEST.'). '
+                .'What the app kept still points to a file that is gone. Delete the file after the save is kept: after the transaction, or in DB::afterCommit().',
+            AppFaults::finding($steps['findings'][0]),
+        );
+
+        // A transaction puts the save back, not the file.
+        $inside = [['kind' => 'begin', 'open' => 1], $this->stored(self::NEW.':3', 'delete', open: 1), $this->asked('delete from "orders" where "id" = ?', self::NEW.':4', open: 1)];
+        $undone = $this->measure([...$inside, ['kind' => 'commit', 'open' => 0]], 500, [...$inside, ['kind' => 'rollback', 'open' => 0]]);
+        $this->assertSame([['file_gone', 'file delete']], array_map(fn (array $finding) => [$finding['kind'], $finding['what']], $undone['findings'] ?? []));
+
+        // A file the app wrote before the lost save only stays unused, and an app that took the failure in is not read.
+        $this->assertSame(['send'], array_column($this->points([$this->recorded('POST', '/orders', 302, [$this->stored(self::NEW.':3'), $save])]), 'fails'));
+        $this->assertSame([], $this->measure([$gone, $save], 302, [$gone, $save])['findings'] ?? null);
     }
 
     public function test_only_the_last_save_in_steps_is_a_place_and_only_after_the_apps_code_saved_or_sent()

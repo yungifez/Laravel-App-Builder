@@ -62,7 +62,7 @@ use WeakMap;
 
 /**
  * Records what one request does: its queries, its transactions, what it
- * queues and sends and the files it writes to a disk, in order, each with
+ * queues and sends and the files it writes to or deletes from a disk, in order, each with
  * the line of the app's code it came from. One line of JSON is written per
  * request.
  *
@@ -287,7 +287,7 @@ class Recorder
         $events->listen(ArtisanStarting::class, fn (ArtisanStarting $event) => $this->hear($event->artisan));
         $this->hear($this->console());
 
-        // The app's disks say when the app writes a file. An app that has
+        // The app's disks say when the app writes or deletes a file. An app that has
         // disks of a class of its own keeps them, and they are not seen.
         try {
             $this->app->extend('filesystem', fn ($files) => is_object($files) && $files::class === FilesystemManager::class ? SeenFiles::over($files, $this->app, $this) : $files);
@@ -1056,6 +1056,15 @@ class Recorder
     public function stored(string $path): void
     {
         $this->effect(['kind' => 'file', 'what' => 'write'], fails: fn () => UnableToWriteFile::atLocation($path, 'No space left on device'));
+    }
+
+    /**
+     * Note a file the app deletes from one of its disks now. Nothing puts
+     * a deleted file back.
+     */
+    public function removed(): void
+    {
+        $this->effect(['kind' => 'file', 'what' => 'delete']);
     }
 
     /**

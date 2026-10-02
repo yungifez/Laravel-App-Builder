@@ -108,6 +108,10 @@ namespace App\Features;
  * thing below). A file is not counted among what the app sent: a file
  * that stays after a save was lost is not held against the change.
  *
+ * A file the app deletes is read when a save after it is lost. Nothing
+ * puts a deleted file back, so what the app kept still points to a file
+ * that is gone. A save in steps after a delete is a place for that reason.
+ *
  * The last thing is read when the app's code catches the failure. A
  * request that then did nothing new, gave the same kind of answer as when
  * all worked, and wrote nothing to its log hid the failure: the person
@@ -139,6 +143,8 @@ class AppFaults
 
     public const SAVED_IN_PART = 'saved_in_part';
 
+    public const FILE_GONE = 'file_gone';
+
     public const DONE_TWICE = 'done_twice';
 
     public const CALLED_AGAIN = 'called_again';
@@ -166,6 +172,7 @@ class AppFaults
         self::SAVED_THEN_FAILED,
         self::SENT_THEN_LOST,
         self::SAVED_IN_PART,
+        self::FILE_GONE,
         self::FAILURE_HIDDEN,
         self::DONE_TWICE,
         self::SENT_AGAIN,
@@ -225,8 +232,8 @@ class AppFaults
      * call and file write a request makes, also from the app's code in a job, each outside
      * call the app's code makes itself and does more after, the last save
      * of each transaction a request commits, the last save the app's code
-     * makes outside a transaction once the request has saved or sent
-     * something, each job the sync queue ran that sent or added something,
+     * makes outside a transaction once the request has saved, sent or
+     * deleted a file, each job the sync queue ran that sent or added something,
      * each job that sent or saved something or that the request does more
      * after, and each event with found listeners to run in the reverse
      * order. Only requests that ran the change's code are used.
@@ -290,7 +297,7 @@ class AppFaults
                     // What the app's code sends in a job can fail there. The last
                     // send from one line is the place: what the job sent before
                     // it is then seen when the job is tried again.
-                    if (in_array($effect['kind'], self::FAILS, true) && is_string($effect['at'] ?? null) && ! self::inside($request['effects'], $place)) {
+                    if (in_array($effect['kind'], self::FAILS, true) && ! self::gone($effect) && is_string($effect['at'] ?? null) && ! self::inside($request['effects'], $place)) {
                         $found[self::name($effect).'|'.$effect['at']] = [self::SEND, $place, $effect];
                     }
 
@@ -322,7 +329,7 @@ class AppFaults
                     $jobs[] = [self::LATER, $place, $effect, array_any([...$its, ...$after], $new), 'later'];
                 }
 
-                if (in_array($effect['kind'], self::FAILS, true)) {
+                if (in_array($effect['kind'], self::FAILS, true) && ! self::gone($effect)) {
                     $found[] = [self::SEND, $place, $effect];
                 } elseif ($effect['open'] > 0 && AppTraces::writes($effect)) {
                     $last = [self::SAVE, $place, $effect];
@@ -336,7 +343,7 @@ class AppFaults
                     $apart = [self::SAVE, $place, $effect];
                 }
 
-                $done = $done || in_array($effect['kind'], self::SENT, true) || (isset($stayed[$place]) && is_string($effect['at'] ?? null));
+                $done = $done || in_array($effect['kind'], self::SENT, true) || self::gone($effect) || (isset($stayed[$place]) && is_string($effect['at'] ?? null));
             }
 
             foreach ([...$found, ...($apart === null ? [] : [$apart]), ...$answers, ...$jobs] as $point) {
@@ -562,6 +569,7 @@ class AppFaults
             self::SAVED_THEN_FAILED => "when {$finding['failed']} failed{$at(' at')}, the {$run} ended in ".($command ? 'an error' : 'a server error')." but had already saved: {$finding['what']}",
             self::SENT_THEN_LOST => "when {$finding['failed']} failed{$at(' at')}, the save was lost but the {$run} had already sent: {$finding['what']}",
             self::SAVED_IN_PART => "when {$finding['failed']} failed{$at(' at')}, the save was lost but the {$run} kept what it had saved before it, with no transaction around both: {$finding['what']}",
+            self::FILE_GONE => "when {$finding['failed']} failed{$at(' at')}, the save was lost but the {$run} had already deleted a file, and nothing puts it back: {$finding['what']}",
             self::FAILURE_HIDDEN => ($finding['job'] ?? false)
                 ? "when {$finding['failed']} failed{$at(' at')}, in a job the {$run} queued, the job {$hid}: it ended with no error, did nothing new, and wrote nothing to the log"
                 : "when {$finding['failed']} failed{$at(' at')}, the app {$hid}: the {$run} did nothing new, ".($command || $job ? 'ended the same' : 'gave the same kind of answer').' as when all worked, and wrote nothing to the log',
@@ -605,6 +613,7 @@ class AppFaults
             self::SAVED_THEN_FAILED => 'A person who sees the error tries again, and the save happens twice. Queue what the request sends, after the save is kept. Or catch the failure, record it with report(), and tell the person what did not happen.',
             self::SENT_THEN_LOST => 'People are told about something that was not saved. Send after the save is kept: after the transaction, or with afterCommit().',
             self::SAVED_IN_PART => 'Put the saves that belong together in one DB::transaction().',
+            self::FILE_GONE => 'What the app kept still points to a file that is gone. Delete the file after the save is kept: after the transaction, or in DB::afterCommit().',
             self::FAILURE_HIDDEN => 'No one finds a failure that the code catches and does not record. Let it fail, or record it with report() and tell the person what did not happen.',
             self::DONE_TWICE => 'A queue gives a job to a worker at least once. Make the job safe to run again: look for what it already made (firstOrCreate, a unique index), or record that it sent before it sends, and take that record back when the send fails. Give an outside call an Idempotency-Key header with the same value on each run.',
             self::SENT_AGAIN => 'A queue tries a failed job again. Save first and send last in the job, and take the save back when the send fails, so the next try sends.',
@@ -716,8 +725,9 @@ class AppFaults
         }
 
         $sent = array_values(array_filter($hit['effects'], fn (array $effect, int $at) => $before($effect, $at) && in_array($effect['kind'], self::SENT, true), ARRAY_FILTER_USE_BOTH));
+        $gone = array_values(array_filter($hit['effects'], fn (array $effect, int $at) => $before($effect, $at) && self::gone($effect), ARRAY_FILTER_USE_BOTH));
 
-        return array_filter([self::SENT_THEN_LOST => $sent, self::SAVED_IN_PART => $kept, self::FAILURE_HIDDEN => self::hidden($hit, $was)]);
+        return array_filter([self::SENT_THEN_LOST => $sent, self::SAVED_IN_PART => $kept, self::FILE_GONE => $gone, self::FAILURE_HIDDEN => self::hidden($hit, $was)]);
     }
 
     /**
@@ -1157,6 +1167,16 @@ class AppFaults
     protected static function takesTwice(array $effect): bool
     {
         return $effect['kind'] === 'http' && (($effect['keyed'] ?? false) || preg_match('/^http (POST|PATCH) /', self::name($effect)) !== 1);
+    }
+
+    /**
+     * Determine if a thing is a file the app deleted from a disk.
+     *
+     * @param  array{kind: string, sql?: string, what?: string}  $effect
+     */
+    protected static function gone(array $effect): bool
+    {
+        return $effect['kind'] === 'file' && ($effect['what'] ?? null) === 'delete';
     }
 
     /**

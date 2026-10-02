@@ -537,6 +537,7 @@ class ChangeProofTest extends TestCase
             $finding('saved_then_failed', 'POST /orders/{order}/pay', 'http POST api.stripe.com'),
             $finding('sent_then_lost', 'POST /invitations', 'insert invitations'),
             $finding('saved_in_part', 'POST /teams', 'insert team_user'),
+            $finding('file_gone', 'DELETE /documents/{document}', 'delete documents'),
             $finding('done_twice', 'POST /orders', 'job App\Jobs\SendReceipt'),
             $finding('called_again', 'POST /orders/{order}/pay', 'http POST api.stripe.com'),
         ]]);
@@ -544,6 +545,7 @@ class ChangeProofTest extends TestCase
             'If an email cannot be sent at /orders, the person sees an error, but your app has already saved what they did. They may try again and do it twice. Something like this also happens at one more place: /orders/{order}/pay.',
             'If saving fails at /invitations, your app has already sent something. People are told about something that was not saved.',
             'If saving fails at /teams, your app keeps one part of what it was saving and loses the rest.',
+            'If saving fails at /documents/{document}, your app has already deleted a file. What it kept still points to that file, and the file is gone.',
             'Your app does some work on its own after someone uses /orders. If that work is cut off and starts over, it sends or adds the same thing twice.',
             'If an outside service is slow to answer at /orders/{order}/pay, your app asks it again. The service may then do the same thing twice, such as take a payment twice.',
         ], $left->where('kind', 'gap')->pluck('text')->all());
