@@ -961,6 +961,21 @@ const checks = computed(() => {
                                     />
                                 </Form>
                             </div>
+                            <!-- What passed before this stays the owner's to keep -->
+                            <Link
+                                v-if="request.keep_earlier"
+                                :href="
+                                    showProject(change.project.id, {
+                                        query: { change: request.keep_earlier },
+                                    })
+                                "
+                                :only="['change']"
+                                preserve-state
+                                class="block min-h-11 content-center text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-6"
+                                data-test="keep-earlier-after-failure"
+                            >
+                                Keep the version before this
+                            </Link>
                             <Form
                                 v-if="request.can_work_yourself"
                                 v-bind="

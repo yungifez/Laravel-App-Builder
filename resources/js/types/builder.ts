@@ -184,6 +184,8 @@ export type FeatureRequestDetail = {
     can_continue: boolean;
     /** Whether the owner can write it with their own Claude Code or Codex. */
     can_work_yourself: boolean;
+    /** An earlier change in this chat that passed and can still be kept. */
+    keep_earlier: string | null;
 };
 
 export type VerificationStatus =

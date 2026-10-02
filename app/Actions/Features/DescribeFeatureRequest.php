@@ -75,6 +75,9 @@ class DescribeFeatureRequest
                 'can_retry' => RetryFeatureRequest::retryable($featureRequest),
                 'can_keep_trying' => KeepTryingRun::possible($featureRequest),
                 'can_continue' => RequestFollowUp::continuable($featureRequest),
+                // An earlier change in this chat that passed and can still
+                // be kept, when this one stopped.
+                'keep_earlier' => $this->keepEarlier($featureRequest),
                 // Once the owner's tool writes every change, it needs no
                 // connection of its own for this one.
                 'can_work_yourself' => ! ConnectOwnTool::connected($featureRequest->project) && HandChangeToOwner::available($featureRequest),
@@ -116,6 +119,25 @@ class DescribeFeatureRequest
         }
 
         return $earlier;
+    }
+
+    /**
+     * Get the nearest earlier change in this chat that the owner can still
+     * keep, unless one nearer is already kept.
+     */
+    protected function keepEarlier(FeatureRequest $featureRequest): ?string
+    {
+        for ($request = $featureRequest->parent; $request !== null; $request = $request->parent) {
+            if ($request->commit_sha !== null) {
+                return null;
+            }
+
+            if ($request->status === FeatureRequestStatus::Generated && $request->latestRun?->status === RunStatus::Completed) {
+                return $request->uuid;
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -2,11 +2,14 @@
 
 namespace Tests\Feature\Features;
 
+use App\Actions\Features\DescribeFeatureRequest;
 use App\Actions\Features\RetryFeatureRequest;
 use App\Actions\Runs\StartRun;
 use App\Enums\FeatureRequestStatus;
+use App\Enums\RunStatus;
 use App\Models\FeatureRequest;
 use App\Models\Project;
+use App\Models\Run;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -23,6 +26,23 @@ class FollowUpTest extends TestCase
 
         // Building the change is not what these tests are about.
         $this->mock(StartRun::class, fn (MockInterface $mock) => $mock->shouldReceive('handle'));
+    }
+
+    public function test_when_a_follow_up_stops_the_last_passed_change_before_it_can_still_be_kept()
+    {
+        $passed = FeatureRequest::factory()->generated()->create();
+        Run::factory()->create(['feature_request_id' => $passed->id, 'status' => RunStatus::Completed]);
+        $stopped = FeatureRequest::factory()->generated()->create(['project_id' => $passed->project_id, 'user_id' => $passed->user_id, 'parent_id' => $passed->id]);
+        Run::factory()->create(['feature_request_id' => $stopped->id, 'status' => RunStatus::Failed]);
+        $latest = FeatureRequest::factory()->create(['project_id' => $passed->project_id, 'user_id' => $passed->user_id, 'parent_id' => $stopped->id, 'status' => FeatureRequestStatus::Failed]);
+        $keep = fn (FeatureRequest $request) => app(DescribeFeatureRequest::class)->handle($request->refresh())['featureRequest']['keep_earlier'];
+
+        // The stopped change in between is passed over.
+        $this->assertSame($passed->uuid, $keep($latest));
+
+        // Once it is kept, there is nothing earlier left to keep.
+        $passed->update(['commit_sha' => str_repeat('a', 40)]);
+        $this->assertNull($keep($latest));
     }
 
     public function test_a_message_about_a_generated_change_continues_it_in_the_same_chat()
