@@ -57,13 +57,14 @@ class AppFaultsTest extends TestCase
     }
 
     /**
-     * A call to an outside service, from a line of the app's code.
+     * A call to an outside service, from a line of the app's code. A
+     * direct call is one that line made itself.
      *
      * @return array<string, mixed>
      */
-    protected function called(?string $at, string $method = 'POST', bool $keyed = false): array
+    protected function called(?string $at, string $method = 'POST', bool $keyed = false, bool $direct = false): array
     {
-        return ['kind' => 'http', 'what' => "{$method} pay.example", 'open' => 0, 'at' => $at, ...($keyed ? ['keyed' => true] : [])];
+        return ['kind' => 'http', 'what' => "{$method} pay.example", 'open' => 0, 'at' => $at, ...($keyed ? ['keyed' => true] : []), ...($direct ? ['direct' => true] : [])];
     }
 
     /**
@@ -140,6 +141,23 @@ class AppFaultsTest extends TestCase
         $point = (int) array_search('later', array_column($points, 'fails'), true);
 
         return AppFaults::measure($points, [$point => AppTraces::parse($this->recorded('POST', '/orders', $status, $held, ['fault' => 0, ...$extra]))], self::PATCH);
+    }
+
+    /**
+     * Measure an outside call against the request it was answered with a
+     * server error in.
+     *
+     * @param  list<array<string, mixed>>  $normal  What the request did in the tests' normal run
+     * @param  list<array<string, mixed>>  $answered  What it did when the call was answered with an error
+     * @param  array<string, mixed>  $extra
+     * @return array<string, mixed>|null
+     */
+    protected function answered(array $normal, int $status, array $answered, array $extra = []): ?array
+    {
+        $points = AppFaults::points(AppTraces::parse($this->recorded('POST', '/orders', 302, $normal)), self::PATCH);
+        $point = (int) array_search('answer', array_column($points, 'fails'), true);
+
+        return AppFaults::measure($points, [$point => AppTraces::parse($this->recorded('POST', '/orders', $status, $answered, ['fault' => $points[$point]['fault']['effect'], ...$extra]))], self::PATCH);
     }
 
     /**
@@ -526,6 +544,74 @@ class AppFaultsTest extends TestCase
         ];
 
         $this->assertSame(array_fill(0, 6, [1, []]), array_map(fn (?array $measured) => [$measured['run'] ?? null, $measured['findings'] ?? null], $measured));
+    }
+
+    public function test_an_outside_call_the_apps_code_makes_itself_and_does_more_after_is_a_place()
+    {
+        $call = $this->called('app/Http/Controllers/OrderController.php:1', direct: true);
+        $marks = $this->asked('update "orders" set "paid" = ? where "id" = ?', self::NEW.':5');
+        $places = fn (array $effects) => array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind'], $point['own']], $this->points([$this->recorded('POST', '/orders', 302, $effects)]));
+        $answers = fn (array $effects) => array_values(array_filter($places($effects), fn (array $place) => $place[0] === 'answer'));
+
+        // The change wrote what the request does after the call, so the place is the change's.
+        // It is tried with the sends, before the saves.
+        $this->assertSame([['answer', 0, 'answer', true], ['save', 1, 'query', true], ['send', 0, 'http', false]], $places([$call, $marks]));
+        // A package made the call for the app: the app's code does not get the answer.
+        $this->assertSame([['save', 1, 'query', true], ['send', 0, 'http', false]], $places([$this->called('app/Http/Controllers/OrderController.php:1'), $marks]));
+        // Nothing of the app's code is sent or saved after the call.
+        $this->assertSame([['send', 0, 'http', true]], $places([$this->called(self::NEW.':4', direct: true)]));
+        $this->assertSame([['send', 0, 'http', true]], $places([$this->called(self::NEW.':4', direct: true), $this->asked('select * from "orders"', self::NEW.':5'), $this->asked('update "sessions" set "payload" = ?', null)]));
+
+        // After a call a job made, only the rest of that job counts.
+        $job = $this->job(self::NEW.':4');
+        $inJob = $this->done($this->called('app/Jobs/SendReceipt.php:19', direct: true));
+        $this->assertSame([], $answers([$job, $inJob, $marks]));
+        $this->assertSame([['answer', 1, 'answer', false]], $answers([$job, $inJob, $this->done($this->mailed('app/Jobs/SendReceipt.php:20'))]));
+    }
+
+    public function test_an_outside_call_answered_with_an_error_is_found_when_the_app_carries_on_without_asking()
+    {
+        $call = $this->called(self::NEW.':4', direct: true);
+        $marks = $this->asked('update "orders" set "paid" = ? where "id" = ?', self::NEW.':5');
+        $mail = $this->mailed(self::NEW.':5');
+
+        $measured = $this->answered([$call, $marks, $mail], 302, [$call, $marks, $mail]);
+
+        $this->assertSame(['points' => 4, 'run' => 1, 'missed' => 0, 'existing' => 0], array_diff_key((array) $measured, ['findings' => 1]));
+        $this->assertSame([
+            ['kind' => 'answer_not_checked', 'route' => 'POST /orders', 'failed' => 'http POST pay.example', 'what' => 'update orders, mail App\Mail\Receipt', 'at' => self::NEW.':4', 'test' => self::TEST],
+        ], $measured['findings'] ?? null);
+
+        // Code the app already had made the call and carried on: counted, not held against the change.
+        $old = $this->called('app/Services/Pay.php:9', direct: true);
+        $oldMarks = $this->asked('update "orders" set "paid" = ? where "id" = ?', 'app/Services/Pay.php:12');
+        $order = $this->asked('insert into "orders" ("total") values (?)', self::NEW.':3');
+        $existing = $this->answered([$order, $old, $oldMarks], 302, [$order, $old, $oldMarks]);
+        $this->assertSame([1, 1, []], [$existing['run'] ?? null, $existing['existing'] ?? null, $existing['findings'] ?? null]);
+    }
+
+    public function test_an_outside_call_answered_with_an_error_is_no_finding_when_the_app_asked_or_did_something_else()
+    {
+        $call = $this->called(self::NEW.':4', direct: true);
+        $marks = $this->asked('update "orders" set "paid" = ? where "id" = ?', self::NEW.':5');
+        $fails = $this->asked('update "orders" set "failed_at" = ? where "id" = ?', self::NEW.':3');
+
+        $measured = [
+            // The app asked the answer for its status, and carried on in its own way.
+            $this->answered([$call, $marks], 302, [$call, $marks], ['asked' => true]),
+            // The app stopped: the person got another answer, and nothing was marked.
+            $this->answered([$call, $marks], 502, [$call]),
+            // The app marked the order in another way, from another line.
+            $this->answered([$call, $marks], 302, [$call, $fails]),
+        ];
+
+        $this->assertSame(array_fill(0, 3, [1, 0, []]), array_map(fn (?array $measured) => [$measured['run'] ?? null, $measured['missed'] ?? null, $measured['findings'] ?? null], $measured));
+
+        // A trace that is not whole cannot be compared, and a call that got its own answer is not the place.
+        $cut = $this->answered([$call, $marks], 302, [$call, $marks], ['cut' => true]);
+        $points = AppFaults::points(AppTraces::parse($this->recorded('POST', '/orders', 302, [$call, $marks])), self::PATCH);
+        $unanswered = AppFaults::measure($points, [0 => AppTraces::parse($this->recorded('POST', '/orders', 302, [$call, $marks]))], self::PATCH);
+        $this->assertSame([[0, 1, []], [0, 1, []]], array_map(fn (?array $measured) => [$measured['run'] ?? null, $measured['missed'] ?? null, $measured['findings'] ?? null], [$cut, $unanswered]));
     }
 
     public function test_a_job_the_request_does_more_after_is_a_place()

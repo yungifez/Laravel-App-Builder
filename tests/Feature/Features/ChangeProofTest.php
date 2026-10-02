@@ -576,6 +576,11 @@ class ChangeProofTest extends TestCase
             $proof(['run' => 1, 'findings' => [$finding('needs_job_done', 'POST /orders', 'job App\Jobs\SendReceipt')]])->where('kind', 'gap')->pluck('text')->all(),
         );
 
+        $this->assertSame(
+            ['If an outside service says it could not do what your app asked at /orders/{order}/pay, your app does not look at that answer. It carries on as if the service did it.'],
+            $proof(['run' => 1, 'findings' => [$finding('answer_not_checked', 'POST /orders/{order}/pay', 'http POST api.stripe.com')]])->where('kind', 'gap')->pluck('text')->all(),
+        );
+
         // The recording already said it sends before saving ends: it is said once.
         $twice = $proof(['run' => 1, 'findings' => [$finding('sent_then_lost', 'POST /invitations', 'insert invitations')]], ['traces' => ['requests' => 40, 'reached' => 12, 'unseen' => 0, 'existing' => 0, 'repeats' => [], 'findings' => [
             ['kind' => 'sent_before_saved', 'route' => 'POST /invitations', 'what' => 'mail App\Mail\Invited', 'at' => 'app/Models/Order.php:3', 'test' => null],

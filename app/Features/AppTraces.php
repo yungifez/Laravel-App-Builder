@@ -55,7 +55,9 @@ class AppTraces
      * "again" marks where a job was made to run a second time, and
      * "delivers" a job of the framework that only delivers one email,
      * notification or broadcast. "keyed" marks an outside call that says
-     * which call it is (an idempotency key).
+     * which call it is (an idempotency key), and "direct" one the app's
+     * code made itself, so it gets the answer. "asked" says that the
+     * app's code asked an error answer for its status (see AppFaults).
      * "phase" is the part of the request a thing happened in (such as
      * authorization, validation, handling or rendering; "unknown" when the
      * recorder could not tell), and "frames" the app's own code on the way
@@ -65,7 +67,7 @@ class AppTraces
      * more listeners Laravel found by itself: the line that dispatched it
      * and those listeners, in the order they ran, as Class::method.
      *
-     * @return list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, phase?: string, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, events?: list<array{what: string, at: string|null, listeners: list<string>}>}>
+     * @return list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, direct?: bool, phase?: string, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, asked?: bool, events?: list<array{what: string, at: string|null, listeners: list<string>}>}>
      */
     public static function parse(string $report): array
     {
@@ -95,6 +97,7 @@ class AppTraces
                     ...(($effect['again'] ?? false) === true ? ['again' => true] : []),
                     ...(($effect['delivers'] ?? false) === true ? ['delivers' => true] : []),
                     ...(($effect['keyed'] ?? false) === true ? ['keyed' => true] : []),
+                    ...(($effect['direct'] ?? false) === true ? ['direct' => true] : []),
                     ...(is_string($effect['phase'] ?? null) ? [
                         'phase' => $effect['phase'],
                         'frames' => array_values(array_filter(is_array($effect['frames'] ?? null) ? $effect['frames'] : [], is_string(...))),
@@ -125,6 +128,7 @@ class AppTraces
                 'cut' => (bool) ($request['cut'] ?? false),
                 ...(is_int($request['n'] ?? null) ? ['n' => $request['n']] : []),
                 ...(is_int($request['fault'] ?? null) ? ['fault' => $request['fault']] : []),
+                ...(($request['asked'] ?? false) === true ? ['asked' => true] : []),
                 ...($events === [] ? [] : ['events' => $events]),
             ];
         }

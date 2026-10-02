@@ -37,6 +37,14 @@ namespace App\Features;
  * a finding for a POST or a PATCH that does not say which call it is
  * (an idempotency key). A GET, a PUT and a DELETE can be made again.
  *
+ * A sixth thing is read when an outside call is answered with an error.
+ * Laravel's HTTP client gives the app such an answer and throws nothing,
+ * so an app that does not ask carries on as if the call worked. The
+ * call is made, and a server error is its answer. It is a finding when
+ * the app's code did not ask that answer for its status, and the request
+ * went on to send and save the same as when the call works. Only a call
+ * the app's code makes itself, and does more after, is such a place.
+ *
  * A job has a second place: the last save it makes after it sent
  * something. That save is refused, and the job is run again, the way a
  * queue tries a failed job again. A job that asks if it ran before, but
@@ -77,6 +85,8 @@ class AppFaults
 
     public const NEEDS_JOB_DONE = 'needs_job_done';
 
+    public const ANSWER_NOT_CHECKED = 'answer_not_checked';
+
     public const SEND = 'send';
 
     public const SAVE = 'save';
@@ -88,6 +98,8 @@ class AppFaults
     public const REORDER = 'reorder';
 
     public const LATER = 'later';
+
+    public const ANSWER = 'answer';
 
     /**
      * What the recorder can make fail when the app sends it.
@@ -105,7 +117,7 @@ class AppFaults
      * What is tried first when the places are otherwise alike: what cannot
      * be taken back comes before what the database can put back.
      */
-    protected const ORDER = ['http' => 0, 'mail' => 0, 'job' => 1, 'later' => 1, 'event' => 1, 'query' => 2];
+    protected const ORDER = ['http' => 0, 'mail' => 0, 'answer' => 0, 'job' => 1, 'later' => 1, 'event' => 1, 'query' => 2];
 
     /**
      * The most findings kept, so one change cannot fill the row.
@@ -114,7 +126,8 @@ class AppFaults
 
     /**
      * Find the places where a failure can be caused: each email and outside
-     * call a request makes, the last save of each transaction a request
+     * call a request makes, each outside call the app's code makes itself
+     * and does more after, the last save of each transaction a request
      * commits, the last save the app's code makes outside a transaction
      * once the request has saved or sent something, each job the sync
      * queue ran that sent or added something, each job the request does
@@ -128,7 +141,7 @@ class AppFaults
      * order comes only from the trace, the patch and those findings, so
      * the same change gives the same order.
      *
-     * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, events?: list<array{what: string, at: string|null, listeners: list<string>}>}>  $requests  From AppTraces::parse(), of the tests' normal run
+     * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, direct?: bool, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, events?: list<array{what: string, at: string|null, listeners: list<string>}>}>  $requests  From AppTraces::parse(), of the tests' normal run
      * @param  list<array{route: string, at?: string|null}>  $suspected  Findings of the other engines about the change, such as AppTraces and AppBoundaries give
      * @return list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string, what?: string}, times: int, own: bool, was?: array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool}}>
      */
@@ -154,11 +167,20 @@ class AppFaults
             $stayed = AppTraces::saved($request['effects']);
             $found = [];
             $jobs = [];
+            $answers = [];
             $last = null;
             $apart = null;
             $done = false;
 
             foreach ($request['effects'] as $place => $effect) {
+                // An outside call the app's code made itself and did more
+                // after: its answer can be an error.
+                $more = $effect['kind'] === 'http' && ($effect['direct'] ?? false) ? self::after($request['effects'], $place) : [];
+
+                if ($more !== []) {
+                    $answers[] = [self::ANSWER, $place, $effect, array_any($more, $new), 'answer'];
+                }
+
                 if ($effect['job'] ?? false) {
                     continue;
                 }
@@ -203,7 +225,7 @@ class AppFaults
                 $done = $done || in_array($effect['kind'], self::SENT, true) || (isset($stayed[$place]) && is_string($effect['at'] ?? null));
             }
 
-            foreach ([...$found, ...($apart === null ? [] : [$apart]), ...$jobs] as $point) {
+            foreach ([...$found, ...($apart === null ? [] : [$apart]), ...$answers, ...$jobs] as $point) {
                 [$fails, $at, $failed] = $point;
 
                 $points[implode('|', [$fails, $route, self::name($failed), $failed['at'] ?? ''])] ??= [
@@ -217,11 +239,11 @@ class AppFaults
                     'times' => count(self::same($request['effects'], $failed)),
                     // A job is also the change's when the change wrote what it does.
                     'own' => $new($failed) || ($point[3] ?? false),
-                    ...($fails === self::LATER ? ['was' => [
+                    ...($fails === self::LATER || $fails === self::ANSWER ? ['was' => [
                         'status' => $request['status'],
                         'did' => self::did($request['effects']),
                         'listeners' => [],
-                        'apart' => self::apart(self::around($request['effects'], $at)),
+                        'apart' => $fails === self::ANSWER || self::apart(self::around($request['effects'], $at)),
                     ]] : []),
                 ];
             }
@@ -277,7 +299,7 @@ class AppFaults
      * but the shape cannot say that they left the same behind.
      *
      * @param  list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string, what?: string}, times: int, own: bool, was?: array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool}}>  $points  From points()
-     * @param  array<int, list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int}>>  $runs  What was recorded when each place's failure was caused, by the place's position in $points; a place not tried is absent
+     * @param  array<int, list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, asked?: bool}>>  $runs  What was recorded when each place's failure was caused, by the place's position in $points; a place not tried is absent
      * @return array{points: int, run: int, missed: int, existing: int, findings: list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}>}|null
      */
     public static function measure(array $points, array $runs, ?string $patch): ?array
@@ -297,7 +319,7 @@ class AppFaults
                 && ($request['n'] ?? null) === $point['fault']['request']
                 && ($request['fault'] ?? null) === $point['fault']['effect']
                 // A run that is not whole in the trace cannot be compared.
-                && ! (in_array($point['fails'], [self::AGAIN, self::RETRY, self::REORDER, self::LATER], true) && $request['cut']));
+                && ! (in_array($point['fails'], [self::AGAIN, self::RETRY, self::REORDER, self::LATER, self::ANSWER], true) && $request['cut']));
 
             if ($point === null || $hit === null || self::undecided($point, $hit)) {
                 continue;
@@ -350,9 +372,9 @@ class AppFaults
      * Get what a request left behind after its failure that the failure
      * should have stopped or undone, by the kind of problem it is.
      *
-     * @param  array{status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, fault?: int}  $hit  The request the failure was caused in
+     * @param  array{status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, fault?: int, asked?: bool}  $hit  The request the failure was caused in
      * @param  int  $times  How many times the request did the same thing from the same line in the tests' normal run
-     * @param  array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool}|null  $was  What the request did in the tests' normal run, for an event or a job that waits
+     * @param  array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool}|null  $was  What the request did in the tests' normal run, for an event, a job that waits or an answer
      * @return array<string, list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>>
      */
     protected static function left(string $fails, array $hit, int $times, ?array $was = null): array
@@ -361,6 +383,14 @@ class AppFaults
 
         if ($fails === self::REORDER || $fails === self::LATER) {
             return array_filter([($fails === self::REORDER ? self::DEPENDS_ON_ORDER : self::NEEDS_JOB_DONE) => $was === null ? [] : self::changed($was, $hit)]);
+        }
+
+        if ($fails === self::ANSWER) {
+            // An app that asked how the call went, or did something else,
+            // took the error in.
+            $same = $was !== null && ! ($hit['asked'] ?? false) && self::changed($was, $hit) === [];
+
+            return array_filter([self::ANSWER_NOT_CHECKED => $same ? self::after($hit['effects'], $place) : []]);
         }
 
         if ($fails === self::AGAIN) {
@@ -550,6 +580,29 @@ class AppFaults
             array_values(array_filter($after, fn (array $effect) => $effect['job'] ?? false)),
             array_values(array_filter($after, fn (array $effect) => ! ($effect['job'] ?? false) && is_string($effect['at'] ?? null))),
         ];
+    }
+
+    /**
+     * Get what the app went on to do after an outside call: what it
+     * sent, and what its code saved that stayed. For a call a job made,
+     * only the rest of that job counts: in use the request has ended by
+     * then.
+     *
+     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>  $effects
+     * @return list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>
+     */
+    protected static function after(array $effects, int $place): array
+    {
+        $stayed = AppTraces::saved($effects);
+        $rest = ($effects[$place]['job'] ?? false)
+            ? self::ran($effects, $place)
+            : array_filter(array_slice($effects, $place + 1, null, true), fn (array $effect) => ! ($effect['job'] ?? false));
+
+        return array_values(array_filter(
+            $rest,
+            fn (array $effect, int $at) => in_array($effect['kind'], self::SENT, true) || (isset($stayed[$at]) && is_string($effect['at'] ?? null)),
+            ARRAY_FILTER_USE_BOTH,
+        ));
     }
 
     /**

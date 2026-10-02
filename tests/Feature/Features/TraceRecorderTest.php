@@ -131,6 +131,34 @@ class TraceRecorderTest extends TestCase
     }
 
     /**
+     * Charge a person twice, the second time with a server error as the
+     * answer of the outside call, and measure that place.
+     *
+     * @param  array<string, int>  $sent
+     * @return array{0: list<array<string, mixed>>, 1: array<string, mixed>}
+     */
+    protected function chargeAnsweredWithAnError(array $sent, int $status): array
+    {
+        $user = User::factory()->create();
+        Route::post('/_faked/charged/{user}', [RecordedApp::class, 'charged'])->middleware('web');
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'answer');
+        Http::fake();
+
+        $this->post("/_faked/charged/{$user->id}", $sent)->assertNoContent();
+        $this->post("/_faked/charged/{$user->id}", $sent)->assertStatus($status);
+
+        $requests = $recorded();
+        // The call reached the fake both times: only its answer was another one.
+        Http::assertSentCount(2);
+
+        $points = AppFaults::points([$requests[0]], $this->wholeFilePatch());
+        $this->assertSame([['send', 1, 'http'], ['answer', 1, 'answer'], ['save', 2, 'query']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
+        $points[1]['fault']['request'] = 1;
+
+        return [$requests, (array) AppFaults::measure($points, [1 => $requests], $this->wholeFilePatch())];
+    }
+
+    /**
      * A patch that adds every line of the app that is recorded, so what
      * its routes do is the change's.
      */
@@ -667,6 +695,63 @@ class TraceRecorderTest extends TestCase
 
         $measured = $this->measureFailure($requests, 'http POST outside.example');
         $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+    }
+
+    public function test_an_outside_call_answered_with_an_error_shows_an_app_that_carries_on_without_asking()
+    {
+        [$requests, $measured] = $this->chargeAnsweredWithAnError([], 204);
+
+        $this->assertSame([['query', 'http', 'query'], ['query', 'http', 'query']], array_map(fn (array $request) => array_column($request['effects'], 'kind'), $requests));
+        // The app's code made the call itself, so it gets the answer.
+        $this->assertSame([true, true], [$requests[0]['effects'][1]['direct'] ?? null, $requests[1]['effects'][1]['direct'] ?? null]);
+        $this->assertSame([[null, null], [1, null]], array_map(fn (array $request) => [$request['fault'] ?? null, $request['asked'] ?? null], $requests));
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['answer_not_checked', 'POST /_faked/charged/{user}', 'http POST outside.example', 'update users']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
+    public function test_an_app_that_asks_the_error_answer_how_the_call_went_and_stops_is_clean()
+    {
+        [$requests, $measured] = $this->chargeAnsweredWithAnError(['careful' => 1], 502);
+
+        $this->assertSame([[null, null], [1, true]], array_map(fn (array $request) => [$request['fault'] ?? null, $request['asked'] ?? null], $requests));
+        $this->assertSame(['query', 'http'], array_column($requests[1]['effects'], 'kind'));
+        $this->assertSame([1, 0, []], [$measured['run'], $measured['missed'], $measured['findings']]);
+    }
+
+    public function test_an_app_that_asks_the_error_answer_and_carries_on_in_its_own_way_is_clean()
+    {
+        [$requests, $measured] = $this->chargeAnsweredWithAnError(['noted' => 1], 204);
+
+        // The same shape as when the call works, but the app looked.
+        $this->assertSame([[null, null], [1, true]], array_map(fn (array $request) => [$request['fault'] ?? null, $request['asked'] ?? null], $requests));
+        $this->assertSame(['query', 'http', 'query'], array_column($requests[1]['effects'], 'kind'));
+        $this->assertSame(1, User::query()->where('name', 'Unpaid')->count());
+        $this->assertSame([1, 0, []], [$measured['run'], $measured['missed'], $measured['findings']]);
+    }
+
+    public function test_an_app_that_stops_on_what_the_error_answer_holds_is_clean_without_asking()
+    {
+        [$requests, $measured] = $this->chargeAnsweredWithAnError(['wary' => 1], 502);
+
+        $this->assertSame([[null, null], [1, null]], array_map(fn (array $request) => [$request['fault'] ?? null, $request['asked'] ?? null], $requests));
+        $this->assertSame([1, 0, []], [$measured['run'], $measured['missed'], $measured['findings']]);
+    }
+
+    public function test_an_outside_call_other_code_makes_for_the_app_is_no_place_for_an_answer()
+    {
+        $user = User::factory()->create();
+        Route::post('/_faked/relayed/{user}', [RecordedApp::class, 'relayed'])->middleware('web');
+        $recorded = $this->record();
+        Http::fake();
+
+        $this->post("/_faked/relayed/{$user->id}")->assertNoContent();
+
+        $requests = $recorded();
+        $this->assertSame([['query', null], ['http', null], ['query', null]], array_map(fn (array $effect) => [$effect['kind'], $effect['direct'] ?? null], $requests[0]['effects']));
+        $this->assertStringStartsWith(RecordedApp::PATH.':', (string) $requests[0]['effects'][1]['at']);
+
+        $points = AppFaults::points($requests, $this->wholeFilePatch());
+        $this->assertSame([['send', 1, 'http'], ['save', 2, 'query']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
     }
 
     public function test_a_notification_a_test_fakes_is_seen_as_the_email_it_sends_and_that_email_can_fail()

@@ -329,11 +329,11 @@ abstract class AgentDriver implements ConstructionDriver
 
         if (isset($measured['faults'])) {
             $faults = $measured['faults'];
-            $parts[] = sprintf("One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer, a save the database refused, or a queued job that ran a second time, whole or after a save in it was refused. Two more places have no failure. A queued job the request does more after: it ran after the response, the way a queue runs it. An event with listeners that Laravel found by itself: its listeners ran in the reverse order. Of %d places where those requests send, save, run a job or dispatch such an event, %d were tried and the failure happened in %d.", $faults['points'], $faults['run'] + $faults['missed'], $faults['run'])
+            $parts[] = sprintf("One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer or got a server error as its answer, a save the database refused, or a queued job that ran a second time, whole or after a save in it was refused. Two more places have no failure. A queued job the request does more after: it ran after the response, the way a queue runs it. An event with listeners that Laravel found by itself: its listeners ran in the reverse order. Of %d places where those requests send, save, run a job or dispatch such an event, %d were tried and the failure happened in %d.", $faults['points'], $faults['run'] + $faults['missed'], $faults['run'])
                 .match (true) {
                     $faults['findings'] !== [] => " What the app left behind:\n".$this->list(array_map($this->left(...), $faults['findings'])),
                     $faults['run'] === 0 => ' So this says nothing about the change.',
-                    default => ' Each time the app left nothing behind: it had saved nothing before a server error, sent nothing before a save it lost, kept no part of a save it lost, sent or added nothing again in a job that ran twice or was tried again after its save failed, made no POST or PATCH call again without an idempotency key, and did the same when a queued job ran after the response or the listeners of an event ran in the reverse order.',
+                    default => ' Each time the app left nothing behind: it had saved nothing before a server error, sent nothing before a save it lost, kept no part of a save it lost, sent or added nothing again in a job that ran twice or was tried again after its save failed, made no POST or PATCH call again without an idempotency key, asked how an outside call went or did something else when its answer was a server error, and did the same when a queued job ran after the response or the listeners of an event ran in the reverse order.',
                 };
         }
 
@@ -367,6 +367,13 @@ abstract class AgentDriver implements ConstructionDriver
             return "{$finding['route']}: when {$finding['failed']}"
                 .($finding['at'] === null ? '' : " at {$finding['at']}")
                 ." got no answer, the request made the same call again with no idempotency key, so the service may do it twice (caused in {$finding['test']})";
+        }
+
+        // Laravel's HTTP client throws nothing for an error answer: the app must ask.
+        if ($finding['kind'] === AppFaults::ANSWER_NOT_CHECKED) {
+            return "{$finding['route']}: when {$finding['failed']}"
+                .($finding['at'] === null ? '' : " at {$finding['at']}")
+                ." was answered with a server error, the app's code did not ask the answer for its status and the request went on as if the call worked: {$finding['what']} (caused in {$finding['test']})";
         }
 
         // Tests run a queued job where it is dispatched; a queue runs it later.

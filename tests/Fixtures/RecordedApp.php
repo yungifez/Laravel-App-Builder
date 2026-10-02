@@ -3,6 +3,7 @@
 namespace Tests\Fixtures;
 
 use App\Models\User;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
@@ -155,6 +156,38 @@ class RecordedApp
     {
         DB::table('users')->where('id', $user->id)->update(['name' => 'Called']);
         Http::post('https://outside.example/hook', ['user' => $user->id]);
+
+        return response()->noContent();
+    }
+
+    /**
+     * Marks the person as paid after an outside call, whatever its
+     * answer. A careful request asks the answer first and stops. One
+     * that notes the answer asks and carries on. A wary one reads what
+     * the answer holds and stops on that.
+     */
+    public function charged(User $user, Request $request): Response
+    {
+        $answer = Http::post('https://outside.example/charge', ['user' => $user->id]);
+
+        abort_if($request->boolean('careful') && $answer->failed(), 502);
+        abort_if($request->boolean('wary') && $answer->json('message') !== null, 502);
+
+        $unpaid = $request->boolean('noted') && $answer->failed();
+
+        DB::table('users')->where('id', $user->id)->update(['name' => $unpaid ? 'Unpaid' : 'Paid']);
+
+        return response()->noContent();
+    }
+
+    /**
+     * Has other code make the outside call for it, so this code does
+     * not get the answer.
+     */
+    public function relayed(User $user): Response
+    {
+        value(app(Factory::class)->post(...), 'https://outside.example/hook');
+        DB::table('users')->where('id', $user->id)->update(['name' => 'Relayed']);
 
         return response()->noContent();
     }

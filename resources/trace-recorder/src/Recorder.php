@@ -16,12 +16,15 @@ use Illuminate\Foundation\Http\Kernel;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Events\RequestSending;
+use Illuminate\Http\Client\Factory as HttpClient;
+use Illuminate\Http\Client\Response as ClientResponse;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Notifications\Events\NotificationSending;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Events\JobQueued;
+use Illuminate\Support\Facades\Facade;
 use PDOException;
 use PHPUnit\Framework\TestCase;
 use ReflectionObject;
@@ -53,6 +56,10 @@ use WeakMap;
  *
  * And it can name a job the sync queue runs. That job is then held back
  * until the response is made, the way a real queue runs it later.
+ *
+ * And it can name an outside call to answer. That call is made, and a
+ * server error is given as its answer. The trace then says if the app's
+ * code asked that answer for its status.
  */
 class Recorder
 {
@@ -131,6 +138,9 @@ class Recorder
     /** Whether a job that was held back runs now. */
     protected bool $releasing = false;
 
+    /** The place of the outside call that is being made now and gets a server error as its answer. */
+    protected ?int $answering = null;
+
     /** @var array<string, true> The fakes that took work of this request this recorder could not see */
     protected array $hidden = [];
 
@@ -160,6 +170,20 @@ class Recorder
         if (($this->fault['kind'] ?? null) === 'later') {
             try {
                 $this->app->make('queue')->addConnector('sync', fn () => LaterQueue::connector($this));
+            } catch (Throwable) {
+                //
+            }
+        }
+
+        // A run about an answer needs a place between the app and its outside calls.
+        if (($this->fault['kind'] ?? null) === 'answer') {
+            try {
+                $between = fn (HttpClient $http) => $http->globalMiddleware($this->answer());
+                $this->app->resolving(HttpClient::class, $between);
+
+                if ($this->app->resolved(HttpClient::class)) {
+                    $between($this->app->make(HttpClient::class));
+                }
             } catch (Throwable) {
                 //
             }
@@ -213,10 +237,21 @@ class Recorder
         });
         $events->listen(MessageSending::class, fn (MessageSending $event) => $this->mailed((string) ($event->data['__laravel_mailable'] ?? $event->data['__laravel_notification'] ?? 'message')));
         $events->listen(NotificationSending::class, fn (NotificationSending $event) => $this->effect(['kind' => 'notification', 'what' => $event->notification::class]));
-        $events->listen(RequestSending::class, fn (RequestSending $event) => $this->effect(
-            ['kind' => 'http', 'what' => $event->request->method().' '.parse_url($event->request->url(), PHP_URL_HOST), ...($this->keyed($event->request) ? ['keyed' => true] : [])],
-            fails: fn () => new ConnectionException('cURL error 28: Operation timed out'),
-        ));
+        $events->listen(RequestSending::class, function (RequestSending $event) {
+            $place = count($this->operation['effects'] ?? []);
+
+            $this->effect(
+                ['kind' => 'http', 'what' => $event->request->method().' '.parse_url($event->request->url(), PHP_URL_HOST), ...($this->keyed($event->request) ? ['keyed' => true] : [])],
+                fails: fn () => new ConnectionException('cURL error 28: Operation timed out'),
+            );
+
+            // The one answer this run is about: the call is made, and its answer is an error.
+            if ($this->operation !== null && ! isset($this->operation['fault'])
+                && $this->fault === ['request' => $this->requests - 1, 'effect' => $place, 'kind' => 'answer']
+                && count($this->operation['effects']) === $place + 1) {
+                $this->answering = $place;
+            }
+        });
 
         $this->app->terminating(fn () => $this->finish());
     }
@@ -231,6 +266,7 @@ class Recorder
         $this->jobs = 0;
         $this->running = [];
         $this->held = [];
+        $this->answering = null;
         $this->hidden = [];
         $this->fakes->standIn();
         $this->follow();
@@ -590,6 +626,84 @@ class Recorder
     }
 
     /**
+     * Make the place between the app and its outside calls where the one
+     * call this run is about gets its answer. The call is made first, so
+     * a fake still takes it. Then a server error is given as its answer,
+     * the way a service answers that could not do what it was asked.
+     *
+     * @return Closure(callable): callable
+     */
+    protected function answer(): Closure
+    {
+        return fn (callable $handler) => function ($request, array $options) use ($handler) {
+            $this->answering = null;
+
+            try {
+                $promise = $handler($request, $options);
+            } finally {
+                $place = $this->answering;
+                $this->answering = null;
+            }
+
+            return $place === null ? $promise : $promise->then(fn ($response) => $this->answered($place, $response));
+        };
+    }
+
+    /**
+     * Give a server error as the answer of the outside call at a place.
+     */
+    protected function answered(int $place, mixed $response): mixed
+    {
+        if ($this->operation === null || isset($this->operation['fault'])) {
+            return $response;
+        }
+
+        try {
+            $error = new Answer($this);
+        } catch (Throwable) {
+            return $response;
+        }
+
+        $this->operation['fault'] = $place;
+
+        return $error;
+    }
+
+    /**
+     * Note that the app's code asks the error answer for its status: it
+     * looks at how the call went. The framework asks every answer, and
+     * so can a package that watches outside calls; neither counts.
+     */
+    public function asked(): void
+    {
+        if ($this->operation === null || isset($this->operation['asked'])) {
+            return;
+        }
+
+        try {
+            $file = null;
+            $by = '';
+
+            // An answer's methods ask each other: the call into the first of them is the one that asks.
+            foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 12) as $frame) {
+                $by = $frame['class'] ?? '';
+
+                if ($by !== self::class && $by !== Answer::class && ($by === '' || ! is_a($by, ClientResponse::class, true))) {
+                    break;
+                }
+
+                $file = $frame['file'] ?? null;
+            }
+
+            if (is_string($file) && $this->own($file) && $file !== $this->testFile && ($by === '' || ! is_a($by, TestCase::class, true))) {
+                $this->operation['asked'] = true;
+            }
+        } catch (Throwable) {
+            //
+        }
+    }
+
+    /**
      * Hear of each event that has two or more listeners Laravel found by
      * itself. Laravel takes those in the order the disk lists their files,
      * so their order is not the same on every machine. Listeners the app
@@ -823,8 +937,10 @@ class Recorder
      * - "frames": the app's own code on the way, nearest first, each as
      *   Class::method (or the file, for code outside a class).
      * - "phase": the part of the request it happened in (see PHASES).
+     * - "direct": that line called the framework's HTTP client itself, so
+     *   the app's code gets the answer of the outside call.
      *
-     * @return array{at: string|null, phase: string, frames?: list<string>}
+     * @return array{at: string|null, phase: string, frames?: list<string>, direct?: true}
      */
     protected function cause(): array
     {
@@ -833,6 +949,7 @@ class Recorder
         $own = [];
         $phase = null;
         $nearest = true;
+        $direct = false;
         $delivered = false;
 
         foreach ($frames as $position => $frame) {
@@ -857,7 +974,7 @@ class Recorder
                 continue;
             }
 
-            if (str_starts_with($file, $this->base) && ! str_starts_with($file, $this->base.'vendor/') && ! str_starts_with($file, $this->base.'storage/') && ! str_starts_with($file, $this->base.'public/')) {
+            if ($this->own($file)) {
                 // The frame after this one names the code this line is in.
                 $in = $frames[$position + 1] ?? [];
 
@@ -873,6 +990,7 @@ class Recorder
 
                 if ($nearest) {
                     $at = substr($file, strlen($this->base)).':'.($frame['line'] ?? 0);
+                    $direct = $this->callsClient($frames, $position);
                     $nearest = false;
                 }
 
@@ -882,7 +1000,36 @@ class Recorder
             }
         }
 
-        return ['at' => $at, 'phase' => $phase ?? 'unknown', ...($own === [] ? [] : ['frames' => $own])];
+        return ['at' => $at, 'phase' => $phase ?? 'unknown', ...($own === [] ? [] : ['frames' => $own]), ...($direct ? ['direct' => true] : [])];
+    }
+
+    /**
+     * Determine if a file is the app's own code: not the framework's, a
+     * package's, a compiled view's or the web folder's.
+     */
+    protected function own(string $file): bool
+    {
+        return str_starts_with($file, $this->base) && ! str_starts_with($file, $this->base.'vendor/') && ! str_starts_with($file, $this->base.'storage/') && ! str_starts_with($file, $this->base.'public/');
+    }
+
+    /**
+     * Determine if a call made from a line of the app's code is a call
+     * of the framework's HTTP client. A package that makes an outside
+     * call for the app gets the answer, and the app's code cannot ask it.
+     *
+     * @param  list<array<string, mixed>>  $frames
+     * @param  int  $position  The frame of the call the line made
+     */
+    protected function callsClient(array $frames, int $position): bool
+    {
+        $called = (string) ($frames[$position]['class'] ?? '');
+
+        // A facade passes the call on from its own file.
+        if ($called === Facade::class) {
+            $called = (string) ($frames[$position - 1]['class'] ?? '');
+        }
+
+        return str_starts_with($called, 'Illuminate\\Http\\Client\\');
     }
 
     /**

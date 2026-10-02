@@ -1885,6 +1885,12 @@ Nothing is random. `AppFaults` reads the recording for the places a failure
 can be caused, in requests that ran the change's code:
 
 - **A send.** Each mail and each outside call of a request.
+- **An answer.** Each outside call the app's code makes itself, when the
+  app's code sends or saves something after it. The call does not fail. It
+  is made, and a server error is given as its answer. Laravel's HTTP client
+  gives the app such an answer and throws nothing. A call a package makes
+  for the app is not a place: the app's code does not get its answer. For a
+  call a job makes, only what the rest of that job does counts as after.
 - **A save in a transaction.** The last write of each transaction that a
   request commits.
 - **A save in steps.** The last write the app's code makes outside a
@@ -1919,7 +1925,9 @@ refuses the write before it runs. A job is run again when it is done, the
 way a queue runs it again when a worker stops before it marks the job as
 done. The second run is marked in the trace, and an error in it stays in it.
 For a job that waits, the recorder puts a sync queue in place that asks it
-before each job, and only in that run. For an event, the fault also names
+before each job, and only in that run. For an answer, the recorder puts a
+middleware on the HTTP client the same way. The call still reaches a fake
+of the test, and then gets a 500 as its answer. For an event, the fault also names
 the event. The recorder puts its found
 listeners in the reverse order for that one request, and gives them their
 order back when the request ends.
@@ -1941,6 +1949,10 @@ The trace of that request shows what stayed:
 - **Called again.** An outside call got no answer, and the request made the
   same call again from the same line. A call that got no answer can still
   have arrived, so the service can do it twice: a payment taken twice.
+- **Answer not checked.** An outside call was answered with a server
+  error. The app's code did not ask the answer for its status, and the
+  request went on to send and save the same as when the call works: an
+  order marked as paid when the payment failed.
 - **Needs its job done.** A job ran after the response and not where it
   was dispatched, and the request did not do the same. What the request
   does after it dispatches a job only works when the job is done.
@@ -1964,6 +1976,17 @@ a PUT and a DELETE can be made again. More calls from the line than in the
 normal run means a new try. The same number means a loop that carried on
 with its next call, and nothing is said.
 
+An answer is judged by two facts. The error answer tells the recorder when
+the app's code asks it for its status (`successful()`, `failed()`,
+`status()`, `throw()`), and the trace says so (`asked`). The framework asks
+every answer, and a package that watches outside calls can ask too. Neither
+counts. The second fact is the shape of the request. An app that asked, or
+that did not do the same as in the normal run, took the error in, and
+nothing is said. The recorder marks each call the app's code made itself
+(`direct`), so only those are places. One limit: an app that reads only the
+body of the answer and carries on with the same shape is a finding. The
+recorder keeps no values, so it cannot see that the body was used.
+
 The two orders of an event's listeners are compared by shape too. The
 recorder lists each such event in the trace (`events`), with the line that
 dispatched it and its found listeners. The same sends and saves from the
@@ -1982,7 +2005,8 @@ and not reported. The places are tried in a fixed order (direction 33).
 Places on the change's own lines come first. Next come places on a line or a
 route that `AppTraces` or `AppBoundaries` has a finding about. Then sends
 come before jobs, and jobs before saves: what cannot be taken back is tried
-first. The order comes only from the trace, the patch and those findings. At
+first. An answer is tried with the sends. It is the change's when the
+change makes the call or wrote what the request does after it. The order comes only from the trace, the patch and those findings. At
 most `points` places are tried, and no place starts after `seconds`, so the
 owner's wait has a limit. A place whose failure did not happen is counted as
 `missed`, never as clean. What a job on the sync queue does is not a place
@@ -1999,7 +2023,7 @@ is said. A second run that the trace cut short is missed. An email that a test
 fakes is a place too: the stand-in of the fake fails it the same way, before
 the fake takes it.
 
-The reviewer blocks all eight, unless the request or the plan asks for
+The reviewer blocks all nine, unless the request or the plan asks for
 exactly that. The owner reads each in the proof: "If saving fails at /invitations,
 your app has already sent something. People are told about something that
 was not saved." When failures were caused and nothing stayed: "We made things
@@ -2011,7 +2035,10 @@ thing twice." When the job sends twice only after its save failed, the
 owner reads that in its place: "If saving fails during that work and it
 starts over, it sends the same thing twice." For a call made again: "If an outside service is slow to
 answer at /orders/{order}/pay, your app asks it again. The service may then
-do the same thing twice, such as take a payment twice." For an event: "When
+do the same thing twice, such as take a payment twice." For an answer that
+is not checked: "If an outside service says it could not do what your app
+asked at /orders/{order}/pay, your app does not look at that answer. It
+carries on as if the service did it." For an event: "When
 someone uses /orders, your app does a few things one after the other, and
 nothing says which comes first. When they happen the other way round, your
 app does not do the same things." For a job that waits: "Your app does some
