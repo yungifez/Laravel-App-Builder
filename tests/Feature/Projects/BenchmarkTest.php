@@ -79,6 +79,7 @@ class BenchmarkTest extends TestCase
 
         $this->artisan('builder:benchmark', ['project' => $project->id, '--changes' => 3])
             ->expectsOutputToContain('It stopped: failed.')
+            ->doesntExpectOutputToContain('DONE')
             ->assertFailed();
 
         $this->assertSame(1, $project->featureRequests()->count());

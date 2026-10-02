@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Console\View\TaskResult;
 use Illuminate\Support\Sleep;
 
 #[Signature('builder:benchmark {project : The project, by id} {--changes=1 : How many of the next changes to make}')]
@@ -52,7 +53,7 @@ class RunBenchmark extends Command
             $this->components->task("Change {$number}: {$prompt}", function () use ($requestFeature, $answerRunQuestion, $acceptChange, $project, $owner, $prompt, &$failure) {
                 $failure = $this->make($requestFeature, $answerRunQuestion, $acceptChange, $project, $owner, $prompt);
 
-                return $failure === null;
+                return $failure === null ? TaskResult::Success->value : TaskResult::Failure->value;
             });
 
             if ($failure !== null) {
