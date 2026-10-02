@@ -161,6 +161,21 @@ class AttentionTest extends TestCase
         $this->assertNull($this->item($this->attention(), 'machine_starts_paused'));
     }
 
+    public function test_it_warns_when_this_servers_disk_runs_low()
+    {
+        config(['operations.attention.min_free_disk_mb' => PHP_INT_MAX >> 20]);
+
+        $item = $this->item($this->attention(), 'control_plane_disk_low');
+
+        $this->assertStringEndsWith('MB free where storage/ lives', $item['records'][0]['label']);
+
+        config(['operations.attention.min_free_disk_mb' => 1]);
+        $this->assertNull($this->item($this->attention(), 'control_plane_disk_low'));
+
+        config(['operations.attention.min_free_disk_mb' => 0]);
+        $this->assertNull($this->item($this->attention(), 'control_plane_disk_low'));
+    }
+
     public function test_it_warns_when_the_queue_would_hand_a_slow_job_to_a_second_worker()
     {
         config(['queue.default' => 'redis', 'queue.connections.redis.retry_after' => 90]);

@@ -74,6 +74,9 @@ CACHE_STORE=redis
 SESSION_DRIVER=database
 BROADCAST_CONNECTION=reverb
 
+# One log file a day, kept for 14 days, so logs cannot fill the disk.
+LOG_STACK=daily
+
 # A job can run for up to an hour. Below this value, a second worker
 # takes over a slow job while the first still works on it.
 REDIS_QUEUE_RETRY_AFTER=3700
@@ -135,6 +138,8 @@ address where that guide asks for the control plane's private address.
 3. Sign in with the email in `OPERATIONS_OPERATORS` and open `/operations`.
    Each queue shows a live worker, and no item asks for attention. If
    "Slow jobs can run twice" shows, `REDIS_QUEUE_RETRY_AFTER` is missing.
+   "This server is running out of disk" shows when less than 2 GB is free
+   (`OPERATIONS_MIN_FREE_DISK_MB`).
 4. Make a project and ask for a small change. The change gets built and
    checked, and its preview opens on a `preview.example.com` subdomain.
 

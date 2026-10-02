@@ -63,6 +63,9 @@ return [
         'window_days' => 7,
         // Rebuilds slower than this, from edit to screen, are listed.
         'slow_rebuild_seconds' => (int) env('OPERATIONS_SLOW_REBUILD_SECONDS', 30),
+        // Below this much free space where storage/ lives, the server that
+        // holds the project repositories is listed. 0 turns the check off.
+        'min_free_disk_mb' => (int) env('OPERATIONS_MIN_FREE_DISK_MB', 2048),
         'records' => 10,
     ],
 

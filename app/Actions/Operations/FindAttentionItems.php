@@ -64,6 +64,7 @@ class FindAttentionItems
             'items' => array_values(array_filter([
                 $this->queueGivesUpEarly(),
                 $this->missingRepositories(),
+                $this->lowDisk(),
                 $this->stuckRuns($now),
                 $this->expiredLeases($now),
                 $this->exhaustedBudgets($since),
@@ -368,6 +369,33 @@ class FindAttentionItems
             'at' => $runner->last_seen_at?->toIso8601String(),
             'href' => null,
         ]);
+    }
+
+    /**
+     * This server's own disk, where the project repositories, uploads and
+     * logs live. A full disk stops changes from being kept.
+     *
+     * @return AttentionItem
+     */
+    protected function lowDisk(): array
+    {
+        $minimum = (int) config('operations.attention.min_free_disk_mb');
+        $free = $minimum > 0 ? @disk_free_space(storage_path()) : false;
+        $freeMb = $free === false ? null : (int) floor($free / 1048576);
+        $low = $freeMb !== null && $freeMb < $minimum;
+
+        return [
+            'key' => 'control_plane_disk_low',
+            'title' => 'This server is running out of disk',
+            'count' => $low ? 1 : 0,
+            'href' => null,
+            'records' => $low ? [[
+                'label' => "{$freeMb} MB free where storage/ lives",
+                'detail' => 'Project repositories, logs and uploads live here. Free space or grow the disk. Keep LOG_STACK=daily so old logs are removed.',
+                'at' => null,
+                'href' => null,
+            ]] : [],
+        ];
     }
 
     /**
