@@ -19,6 +19,7 @@ use App\Actions\Projects\StartProjectFromTemplate;
 use App\Actions\Projects\SummarizeChanges;
 use App\Actions\Projects\SummarizeProjectTelemetry;
 use App\Actions\Publishing\DescribeUnpublished;
+use App\Actions\Publishing\RestoreDeployment;
 use App\Actions\Runs\DescribeRunProgress;
 use App\Actions\VisualEditing\DescribeDesignEdits;
 use App\Actions\VisualEditing\InspectSelection;
@@ -300,6 +301,9 @@ class ProjectController extends Controller
                 'head' => $head = $repository->exists($project) ? ($repository->head($project, Experiment::mainBranch()) ?: null) : null,
                 // What going online would change, in the owner's words.
                 'unpublished' => $describeUnpublished->handle($project, $head, risks: true),
+                // The version the owner can go back to, when a newer one
+                // went wrong.
+                'previous' => $this->previousVersion($project, $repository),
                 'deployments' => $project->deployments()->latest('id')->limit(5)->get()
                     ->map(fn (Deployment $deployment) => [
                         'id' => $deployment->id,
@@ -309,6 +313,8 @@ class ProjectController extends Controller
                         // Which check runs now, while it is checked first.
                         'doing' => $deployment->status === DeploymentStatus::Checking ? DescribeRunProgress::checks(count($deployment->checks ?? [])) : null,
                         'error' => $deployment->error,
+                        // When the version it put back first came online.
+                        'restores' => $deployment->restores?->finished_at?->toIso8601String(),
                         'health' => $deployment->health ?? [],
                         // A count only: the error text is for operators.
                         'problems' => $deployment->liveErrorCount(),
@@ -319,6 +325,31 @@ class ProjectController extends Controller
                     ]),
             ],
         ]);
+    }
+
+    /**
+     * Get the version the owner can go back to, with whether the newer one
+     * changed how the app stores information: going back leaves that as it
+     * is, so the earlier version may not expect it.
+     *
+     * @return array{id: int, at: string|null, stored: bool}|null
+     */
+    protected function previousVersion(Project $project, ProjectRepository $repository): ?array
+    {
+        $previous = RestoreDeployment::previous($project);
+        $online = RestoreDeployment::online($project);
+
+        if ($previous === null || $online === null) {
+            return null;
+        }
+
+        $changed = rescue(fn () => $repository->changedFiles($project, $previous->commit_sha, $online->commit_sha), [], report: false);
+
+        return [
+            'id' => $previous->id,
+            'at' => $previous->finished_at?->toIso8601String(),
+            'stored' => collect(array_keys($changed))->contains(fn (string $file) => str_starts_with($file, 'database/migrations/')),
+        ];
     }
 
     /**

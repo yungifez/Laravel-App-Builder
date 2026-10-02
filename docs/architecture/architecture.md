@@ -2547,6 +2547,29 @@ email or SMS, paid infrastructure, data deletion, domain and DNS changes,
 integrations with real consequences. The behaviour diff detects most of them
 deterministically (a new mail channel, a destructive migration, a new secret).
 
+### Going back to the version before
+
+When a newer version goes wrong online, the owner puts the one before it back.
+The publish panel offers "Go back to the version from …" and asks once, in
+place (`RestoreDeployment`). Only a version that came online and answered its
+checks (status `published`) can come back. It is not checked again, so it goes
+at once. The app in the builder keeps its newer work, and the next publish puts
+it online again.
+
+A push never forces, so the host may never lose a commit it has. Going back
+sends a commit with the earlier files on top of what the host has. The next
+publish sends the newer files on top of that commit. `PublishDeployment` makes
+these release commits (`ProjectRepository::releaseCommit`) when the commit it
+checked does not build on the last one sent. It keeps each under
+`refs/releases/{id}` and records it as `release_sha`. Hosts push
+`Deployment::released()`.
+
+Only code goes back. Information people saved stays, and so does how it is
+stored: a down-migration could lose what they saved. When the newer version
+changed `database/migrations/`, the panel says so before the owner goes back.
+Backups, restoring into a clean environment and approval that expires before a
+release are not built yet.
+
 ### Outside services and their keys
 
 Payments and email are what make most business apps usable, so the owner can

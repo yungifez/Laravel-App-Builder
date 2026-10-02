@@ -50,7 +50,7 @@ class LaravelCloudHost implements PublishingHost
                 $project->update(['host_state' => $state]);
             }
 
-            $this->repository->push($project, $deployment->commit_sha, $this->github->remote($state['repository']), self::BRANCH);
+            $this->repository->push($project, $deployment->released(), $this->github->remote($state['repository']), self::BRANCH);
 
             if (! isset($state['environment'])) {
                 $state = $this->createApplication($project, $state);

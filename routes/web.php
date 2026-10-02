@@ -6,6 +6,7 @@ use App\Features\AppFaults;
 use App\Http\Controllers\ClearedProblemController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeploymentController;
+use App\Http\Controllers\DeploymentRestorationController;
 use App\Http\Controllers\DesignEditsController;
 use App\Http\Controllers\DeveloperReviewController;
 use App\Http\Controllers\DeveloperReviewGuidanceController;
@@ -102,6 +103,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('projects/{project}/share', [ProjectShareController::class, 'destroy'])->name('projects.share.destroy');
     Route::put('projects/{project}/publishing', [ProjectPublishingController::class, 'update'])->name('projects.publishing.update');
     Route::post('projects/{project}/deployments', [DeploymentController::class, 'store'])->name('deployments.store');
+    Route::post('projects/{project}/deployments/{deployment}/restoration', [DeploymentRestorationController::class, 'store'])->scopeBindings()->name('deployments.restoration.store');
     Route::post('projects/{project}/live-error-fixes', [LiveErrorFixController::class, 'store'])->name('live-error-fixes.store');
     Route::post('projects/{project}/preview-problem-fixes', [PreviewProblemFixController::class, 'store'])->name('preview-problem-fixes.store');
     Route::post('projects/{project}/preview-sign-ins', [PreviewSignInController::class, 'store'])->name('preview-sign-ins.store');

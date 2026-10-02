@@ -761,6 +761,8 @@ export type DeploymentSummary = {
         | 'needs_attention'
         | 'failed';
     commit: string;
+    /** When the version it put back first came online, when it goes back. */
+    restores: string | null;
     checks: { name: string; passed: boolean }[];
     /** Which check runs now, while it is checked before going online. */
     doing: string | null;
@@ -795,6 +797,9 @@ export type ProjectPublishing = {
         undone: { id: string; asked: string }[];
         edits: number;
     } | null;
+    /** The version the owner can go back to, with whether the newer one
+     * changed how the app stores information. */
+    previous: { id: number; at: string | null; stored: boolean } | null;
     deployments: DeploymentSummary[];
 };
 

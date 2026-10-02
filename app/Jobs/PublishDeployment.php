@@ -61,17 +61,25 @@ class PublishDeployment implements ShouldQueue
         $workspace = null;
 
         try {
-            $workspace = $provisionWorkspace->handle($project->owner, (string) config('builder.verification.workspace_driver'));
-            $driver = $workspaces->driver($workspace->driver);
-            $repository->withCheckout($project, $this->deployment->commit_sha, fn (string $source) => $driver->copyDirectory((string) $workspace->driver_id, $source));
+            // Going back puts online a version that passed every check and
+            // came online before, so it goes at once.
+            $restores = $this->deployment->restores;
 
-            if (! $this->passes($runWorkspaceCommand, $workspace)) {
-                $this->finish(DeploymentStatus::Failed, __('A check did not pass, so I did not publish. Your app online has not changed.'));
+            if ($restores !== null) {
+                $this->deployment->update(['checks' => $restores->checks]);
+            } else {
+                $workspace = $provisionWorkspace->handle($project->owner, (string) config('builder.verification.workspace_driver'));
+                $driver = $workspaces->driver($workspace->driver);
+                $repository->withCheckout($project, $this->deployment->commit_sha, fn (string $source) => $driver->copyDirectory((string) $workspace->driver_id, $source));
 
-                return;
+                if (! $this->passes($runWorkspaceCommand, $workspace)) {
+                    $this->finish(DeploymentStatus::Failed, __('A check did not pass, so I did not publish. Your app online has not changed.'));
+
+                    return;
+                }
             }
 
-            $this->deployment->update(['status' => DeploymentStatus::Pushing]);
+            $this->deployment->update(['status' => DeploymentStatus::Pushing, 'release_sha' => $this->releaseCommit($repository)]);
 
             $hosts->driver($this->deployment->host ?? $project->publishingHost())->release($project, $this->deployment);
             $project->refresh();
@@ -99,6 +107,45 @@ class PublishDeployment implements ShouldQueue
                 rescue(fn () => $destroyWorkspace->handle($workspace));
             }
         }
+    }
+
+    /**
+     * Get the commit to send when the host has a commit the checked one does
+     * not build on: after going back, the host has the earlier files on top
+     * of the newer ones. The commit holds the checked files on top of both,
+     * so the host takes it without forcing. Null when the checked commit
+     * itself builds on what the host has.
+     */
+    protected function releaseCommit(ProjectRepository $repository): ?string
+    {
+        $project = $this->deployment->project;
+        $sent = $project->deployments()
+            ->whereKeyNot($this->deployment->id)
+            ->where('host', $this->deployment->host)
+            ->where('branch', $this->deployment->branch)
+            ->whereNotNull('pushed_at')
+            // One publish runs at a time, so the newest sent is the last.
+            ->latest('id')
+            ->first()
+            ?->released();
+
+        if ($sent === null || $repository->isAncestor($project, $sent, $this->deployment->commit_sha)) {
+            return null;
+        }
+
+        $restores = $this->deployment->restores;
+        $message = $restores === null
+            ? 'Publish the newest version'
+            : 'Go back to the version published on '.$restores->finished_at?->toDateString();
+
+        return $repository->releaseCommit(
+            $project,
+            $this->deployment->commit_sha,
+            [$this->deployment->commit_sha, $sent],
+            $message,
+            null,
+            "refs/releases/{$this->deployment->id}",
+        );
     }
 
     /**

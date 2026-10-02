@@ -20,6 +20,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property int $project_id
  * @property int $user_id
  * @property string $commit_sha
+ * @property int|null $restores_deployment_id The earlier publish this one puts back online
+ * @property string|null $release_sha The commit sent to the host, when it is not commit_sha
  * @property string $branch
  * @property string|null $host The host it was published to
  * @property string|null $host_release_id The host's own ID for this release, when it has one
@@ -36,7 +38,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['user_id', 'commit_sha', 'branch', 'host', 'host_release_id', 'host_status', 'status', 'checks', 'error', 'pushed_at', 'confirmed_at', 'health', 'live_errors', 'live_errors_checked_at', 'finished_at'])]
+#[Fillable(['user_id', 'commit_sha', 'restores_deployment_id', 'release_sha', 'branch', 'host', 'host_release_id', 'host_status', 'status', 'checks', 'error', 'pushed_at', 'confirmed_at', 'health', 'live_errors', 'live_errors_checked_at', 'finished_at'])]
 class Deployment extends Model
 {
     /** @use HasFactory<DeploymentFactory> */
@@ -67,6 +69,25 @@ class Deployment extends Model
     public function liveErrorCount(): int
     {
         return (int) array_sum(array_column($this->live_errors ?? [], 'count'));
+    }
+
+    /**
+     * Get the commit the host was sent: the checked commit, or the same
+     * files on top of what the host had.
+     */
+    public function released(): string
+    {
+        return $this->release_sha ?? $this->commit_sha;
+    }
+
+    /**
+     * Get the earlier publish this one puts back online.
+     *
+     * @return BelongsTo<Deployment, $this>
+     */
+    public function restores(): BelongsTo
+    {
+        return $this->belongsTo(Deployment::class, 'restores_deployment_id');
     }
 
     /**

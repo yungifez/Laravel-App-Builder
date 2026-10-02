@@ -429,6 +429,43 @@ class ProjectRepository
     }
 
     /**
+     * Determine if a commit is in the history of another.
+     */
+    public function isAncestor(Project $project, string $ancestor, string $commit): bool
+    {
+        return $this->git($project, ['merge-base', '--is-ancestor', $ancestor, $commit], throw: false)->successful();
+    }
+
+    /**
+     * Make a commit with the files of "files" on top of "parents", outside
+     * any branch, and keep it under "ref". A release uses it to send the
+     * files of one commit to a host that has another, without forcing.
+     *
+     * @param  list<string>  $parents
+     * @param  array{name: string, email: string}|null  $author
+     */
+    public function releaseCommit(Project $project, string $files, array $parents, string $message, ?array $author, string $ref): string
+    {
+        $author = $this->identity($project, $author);
+        $arguments = ['commit-tree', "{$files}^{tree}", '-m', $message];
+
+        foreach ($parents as $parent) {
+            array_push($arguments, '-p', $parent);
+        }
+
+        $commit = trim($this->git($project, $arguments, env: [
+            'GIT_AUTHOR_NAME' => $author['name'],
+            'GIT_AUTHOR_EMAIL' => $author['email'],
+            'GIT_COMMITTER_NAME' => $author['name'],
+            'GIT_COMMITTER_EMAIL' => $author['email'],
+        ])->output());
+
+        $this->git($project, ['update-ref', $ref, $commit]);
+
+        return $commit;
+    }
+
+    /**
      * Push one commit to a branch of another repository, never forcing.
      * Output is returned without the credentials the remote may contain.
      *

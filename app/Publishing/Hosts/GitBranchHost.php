@@ -33,7 +33,7 @@ class GitBranchHost implements PublishingHost
     public function release(Project $project, Deployment $deployment): void
     {
         try {
-            $this->repository->push($project, $deployment->commit_sha, (string) $project->deploy_remote, $deployment->branch);
+            $this->repository->push($project, $deployment->released(), (string) $project->deploy_remote, $deployment->branch);
         } catch (RepositoryConflict $exception) {
             throw $exception;
         } catch (RuntimeException $exception) {

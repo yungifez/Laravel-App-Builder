@@ -9,6 +9,7 @@ import {
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import DeploymentController from '@/actions/App/Http/Controllers/DeploymentController';
+import DeploymentRestorationController from '@/actions/App/Http/Controllers/DeploymentRestorationController';
 import LiveErrorFixController from '@/actions/App/Http/Controllers/LiveErrorFixController';
 import ProjectPublishingController from '@/actions/App/Http/Controllers/ProjectPublishingController';
 import Heading from '@/components/Heading.vue';
@@ -32,6 +33,9 @@ const props = defineProps<{
 }>();
 
 const changing = ref(false);
+// Going back is the way out when a newer version went wrong. It asks once,
+// in place, and says what stays as it is.
+const goingBack = ref(false);
 const latest = computed(() => props.publishing.deployments[0] ?? null);
 const live = computed(
     () =>
@@ -119,6 +123,13 @@ const testsPassed = computed(
 
 const status = computed(() => {
     switch (true) {
+        case latest.value?.restores != null && active.value:
+            return {
+                icon: LoaderCircle,
+                tone: 'animate-spin text-muted-foreground',
+                title: 'Going back to the earlier version…',
+                detail: 'It was checked before, so this is quick.',
+            };
         case latest.value?.status === 'checking':
             return {
                 icon: LoaderCircle,
@@ -177,6 +188,13 @@ const status = computed(() => {
                 tone: 'text-amber-500',
                 title: 'Online, but it ran into problems',
                 detail: `Something went wrong ${times(live.value?.problems ?? 0)} since it went online ${when(live.value?.finished_at ?? null)}.`,
+            };
+        case live.value?.restores != null && !upToDate.value:
+            return {
+                icon: CircleDot,
+                tone: 'text-muted-foreground',
+                title: 'Back to an earlier version',
+                detail: `What's online is the version from ${when(live.value?.restores ?? null)}. Your newer changes are here, ready to go online again.`,
             };
         case upToDate.value:
             return {
@@ -353,6 +371,70 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                     }}
                 </p>
             </Form>
+
+            <div v-if="publishing.previous && !active" data-test="go-back">
+                <button
+                    v-if="!goingBack"
+                    type="button"
+                    class="min-h-11 text-xs text-muted-foreground underline-offset-4 select-none hover:underline sm:min-h-0"
+                    data-test="go-back-open"
+                    @click="goingBack = true"
+                >
+                    Go back to the version from
+                    {{ when(publishing.previous.at) }}
+                </button>
+                <Form
+                    v-else
+                    v-bind="
+                        DeploymentRestorationController.store.form({
+                            project: projectId,
+                            deployment: publishing.previous.id,
+                        })
+                    "
+                    :options="{ preserveScroll: true }"
+                    class="space-y-2 border-t pt-3 text-sm"
+                    v-slot="{ errors, processing }"
+                    @success="goingBack = false"
+                >
+                    <p>
+                        Your app online goes back to the version from
+                        {{ when(publishing.previous.at) }}. It was checked then,
+                        so it goes at once. Your newer changes stay here.
+                    </p>
+                    <p class="text-muted-foreground">
+                        Information people saved since then stays.
+                    </p>
+                    <p
+                        v-if="publishing.previous.stored"
+                        class="flex gap-1.5 text-amber-500"
+                        data-test="go-back-stored"
+                    >
+                        <CircleAlert class="mt-0.5 size-4 shrink-0" />
+                        The newer version changed how your app keeps
+                        information. That stays, and the earlier version may not
+                        expect it.
+                    </p>
+                    <div class="flex gap-2">
+                        <Button
+                            :disabled="processing"
+                            variant="outline"
+                            class="h-11 select-none sm:h-9"
+                            data-test="go-back-confirm"
+                        >
+                            Go back
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            class="h-11 sm:h-9"
+                            @click="goingBack = false"
+                        >
+                            Cancel
+                        </Button>
+                    </div>
+                    <InputError :message="errors.restore" />
+                </Form>
+            </div>
 
             <Collapsible>
                 <CollapsibleTrigger
