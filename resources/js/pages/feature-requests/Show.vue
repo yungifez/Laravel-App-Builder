@@ -140,7 +140,7 @@ watch(
 
 const runLabels: Record<Run['status'], string> = {
     queued: 'Waiting to start',
-    planning: 'Working out what to change',
+    planning: 'Working out what you need',
     implementing: 'Making the change',
     verifying: 'Running checks',
     reviewing: 'Looking over what changed',

@@ -140,7 +140,7 @@ class OwnerWording
         }
 
         return match ($to) {
-            RunStatus::Planning => $from === RunStatus::NeedsUserDecision ? __('Carried on with your answer') : __('Working out what to change'),
+            RunStatus::Planning => $from === RunStatus::NeedsUserDecision ? __('Carried on with your answer') : __('Working out what you need'),
             RunStatus::Implementing => __('Making the change'),
             RunStatus::Verifying => __('Checking it works'),
             RunStatus::Reviewing => __('Looking over what changed'),

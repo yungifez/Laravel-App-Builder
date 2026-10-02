@@ -372,7 +372,7 @@ watch(
 
 const steps: Partial<Record<Run['status'], string>> = {
     queued: 'Getting started',
-    planning: 'Working out what to change',
+    planning: 'Working out what you need',
     implementing: 'Making the change',
     verifying: 'Checking it works',
     reviewing: 'Looking over what changed',

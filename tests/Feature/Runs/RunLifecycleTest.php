@@ -330,7 +330,7 @@ class RunLifecycleTest extends TestCase
                 ->missing('run.events')
                 ->where('run.log', fn ($log) => collect($log)->pluck('text')->all() === [
                     'You asked for this',
-                    'Working out what to change',
+                    'Working out what you need',
                     'Making the change',
                     'Checking it works',
                 ]));
