@@ -516,6 +516,21 @@ class SdkDriverTest extends TestCase
         $this->assertSame('Whole prompt', File::get($this->path($workspace, 'agent-output.txt')));
     }
 
+    public function test_codex_can_work_on_its_own_sign_in_instead_of_the_api_key()
+    {
+        config([
+            'ai.providers.openai.key' => 'test-openai-key',
+            'builder.agents.order' => ['codex'],
+            'builder.agents.runner.path' => base_path('tests/Fixtures/fake-agent-runner.mjs'),
+            'builder.agents.adapters.codex.use_api_key' => false,
+        ]);
+        FeaturePlanner::fake([$this->plan()]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertStringContainsString('key=missing', $run->events()->where('type', 'build_finished')->sole()->data['account']);
+    }
+
     public function test_the_brief_holds_nothing_of_ours_that_would_do_harm_when_read()
     {
         config(['builder.models.planner' => ['provider' => 'anthropic', 'model' => 'planner-model-7'], 'builder.agents.adapters.claude.model' => 'coder-model-7']);

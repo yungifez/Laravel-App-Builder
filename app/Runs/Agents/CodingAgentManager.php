@@ -54,7 +54,12 @@ class CodingAgentManager extends Manager
      */
     public function createCodexDriver(): CodingAgent
     {
-        return $this->runner('codex', ['OPENAI_API_KEY' => (string) $this->config->get('ai.providers.openai.key')]);
+        return $this->runner('codex', [
+            // Without the key, Codex uses its own sign-in, which may be a
+            // ChatGPT plan.
+            'OPENAI_API_KEY' => $this->config->get('builder.agents.adapters.codex.use_api_key') ? (string) $this->config->get('ai.providers.openai.key') : '',
+            'CODEX_HOME' => (string) $this->config->get('builder.agents.adapters.codex.home'),
+        ]);
     }
 
     /**

@@ -433,10 +433,15 @@ return [
     | "circuit.minutes". The reviewer always uses the other provider from the
     | one that built the change.
     |
+    | Codex can work on the operator's own ChatGPT plan instead of the API
+    | key: set BUILDER_CODEX_USE_API_KEY to false, put "codex" first in
+    | BUILDER_AGENT_ORDER, and sign Codex in once with "codex login" using
+    | the same CODEX_HOME as BUILDER_CODEX_HOME.
+    |
     */
 
     'agents' => [
-        'order' => ['claude', 'codex'],
+        'order' => array_map(trim(...), explode(',', (string) env('BUILDER_AGENT_ORDER', 'claude,codex'))),
 
         'runner' => [
             'node' => env('BUILDER_AGENT_NODE', 'node'),
@@ -467,6 +472,10 @@ return [
                 'effort' => env('BUILDER_CODEX_AGENT_EFFORT'),
                 'light_effort' => env('BUILDER_CODEX_AGENT_LIGHT_EFFORT'),
                 'sandbox' => env('BUILDER_CODEX_SANDBOX', 'workspace-write'),
+                // Set to false to use what "codex login" saved, such as a ChatGPT
+                // plan, kept where "home" says (Codex's own default if null).
+                'use_api_key' => (bool) env('BUILDER_CODEX_USE_API_KEY', true),
+                'home' => env('BUILDER_CODEX_HOME'),
             ],
         ],
 
