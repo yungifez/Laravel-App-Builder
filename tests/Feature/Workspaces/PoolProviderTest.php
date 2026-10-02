@@ -103,6 +103,26 @@ class PoolProviderTest extends TestCase
         $this->assertSame(0, $pool->load($runner));
     }
 
+    public function test_a_runner_whose_disk_is_nearly_full_gets_no_new_workspace()
+    {
+        config(['workspaces.boxes.pool.min_free_disk_mb' => 2048]);
+        Runner::factory()->create(['name' => 'tight', 'disk_free_mb' => 1500]);
+        $this->holding(Runner::factory()->create(['name' => 'roomy', 'disk_free_mb' => 30000]), 3);
+
+        $this->assertSame('roomy--workspace-new', (new PoolProvider)->create($this->spec()));
+    }
+
+    public function test_a_runner_reports_its_free_disk_when_it_asks_for_work()
+    {
+        $token = 'vm1-token';
+        Runner::factory()->create(['name' => 'vm1', 'token_hash' => Runner::hashToken($token), 'last_seen_at' => null]);
+        config(['workspaces.drivers.runner.provider' => 'pool']);
+
+        $this->withToken($token)->postJson(route('runner.commands.claim'), ['disk_free_mb' => 12345])->assertOk();
+
+        $this->assertSame(12345, Runner::query()->sole()->disk_free_mb);
+    }
+
     public function test_no_workspace_is_made_when_no_runner_is_online()
     {
         Runner::factory()->offline()->create();
@@ -238,10 +258,10 @@ class PoolProviderTest extends TestCase
         Runner::factory()->offline()->create(['name' => 'vm3', 'draining_at' => now()]);
 
         $this->artisan('runners:list')
-            ->expectsTable(['Machine', 'State', 'Workspaces', 'Last asked for work', 'Previews at'], [
-                ['vm1', 'online', 2, '0 seconds ago', '10.0.0.2'],
-                ['vm2', 'draining', 0, '0 seconds ago', Runner::query()->where('name', 'vm2')->value('service_host')],
-                ['vm3', 'offline', 0, '1 day ago', Runner::query()->where('name', 'vm3')->value('service_host')],
+            ->expectsTable(['Machine', 'State', 'Workspaces', 'Free disk', 'Last asked for work', 'Previews at'], [
+                ['vm1', 'online', 2, '-', '0 seconds ago', '10.0.0.2'],
+                ['vm2', 'draining', 0, '-', '0 seconds ago', Runner::query()->where('name', 'vm2')->value('service_host')],
+                ['vm3', 'offline', 0, '-', '1 day ago', Runner::query()->where('name', 'vm3')->value('service_host')],
             ])
             ->assertSuccessful();
     }

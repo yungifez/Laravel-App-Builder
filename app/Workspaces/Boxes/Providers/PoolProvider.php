@@ -49,8 +49,12 @@ class PoolProvider implements BoxProvider
             $limit = (int) config('workspaces.boxes.pool.max_workspaces');
 
             // A draining runner keeps its workspaces but gets no new ones; a
-            // full one gets none until some close.
-            $runner = Runner::query()->online()->whereNull('draining_at')->get()
+            // full one gets none until some close, and one whose disk is
+            // nearly full none until it has room. A runner that has not said
+            // how much disk it has gets them.
+            $runner = Runner::query()->online()->whereNull('draining_at')
+                ->where(fn (Builder $query) => $query->whereNull('disk_free_mb')->orWhere('disk_free_mb', '>=', (int) config('workspaces.boxes.pool.min_free_disk_mb')))
+                ->get()
                 ->map(fn (Runner $runner) => ['runner' => $runner, 'load' => $this->load($runner)])
                 ->reject(fn (array $candidate) => $limit > 0 && $candidate['load'] >= $limit)
                 ->sortBy(fn (array $candidate) => [$candidate['load'], $candidate['runner']->id])

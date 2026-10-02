@@ -32,11 +32,14 @@ class AuthenticateRunner
         $request->attributes->set('runner', $runner);
 
         // A pool runner counts as online while it keeps asking; a write at
-        // most every few seconds is enough for that.
+        // most every few seconds is enough for that. It also says how much
+        // disk it has left when it asks for work.
+        $diskFree = $request->input('disk_free_mb');
+
         Runner::query()
             ->where('name', $runner)
             ->where(fn ($query) => $query->whereNull('last_seen_at')->orWhere('last_seen_at', '<', now()->subSeconds(15)))
-            ->update(['last_seen_at' => now()]);
+            ->update(['last_seen_at' => now(), ...(is_int($diskFree) && $diskFree >= 0 ? ['disk_free_mb' => min($diskFree, 4_000_000_000)] : [])]);
 
         return $next($request);
     }

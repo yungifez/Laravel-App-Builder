@@ -154,10 +154,12 @@ return [
         // `php artisan runners:add {name}`. A runner counts as online while
         // it asked for work in the last "online_seconds"; new workspaces go
         // only to online runners. A runner holding "max_workspaces" gets no
-        // more, so a small machine is not overloaded (0: no limit).
+        // more, so a small machine is not overloaded (0: no limit); nor does
+        // one with less than "min_free_disk_mb" of disk left.
         'pool' => [
             'online_seconds' => (int) env('WORKSPACE_RUNNER_ONLINE_SECONDS', 120),
             'max_workspaces' => (int) env('WORKSPACE_RUNNER_MAX_WORKSPACES', 0),
+            'min_free_disk_mb' => (int) env('WORKSPACE_RUNNER_MIN_FREE_DISK_MB', 2048),
         ],
 
         // One container per workspace, through the box service in

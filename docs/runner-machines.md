@@ -42,6 +42,10 @@ uses it.
     4 GB machine. Watch the machine's memory, and change the value if
     necessary.
 
+    A machine with less than 2 GB of free disk also gets no new workspaces.
+    The runner reports its free disk while it asks for work. To change the
+    amount, set `WORKSPACE_RUNNER_MIN_FREE_DISK_MB`.
+
 2. Add the machine. Use lowercase letters and digits only:
 
     ```

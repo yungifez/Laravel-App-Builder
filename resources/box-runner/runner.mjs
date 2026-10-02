@@ -33,6 +33,7 @@ import {
     mkdirSync,
     readdirSync,
     rmSync,
+    statfsSync,
     statSync,
     writeFileSync,
 } from 'node:fs';
@@ -781,8 +782,20 @@ async function handle(command) {
     await report(command.id, result);
 }
 
+// The free disk space where workspaces live, so the control plane gives
+// new workspaces to machines with room.
+function diskFreeMb() {
+    try {
+        const stats = statfsSync(root);
+
+        return Math.floor((stats.bavail * stats.bsize) / 1048576);
+    } catch {
+        return undefined;
+    }
+}
+
 async function claim() {
-    const work = await api('commands/claim');
+    const work = await api('commands/claim', { disk_free_mb: diskFreeMb() });
 
     for (const id of work.cancel) {
         running.get(id)?.();

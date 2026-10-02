@@ -28,7 +28,7 @@ class ListRunners extends Command
         $online = Runner::query()->online()->pluck('id');
 
         $this->table(
-            ['Machine', 'State', 'Workspaces', 'Last asked for work', 'Previews at'],
+            ['Machine', 'State', 'Workspaces', 'Free disk', 'Last asked for work', 'Previews at'],
             $runners->map(fn (Runner $runner) => [
                 $runner->name,
                 match (true) {
@@ -37,6 +37,7 @@ class ListRunners extends Command
                     default => 'online',
                 },
                 $pool->load($runner),
+                $runner->disk_free_mb === null ? '-' : number_format($runner->disk_free_mb / 1024, 1).' GB',
                 $runner->last_seen_at?->diffForHumans() ?? 'never',
                 $runner->service_host ?? '-',
             ])->all(),
