@@ -53,7 +53,10 @@ class AuthenticateWorker
     {
         return Run::query()
             ->where('driver', 'worker')
-            ->whereIn('status', [RunStatus::Queued, RunStatus::Planning, RunStatus::Implementing, RunStatus::Verifying, RunStatus::Reviewing])
+            // Only once our planner decided there is something to build: a
+            // question about the app is answered from the plan, so the
+            // owner's tool never spends its turns on it.
+            ->whereIn('status', [RunStatus::Implementing, RunStatus::Verifying, RunStatus::Reviewing])
             ->whereHas('featureRequest', fn ($query) => $query->whereBelongsTo($project))
             ->oldest('id')
             ->first();

@@ -199,8 +199,10 @@ class DescribeFeatureRequest
             // hands the change back, the thread says how to connect it.
             'yours' => $run->driver !== 'worker' ? null : [
                 // From the hand-over until their change arrives, so they can
-                // connect while the change is still being planned.
-                'waiting' => in_array($run->status, [RunStatus::Queued, RunStatus::Planning, RunStatus::Implementing], true)
+                // connect while the change is still being planned. A tool
+                // connected to the whole app gets only what our planner
+                // decided to build, never a question we answer ourselves.
+                'waiting' => in_array($run->status, ConnectOwnTool::connected($featureRequest->project) ? [RunStatus::Implementing] : [RunStatus::Queued, RunStatus::Planning, RunStatus::Implementing], true)
                     && app(WorkerDriver::class)->submission($run) === null,
                 'address' => route('mcp.task'),
                 // What their tool calls the connection: the app's own name.

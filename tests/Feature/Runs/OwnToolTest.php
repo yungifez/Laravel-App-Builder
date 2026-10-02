@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\Runs;
 
+use App\Actions\Features\DescribeFeatureRequest;
 use App\Actions\Projects\ConnectOwnTool;
 use App\Actions\Projects\CreateProject;
 use App\Actions\Runs\StartRun;
+use App\Enums\RunStatus;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
@@ -56,6 +58,26 @@ class OwnToolTest extends TestCase
         $this->assertStringNotContainsString('Members can cancel a booking.', $brief);
         $this->assertStringNotContainsString('Trainers can cancel a class.', $brief);
         $this->assertStringContainsString('/worker-code/'.$first->uuid.'?', $brief);
+    }
+
+    public function test_a_question_never_reaches_the_owners_tool()
+    {
+        $project = Project::factory()->create();
+        $token = app(ConnectOwnTool::class)->handle($project);
+        $run = Run::factory()->for(FeatureRequest::factory()->for($project))->create(['driver' => 'worker', 'status' => RunStatus::Planning]);
+
+        // While our planner works out whether it is only a question, the
+        // tool is not offered it and the owner is not told it writes it.
+        $this->getTask($token)->assertOk()->assertSee('No change waits for you now.');
+        $this->assertFalse(app(DescribeFeatureRequest::class)->handle($run->featureRequest)['run']['yours']['waiting']);
+
+        // A question is answered from the plan and never built.
+        $run->update(['status' => RunStatus::Completed, 'plan' => (new Plan(summary: 'How booking works.', answer: 'Members book from the class page.'))->toArray()]);
+        $this->getTask($token)->assertOk()->assertSee('No change waits for you now.');
+
+        // Something to build reaches it once planned.
+        $this->waitingRun($project);
+        $this->getTask($token)->assertOk()->assertSee('Members can book a class.');
     }
 
     public function test_a_fix_keeps_working_in_the_folder_with_the_first_try()
