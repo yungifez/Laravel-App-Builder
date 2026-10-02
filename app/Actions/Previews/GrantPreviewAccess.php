@@ -17,8 +17,9 @@ class GrantPreviewAccess
      * app's own, such as a session one of its people is signed in with,
      * is set with the grant.
      *
-     * A grant for someone the owner shared the app with is kept apart, so
-     * it never takes the place of the owner's own grant.
+     * A grant for someone the owner shared the app with, or for the owner's
+     * own coding tool, is kept apart, so it never takes the place of the
+     * owner's own grant.
      *
      * @param  array{name: string, value: string, minutes: int}|null  $cookie
      *
@@ -37,7 +38,11 @@ class GrantPreviewAccess
         if ($shared) {
             Cache::put(self::sharedKey($preview, $grant), true, now()->addSeconds((int) config('builder.preview.grant_seconds')));
 
-            return $preview->url('/__builder/session').'?'.http_build_query(['grant' => $grant]);
+            if ($cookie !== null) {
+                Cache::put(self::cookieKey($preview, $grant), $cookie, now()->addSeconds((int) config('builder.preview.grant_seconds')));
+            }
+
+            return $preview->url('/__builder/session').'?'.http_build_query(array_filter(['grant' => $grant, 'to' => $path]));
         }
 
         $preview->update([

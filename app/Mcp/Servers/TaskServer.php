@@ -4,6 +4,7 @@ namespace App\Mcp\Servers;
 
 use App\Mcp\Tools\CheckStatus;
 use App\Mcp\Tools\GetTask;
+use App\Mcp\Tools\OpenPreview;
 use App\Mcp\Tools\ShareProgress;
 use App\Mcp\Tools\SubmitChange;
 use App\Mcp\Tools\TryChange;
@@ -28,5 +29,6 @@ class TaskServer extends Server
         TryChange::class,
         SubmitChange::class,
         CheckStatus::class,
+        OpenPreview::class,
     ];
 }

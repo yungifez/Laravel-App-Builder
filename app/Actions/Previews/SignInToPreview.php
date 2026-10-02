@@ -2,6 +2,7 @@
 
 namespace App\Actions\Previews;
 
+use App\Models\Preview;
 use App\Models\Project;
 use Illuminate\Validation\ValidationException;
 
@@ -43,6 +44,19 @@ class SignInToPreview
         $preview = $this->readPreviewLog->preview($project)
             ?? throw ValidationException::withMessages(['person' => __('Your app is not running. Start it and try again.')]);
 
+        return $this->grantPreviewAccess->handle($preview, $path, $this->cookie($preview, $person));
+    }
+
+    /**
+     * Sign one person in to a running preview and get the app's session
+     * cookie that keeps them signed in.
+     *
+     * @return array{name: string, value: string, minutes: int}
+     *
+     * @throws ValidationException when the app cannot sign them in.
+     */
+    public function cookie(Preview $preview, string $person): array
+    {
         $output = $this->runPreviewCommand->handle(
             $preview,
             ['php', '-r', self::SCRIPT, '--', $person],
@@ -55,10 +69,10 @@ class SignInToPreview
             throw ValidationException::withMessages(['person' => __('Your app could not sign them in. This is our fault. Try again.')]);
         }
 
-        return $this->grantPreviewAccess->handle($preview, $path, [
+        return [
             'name' => $cookie['name'],
             'value' => $cookie['value'],
             'minutes' => max(1, (int) ($cookie['minutes'] ?? 120)),
-        ]);
+        ];
     }
 }

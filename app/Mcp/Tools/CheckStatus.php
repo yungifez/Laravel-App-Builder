@@ -70,8 +70,8 @@ class CheckStatus extends Tool
         return match ($run->status) {
             RunStatus::Queued, RunStatus::Planning => [__('The task is still being planned. Call get_task in a minute.'), true],
             RunStatus::Implementing => $this->implementing($run),
-            RunStatus::Verifying => [__('Your change applied and is being checked. Call check_status again for the result.'), true],
-            RunStatus::Reviewing => [__('Your change passed the checks and is being reviewed. Call check_status again for the result.'), true],
+            RunStatus::Verifying => [__('Your change applied and is being checked. Call check_status again for the result.').$this->tryIt($run), true],
+            RunStatus::Reviewing => [__('Your change passed the checks and is being reviewed. Call check_status again for the result.').$this->tryIt($run), true],
             RunStatus::NeedsUserDecision => [__('The change is waiting for the owner. Ask again later.'), false],
             RunStatus::Completed => [__('Your change passed its checks and review and is with the owner. There is nothing more to do on it.'), false],
             RunStatus::Cancelling, RunStatus::Cancelled => [__('The owner stopped this change. There is nothing more to do on it.'), false],
@@ -100,6 +100,17 @@ class CheckStatus extends Tool
             ->whereHas('featureRequest', fn ($query) => $query->whereBelongsTo($this->task->project))
             ->latest('finished_at')
             ->first();
+    }
+
+    /**
+     * Say that the app with the change runs, once it does, so the tool can
+     * try it in a browser while it waits.
+     */
+    protected function tryIt(Run $run): string
+    {
+        return OpenPreview::preview($run) === null
+            ? ''
+            : "\n\n".__('Meanwhile the app runs with your change: call open_preview to try it in a browser.');
     }
 
     /**

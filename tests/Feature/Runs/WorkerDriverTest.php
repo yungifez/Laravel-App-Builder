@@ -3,6 +3,8 @@
 namespace Tests\Feature\Runs;
 
 use App\Actions\Features\DescribeFeatureRequest;
+use App\Actions\Previews\GrantPreviewAccess;
+use App\Actions\Previews\SignInToPreview;
 use App\Actions\Projects\ConnectOwnTool;
 use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Runs\DescribeRunProgress;
@@ -18,12 +20,16 @@ use App\Enums\VerificationStatus;
 use App\Jobs\ExecuteRun;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\FeatureRequest;
+use App\Models\Preview;
 use App\Models\Project;
 use App\Models\Run;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Illuminate\Testing\TestResponse;
+use Mockery;
+use Mockery\MockInterface;
 use Tests\Concerns\PreparesRuns;
 use Tests\TestCase;
 
@@ -158,6 +164,33 @@ class WorkerDriverTest extends TestCase
         $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.']);
 
         $this->assertTrue($describe()['run']['yours']['wrote']);
+    }
+
+    public function test_the_worker_opens_the_app_with_its_change_in_a_browser_apart_from_the_owner()
+    {
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+
+        $this->tool('open_preview', $token)->assertSee('not running yet');
+
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.']);
+        $preview = Preview::factory()->ready()->create(['project_id' => $run->featureRequest->project_id, 'feature_request_id' => $run->feature_request_id]);
+        $this->tool('check_status', $token)->assertSee('call open_preview');
+
+        $this->mock(SignInToPreview::class, fn (MockInterface $mock) => $mock->shouldReceive('cookie')
+            ->once()->with(Mockery::on(fn (Preview $on) => $on->is($preview)), '7')
+            ->andReturn(['name' => 'app_session', 'value' => 'sealed', 'minutes' => 120]));
+
+        $text = (string) $this->tool('open_preview', $token, ['path' => '/classes', 'person' => '7'])->json('result.content.0.text');
+        preg_match('/grant=([A-Za-z0-9]+)/', $text, $grant);
+
+        $this->assertStringContainsString('to=%2Fclasses', $text);
+        // A grant of its own: the owner's grant and sessions stay as they were.
+        $this->assertTrue(Cache::has(GrantPreviewAccess::sharedKey($preview, $grant[1])));
+        $this->assertSame('sealed', Cache::get(GrantPreviewAccess::cookieKey($preview, $grant[1]))['value']);
+        $this->assertNull($preview->refresh()->grant_hash);
+
+        $this->tool('open_preview', $token, ['path' => '//evil.example'])->assertSee('path');
     }
 
     public function test_the_worker_runs_commands_on_its_change_in_our_workspace_which_stays_as_it_was()
