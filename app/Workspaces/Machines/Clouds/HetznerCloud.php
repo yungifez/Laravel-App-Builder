@@ -30,6 +30,7 @@ class HetznerCloud implements MachineCloud
         protected ?string $network = null,
         protected ?string $firewall = null,
         protected array $sshKeys = [],
+        protected ?int $billingMinutes = 60,
     ) {}
 
     public function create(string $name, string $bootScript): string
@@ -100,6 +101,11 @@ class HetznerCloud implements MachineCloud
         return $this->network === null
             ? "hostname -I | awk '{print \$1}'"
             : "curl -sf http://169.254.169.254/hetzner/v1/metadata/private-networks | awk '/^- ip:/ {print \$3; exit}'";
+    }
+
+    public function billingMinutes(): ?int
+    {
+        return $this->billingMinutes;
     }
 
     protected function api(): PendingRequest

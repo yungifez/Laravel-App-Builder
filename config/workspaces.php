@@ -220,6 +220,10 @@ return [
                 'firewall' => env('WORKSPACE_MACHINES_HETZNER_FIREWALL'),
                 // SSH keys by name or id, separated by commas.
                 'ssh_keys' => env('WORKSPACE_MACHINES_HETZNER_SSH_KEYS'),
+                // Hetzner bills each machine by the started hour, so an
+                // empty machine is kept until its hour is nearly over. 0
+                // when it bills by the second.
+                'billing_minutes' => (int) env('WORKSPACE_MACHINES_HETZNER_BILLING_MINUTES', 60),
             ],
         ],
     ],

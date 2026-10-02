@@ -51,6 +51,7 @@ class MachineCloudManager extends Manager
             network: filled($config['network'] ?? null) ? (string) $config['network'] : null,
             firewall: filled($config['firewall'] ?? null) ? (string) $config['firewall'] : null,
             sshKeys: array_values(array_filter(explode(',', (string) ($config['ssh_keys'] ?? '')))),
+            billingMinutes: (int) ($config['billing_minutes'] ?? 60) > 0 ? (int) $config['billing_minutes'] : null,
         );
     }
 }

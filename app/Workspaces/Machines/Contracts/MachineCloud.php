@@ -35,4 +35,11 @@ interface MachineCloud
      * the machine's previews at, usually its private network address.
      */
     public function serviceHostCommand(): string;
+
+    /**
+     * Get how many minutes the cloud bills a machine for at a time, so an
+     * empty machine is kept until its paid time is nearly over. Null when
+     * the cloud bills by the second.
+     */
+    public function billingMinutes(): ?int;
 }

@@ -73,7 +73,7 @@ class ScaleRunnerPool
         }
 
         if ($machines->count() > (int) config('workspaces.machines.min') && $spare - $capacity >= $wanted) {
-            $empty = $this->longestEmpty($machines);
+            $empty = $this->longestEmpty($machines, $cloud->billingMinutes());
 
             if ($empty !== null && $this->retireRunner->handle($empty) === 0) {
                 $done[] = "Deleted machine [{$empty->name}]: it held nothing, and the pool has room without it.";
@@ -227,20 +227,37 @@ class ScaleRunnerPool
 
     /**
      * Get the cloud machine that has held nothing for longest, once that is
-     * longer than "empty_minutes".
+     * longer than "empty_minutes" and its paid time is nearly over.
      *
      * @param  Collection<int, Runner>  $machines
      */
-    protected function longestEmpty(Collection $machines): ?Runner
+    protected function longestEmpty(Collection $machines, ?int $billingMinutes): ?Runner
     {
         $before = now()->subMinutes((int) config('workspaces.machines.empty_minutes'));
 
         return $machines
             ->filter(fn (Runner $runner) => $runner->last_seen_at !== null && $this->pool->load($runner) === 0)
+            ->filter(fn (Runner $runner) => $this->paidTimeNearlyOver($runner, $billingMinutes))
             ->map(fn (Runner $runner) => ['runner' => $runner, 'since' => $this->emptySince($runner)])
             ->filter(fn (array $candidate) => $candidate['since']->lt($before))
             ->sortBy(fn (array $candidate) => $candidate['since']->getTimestamp())
             ->first()['runner'] ?? null;
+    }
+
+    /**
+     * Tell whether a machine is in the last minutes of the time already paid
+     * for it. Deleting it earlier saves nothing, and a workspace that comes
+     * in the meantime can use it instead of a new machine.
+     */
+    protected function paidTimeNearlyOver(Runner $runner, ?int $billingMinutes): bool
+    {
+        if ($billingMinutes === null) {
+            return true;
+        }
+
+        $intoPeriod = (int) $runner->created_at->diffInMinutes(now()) % $billingMinutes;
+
+        return $intoPeriod >= $billingMinutes - min(10, intdiv($billingMinutes, 2));
     }
 
     /**

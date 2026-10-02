@@ -130,7 +130,7 @@ class RunnerScalingTest extends TestCase
     public function test_a_machine_that_held_nothing_for_a_while_is_deleted_when_the_pool_has_room_without_it()
     {
         $this->onCloud('roomy', '7', holding: 1);
-        $empty = $this->onCloud('empty', '8', holding: 0, createdAt: now()->subHour());
+        $empty = $this->onCloud('empty', '8', holding: 0, createdAt: now()->subMinutes(55));
 
         $this->artisan('runners:scale')->expectsOutputToContain('Deleted machine [empty]')->assertSuccessful();
 
@@ -138,10 +138,33 @@ class RunnerScalingTest extends TestCase
         $this->assertFalse(Runner::query()->whereKey($empty->id)->exists());
     }
 
+    public function test_an_empty_machine_is_kept_until_the_hour_paid_for_it_is_nearly_over()
+    {
+        $this->onCloud('roomy', '7', holding: 1);
+        $empty = $this->onCloud('empty', '8', holding: 0, createdAt: now()->subMinutes(90));
+
+        // Half of its second hour is paid for and left.
+        $this->artisan('runners:scale')->assertSuccessful();
+        $this->assertSame([], $this->deleted);
+
+        $this->travel(21)->minutes();
+        $this->artisan('runners:scale')->expectsOutputToContain('Deleted machine [empty]')->assertSuccessful();
+        $this->assertFalse(Runner::query()->whereKey($empty->id)->exists());
+    }
+
+    public function test_a_cloud_that_bills_by_the_second_deletes_an_empty_machine_at_once()
+    {
+        config(['workspaces.machines.clouds.hetzner.billing_minutes' => 0]);
+        $this->onCloud('roomy', '7', holding: 1);
+        $this->onCloud('empty', '8', holding: 0, createdAt: now()->subMinutes(90));
+
+        $this->artisan('runners:scale')->expectsOutputToContain('Deleted machine [empty]')->assertSuccessful();
+    }
+
     public function test_a_machine_is_kept_when_the_pool_needs_its_room_or_its_least_number()
     {
         $this->onCloud('roomy', '7', holding: 3, createdAt: now()->subHour());
-        $this->onCloud('empty', '8', holding: 0, createdAt: now()->subHour());
+        $this->onCloud('empty', '8', holding: 0, createdAt: now()->subMinutes(55));
 
         // Without it, one place would be free, and two are wanted.
         $this->artisan('runners:scale')->assertSuccessful();
@@ -155,7 +178,7 @@ class RunnerScalingTest extends TestCase
     public function test_a_machine_that_recently_held_a_workspace_is_kept_a_while()
     {
         $this->onCloud('roomy', '7', holding: 1);
-        $recent = $this->onCloud('recent', '8', holding: 0, createdAt: now()->subHour());
+        $recent = $this->onCloud('recent', '8', holding: 0, createdAt: now()->subMinutes(55));
         Workspace::factory()->create(['driver' => 'runner', 'driver_id' => 'recent--workspace-old', 'status' => WorkspaceStatus::Destroyed]);
 
         $this->artisan('runners:scale')->assertSuccessful();

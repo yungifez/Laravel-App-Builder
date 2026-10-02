@@ -222,7 +222,12 @@ one of these things:
   pay for new ones. `runners:scale` and the log tell you when this occurs.
 - It deletes machines in the pool that no runner belongs to.
 
-Hetzner bills by the hour, so the pool costs little when nobody works.
+Hetzner bills each machine by the started hour, so the pool costs little
+when nobody works. An empty machine is deleted only in the last 10 minutes
+of an hour it was paid for. Before that, deleting it saves nothing, and a
+new workspace can use it instead of a new machine. Set
+`WORKSPACE_MACHINES_HETZNER_BILLING_MINUTES=0` if your account bills by the
+second.
 
 1. In Hetzner Cloud, make a project for the pool. Make an API token with
    read and write access. Make a private network that includes the control
