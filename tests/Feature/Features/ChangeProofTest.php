@@ -531,7 +531,7 @@ class ChangeProofTest extends TestCase
             $proof(['run' => 1])->all(),
         );
 
-        // Each kind of thing left behind is one gap, with the first address it happened at.
+        // Each kind of thing left behind is one gap, with the first address it happened at. The other addresses are named after it.
         $left = $proof(['run' => 5, 'findings' => [
             $finding('saved_then_failed', 'POST /orders', 'mail App\Mail\Receipt'),
             $finding('saved_then_failed', 'POST /orders/{order}/pay', 'http POST api.stripe.com'),
@@ -541,7 +541,7 @@ class ChangeProofTest extends TestCase
             $finding('called_again', 'POST /orders/{order}/pay', 'http POST api.stripe.com'),
         ]]);
         $this->assertSame([
-            'If an email cannot be sent at /orders, the person sees an error, but your app has already saved what they did. They may try again and do it twice.',
+            'If an email cannot be sent at /orders, the person sees an error, but your app has already saved what they did. They may try again and do it twice. Something like this also happens at one more place: /orders/{order}/pay.',
             'If saving fails at /invitations, your app has already sent something. People are told about something that was not saved.',
             'If saving fails at /teams, your app keeps one part of what it was saving and loses the rest.',
             'Your app does some work on its own after someone uses /orders. If that work is cut off and starts over, it sends or adds the same thing twice.',
@@ -594,6 +594,17 @@ class ChangeProofTest extends TestCase
         ], array_map(
             fn (string $failed) => $proof(['run' => 1, 'findings' => [$finding('failure_hidden', 'POST /orders', $failed)]])->where('kind', 'gap')->pluck('text')->all(),
             ['mail App\Mail\Receipt', 'http POST api.stripe.com', 'insert orders'],
+        ));
+
+        // The same thing at more than one place: the owner's choice is for all of them, so each is named.
+        $this->assertSame([
+            ['If an email cannot be sent at /orders, your app carries on as if it worked. The person sees the same as when it works, and nothing is written down, so you would not find out. Something like this also happens at one more place: /refunds.'],
+            ['If an email cannot be sent at /orders, your app carries on as if it worked. The person sees the same as when it works, and nothing is written down, so you would not find out. Something like this also happens at 3 more places, such as /refunds and the work “reminders send”.'],
+            // Two things that fail at one address are one place.
+            ['If an email cannot be sent at /orders, your app carries on as if it worked. The person sees the same as when it works, and nothing is written down, so you would not find out.'],
+        ], array_map(
+            fn (array $routes) => $proof(['run' => 1, 'findings' => array_map(fn (string $route) => $finding('failure_hidden', $route, 'mail App\\Mail\\Receipt'), $routes)])->where('kind', 'gap')->pluck('text')->all(),
+            [['POST /orders', 'POST /refunds'], ['POST /orders', 'POST /refunds', 'ARTISAN reminders:send', 'POST /invoices', 'POST /refunds'], ['POST /orders', 'POST /orders']],
         ));
 
         // A failure hidden in work the app leaves for later has no person who sees an answer.

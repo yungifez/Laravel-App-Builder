@@ -2332,7 +2332,10 @@ findings. It can add to them, but it cannot take one away. Only the owner
 can: each of these lines in the proof has "I want it this way", as a
 boundary finding has. The choice is kept by what the finding is (the
 finding, the address and what was made to fail), not by its line, so it
-holds while the change is fixed. The reviewer is told how many the owner
+holds while the change is fixed. One line stands for every place where
+the same kind was found, and the owner's choice is for all of them. So the
+line names the first address and says where else: "Something like this also
+happens at one more place: /refunds." The reviewer is told how many the owner
 wants and does not see them.
 The owner reads each in the proof: "If saving fails at /invitations,
 your app has already sent something. People are told about something that

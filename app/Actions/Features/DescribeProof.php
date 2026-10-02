@@ -545,6 +545,21 @@ class DescribeProof
                     },
                 ]);
 
+                // The owner's choice is for every place the same thing was found, so each is named.
+                $first = AppRoutes::address($found[0]['route']);
+                $elsewhere = array_values(array_unique(array_filter(
+                    array_map(fn (array $finding) => AppRoutes::address($finding['route']), $found),
+                    fn (string $address) => $address !== $first,
+                )));
+
+                if ($elsewhere !== []) {
+                    $gap .= ' '.trans_choice(
+                        'Something like this also happens at one more place: :places.|Something like this also happens at :count more places, such as :places.',
+                        count($elsewhere),
+                        ['places' => $this->join(array_slice($elsewhere, 0, 2))],
+                    );
+                }
+
                 $lines[] = [
                     'kind' => $accepted ? 'chosen' : 'gap',
                     'text' => $accepted ? __('You said you want this. :gap If a later change does more of this, I will ask again.', ['gap' => $gap]) : $gap,
