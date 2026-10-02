@@ -473,7 +473,7 @@ class DescribeProof
             AppFaults::SAVED_THEN_FAILED => 'If :failure at :address, the person sees an error, but your app has already saved what they did. They may try again and do it twice.',
             AppFaults::SENT_THEN_LOST => 'If saving fails at :address, your app has already sent something. People are told about something that was not saved.',
             AppFaults::SAVED_IN_PART => 'If saving fails at :address, your app keeps one part of what it was saving and loses the rest.',
-            AppFaults::FAILURE_HIDDEN => 'If :failure at :address, your app carries on as if it worked. The person is not told, and nothing is written down, so you would not find out.',
+            AppFaults::FAILURE_HIDDEN => 'If :failure at :address, your app carries on as if it worked. The person sees the same as when it works, and nothing is written down, so you would not find out.',
             AppFaults::DONE_TWICE => 'Your app does some work on its own after someone uses :address. If that work is cut off and starts over, it sends or adds the same thing twice.',
             AppFaults::SENT_AGAIN => 'Your app does some work on its own after someone uses :address. If saving fails during that work and it starts over, it sends the same thing twice.',
             AppFaults::CALLED_AGAIN => 'If an outside service is slow to answer at :address, your app asks it again. The service may then do the same thing twice, such as take a payment twice.',

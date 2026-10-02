@@ -4,6 +4,7 @@ namespace Tests\Fixtures;
 
 use App\Models\User;
 use Illuminate\Http\Client\Factory;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -11,6 +12,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
+use Inertia\Inertia;
+use Inertia\Response as InertiaResponse;
 use RuntimeException;
 use Throwable;
 
@@ -344,6 +347,44 @@ class RecordedApp
         }
 
         return redirect('/_hidden/receipt')->with('status', 'The receipt is on its way.');
+    }
+
+    /**
+     * Catches an email that cannot be sent and answers with JSON, the
+     * way a package for screens does: what it tells the person is in
+     * text that holds JSON. Only when asked does it name a field as wrong.
+     */
+    public function screened(Request $request): JsonResponse
+    {
+        $wrong = [];
+
+        try {
+            Mail::raw('Receipt', fn ($message) => $message->to('owner@example.com'));
+        } catch (Throwable) {
+            $wrong = $request->boolean('told') ? ['email' => ['The receipt was not sent.']] : [];
+        }
+
+        return response()->json(['components' => [[
+            'snapshot' => json_encode(['data' => ['email' => 'owner@example.com', 'rows' => [7 => ['name' => 'First']]], 'memo' => ['errors' => $wrong]]),
+            'effects' => ['html' => '<p>Receipt</p>'],
+        ]]]);
+    }
+
+    /**
+     * Catches an email that cannot be sent and answers with an Inertia
+     * page. Only when asked does it show another page for the failure.
+     */
+    public function paged(Request $request): InertiaResponse
+    {
+        $page = 'Receipt/Sent';
+
+        try {
+            Mail::raw('Receipt', fn ($message) => $message->to('owner@example.com'));
+        } catch (Throwable) {
+            $page = $request->boolean('told') ? 'Receipt/NotSent' : $page;
+        }
+
+        return Inertia::render($page, ['receipt' => ['number' => 7, 'lines' => [['name' => 'First']]]]);
     }
 
     /**

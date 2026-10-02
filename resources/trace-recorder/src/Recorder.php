@@ -88,6 +88,16 @@ class Recorder
     protected const FRAMES = 6;
 
     /**
+     * The most names kept of the data of an answer, the most read, and
+     * how deep.
+     */
+    protected const NAMES = 40;
+
+    protected const READ = 2000;
+
+    protected const DEPTH = 10;
+
+    /**
      * The framework's calls that say which part of a request runs:
      * asking if the person may, checking what they sent, the route's own
      * code, building the answer, a model's hooks, a listener, a job, and
@@ -373,9 +383,9 @@ class Recorder
     /**
      * Say what kind of answer the request gave, by names only: the route
      * it sends the person to, what it tells them once, the fields it
-     * found wrong, the view it shows and what the view is given, and the
-     * names at the top of a JSON answer. Two runs of a request that tell
-     * the person the same have the same shape.
+     * found wrong, the view it shows and what the view is given, the
+     * names in a JSON answer, and the component of an Inertia page. Two
+     * runs of a request that tell the person the same have the same shape.
      *
      * @return list<string>
      */
@@ -411,18 +421,85 @@ class Recorder
         }
 
         $original = $response->original ?? null;
+        $page = null;
 
         if ($original instanceof View) {
             $shape[] = 'view '.$original->name();
             $add('with', array_keys($original->getData()));
+            $page = $original->getData()['page'] ?? null;
         } elseif ($response instanceof JsonResponse) {
-            $data = $response->getData(true);
-            $add('json', is_array($data) && ! array_is_list($data) ? array_keys($data) : []);
+            $page = $response->getData(true);
+            $shape = [...$shape, ...$this->names('json', $page)];
+        }
+
+        // Inertia answers with a page, in a view or as JSON: the component
+        // it shows is a name in the code, and its props are what it is given.
+        if (is_array($page) && is_array($page['props'] ?? null) && is_string($page['component'] ?? null) && preg_match('/^[\w\/.:-]{1,120}$/', $page['component']) === 1) {
+            $shape[] = 'page '.$page['component'];
+
+            if ($original instanceof View) {
+                $shape = [...$shape, ...$this->names('with', ['page' => $page])];
+            }
         }
 
         sort($shape);
 
         return array_values(array_unique($shape));
+    }
+
+    /**
+     * Get the names in data as lines of a shape. The names that are not
+     * kept still count: one mark stands for all of them.
+     *
+     * @return list<string>
+     */
+    protected function names(string $kind, mixed $data): array
+    {
+        $named = array_keys($this->named($data));
+        sort($named);
+
+        $names = array_map(fn (string $name) => "{$kind} {$name}", array_slice($named, 0, self::NAMES));
+
+        return count($named) > self::NAMES ? [...$names, "{$kind} more ".substr(md5(implode("\n", $named)), 0, 12)] : $names;
+    }
+
+    /**
+     * Get the names in the data of an answer, each with the names above
+     * it, and never a value. The items of a list share the name above them. Text
+     * that holds JSON is read the same way: a package can put what it
+     * tells the person there, such as the fields it found wrong.
+     *
+     * @return array<string, true>
+     */
+    protected function named(mixed $data, string $under = '', int $depth = 0): array
+    {
+        if (is_string($data) && $depth > 0 && strlen($data) <= 65536 && str_starts_with($data, '{')) {
+            $data = json_decode($data, true);
+        }
+
+        if (! is_array($data) || $depth >= self::DEPTH) {
+            return [];
+        }
+
+        $names = [];
+
+        foreach ($data as $key => $value) {
+            $name = $under;
+
+            // A key that is not a name, such as an id, is a value: it is left out.
+            if (is_string($key) && preg_match('/^[A-Za-z_][\w-]{0,40}$/', $key) === 1) {
+                $name = $under === '' ? $key : "{$under}.{$key}";
+                $names[$name] = true;
+            }
+
+            $names += $this->named($value, $name, $depth + 1);
+
+            if (count($names) >= self::READ) {
+                break;
+            }
+        }
+
+        return $names;
     }
 
     /**

@@ -2053,7 +2053,8 @@ The trace of that request shows what stayed:
   has another status.
 - **Failure hidden.** A send or a save failed, the app's code caught the
   failure, and the request carried on as if it worked: an empty `catch`
-  around an email. The person is not told, and no one can find out later.
+  around an email. The person sees the same as when it worked, and no one
+  can find out later.
 
 A save in a transaction is lost when the transaction rolls back. A save in
 steps is lost when the request ends in a server error. An app that catches
@@ -2066,13 +2067,20 @@ normal run. And the request did nothing it does not do in the normal run;
 what it did less is the failure itself. The recorder keeps the kind of
 answer by names only (`shape`): the pattern of the route a redirect leads
 to, the names of what the request flashed and of the fields it found wrong,
-the view and the names of what it was given, and the names at the top of a
-JSON answer. So an app that records the failure, tells the person, or does
-something else about it is clean. Nothing is said when the log cannot be
+the view and the names of what it was given, and the names in a JSON
+answer. It reads those names at any depth, and in text that holds JSON,
+because a package for screens can put the fields it found wrong there. A
+key that is not a name, such as an id, is left out. It keeps 40 names; one
+mark stands for all of them when there are more. An Inertia page is read
+the same way, in a view and as JSON: the component it shows, which is a
+name in the code, and the names in its props. So an app that records the
+failure, tells the person, or does something else about it is clean.
+Nothing is said when the log cannot be
 seen: a test put a fake in place of the events or the log, or turned off
 the app's handling of errors, where `report()` does nothing. One limit: an
-app that tells the person in other words under the same name, and records
-nothing, is a finding. The coder was told to catch a failure only together
+app that tells the person in other words under the same name, or saves
+another value with the same statement, and records nothing, is a finding.
+The coder was told to catch a failure only together
 with `report()`, so this finding closes the easy way past the others.
 The recorder keeps no values, so the two runs of a job are compared by
 shape only. An update, a delete, or an insert that says what to do with a

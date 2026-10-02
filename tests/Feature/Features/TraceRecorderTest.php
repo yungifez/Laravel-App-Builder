@@ -846,6 +846,69 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
     }
 
+    public function test_what_a_json_answer_tells_the_person_is_read_by_its_names_at_every_depth()
+    {
+        Route::post('/_hidden/screen', [RecordedApp::class, 'screened']);
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'mail');
+
+        $this->post('/_hidden/screen?told=1')->assertOk();
+        $this->post('/_hidden/screen?told=1')->assertOk();
+        $this->post('/_hidden/screen')->assertOk();
+
+        $requests = $recorded();
+        $names = ['json components', 'json components.effects', 'json components.effects.html', 'json components.snapshot', 'json components.snapshot.data', 'json components.snapshot.data.email', 'json components.snapshot.data.rows', 'json components.snapshot.data.rows.name', 'json components.snapshot.memo', 'json components.snapshot.memo.errors'];
+        // Text that holds JSON is read too, and the id of a row is a value: it is left out.
+        $this->assertSame($names, $requests[0]['shape']);
+        // The field named as wrong is the only thing that tells the two answers apart.
+        $this->assertSame([...$names, 'json components.snapshot.memo.errors.email'], $requests[1]['shape']);
+        $this->assertTrue($requests[1]['quiet']);
+        $this->assertStringNotContainsString('First', File::get("{$this->directory}/trace.jsonl"));
+
+        $measured = $this->measureFailure($requests, 'mail message');
+        $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+    }
+
+    public function test_a_json_answer_with_many_names_keeps_some_and_one_mark_for_all()
+    {
+        Route::get('/_hidden/many', fn () => response()->json(array_fill_keys(array_map(fn (int $at) => "name_{$at}", range(1, 50)), ['inner' => 1])));
+        Route::get('/_hidden/many-more', fn () => response()->json([...array_fill_keys(array_map(fn (int $at) => "name_{$at}", range(1, 50)), ['inner' => 1]), 'zz_errors' => 1]));
+        $recorded = $this->record();
+
+        $this->get('/_hidden/many')->assertOk();
+        $this->get('/_hidden/many')->assertOk();
+        $this->get('/_hidden/many-more')->assertOk();
+
+        $shapes = array_column($recorded(), 'shape');
+        $this->assertCount(41, $shapes[0]);
+        $this->assertMatchesRegularExpression('/^json more [0-9a-f]{12}$/', $shapes[0][0]);
+        $this->assertSame($shapes[0], $shapes[1]);
+        // A name past the ones kept still makes the shape another one.
+        $this->assertSame(array_slice($shapes[0], 1), array_slice($shapes[2], 1));
+        $this->assertNotSame($shapes[0][0], $shapes[2][0]);
+    }
+
+    public function test_an_inertia_page_is_told_apart_by_its_component_in_a_view_and_as_json()
+    {
+        Route::post('/_hidden/page', [RecordedApp::class, 'paged']);
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'mail');
+        $this->withoutVite();
+
+        $this->post('/_hidden/page?told=1')->assertOk();
+        $this->post('/_hidden/page?told=1')->assertOk();
+        // The failure is caused in the second request only.
+        $this->post('/_hidden/page?told=1', [], ['X-Inertia' => 'true'])->assertOk();
+
+        $requests = $recorded();
+        $this->assertSame(['page Receipt/Sent', 'view app', 'with page', 'with page.component', 'with page.props', 'with page.props.receipt', 'with page.props.receipt.lines', 'with page.props.receipt.lines.name', 'with page.props.receipt.number', 'with page.url', 'with page.version'], $requests[0]['shape']);
+        $this->assertContains('page Receipt/NotSent', $requests[1]['shape']);
+        $this->assertSame(array_diff($requests[0]['shape'], ['page Receipt/Sent']), array_diff($requests[1]['shape'], ['page Receipt/NotSent']));
+        $this->assertSame(['json component', 'json props', 'json props.receipt', 'json props.receipt.lines', 'json props.receipt.lines.name', 'json props.receipt.number', 'json url', 'json version', 'page Receipt/Sent'], $requests[2]['shape']);
+        $this->assertTrue($requests[1]['quiet']);
+
+        $measured = $this->measureFailure($requests, 'mail message');
+        $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+    }
+
     public function test_nothing_is_said_about_a_caught_failure_when_the_test_turned_off_the_apps_handling_of_errors()
     {
         Route::post('/_hidden/receipt', [RecordedApp::class, 'hushed'])->middleware('web');
