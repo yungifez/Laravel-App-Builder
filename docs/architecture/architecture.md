@@ -1853,8 +1853,8 @@ is recorded the same way: a test dispatched it, or something the test did,
 such as an event with a queued listener. Its line has the method `JOB` and
 the job's name as the route. Most tests of a request put a fake in place of
 the queue, so the job's own test is where the job runs. The job is then run
-a second time, and tried again after its last save failed, the same way as
-a job a request dispatched. It is not held back, because no request ran
+a second time, and tried again after its last save or its email failed, the
+same way as a job a request dispatched. It is not held back, because no request ran
 before it. An email or an outside call the job makes is made to fail in it
 too: a queue takes a job that ends without an error as done, so a job that
 catches the failure and writes nothing to the log hid it. A job that lets
@@ -2152,6 +2152,12 @@ The trace of that request shows what stayed:
   job was tried again, and it sent the same thing again from the same line.
   A job that asks if it ran before passes the run above. It fails here when
   it marks that only after it sent.
+- **Never sent.** An email failed in a job, the job was tried again, and
+  the second try sent nothing from the same line. A job that marks its work
+  as done before it sends stops at that mark, so the email is never sent. A
+  job that takes the mark back when the email fails is clean. An outside
+  call is left out: a call that got no answer may have arrived, so a job
+  that does not make it again can be right.
 - **Called again.** An outside call got no answer, and the request made the
   same call again from the same line. A call that got no answer can still
   have arrived, so the service can do it twice: a payment taken twice.
@@ -2289,7 +2295,7 @@ is said. A second run that the trace cut short is missed. An email that a test
 fakes is a place too: the stand-in of the fake fails it the same way, before
 the fake takes it.
 
-Each of the eleven sends the change back for a fix by itself, as the safety
+Each of the twelve sends the change back for a fix by itself, as the safety
 scan does (`builder.verification.faults.send_back`). No model decides it:
 the failure was caused, and the trace shows what stayed. The coder is told
 what stayed and how to avoid it ("…A queue gives a job to a worker at least
@@ -2313,7 +2319,10 @@ done." For a job: "Your app does some work on its own after someone uses
 /orders. If that work is cut off and starts over, it sends or adds the same
 thing twice." When the job sends twice only after its save failed, the
 owner reads that in its place: "If saving fails during that work and it
-starts over, it sends the same thing twice." For a call made again: "If an outside service is slow to
+starts over, it sends the same thing twice." When the job does not send
+after it starts over: "If an email cannot be sent during that work and it
+starts over, it does not try to send again. What it had to send is never
+sent." For a call made again: "If an outside service is slow to
 answer at /orders/{order}/pay, your app asks it again. The service may then
 do the same thing twice, such as take a payment twice." For an answer that
 is not checked: "If an outside service says it could not do what your app

@@ -1217,16 +1217,17 @@ class Recorder
     }
 
     /**
-     * Run a job a second time, when the write this run is about failed in
-     * it and the job did not take the failure in. A queue tries a failed
-     * job again: what the job did before the failure is then done again.
+     * Run a job a second time, when the write or the email this run is
+     * about failed in it and the job did not take the failure in. A queue
+     * tries a failed job again: what the job did before the failure is
+     * then done again, and what it could not send must be sent now.
      */
     protected function retry(object $job, ?int $place): void
     {
         $failed = $this->operation['fault'] ?? null;
 
         if ($place === null || $this->operation === null || $this->jobs > 0 || ! is_int($failed) || $failed <= $place
-            || ($this->fault['kind'] ?? null) !== 'query'
+            || ! in_array($this->fault['kind'] ?? null, ['query', 'mail'], true)
             || ! ($this->operation['effects'][$failed]['job'] ?? false)
             || ($this->operation['effects'][$place]['kind'] ?? null) !== 'job'
             || array_any($this->operation['effects'], fn (array $effect) => $effect['again'] ?? false)

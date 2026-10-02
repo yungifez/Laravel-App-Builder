@@ -13,6 +13,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Gate;
@@ -28,6 +29,7 @@ use RuntimeException;
 use Tests\Fixtures\RecordedApp;
 use Tests\Fixtures\RecordedCarefulJob;
 use Tests\Fixtures\RecordedCommand;
+use Tests\Fixtures\RecordedEagerJob;
 use Tests\Fixtures\RecordedEvent;
 use Tests\Fixtures\RecordedHushedJob;
 use Tests\Fixtures\RecordedJob;
@@ -816,6 +818,45 @@ class TraceRecorderTest extends TestCase
         $requests = $recorded();
         $this->assertSame([[200, ['done'], null], [500, ['error'], 2]], array_map(fn (array $request) => [$request['status'], $request['shape'], $request['fault'] ?? null], $requests));
         $measured = $this->measureFailure($requests, 'mail message', 'tests/Fixtures/RecordedJob.php');
+        $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+    }
+
+    public function test_a_job_tried_again_after_its_email_failed_that_does_not_send_the_second_time_never_sends()
+    {
+        User::factory()->create(['name' => 'Eager']);
+        $recorded = $this->recordWithFailure(effect: 3, kind: 'mail');
+
+        RecordedEagerJob::dispatch();
+        DB::table('users')->update(['name' => 'Eager']);
+        rescue(function () {
+            RecordedEagerJob::dispatch();
+        }, report: false);
+
+        $requests = $recorded();
+        $this->assertSame([[200, null], [500, 3]], array_map(fn (array $request) => [$request['status'], $request['fault'] ?? null], $requests));
+        // The second try asked if the job ran before, saw the mark and stopped.
+        $this->assertSame([['job', false], ['query', false], ['query', false], ['mail', false], ['job', true], ['query', false]], array_map(fn (array $effect) => [$effect['kind'], $effect['again'] ?? false], $requests[1]['effects']));
+
+        $measured = $this->measureFailure($requests, 'mail message', RecordedEagerJob::PATH);
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['never_sent', 'JOB '.RecordedEagerJob::class, 'mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed']], $measured['findings']));
+    }
+
+    public function test_a_job_tried_again_after_its_email_failed_that_took_its_mark_back_sends_the_second_time()
+    {
+        User::factory()->create(['name' => 'Eager']);
+        $recorded = $this->recordWithFailure(effect: 3, kind: 'mail');
+
+        RecordedEagerJob::dispatch(takesBack: true);
+        DB::table('users')->update(['name' => 'Eager']);
+        rescue(function () {
+            RecordedEagerJob::dispatch(takesBack: true);
+        }, report: false);
+
+        $requests = $recorded();
+        $this->assertSame(['job', 'query', 'query', 'mail', 'query', 'job', 'query', 'query', 'mail'], array_column($requests[1]['effects'], 'kind'));
+
+        $measured = $this->measureFailure($requests, 'mail message', RecordedEagerJob::PATH);
         $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
     }
 

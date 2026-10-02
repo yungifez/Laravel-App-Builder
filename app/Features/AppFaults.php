@@ -53,6 +53,14 @@ namespace App\Features;
  * marks that only after it sent, passes the run above and sends twice
  * here.
  *
+ * The other way round is read too. A job that marks its work as done
+ * before it sends, and then fails with its email, is tried again by the
+ * queue. The second try sees the mark and stops, so the email is never
+ * sent. The job is run again after its email failed, and the second run
+ * must send from the same line. An outside call is left out of this: a
+ * call that got no answer may have arrived, so a job that does not make
+ * it again can be right.
+ *
  * One more thing is read with no failure at all. An event can have two
  * or more listeners that Laravel found by itself. Laravel takes those in
  * the order the disk lists their files, so their order is not the same on
@@ -91,7 +99,8 @@ namespace App\Features;
  * A job a test runs with no request or command around it is a place too.
  * Most tests of a request put a fake in place of the queue, so the job's
  * own test is where the job runs. It is run a second time, and tried again
- * after its last save failed, the same way as a job a request dispatched.
+ * after its last save or its email failed, the same way as a job a request
+ * dispatched.
  * It is not held back: nothing ran before it that it could need. An email
  * or an outside call it makes is made to fail in it too. A queue takes a
  * job that ends without an error as done, so a job that catches that
@@ -110,6 +119,8 @@ class AppFaults
     public const CALLED_AGAIN = 'called_again';
 
     public const SENT_AGAIN = 'sent_again';
+
+    public const NEVER_SENT = 'never_sent';
 
     public const DEPENDS_ON_ORDER = 'depends_on_order';
 
@@ -131,6 +142,7 @@ class AppFaults
         self::FAILURE_HIDDEN,
         self::DONE_TWICE,
         self::SENT_AGAIN,
+        self::NEVER_SENT,
         self::CALLED_AGAIN,
         self::ANSWER_NOT_CHECKED,
         self::NEEDS_JOB_DONE,
@@ -500,6 +512,7 @@ class AppFaults
         $said = match ($finding['kind']) {
             self::DONE_TWICE => "when {$finding['failed']}{$at(', queued at', ',')} ran a second time, it sent or added the same thing again: {$finding['what']}",
             self::SENT_AGAIN => "when a save failed in {$finding['failed']}{$at(', queued at', ',')} and the job was tried again, it sent the same thing again: {$finding['what']}",
+            self::NEVER_SENT => "when {$finding['failed']} failed{$at(' at')} and the job was tried again, the second try did not send it: what the first try left behind made the job stop, so it is never sent",
             self::CALLED_AGAIN => "when {$finding['failed']}{$at(' at')} got no answer, the {$run} made the same call again with no idempotency key, so the service may do it twice",
             self::ANSWER_NOT_CHECKED => "when {$finding['failed']}{$at(' at')} was answered with a server error, the app's code did not ask the answer for its status and the {$run} went on as if the call worked: {$finding['what']}",
             self::NEEDS_JOB_DONE => "when {$finding['failed']}{$at(', queued at', ',')} ran after {$end}, the way a queue runs it, the {$run} did not do the same: {$finding['what']}",
@@ -546,8 +559,9 @@ class AppFaults
             self::SENT_THEN_LOST => 'People are told about something that was not saved. Send after the save is kept: after the transaction, or with afterCommit().',
             self::SAVED_IN_PART => 'Put the saves that belong together in one DB::transaction().',
             self::FAILURE_HIDDEN => 'No one finds a failure that the code catches and does not record. Let it fail, or record it with report() and tell the person what did not happen.',
-            self::DONE_TWICE => 'A queue gives a job to a worker at least once. Make the job safe to run again: look for what it already made (firstOrCreate, a unique index), or record that it sent before it sends.',
-            self::SENT_AGAIN => 'A queue tries a failed job again. Save first and send last in the job, or record what it sent so the next try does not send it again.',
+            self::DONE_TWICE => 'A queue gives a job to a worker at least once. Make the job safe to run again: look for what it already made (firstOrCreate, a unique index), or record that it sent before it sends, and take that record back when the send fails.',
+            self::SENT_AGAIN => 'A queue tries a failed job again. Save first and send last in the job, and take the save back when the send fails, so the next try sends.',
+            self::NEVER_SENT => 'A queue tries a failed job again, and that try must send what the first could not. When the send fails, take back what the job saved before it: catch the failure, undo the save, and throw the failure again.',
             self::CALLED_AGAIN => 'A call that got no answer can still have arrived. Give the call an Idempotency-Key header with the same value on each try. When the service takes none, do not try the call again.',
             self::ANSWER_NOT_CHECKED => 'The HTTP client of Laravel throws nothing for an error answer. Call throw() on the answer, or ask successful() or failed() and stop when the call did not work.',
             self::NEEDS_JOB_DONE => 'Tests run a queued job where it is dispatched. In use a queue runs it after the response. Do what the request needs before it answers in the request, or run that work with dispatchSync().',
@@ -627,6 +641,7 @@ class AppFaults
                 // a job fails on the queue in use, after the answer.
                 self::SAVED_THEN_FAILED => $hit['status'] >= 500 && ! ($hit['effects'][$place]['job'] ?? false) ? $kept : [],
                 self::CALLED_AGAIN => self::calledAgain($hit['effects'], $place, $times),
+                self::NEVER_SENT => self::neverSent($hit, $place),
                 self::FAILURE_HIDDEN => self::hidden($hit, $was),
             ]);
         }
@@ -957,6 +972,26 @@ class AppFaults
         }
 
         return $sent;
+    }
+
+    /**
+     * Get the email a job did not send when it was tried again after that
+     * email failed in it: the second run sent nothing from the same line.
+     * A second run that is not whole in the trace says nothing.
+     *
+     * @param  array{effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, cut: bool}  $hit
+     * @return list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>
+     */
+    protected static function neverSent(array $hit, int $place): array
+    {
+        $failed = $hit['effects'][$place] ?? null;
+        $marker = array_find_key($hit['effects'], fn (array $effect, int $at) => $at > $place && ($effect['again'] ?? false));
+
+        if ($failed === null || $marker === null || $hit['cut'] || ! ($failed['job'] ?? false)) {
+            return [];
+        }
+
+        return self::same(self::ran($hit['effects'], $marker), $failed) === [] ? [$failed] : [];
     }
 
     /**

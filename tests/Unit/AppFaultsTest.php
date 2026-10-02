@@ -590,6 +590,40 @@ class AppFaultsTest extends TestCase
         ], $measured['findings'] ?? null);
     }
 
+    public function test_a_job_tried_again_after_its_email_failed_is_found_when_the_second_try_does_not_send()
+    {
+        $asks = $this->done($this->asked('select * from "orders" where "receipt_sent_at" is null', 'app/Jobs/SendReceipt.php:19'));
+        $marks = $this->done($this->asked('update "orders" set "receipt_sent_at" = ?', 'app/Jobs/SendReceipt.php:20'));
+        // The change wrote the line that sends.
+        $mail = $this->done($this->mailed(self::NEW.':4'));
+        $normal = [$this->job('app/Actions/PlaceOrder.php:9'), $asks, $marks, $mail];
+        $again = $this->done([...$this->job(null), 'again' => true]);
+        $send = (int) array_search('send', array_column($this->points([$this->recorded('POST', '/orders', 302, $normal)]), 'fails'), true);
+        $this->assertSame(2, $send);
+
+        // The second try saw the mark of the first, and stopped.
+        $measured = $this->measure($normal, 500, [...$normal, $again, $asks], point: $send);
+
+        $this->assertSame([
+            ['kind' => 'never_sent', 'route' => 'POST /orders', 'failed' => 'mail App\Mail\Receipt', 'what' => 'mail App\Mail\Receipt', 'at' => self::NEW.':4', 'test' => self::TEST],
+        ], $measured['findings'] ?? null);
+        $this->assertSame(
+            'POST /orders: when mail App\Mail\Receipt failed at '.self::NEW.':4 and the job was tried again, the second try did not send it: what the first try left behind made the job stop, so it is never sent (caused in '.self::TEST.'). '
+                .'A queue tries a failed job again, and that try must send what the first could not. When the send fails, take back what the job saved before it: catch the failure, undo the save, and throw the failure again.',
+            AppFaults::finding($measured['findings'][0] ?? []),
+        );
+
+        // The job took the mark back, so the second try sent.
+        $back = $this->done($this->asked('update "orders" set "receipt_sent_at" = null', 'app/Jobs/SendReceipt.php:24'));
+        $sent = $this->measure($normal, 500, [...$normal, $back, $again, $asks, $marks, $mail], point: $send);
+        // The job took the failure in: no queue tries it again. It recorded the failure, so it did not hide it.
+        $tookIn = $this->measure($normal, 302, $normal, point: $send);
+        // A second try that is not whole in the trace says nothing.
+        $cut = $this->measure($normal, 500, [...$normal, $again, $asks], point: $send, extra: ['cut' => true]);
+
+        $this->assertSame([[1, []], [1, []], [1, []]], array_map(fn (?array $measured) => [$measured['run'] ?? null, $measured['findings'] ?? null], [$sent, $tookIn, $cut]));
+    }
+
     public function test_a_job_tried_again_is_no_finding_when_it_sends_once_and_missed_when_its_second_run_is_not_whole()
     {
         $asks = $this->done($this->asked('select * from "orders" where "receipt_sent_at" is null', 'app/Jobs/SendReceipt.php:19'));
@@ -949,7 +983,7 @@ class AppFaultsTest extends TestCase
         );
         $this->assertSame(
             'POST /orders: when job App\Jobs\SendReceipt ran a second time, it sent or added the same thing again: mail App\Mail\Receipt (caused in '.self::TEST.'). '
-                .'A queue gives a job to a worker at least once. Make the job safe to run again: look for what it already made (firstOrCreate, a unique index), or record that it sent before it sends.',
+                .'A queue gives a job to a worker at least once. Make the job safe to run again: look for what it already made (firstOrCreate, a unique index), or record that it sent before it sends, and take that record back when the send fails.',
             AppFaults::finding($twice),
         );
 

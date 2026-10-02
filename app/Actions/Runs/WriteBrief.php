@@ -247,7 +247,8 @@ class WriteBrief
     - A request that saved must not end in an error because a send failed: the person tries again and it saves twice. Queue what the request sends.
     - Put saves that belong together in one `DB::transaction()`.
     - Never catch a failure and carry on as if it worked. Let it fail, or record it with `report()` and tell the person what did not happen.
-    - Make a queued job safe to run again. Give it what it needs through its constructor: a queue worker has no request, no session and no signed-in person.
+    - Make a queued job safe to run again. When a send fails in it, take back what the job saved before the send, so the next try sends.
+    - Give a queued job what it needs through its constructor: a queue worker has no request, no session and no signed-in person.
     - Do not count on a queued job being done before the request answers, or on the order in which the listeners of one event run.
     - Ask the answer of an outside call how it went (`throw()`, `successful()`, `failed()`) before you carry on. Try a call again only with the same `Idempotency-Key` header on each try.
     TEXT;

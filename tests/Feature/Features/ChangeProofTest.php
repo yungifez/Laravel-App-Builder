@@ -613,6 +613,15 @@ class ChangeProofTest extends TestCase
             fn (string $kind) => $proof(['run' => 1, 'findings' => [$finding($kind, 'JOB App\\Jobs\\SendReminder', 'job App\\Jobs\\SendReminder')]])->where('kind', 'gap')->pluck('text')->all(),
             ['done_twice', 'sent_again'],
         ));
+        // Work that starts over and does not send what it could not send is said for each way the work runs.
+        $this->assertSame([
+            ['Your app does some work on its own after someone uses /orders. If an email cannot be sent during that work and it starts over, it does not try to send again. What it had to send is never sent.'],
+            ['Your app does some work on its own (“reminders send”) and leaves part of it for later. If an email cannot be sent during that part and it starts over, it does not try to send again. What it had to send is never sent.'],
+            ['Your app does some work on its own (“send reminder”). If an email cannot be sent during that work and it starts over, it does not try to send again. What it had to send is never sent.'],
+        ], array_map(
+            fn (string $route) => $proof(['run' => 1, 'findings' => [$finding('never_sent', $route, 'mail App\Mail\Reminder')]])->where('kind', 'gap')->pluck('text')->all(),
+            ['POST /orders', 'ARTISAN reminders:send', 'JOB App\\Jobs\\SendReminder'],
+        ));
 
         // The recording already said it sends before saving ends: it is said once.
         $twice = $proof(['run' => 1, 'findings' => [$finding('sent_then_lost', 'POST /invitations', 'insert invitations')]], ['traces' => ['requests' => 40, 'reached' => 12, 'unseen' => 0, 'existing' => 0, 'repeats' => [], 'findings' => [
