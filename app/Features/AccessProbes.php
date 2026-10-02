@@ -21,7 +21,7 @@ use Illuminate\Support\Str;
  * @phpstan-import-type Record from Scaffold
  *
  * @phpstan-type Probe array{record: string, noun: string, creator: string|null, action: string, actor: string, rule: string, method: string, uri: string, param: string, key: string|null}
- * @phpstan-type Observed array{id: int, status: int, changed: bool, invalid: bool}
+ * @phpstan-type Observed array{id: int, status: int, changed: bool, invalid: bool, policy: bool|null}
  * @phpstan-type Finding array{record: string, noun: string, creator: string|null, action: string, actor: string, rule: string, method: string, uri: string, param: string, key: string|null, status: int}
  */
 class AccessProbes
@@ -85,6 +85,50 @@ class AccessProbes
     }
 
     /**
+     * Plan probes for records the app already had, where the plan states no
+     * rule: the app's own policy is the rule. Each route the change's
+     * controllers serve is tried by both actors, and the test asks the
+     * policy first, so only a request the policy refuses can be a finding.
+     * Routes of controllers the change did not touch are left alone: their
+     * problems are not the change's.
+     *
+     * @param  list<string>  $models  Models with a policy, by class name
+     * @param  list<string>  $controllers  Controllers the change touched, by class name
+     * @return list<Probe>
+     */
+    public static function fromPolicies(array $models, string $routeList, array $controllers, int $limit): array
+    {
+        $routes = json_decode(trim($routeList), true);
+        $probes = [];
+
+        if (! is_array($routes) || ! array_is_list($routes) || $controllers === []) {
+            return [];
+        }
+
+        foreach ($models as $model) {
+            foreach (self::routesFor($model, $routes) as $route) {
+                if (! in_array($route['controller'], $controllers, true)) {
+                    continue;
+                }
+
+                foreach ([self::GUEST, self::STRANGER] as $actor) {
+                    $probes[] = [
+                        'record' => $model,
+                        'noun' => Str::of($model)->snake(' ')->lower()->toString(),
+                        'creator' => null,
+                        'action' => $route['action'],
+                        'actor' => $actor,
+                        'rule' => 'policy',
+                        ...array_intersect_key($route, array_flip(['method', 'uri', 'param', 'key'])),
+                    ];
+                }
+            }
+        }
+
+        return array_slice($probes, 0, $limit);
+    }
+
+    /**
      * Determine if a rule refuses an actor. Adding a record has no person
      * who added it yet, so "creator" there means anyone signed in.
      */
@@ -101,7 +145,7 @@ class AccessProbes
      * parameter named after it, or adding one at the same controller.
      *
      * @param  list<mixed>  $routes
-     * @return list<array{action: string, method: string, uri: string, param: string, key: string|null}>
+     * @return list<array{action: string, method: string, uri: string, param: string, key: string|null, controller: string|null}>
      */
     protected static function routesFor(string $model, array $routes): array
     {
@@ -144,14 +188,14 @@ class AccessProbes
                 };
 
                 if ($action !== null) {
-                    $found[] = ['action' => $action, 'method' => $method, 'uri' => $uri, 'param' => $params[0][1], 'key' => ($params[0][2] ?? '') === '' ? null : $params[0][2]];
+                    $found[] = ['action' => $action, 'method' => $method, 'uri' => $uri, 'param' => $params[0][1], 'key' => ($params[0][2] ?? '') === '' ? null : $params[0][2], 'controller' => $controller];
                 }
             }
         }
 
         foreach ($adding as $route) {
             if (($route['controller'] !== null && in_array($route['controller'], $controllers, true)) || $route['name'] === Str::snake(Str::pluralStudly($model)).'.store') {
-                $found[] = ['action' => 'create', 'method' => 'POST', 'uri' => $route['uri'], 'param' => '', 'key' => null];
+                $found[] = ['action' => 'create', 'method' => 'POST', 'uri' => $route['uri'], 'param' => '', 'key' => null, 'controller' => $route['controller']];
             }
         }
 
@@ -170,7 +214,7 @@ class AccessProbes
 
         foreach ($probes as $id => $probe) {
             $methods[] = sprintf(
-                "    public function test_probe_%d(): void\n    {\n        \$this->probe(%d, %s, %s, %s, %s, %s, %s, %s, %s);\n    }",
+                "    public function test_probe_%d(): void\n    {\n        \$this->probe(%d, %s, %s, %s, %s, %s, %s, %s, %s, %s);\n    }",
                 $id,
                 $id,
                 var_export('App\\Models\\'.$probe['record'], true),
@@ -181,6 +225,7 @@ class AccessProbes
                 var_export($probe['param'], true),
                 var_export($probe['key'], true),
                 var_export($probe['actor'], true),
+                var_export($probe['rule'] === 'policy', true),
             );
         }
 
@@ -196,6 +241,7 @@ use App\Models\User;
 use BackedEnum;
 use DateTimeInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Gate;
 use Tests\TestCase;
 
 class AccessProbeTest extends TestCase
@@ -205,11 +251,12 @@ class AccessProbeTest extends TestCase
 {$methods}
 
     /**
-     * Send one request as one actor and note what it did to the record.
+     * Send one request as one actor and note what it did to the record,
+     * and, when asked, what the app's own policy says about it first.
      *
      * @param  class-string<\Illuminate\Database\Eloquent\Model>  \$model
      */
-    private function probe(int \$id, string \$model, ?string \$creator, string \$action, string \$method, string \$uri, string \$param, ?string \$key, string \$actor): void
+    private function probe(int \$id, string \$model, ?string \$creator, string \$action, string \$method, string \$uri, string \$param, ?string \$key, string \$actor, bool \$askPolicy): void
     {
         \$owner = User::factory()->create();
         \$record = \$model::factory()->create(\$creator === null ? [] : [\$creator => \$owner->getKey()]);
@@ -224,8 +271,11 @@ class AccessProbeTest extends TestCase
             }, array_diff_key(\$model::factory()->raw(), array_flip(array_filter([\$creator]))))
             : [];
 
-        if (\$actor === 'stranger') {
-            \$this->actingAs(User::factory()->create());
+        \$user = \$actor === 'stranger' ? User::factory()->create() : null;
+        \$policy = \$askPolicy ? Gate::forUser(\$user)->allows(\$action, \$action === 'create' ? \$model : \$record) : null;
+
+        if (\$user !== null) {
+            \$this->actingAs(\$user);
         }
 
         \$response = \$this->call(\$method, \$url, \$payload);
@@ -243,6 +293,7 @@ class AccessProbeTest extends TestCase
             'status' => \$response->getStatusCode(),
             'changed' => \$changed,
             'invalid' => \$response->getStatusCode() === 422 || session()->has('errors'),
+            'policy' => \$policy,
         ]).PHP_EOL, FILE_APPEND);
 
         \$this->addToAssertionCount(1);
@@ -265,7 +316,7 @@ PHP;
             $data = json_decode($line, true);
 
             if (is_array($data) && is_int($data['id'] ?? null) && is_int($data['status'] ?? null)) {
-                $observed[$data['id']] = ['id' => $data['id'], 'status' => $data['status'], 'changed' => ($data['changed'] ?? false) === true, 'invalid' => ($data['invalid'] ?? false) === true];
+                $observed[$data['id']] = ['id' => $data['id'], 'status' => $data['status'], 'changed' => ($data['changed'] ?? false) === true, 'invalid' => ($data['invalid'] ?? false) === true, 'policy' => is_bool($data['policy'] ?? null) ? $data['policy'] : null];
             }
         }
 
@@ -290,6 +341,15 @@ PHP;
         foreach ($probes as $id => $probe) {
             $seen = $observed[$id] ?? null;
 
+            // The app's own policy lets this actor do it: nothing to judge.
+            if ($probe['rule'] === 'policy' && $seen !== null && $seen['policy'] !== false) {
+                if ($seen['policy'] === null) {
+                    $untried++;
+                }
+
+                continue;
+            }
+
             if ($seen === null || $seen['status'] >= 500 || ($seen['invalid'] && ! $seen['changed'])) {
                 $untried++;
 
@@ -305,7 +365,7 @@ PHP;
             }
         }
 
-        return ['tried' => count($probes) - $untried, 'refused' => $refused, 'findings' => $findings, 'untried' => $untried];
+        return ['tried' => $refused + count($findings), 'refused' => $refused, 'findings' => $findings, 'untried' => $untried];
     }
 
     /**
@@ -327,12 +387,16 @@ PHP;
                 'update' => $finding['method'] === 'GET' ? "could open the form to change a {$finding['noun']}" : "could change a {$finding['noun']}",
                 default => "could remove a {$finding['noun']}",
             };
-            $rule = $finding['rule'] === 'creator' ? 'only the person who added it' : 'only people who are signed in';
+            $rule = match ($finding['rule']) {
+                'policy' => "The app's own {$finding['record']} policy refuses this",
+                'creator' => 'The plan allows only the person who added it',
+                default => 'The plan allows only people who are signed in',
+            };
 
-            $lines[] = "{$who} {$did}: {$finding['method']} {$finding['uri']} answered {$finding['status']}. The plan allows {$rule}. Make this route check the {$finding['record']} policy.";
+            $lines[] = "{$who} {$did}: {$finding['method']} {$finding['uri']} answered {$finding['status']}. {$rule}. Make this route check the {$finding['record']} policy.";
         }
 
-        $lines[] = "Tried {$measured['tried']} requests as a signed-out visitor and as another signed-in person; {$measured['refused']} were refused as planned.";
+        $lines[] = "Tried {$measured['tried']} requests as a signed-out visitor and as another signed-in person; {$measured['refused']} were refused, as they should be.";
 
         if ($measured['untried'] > 0) {
             $lines[] = "{$measured['untried']} could not be judged: the request broke, or the values sent were turned down first.";

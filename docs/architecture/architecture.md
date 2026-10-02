@@ -3768,9 +3768,14 @@ Only that is evidence: a refused actor who changed data, or got a 200 on a
 page, fails the check "Who may see and change records", and the change goes
 back for a fix with the route and the rule. A request that broke, or whose
 values were turned down first, proves nothing and is counted, never judged.
-Routes that need other values (a team), records with no matching route, and
-records the app already had are not probed yet; tenant isolation waits for
-the team model to be found. The scaffold no longer asks the form for the
+Records the app already had answer to the app's own policy instead: on the
+routes of controllers the change touched, each probe first asks the policy
+(`Gate::forUser`) about the same actor and record, and only a request the
+policy refuses can be a finding ("the policy says no, the route said yes").
+Routes of untouched controllers are left alone, since their problems are not
+the change's. Routes that need other values (a team) and records with no
+matching route are not probed yet; tenant isolation waits for the team model
+to be found. The scaffold no longer asks the form for the
 person who added a record: it comes from the signed-in user.
 
 **Out of V0:** the rest, including the introspection this relies on, beyond

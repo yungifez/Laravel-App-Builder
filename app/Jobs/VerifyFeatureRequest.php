@@ -1048,7 +1048,15 @@ class VerifyFeatureRequest implements ShouldQueue
                 ->filter(fn (array $record) => ($record['access'] ?? null) !== null)
                 ->all());
 
-            if ($records === []) {
+            // Records the app already had answer to its own policy, on the
+            // routes of the controllers the change touched.
+            $controllers = array_values(collect($this->touched)
+                ->reject(fn (bool $deleted, string $path) => $deleted || ! preg_match('#^app/Http/Controllers/(.+)\.php$#', $path))
+                ->keys()
+                ->map(fn (string $path) => 'App\\Http\\Controllers\\'.str_replace('/', '\\', substr($path, 21, -4)))
+                ->all());
+
+            if ($records === [] && $controllers === []) {
                 return true;
             }
 
@@ -1060,6 +1068,15 @@ class VerifyFeatureRequest implements ShouldQueue
             }
 
             $planned = AccessProbes::plan($records, $read($config['routes']['report']), $config['probes']);
+
+            if ($controllers !== []) {
+                $policies = $runWorkspaceCommand->handle($workspace, ['find', 'app/Policies', '-name', '*Policy.php', '-type', 'f'], 30);
+                $models = array_values(array_diff(
+                    preg_match_all('#app/Policies/(\w+)Policy\.php#', $policies->output, $found) > 0 ? $found[1] : [],
+                    array_column($records, 'name'),
+                ));
+                $planned['probes'] = [...$planned['probes'], ...AccessProbes::fromPolicies($models, $read($config['routes']['report']), $controllers, $config['probes'] - count($planned['probes']))];
+            }
 
             if ($planned['probes'] === []) {
                 return true;

@@ -73,8 +73,8 @@ class AccessProbeVerificationTest extends TestCase
     }
 
     /**
-     * Answer the route list with a delete route for bookings, and the
-     * probes with what each one did.
+     * Answer the route list with a delete route for bookings, the policy
+     * files with a booking policy, and the probes with what each one did.
      *
      * @param  list<string>  $lines
      */
@@ -85,6 +85,10 @@ class AccessProbeVerificationTest extends TestCase
                 $this->driver->files["{$workspace}:routes.json"] = (string) json_encode([
                     ['domain' => null, 'method' => 'DELETE', 'uri' => 'bookings/{booking}', 'name' => 'bookings.destroy', 'action' => 'App\Http\Controllers\BookingController@destroy', 'middleware' => ['web']],
                 ]);
+            }
+
+            if ($command === ['find', 'app/Policies', '-name', '*Policy.php', '-type', 'f']) {
+                return new CommandResult(exitCode: 0, output: "app/Policies/BookingPolicy.php\napp/Policies/RoomPolicy.php\n", errorOutput: '', durationMs: 5);
             }
 
             if (array_slice($command, 0, 4) === self::PROBE) {
@@ -157,5 +161,25 @@ class AccessProbeVerificationTest extends TestCase
         }
 
         return '';
+    }
+
+    public function test_a_record_the_app_had_is_held_to_its_own_policy_where_the_change_touched_its_controller(): void
+    {
+        $this->answer(['{"id":0,"status":302,"changed":false,"invalid":false,"policy":false}', '{"id":1,"status":302,"changed":true,"invalid":false,"policy":false}']);
+        $change = FeatureRequest::factory()->generated()->create(['patch' => implode("\n", [
+            'diff --git a/app/Http/Controllers/BookingController.php b/app/Http/Controllers/BookingController.php',
+            '--- a/app/Http/Controllers/BookingController.php',
+            '+++ b/app/Http/Controllers/BookingController.php',
+            '@@ -1 +1,2 @@',
+            ' <?php',
+            '+// Bookings',
+            '',
+        ])]);
+
+        app(RequestVerification::class)->handle($change);
+
+        $result = collect($change->verifications()->sole()->results)->firstWhere('name', 'Who may see and change records');
+        $this->assertSame('failed', $result['outcome']);
+        $this->assertStringContainsString("could remove a booking: DELETE /bookings/{booking} answered 302. The app's own Booking policy refuses this.", $result['output']);
     }
 }

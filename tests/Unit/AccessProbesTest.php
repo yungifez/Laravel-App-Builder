@@ -95,7 +95,7 @@ class AccessProbesTest extends TestCase
 
         $test = AccessProbes::test($probes, 'storage/logs/access/probes.jsonl');
 
-        $this->assertStringContainsString("\$this->probe(1, 'App\\\\Models\\\\Booking', 'user_id', 'view', 'GET', '/bookings/{booking}', 'booking', NULL, 'stranger');", $test);
+        $this->assertStringContainsString("\$this->probe(1, 'App\\\\Models\\\\Booking', 'user_id', 'view', 'GET', '/bookings/{booking}', 'booking', NULL, 'stranger', false);", $test);
         $this->assertStringContainsString("base_path('storage/logs/access/probes.jsonl')", $test);
         $this->assertNotFalse(token_get_all($test, TOKEN_PARSE));
     }
@@ -126,8 +126,37 @@ class AccessProbesTest extends TestCase
         $this->assertSame(implode("\n", [
             'A signed-in person who did not add it could see a booking: GET /bookings/{booking} answered 200. The plan allows only the person who added it. Make this route check the Booking policy.',
             'A signed-in person who did not add it could remove a booking: DELETE /bookings/{booking} answered 302. The plan allows only the person who added it. Make this route check the Booking policy.',
-            'Tried 4 requests as a signed-out visitor and as another signed-in person; 2 were refused as planned.',
+            'Tried 4 requests as a signed-out visitor and as another signed-in person; 2 were refused, as they should be.',
             '7 could not be judged: the request broke, or the values sent were turned down first.',
         ]), AccessProbes::describe($measured, []));
+    }
+
+    public function test_a_record_the_app_had_is_tried_against_its_own_policy_only_on_routes_the_change_touched(): void
+    {
+        $touched = AccessProbes::fromPolicies(['Booking'], $this->routes(), ['App\Http\Controllers\BookingController'], 100);
+
+        $this->assertCount(12, $touched, 'both actors on each of the six booking routes');
+        $this->assertSame(['policy'], array_values(array_unique(array_column($touched, 'rule'))));
+        $this->assertNull($touched[0]['creator']);
+        $this->assertSame([], AccessProbes::fromPolicies(['Booking'], $this->routes(), ['App\Http\Controllers\RoomController'], 100));
+        $this->assertSame([], AccessProbes::fromPolicies(['Booking'], $this->routes(), [], 100));
+    }
+
+    public function test_only_a_request_the_policy_refuses_can_be_a_finding(): void
+    {
+        $probes = array_slice(AccessProbes::fromPolicies(['Booking'], $this->routes(), ['App\Http\Controllers\BookingController'], 100), 0, 4);
+        $observed = AccessProbes::parse(implode("\n", [
+            // The policy refuses the visitor, and the page was refused.
+            '{"id":0,"status":302,"changed":false,"invalid":false,"policy":false}',
+            // The policy lets anyone signed in see it: nothing to judge.
+            '{"id":1,"status":200,"changed":false,"invalid":false,"policy":true}',
+            // The policy refuses, yet the edit form opened.
+            '{"id":3,"status":200,"changed":false,"invalid":false,"policy":false}',
+        ]));
+
+        $measured = AccessProbes::measure($probes, $observed);
+
+        $this->assertSame(['tried' => 2, 'refused' => 1, 'untried' => 1], array_diff_key($measured, ['findings' => true]));
+        $this->assertStringStartsWith("A signed-in person who did not add it could open the form to change a booking: GET /bookings/{booking}/edit answered 200. The app's own Booking policy refuses this.", AccessProbes::describe($measured, []));
     }
 }
