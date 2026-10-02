@@ -54,6 +54,7 @@ import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequ
 import PageConsistencyController from '@/actions/App/Http/Controllers/PageConsistencyController';
 import MeasureField from '@/components/design/MeasureField.vue';
 import PanelSection from '@/components/design/PanelSection.vue';
+import DesignEditsBar from '@/components/design/DesignEditsBar.vue';
 import Reveal from '@/components/design/Reveal.vue';
 import Segmented from '@/components/design/Segmented.vue';
 import SpacingBox from '@/components/design/SpacingBox.vue';
@@ -95,6 +96,7 @@ import {
     weights,
 } from '@/lib/visualProperties';
 import type {
+    DesignEdits,
     EditorPreview,
     InspectedElement,
     VisualEditSummary,
@@ -2277,6 +2279,11 @@ const recent = computed(() => {
             </template>
         </div>
 
+        <DesignEditsBar
+            v-if="!onChange"
+            :project-id="projectId"
+            :waiting="(page.props.designEdits as DesignEdits | null) ?? null"
+        />
         <footer
             v-if="preview?.status === 'ready'"
             class="flex items-center gap-1 border-t bg-background px-2 py-1"
@@ -2342,22 +2349,23 @@ const recent = computed(() => {
                 <LoaderCircle class="size-3.5 animate-spin" />
                 Saving
             </p>
-            <!-- Saved into the app's own code, then the app is rebuilt with
-                 it: the owner sees their change is real, not a mock-up. -->
+            <!-- Saved into the code, then the preview is rebuilt with it:
+                 the owner sees their change is real, not a mock-up. On the
+                 app it waits to be kept (DesignEditsBar). -->
             <p
                 v-else-if="edits.length > 0 && state.updating"
                 class="ml-auto flex items-center gap-1.5 px-2 text-xs text-muted-foreground"
                 data-test="saved"
             >
                 <LoaderCircle class="size-3.5 animate-spin" />
-                Saved · updating your app
+                Saved · updating
             </p>
             <p
                 v-else-if="edits.length > 0"
                 class="ml-auto flex items-center gap-1.5 px-2 text-xs text-muted-foreground"
                 :title="
                     state.upToDate
-                        ? 'Your app was rebuilt with your changes, and it runs.'
+                        ? 'The preview was rebuilt with your changes, and it runs.'
                         : undefined
                 "
                 data-test="saved"
@@ -2368,7 +2376,7 @@ const recent = computed(() => {
                         ? 'Saved'
                         : onChange
                           ? 'Saved · in this change'
-                          : 'Saved · in your app'
+                          : 'Saved'
                 }}
             </p>
         </footer>

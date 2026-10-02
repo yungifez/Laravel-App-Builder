@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\PreviewStatus;
 use App\Models\Concerns\HasPublicId;
+use App\VisualEditing\DesignDrafts;
 use Carbon\CarbonImmutable;
 use Database\Factories\PreviewFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -96,13 +97,26 @@ class Preview extends Model
     }
 
     /**
+     * Get the change that design edits on the preview go into: the change
+     * for a copy of one, else the draft that waits on the app, if any.
+     */
+    public function designing(): ?FeatureRequest
+    {
+        if ($this->feature_request_id !== null) {
+            return $this->featureRequest;
+        }
+
+        return $this->editable ? app(DesignDrafts::class)->find($this->project) : null;
+    }
+
+    /**
      * Get the branch the preview runs and design edits on it go to: the
-     * change's design branch for a copy of a change, else the branch the
-     * owner works on.
+     * change's design branch, or the draft's while one waits on the app,
+     * else the branch the owner works on.
      */
     public function branch(): string
     {
-        return $this->featureRequest?->designBranch() ?? $this->project->branch();
+        return $this->designing()?->designBranch() ?? $this->project->branch();
     }
 
     /**

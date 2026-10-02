@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Actions\Context\ReadProjectContext;
 use App\Actions\Runs\CompleteRunVerification;
+use App\Actions\VisualEditing\CommitDesignEdits;
 use App\Actions\Workspaces\DestroyWorkspace;
 use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
@@ -1100,5 +1101,7 @@ class VerifyFeatureRequest implements ShouldQueue
         ]);
 
         app(CompleteRunVerification::class)->handle($this->verification);
+        // Design edits the owner asked to keep join the app once cleared.
+        app(CommitDesignEdits::class)->handle($this->verification);
     }
 }

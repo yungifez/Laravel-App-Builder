@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\VisualEdit;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\DesignDrafts;
 use App\VisualEditing\FormattedRevisions;
 use App\VisualEditing\ThemeColors;
 use Illuminate\Validation\ValidationException;
@@ -16,6 +17,7 @@ class ChangeThemeColor
     public function __construct(
         private ProjectRepository $repository,
         private FormattedRevisions $formatted,
+        private DesignDrafts $designDrafts,
     ) {}
 
     /**
@@ -37,6 +39,9 @@ class ChangeThemeColor
         if (! $preview->editable) {
             throw ValidationException::withMessages(['edit' => __('This preview cannot be edited.')]);
         }
+
+        // An edit on the app waits in a draft until the owner keeps it.
+        $this->designDrafts->open($preview, $owner);
 
         foreach ($this->repository->files($project, $revision) as $file) {
             if (! str_ends_with($file, '.css')) {
@@ -66,7 +71,7 @@ class ChangeThemeColor
             // The new commit rebuilds the editable preview (ProjectCommitted).
             return $project->visualEdits()->create([
                 'experiment_id' => $project->experiment_id,
-                'feature_request_id' => $preview->feature_request_id,
+                'feature_request_id' => $preview->designing()?->id,
                 'user_id' => $owner->id,
                 'file' => $file,
                 'line' => substr_count(substr($contents, 0, $found['offset']), "\n") + 1,

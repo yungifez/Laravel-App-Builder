@@ -8,6 +8,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\DesignDrafts;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
@@ -86,7 +87,7 @@ class WordsWhereWrittenTest extends TestCase
             'resources/js/pages/Login.vue' => self::LOGIN,
         ]), draftNotes: false);
         $this->repository->import($this->project);
-        $this->preview = Preview::factory()->editable($this->repository->head($this->project))->ready()->create([
+        $this->preview = Preview::factory()->editable($this->editedHead())->ready()->create([
             'project_id' => $this->project->id,
             'workspace_id' => Workspace::factory()->create(['user_id' => $this->owner->id])->id,
         ]);
@@ -134,14 +135,14 @@ class WordsWhereWrittenTest extends TestCase
             'target' => 'resources/js/pages/Settings.vue:5:5',
             'before' => 'Save',
             'text' => 'Keep changes',
-            'revision' => $this->repository->head($this->project),
+            'revision' => $this->editedHead(),
         ])->assertSessionHasNoErrors();
         $this->assertStringContainsString("<button>{{ __('Keep changes') }}</button>", $this->fileNow('resources/js/pages/Settings.vue'));
     }
 
     public function test_words_that_cannot_be_told_apart_or_come_from_data_are_left_alone()
     {
-        $head = $this->repository->head($this->project);
+        $head = $this->editedHead();
 
         $this->reword(['target' => 'resources/js/pages/Settings.vue:3:5', 'before' => 'Pick one', 'text' => 'Choose'])
             ->assertSessionHasErrors(['edit' => 'These words are written in more than one place, so I can\'t tell which to change. Ask me to change them instead.']);
@@ -152,7 +153,7 @@ class WordsWhereWrittenTest extends TestCase
         $this->reword(['target' => 'resources/js/components/Heading.vue:3:9', 'before' => 'Settings', 'text' => 'Mine', 'places' => ['../secrets.vue', '/etc/app.vue', 'config/app.php']])
             ->assertSessionHasErrors(['places.0', 'places.1', 'places.2']);
 
-        $this->assertSame($head, $this->repository->head($this->project));
+        $this->assertSame($head, $this->editedHead());
     }
 
     /**
@@ -168,6 +169,15 @@ class WordsWhereWrittenTest extends TestCase
 
     protected function fileNow(string $file): string
     {
-        return (string) $this->repository->show($this->project, $this->repository->head($this->project), $file);
+        return (string) $this->repository->show($this->project, $this->editedHead(), $file);
+    }
+
+    /**
+     * Get the newest commit of what the owner edits: the app's design
+     * draft while one waits, else the app.
+     */
+    protected function editedHead(): string
+    {
+        return $this->repository->head($this->project, app(DesignDrafts::class)->find($this->project)?->designBranch());
     }
 }

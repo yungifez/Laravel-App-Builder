@@ -8,6 +8,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\DesignDrafts;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -55,7 +56,7 @@ class VisualPartsTest extends TestCase
             self::FILE => self::CARD,
         ]), draftNotes: false);
         $this->repository->import($this->project);
-        $this->preview = Preview::factory()->editable($this->repository->head($this->project))->ready()->create([
+        $this->preview = Preview::factory()->editable($this->editedHead())->ready()->create([
             'project_id' => $this->project->id,
             'workspace_id' => Workspace::factory()->create(['user_id' => $this->owner->id])->id,
         ]);
@@ -195,6 +196,15 @@ class VisualPartsTest extends TestCase
 
     protected function file(): ?string
     {
-        return $this->repository->show($this->project, $this->repository->head($this->project), self::FILE);
+        return $this->repository->show($this->project, $this->editedHead(), self::FILE);
+    }
+
+    /**
+     * Get the newest commit of what the owner edits: the app's design
+     * draft while one waits, else the app.
+     */
+    protected function editedHead(): string
+    {
+        return $this->repository->head($this->project, app(DesignDrafts::class)->find($this->project)?->designBranch());
     }
 }

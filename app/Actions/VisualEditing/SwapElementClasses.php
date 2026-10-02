@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\VisualEdit;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\DesignDrafts;
 use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TailwindClasses;
 use App\VisualEditing\TemplateElement;
@@ -16,6 +17,7 @@ class SwapElementClasses
     public function __construct(
         private ProjectRepository $repository,
         private FollowLocation $followLocation,
+        private DesignDrafts $designDrafts,
     ) {}
 
     /**
@@ -34,8 +36,12 @@ class SwapElementClasses
         $branch = $edit->branch();
 
         if ($branch === null) {
-            throw ValidationException::withMessages(['edit' => __('This idea was thrown away, so its changes are gone.')]);
+            throw ValidationException::withMessages(['edit' => $edit->feature_request_id === null
+                ? __('This idea was thrown away, so its changes are gone.')
+                : __('These edits are not waiting any more, so they cannot be undone here.')]);
         }
+
+        $this->designDrafts->refuseWhileChecking($edit->featureRequest);
 
         $head = $this->repository->head($project, $branch);
         $contents = $this->repository->show($project, $head, $edit->file);

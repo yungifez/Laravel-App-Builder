@@ -2278,8 +2278,22 @@ clean.
 - **Not static → agent:** dynamic `:class`, `v-if`, loops, props, database
   content, anything tied to permissions or behaviour.
 
-Edits collect on a visual-session branch, commit on save, and get light
-verification.
+**Design edits on the app wait in a draft.** An edit on the app's own preview
+does not change the app. The first edit opens a draft (`DesignDrafts`): a
+feature request with the generator `design` and a branch `changes/{id}` that
+starts at the app's newest commit. Each edit commits on save to that branch,
+and the app's preview runs from it (`Preview::branch()`). The draft's patch
+follows each commit (`FollowDesignedChange`). When the app moves on meanwhile,
+`CatchUpDesignDraft` moves the draft onto the new commit. When the edits no
+longer fit, the draft stays as it was. The design panel shows "N edits not
+kept yet" with **Keep** and **Undo all**. Keep runs the full checks on the
+draft (`KeepDesignEdits`, then `VerifyFeatureRequest`). Edits and undos are
+refused while the checks run, so what joins the app is what was checked. When
+the checks pass, or fail only as they failed before, `CommitDesignEdits`
+squash-merges the branch into the app as one commit, "Change the design". When
+they fail, the edits wait and the owner is told why. Undo all throws the draft
+away (`DiscardDesignEdits`), and the app never had it. A kept draft is a kept
+change, so the app's history can undo it.
 
 **Designing a change before it is kept.** A change that waits to be kept has
 its own branch, `changes/{id}` (`OpenChangeForDesign`). The branch holds the
@@ -2394,6 +2408,14 @@ path.
 - The runtime gets a base URL and a short-lived token; the gateway injects the
   real credential, so an agent with a shell never sees it; it records usage and
   enforces budgets as hard limits.
+  Built (`ModelGateway`, `/api/gateway/{provider}`, off by default behind
+  `BUILDER_MODEL_GATEWAY`): each runner-agent run gets a `gw_` token in place
+  of `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, and a base URL that points at the
+  control plane. The gateway passes each call on with the real key and streams
+  the answer back. It counts calls and output tokens per run, and it refuses a
+  run past `max_requests` or `max_output_tokens`. The token works for one
+  provider and closes when the run ends. It is plain Laravel and HTTP, so it
+  does not depend on a cloud vendor. Not built yet: budgets per account.
 - The gateway also adds our instructions on its side (how to work, the
   discretion and observability rules), so the box holds only the task: the
   plan, its acceptance criteria and the owner's own request for their own app

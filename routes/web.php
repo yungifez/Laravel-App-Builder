@@ -4,6 +4,7 @@ use App\Features\AppBoundaries;
 use App\Http\Controllers\ClearedProblemController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeploymentController;
+use App\Http\Controllers\DesignEditsController;
 use App\Http\Controllers\DeveloperReviewController;
 use App\Http\Controllers\DeveloperReviewGuidanceController;
 use App\Http\Controllers\ExperimentController;
@@ -119,6 +120,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/visual-texts', [VisualTextController::class, 'store'])->name('visual-texts.store');
     Route::post('projects/{project}/visual-links', [VisualLinkController::class, 'store'])->name('visual-links.store');
     Route::post('projects/{project}/theme-colors', [ThemeColorController::class, 'store'])->name('theme-colors.store');
+    Route::post('projects/{project}/design-edits', [DesignEditsController::class, 'store'])->name('design-edits.store');
+    Route::delete('projects/{project}/design-edits', [DesignEditsController::class, 'destroy'])->name('design-edits.destroy');
     Route::post('projects/{project}/visual-pictures', [VisualPictureController::class, 'store'])->name('visual-pictures.store');
     Route::post('projects/{project}/visual-parts', [VisualPartController::class, 'store'])->name('visual-parts.store');
     Route::delete('projects/{project}/visual-parts', [VisualPartController::class, 'destroy'])->name('visual-parts.destroy');

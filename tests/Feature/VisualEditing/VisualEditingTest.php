@@ -13,6 +13,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\DesignDrafts;
 use App\VisualEditing\FormattedRevisions;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -99,7 +100,7 @@ class VisualEditingTest extends TestCase
         $this->assertSame(PreviewStatus::Ready, $preview->status);
         $this->assertTrue($preview->editable);
         $this->assertNull($preview->feature_request_id);
-        $this->assertSame($this->repository->head($this->project), $preview->revision);
+        $this->assertSame($this->editedHead(), $preview->revision);
 
         $commands = array_column($this->driver->executed, 'command');
         $this->assertContains(StartPreview::locatorCommand(), $commands);
@@ -180,16 +181,16 @@ class VisualEditingTest extends TestCase
             ->assertSessionHasNoErrors()
             ->assertRedirect(route('projects.editor.show', $this->project));
 
-        $contents = $this->repository->show($this->project, $this->repository->head($this->project), 'resources/js/pages/Plans.vue');
+        $contents = $this->repository->show($this->project, $this->editedHead(), 'resources/js/pages/Plans.vue');
         $this->assertStringContainsString('<div class="flex gap-4 p-4 text-sm md:gap-6 md:px-3.75">', (string) $contents);
         $this->assertStringContainsString('<h1 class="text-xl">Plans</h1>', (string) $contents);
 
         $edit = $this->project->visualEdits()->sole();
-        $this->assertSame($this->repository->head($this->project), $edit->commit_sha);
+        $this->assertSame($this->editedHead(), $edit->commit_sha);
         $this->assertSame($preview->revision, $edit->base_revision);
         $this->assertSame('flex gap-4 p-4 text-sm', $edit->classes_before);
-        $this->assertSame('Ada Owner', $this->repository->log($this->project)[0]['author']);
-        $this->assertSame('Change how a box looks on tablets and up', $this->repository->log($this->project)[0]['subject']);
+        $this->assertSame('Ada Owner', $this->editedLog(1)[0]['author']);
+        $this->assertSame('Change how a box looks on tablets and up', $this->editedLog(1)[0]['subject']);
 
         Queue::assertPushed(RebuildPreview::class, fn (RebuildPreview $job) => $job->preview->is($preview));
     }
@@ -211,7 +212,7 @@ class VisualEditingTest extends TestCase
         $old = (string) $preview->revision;
         // Another commit whose own rebuild is not what this test is about.
         Event::fakeFor(fn () => $this->repository->commitFiles($this->project, $old, ['README.md' => "Hi\n"], 'Another change', null));
-        $head = $this->repository->head($this->project);
+        $head = $this->editedHead();
 
         $this->actingAs($this->owner)
             ->post(route('visual-edits.store', $this->project), [
@@ -224,7 +225,7 @@ class VisualEditingTest extends TestCase
             ])
             ->assertSessionHasErrors('edit');
 
-        $this->assertSame($head, $this->repository->head($this->project));
+        $this->assertSame($head, $this->editedHead());
         $this->assertSame(0, $this->project->visualEdits()->count());
         Queue::assertNothingPushed();
     }
@@ -251,9 +252,9 @@ class VisualEditingTest extends TestCase
 
         $edit->refresh();
         $this->assertNotNull($edit->reverted_at);
-        $this->assertSame($this->repository->head($this->project), $edit->revert_sha);
-        $this->assertSame($before, $this->repository->show($this->project, $this->repository->head($this->project), 'resources/js/pages/Plans.vue'));
-        $this->assertSame('Undo a change to how a box looks', $this->repository->log($this->project, 1)[0]['subject']);
+        $this->assertSame($this->editedHead(), $edit->revert_sha);
+        $this->assertSame($before, $this->repository->show($this->project, $this->editedHead(), 'resources/js/pages/Plans.vue'));
+        $this->assertSame('Undo a change to how a box looks', $this->editedLog(1)[0]['subject']);
         Queue::assertPushed(RebuildPreview::class, 2);
 
         $this->actingAs($this->owner)
@@ -285,7 +286,7 @@ class VisualEditingTest extends TestCase
             'changes' => ['gap' => 24],
         ])->assertSessionHasErrors(['edit' => 'This part was changed since you picked it. Pick it again to see how it looks now.']);
 
-        $this->assertSame($preview->revision, $this->repository->head($this->project));
+        $this->assertSame($preview->revision, $this->editedHead());
         $this->assertSame(0, $this->project->visualEdits()->count());
     }
 
@@ -308,11 +309,11 @@ class VisualEditingTest extends TestCase
             ->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('edits.0.classes', 'flex gap-6 p-4 text-sm')
-                ->where('edits.0.revision', $this->repository->head($this->project)));
+                ->where('edits.0.revision', $this->editedHead()));
 
-        $save($this->repository->head($this->project), 'flex gap-6 p-4 text-sm', ['padding_x' => 8])->assertSessionHasNoErrors();
+        $save($this->editedHead(), 'flex gap-6 p-4 text-sm', ['padding_x' => 8])->assertSessionHasNoErrors();
 
-        $this->assertStringContainsString('<div class="flex gap-6 px-2 py-4 text-sm">', (string) $this->repository->show($this->project, $this->repository->head($this->project), 'resources/js/pages/Plans.vue'));
+        $this->assertStringContainsString('<div class="flex gap-6 px-2 py-4 text-sm">', (string) $this->repository->show($this->project, $this->editedHead(), 'resources/js/pages/Plans.vue'));
         $this->assertSame(2, $this->project->visualEdits()->count());
     }
 
@@ -336,9 +337,9 @@ class VisualEditingTest extends TestCase
 
         $edit->refresh();
         $this->assertNull($edit->reverted_at);
-        $this->assertSame($this->repository->head($this->project), $edit->commit_sha);
+        $this->assertSame($this->editedHead(), $edit->commit_sha);
         $this->assertStringContainsString('<div class="flex gap-6 p-4 text-sm">', (string) $this->repository->show($this->project, $edit->commit_sha, 'resources/js/pages/Plans.vue'));
-        $this->assertSame('Redo a change to how a box looks', $this->repository->log($this->project, 1)[0]['subject']);
+        $this->assertSame('Redo a change to how a box looks', $this->editedLog(1)[0]['subject']);
 
         $this->actingAs($this->owner)
             ->delete(route('visual-edits.reversion.destroy', $edit))
@@ -365,16 +366,16 @@ class VisualEditingTest extends TestCase
         $edit = $this->project->visualEdits()->sole();
 
         // A model changes the same element in a later commit.
-        $head = $this->repository->head($this->project);
+        $head = $this->editedHead();
         $contents = (string) $this->repository->show($this->project, $head, 'resources/js/pages/Plans.vue');
-        $this->repository->commitFiles($this->project, $head, ['resources/js/pages/Plans.vue' => str_replace('flex gap-6 p-4 text-sm', 'flex gap-6 p-4 text-sm shadow', $contents)], 'Add a shadow', null);
-        $head = $this->repository->head($this->project);
+        $this->repository->commitFiles($this->project, $head, ['resources/js/pages/Plans.vue' => str_replace('flex gap-6 p-4 text-sm', 'flex gap-6 p-4 text-sm shadow', $contents)], 'Add a shadow', null, $this->editedBranch());
+        $head = $this->editedHead();
 
         $this->actingAs($this->owner)
             ->post(route('visual-edits.reversion.store', $edit))
             ->assertSessionHasErrors(['edit' => 'This part was changed since, so going back would lose that change.']);
 
-        $this->assertSame($head, $this->repository->head($this->project));
+        $this->assertSame($head, $this->editedHead());
         $this->assertNull($edit->fresh()->reverted_at);
     }
 
@@ -425,7 +426,7 @@ class VisualEditingTest extends TestCase
         $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
             'preview' => $other->uuid,
             'target' => 'resources/js/pages/Plans.vue:2:5',
-            'revision' => $this->repository->head($this->project),
+            'revision' => $this->editedHead(),
             'expected' => 'flex gap-4 p-4 text-sm',
             'device' => 'base',
             'changes' => ['gap' => 24],
@@ -439,7 +440,7 @@ class VisualEditingTest extends TestCase
         $this->repository->commitFiles($this->project, $old, ['resources/js/pages/Plans.vue' => "<template><div class=\"gap-8\" /></template>\n"], 'Edit', null);
         $this->repository->git($this->project, ['rm', '-q', 'resources/js/pages/Home.vue']);
         $this->repository->git($this->project, ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-q', '-m', 'Remove home']);
-        $head = $this->repository->head($this->project);
+        $head = $this->editedHead();
 
         $this->actingAs($this->owner)
             ->get(route('projects.show', $this->project))
@@ -505,7 +506,7 @@ class VisualEditingTest extends TestCase
         Event::fakeFor(fn () => $this->repository->commitFiles($this->project, (string) $preview->revision, ['resources/js/pages/Plans.vue' => "<template><div class=\"gap-8\" /></template>\n"], 'Edit', null));
         $this->repository->git($this->project, ['rm', '-q', 'resources/js/pages/Home.vue']);
         $this->repository->git($this->project, ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-q', '-m', 'Remove home']);
-        $head = $this->repository->head($this->project);
+        $head = $this->editedHead();
 
         RebuildPreview::dispatchSync($preview);
 
@@ -539,7 +540,7 @@ class VisualEditingTest extends TestCase
 
         $preview->refresh();
         $this->assertFalse($preview->watching);
-        $this->assertSame($this->repository->head($this->project), $preview->revision);
+        $this->assertSame($this->editedHead(), $preview->revision);
     }
 
     public function test_once_the_preview_shows_a_design_change_its_files_are_formatted_by_the_apps_formatters_and_committed()
@@ -549,7 +550,7 @@ class VisualEditingTest extends TestCase
         $preview = $this->runningPreview();
         $old = (string) $preview->revision;
         Event::fakeFor(fn () => $this->repository->commitFiles($this->project, $old, ['resources/js/pages/Plans.vue' => "<template><div class=\"p-4 flex\" /></template>\n", 'README.md' => "Hi\n"], 'Edit', null));
-        $edited = $this->repository->head($this->project);
+        $edited = $this->editedHead();
 
         RebuildPreview::dispatchSync($preview);
 
@@ -568,9 +569,9 @@ class VisualEditingTest extends TestCase
 
         (new FormatEditedFiles($preview, $edited))->handle($this->repository, app(FormatAppFiles::class), app(FormattedRevisions::class));
 
-        $head = $this->repository->head($this->project);
+        $head = $this->editedHead();
         $this->assertNotSame($edited, $head);
-        $this->assertSame('Format the code of recent design changes', $this->repository->log($this->project, 1)[0]['subject']);
+        $this->assertSame('Format the code of recent design changes', $this->editedLog(1)[0]['subject']);
         $this->assertSame("<template><div class=\"flex p-4\" /></template>\n", $this->repository->show($this->project, $head, 'resources/js/pages/Plans.vue'));
         $this->assertSame($head, app(FormattedRevisions::class)->after($this->project, $edited));
 
@@ -592,17 +593,17 @@ class VisualEditingTest extends TestCase
         $preview = $this->runningPreview();
         $old = (string) $preview->revision;
         Event::fakeFor(fn () => $this->repository->commitFiles($this->project, $old, ['resources/js/pages/Plans.vue' => "<template />\n"], 'Edit', null));
-        $edited = $this->repository->head($this->project);
+        $edited = $this->editedHead();
         RebuildPreview::dispatchSync($preview);
         $this->assertSame($edited, $preview->fresh()->revision);
         Event::fakeFor(fn () => $this->repository->commitFiles($this->project, $edited, ['README.md' => "Hi\n"], 'Another change', null));
-        $newest = $this->repository->head($this->project);
+        $newest = $this->editedHead();
         $this->driver->executed = [];
 
         (new FormatEditedFiles($preview, $edited))->handle($this->repository, app(FormatAppFiles::class), app(FormattedRevisions::class));
 
         $this->assertSame([], $this->driver->executed);
-        $this->assertSame($newest, $this->repository->head($this->project));
+        $this->assertSame($newest, $this->editedHead());
     }
 
     public function test_an_edit_sent_on_the_version_before_formatting_continues_on_the_formatted_version()
@@ -616,7 +617,7 @@ class VisualEditingTest extends TestCase
             self::CARD,
         );
         Event::fakeFor(fn () => $this->repository->commitFiles($this->project, $old, ['resources/js/pages/Plans.vue' => $formatted], 'Format the code of recent design changes', null));
-        $head = $this->repository->head($this->project);
+        $head = $this->editedHead();
         app(FormattedRevisions::class)->record($this->project, $old, $head);
 
         $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
@@ -630,18 +631,18 @@ class VisualEditingTest extends TestCase
 
         $edit = $this->project->visualEdits()->sole();
         $this->assertSame($head, $edit->base_revision);
-        $this->assertStringContainsString('class="text-sm flex p-4 gap-6"', (string) $this->repository->show($this->project, $this->repository->head($this->project), 'resources/js/pages/Plans.vue'));
+        $this->assertStringContainsString('class="text-sm flex p-4 gap-6"', (string) $this->repository->show($this->project, $this->editedHead(), 'resources/js/pages/Plans.vue'));
 
         // Formatting again sorts the classes; undo still finds the part.
-        $edited = $this->repository->head($this->project);
+        $edited = $this->editedHead();
         $sorted = str_replace('text-sm flex p-4 gap-6', 'flex gap-6 p-4 text-sm', (string) $this->repository->show($this->project, $edited, 'resources/js/pages/Plans.vue'));
-        Event::fakeFor(fn () => $this->repository->commitFiles($this->project, $edited, ['resources/js/pages/Plans.vue' => "<!-- formatted -->\n".$sorted], 'Format the code of recent design changes', null));
+        Event::fakeFor(fn () => $this->repository->commitFiles($this->project, $edited, ['resources/js/pages/Plans.vue' => "<!-- formatted -->\n".$sorted], 'Format the code of recent design changes', null, $this->editedBranch()));
 
         $this->actingAs($this->owner)
             ->post(route('visual-edits.reversion.store', $edit))
             ->assertSessionHasNoErrors();
 
-        $this->assertStringContainsString('class="text-sm flex p-4 gap-4"', (string) $this->repository->show($this->project, $this->repository->head($this->project), 'resources/js/pages/Plans.vue'));
+        $this->assertStringContainsString('class="text-sm flex p-4 gap-4"', (string) $this->repository->show($this->project, $this->editedHead(), 'resources/js/pages/Plans.vue'));
     }
 
     public function test_any_new_commit_brings_the_editable_preview_up_to_date()
@@ -655,7 +656,7 @@ class VisualEditingTest extends TestCase
 
         Queue::fake();
         $preview->update(['status' => PreviewStatus::Stopped]);
-        $this->repository->commitFiles($this->project, $this->repository->head($this->project), ['README.md' => "Hi\n"], 'Another change', null);
+        $this->repository->commitFiles($this->project, $this->editedHead(), ['README.md' => "Hi\n"], 'Another change', null);
 
         Queue::assertNothingPushed();
     }
@@ -767,7 +768,7 @@ class VisualEditingTest extends TestCase
             'revision' => $preview->revision,
         ])->assertSessionHasNoErrors();
 
-        $head = $this->repository->head($this->project);
+        $head = $this->editedHead();
         $this->assertSame($moved, $this->repository->show($this->project, $head, $file));
 
         $edit = $this->project->visualEdits()->sole();
@@ -781,10 +782,10 @@ class VisualEditingTest extends TestCase
                 ->where('edits.0.properties', []));
 
         $this->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
-        $this->assertSame(self::CARD, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+        $this->assertSame(self::CARD, $this->repository->show($this->project, $this->editedHead(), $file));
 
         $this->delete(route('visual-edits.reversion.destroy', $edit))->assertSessionHasNoErrors();
-        $this->assertSame($moved, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+        $this->assertSame($moved, $this->repository->show($this->project, $this->editedHead(), $file));
         $this->assertNull($edit->fresh()->reverted_at);
     }
 
@@ -803,7 +804,7 @@ class VisualEditingTest extends TestCase
             'revision' => $preview->revision,
         ])->assertSessionHasNoErrors();
 
-        $this->assertSame($reworded, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+        $this->assertSame($reworded, $this->repository->show($this->project, $this->editedHead(), $file));
 
         $edit = $this->project->visualEdits()->sole();
         $this->assertTrue($edit->rewords());
@@ -817,10 +818,10 @@ class VisualEditingTest extends TestCase
                 ->where('edits.0.sides', null));
 
         $this->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
-        $this->assertSame(self::CARD, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+        $this->assertSame(self::CARD, $this->repository->show($this->project, $this->editedHead(), $file));
 
         $this->delete(route('visual-edits.reversion.destroy', $edit))->assertSessionHasNoErrors();
-        $this->assertSame($reworded, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+        $this->assertSame($reworded, $this->repository->show($this->project, $this->editedHead(), $file));
     }
 
     public function test_words_that_come_from_the_app_or_changed_since_are_not_changed_in_place()
@@ -841,12 +842,12 @@ class VisualEditingTest extends TestCase
         $reword(['target' => 'resources/js/pages/Plans.vue:2:5'])->assertSessionHasErrors('edit');
         $reword(['before' => 'Pricing'])->assertSessionHasErrors(['edit' => 'These words were changed since. Look again and try once more.']);
         $reword(['text' => 'Hi {{ name }}'])->assertSessionHasErrors('text');
-        $this->assertSame($preview->revision, $this->repository->head($this->project));
+        $this->assertSame($preview->revision, $this->editedHead());
 
         // Where the shared button is used, its words are plain.
         $reword(['target' => 'resources/js/pages/Home.vue:2:5', 'instance' => true, 'before' => 'Go', 'text' => 'Start'])
             ->assertSessionHasNoErrors();
-        $this->assertStringContainsString('<Button>Start</Button>', (string) $this->repository->show($this->project, $this->repository->head($this->project), 'resources/js/pages/Home.vue'));
+        $this->assertStringContainsString('<Button>Start</Button>', (string) $this->repository->show($this->project, $this->editedHead(), 'resources/js/pages/Home.vue'));
     }
 
     protected const NAV = <<<'VUE'
@@ -863,7 +864,7 @@ class VisualEditingTest extends TestCase
     {
         Queue::fake();
         $file = 'resources/js/pages/Nav.vue';
-        $this->repository->commitFiles($this->project, $this->repository->head($this->project), [$file => self::NAV], 'Add links', ['name' => 'Ada Owner', 'email' => 'ada@example.com']);
+        $this->repository->commitFiles($this->project, $this->editedHead(), [$file => self::NAV], 'Add links', ['name' => 'Ada Owner', 'email' => 'ada@example.com']);
         $preview = $this->runningPreview();
         $relinked = str_replace('href="/plans"', 'href="https://example.com/?a=1&amp;b=2"', self::NAV);
 
@@ -880,7 +881,7 @@ class VisualEditingTest extends TestCase
             'revision' => $preview->revision,
         ])->assertSessionHasNoErrors();
 
-        $this->assertSame($relinked, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+        $this->assertSame($relinked, $this->repository->show($this->project, $this->editedHead(), $file));
 
         $edit = $this->project->visualEdits()->sole();
         $this->assertTrue($edit->relinks());
@@ -892,10 +893,10 @@ class VisualEditingTest extends TestCase
                 ->where('edits.0.sides', null));
 
         $this->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
-        $this->assertSame(self::NAV, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+        $this->assertSame(self::NAV, $this->repository->show($this->project, $this->editedHead(), $file));
 
         $this->delete(route('visual-edits.reversion.destroy', $edit))->assertSessionHasNoErrors();
-        $this->assertSame($relinked, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+        $this->assertSame($relinked, $this->repository->show($this->project, $this->editedHead(), $file));
     }
 
     protected const THEME = <<<'CSS'
@@ -917,7 +918,7 @@ class VisualEditingTest extends TestCase
     {
         Queue::fake();
         $file = 'resources/styles/brand.css';
-        $this->repository->commitFiles($this->project, $this->repository->head($this->project), [$file => self::THEME], 'Add a theme', ['name' => 'Ada Owner', 'email' => 'ada@example.com']);
+        $this->repository->commitFiles($this->project, $this->editedHead(), [$file => self::THEME], 'Add a theme', ['name' => 'Ada Owner', 'email' => 'ada@example.com']);
         $preview = $this->runningPreview();
         $changed = str_replace('--primary: hsl(0 0% 98%);', '--primary: #2563eb;', self::THEME);
 
@@ -930,7 +931,7 @@ class VisualEditingTest extends TestCase
         ])->assertSessionHasNoErrors();
 
         // Only the dark look's colour changes, wherever the stylesheet is.
-        $this->assertSame($changed, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+        $this->assertSame($changed, $this->repository->show($this->project, $this->editedHead(), $file));
 
         $edit = $this->project->visualEdits()->sole();
         $this->assertSame('theme', $edit->kind());
@@ -942,10 +943,10 @@ class VisualEditingTest extends TestCase
                 ->where('edits.0.theme', ['mode' => 'dark', 'token' => 'primary', 'before' => 'hsl(0 0% 98%)', 'after' => '#2563eb']));
 
         $this->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
-        $this->assertSame(self::THEME, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+        $this->assertSame(self::THEME, $this->repository->show($this->project, $this->editedHead(), $file));
 
         $this->delete(route('visual-edits.reversion.destroy', $edit))->assertSessionHasNoErrors();
-        $this->assertSame($changed, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+        $this->assertSame($changed, $this->repository->show($this->project, $this->editedHead(), $file));
     }
 
     public function test_the_owner_changes_a_colour_of_an_app_that_does_not_use_shadcn()
@@ -953,7 +954,7 @@ class VisualEditingTest extends TestCase
         Queue::fake();
         $file = 'resources/css/tokens.css';
         $css = "@theme {\n    --color-brand-500: oklch(0.55 0.2 290);\n    --spacing-gutter: 24px;\n}\n";
-        $this->repository->commitFiles($this->project, $this->repository->head($this->project), [$file => $css], 'Add tokens', ['name' => 'Ada Owner', 'email' => 'ada@example.com']);
+        $this->repository->commitFiles($this->project, $this->editedHead(), [$file => $css], 'Add tokens', ['name' => 'Ada Owner', 'email' => 'ada@example.com']);
         $preview = $this->runningPreview();
 
         // The panel offers the colour by the name its classes use.
@@ -971,14 +972,14 @@ class VisualEditingTest extends TestCase
 
         $this->assertSame(
             str_replace('oklch(0.55 0.2 290)', '#7c3aed', $css),
-            $this->repository->show($this->project, $this->repository->head($this->project), $file),
+            $this->repository->show($this->project, $this->editedHead(), $file),
         );
     }
 
     public function test_a_text_size_the_apps_theme_names_is_replaced_by_the_size_the_owner_picks()
     {
         Queue::fake();
-        $this->repository->commitFiles($this->project, $this->repository->head($this->project), [
+        $this->repository->commitFiles($this->project, $this->editedHead(), [
             'resources/css/app.css' => "@theme {\n    --text-hero: 4.5rem;\n}\n",
             'resources/js/pages/Hero.vue' => "<template>\n    <h1 class=\"text-hero font-bold\">Plans</h1>\n</template>\n",
         ], 'Add a hero', ['name' => 'Ada Owner', 'email' => 'ada@example.com']);
@@ -995,7 +996,7 @@ class VisualEditingTest extends TestCase
 
         $this->assertStringContainsString(
             '<h1 class="text-4xl font-bold">',
-            (string) $this->repository->show($this->project, $this->repository->head($this->project), 'resources/js/pages/Hero.vue'),
+            (string) $this->repository->show($this->project, $this->editedHead(), 'resources/js/pages/Hero.vue'),
         );
     }
 
@@ -1015,7 +1016,7 @@ class VisualEditingTest extends TestCase
         $recolor(['token' => 'primary: red; --x'])->assertSessionHasErrors('token');
         $recolor(['mode' => 'sepia'])->assertSessionHasErrors('mode');
         $recolor([])->assertSessionHasErrors(['edit' => 'Your app keeps this colour some other way, so I can\'t change it here. Ask me to change it instead.']);
-        $this->assertSame($preview->revision, $this->repository->head($this->project));
+        $this->assertSame($preview->revision, $this->editedHead());
         $this->assertSame(0, $this->project->visualEdits()->count());
     }
 
@@ -1023,7 +1024,7 @@ class VisualEditingTest extends TestCase
     {
         Queue::fake();
         $file = 'resources/js/pages/Nav.vue';
-        $this->repository->commitFiles($this->project, $this->repository->head($this->project), [$file => self::NAV], 'Add links', ['name' => 'Ada Owner', 'email' => 'ada@example.com']);
+        $this->repository->commitFiles($this->project, $this->editedHead(), [$file => self::NAV], 'Add links', ['name' => 'Ada Owner', 'email' => 'ada@example.com']);
         $preview = $this->runningPreview();
         $relink = fn (array $data) => $this->actingAs($this->owner)->post(route('visual-links.store', $this->project), $data + [
             'preview' => $preview->uuid,
@@ -1046,7 +1047,7 @@ class VisualEditingTest extends TestCase
             $relink(['href' => $address])->assertSessionHasErrors('href');
         }
 
-        $this->assertSame($preview->revision, $this->repository->head($this->project));
+        $this->assertSame($preview->revision, $this->editedHead());
     }
 
     public function test_moves_between_files_or_across_parents_are_refused_and_undo_keeps_later_changes()
@@ -1064,20 +1065,20 @@ class VisualEditingTest extends TestCase
         $move(['to' => 'resources/js/pages/Home.vue:2:5'])->assertSessionHasErrors('edit');
         $move(['to' => 'resources/js/pages/Plans.vue:2:5'])->assertSessionHasErrors(['edit' => 'This part cannot be moved there. Ask me to move it instead.']);
         $move(['placement' => 'inside'])->assertSessionHasErrors('placement');
-        $this->assertSame($preview->revision, $this->repository->head($this->project));
+        $this->assertSame($preview->revision, $this->editedHead());
 
         $move(['placement' => 'after'])->assertSessionHasNoErrors();
         $edit = $this->project->visualEdits()->sole();
 
         // Something else changes the same page after the move.
-        $head = $this->repository->head($this->project);
+        $head = $this->editedHead();
         $contents = (string) $this->repository->show($this->project, $head, 'resources/js/pages/Plans.vue');
-        $this->repository->commitFiles($this->project, $head, ['resources/js/pages/Plans.vue' => str_replace('Pick one', 'Choose one', $contents)], 'Reword', null);
-        $head = $this->repository->head($this->project);
+        $this->repository->commitFiles($this->project, $head, ['resources/js/pages/Plans.vue' => str_replace('Pick one', 'Choose one', $contents)], 'Reword', null, $this->editedBranch());
+        $head = $this->editedHead();
 
         $this->post(route('visual-edits.reversion.store', $edit))
             ->assertSessionHasErrors(['edit' => 'This page was changed since, so going back would lose that change.']);
-        $this->assertSame($head, $this->repository->head($this->project));
+        $this->assertSame($head, $this->editedHead());
     }
 
     public function test_other_parts_stay_editable_while_the_preview_rebuilds_after_a_save()
@@ -1110,13 +1111,13 @@ class VisualEditingTest extends TestCase
         $this->post(route('visual-edits.store', $this->project), [
             'preview' => $preview->uuid,
             'target' => "{$file}:3:9",
-            'revision' => $this->repository->head($this->project),
+            'revision' => $this->editedHead(),
             'expected' => 'text-xl',
             'device' => 'base',
             'changes' => ['gap' => 8],
         ])->assertSessionHasNoErrors();
 
-        $this->assertStringContainsString('<h1 class="text-xl gap-2">Plans</h1>', (string) $this->repository->show($this->project, $this->repository->head($this->project), $file));
+        $this->assertStringContainsString('<h1 class="text-xl gap-2">Plans</h1>', (string) $this->repository->show($this->project, $this->editedHead(), $file));
     }
 
     public function test_an_edit_follows_a_part_whose_lines_moved_since_the_preview_was_built()
@@ -1133,13 +1134,13 @@ class VisualEditingTest extends TestCase
         $this->actingAs($this->owner)->post(route('visual-edits.store', $this->project), [
             'preview' => $preview->uuid,
             'target' => "{$file}:3:9",
-            'revision' => $this->repository->head($this->project),
+            'revision' => $this->editedHead(),
             'expected' => 'text-xl',
             'device' => 'base',
             'changes' => ['gap' => 8],
         ])->assertSessionHasNoErrors();
 
-        $contents = (string) $this->repository->show($this->project, $this->repository->head($this->project), $file);
+        $contents = (string) $this->repository->show($this->project, $this->editedHead(), $file);
         $this->assertStringContainsString("<span>New</span>\n        <h1 class=\"text-xl gap-2\">Plans</h1>", $contents);
         $this->assertSame(4, $this->project->visualEdits()->sole()->line);
     }
@@ -1155,13 +1156,13 @@ class VisualEditingTest extends TestCase
             'target' => "{$file}:3:9",
             'to' => "{$file}:4:9",
             'placement' => $placement,
-            'revision' => $this->repository->head($this->project),
+            'revision' => $this->editedHead(),
         ]);
 
         $move('after')->assertSessionHasNoErrors();
         $move('before')->assertSessionHasNoErrors();
 
-        $this->assertSame(self::CARD, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+        $this->assertSame(self::CARD, $this->repository->show($this->project, $this->editedHead(), $file));
         $this->assertSame(2, $this->project->visualEdits()->count());
     }
 
@@ -1186,7 +1187,7 @@ class VisualEditingTest extends TestCase
         </template>
 
         VUE;
-        Event::fakeFor(fn () => $this->repository->commitFiles($this->project, $this->repository->head($this->project), [$file => $steps], 'Add steps', null));
+        Event::fakeFor(fn () => $this->repository->commitFiles($this->project, $this->editedHead(), [$file => $steps], 'Add steps', null));
         $preview = $this->runningPreview();
         // A diff lines up the two items' matching lines, so following the
         // first item's lines would find the second one.
@@ -1195,13 +1196,13 @@ class VisualEditingTest extends TestCase
             'target' => "{$file}:3:9",
             'to' => "{$file}:8:9",
             'placement' => $placement,
-            'revision' => $this->repository->head($this->project),
+            'revision' => $this->editedHead(),
         ]);
 
         $move('after')->assertSessionHasNoErrors();
         $move('before')->assertSessionHasNoErrors();
 
-        $this->assertSame($steps, $this->repository->show($this->project, $this->repository->head($this->project), $file));
+        $this->assertSame($steps, $this->repository->show($this->project, $this->editedHead(), $file));
     }
 
     public function test_a_new_look_after_a_move_changes_the_moved_part_not_the_one_now_in_its_place()
@@ -1221,13 +1222,13 @@ class VisualEditingTest extends TestCase
         $this->post(route('visual-edits.store', $this->project), [
             'preview' => $preview->uuid,
             'target' => "{$file}:3:9",
-            'revision' => $this->repository->head($this->project),
+            'revision' => $this->editedHead(),
             'expected' => 'text-xl',
             'device' => 'base',
             'changes' => ['gap' => 8],
         ])->assertSessionHasNoErrors();
 
-        $contents = (string) $this->repository->show($this->project, $this->repository->head($this->project), $file);
+        $contents = (string) $this->repository->show($this->project, $this->editedHead(), $file);
         $this->assertStringContainsString("<p :class=\"{ 'font-bold': active }\">Pick one</p>\n        <h1 class=\"text-xl gap-2\">Plans</h1>", $contents);
     }
 
@@ -1247,7 +1248,7 @@ class VisualEditingTest extends TestCase
         $this->post(route('visual-edits.store', $this->project), [
             'preview' => $preview->uuid,
             'target' => "{$file}:3:9",
-            'revision' => $this->repository->head($this->project),
+            'revision' => $this->editedHead(),
             'expected' => 'text-xl',
             'device' => 'base',
             'changes' => ['gap' => 8],
@@ -1256,7 +1257,7 @@ class VisualEditingTest extends TestCase
 
     protected function runningPreview(array $attributes = []): Preview
     {
-        return Preview::factory()->editable($this->repository->head($this->project))->ready()->create([
+        return Preview::factory()->editable($this->editedHead())->ready()->create([
             'project_id' => $this->project->id,
             'workspace_id' => Workspace::factory()->create(['user_id' => $this->owner->id])->id,
             ...$attributes,
@@ -1268,5 +1269,32 @@ class VisualEditingTest extends TestCase
         $this->actingAs($this->owner)
             ->get(route('projects.editor.show', $this->project))
             ->assertRedirect(route('projects.show', ['project' => $this->project, 'design' => 1]));
+    }
+
+    /**
+     * Get the newest commit of what the owner edits: the app's design
+     * draft while one waits, else the app.
+     */
+    protected function editedHead(): string
+    {
+        return $this->repository->head($this->project, $this->editedBranch());
+    }
+
+    /**
+     * Get the branch the owner's edits land on.
+     */
+    protected function editedBranch(): ?string
+    {
+        return app(DesignDrafts::class)->find($this->project)?->designBranch();
+    }
+
+    /**
+     * Get the newest commits of what the owner edits.
+     *
+     * @return list<array{sha: string, subject: string, author: string, committed_at: string}>
+     */
+    protected function editedLog(int $limit): array
+    {
+        return $this->repository->log($this->project, $limit, $this->editedBranch());
     }
 }

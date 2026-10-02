@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\VisualEdit;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\DesignDrafts;
 use App\VisualEditing\ElementName;
 use App\VisualEditing\FormattedRevisions;
 use App\VisualEditing\SourceLocation;
@@ -21,6 +22,7 @@ class ApplyVisualEdit
         private ProjectRepository $repository,
         private FollowLocation $followLocation,
         private FormattedRevisions $formatted,
+        private DesignDrafts $designDrafts,
         private ReadAppColors $readAppColors,
         private ReadAppTheme $readAppTheme,
     ) {}
@@ -50,6 +52,9 @@ class ApplyVisualEdit
         if (! $preview->editable) {
             throw ValidationException::withMessages(['edit' => __('This preview cannot be edited.')]);
         }
+
+        // An edit on the app waits in a draft until the owner keeps it.
+        $this->designDrafts->open($preview, $owner);
 
         // The location is where the running preview says the element is;
         // the owner may be editing a newer version while it rebuilds.
@@ -98,7 +103,7 @@ class ApplyVisualEdit
         // The new commit rebuilds the editable preview (ProjectCommitted).
         return $project->visualEdits()->create([
             'experiment_id' => $project->experiment_id,
-            'feature_request_id' => $preview->feature_request_id,
+            'feature_request_id' => $preview->designing()?->id,
             'user_id' => $owner->id,
             'file' => $location->file,
             'line' => $location->line,

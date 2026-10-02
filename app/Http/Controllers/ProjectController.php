@@ -20,6 +20,7 @@ use App\Actions\Projects\SummarizeChanges;
 use App\Actions\Projects\SummarizeProjectTelemetry;
 use App\Actions\Publishing\DescribeUnpublished;
 use App\Actions\Runs\DescribeRunProgress;
+use App\Actions\VisualEditing\DescribeDesignEdits;
 use App\Actions\VisualEditing\InspectSelection;
 use App\Actions\VisualEditing\ReadAppColors;
 use App\Enums\DeploymentStatus;
@@ -35,6 +36,7 @@ use App\Models\VisualEdit;
 use App\Projects\DesignDirection;
 use App\Projects\ProjectRepository;
 use App\Projects\Starter;
+use App\VisualEditing\DesignDrafts;
 use App\VisualEditing\TailwindClasses;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
@@ -156,7 +158,7 @@ class ProjectController extends Controller
      * app running beside it, and the design panel for changing how it looks.
      * The element the owner selected is loaded on request.
      */
-    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails, ReadPreviewPeople $readPreviewPeople, ReadPreviewProblems $readPreviewProblems, ReadPreviewData $readPreviewData, ReadPreviewRows $readPreviewRows, ReadPreviewSchedule $readPreviewSchedule, ReadPreviewFiles $readPreviewFiles, ReadPreviewPages $readPreviewPages, ReadAppColors $readAppColors): Response
+    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails, ReadPreviewPeople $readPreviewPeople, ReadPreviewProblems $readPreviewProblems, ReadPreviewData $readPreviewData, ReadPreviewRows $readPreviewRows, ReadPreviewSchedule $readPreviewSchedule, ReadPreviewFiles $readPreviewFiles, ReadPreviewPages $readPreviewPages, ReadAppColors $readAppColors, DescribeDesignEdits $describeDesignEdits, DesignDrafts $designDrafts): Response
     {
         Gate::authorize('view', $project);
 
@@ -206,10 +208,13 @@ class ProjectController extends Controller
             // And the rows of one table, when the owner opens it.
             'rows' => Inertia::optional(fn () => $request->filled('table') ? $readPreviewRows->handle($project, $request->string('table')->toString()) : null),
             'change' => fn () => $change === null ? null : $describeFeatureRequest->handle($change),
+            // The design edits that wait on the app to be kept, if any.
+            'designEdits' => fn () => $describeDesignEdits->handle($project),
             // The design edits made on what is on show: the change's copy
-            // while the owner tries one, else the app.
+            // while the owner tries one, else the app's waiting draft. Edits
+            // already kept are part of the app; its history undoes them.
             'edits' => fn () => $project->visualEdits()->where('experiment_id', $project->experiment_id)
-                ->where('feature_request_id', is_string($request->query('copy')) && Str::isUuid($request->query('copy')) ? $project->featureRequests()->where('uuid', $request->query('copy'))->value('id') : null)
+                ->where('feature_request_id', is_string($request->query('copy')) && Str::isUuid($request->query('copy')) ? $project->featureRequests()->where('uuid', $request->query('copy'))->value('id') : ($designDrafts->find($project)->id ?? 0))
                 ->latest('id')->limit(10)->get()
                 ->map(fn (VisualEdit $edit) => [
                     'id' => $edit->uuid,

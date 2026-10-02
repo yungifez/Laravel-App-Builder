@@ -212,13 +212,18 @@ class VisualEdit extends Model
 
     /**
      * Get the branch the edit lives on now, or null when its idea was
-     * thrown away. An edit on a change lives on the change's design branch
-     * only while the change waits; once kept, it is in the change's commit.
+     * thrown away. An edit on a change (or on the app's design draft) lives
+     * on the change's design branch only while the change waits; once kept,
+     * it is in the change's commit, and once set aside, it is gone.
      */
     public function branch(): ?string
     {
         if ($this->featureRequest !== null) {
-            return $this->featureRequest->status === FeatureRequestStatus::Generated ? $this->featureRequest->designBranch() : null;
+            $waiting = $this->featureRequest->status === FeatureRequestStatus::Generated
+                && $this->featureRequest->accepted_at === null
+                && $this->featureRequest->dismissed_at === null;
+
+            return $waiting ? $this->featureRequest->designBranch() : null;
         }
 
         return Experiment::branchOf($this->experiment);

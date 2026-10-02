@@ -624,6 +624,13 @@ export type AppColor = {
     classes: boolean;
 };
 
+// Design edits on the app that wait to be kept, and how checking them went.
+export type DesignEdits = {
+    edits: number;
+    checking: boolean;
+    problem: string | null;
+};
+
 export type VisualEditSummary = {
     id: string;
     tag: string;

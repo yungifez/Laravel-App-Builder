@@ -7,6 +7,7 @@ use App\Jobs\StartPreview;
 use App\Models\Preview;
 use App\Models\Project;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\DesignDrafts;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -17,11 +18,13 @@ class RequestProjectPreview
     public function __construct(
         private StopPreview $stopPreview,
         private ProjectRepository $repository,
+        private DesignDrafts $designDrafts,
     ) {}
 
     /**
      * Start an editable preview of the project as it is now (its latest
-     * commit), replacing any running one.
+     * commit, with the design edits that wait to be kept), replacing any
+     * running one.
      *
      * @throws ValidationException when the project cannot be read.
      */
@@ -40,7 +43,7 @@ class RequestProjectPreview
 
         return DB::transaction(function () use ($project) {
             $preview = $project->previews()->create([
-                'revision' => $this->repository->head($project),
+                'revision' => $this->repository->head($project, $this->designDrafts->find($project)?->designBranch()),
                 'editable' => true,
                 'host' => 'p'.Str::lower(Str::random(31)),
                 'status' => PreviewStatus::Starting,
