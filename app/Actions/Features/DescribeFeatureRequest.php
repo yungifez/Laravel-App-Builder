@@ -2,6 +2,7 @@
 
 namespace App\Actions\Features;
 
+use App\Actions\Projects\ConnectOwnTool;
 use App\Actions\Runs\DescribeRunProgress;
 use App\Actions\Runs\KeepTryingRun;
 use App\Actions\Runs\NarrateWork;
@@ -204,6 +205,9 @@ class DescribeFeatureRequest
                 'address' => route('mcp.task'),
                 // What their tool calls the connection: the app's own name.
                 'name' => Str::slug($featureRequest->project->name) ?: 'app',
+                // Their tool is connected to the whole app and picks the
+                // change up itself.
+                'whole_app' => ConnectOwnTool::connected($featureRequest->project),
             ],
             'plan' => $run->plan === null ? null : [
                 'summary' => $run->plan['summary'],

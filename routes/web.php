@@ -47,6 +47,7 @@ use App\Http\Controllers\ProjectEditorController;
 use App\Http\Controllers\ProjectExperimentController;
 use App\Http\Controllers\ProjectNameController;
 use App\Http\Controllers\ProjectNotesDraftController;
+use App\Http\Controllers\ProjectOwnToolController;
 use App\Http\Controllers\ProjectPreviewController;
 use App\Http\Controllers\ProjectPublishingController;
 use App\Http\Controllers\ProjectServiceController;
@@ -97,6 +98,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/preview-problem-fixes', [PreviewProblemFixController::class, 'store'])->name('preview-problem-fixes.store');
     Route::post('projects/{project}/preview-sign-ins', [PreviewSignInController::class, 'store'])->name('preview-sign-ins.store');
     Route::post('projects/{project}/preview-people', [PreviewPersonController::class, 'store'])->name('preview-people.store');
+    Route::post('projects/{project}/own-tool', [ProjectOwnToolController::class, 'store'])->name('projects.own-tool.store');
+    Route::delete('projects/{project}/own-tool', [ProjectOwnToolController::class, 'destroy'])->name('projects.own-tool.destroy');
     Route::delete('projects/{project}/preview-emails', [PreviewEmailController::class, 'destroy'])->name('preview-emails.destroy');
     Route::post('projects/{project}/cleared-problems', [ClearedProblemController::class, 'store'])->name('cleared-problems.store');
     Route::delete('projects/{project}/cleared-problems/{problem}', [ClearedProblemController::class, 'destroy'])->name('cleared-problems.destroy');

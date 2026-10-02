@@ -635,8 +635,16 @@ const checks = computed(() => {
                             </li>
                         </TransitionGroup>
 
+                        <p
+                            v-if="theirs && run?.yours?.whole_app"
+                            class="text-muted-foreground"
+                            data-test="own-tool-writes"
+                        >
+                            Your Claude Code or Codex writes this. It takes it
+                            the next time it asks for work.
+                        </p>
                         <WorkYourself
-                            v-if="theirs && run?.yours"
+                            v-else-if="theirs && run?.yours"
                             :request-id="request.id"
                             :run-id="run.id"
                             :address="run.yours.address"

@@ -17,6 +17,8 @@ export type ProjectSummary = {
     share: { url: string; expires_at: string } | null;
     /** How many days a new link works. */
     share_days: number;
+    /** The owner's own Claude Code or Codex, when it writes the changes. */
+    own_tool: { connected: boolean; address: string; name: string };
 };
 
 /** Someone who can sign in to the app on show, as the app keeps them. */
@@ -255,7 +257,13 @@ export type Run = {
     }[];
     /** Set when the owner's own Claude Code or Codex writes the change:
      * whether it still waits for their change, and where it connects. */
-    yours: { waiting: boolean; address: string; name: string } | null;
+    yours: {
+        waiting: boolean;
+        address: string;
+        name: string;
+        /** Their tool is connected to the whole app and picks it up. */
+        whole_app: boolean;
+    } | null;
     plan: {
         summary: string;
         /** The reply when the owner only asked about the app. */

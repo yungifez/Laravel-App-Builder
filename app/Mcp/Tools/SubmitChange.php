@@ -37,8 +37,14 @@ class SubmitChange extends Tool
             'patch.max' => __('The change is too large to hand back in one patch.'),
         ]);
 
-        $refused = DB::transaction(function () use ($input) {
-            $run = Run::query()->lockForUpdate()->findOrFail($this->task->run->id);
+        $task = $this->task->run;
+
+        if ($task === null) {
+            return Response::error(__('No change waits for you now. Call get_task first.'));
+        }
+
+        $refused = DB::transaction(function () use ($input, $task) {
+            $run = Run::query()->lockForUpdate()->findOrFail($task->id);
             $refused = $this->refuse($run);
 
             if ($refused === null) {
@@ -52,7 +58,7 @@ class SubmitChange extends Tool
             return Response::error($refused);
         }
 
-        ExecuteRun::dispatch($this->task->run);
+        ExecuteRun::dispatch($task);
 
         return Response::text(__('Received. Your change is being applied and checked. Call check_status to see how it goes.'));
     }

@@ -493,6 +493,8 @@ return [
         // change it hands back is at most "max_patch_kb" long.
         'workers' => [
             'minutes' => (int) env('BUILDER_WORKER_MINUTES', 240),
+            // How long the owner's tool stays connected to a whole app.
+            'project_days' => (int) env('BUILDER_WORKER_PROJECT_DAYS', 30),
             'per_minute' => (int) env('BUILDER_WORKER_PER_MINUTE', 60),
             'max_patch_kb' => (int) env('BUILDER_WORKER_MAX_PATCH_KB', 512),
         ],

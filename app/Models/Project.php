@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use Laravel\Sanctum\HasApiTokens;
 
 /**
  * A customer application the builder generates features for.
@@ -47,6 +48,10 @@ use Illuminate\Support\Carbon;
 #[Hidden(['deploy_remote', 'service_keys', 'share_token', 'share_token_hash'])]
 class Project extends Model
 {
+    // The owner's own tool's token opens the changes waiting for it
+    // (ConnectOwnTool).
+    use HasApiTokens;
+
     /** @use HasFactory<ProjectFactory> */
     use HasFactory;
 

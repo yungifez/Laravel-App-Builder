@@ -13,6 +13,7 @@ use App\Actions\Previews\ReadPreviewProblems;
 use App\Actions\Previews\ReadPreviewRows;
 use App\Actions\Previews\ReadPreviewSchedule;
 use App\Actions\Previews\ShareApp;
+use App\Actions\Projects\ConnectOwnTool;
 use App\Actions\Projects\CreateProject;
 use App\Actions\Projects\StartProjectFromTemplate;
 use App\Actions\Projects\SummarizeChanges;
@@ -270,6 +271,13 @@ class ProjectController extends Controller
                     'expires_at' => $project->share_expires_at->toIso8601String(),
                 ] : null,
                 'share_days' => (int) config('builder.preview.share_days'),
+                // Whether the owner's own Claude Code or Codex writes its
+                // changes, and how their tool reaches them.
+                'own_tool' => [
+                    'connected' => ConnectOwnTool::connected($project),
+                    'address' => route('mcp.task'),
+                    'name' => Str::slug($project->name) ?: 'app',
+                ],
             ],
             'changes' => fn () => $summarizeChanges->handle($project),
             'preview' => fn () => $describePreview->handle($project),

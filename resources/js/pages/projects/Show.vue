@@ -72,6 +72,7 @@ import InputError from '@/components/InputError.vue';
 import ProjectDetails from '@/components/ProjectDetails.vue';
 import NotificationBell from '@/components/NotificationBell.vue';
 import PublishPanel from '@/components/PublishPanel.vue';
+import OwnToolDialog from '@/components/OwnToolDialog.vue';
 import RenameAppDialog from '@/components/RenameAppDialog.vue';
 import ShareAppDialog from '@/components/ShareAppDialog.vue';
 import ServicesDialog from '@/components/ServicesDialog.vue';
@@ -755,6 +756,7 @@ const behind = computed(() => {
 const startingIdea = ref(false);
 const renaming = ref(false);
 const sharing = ref(false);
+const usingOwnTool = ref(false);
 const connecting = ref(false);
 const usingIdea = ref(false);
 
@@ -1288,6 +1290,12 @@ function sendOnEnter(event: KeyboardEvent): void {
                 >
                     Details for your developer
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                    data-test="own-tool-open"
+                    @select="usingOwnTool = true"
+                >
+                    Use my own Claude Code or Codex…
+                </DropdownMenuItem>
                 <!-- The code is the owner's to take to any developer. -->
                 <DropdownMenuItem as-child>
                     <a
@@ -1434,6 +1442,13 @@ function sendOnEnter(event: KeyboardEvent): void {
         v-model:open="renaming"
         :project-id="project.id"
         :name="project.name"
+    />
+    <OwnToolDialog
+        v-model:open="usingOwnTool"
+        :project-id="project.id"
+        :connected="project.own_tool.connected"
+        :address="project.own_tool.address"
+        :name="project.own_tool.name"
     />
     <ShareAppDialog
         v-model:open="sharing"

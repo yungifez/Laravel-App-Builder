@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools;
 
 use App\Enums\RunStatus;
+use App\Models\Run;
 use App\Runs\Drivers\WorkerDriver;
 use App\Runs\WorkerTask;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -27,12 +28,17 @@ class CheckStatus extends Tool
      */
     public function handle(Request $request): Response
     {
-        $run = $this->task->run->refresh();
+        $run = $this->task->run?->refresh();
+
+        if ($run === null) {
+            return Response::text(__('No change waits for you now. A change you handed back passed its checks, or is with the owner. Call get_task in a minute for the next one.'));
+        }
+
         $run->recordEvent('worker_query', ['tool' => 'check_status']);
 
         return Response::text(match ($run->status) {
             RunStatus::Queued, RunStatus::Planning => __('The task is still being planned. Call get_task in a minute.'),
-            RunStatus::Implementing => $this->implementing(),
+            RunStatus::Implementing => $this->implementing($run),
             RunStatus::Verifying => __('Your change applied and is being checked. Ask again in a few minutes.'),
             RunStatus::Reviewing => __('Your change passed the checks and is being reviewed. Ask again in a few minutes.'),
             RunStatus::NeedsUserDecision => __('The change is waiting for the owner. Ask again later.'),
@@ -43,9 +49,8 @@ class CheckStatus extends Tool
     /**
      * Say what the change waits for while it is being written.
      */
-    protected function implementing(): string
+    protected function implementing(Run $run): string
     {
-        $run = $this->task->run;
         $latest = $this->workers->latestSubmission($run);
         $refusal = $latest === null ? null : $this->workers->refusal($run, $latest);
 
