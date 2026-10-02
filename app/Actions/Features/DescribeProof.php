@@ -30,6 +30,7 @@ class DescribeProof
     public function __construct(
         private ProjectRepository $repository,
         private ReadProjectContext $readProjectContext,
+        private AcceptFindings $acceptFindings,
     ) {}
 
     /**
@@ -57,7 +58,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($verification)), ...$this->about(__('what goes wrong'), $this->failed($verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return array_values(collect($lines)->unique('text')->all());
@@ -317,12 +318,13 @@ class DescribeProof
      * or putting a page together (direction 33). Those parts can run many
      * times, or before the app says no, so what they save or send repeats
      * or stays. Each kind found is a gap with the address where it
-     * happened. A clean line is said only when the recorder named those
-     * parts and a recorded request ran the new code.
+     * happened, and the owner may say they want it: then it is said as
+     * their choice, with what it costs. A clean line is said only when the
+     * recorder named those parts and a recorded request ran the new code.
      *
-     * @return list<array{kind: string, text: string}>
+     * @return list<array{kind: string, text: string, decision?: array{change: string, finding: string, accepted: bool}}>
      */
-    protected function steady(Verification $verification): array
+    protected function steady(FeatureRequest $featureRequest, Verification $verification): array
     {
         $boundaries = $verification->evidence['boundaries'] ?? null;
 
@@ -335,13 +337,25 @@ class DescribeProof
             AppBoundaries::CHANGED_WHILE_VALIDATING => 'At :address your app saves or sends something while it checks what was filled in. If it then says no, what it saved or sent stays.',
             AppBoundaries::CHANGED_WHILE_RENDERING => 'At :address your app saves or sends something while it puts the page together. That can happen more than once each time the page opens.',
         ];
+        $chosen = [
+            AppBoundaries::CHANGED_WHILE_AUTHORIZING => 'You said you want this: at :address your app saves or sends something while it checks who may do something, so it happens again each time that check runs. If a later change does more of this, I will ask again.',
+            AppBoundaries::CHANGED_WHILE_VALIDATING => 'You said you want this: at :address your app saves or sends something while it checks what was filled in, and it stays when the app then says no. If a later change does more of this, I will ask again.',
+            AppBoundaries::CHANGED_WHILE_RENDERING => 'You said you want this: at :address your app saves or sends something while it puts the page together, so it can happen more than once each time the page opens. If a later change does more of this, I will ask again.',
+        ];
+        // A kept change is part of the app: there is nothing left to decide.
+        $open = ! $featureRequest->isAccepted();
+        $decision = fn (string $kind, bool $accepted) => $open ? ['decision' => ['change' => $featureRequest->uuid, 'finding' => $kind, 'accepted' => $accepted]] : [];
+        $accepted = $this->acceptFindings->identities($featureRequest);
         $lines = [];
 
         foreach ($gaps as $kind => $text) {
             $found = AppBoundaries::findings($boundaries, $kind);
+            $left = AppBoundaries::findings(AppBoundaries::without($boundaries, $accepted), $kind);
 
-            if ($found !== []) {
-                $lines[] = ['kind' => 'gap', 'text' => __($text, ['address' => AppRoutes::address($found[0]['route'])])];
+            if ($left !== []) {
+                $lines[] = ['kind' => 'gap', 'text' => __($text, ['address' => AppRoutes::address($left[0]['route'])]), ...$decision($kind, false)];
+            } elseif ($found !== []) {
+                $lines[] = ['kind' => 'chosen', 'text' => __($chosen[$kind], ['address' => AppRoutes::address($found[0]['route'])]), ...$decision($kind, true)];
             }
         }
 

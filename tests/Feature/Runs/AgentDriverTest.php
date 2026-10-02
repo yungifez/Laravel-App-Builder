@@ -14,6 +14,7 @@ use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Enums\WorkspaceStatus;
 use App\Jobs\VerifyFeatureRequest;
+use App\Models\AcceptedFinding;
 use App\Models\Deployment;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -593,6 +594,25 @@ class AgentDriverTest extends TestCase
                 ."\n- POST /teams: when job App\Jobs\SyncSeats, queued at app/Models/Team.php:13, ran after the response, the way a queue worker runs it, with no signed-in user and an empty request and session, the job did not do the same: missing mail App\Mail\SeatsChanged (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)"
                 ."\n- POST /teams: when the listeners Laravel found for event App\Events\TeamCreated, dispatched at app/Models/Team.php:13, ran in the reverse order, the request did not do the same: missing mail App\Mail\TeamCreated (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)",
         ])));
+    }
+
+    public function test_the_reviewer_does_not_hold_what_the_owner_wants_against_the_change()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]));
+        ChangeReviewer::fake([['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]]]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        AcceptedFinding::factory()->for($run->featureRequest)->create(['identity' => 'changed_while_authorizing|App\Policies\TeamPolicy::view|save']);
+        $this->passVerification($run, evidence: [
+            'boundaries' => ['phased' => 30, 'unknown' => 0, 'existing' => 0, 'findings' => [
+                ['kind' => 'changed_while_authorizing', 'route' => 'GET /teams', 'what' => 'update teams', 'at' => 'app/Policies/TeamPolicy.php:9', 'in' => 'App\Policies\TeamPolicy::view', 'test' => null],
+            ]],
+        ]);
+
+        ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'so nothing in them may save, queue or send. Nothing else the code the change added saved or sent in those parts.'
+            ."\nLeft out above: 1 found in those parts that the owner said the change does on purpose, after reading what each costs. Do not hold them against the change.")
+            && ! str_contains($prompt->prompt, 'TeamPolicy.php:9'));
     }
 
     public function test_a_named_test_that_did_not_run_is_not_evidence_and_sends_the_change_back()

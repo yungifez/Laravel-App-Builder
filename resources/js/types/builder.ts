@@ -366,7 +366,14 @@ export type RequestImage = { url: string; name: string };
 
 // One plain sentence on how we know a change works.
 export type ProofLine = {
-    kind: 'passed' | 'caught' | 'reach' | 'gap' | 'rule' | 'approach';
+    kind:
+        | 'passed'
+        | 'caught'
+        | 'reach'
+        | 'gap'
+        | 'rule'
+        | 'approach'
+        | 'chosen';
     text: string;
     /** Pictures of a changed screen as a phone, a tablet and a computer show it. */
     pictures?: { url: string; label: string }[];
@@ -376,6 +383,8 @@ export type ProofLine = {
     items?: string[];
     /** What a passed line checked, in a word or two ("safety", "sign-in"). */
     topic?: string;
+    /** A finding the owner may say the change makes on purpose, or take that back. */
+    decision?: { change: string; finding: string; accepted: boolean };
 };
 
 // Everything about one change, as its page and the workspace chat show it.

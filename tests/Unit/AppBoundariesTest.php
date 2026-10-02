@@ -160,6 +160,23 @@ class AppBoundariesTest extends TestCase
         $this->assertSame(1, $more['existing']);
     }
 
+    public function test_what_a_person_accepted_is_set_aside_by_what_it_is()
+    {
+        $view = 'App\Policies\PostPolicy::view';
+        $measured = AppBoundaries::withRead(AppBoundaries::measure([$this->recorded('GET', '/posts', [
+            $this->asked('update "posts" set "views" = ?', self::NEW.':3', 'authorization'),
+            ['kind' => 'http', 'what' => 'POST stats.example.com', 'open' => 0, 'at' => self::NEW.':4', 'phase' => 'authorization', 'frames' => [$view]],
+        ])], self::PATCH), ['read' => [['kind' => AppBoundaries::CHANGED_WHILE_AUTHORIZING, 'what' => 'save', 'at' => self::NEW.':9', 'in' => $view]], 'before' => []]);
+
+        $left = AppBoundaries::without($measured, [AppBoundaries::CHANGED_WHILE_AUTHORIZING.'|'.$view.'|save']);
+
+        $this->assertSame(['http POST stats.example.com'], array_column($left['findings'], 'what'));
+        $this->assertSame([], $left['read']);
+        $this->assertSame(2, $left['accepted']);
+        $this->assertSame($measured, AppBoundaries::without($measured, []));
+        $this->assertNull(AppBoundaries::without(null, ['anything']));
+    }
+
     public function test_only_the_phases_asked_for_are_checked()
     {
         $requests = [$this->recorded('GET', '/posts', [

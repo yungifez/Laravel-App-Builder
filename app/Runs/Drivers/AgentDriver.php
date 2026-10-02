@@ -2,6 +2,7 @@
 
 namespace App\Runs\Drivers;
 
+use App\Actions\Features\AcceptFindings;
 use App\Actions\Runs\RecordModelUsage;
 use App\Actions\Runs\WriteBrief;
 use App\Ai\Agents\ChangeReviewer;
@@ -89,7 +90,7 @@ abstract class AgentDriver implements ConstructionDriver
      */
     protected function reviewWith(Run $run, ReviewEvidence $evidence, array $providers): Review
     {
-        $response = $this->ask(fn () => ChangeReviewer::make()->prompt($this->reviewPrompt($evidence), $this->pictures($run->featureRequest), provider: $providers));
+        $response = $this->ask(fn () => ChangeReviewer::make()->prompt($this->reviewPrompt($evidence, app(AcceptFindings::class)->identities($run->featureRequest)), $this->pictures($run->featureRequest), provider: $providers));
 
         $this->recordModelUsage->handle($run, ModelRole::Reviewer, $response);
 
@@ -238,8 +239,10 @@ abstract class AgentDriver implements ConstructionDriver
 
     /**
      * Lay out the evidence for the reviewer.
+     *
+     * @param  list<string>  $accepted  The boundary findings the owner said the change makes on purpose
      */
-    protected function reviewPrompt(ReviewEvidence $evidence): string
+    protected function reviewPrompt(ReviewEvidence $evidence, array $accepted = []): string
     {
         $results = array_map(
             fn (array $result) => match (true) {
@@ -261,7 +264,7 @@ abstract class AgentDriver implements ConstructionDriver
             $evidence->plan->preserve !== [] ? "## Must stay as it is\n\n".$this->list(array_column($evidence->plan->preserve, 'statement')) : null,
             "## Verification: {$evidence->verificationStatus}\n\n".implode("\n", $results),
             "## Tests deleted or weakened by the diff\n\n".($evidence->weakenedTests === [] ? 'None.' : $this->json($evidence->weakenedTests)),
-            $this->changeEvidence($evidence),
+            $this->changeEvidence($evidence, $accepted),
             "## Diff\n\n```diff\n".$this->bounded($evidence->patch)."\n```",
         ]));
     }
@@ -274,8 +277,10 @@ abstract class AgentDriver implements ConstructionDriver
      * requests left behind when one thing was made to fail. These are
      * measured facts; whether each was wanted is the reviewer's to judge
      * against the plan.
+     *
+     * @param  list<string>  $accepted  The boundary findings the owner said the change makes on purpose
      */
-    protected function changeEvidence(ReviewEvidence $evidence): ?string
+    protected function changeEvidence(ReviewEvidence $evidence, array $accepted = []): ?string
     {
         $measured = $evidence->changeEvidence;
         $parts = [];
@@ -318,12 +323,13 @@ abstract class AgentDriver implements ConstructionDriver
         }
 
         if (isset($measured['boundaries'])) {
-            $boundaries = $measured['boundaries'];
+            $boundaries = AppBoundaries::without($measured['boundaries'], $accepted);
             $parts[] = 'The recording also says in which part of a request each thing ran: while Laravel checked who may act, checked the input, handled the request or built the response. Checks and responses can run many times per request and before the request is refused, so nothing in them may save, queue or send.'
                 .($boundaries['findings'] === []
-                    ? ' The code the change added saved and sent nothing in those parts.'
+                    ? (($boundaries['accepted'] ?? 0) === 0 ? ' The code the change added saved and sent nothing in those parts.' : ' Nothing else the code the change added saved or sent in those parts.')
                     : " Saved, queued or sent by the code the change added in those parts:\n".$this->list(array_map($this->crossed(...), $boundaries['findings'])))
                 .($boundaries['unknown'] === 0 ? '' : sprintf("\nFor %d recorded things the part of the request could not be told.", $boundaries['unknown']))
+                .(($boundaries['accepted'] ?? 0) === 0 ? '' : sprintf("\nLeft out above: %d found in those parts that the owner said the change does on purpose, after reading what each costs. Do not hold them against the change.", $boundaries['accepted']))
                 .(($boundaries['read'] ?? []) === [] ? '' : "\nRead from the code the change added, not seen running; each is likely, so check the method before you hold it against the change:\n".$this->list(array_map($this->read(...), $boundaries['read'])));
         }
 

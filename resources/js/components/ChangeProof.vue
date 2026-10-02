@@ -6,8 +6,11 @@ import {
     Lock,
     ScanSearch,
     ShieldCheck,
+    UserCheck,
 } from '@lucide/vue';
-import { computed } from 'vue';
+import { router } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
+import FeatureRequestAcceptedFindingController from '@/actions/App/Http/Controllers/FeatureRequestAcceptedFindingController';
 import type { ProofLine } from '@/types';
 
 // How we know a change works, in plain words: what the checks proved, how
@@ -31,9 +34,38 @@ const passes = computed(() => {
         ...passed.filter((line) => !line.evidence),
     ];
 });
-const others = computed(() =>
-    props.proof.filter((line) => line.kind !== 'passed' && line.kind !== 'gap'),
+// What the owner said the change does on purpose stays where its gap was,
+// so saying so does not move the line away from under them.
+const chosen = computed(() =>
+    props.proof.filter((line) => line.kind === 'chosen'),
 );
+const others = computed(() =>
+    props.proof.filter(
+        (line) =>
+            line.kind !== 'passed' &&
+            line.kind !== 'gap' &&
+            line.kind !== 'chosen',
+    ),
+);
+
+// The finding being saved, so its control cannot be pressed twice.
+const deciding = ref<string | null>(null);
+
+function decide(decision: NonNullable<ProofLine['decision']>): void {
+    const action = decision.accepted
+        ? FeatureRequestAcceptedFindingController.destroy
+        : FeatureRequestAcceptedFindingController.store;
+
+    deciding.value = decision.finding;
+    router.visit(
+        action({ featureRequest: decision.change, kind: decision.finding }),
+        {
+            preserveScroll: true,
+            preserveState: true,
+            onFinish: () => (deciding.value = null),
+        },
+    );
+}
 
 // What the folded passes checked, so the fold says it ("such as safety,
 // sign-in and speed") instead of hiding it behind a bare count.
@@ -94,6 +126,8 @@ const icons = {
     caught: { icon: ShieldCheck, tone: 'text-green-600' },
     reach: { icon: ScanSearch, tone: 'text-muted-foreground' },
     gap: { icon: CircleDashed, tone: 'text-amber-600' },
+    // The owner read what it costs and wants it anyway.
+    chosen: { icon: UserCheck, tone: 'text-muted-foreground' },
     rule: { icon: Lock, tone: 'text-muted-foreground' },
     // Whether the old way was kept working, and why.
     approach: { icon: History, tone: 'text-muted-foreground' },
@@ -136,6 +170,42 @@ const icons = {
                             {{ item }}
                         </li>
                     </ul>
+                    <button
+                        v-if="line.decision"
+                        type="button"
+                        class="mt-0.5 flex min-h-11 items-center font-medium text-foreground underline-offset-2 select-none hover:underline disabled:opacity-50 sm:min-h-6"
+                        :disabled="deciding === line.decision.finding"
+                        data-test="change-proof-accept"
+                        @click="decide(line.decision)"
+                    >
+                        I want it this way
+                    </button>
+                </div>
+            </li>
+        </ul>
+        <ul
+            v-if="chosen.length > 0"
+            class="space-y-1"
+            data-test="change-proof-chosen"
+        >
+            <li
+                v-for="line in chosen"
+                :key="line.text"
+                class="flex items-start gap-2 text-xs text-muted-foreground"
+            >
+                <UserCheck class="mt-px size-3.5 shrink-0" />
+                <div>
+                    {{ line.text }}
+                    <button
+                        v-if="line.decision"
+                        type="button"
+                        class="mt-0.5 flex min-h-11 items-center underline-offset-2 select-none hover:text-foreground hover:underline disabled:opacity-50 sm:min-h-6"
+                        :disabled="deciding === line.decision.finding"
+                        data-test="change-proof-undo-accept"
+                        @click="decide(line.decision)"
+                    >
+                        Undo
+                    </button>
                 </div>
             </li>
         </ul>

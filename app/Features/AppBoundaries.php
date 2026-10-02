@@ -47,6 +47,12 @@ class AppBoundaries
     ];
 
     /**
+     * The findings the owner reads in the proof, and so may accept. The
+     * app's start is read from the code only, so it goes to the reviewer.
+     */
+    public const OWNED = [self::CHANGED_WHILE_AUTHORIZING, self::CHANGED_WHILE_VALIDATING, self::CHANGED_WHILE_RENDERING];
+
+    /**
      * What changes the world outside the request, besides a write.
      */
     protected const SENT = ['job', 'mail', 'notification', 'http'];
@@ -162,6 +168,49 @@ class AppBoundaries
             'existing' => $measured['existing'] + $moved,
             'findings' => $findings,
             'read' => array_slice($read, 0, self::KEPT),
+        ];
+    }
+
+    /**
+     * Set aside the findings a person said the change makes on purpose, by
+     * what they are (BoundaryCode::identity()), seen or read. They are
+     * counted as "accepted", not held against the change.
+     *
+     * @param  array{phased: int, unknown: int, existing: int, findings: list<array{kind: string, route: string, what: string, at: string|null, in: string|null, test: string|null}>, read?: list<array{kind: string, what: string, at: string, in: string}>, accepted?: int}|null  $measured  From measure() or withRead()
+     * @param  list<string>  $accepted  The identities accepted
+     * @return array{phased: int, unknown: int, existing: int, findings: list<array{kind: string, route: string, what: string, at: string|null, in: string|null, test: string|null}>, read?: list<array{kind: string, what: string, at: string, in: string}>, accepted?: int}|null
+     */
+    public static function without(?array $measured, array $accepted): ?array
+    {
+        if ($measured === null || $accepted === []) {
+            return $measured;
+        }
+
+        $set = 0;
+        $findings = [];
+        $read = [];
+
+        foreach ($measured['findings'] as $finding) {
+            if (in_array(BoundaryCode::identity($finding), $accepted, true)) {
+                $set++;
+            } else {
+                $findings[] = $finding;
+            }
+        }
+
+        foreach ($measured['read'] ?? [] as $finding) {
+            if (in_array(BoundaryCode::identity($finding), $accepted, true)) {
+                $set++;
+            } else {
+                $read[] = $finding;
+            }
+        }
+
+        return [
+            ...$measured,
+            'findings' => $findings,
+            ...(isset($measured['read']) ? ['read' => $read] : []),
+            'accepted' => ($measured['accepted'] ?? 0) + $set,
         ];
     }
 

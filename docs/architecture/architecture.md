@@ -1860,6 +1860,18 @@ moved, for example when the change reformats a policy, and is counted as
 app's start is a fourth rule, read only: a query there runs for every
 request, command and queue worker, and before a database may exist.
 
+**The owner may want what a phase rule finds** (an exception, direction
+33). An audit log of each refusal, for example, is written while the app
+checks who may act. Each gap line of the proof carries a control ("I want it
+this way"), shown only while the change waits for the owner. Pressing it
+stores each finding of that rule in the change by what it is, never the
+rule itself (`accepted_findings`, in the control plane: the agent writes the
+app's code, so a code comment cannot grant one). The line then says it is
+the owner's choice, with what it costs, and can be undone. The reviewer
+does not hold those findings against the change. Once the change is kept,
+the finding is part of the app as it was, so a later change that does more
+of the same is asked about again.
+
 **The files that decide how the app is checked are protected** (direction
 33). `phpunit.xml`, `tests/Pest.php`, `phpstan.neon` (and their `.dist`
 forms) and `.github` join the protected paths

@@ -294,6 +294,16 @@ class FeatureRequest extends Model
     }
 
     /**
+     * Get the boundary findings the owner said the change makes on purpose.
+     *
+     * @return HasMany<AcceptedFinding, $this>
+     */
+    public function acceptedFindings(): HasMany
+    {
+        return $this->hasMany(AcceptedFinding::class);
+    }
+
+    /**
      * Get the verification runs for the request's change.
      *
      * @return HasMany<Verification, $this>
