@@ -2108,7 +2108,9 @@ can be caused, in requests that ran the change's code:
   A job of the framework that delivers an email or a notification is a
   place here too: the worker runs what the app's code puts in it. What such
   a job sends keeps the line that dispatched the job, in both runs, so the
-  same email is read as the same. A job the
+  same email is read as the same. A listener that waits on a queue
+  (`ShouldQueue`) is a job of the app: the queue runs it under the
+  listener's name, and it has the same places as a job. A job the
   app sends to the sync queue by
   name (`dispatch_sync`, or a job that names the `sync` connection) is not
   such a job, and is never held.

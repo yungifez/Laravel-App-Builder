@@ -37,6 +37,7 @@ use Tests\Fixtures\RecordedMail;
 use Tests\Fixtures\RecordedMarksReady;
 use Tests\Fixtures\RecordedNotice;
 use Tests\Fixtures\RecordedPersonalJob;
+use Tests\Fixtures\RecordedQueuedListener;
 use Tests\Fixtures\RecordedQueuedNotice;
 use Tests\Fixtures\RecordedResource;
 use Tests\Fixtures\RecordedRoundJob;
@@ -1199,6 +1200,30 @@ class TraceRecorderTest extends TestCase
         // In use that job runs once and now. It is no place for a second run or a wait: its email and its last save are places of the request.
         $points = AppFaults::points([$request], $this->wholeFilePatch());
         $this->assertSame([['again', 3, 'job'], ['retry', 6, 'query'], ['later', 3, 'later'], ['send', 1, 'mail'], ['save', 2, 'query']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
+    }
+
+    public function test_a_listener_that_waits_on_a_queue_is_read_as_a_job_of_the_app()
+    {
+        Route::post('/_failing/ordered', [RecordedApp::class, 'ordered']);
+        Event::listen(RecordedEvent::class, RecordedQueuedListener::class);
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'mail');
+
+        $this->post('/_failing/ordered')->assertNoContent();
+        $this->post('/_failing/ordered')->assertNoContent();
+
+        $requests = $recorded();
+        // The job has the listener's name, and the app wrote what it does.
+        $this->assertSame([['job', RecordedQueuedListener::class, false, false], ['mail', 'message', false, true]], array_map(fn (array $effect) => [$effect['kind'], $effect['what'], $effect['delivers'] ?? false, $effect['job'] ?? false], $requests[0]['effects']));
+        $this->assertStringStartsWith(RecordedQueuedListener::PATH.':', $requests[0]['effects'][1]['at']);
+        $this->assertSame([[204, null], [204, 1]], array_map(fn (array $request) => [$request['status'], $request['fault'] ?? null], $requests));
+
+        // It has the places of a job: run twice, run after the response, and its email fails.
+        $points = AppFaults::points([$requests[0]], $this->wholeFilePatch(RecordedQueuedListener::PATH));
+        $this->assertSame([['again', 0, 'job'], ['later', 0, 'later'], ['send', 1, 'mail']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
+
+        $measured = $this->measureFailure($requests, 'mail message', RecordedQueuedListener::PATH);
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['failure_hidden', 'POST /_failing/ordered', 'mail message', true]], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['job'] ?? false], $measured['findings']));
     }
 
     public function test_an_event_whose_found_listeners_run_in_the_reverse_order_shows_what_the_request_did_not_do()
