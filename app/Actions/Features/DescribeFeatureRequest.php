@@ -187,6 +187,12 @@ class DescribeFeatureRequest
                 ? OwnerWording::failure($run->error)
                 : OwnerWording::message($run->error),
             'question' => $run->status === RunStatus::NeedsUserDecision ? $run->question : null,
+            // Stopped because it found nothing to change: what it checked
+            // and why, in its own words, so a fix for something that is
+            // not broken does not read as a failure.
+            'found_nothing' => $run->status === RunStatus::NeedsUserDecision && str_starts_with((string) $run->error, 'The run finished without changing')
+                ? ($run->events()->where('type', 'build_finished')->latest('sequence')->first()?->data['account'] ?? null)
+                : null,
             'answers' => $run->answers ?? [],
             // The owner's own Claude Code or Codex writes the change. Until it
             // hands the change back, the thread says how to connect it.

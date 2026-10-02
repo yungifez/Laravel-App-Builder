@@ -238,6 +238,8 @@ export type Run = {
     id: string;
     status: RunStatus;
     error: string | null;
+    /** It stopped finding nothing to change: what it checked and why. */
+    found_nothing?: string | null;
     question: {
         text: string;
         why: string;

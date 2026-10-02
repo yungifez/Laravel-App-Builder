@@ -48,6 +48,27 @@ class FailureWordingTest extends TestCase
                 ->where('run.error', "This is our fault: your app's checks still failed after I tried to fix them, so I stopped. Nothing in your app changed. Try again, or ask in other words."));
     }
 
+    public function test_a_stop_that_found_nothing_to_change_says_what_was_checked()
+    {
+        $request = FeatureRequest::factory()->create();
+        $run = Run::factory()->for($request)->create([
+            'status' => RunStatus::NeedsUserDecision,
+            'error' => 'The run finished without changing the project.',
+        ]);
+        $run->recordEvent('build_finished', ['attempt' => 0, 'account' => "I opened the front page and its links.\n\nNothing was broken, so I changed nothing."]);
+
+        $this->actingAs($request->user)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('run.found_nothing', "I opened the front page and its links.\n\nNothing was broken, so I changed nothing."));
+
+        // Any other stop has no such account.
+        $run->update(['error' => 'Verification did not pass, and this run cannot repair the change.']);
+
+        $this->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page->where('run.found_nothing', null));
+    }
+
     public function test_an_unknown_failure_says_it_is_our_fault_without_the_detail()
     {
         $request = FeatureRequest::factory()->create();

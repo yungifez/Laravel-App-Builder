@@ -12,6 +12,7 @@ import {
     LoaderCircle,
     Maximize2,
     Minimize2,
+    SearchCheck,
     Sparkles,
     Target,
     Undo2,
@@ -390,6 +391,23 @@ onBeforeUnmount(() => emit('stopped', false));
 
 // Why the change could not be finished, as the run or the request says.
 const reason = computed(() => run.value?.error ?? request.value.error ?? null);
+
+// It looked and found nothing to change, and said why: its conclusion
+// leads, and what it checked is there to read.
+const foundNothing = computed(() => {
+    const account = run.value?.found_nothing?.trim();
+
+    if (!account) {
+        return null;
+    }
+
+    const paragraphs = account.split(/\n\s*\n/);
+
+    return {
+        conclusion: paragraphs.at(-1) ?? account,
+        checked: paragraphs.slice(0, -1).join('\n\n'),
+    };
+});
 
 const changes = computed(() => run.value?.review?.changes ?? []);
 const asked = computed(() =>
@@ -809,17 +827,53 @@ const checks = computed(() => {
                         <!-- Could not finish -->
                         <div
                             v-if="failed"
-                            class="space-y-2 rounded-xl border border-red-500/30 bg-red-500/5 p-3"
+                            :class="[
+                                'space-y-2 rounded-xl border p-3',
+                                foundNothing
+                                    ? 'bg-muted/40'
+                                    : 'border-red-500/30 bg-red-500/5',
+                            ]"
                             data-test="thread-failed"
                         >
-                            <p class="flex items-center gap-2 font-medium">
+                            <p
+                                v-if="foundNothing"
+                                class="flex items-center gap-2 font-medium"
+                            >
+                                <SearchCheck class="size-4" />
+                                I found nothing to change
+                            </p>
+                            <p
+                                v-else
+                                class="flex items-center gap-2 font-medium"
+                            >
                                 <CircleAlert class="size-4 text-red-600" />
                                 I couldn't finish this
                             </p>
+                            <template v-if="foundNothing">
+                                <p
+                                    class="text-sm whitespace-pre-line"
+                                    data-test="thread-found-nothing"
+                                >
+                                    {{ foundNothing.conclusion }}
+                                </p>
+                                <details
+                                    v-if="foundNothing.checked"
+                                    class="text-xs text-muted-foreground"
+                                >
+                                    <summary
+                                        class="min-h-11 cursor-pointer select-none sm:min-h-0"
+                                    >
+                                        What I checked
+                                    </summary>
+                                    <p class="mt-1 whitespace-pre-line">
+                                        {{ foundNothing.checked }}
+                                    </p>
+                                </details>
+                            </template>
                             <!-- Why, when I know, so the owner is not left
                                  guessing; the app is never changed. -->
                             <p
-                                v-if="reason"
+                                v-else-if="reason"
                                 class="text-sm"
                                 data-test="thread-failed-reason"
                             >
