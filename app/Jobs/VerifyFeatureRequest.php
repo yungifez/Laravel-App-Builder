@@ -11,6 +11,7 @@ use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Context\Capability;
 use App\Context\ProjectNotes;
+use App\Enums\ExperimentStatus;
 use App\Enums\VerificationStatus;
 use App\Features\AcceptanceSuite;
 use App\Features\AccessProbes;
@@ -46,6 +47,7 @@ use App\Workspaces\Exceptions\CommandLost;
 use App\Workspaces\WorkspaceFiles;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -1050,7 +1052,17 @@ class VerifyFeatureRequest implements ShouldQueue
         }
 
         try {
-            $records = array_values(array_filter($this->plannedRecords($featureRequest), fn (array $record) => ($record['access'] ?? null) !== null));
+            $own = $this->plannedRecords($featureRequest);
+            $names = array_column($own, 'name');
+
+            // The rules earlier kept changes stated stay tests: a change
+            // that breaks one is caught even where it did not touch the
+            // record. The change's own records come first, so the limit
+            // never cuts them.
+            $records = array_values(array_filter(
+                [...$own, ...array_filter($this->keptRecords($featureRequest), fn (array $record) => ! in_array($record['name'], $names, true))],
+                fn (array $record) => ($record['access'] ?? null) !== null,
+            ));
 
             // Records the app already had answer to its own policy, on the
             // routes of the controllers the change touched.
@@ -1068,6 +1080,9 @@ class VerifyFeatureRequest implements ShouldQueue
             }
 
             $planned = AccessProbes::plan($records, $read($config['routes']['report']), $config['probes']);
+            // A record a later change took out has no route; only the
+            // change's own are worth naming.
+            $planned['unmatched'] = array_values(array_intersect($planned['unmatched'], $names));
 
             if ($controllers !== []) {
                 // Crossing a team is tried first; the policy is not asked there.
@@ -1194,6 +1209,36 @@ class VerifyFeatureRequest implements ShouldQueue
     {
         return array_values(collect($featureRequest->lineage())
             ->flatMap(fn (FeatureRequest $request) => $request->latestRun?->plan === null ? [] : Plan::fromArray($request->latestRun->plan)->dataShape)
+            ->keyBy('name')
+            ->all());
+    }
+
+    /**
+     * Get the records the plans of the project's kept changes described,
+     * the latest of each name: the main app's, and the open idea's own
+     * when the change was made in one. Only changes whose access probes
+     * passed count.
+     *
+     * @return list<Record>
+     */
+    protected function keptRecords(FeatureRequest $featureRequest): array
+    {
+        return array_values(FeatureRequest::query()
+            ->whereBelongsTo($featureRequest->project)
+            ->whereKeyNot($featureRequest->getKey())
+            ->whereNotNull('commit_sha')
+            ->whereNull('reverted_at')
+            ->where(fn (Builder $query) => $query
+                ->whereNull('experiment_id')
+                ->orWhereHas('experiment', fn (Builder $query) => $query->where('status', ExperimentStatus::Merged))
+                ->when($featureRequest->experiment_id !== null, fn (Builder $query) => $query->orWhere('experiment_id', $featureRequest->experiment_id)))
+            ->with(['latestRun', 'verifications'])
+            ->oldest('id')
+            ->get()
+            // Only rules the probes proved when their change was kept, so a
+            // problem the app already had is not held against this change.
+            ->filter(fn (FeatureRequest $request) => $request->verifications->contains(fn (Verification $verification) => collect($verification->results)->contains(fn (array $result) => $result['name'] === __('Who may see and change records') && $result['outcome'] === self::OUTCOME_PASSED)))
+            ->flatMap(fn (FeatureRequest $request) => $request->latestRun?->plan === null ? [] : rescue(fn () => Plan::fromArray($request->latestRun->plan)->dataShape, [], report: false))
             ->keyBy('name')
             ->all());
     }

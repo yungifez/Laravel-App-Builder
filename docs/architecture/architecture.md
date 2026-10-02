@@ -3816,6 +3816,14 @@ policy refuses can be a finding ("the policy says no, the route said yes").
 Routes of untouched controllers are left alone, since their problems are not
 the change's.
 
+**Rules stay tests.** A rule the owner stated does not end with its change. The
+records of every kept change whose probes passed are probed again on each later
+change, wherever it touched the app, after the change's own records, within the
+same limit. A change that breaks an earlier rule (a moved route, a removed
+policy check) fails the same check. A rule of a change that was undone, or that
+no probe proved when it was kept, is not tried: a problem the app already had
+is never held against a later change.
+
 **Tenant isolation, on the same touched routes.** A short script runs with the
 app's own PHP and reads what the models declare through their return types: a
 team is a model with a many-to-many link to the user model, and a record

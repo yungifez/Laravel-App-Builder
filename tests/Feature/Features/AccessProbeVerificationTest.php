@@ -60,7 +60,20 @@ class AccessProbeVerificationTest extends TestCase
     protected function change(): FeatureRequest
     {
         $change = FeatureRequest::factory()->generated()->create();
-        Run::factory()->for($change)->create(['plan' => [
+        Run::factory()->for($change)->create(['plan' => $this->bookingPlan()]);
+
+        return $change;
+    }
+
+    /**
+     * The plan of a change that says only the person who added a booking
+     * may remove it.
+     *
+     * @return array<string, mixed>
+     */
+    protected function bookingPlan(): array
+    {
+        return [
             'summary' => 'Members book rooms.',
             'acceptance_criteria' => ['A member can book a room.'],
             'assumptions' => [],
@@ -73,9 +86,7 @@ class AccessProbeVerificationTest extends TestCase
                 'fields' => [['name' => 'user', 'type' => 'belongs_to', 'required' => true, 'choices' => [], 'of' => 'User']],
                 'access' => ['view' => 'everyone', 'create' => 'everyone', 'update' => 'everyone', 'delete' => 'creator'],
             ]],
-        ]]);
-
-        return $change;
+        ];
     }
 
     /**
@@ -216,5 +227,40 @@ class AccessProbeVerificationTest extends TestCase
         $test = $this->written();
         $this->assertSame(1, substr_count($test, "'stranger', "), 'one probe for the outsider, not a second from the policy');
         $this->assertSame(1, substr_count($test, "'guest', "));
+    }
+
+    public function test_a_rule_an_earlier_kept_change_stated_is_tried_on_every_later_change(): void
+    {
+        $this->answer(['{"id":0,"status":302,"changed":false,"invalid":false}', '{"id":1,"status":302,"changed":true,"invalid":false}']);
+        $kept = FeatureRequest::factory()->generated()->create(['commit_sha' => str_repeat('a', 40)]);
+        Run::factory()->for($kept)->create(['plan' => $this->bookingPlan()]);
+        $kept->verifications()->create(['status' => VerificationStatus::Passed, 'results' => [['name' => 'Who may see and change records', 'stage' => 'checks', 'outcome' => 'passed']]]);
+        // A change that only touches a page still answers to the rule.
+        $change = FeatureRequest::factory()->generated()->for($kept->project)->create();
+        Run::factory()->for($change)->create();
+
+        app(RequestVerification::class)->handle($change);
+
+        $result = collect($change->verifications()->sole()->results)->firstWhere('name', 'Who may see and change records');
+        $this->assertSame('failed', $result['outcome']);
+        $this->assertStringContainsString('A signed-in person who did not add it could remove a booking', $result['output']);
+    }
+
+    public function test_a_rule_of_an_undone_change_or_one_no_probe_proved_is_not_tried(): void
+    {
+        $this->answer([]);
+        $proved = ['status' => VerificationStatus::Passed, 'results' => [['name' => 'Who may see and change records', 'stage' => 'checks', 'outcome' => 'passed']]];
+        $undone = FeatureRequest::factory()->generated()->create(['commit_sha' => str_repeat('a', 40), 'reverted_at' => now()]);
+        Run::factory()->for($undone)->create(['plan' => $this->bookingPlan()]);
+        $undone->verifications()->create($proved);
+        // Kept before its probes ran: nothing proves its rule held then.
+        $unproven = FeatureRequest::factory()->generated()->for($undone->project)->create(['commit_sha' => str_repeat('b', 40)]);
+        Run::factory()->for($unproven)->create(['plan' => $this->bookingPlan()]);
+        $change = FeatureRequest::factory()->generated()->for($undone->project)->create();
+        Run::factory()->for($change)->create();
+
+        app(RequestVerification::class)->handle($change);
+
+        $this->assertNotContains(self::ROUTES, array_column($this->driver->executed, 'command'));
     }
 }
