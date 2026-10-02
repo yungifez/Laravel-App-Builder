@@ -3,22 +3,28 @@
 namespace TraceRecorder;
 
 use Closure;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
+use Illuminate\Contracts\View\View;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Database\QueryException;
 use Illuminate\Events\Dispatcher as Events;
+use Illuminate\Foundation\Exceptions\Handler;
 use Illuminate\Foundation\Http\Kernel;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Events\RequestSending;
 use Illuminate\Http\Client\Factory as HttpClient;
 use Illuminate\Http\Client\Response as ClientResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Log\LogManager;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Notifications\Events\NotificationSending;
 use Illuminate\Queue\Events\JobExceptionOccurred;
@@ -64,6 +70,10 @@ use WeakMap;
  * And it can name an outside call to answer. That call is made, and a
  * server error is given as its answer. The trace then says if the app's
  * code asked that answer for its status.
+ *
+ * Each trace also says what kind of answer the request gave, by names
+ * only. And a trace of a caused failure says when the app caught that
+ * failure and wrote nothing to its log after it.
  */
 class Recorder
 {
@@ -147,6 +157,9 @@ class Recorder
 
     /** @var array<string, true> The fakes that took work of this request this recorder could not see */
     protected array $hidden = [];
+
+    /** Whether the app wrote to its log after the failure this run caused. */
+    protected bool $told = false;
 
     protected Fakes $fakes;
 
@@ -251,6 +264,12 @@ class Recorder
                 }
             }
         });
+        // A report() of the app ends in its log too.
+        $events->listen(MessageLogged::class, function () {
+            if (isset($this->operation['fault'])) {
+                $this->told = true;
+            }
+        });
         $events->listen(MessageSending::class, fn (MessageSending $event) => $this->mailed((string) ($event->data['__laravel_mailable'] ?? $event->data['__laravel_notification'] ?? 'message')));
         $events->listen(NotificationSending::class, fn (NotificationSending $event) => $this->effect(['kind' => 'notification', 'what' => $event->notification::class]));
         $events->listen(RequestSending::class, function (RequestSending $event) {
@@ -284,6 +303,7 @@ class Recorder
         $this->held = [];
         $this->answering = null;
         $this->hidden = [];
+        $this->told = false;
         $this->fakes->standIn();
         $this->follow();
 
@@ -321,6 +341,118 @@ class Recorder
         $this->operation['status'] = $status;
         $this->operation['refused'] = $status >= 400 || $this->invalid($request);
         $this->operation['blind'] = $this->fakes->hiding($this->hidden);
+
+        try {
+            $this->operation['shape'] = $this->shape($request, $response);
+
+            if ($status < 500 && $this->quiet()) {
+                $this->operation['quiet'] = true;
+            }
+        } catch (Throwable) {
+            //
+        }
+    }
+
+    /**
+     * Determine if the app caught the failure this run caused and wrote
+     * nothing to its log after it. Nothing is said when the log cannot be
+     * seen: a test put a fake in place of the events or the log, or
+     * turned off the app's handling of errors, where report() does
+     * nothing.
+     */
+    protected function quiet(): bool
+    {
+        return isset($this->operation['fault'])
+            && in_array($this->fault['kind'] ?? null, ['mail', 'http', 'query'], true)
+            && ! $this->told
+            && $this->app->make('events') === $this->events
+            && $this->app->make('log') instanceof LogManager
+            && $this->app->make(ExceptionHandler::class) instanceof Handler;
+    }
+
+    /**
+     * Say what kind of answer the request gave, by names only: the route
+     * it sends the person to, what it tells them once, the fields it
+     * found wrong, the view it shows and what the view is given, and the
+     * names at the top of a JSON answer. Two runs of a request that tell
+     * the person the same have the same shape.
+     *
+     * @return list<string>
+     */
+    protected function shape($request, $response): array
+    {
+        $shape = [];
+        $names = fn (mixed $keys): array => array_slice(array_values(array_filter(
+            is_array($keys) ? $keys : [],
+            fn ($key) => is_string($key) && preg_match('/^[A-Za-z_][\w.-]{0,40}$/', $key) === 1,
+        )), 0, 12);
+        $add = function (string $kind, mixed $keys) use (&$shape, $names) {
+            foreach ($names($keys) as $name) {
+                $shape[] = "{$kind} {$name}";
+            }
+        };
+
+        $to = method_exists($response, 'isRedirection') && $response->isRedirection() ? $response->headers->get('Location') : null;
+
+        if (is_string($to)) {
+            $shape[] = 'to '.$this->routeOf($to, $request);
+        }
+
+        if (method_exists($request, 'hasSession') && $request->hasSession()) {
+            $session = $request->session();
+            $errors = $session->get('errors');
+
+            // The session was saved: what this request flashed is now "old".
+            $add('flash', $session->get('_flash.old'));
+
+            foreach (is_object($errors) && method_exists($errors, 'getBags') ? $errors->getBags() : (is_array($errors) ? $errors : []) as $bag) {
+                $add('error', is_object($bag) && method_exists($bag, 'keys') ? $bag->keys() : array_keys(is_array($bag['messages'] ?? null) ? $bag['messages'] : []));
+            }
+        }
+
+        $original = $response->original ?? null;
+
+        if ($original instanceof View) {
+            $shape[] = 'view '.$original->name();
+            $add('with', array_keys($original->getData()));
+        } elseif ($response instanceof JsonResponse) {
+            $data = $response->getData(true);
+            $add('json', is_array($data) && ! array_is_list($data) ? array_keys($data) : []);
+        }
+
+        sort($shape);
+
+        return array_values(array_unique($shape));
+    }
+
+    /**
+     * Get the route an address of the app leads to, as its pattern, so
+     * no value of the address is kept. "?" when no route of the app
+     * takes it.
+     */
+    protected function routeOf(string $address, $request): string
+    {
+        try {
+            $host = parse_url($address, PHP_URL_HOST);
+
+            if (is_string($host) && $host !== $request->getHost()) {
+                return 'outside';
+            }
+
+            $path = (string) parse_url($address, PHP_URL_PATH);
+            $asked = Request::create($path === '' ? '/' : $path);
+
+            // Asking each route leaves the routes as they are; matching through the router does not.
+            foreach ($this->app->make('router')->getRoutes()->get('GET') as $route) {
+                if ($route->matches($asked)) {
+                    return '/'.ltrim($route->uri(), '/');
+                }
+            }
+        } catch (Throwable) {
+            //
+        }
+
+        return '?';
     }
 
     /**

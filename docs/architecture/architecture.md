@@ -2038,11 +2038,30 @@ The trace of that request shows what stayed:
   order, and the request did not do the same. A send, or a save of the
   app's code that stayed, is missing or new from its line, or the answer
   has another status.
+- **Failure hidden.** A send or a save failed, the app's code caught the
+  failure, and the request carried on as if it worked: an empty `catch`
+  around an email. The person is not told, and no one can find out later.
 
 A save in a transaction is lost when the transaction rolls back. A save in
 steps is lost when the request ends in a server error. An app that catches
 the failure and answers in its own way took the failure in, and nothing is
-said. The recorder keeps no values, so the two runs of a job are compared by
+said about what stayed. Such an app must still not hide the failure. The
+failure is hidden when three things hold. The app wrote nothing to its log
+after the failure: the recorder hears each log entry, and a `report()` ends
+in the log too (`quiet`). The request gave the same kind of answer as in the
+normal run. And the request did nothing it does not do in the normal run;
+what it did less is the failure itself. The recorder keeps the kind of
+answer by names only (`shape`): the pattern of the route a redirect leads
+to, the names of what the request flashed and of the fields it found wrong,
+the view and the names of what it was given, and the names at the top of a
+JSON answer. So an app that records the failure, tells the person, or does
+something else about it is clean. Nothing is said when the log cannot be
+seen: a test put a fake in place of the events or the log, or turned off
+the app's handling of errors, where `report()` does nothing. One limit: an
+app that tells the person in other words under the same name, and records
+nothing, is a finding. The coder was told to catch a failure only together
+with `report()`, so this finding closes the easy way past the others.
+The recorder keeps no values, so the two runs of a job are compared by
 shape only. An update, a delete, or an insert that says what to do with a
 row that is there (`on conflict`, `insert ignore`) can be made again, and is
 not held against the job. A job that asks first and stops is clean.
@@ -2111,7 +2130,7 @@ is said. A second run that the trace cut short is missed. An email that a test
 fakes is a place too: the stand-in of the fake fails it the same way, before
 the fake takes it.
 
-Each of the ten sends the change back for a fix by itself, as the safety
+Each of the eleven sends the change back for a fix by itself, as the safety
 scan does (`builder.verification.faults.send_back`). No model decides it:
 the failure was caused, and the trace shows what stayed. The coder is told
 what stayed and how to avoid it ("…A queue gives a job to a worker at least

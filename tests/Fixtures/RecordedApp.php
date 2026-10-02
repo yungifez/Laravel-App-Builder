@@ -4,6 +4,7 @@ namespace Tests\Fixtures;
 
 use App\Models\User;
 use Illuminate\Http\Client\Factory;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
@@ -11,6 +12,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use RuntimeException;
+use Throwable;
 
 /**
  * Stands in for an owner's app while the recorder is tested: each method
@@ -318,6 +320,42 @@ class RecordedApp
         Http::retry(2, 0)
             ->withHeaders($request->boolean('keyed') ? ['Idempotency-Key' => 'charge-1'] : [])
             ->post('https://outside.example/charge', ['amount' => 5]);
+
+        return response()->noContent();
+    }
+
+    /**
+     * Catches an email that cannot be sent. It carries on as if the
+     * email was sent, unless it is asked to record the failure or to tell
+     * the person.
+     */
+    public function hushed(Request $request): RedirectResponse
+    {
+        try {
+            Mail::raw('Receipt', fn ($message) => $message->to('owner@example.com'));
+        } catch (Throwable $exception) {
+            if ($request->boolean('recorded')) {
+                report($exception);
+            }
+
+            if ($request->boolean('told')) {
+                return redirect('/_hidden/receipt')->with('problem', 'The receipt was not sent.');
+            }
+        }
+
+        return redirect('/_hidden/receipt')->with('status', 'The receipt is on its way.');
+    }
+
+    /**
+     * Catches a save that fails and answers as if it saved.
+     */
+    public function swallowed(): Response
+    {
+        try {
+            DB::transaction(fn () => User::factory()->create());
+        } catch (Throwable) {
+            //
+        }
 
         return response()->noContent();
     }

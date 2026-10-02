@@ -792,6 +792,97 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([['called_again', 'http POST outside.example', 'http POST outside.example']], array_map(fn (array $finding) => [$finding['kind'], $finding['failed'], $finding['what']], $measured['findings']));
     }
 
+    public function test_an_email_failure_the_app_catches_and_tells_no_one_about_is_found()
+    {
+        Route::post('/_hidden/receipt', [RecordedApp::class, 'hushed'])->middleware('web');
+        Route::get('/_hidden/receipt', [RecordedApp::class, 'quiet']);
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'mail');
+
+        $this->post('/_hidden/receipt')->assertRedirect('/_hidden/receipt')->assertSessionHas('status');
+        $this->post('/_hidden/receipt')->assertRedirect('/_hidden/receipt')->assertSessionHas('status');
+
+        $requests = $recorded();
+        $this->assertSame([false, true], array_map(fn (array $request) => $request['quiet'] ?? false, $requests));
+        // The answer is kept by its names: the route it leads to and what it tells the person, not the words.
+        $this->assertSame([['flash status', 'to /_hidden/receipt'], ['flash status', 'to /_hidden/receipt']], array_column($requests, 'shape'));
+        $this->assertStringNotContainsString('on its way', File::get("{$this->directory}/trace.jsonl"));
+
+        $measured = $this->measureFailure($requests, 'mail message');
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['failure_hidden', 'POST /_hidden/receipt', 'mail message', 'mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
+    public function test_an_email_failure_the_app_catches_and_records_is_clean()
+    {
+        Route::post('/_hidden/receipt', [RecordedApp::class, 'hushed'])->middleware('web');
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'mail');
+
+        $this->post('/_hidden/receipt?recorded=1')->assertSessionHas('status');
+        $this->post('/_hidden/receipt?recorded=1')->assertSessionHas('status');
+
+        $requests = $recorded();
+        $this->assertSame(0, $requests[1]['fault']);
+        // report() wrote to the log after the failure.
+        $this->assertSame([false, false], array_map(fn (array $request) => $request['quiet'] ?? false, $requests));
+
+        $measured = $this->measureFailure($requests, 'mail message');
+        $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+    }
+
+    public function test_an_email_failure_the_app_catches_and_tells_the_person_about_is_clean()
+    {
+        Route::post('/_hidden/receipt', [RecordedApp::class, 'hushed'])->middleware('web');
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'mail');
+
+        $this->post('/_hidden/receipt?told=1')->assertSessionHas('status');
+        $this->post('/_hidden/receipt?told=1')->assertSessionHas('problem');
+
+        $requests = $recorded();
+        // No route takes the address in this test, and the person was told something else.
+        $this->assertSame([['flash status', 'to ?'], ['flash problem', 'to ?']], array_column($requests, 'shape'));
+        $this->assertTrue($requests[1]['quiet']);
+
+        $measured = $this->measureFailure($requests, 'mail message');
+        $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+    }
+
+    public function test_nothing_is_said_about_a_caught_failure_when_the_test_turned_off_the_apps_handling_of_errors()
+    {
+        Route::post('/_hidden/receipt', [RecordedApp::class, 'hushed'])->middleware('web');
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'mail');
+        // report() does nothing now, so an empty log says nothing.
+        $this->withoutExceptionHandling();
+
+        $this->post('/_hidden/receipt')->assertSessionHas('status');
+        $this->post('/_hidden/receipt')->assertSessionHas('status');
+
+        $requests = $recorded();
+        $this->assertSame(0, $requests[1]['fault']);
+        $this->assertSame([false, false], array_map(fn (array $request) => $request['quiet'] ?? false, $requests));
+
+        $measured = $this->measureFailure($requests, 'mail message');
+        $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+    }
+
+    public function test_a_save_failure_the_app_catches_and_tells_no_one_about_is_found()
+    {
+        Route::post('/_hidden/saved', [RecordedApp::class, 'swallowed']);
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'query');
+
+        $this->post('/_hidden/saved')->assertNoContent();
+        $this->post('/_hidden/saved')->assertNoContent();
+
+        $requests = $recorded();
+        $this->assertSame(['begin 1', 'query 1', 'rollback 0'], array_map(fn (array $effect) => $effect['kind'].' '.$effect['open'], $requests[1]['effects']));
+        $this->assertSame([[], []], array_column($requests, 'shape'));
+        $this->assertTrue($requests[1]['quiet']);
+        // The person was told it worked, and only the first request's user is there.
+        $this->assertSame(1, User::query()->count());
+
+        $measured = $this->measureFailure($requests, 'insert users');
+        $this->assertSame([['failure_hidden', 'POST /_hidden/saved', 'insert users', 'insert users']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
     public function test_an_outside_call_that_says_which_call_it_is_is_marked_and_can_be_made_again()
     {
         Route::post('/_faked/retried', [RecordedApp::class, 'retried']);

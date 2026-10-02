@@ -174,12 +174,14 @@ class AppFaultsTest extends TestCase
      *
      * @param  list<array<string, mixed>>  $normal  What the request did in the tests' normal run
      * @param  list<array<string, mixed>>  $failed  What it did when the failure was caused
+     * @param  array<string, mixed>  $extra  What else the recorder said of the request the failure was caused in
+     * @param  array<string, mixed>  $was  What else it said of the request in the tests' normal run
      * @return array<string, mixed>|null
      */
-    protected function measure(array $normal, int $status, array $failed, int $point = 0): ?array
+    protected function measure(array $normal, int $status, array $failed, int $point = 0, array $extra = [], array $was = []): ?array
     {
-        $points = AppFaults::points(AppTraces::parse($this->recorded('POST', '/orders', 302, $normal)), self::PATCH);
-        $run = AppTraces::parse($this->recorded('POST', '/orders', $status, $failed, ['fault' => $points[$point]['fault']['effect']]));
+        $points = AppFaults::points(AppTraces::parse($this->recorded('POST', '/orders', 302, $normal, $was)), self::PATCH);
+        $run = AppTraces::parse($this->recorded('POST', '/orders', $status, $failed, ['fault' => $points[$point]['fault']['effect'], ...$extra]));
 
         return AppFaults::measure($points, [$point => $run], self::PATCH);
     }
@@ -344,6 +346,63 @@ class AppFaultsTest extends TestCase
         $clean = $this->measure([['kind' => 'begin', 'open' => 1], $order, ['kind' => 'commit', 'open' => 0]], 500, [['kind' => 'begin', 'open' => 1], $order, ['kind' => 'rollback', 'open' => 0]]);
 
         $this->assertSame([[1, []], [1, []], [1, []]], array_map(fn (array $measured) => [$measured['run'], $measured['findings']], [$again, $carriedOn, $clean]));
+    }
+
+    public function test_a_failure_the_app_catches_is_found_when_it_tells_no_one()
+    {
+        $saved = $this->asked('insert into "orders" ("total") values (?)', self::NEW.':3');
+        $mail = $this->mailed(self::NEW.':4');
+        $marks = $this->asked('update "orders" set "receipt_sent" = ? where "id" = ?', self::NEW.':5');
+        $shape = ['shape' => ['flash status', 'to /orders/{order}']];
+
+        // The email failed inside a try: the request left out what came after it, and answered as usual.
+        $measured = $this->measure([$saved, $mail, $marks], 302, [$saved, $mail], extra: ['quiet' => true, ...$shape], was: $shape);
+
+        $this->assertSame(['points' => 2, 'run' => 1, 'missed' => 0, 'existing' => 0], array_diff_key((array) $measured, ['findings' => 1]));
+        $this->assertSame([
+            ['kind' => 'failure_hidden', 'route' => 'POST /orders', 'failed' => 'mail App\Mail\Receipt', 'what' => 'mail App\Mail\Receipt', 'at' => self::NEW.':4', 'test' => self::TEST],
+        ], $measured['findings'] ?? null);
+
+        // A save the app catches is found the same way: put back with its transaction, or never made.
+        $order = $this->asked('insert into "orders" ("total") values (?)', self::NEW.':5', open: 1);
+        $undone = $this->measure([['kind' => 'begin', 'open' => 1], $order, ['kind' => 'commit', 'open' => 0]], 302, [['kind' => 'begin', 'open' => 1], $order, ['kind' => 'rollback', 'open' => 0]], extra: ['quiet' => true, ...$shape], was: $shape);
+        $never = $this->measure([$saved, $marks], 302, [$saved, $marks], extra: ['quiet' => true, ...$shape], was: $shape);
+
+        $this->assertSame([[['failure_hidden', 'insert orders']], [['failure_hidden', 'update orders']]], array_map(
+            fn (?array $measured) => array_map(fn (array $finding) => [$finding['kind'], $finding['failed']], $measured['findings'] ?? []),
+            [$undone, $never],
+        ));
+
+        // The same in code the app already had is counted, not held against the change.
+        $old = $this->mailed('app/Services/Receipts.php:9');
+        $existing = $this->measure([$saved, $old], 302, [$saved, $old], extra: ['quiet' => true, ...$shape], was: $shape);
+        $this->assertSame([1, 1, []], [$existing['run'] ?? null, $existing['existing'] ?? null, $existing['findings'] ?? null]);
+    }
+
+    public function test_a_failure_the_app_catches_is_no_finding_when_it_records_it_tells_the_person_or_does_something_about_it()
+    {
+        $saved = $this->asked('insert into "orders" ("total") values (?)', self::NEW.':3');
+        $mail = $this->mailed(self::NEW.':4');
+        $shape = ['shape' => ['flash status', 'to /orders/{order}']];
+        $noted = $this->asked('insert into "failed_receipts" ("order_id") values (?)', self::NEW.':5');
+
+        $measured = [
+            // The app wrote to its log after the failure, or the log could not be seen.
+            $this->measure([$saved, $mail], 302, [$saved, $mail], extra: $shape, was: $shape),
+            // The person was told something else.
+            $this->measure([$saved, $mail], 302, [$saved, $mail], extra: ['quiet' => true, 'shape' => ['flash problem', 'to /orders/{order}']], was: $shape),
+            // The person got another answer.
+            $this->measure([$saved, $mail], 422, [$saved, $mail], extra: ['quiet' => true, ...$shape], was: $shape),
+            // The app did something it does not do when all works.
+            $this->measure([$saved, $mail], 302, [$saved, $mail, $noted], extra: ['quiet' => true, ...$shape], was: $shape),
+            // The shape of the answer is not known for both runs.
+            $this->measure([$saved, $mail], 302, [$saved, $mail], extra: ['quiet' => true, ...$shape]),
+            $this->measure([$saved, $mail], 302, [$saved, $mail], extra: ['quiet' => true], was: $shape),
+            // A trace that is not whole cannot be compared.
+            $this->measure([$saved, $mail], 302, [$saved, $mail], extra: ['quiet' => true, 'cut' => true, ...$shape], was: $shape),
+        ];
+
+        $this->assertSame(array_fill(0, 7, [1, []]), array_map(fn (?array $measured) => [$measured['run'] ?? null, $measured['findings'] ?? null], $measured));
     }
 
     public function test_only_the_last_save_in_steps_is_a_place_and_only_after_the_apps_code_saved_or_sent()
@@ -856,7 +915,7 @@ class AppFaultsTest extends TestCase
 
         $this->assertSame(
             'POST /orders: when mail App\Mail\Receipt failed at '.self::NEW.':4, the request ended in a server error but had already saved: insert orders (caused in '.self::TEST.'). '
-                .'A person who sees the error tries again, and the save happens twice. Queue what the request sends, after the save is kept, or catch the failure and answer without an error.',
+                .'A person who sees the error tries again, and the save happens twice. Queue what the request sends, after the save is kept. Or catch the failure, record it with report(), and tell the person what did not happen.',
             AppFaults::finding($kept),
         );
         $this->assertSame(

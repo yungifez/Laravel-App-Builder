@@ -58,6 +58,9 @@ class AppTraces
      * which call it is (an idempotency key), and "direct" one the app's
      * code made itself, so it gets the answer. "asked" says that the
      * app's code asked an error answer for its status (see AppFaults).
+     * "shape" is the kind of answer the request gave, by names only, and
+     * "quiet" says that the app caught the failure that was caused and
+     * wrote nothing to its log after it (see AppFaults).
      * "phase" is the part of the request a thing happened in (such as
      * authorization, validation, handling or rendering; "unknown" when the
      * recorder could not tell), and "frames" the app's own code on the way
@@ -67,7 +70,7 @@ class AppTraces
      * more listeners Laravel found by itself: the line that dispatched it
      * and those listeners, in the order they ran, as Class::method.
      *
-     * @return list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, direct?: bool, phase?: string, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, asked?: bool, events?: list<array{what: string, at: string|null, listeners: list<string>}>}>
+     * @return list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, direct?: bool, phase?: string, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, asked?: bool, quiet?: bool, shape?: list<string>, events?: list<array{what: string, at: string|null, listeners: list<string>}>}>
      */
     public static function parse(string $report): array
     {
@@ -129,6 +132,8 @@ class AppTraces
                 ...(is_int($request['n'] ?? null) ? ['n' => $request['n']] : []),
                 ...(is_int($request['fault'] ?? null) ? ['fault' => $request['fault']] : []),
                 ...(($request['asked'] ?? false) === true ? ['asked' => true] : []),
+                ...(($request['quiet'] ?? false) === true ? ['quiet' => true] : []),
+                ...(is_array($request['shape'] ?? null) ? ['shape' => array_values(array_filter($request['shape'], is_string(...)))] : []),
                 ...($events === [] ? [] : ['events' => $events]),
             ];
         }

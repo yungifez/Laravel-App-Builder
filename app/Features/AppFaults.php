@@ -72,6 +72,15 @@ namespace App\Features;
  * there. The job that was held back runs that way. A job that takes
  * the person from the request it was dispatched in, and not from what
  * it was given, then sends or saves less. That is a finding of its own.
+ *
+ * The last thing is read when the app's code catches the failure. A
+ * request that then did nothing new, gave the same kind of answer as when
+ * all worked, and wrote nothing to its log hid the failure: the person
+ * is not told, and no one can find out later. The recorder keeps no
+ * values, so the answer is compared by its names only: its status, the
+ * route it sends the person to, and what it tells them. A log that
+ * cannot be seen, such as one a test put a fake in place of, says
+ * nothing.
  */
 class AppFaults
 {
@@ -95,6 +104,8 @@ class AppFaults
 
     public const ANSWER_NOT_CHECKED = 'answer_not_checked';
 
+    public const FAILURE_HIDDEN = 'failure_hidden';
+
     /**
      * The findings the owner reads in the proof, and so may accept.
      */
@@ -102,6 +113,7 @@ class AppFaults
         self::SAVED_THEN_FAILED,
         self::SENT_THEN_LOST,
         self::SAVED_IN_PART,
+        self::FAILURE_HIDDEN,
         self::DONE_TWICE,
         self::SENT_AGAIN,
         self::CALLED_AGAIN,
@@ -170,9 +182,9 @@ class AppFaults
      * order comes only from the trace, the patch and those findings, so
      * the same change gives the same order.
      *
-     * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, direct?: bool, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, events?: list<array{what: string, at: string|null, listeners: list<string>}>}>  $requests  From AppTraces::parse(), of the tests' normal run
+     * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, direct?: bool, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, shape?: list<string>, events?: list<array{what: string, at: string|null, listeners: list<string>}>}>  $requests  From AppTraces::parse(), of the tests' normal run
      * @param  list<array{route: string, at?: string|null}>  $suspected  Findings of the other engines about the change, such as AppTraces and AppBoundaries give
-     * @return list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string, what?: string}, times: int, own: bool, was?: array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool}}>
+     * @return list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string, what?: string}, times: int, own: bool, was?: array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool, shape?: list<string>}}>
      */
     public static function points(array $requests, ?string $patch, array $suspected = []): array
     {
@@ -270,11 +282,13 @@ class AppFaults
                     'times' => count(self::same($request['effects'], $failed)),
                     // A job is also the change's when the change wrote what it does.
                     'own' => $new($failed) || ($point[3] ?? false),
-                    ...($fails === self::LATER || $fails === self::ANSWER ? ['was' => [
+                    // What the failure is compared with: the same request when all worked.
+                    ...(in_array($fails, [self::LATER, self::ANSWER, self::SEND, self::SAVE], true) ? ['was' => [
                         'status' => $request['status'],
                         'did' => self::did($request['effects']),
                         'listeners' => [],
-                        'apart' => $fails === self::ANSWER || self::apart(self::around($request['effects'], $at)),
+                        'apart' => $fails !== self::LATER || self::apart(self::around($request['effects'], $at)),
+                        ...(isset($request['shape']) ? ['shape' => $request['shape']] : []),
                     ]] : []),
                 ];
             }
@@ -329,8 +343,8 @@ class AppFaults
      * job that waits is missed too when its two runs have the same shape
      * but the shape cannot say that they left the same behind.
      *
-     * @param  list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string, what?: string}, times: int, own: bool, was?: array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool}}>  $points  From points()
-     * @param  array<int, list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, asked?: bool}>>  $runs  What was recorded when each place's failure was caused, by the place's position in $points; a place not tried is absent
+     * @param  list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string, what?: string}, times: int, own: bool, was?: array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool, shape?: list<string>}}>  $points  From points()
+     * @param  array<int, list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, asked?: bool, quiet?: bool, shape?: list<string>}>>  $runs  What was recorded when each place's failure was caused, by the place's position in $points; a place not tried is absent
      * @return array{points: int, run: int, missed: int, existing: int, findings: list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}>}|null
      */
     public static function measure(array $points, array $runs, ?string $patch): ?array
@@ -444,6 +458,7 @@ class AppFaults
             self::SAVED_THEN_FAILED => "when {$finding['failed']} failed{$at(' at')}, the request ended in a server error but had already saved: {$finding['what']}",
             self::SENT_THEN_LOST => "when {$finding['failed']} failed{$at(' at')}, the save was lost but the request had already sent: {$finding['what']}",
             self::SAVED_IN_PART => "when {$finding['failed']} failed{$at(' at')}, the save was lost but the request kept what it had saved before it, with no transaction around both: {$finding['what']}",
+            self::FAILURE_HIDDEN => "when {$finding['failed']} failed{$at(' at')}, the app caught the failure and hid it: the request did nothing new, gave the same kind of answer as when all worked, and wrote nothing to the log",
             default => "when {$finding['failed']} failed{$at(' at')}, {$finding['kind']}: {$finding['what']}",
         };
 
@@ -460,9 +475,10 @@ class AppFaults
     public static function finding(array $finding): string
     {
         $fix = match ($finding['kind']) {
-            self::SAVED_THEN_FAILED => 'A person who sees the error tries again, and the save happens twice. Queue what the request sends, after the save is kept, or catch the failure and answer without an error.',
+            self::SAVED_THEN_FAILED => 'A person who sees the error tries again, and the save happens twice. Queue what the request sends, after the save is kept. Or catch the failure, record it with report(), and tell the person what did not happen.',
             self::SENT_THEN_LOST => 'People are told about something that was not saved. Send after the save is kept: after the transaction, or with afterCommit().',
             self::SAVED_IN_PART => 'Put the saves that belong together in one DB::transaction().',
+            self::FAILURE_HIDDEN => 'No one finds a failure that the code catches and does not record. Let it fail, or record it with report() and tell the person what did not happen.',
             self::DONE_TWICE => 'A queue gives a job to a worker at least once. Make the job safe to run again: look for what it already made (firstOrCreate, a unique index), or record that it sent before it sends.',
             self::SENT_AGAIN => 'A queue tries a failed job again. Save first and send last in the job, or record what it sent so the next try does not send it again.',
             self::CALLED_AGAIN => 'A call that got no answer can still have arrived. Give the call an Idempotency-Key header with the same value on each try. When the service takes none, do not try the call again.',
@@ -491,9 +507,9 @@ class AppFaults
      * Get what a request left behind after its failure that the failure
      * should have stopped or undone, by the kind of problem it is.
      *
-     * @param  array{status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, fault?: int, asked?: bool}  $hit  The request the failure was caused in
+     * @param  array{status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, cut: bool, fault?: int, asked?: bool, quiet?: bool, shape?: list<string>}  $hit  The request the failure was caused in
      * @param  int  $times  How many times the request did the same thing from the same line in the tests' normal run
-     * @param  array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool}|null  $was  What the request did in the tests' normal run, for an event, a job that waits or an answer
+     * @param  array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool, shape?: list<string>}|null  $was  What the request did in the tests' normal run
      * @return array<string, list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>>
      */
     protected static function left(string $fails, array $hit, int $times, ?array $was = null): array
@@ -545,6 +561,7 @@ class AppFaults
                 // before the failure is still there.
                 self::SAVED_THEN_FAILED => $hit['status'] >= 500 ? $kept : [],
                 self::CALLED_AGAIN => self::calledAgain($hit['effects'], $place, $times),
+                self::FAILURE_HIDDEN => self::hidden($hit, $was),
             ]);
         }
 
@@ -559,13 +576,42 @@ class AppFaults
         $again = fn (array $effect, int $at): bool => $at > $place && ($effect['sql'] ?? null) === ($failed['sql'] ?? '') && ($effect['at'] ?? null) === ($failed['at'] ?? null);
         $tookIn = $failed !== null && ($failed['open'] > 0 ? isset($stayed[$place]) : $hit['status'] < 500);
 
-        if ($failed === null || $tookIn || array_any($stayed, $again)) {
+        if ($failed === null || array_any($stayed, $again)) {
             return [];
+        }
+
+        if ($tookIn) {
+            return array_filter([self::FAILURE_HIDDEN => self::hidden($hit, $was)]);
         }
 
         $sent = array_values(array_filter($hit['effects'], fn (array $effect, int $at) => $before($effect, $at) && in_array($effect['kind'], self::SENT, true), ARRAY_FILTER_USE_BOTH));
 
-        return array_filter([self::SENT_THEN_LOST => $sent, self::SAVED_IN_PART => $kept]);
+        return array_filter([self::SENT_THEN_LOST => $sent, self::SAVED_IN_PART => $kept, self::FAILURE_HIDDEN => self::hidden($hit, $was)]);
+    }
+
+    /**
+     * Get the thing that failed when the app hid its failure: the app's
+     * code caught it and wrote nothing to the log, and the request did
+     * nothing it does not do when all works and gave the same kind of
+     * answer. What the request did less is the failure itself. An app
+     * that tells the person, records the failure or does something else
+     * about it did not hide it.
+     *
+     * @param  array{status: int, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, cut: bool, fault?: int, quiet?: bool, shape?: list<string>}  $hit
+     * @param  array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool, shape?: list<string>}|null  $was
+     * @return list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>
+     */
+    protected static function hidden(array $hit, ?array $was): array
+    {
+        $failed = $hit['effects'][$hit['fault'] ?? 0] ?? null;
+
+        // A run that is not whole in the trace, or an answer whose shape
+        // is not known for both runs, cannot be compared.
+        if ($failed === null || $was === null || ! ($hit['quiet'] ?? false) || $hit['cut'] || ! isset($was['shape'], $hit['shape']) || $was['shape'] !== $hit['shape']) {
+            return [];
+        }
+
+        return array_all(self::changed($was, $hit), fn (array $change) => $change['kind'] === 'missing') ? [$failed] : [];
     }
 
     /**
@@ -576,7 +622,7 @@ class AppFaults
      * saves to it. The recorder keeps no values, so what stayed in that
      * table, or what was read from it, is not known.
      *
-     * @param  array{fails: string, was?: array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool}}  $point
+     * @param  array{fails: string, was?: array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool, shape?: list<string>}}  $point
      * @param  array{status: int, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, frames?: list<string>}>, fault?: int}  $hit
      */
     protected static function undecided(array $point, array $hit): bool

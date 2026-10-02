@@ -586,6 +586,16 @@ class ChangeProofTest extends TestCase
             $proof(['run' => 1, 'findings' => [$finding('answer_not_checked', 'POST /orders/{order}/pay', 'http POST api.stripe.com')]])->where('kind', 'gap')->pluck('text')->all(),
         );
 
+        // A failure the app hides is said by what failed: an email, an outside service or a save.
+        $this->assertSame([
+            ['If an email cannot be sent at /orders, your app carries on as if it worked. The person is not told, and nothing is written down, so you would not find out.'],
+            ['If an outside service does not answer at /orders, your app carries on as if it worked. The person is not told, and nothing is written down, so you would not find out.'],
+            ['If saving fails at /orders, your app carries on as if it worked. The person is not told, and nothing is written down, so you would not find out.'],
+        ], array_map(
+            fn (string $failed) => $proof(['run' => 1, 'findings' => [$finding('failure_hidden', 'POST /orders', $failed)]])->where('kind', 'gap')->pluck('text')->all(),
+            ['mail App\Mail\Receipt', 'http POST api.stripe.com', 'insert orders'],
+        ));
+
         // The recording already said it sends before saving ends: it is said once.
         $twice = $proof(['run' => 1, 'findings' => [$finding('sent_then_lost', 'POST /invitations', 'insert invitations')]], ['traces' => ['requests' => 40, 'reached' => 12, 'unseen' => 0, 'existing' => 0, 'repeats' => [], 'findings' => [
             ['kind' => 'sent_before_saved', 'route' => 'POST /invitations', 'what' => 'mail App\Mail\Invited', 'at' => 'app/Models/Order.php:3', 'test' => null],
