@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Workspaces\LoseRunnerCommands;
 use App\Http\Requests\RunnerHelloRequest;
 use App\Http\Requests\RunnerSocketAuthRequest;
 use App\Models\Runner;
@@ -11,10 +12,13 @@ class RunnerController extends Controller
 {
     /**
      * Tell a runner who it is, how often to poll and where its doorbell is.
+     * A runner says hello once, when it starts, so the commands it took
+     * before are gone.
      */
-    public function hello(RunnerHelloRequest $request): JsonResponse
+    public function hello(RunnerHelloRequest $request, LoseRunnerCommands $loseRunnerCommands): JsonResponse
     {
         $runner = (string) $request->attributes->get('runner');
+        $loseRunnerCommands->handle($runner);
         $socketUrl = config('workspaces.drivers.runner.socket_url');
 
         // A runner in the pool says where its previews are reached; the

@@ -75,6 +75,21 @@ class RunnerApiTest extends TestCase
         $this->assertSame(BoxCommandStatus::Claimed, $mine->refresh()->status);
     }
 
+    public function test_a_runner_that_starts_again_has_lost_the_commands_it_took_before()
+    {
+        $running = $this->command(['status' => BoxCommandStatus::Claimed]);
+        $waiting = $this->command();
+        $elsewhere = $this->command(['runner' => 'other', 'status' => BoxCommandStatus::Claimed]);
+
+        $this->withToken('runner-token')->postJson('/api/runner/hello')->assertOk();
+
+        $this->assertSame(BoxCommandStatus::Lost, $running->refresh()->status);
+        $this->assertSame('The runner restarted while the command ran.', $running->result['error_output']);
+        $this->assertNull($running->payload);
+        $this->assertSame(BoxCommandStatus::Queued, $waiting->refresh()->status, 'The runner takes it on its next poll.');
+        $this->assertSame(BoxCommandStatus::Claimed, $elsewhere->refresh()->status);
+    }
+
     public function test_the_runner_hears_which_running_commands_to_stop()
     {
         $command = $this->command(['status' => BoxCommandStatus::Claimed, 'cancel_requested_at' => now()]);
