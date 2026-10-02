@@ -12,11 +12,13 @@ use App\Enums\PreviewStatus;
 use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\Workspace;
+use App\Previews\PreviewFailure;
 use App\Projects\ProjectRepository;
 use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\Drivers\CopyExclusions;
 use App\Workspaces\WorkspaceFiles;
 use App\Workspaces\WorkspaceManager;
+use Closure;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Config;
@@ -97,7 +99,7 @@ class StartPreview implements ShouldQueue
             $this->run($runWorkspaceCommand, $workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], 30, __('The workspace could not be prepared.'));
 
             foreach (self::steps('setup', $workspace) as $step) {
-                $this->run($runWorkspaceCommand, $workspace, $step['command'], $step['timeout'], __('The setup step ":name" failed.', ['name' => $step['name']]));
+                $this->runStep($runWorkspaceCommand, $workspace, $step);
             }
 
             $workspaceFiles->sync($project, $workspace);
@@ -108,7 +110,7 @@ class StartPreview implements ShouldQueue
 
             if (! ($this->preview->editable && $this->startWatching($driver, $runWorkspaceCommand, $workspace))) {
                 foreach (self::steps('build', $workspace) as $step) {
-                    $this->run($runWorkspaceCommand, $workspace, $step['command'], $step['timeout'], __('The setup step ":name" failed.', ['name' => $step['name']]));
+                    $this->runStep($runWorkspaceCommand, $workspace, $step);
                 }
             }
 
@@ -316,18 +318,36 @@ class StartPreview implements ShouldQueue
     }
 
     /**
-     * Run a preparation command and stop with the given reason if it fails.
+     * Run a setup or build step. If it fails, the owner reads the stage it
+     * stopped at and what to do; operators also get the step's name.
      *
-     * @param  list<string>  $command
+     * @param  array{name: string, command: list<string>, timeout: int, needs?: string}  $step
      *
      * @throws RuntimeException
      */
-    protected function run(RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, array $command, int $timeoutSeconds, string $reason): void
+    protected function runStep(RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, array $step): void
+    {
+        $this->run($runWorkspaceCommand, $workspace, $step['command'], $step['timeout'], fn (bool $timedOut) => PreviewFailure::step($step['name'], $timedOut, $step['timeout'])
+            ."\n".__('The setup step ":name" :outcome.', ['name' => $step['name'], 'outcome' => $timedOut ? __('ran out of time') : __('failed')]));
+    }
+
+    /**
+     * Run a preparation command and stop with the given reason if it fails.
+     * The reason's first line is for the owner; the command's output after
+     * it is for operators.
+     *
+     * @param  list<string>  $command
+     * @param  string|Closure(bool): string  $reason  given whether the command ran out of time
+     *
+     * @throws RuntimeException
+     */
+    protected function run(RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, array $command, int $timeoutSeconds, string|Closure $reason): void
     {
         $result = $runWorkspaceCommand->handle($workspace, $command, $timeoutSeconds);
 
         if ($result->exit_code !== 0 || $result->timed_out) {
             $output = (string) preg_replace('/\e\[[0-9;?]*[ -\/]*[@-~]/', '', $result->error_output ?: $result->output);
+            $reason = is_string($reason) ? $reason : $reason($result->timed_out);
 
             throw new RuntimeException(trim($reason."\n".trim(mb_substr($output, -2000))));
         }

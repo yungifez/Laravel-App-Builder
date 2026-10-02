@@ -157,10 +157,33 @@ class PreviewTest extends TestCase
 
         $preview = $request->previews()->sole();
         $this->assertSame(PreviewStatus::Failed, $preview->status);
+        // The owner reads the first line; operators get the step and its output.
+        $this->assertStringStartsWith("Something went wrong on our side while getting your app ready. This is our fault. Try once more.\n", (string) $preview->error);
         $this->assertStringContainsString('The setup step "Install" failed.', (string) $preview->error);
         $this->assertStringContainsString('Your lock file is out of date.', (string) $preview->error);
         $this->assertCount(1, $this->driver->destroyed);
         $this->assertSame([], $this->driver->services);
+    }
+
+    public function test_a_setup_step_that_runs_out_of_time_says_how_long_it_had()
+    {
+        $this->driver->onExec = fn (string $id, array $command) => new CommandResult(
+            exitCode: $command === ['composer', 'install'] ? 124 : 0,
+            output: '',
+            errorOutput: '',
+            durationMs: 600000,
+            timedOut: $command === ['composer', 'install'],
+        );
+        $request = FeatureRequest::factory()->generated()->create();
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $error = (string) $request->previews()->sole()->error;
+        $this->assertStringStartsWith("Getting your app ready took more than 10 minutes, so I stopped. This is our fault. Try once more.\n", $error);
+        $this->assertStringContainsString('The setup step "Install" ran out of time.', $error);
+
+        $this->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page->where('preview.error', 'Getting your app ready took more than 10 minutes, so I stopped. This is our fault. Try once more.'));
     }
 
     public function test_starting_a_preview_again_stops_the_running_one()

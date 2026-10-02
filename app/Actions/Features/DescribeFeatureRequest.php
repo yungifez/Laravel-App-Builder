@@ -356,7 +356,8 @@ class DescribeFeatureRequest
         return $preview === null ? null : [
             'id' => $preview->uuid,
             'status' => $preview->status->value,
-            'error' => OwnerWording::message($preview->error),
+            // One line for the owner; the output after it is for operators.
+            'error' => OwnerWording::message(strtok((string) $preview->error, "\n") ?: null),
             'url' => $preview->url(),
             'expires_at' => $preview->expires_at?->toIso8601String(),
             'editable' => $preview->editable,
