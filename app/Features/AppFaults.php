@@ -61,6 +61,12 @@ namespace App\Features;
  * call that got no answer may have arrived, so a job that does not make
  * it again can be right.
  *
+ * The same second run shows a job that sends to many. Such a job that
+ * fails at one email starts from the top when it is tried again, and
+ * sends again what it had sent before the failure. So the last email a
+ * job sends from one line is the one that fails, and no email may leave
+ * more times than in the normal run.
+ *
  * One more thing is read with no failure at all. An event can have two
  * or more listeners that Laravel found by itself. Laravel takes those in
  * the order the disk lists their files, so their order is not the same on
@@ -259,10 +265,11 @@ class AppFaults
                 }
 
                 if ($effect['job'] ?? false) {
-                    // What the app's code sends in a job can fail there. A job of
-                    // the framework that delivers one email has no code to catch it.
-                    if (in_array($effect['kind'], self::FAILS, true) && is_string($effect['at'] ?? null) && ! self::delivered($request['effects'], $place)) {
-                        $found[] = [self::SEND, $place, $effect];
+                    // What the app's code sends in a job can fail there. The last
+                    // send from one line is the place: what the job sent before
+                    // it is then seen when the job is tried again.
+                    if (in_array($effect['kind'], self::FAILS, true) && is_string($effect['at'] ?? null) && ! self::inside($request['effects'], $place)) {
+                        $found[self::name($effect).'|'.$effect['at']] = [self::SEND, $place, $effect];
                     }
 
                     continue;
@@ -316,8 +323,12 @@ class AppFaults
                 // A test where the app's log cannot be seen gives its
                 // place to a later test where it can.
                 $seen = ($dark[$key] ?? false) && ! ($request['dark'] ?? false) && in_array($fails, [self::SEND, self::SAVE], true);
+                // A test where a job sends the same thing more times shows more of what it sends again.
+                $more = isset($points[$key]) && $fails === self::SEND && ($failed['job'] ?? false)
+                    && ($dark[$key] || ! ($request['dark'] ?? false))
+                    && count(self::same($request['effects'], $failed)) > $points[$key]['times'];
 
-                if (isset($points[$key]) && ! $seen) {
+                if (isset($points[$key]) && ! $seen && ! $more) {
                     continue;
                 }
 
@@ -335,7 +346,7 @@ class AppFaults
                     // A job is also the change's when the change wrote what it does.
                     'own' => $new($failed) || ($point[3] ?? false),
                     // What the failure is compared with: the same request when all worked.
-                    ...(in_array($fails, [self::LATER, self::ANSWER, self::SEND, self::SAVE], true) ? ['was' => [
+                    ...(in_array($fails, [self::LATER, self::ANSWER, self::SEND, self::SAVE, self::RETRY], true) ? ['was' => [
                         'status' => $request['status'],
                         'did' => self::did($request['effects']),
                         'listeners' => [],
@@ -511,7 +522,9 @@ class AppFaults
 
         $said = match ($finding['kind']) {
             self::DONE_TWICE => "when {$finding['failed']}{$at(', queued at', ',')} ran a second time, it sent or added the same thing again: {$finding['what']}",
-            self::SENT_AGAIN => "when a save failed in {$finding['failed']}{$at(', queued at', ',')} and the job was tried again, it sent the same thing again: {$finding['what']}",
+            self::SENT_AGAIN => str_starts_with($finding['failed'], 'job ')
+                ? "when a save failed in {$finding['failed']}{$at(', queued at', ',')} and the job was tried again, it sent the same thing again: {$finding['what']}"
+                : "when {$finding['failed']} failed{$at(' at')} and the job was tried again, the job started from the top and sent again what it had sent before the failure: {$finding['what']}",
             self::NEVER_SENT => "when {$finding['failed']} failed{$at(' at')} and the job was tried again, the second try did not send it: what the first try left behind made the job stop, so it is never sent",
             self::CALLED_AGAIN => "when {$finding['failed']}{$at(' at')} got no answer, the {$run} made the same call again with no idempotency key, so the service may do it twice",
             self::ANSWER_NOT_CHECKED => "when {$finding['failed']}{$at(' at')} was answered with a server error, the app's code did not ask the answer for its status and the {$run} went on as if the call worked: {$finding['what']}",
@@ -542,6 +555,7 @@ class AppFaults
         $fix = match (true) {
             $command && $finding['kind'] === self::SAVED_THEN_FAILED => 'The schedule runs the command again, and what the failed run saved is still there: the command then skips that work or does it twice. Save that the work is done only after the send worked, or make the command safe to run again.',
             $command && $finding['kind'] === self::FAILURE_HIDDEN => 'No one reads what a command prints when the schedule runs it. Let it fail, or record the failure with report().',
+            $finding['kind'] === self::SENT_AGAIN && ! str_starts_with($finding['failed'], 'job ') => 'A queue tries a failed job again from the top. Send each email from its own job (queue the email, or dispatch one job for each person). Or record each one before the job sends it, and take only that record back when its send fails.',
             AppTraces::job($finding['route']) !== null && $finding['kind'] === self::FAILURE_HIDDEN => 'A queue takes a job that ends without an error as done, and does not try it again. Let the job fail, or record the failure with report().',
             default => self::fix($finding['kind']),
         };
@@ -625,7 +639,7 @@ class AppFaults
         }
 
         if ($fails === self::RETRY) {
-            return array_filter([self::SENT_AGAIN => self::sentAgain($hit['effects'], $place)]);
+            return array_filter([self::SENT_AGAIN => self::sentTwice($hit, $place, $was)]);
         }
 
         $before = fn (array $effect, int $at): bool => $at < $place && ! ($effect['job'] ?? false);
@@ -642,6 +656,7 @@ class AppFaults
                 self::SAVED_THEN_FAILED => $hit['status'] >= 500 && ! ($hit['effects'][$place]['job'] ?? false) ? $kept : [],
                 self::CALLED_AGAIN => self::calledAgain($hit['effects'], $place, $times),
                 self::NEVER_SENT => self::neverSent($hit, $place),
+                self::SENT_AGAIN => self::sentTwice($hit, $place, $was),
                 self::FAILURE_HIDDEN => self::hidden($hit, $was),
             ]);
         }
@@ -946,35 +961,6 @@ class AppFaults
     }
 
     /**
-     * Get what a job sent before its save failed and sent again, from the
-     * same line, when it was tried again. A job that took the failure in
-     * was not tried again, and nothing is said.
-     *
-     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>  $effects
-     * @return list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>
-     */
-    protected static function sentAgain(array $effects, int $place): array
-    {
-        $marker = array_find_key($effects, fn (array $effect, int $at) => $at > $place && ($effect['again'] ?? false));
-
-        if ($marker === null) {
-            return [];
-        }
-
-        $again = self::ran($effects, $marker);
-        $sent = [];
-
-        // The job's first run, back from the save that failed.
-        for ($at = $place - 1; $effects[$at]['job'] ?? false; $at--) {
-            if (in_array($effects[$at]['kind'], self::SENT, true) && self::same($again, $effects[$at]) !== []) {
-                array_unshift($sent, $effects[$at]);
-            }
-        }
-
-        return $sent;
-    }
-
-    /**
      * Get the email a job did not send when it was tried again after that
      * email failed in it: the second run sent nothing from the same line.
      * A second run that is not whole in the trace says nothing.
@@ -995,17 +981,50 @@ class AppFaults
     }
 
     /**
-     * Determine if a thing a job did was done by a job of the framework
-     * that delivers one email, notification or broadcast: the nearest job
-     * before it in the trace is such a job.
+     * Get what a job sent more times than in the normal run when it was
+     * tried again after a save or an email failed in it: the second run
+     * sent again what the first run had sent. Only the count from one line
+     * is compared, so a job that sends to many and goes on where it
+     * stopped is clean. An email that failed did not leave, and is not
+     * counted.
+     *
+     * @param  array{effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, cut: bool}  $hit
+     * @param  array{did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>}|null  $was
+     * @return list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>
+     */
+    protected static function sentTwice(array $hit, int $place, ?array $was): array
+    {
+        $marker = array_find_key($hit['effects'], fn (array $effect, int $at) => $at > $place && ($effect['again'] ?? false));
+
+        if ($was === null || $marker === null || $hit['cut']) {
+            return [];
+        }
+
+        $sent = fn (array $effect, int $at = -1): bool => $at !== $place && ($effect['job'] ?? false) && ! ($effect['again'] ?? false) && in_array($effect['kind'], self::SENT, true);
+        $normal = self::byName(array_values(array_filter($was['did'], $sent)));
+        $both = self::byName(array_values(array_filter($hit['effects'], $sent, ARRAY_FILTER_USE_BOTH)));
+        $first = self::byName(array_values(array_filter($hit['effects'], fn (array $effect, int $at) => $at < $marker && $sent($effect, $at), ARRAY_FILTER_USE_BOTH)));
+
+        return array_values(array_map(
+            fn (array $same) => $same[0],
+            array_filter($first, fn (array $same, string $key) => count($both[$key]) > count($normal[$key] ?? []), ARRAY_FILTER_USE_BOTH),
+        ));
+    }
+
+    /**
+     * Determine if a thing a job did was done by a job inside that job: a
+     * job of the framework that delivers one email, notification or
+     * broadcast, or a job the job dispatched. The nearest job before it in
+     * the trace is such a job. In use that job runs by itself, so its
+     * failure is not the failure of the job around it.
      *
      * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>  $effects
      */
-    protected static function delivered(array $effects, int $place): bool
+    protected static function inside(array $effects, int $place): bool
     {
         for ($at = $place - 1; $at >= 0; $at--) {
             if ($effects[$at]['kind'] === 'job') {
-                return $effects[$at]['delivers'] ?? false;
+                return ($effects[$at]['delivers'] ?? false) || ($effects[$at]['job'] ?? false);
             }
         }
 

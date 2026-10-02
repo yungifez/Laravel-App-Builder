@@ -39,6 +39,7 @@ use Tests\Fixtures\RecordedNotice;
 use Tests\Fixtures\RecordedPersonalJob;
 use Tests\Fixtures\RecordedQueuedNotice;
 use Tests\Fixtures\RecordedResource;
+use Tests\Fixtures\RecordedRoundJob;
 use Tests\Fixtures\RecordedTellsOwner;
 use Tests\TestCase;
 use TraceRecorder\Provider;
@@ -858,6 +859,39 @@ class TraceRecorderTest extends TestCase
 
         $measured = $this->measureFailure($requests, 'mail message', RecordedEagerJob::PATH);
         $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+    }
+
+    public function test_a_job_that_sends_to_many_and_is_tried_again_after_one_email_failed_sends_the_first_ones_again()
+    {
+        // The last email the job sends from the line is the one that fails.
+        $recorded = $this->recordWithFailure(effect: 2, kind: 'mail');
+
+        RecordedRoundJob::dispatch();
+        rescue(function () {
+            RecordedRoundJob::dispatch();
+        }, report: false);
+
+        $requests = $recorded();
+        $this->assertSame([[200, null], [500, 2]], array_map(fn (array $request) => [$request['status'], $request['fault'] ?? null], $requests));
+        $this->assertSame(['job', 'mail', 'mail', 'job', 'mail', 'mail'], array_column($requests[1]['effects'], 'kind'));
+
+        $measured = $this->measureFailure($requests, 'mail message', RecordedRoundJob::PATH);
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['sent_again', 'JOB '.RecordedRoundJob::class, 'mail message', 'mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+        $this->assertStringContainsString('the job started from the top and sent again what it had sent before the failure', AppFaults::describe($measured['findings'][0]));
+        $this->assertStringContainsString('Send each email from its own job', AppFaults::finding($measured['findings'][0]));
+    }
+
+    public function test_a_job_that_dispatches_one_job_for_each_person_has_no_email_of_its_own_to_fail()
+    {
+        $recorded = $this->record();
+
+        RecordedRoundJob::dispatch(apart: true);
+
+        $requests = $recorded();
+        $this->assertSame([['job', false], ['job', true], ['mail', true], ['job', true], ['mail', true]], array_map(fn (array $effect) => [$effect['kind'], $effect['job'] ?? false], $requests[0]['effects']));
+        // In use each of those jobs runs by itself: its failure is not the failure of the job that dispatched it.
+        $this->assertSame(['again'], array_column(AppFaults::points($requests, $this->wholeFilePatch(RecordedRoundJob::PATH)), 'fails'));
     }
 
     public function test_a_job_of_a_request_that_catches_a_failure_hid_it()

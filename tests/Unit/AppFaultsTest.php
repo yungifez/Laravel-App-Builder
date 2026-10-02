@@ -624,6 +624,51 @@ class AppFaultsTest extends TestCase
         $this->assertSame([[1, []], [1, []], [1, []]], array_map(fn (?array $measured) => [$measured['run'] ?? null, $measured['findings'] ?? null], [$sent, $tookIn, $cut]));
     }
 
+    public function test_a_job_that_sends_to_many_is_found_when_it_sends_the_first_ones_again_after_one_email_failed()
+    {
+        $mail = $this->done($this->mailed(self::NEW.':4'));
+        $job = $this->job('app/Actions/PlaceOrder.php:9');
+        $again = $this->done([...$this->job(null), 'again' => true]);
+        $normal = [$job, $mail, $mail, $mail];
+        $send = fn (array $effects) => (int) array_search('send', array_column($this->points([$this->recorded('POST', '/orders', 302, $effects)]), 'fails'), true);
+
+        // The last email from the line is the one made to fail.
+        $point = $this->points([$this->recorded('POST', '/orders', 302, $normal)])[$send($normal)];
+        $this->assertSame(['send', 3, 3], [$point['fails'], $point['fault']['effect'], $point['times']]);
+
+        // The second try started from the top.
+        $measured = $this->measure($normal, 500, [...$normal, $again, $mail, $mail, $mail], point: $send($normal));
+
+        $this->assertSame([
+            ['kind' => 'sent_again', 'route' => 'POST /orders', 'failed' => 'mail App\Mail\Receipt', 'what' => 'mail App\Mail\Receipt', 'at' => self::NEW.':4', 'test' => self::TEST],
+        ], $measured['findings'] ?? null);
+        $this->assertSame(
+            'POST /orders: when mail App\Mail\Receipt failed at '.self::NEW.':4 and the job was tried again, the job started from the top and sent again what it had sent before the failure: mail App\Mail\Receipt (caused in '.self::TEST.'). '
+                .'A queue tries a failed job again from the top. Send each email from its own job (queue the email, or dispatch one job for each person). Or record each one before the job sends it, and take only that record back when its send fails.',
+            AppFaults::finding($measured['findings'][0] ?? []),
+        );
+
+        // The second try sent only what the first could not.
+        $resumed = $this->measure($normal, 500, [...$normal, $again, $mail], point: $send($normal));
+        // One job for each person: only the job that failed is tried again.
+        $apart = [$job, $mail, $job, $mail, $job, $mail];
+        $each = $this->measure($apart, 500, [...$apart, $again, $mail], point: $send($apart));
+        // A job the job dispatched runs by itself in use: its email is no place of the job around it.
+        $inside = [$job, $this->done($this->job('app/Jobs/SendReceipt.php:9')), $mail];
+
+        $this->assertSame([[1, []], [1, []]], array_map(fn (?array $measured) => [$measured['run'] ?? null, $measured['findings'] ?? null], [$resumed, $each]));
+        $this->assertNotContains('send', array_column($this->points([$this->recorded('POST', '/orders', 302, $inside)]), 'fails'));
+
+        // A test where the job sends more times gives the place: it shows more of what is sent again.
+        $points = $this->points([
+            $this->recorded('POST', '/orders', 302, [$job, $mail], ['test' => 'Tests\Feature\OrderTest::test_one']),
+            $this->recorded('POST', '/orders', 302, [$job, $mail, $mail], ['test' => 'Tests\Feature\OrderTest::test_two']),
+            $this->recorded('POST', '/orders', 302, [$job, $mail, $mail], ['test' => 'Tests\Feature\OrderTest::test_three']),
+        ]);
+        $point = $points[(int) array_search('send', array_column($points, 'fails'), true)];
+        $this->assertSame(['test_two', 2, 2], [$point['filter'], $point['fault']['effect'], $point['times']]);
+    }
+
     public function test_a_job_tried_again_is_no_finding_when_it_sends_once_and_missed_when_its_second_run_is_not_whole()
     {
         $asks = $this->done($this->asked('select * from "orders" where "receipt_sent_at" is null', 'app/Jobs/SendReceipt.php:19'));
@@ -640,6 +685,15 @@ class AppFaultsTest extends TestCase
         $other = $this->measure($normal, 500, [...$normal, $again, $asks, $this->done($this->mailed('app/Jobs/SendReceipt.php:30')), $marks], point: 1);
 
         $this->assertSame([[1, []], [1, []], [1, []]], array_map(fn (?array $measured) => [$measured['run'] ?? null, $measured['findings'] ?? null], [$tookIn, $stopped, $other]));
+
+        // A job that sends to many marks each one before it sends it. The second try went on where
+        // the first stopped: the same line sent in both tries, but each email left once.
+        $many = [$this->job(self::NEW.':4'), $marks, $mail, $marks, $mail];
+        $retry = (int) array_search('retry', array_column($this->points([$this->recorded('POST', '/orders', 302, $many)]), 'fails'), true);
+        $wentOn = $this->measure($many, 500, [$this->job(self::NEW.':4'), $marks, $mail, $marks, $again, $marks, $mail], point: $retry);
+        // The second try started from the top.
+        $fromTop = $this->measure($many, 500, [$this->job(self::NEW.':4'), $marks, $mail, $marks, $again, $marks, $mail, $marks, $mail], point: $retry);
+        $this->assertSame([[1, []], [1, ['sent_again']]], array_map(fn (?array $measured) => [$measured['run'] ?? null, array_column($measured['findings'] ?? [], 'kind')], [$wentOn, $fromTop]));
 
         $points = AppFaults::points(AppTraces::parse($this->recorded('POST', '/orders', 302, $normal)), self::PATCH);
         $cut = AppFaults::measure($points, [1 => AppTraces::parse($this->recorded('POST', '/orders', 500, [...$normal, $again, $asks], ['fault' => 3, 'cut' => true]))], self::PATCH);

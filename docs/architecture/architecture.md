@@ -2151,7 +2151,12 @@ The trace of that request shows what stayed:
 - **Sent again.** A save failed in a job after the job sent something, the
   job was tried again, and it sent the same thing again from the same line.
   A job that asks if it ran before passes the run above. It fails here when
-  it marks that only after it sent.
+  it marks that only after it sent. The same is read when an email failed in
+  the job. A job that sends to many starts from the top when it is tried
+  again, and sends again what it had sent before the failure. So the last
+  email a job sends from one line is the one made to fail. Only the count
+  from each line is compared with the normal run: a job that goes on where
+  it stopped sent each email once, and is clean.
 - **Never sent.** An email failed in a job, the job was tried again, and
   the second try sent nothing from the same line. A job that marks its work
   as done before it sends stops at that mark, so the email is never sent. A
@@ -2279,7 +2284,8 @@ one question: does the job catch the failure and write nothing to the log.
 These places are tried last. A failure the job lets through is not held
 against the request, because in use it stays on the queue, after the
 answer. A job of the framework that delivers one email has no code of the
-app to catch the failure, and gives no such place. A
+app to catch the failure, and gives no such place. A job that the job
+dispatched gives none to the job around it: in use it runs by itself. A
 job the app sends to the sync queue by name is different: in use it runs
 where the app dispatches it, once, and its error is the request's. The
 recorder reads the connection the job names, does not mark the job, and

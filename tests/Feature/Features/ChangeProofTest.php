@@ -613,6 +613,11 @@ class ChangeProofTest extends TestCase
             fn (string $kind) => $proof(['run' => 1, 'findings' => [$finding($kind, 'JOB App\\Jobs\\SendReminder', 'job App\\Jobs\\SendReminder')]])->where('kind', 'gap')->pluck('text')->all(),
             ['done_twice', 'sent_again'],
         ));
+        // Work that sends to many and starts over after one email failed is said by what failed.
+        $this->assertSame(
+            ['Your app does some work on its own (“send reminder”). If an email cannot be sent during that work and it starts over, it sends the same thing twice.'],
+            $proof(['run' => 1, 'findings' => [$finding('sent_again', 'JOB App\\Jobs\\SendReminder', 'mail App\\Mail\\Reminder')]])->where('kind', 'gap')->pluck('text')->all(),
+        );
         // Work that starts over and does not send what it could not send is said for each way the work runs.
         $this->assertSame([
             ['Your app does some work on its own after someone uses /orders. If an email cannot be sent during that work and it starts over, it does not try to send again. What it had to send is never sent.'],

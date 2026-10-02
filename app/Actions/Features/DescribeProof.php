@@ -476,7 +476,7 @@ class DescribeProof
             AppFaults::SAVED_IN_PART => 'If saving fails at :address, your app keeps one part of what it was saving and loses the rest.',
             AppFaults::FAILURE_HIDDEN => 'If :failure at :address, your app carries on as if it worked. The person sees the same as when it works, and nothing is written down, so you would not find out.',
             AppFaults::DONE_TWICE => 'Your app does some work on its own after someone uses :address. If that work is cut off and starts over, it sends or adds the same thing twice.',
-            AppFaults::SENT_AGAIN => 'Your app does some work on its own after someone uses :address. If saving fails during that work and it starts over, it sends the same thing twice.',
+            AppFaults::SENT_AGAIN => 'Your app does some work on its own after someone uses :address. If :failure during that work and it starts over, it sends the same thing twice.',
             AppFaults::NEVER_SENT => 'Your app does some work on its own after someone uses :address. If :failure during that work and it starts over, it does not try to send again. What it had to send is never sent.',
             AppFaults::CALLED_AGAIN => 'If an outside service is slow to answer at :address, your app asks it again. The service may then do the same thing twice, such as take a payment twice.',
             AppFaults::ANSWER_NOT_CHECKED => 'If an outside service says it could not do what your app asked at :address, your app does not look at that answer. It carries on as if the service did it.',
@@ -491,7 +491,7 @@ class DescribeProof
             AppFaults::SAVED_IN_PART => 'Your app does some work on its own (:address). If saving fails during that work, it keeps one part of what it was saving and loses the rest.',
             AppFaults::FAILURE_HIDDEN => 'Your app does some work on its own (:address). If :failure during that work, it carries on as if it worked. Nothing is written down, so you would not find out.',
             AppFaults::DONE_TWICE => 'Your app does some work on its own (:address) and leaves part of it for later. If that part is cut off and starts over, it sends or adds the same thing twice.',
-            AppFaults::SENT_AGAIN => 'Your app does some work on its own (:address) and leaves part of it for later. If saving fails during that part and it starts over, it sends the same thing twice.',
+            AppFaults::SENT_AGAIN => 'Your app does some work on its own (:address) and leaves part of it for later. If :failure during that part and it starts over, it sends the same thing twice.',
             AppFaults::NEVER_SENT => 'Your app does some work on its own (:address) and leaves part of it for later. If :failure during that part and it starts over, it does not try to send again. What it had to send is never sent.',
             AppFaults::CALLED_AGAIN => 'Your app does some work on its own (:address). If an outside service is slow to answer during that work, your app asks it again. The service may then do the same thing twice, such as take a payment twice.',
             AppFaults::ANSWER_NOT_CHECKED => 'Your app does some work on its own (:address). If an outside service says it could not do what your app asked, your app does not look at that answer. It carries on as if the service did it.',
@@ -502,7 +502,7 @@ class DescribeProof
         // A job that was seen by itself is the whole of that work, not a part left for later.
         $queued = [
             AppFaults::DONE_TWICE => 'Your app does some work on its own (:address). If that work is cut off and starts over, it sends or adds the same thing twice.',
-            AppFaults::SENT_AGAIN => 'Your app does some work on its own (:address). If saving fails during that work and it starts over, it sends the same thing twice.',
+            AppFaults::SENT_AGAIN => 'Your app does some work on its own (:address). If :failure during that work and it starts over, it sends the same thing twice.',
             AppFaults::NEVER_SENT => 'Your app does some work on its own (:address). If :failure during that work and it starts over, it does not try to send again. What it had to send is never sent.',
         ];
         // The recording already said that this is sent before saving ends.
