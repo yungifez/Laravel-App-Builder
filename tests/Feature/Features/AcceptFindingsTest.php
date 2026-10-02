@@ -5,6 +5,7 @@ namespace Tests\Feature\Features;
 use App\Actions\Features\DescribeProof;
 use App\Enums\VerificationStatus;
 use App\Features\AppBoundaries;
+use App\Features\AppFaults;
 use App\Models\FeatureRequest;
 use App\Models\User;
 use App\Models\Verification;
@@ -89,6 +90,39 @@ class AcceptFindingsTest extends TestCase
 
         // The call out was not accepted, so the rule still has something to say.
         $this->assertSame('gap', $this->line($change)['kind']);
+    }
+
+    public function test_the_owner_says_they_want_what_a_caused_failure_left_behind()
+    {
+        $change = FeatureRequest::factory()->generated()->create();
+        $owner = $change->project->owner;
+        $finding = fn (string $at) => ['kind' => AppFaults::SAVED_THEN_FAILED, 'route' => 'POST /contact', 'failed' => 'mail App\Mail\ContactReceived', 'what' => 'insert messages', 'at' => $at, 'test' => 'Tests\Feature\ContactTest::test_a_visitor_writes'];
+        $checked = fn (string $at) => Verification::factory()->for($change)->create([
+            'status' => VerificationStatus::Passed,
+            'results' => [],
+            'evidence' => ['faults' => ['points' => 2, 'run' => 2, 'missed' => 0, 'existing' => 0, 'findings' => [$finding($at)]]],
+        ]);
+        $line = fn () => collect(app(DescribeProof::class)->handle($change->refresh()))->first(fn (array $line) => str_contains($line['text'], 'an email cannot be sent'));
+        $gap = 'If an email cannot be sent at /contact, the person sees an error, but your app has already saved what they did. They may try again and do it twice.';
+        $checked('app/Http/Controllers/ContactController.php:20');
+
+        $this->assertSame(['kind' => 'gap', 'text' => $gap, 'decision' => ['change' => $change->uuid, 'finding' => AppFaults::SAVED_THEN_FAILED, 'accepted' => false]], $line());
+
+        // Nothing of this kind was left behind, so there is nothing to want.
+        $this->actingAs($owner)->post(route('feature-requests.accepted-findings.store', [$change, AppFaults::SENT_THEN_LOST]))->assertSessionHasErrors('kind');
+        $this->actingAs($owner)->post(route('feature-requests.accepted-findings.store', [$change, AppFaults::SAVED_THEN_FAILED]))->assertRedirect();
+
+        $this->assertSame(['saved_then_failed|POST /contact|mail App\Mail\ContactReceived'], $change->acceptedFindings()->pluck('identity')->all());
+        $this->assertSame(['kind' => 'chosen', 'text' => "You said you want this. {$gap} If a later change does more of this, I will ask again.", 'decision' => ['change' => $change->uuid, 'finding' => AppFaults::SAVED_THEN_FAILED, 'accepted' => true]], $line());
+
+        // The same thing on another line, in the next checks, is still what the owner wants.
+        $checked('app/Http/Controllers/ContactController.php:24');
+        $this->assertSame('chosen', $line()['kind']);
+
+        $this->actingAs($owner)->delete(route('feature-requests.accepted-findings.destroy', [$change, AppFaults::SAVED_THEN_FAILED]))->assertRedirect();
+
+        $this->assertSame(0, $change->acceptedFindings()->count());
+        $this->assertSame('gap', $line()['kind']);
     }
 
     public function test_only_the_owner_decides_and_only_while_the_change_waits_for_them()

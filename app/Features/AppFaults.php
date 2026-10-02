@@ -95,6 +95,22 @@ class AppFaults
 
     public const ANSWER_NOT_CHECKED = 'answer_not_checked';
 
+    /**
+     * The findings the owner reads in the proof, and so may accept.
+     */
+    public const OWNED = [
+        self::SAVED_THEN_FAILED,
+        self::SENT_THEN_LOST,
+        self::SAVED_IN_PART,
+        self::DONE_TWICE,
+        self::SENT_AGAIN,
+        self::CALLED_AGAIN,
+        self::ANSWER_NOT_CHECKED,
+        self::NEEDS_JOB_DONE,
+        self::JOB_NEEDS_REQUEST,
+        self::DEPENDS_ON_ORDER,
+    ];
+
     public const SEND = 'send';
 
     public const SAVE = 'save';
@@ -370,6 +386,94 @@ class AppFaults
             'existing' => count($existing),
             'findings' => array_slice(array_values($findings), 0, self::KEPT),
         ];
+    }
+
+    /**
+     * Name a finding by what it is, not where: what was found, the address
+     * and what was made to fail. The line moves while the change is fixed.
+     *
+     * @param  array{kind: string, route: string, failed: string}  $finding
+     */
+    public static function identity(array $finding): string
+    {
+        return implode('|', [$finding['kind'], $finding['route'], $finding['failed']]);
+    }
+
+    /**
+     * Set aside the findings a person said the change makes on purpose, by
+     * what they are (identity()). They are counted as "accepted", not held
+     * against the change.
+     *
+     * @param  array{points: int, run: int, missed: int, existing: int, findings: list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}>, accepted?: int}|null  $measured  From measure()
+     * @param  list<string>  $accepted  The identities accepted
+     * @return array{points: int, run: int, missed: int, existing: int, findings: list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}>, accepted?: int}|null
+     */
+    public static function without(?array $measured, array $accepted): ?array
+    {
+        if ($measured === null || $accepted === []) {
+            return $measured;
+        }
+
+        $findings = array_values(array_filter($measured['findings'], fn (array $finding) => ! in_array(self::identity($finding), $accepted, true)));
+
+        return [
+            ...$measured,
+            'findings' => $findings,
+            'accepted' => ($measured['accepted'] ?? 0) + count($measured['findings']) - count($findings),
+        ];
+    }
+
+    /**
+     * Say what the app left behind at one place, as the trace of the
+     * caused failure shows it.
+     *
+     * @param  array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}  $finding  From measure()
+     */
+    public static function describe(array $finding): string
+    {
+        $at = fn (string $before, string $after = '') => $finding['at'] === null ? '' : "{$before} {$finding['at']}{$after}";
+
+        $said = match ($finding['kind']) {
+            self::DONE_TWICE => "when {$finding['failed']}{$at(', queued at', ',')} ran a second time, it sent or added the same thing again: {$finding['what']}",
+            self::SENT_AGAIN => "when a save failed in {$finding['failed']}{$at(', queued at', ',')} and the job was tried again, it sent the same thing again: {$finding['what']}",
+            self::CALLED_AGAIN => "when {$finding['failed']}{$at(' at')} got no answer, the request made the same call again with no idempotency key, so the service may do it twice",
+            self::ANSWER_NOT_CHECKED => "when {$finding['failed']}{$at(' at')} was answered with a server error, the app's code did not ask the answer for its status and the request went on as if the call worked: {$finding['what']}",
+            self::NEEDS_JOB_DONE => "when {$finding['failed']}{$at(', queued at', ',')} ran after the response, the way a queue runs it, the request did not do the same: {$finding['what']}",
+            self::JOB_NEEDS_REQUEST => "when {$finding['failed']}{$at(', queued at', ',')} ran after the response, the way a queue worker runs it, with no signed-in user and an empty request and session, the job did not do the same: {$finding['what']}",
+            self::DEPENDS_ON_ORDER => "when the listeners Laravel found for {$finding['failed']}{$at(', dispatched at', ',')} ran in the reverse order, the request did not do the same: {$finding['what']}",
+            self::SAVED_THEN_FAILED => "when {$finding['failed']} failed{$at(' at')}, the request ended in a server error but had already saved: {$finding['what']}",
+            self::SENT_THEN_LOST => "when {$finding['failed']} failed{$at(' at')}, the save was lost but the request had already sent: {$finding['what']}",
+            self::SAVED_IN_PART => "when {$finding['failed']} failed{$at(' at')}, the save was lost but the request kept what it had saved before it, with no transaction around both: {$finding['what']}",
+            default => "when {$finding['failed']} failed{$at(' at')}, {$finding['kind']}: {$finding['what']}",
+        };
+
+        return "{$finding['route']}: {$said} (caused in {$finding['test']})";
+    }
+
+    /**
+     * Say what a finding is and how to fix it, for the coder. A finding
+     * sends the change back by itself: the failure was caused and the
+     * trace shows what stayed.
+     *
+     * @param  array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}  $finding  From measure()
+     */
+    public static function finding(array $finding): string
+    {
+        $fix = match ($finding['kind']) {
+            self::SAVED_THEN_FAILED => 'A person who sees the error tries again, and the save happens twice. Queue what the request sends, after the save is kept, or catch the failure and answer without an error.',
+            self::SENT_THEN_LOST => 'People are told about something that was not saved. Send after the save is kept: after the transaction, or with afterCommit().',
+            self::SAVED_IN_PART => 'Put the saves that belong together in one DB::transaction().',
+            self::DONE_TWICE => 'A queue gives a job to a worker at least once. Make the job safe to run again: look for what it already made (firstOrCreate, a unique index), or record that it sent before it sends.',
+            self::SENT_AGAIN => 'A queue tries a failed job again. Save first and send last in the job, or record what it sent so the next try does not send it again.',
+            self::CALLED_AGAIN => 'A call that got no answer can still have arrived. Give the call an Idempotency-Key header with the same value on each try. When the service takes none, do not try the call again.',
+            self::ANSWER_NOT_CHECKED => 'The HTTP client of Laravel throws nothing for an error answer. Call throw() on the answer, or ask successful() or failed() and stop when the call did not work.',
+            self::NEEDS_JOB_DONE => 'Tests run a queued job where it is dispatched. In use a queue runs it after the response. Do what the request needs before it answers in the request, or run that work with dispatchSync().',
+            self::JOB_NEEDS_REQUEST => 'A queue worker has no request. Give the job what it needs through its constructor, and do not read auth(), request() or session() in it. For a row the request deletes after it queues the job, give the job the values, not the model.',
+            self::DEPENDS_ON_ORDER => 'Laravel takes the listeners it finds in the order the disk lists their files. Put steps that need an order in one listener, or have the second step listen to an event the first one dispatches.',
+            default => '',
+        };
+
+        return trim(__(':said. :fix', ['said' => self::describe($finding), 'fix' => $fix]));
     }
 
     /**

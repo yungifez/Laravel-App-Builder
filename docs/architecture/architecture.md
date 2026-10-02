@@ -2088,8 +2088,19 @@ is said. A second run that the trace cut short is missed. An email that a test
 fakes is a place too: the stand-in of the fake fails it the same way, before
 the fake takes it.
 
-The reviewer blocks all ten, unless the request or the plan asks for
-exactly that. The owner reads each in the proof: "If saving fails at /invitations,
+Each of the ten sends the change back for a fix by itself, as the safety
+scan does (`builder.verification.faults.send_back`). No model decides it:
+the failure was caused, and the trace shows what stayed. The coder is told
+what stayed and how to avoid it ("…A queue gives a job to a worker at least
+once. Make the job safe to run again…"). A place where the failure did not
+happen says nothing and sends nothing back. The reviewer reads the same
+findings. It can add to them, but it cannot take one away. Only the owner
+can: each of these lines in the proof has "I want it this way", as a
+boundary finding has. The choice is kept by what the finding is (the
+finding, the address and what was made to fail), not by its line, so it
+holds while the change is fixed. The reviewer is told how many the owner
+wants and does not see them.
+The owner reads each in the proof: "If saving fails at /invitations,
 your app has already sent something. People are told about something that
 was not saved." When failures were caused and nothing stayed: "We made things
 go wrong 3 times while your app used the new code, such as an email that

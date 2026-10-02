@@ -839,4 +839,35 @@ class AppFaultsTest extends TestCase
         $this->assertSame(1, AppFaults::measure($points, [0 => []], self::PATCH)['missed']);
         $this->assertNull(AppFaults::measure([], [], self::PATCH));
     }
+
+    public function test_what_the_owner_wants_is_set_aside_by_what_it_is_and_the_coder_is_told_the_fix()
+    {
+        $kept = ['kind' => AppFaults::SAVED_THEN_FAILED, 'route' => 'POST /orders', 'failed' => 'mail App\Mail\Receipt', 'what' => 'insert orders', 'at' => self::NEW.':4', 'test' => self::TEST];
+        $twice = ['kind' => AppFaults::DONE_TWICE, 'route' => 'POST /orders', 'failed' => 'job App\Jobs\SendReceipt', 'what' => 'mail App\Mail\Receipt', 'at' => null, 'test' => self::TEST];
+        $measured = ['points' => 3, 'run' => 3, 'missed' => 0, 'existing' => 0, 'findings' => [$kept, $twice]];
+
+        // The line is not part of what a finding is: it moves while the change is fixed.
+        $this->assertSame('saved_then_failed|POST /orders|mail App\Mail\Receipt', AppFaults::identity($kept));
+        $this->assertSame(AppFaults::identity($kept), AppFaults::identity([...$kept, 'at' => self::NEW.':9', 'what' => 'insert orders, insert order_items']));
+
+        $this->assertSame($measured, AppFaults::without($measured, []));
+        $this->assertNull(AppFaults::without(null, [AppFaults::identity($kept)]));
+        $this->assertSame([...$measured, 'findings' => [$twice], 'accepted' => 1], AppFaults::without($measured, [AppFaults::identity($kept), 'saved_then_failed|POST /other|mail App\Mail\Receipt']));
+
+        $this->assertSame(
+            'POST /orders: when mail App\Mail\Receipt failed at '.self::NEW.':4, the request ended in a server error but had already saved: insert orders (caused in '.self::TEST.'). '
+                .'A person who sees the error tries again, and the save happens twice. Queue what the request sends, after the save is kept, or catch the failure and answer without an error.',
+            AppFaults::finding($kept),
+        );
+        $this->assertSame(
+            'POST /orders: when job App\Jobs\SendReceipt ran a second time, it sent or added the same thing again: mail App\Mail\Receipt (caused in '.self::TEST.'). '
+                .'A queue gives a job to a worker at least once. Make the job safe to run again: look for what it already made (firstOrCreate, a unique index), or record that it sent before it sends.',
+            AppFaults::finding($twice),
+        );
+
+        // Each finding the owner reads has a fix to give the coder.
+        foreach (AppFaults::OWNED as $kind) {
+            $this->assertMatchesRegularExpression('/\(caused in .+\)\. \w.+\.$/', AppFaults::finding([...$kept, 'kind' => $kind]));
+        }
+    }
 }

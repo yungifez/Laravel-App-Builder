@@ -2,6 +2,7 @@
 
 namespace App\Actions\Features;
 
+use App\Features\AppFaults;
 use App\Features\BoundaryCode;
 use App\Models\FeatureRequest;
 use App\Models\User;
@@ -10,7 +11,9 @@ use Illuminate\Validation\ValidationException;
 /**
  * Record that the owner wants what a boundary rule found in a change, for
  * example a log of each time someone is turned away, written while the app
- * checks who may act. The owner read what it costs in the proof first.
+ * checks who may act. The same goes for what a caused failure left behind,
+ * for example a message that is kept when the email about it cannot be
+ * sent. The owner read what it costs in the proof first.
  * This covers each finding of that rule in the change by what it is, never
  * the rule itself, and only this change: once the change is kept, a later
  * change that does more of the same is asked about again.
@@ -30,8 +33,12 @@ class AcceptFindings
             ]);
         }
 
-        $boundaries = $featureRequest->verifications()->latest('id')->first()?->evidence['boundaries'] ?? null;
-        $found = array_filter([...$boundaries['findings'] ?? [], ...$boundaries['read'] ?? []], fn (array $finding) => $finding['kind'] === $kind);
+        $evidence = $featureRequest->verifications()->latest('id')->first()?->evidence;
+        $boundaries = $evidence['boundaries'] ?? null;
+        $found = [
+            ...array_map(BoundaryCode::identity(...), array_filter([...$boundaries['findings'] ?? [], ...$boundaries['read'] ?? []], fn (array $finding) => $finding['kind'] === $kind)),
+            ...array_map(AppFaults::identity(...), AppFaults::findings($evidence['faults'] ?? null, $kind)),
+        ];
 
         if ($found === []) {
             throw ValidationException::withMessages([
@@ -39,7 +46,7 @@ class AcceptFindings
             ]);
         }
 
-        foreach (array_unique(array_map(BoundaryCode::identity(...), $found)) as $identity) {
+        foreach (array_unique($found) as $identity) {
             $featureRequest->acceptedFindings()->firstOrCreate(['identity' => $identity], ['kind' => $kind, 'user_id' => $user->id]);
         }
     }

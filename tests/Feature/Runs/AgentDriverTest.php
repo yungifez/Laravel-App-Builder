@@ -645,6 +645,53 @@ class AgentDriverTest extends TestCase
         $this->assertSame(RunStatus::Completed, $run->refresh()->status);
     }
 
+    public function test_what_the_app_left_behind_when_a_failure_was_caused_sends_the_change_back_even_when_the_reviewer_approves()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder(
+            $this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]),
+            $this->writes([], 'Queued the email after the save.'),
+        );
+        $approve = ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]];
+        ChangeReviewer::fake([$approve, $approve]);
+        $faults = fn (array $findings) => ['faults' => ['points' => 2, 'run' => 2, 'missed' => 0, 'existing' => 1, 'findings' => $findings]];
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, evidence: $faults([
+            ['kind' => 'saved_then_failed', 'route' => 'POST /teams', 'failed' => 'mail App\Mail\TeamCreated', 'what' => 'insert teams', 'at' => 'app/Models/Team.php:13', 'test' => 'Tests\Feature\TeamDescriptionTest::test_owners_create_teams'],
+        ]));
+
+        $run->refresh();
+        $this->assertSame(1, $run->repairs);
+        $this->assertFalse($run->review['approved']);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'POST /teams: when mail App\Mail\TeamCreated failed at app/Models/Team.php:13, the request ended in a server error but had already saved: insert teams (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams). A person who sees the error tries again, and the save happens twice. Queue what the request sends'));
+
+        // The failure was caused again and nothing stayed.
+        $this->passVerification($run, evidence: $faults([]));
+
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+    }
+
+    public function test_what_the_owner_wants_the_app_to_leave_behind_is_not_held_against_the_change()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]));
+        ChangeReviewer::fake([['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]]]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        AcceptedFinding::factory()->for($run->featureRequest)->create(['kind' => 'saved_then_failed', 'identity' => 'saved_then_failed|POST /teams|mail App\Mail\TeamCreated']);
+        $this->passVerification($run, evidence: [
+            'faults' => ['points' => 2, 'run' => 2, 'missed' => 0, 'existing' => 0, 'findings' => [
+                ['kind' => 'saved_then_failed', 'route' => 'POST /teams', 'failed' => 'mail App\Mail\TeamCreated', 'what' => 'insert teams', 'at' => 'app/Models/Team.php:13', 'test' => 'Tests\Feature\TeamDescriptionTest::test_owners_create_teams'],
+            ]],
+        ]);
+
+        ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'Of 2 places where those requests send, save, run a job or dispatch such an event, 2 were tried and the failure happened in 2. The app left nothing else behind.'
+            ."\nLeft out above: 1 left behind that the owner said the change does on purpose, after reading what each costs. Do not hold them against the change.")
+            && ! str_contains($prompt->prompt, 'Team.php:13'));
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+    }
+
     public function test_the_reviewer_reads_calls_to_an_outside_service_from_outside_its_area()
     {
         FeaturePlanner::fake([$this->plan()]);

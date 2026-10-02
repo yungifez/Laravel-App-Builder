@@ -823,9 +823,13 @@ return [
         // "command" once, with the name of its test added after it; the
         // test may fail, so only a missing "report" counts as not run. At
         // most "points" places are tried, and no new one starts after
-        // "seconds". It never changes the checks' result.
+        // "seconds". It never changes the checks' result. With "send_back",
+        // what a caused failure shows the change's code left behind sends
+        // the change back for a fix, as the safety scan does, unless the
+        // owner said they want it.
         'faults' => [
             'enabled' => (bool) env('BUILDER_FAULTS', true),
+            'send_back' => (bool) env('BUILDER_FAULTS_SEND_BACK', true),
             'points' => (int) env('BUILDER_FAULT_POINTS', 8),
             'seconds' => (int) env('BUILDER_FAULT_SECONDS', 180),
             'command' => ['sh', '-c', implode(' && ', [

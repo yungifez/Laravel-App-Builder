@@ -58,7 +58,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return array_values(collect($lines)->unique('text')->all());
@@ -372,12 +372,13 @@ class DescribeProof
      * sent, an outside service that did not answer, a save that did not
      * work, or work the app does later that ran a second time. Each kind
      * of thing left behind, done twice, or asked for twice, is a gap the owner reads,
-     * with the address where it happened. That nothing was left behind is
-     * said only when a failure was really caused.
+     * with the address where it happened, and the owner may say they want
+     * it: then it is said as their choice, with what it costs. That nothing
+     * was left behind is said only when a failure was really caused.
      *
-     * @return list<array{kind: string, text: string}>
+     * @return list<array{kind: string, text: string, decision?: array{change: string, finding: string, accepted: bool}}>
      */
-    protected function failed(Verification $verification): array
+    protected function failed(FeatureRequest $featureRequest, Verification $verification): array
     {
         $faults = $verification->evidence['faults'] ?? null;
 
@@ -401,16 +402,27 @@ class DescribeProof
         $said = AppTraces::findings($verification->evidence['traces'] ?? null, AppTraces::SENT_BEFORE_SAVED) !== [];
         // Work that sends twice each time it starts over is said once.
         $twice = AppFaults::findings($faults, AppFaults::DONE_TWICE) !== [];
+        // A kept change is part of the app: there is nothing left to decide.
+        $open = ! $featureRequest->isAccepted();
+        $left = AppFaults::without($faults, $this->acceptFindings->identities($featureRequest));
         $lines = [];
 
         foreach ($gaps as $kind => $text) {
             $found = AppFaults::findings($faults, $kind);
 
             if ($found !== [] && ! ($said && $kind === AppFaults::SENT_THEN_LOST) && ! ($twice && $kind === AppFaults::SENT_AGAIN)) {
-                $lines[] = ['kind' => 'gap', 'text' => __($text, [
+                $accepted = AppFaults::findings($left, $kind) === [];
+                $found = $accepted ? $found : AppFaults::findings($left, $kind);
+                $gap = __($text, [
                     'address' => AppRoutes::address($found[0]['route']),
                     'failure' => str_starts_with($found[0]['failed'], 'mail') ? __('an email cannot be sent') : __('an outside service does not answer'),
-                ])];
+                ]);
+
+                $lines[] = [
+                    'kind' => $accepted ? 'chosen' : 'gap',
+                    'text' => $accepted ? __('You said you want this. :gap If a later change does more of this, I will ask again.', ['gap' => $gap]) : $gap,
+                    ...($open ? ['decision' => ['change' => $featureRequest->uuid, 'finding' => $kind, 'accepted' => $accepted]] : []),
+                ];
             }
         }
 

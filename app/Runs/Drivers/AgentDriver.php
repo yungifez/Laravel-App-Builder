@@ -240,7 +240,7 @@ abstract class AgentDriver implements ConstructionDriver
     /**
      * Lay out the evidence for the reviewer.
      *
-     * @param  list<string>  $accepted  The boundary findings the owner said the change makes on purpose
+     * @param  list<string>  $accepted  The findings the owner said the change makes on purpose
      */
     protected function reviewPrompt(ReviewEvidence $evidence, array $accepted = []): string
     {
@@ -278,7 +278,7 @@ abstract class AgentDriver implements ConstructionDriver
      * measured facts; whether each was wanted is the reviewer's to judge
      * against the plan.
      *
-     * @param  list<string>  $accepted  The boundary findings the owner said the change makes on purpose
+     * @param  list<string>  $accepted  The findings the owner said the change makes on purpose
      */
     protected function changeEvidence(ReviewEvidence $evidence, array $accepted = []): ?string
     {
@@ -339,85 +339,18 @@ abstract class AgentDriver implements ConstructionDriver
         }
 
         if (isset($measured['faults'])) {
-            $faults = $measured['faults'];
+            $faults = AppFaults::without($measured['faults'], $accepted);
             $parts[] = sprintf("One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer or got a server error as its answer, a save the database refused, or a queued job that ran a second time, whole or after a save in it was refused. Two more places have no failure. A queued job that sent or saved something, or that the request does more after: it ran after the response, the way a queue worker runs it, with no signed-in user and an empty request and session. An event with listeners that Laravel found by itself: its listeners ran in the reverse order. Of %d places where those requests send, save, run a job or dispatch such an event, %d were tried and the failure happened in %d.", $faults['points'], $faults['run'] + $faults['missed'], $faults['run'])
                 .match (true) {
-                    $faults['findings'] !== [] => " What the app left behind:\n".$this->list(array_map($this->left(...), $faults['findings'])),
+                    $faults['findings'] !== [] => " What the app left behind:\n".$this->list(array_map(AppFaults::describe(...), $faults['findings'])),
+                    ($faults['accepted'] ?? 0) !== 0 => ' The app left nothing else behind.',
                     $faults['run'] === 0 => ' So this says nothing about the change.',
                     default => ' Each time the app left nothing behind: it had saved nothing before a server error, sent nothing before a save it lost, kept no part of a save it lost, sent or added nothing again in a job that ran twice or was tried again after its save failed, made no POST or PATCH call again without an idempotency key, asked how an outside call went or did something else when its answer was a server error, and the request and the job did the same when a queued job ran after the response the way a queue worker runs it, or the listeners of an event ran in the reverse order.',
-                };
+                }
+            .(($faults['accepted'] ?? 0) === 0 ? '' : sprintf("\nLeft out above: %d left behind that the owner said the change does on purpose, after reading what each costs. Do not hold them against the change.", $faults['accepted']));
         }
 
         return $parts === [] ? null : "## What running the app with and without the change showed\n\n".implode("\n\n", $parts);
-    }
-
-    /**
-     * Say one thing the app left behind when a failure was caused in the
-     * change's code, for the reviewer.
-     *
-     * @param  array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}  $finding
-     */
-    protected function left(array $finding): string
-    {
-        // A queue gives a job to a worker at least once: the job is not safe to run again.
-        if ($finding['kind'] === AppFaults::DONE_TWICE) {
-            return "{$finding['route']}: when {$finding['failed']}"
-                .($finding['at'] === null ? '' : ", queued at {$finding['at']},")
-                ." ran a second time, it sent or added the same thing again: {$finding['what']} (caused in {$finding['test']})";
-        }
-
-        // A queue tries a failed job again: what it sent before the failure goes out twice.
-        if ($finding['kind'] === AppFaults::SENT_AGAIN) {
-            return "{$finding['route']}: when a save failed in {$finding['failed']}"
-                .($finding['at'] === null ? '' : ", queued at {$finding['at']},")
-                ." and the job was tried again, it sent the same thing again: {$finding['what']} (caused in {$finding['test']})";
-        }
-
-        // A call that got no answer may still have arrived at the service.
-        if ($finding['kind'] === AppFaults::CALLED_AGAIN) {
-            return "{$finding['route']}: when {$finding['failed']}"
-                .($finding['at'] === null ? '' : " at {$finding['at']}")
-                ." got no answer, the request made the same call again with no idempotency key, so the service may do it twice (caused in {$finding['test']})";
-        }
-
-        // Laravel's HTTP client throws nothing for an error answer: the app must ask.
-        if ($finding['kind'] === AppFaults::ANSWER_NOT_CHECKED) {
-            return "{$finding['route']}: when {$finding['failed']}"
-                .($finding['at'] === null ? '' : " at {$finding['at']}")
-                ." was answered with a server error, the app's code did not ask the answer for its status and the request went on as if the call worked: {$finding['what']} (caused in {$finding['test']})";
-        }
-
-        // Tests run a queued job where it is dispatched; a queue runs it later.
-        if ($finding['kind'] === AppFaults::NEEDS_JOB_DONE) {
-            return "{$finding['route']}: when {$finding['failed']}"
-                .($finding['at'] === null ? '' : ", queued at {$finding['at']},")
-                ." ran after the response, the way a queue runs it, the request did not do the same: {$finding['what']} (caused in {$finding['test']})";
-        }
-
-        // A queue worker has no request: no one is signed in, and nothing was sent.
-        if ($finding['kind'] === AppFaults::JOB_NEEDS_REQUEST) {
-            return "{$finding['route']}: when {$finding['failed']}"
-                .($finding['at'] === null ? '' : ", queued at {$finding['at']},")
-                ." ran after the response, the way a queue worker runs it, with no signed-in user and an empty request and session, the job did not do the same: {$finding['what']} (caused in {$finding['test']})";
-        }
-
-        // Laravel takes found listeners in the order the disk lists their files.
-        if ($finding['kind'] === AppFaults::DEPENDS_ON_ORDER) {
-            return "{$finding['route']}: when the listeners Laravel found for {$finding['failed']}"
-                .($finding['at'] === null ? '' : ", dispatched at {$finding['at']},")
-                ." ran in the reverse order, the request did not do the same: {$finding['what']} (caused in {$finding['test']})";
-        }
-
-        $did = match ($finding['kind']) {
-            AppFaults::SAVED_THEN_FAILED => 'the request ended in a server error but had already saved',
-            AppFaults::SENT_THEN_LOST => 'the save was lost but the request had already sent',
-            AppFaults::SAVED_IN_PART => 'the save was lost but the request kept what it had saved before it, with no transaction around both',
-            default => $finding['kind'],
-        };
-
-        return "{$finding['route']}: when {$finding['failed']} failed"
-            .($finding['at'] === null ? '' : " at {$finding['at']}")
-            .", {$did}: {$finding['what']} (caused in {$finding['test']})";
     }
 
     /**

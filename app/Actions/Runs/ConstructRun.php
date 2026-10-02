@@ -18,6 +18,7 @@ use App\Context\ProjectContext;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Features\AppBoundaries;
+use App\Features\AppFaults;
 use App\Features\Exceptions\CannotGenerateFeature;
 use App\Features\InventedColours;
 use App\Features\NodeInPhpTests;
@@ -399,6 +400,15 @@ class ConstructRun
         if ($driver->canRepair() && config('builder.verification.boundaries.send_back')) {
             $boundaries = AppBoundaries::without($verification->evidence['boundaries'] ?? null, $this->acceptFindings->identities($featureRequest));
             $review = $review->withBlockingFindings(array_map(AppBoundaries::finding(...), $boundaries['findings'] ?? []));
+        }
+
+        // So does what the app left behind when one thing was made to fail
+        // in the change's code (direction 32). The failure was caused and
+        // the trace shows what stayed; a place where it did not happen
+        // says nothing and is not here.
+        if ($driver->canRepair() && config('builder.verification.faults.send_back')) {
+            $faults = AppFaults::without($verification->evidence['faults'] ?? null, $this->acceptFindings->identities($featureRequest));
+            $review = $review->withBlockingFindings(array_map(AppFaults::finding(...), $faults['findings'] ?? []));
         }
 
         if ($driver->canRepair() && config('builder.verification.screens.enabled')) {
