@@ -165,6 +165,27 @@ return [
             'timeout' => 30,
         ],
 
+        // Forge, in our organization, on Hetzner servers it manages. Many
+        // apps share a server, each with its own site, database and free
+        // on-forge.com address. A server named with "server_prefix" takes
+        // up to "sites_per_server" apps; when all are full, a new one is
+        // made with the Hetzner credential, network, region and size IDs
+        // from Forge (leave them empty to add servers by hand). The token
+        // is services.forge.token.
+        'forge' => [
+            'organization' => env('FORGE_ORGANIZATION'),
+            'server_prefix' => env('FORGE_SERVER_PREFIX', 'apps'),
+            'sites_per_server' => (int) env('FORGE_SITES_PER_SERVER', 15),
+            'credential' => env('FORGE_HETZNER_CREDENTIAL'),
+            'network' => env('FORGE_HETZNER_NETWORK'),
+            'region' => env('FORGE_HETZNER_REGION'),
+            'size' => env('FORGE_HETZNER_SIZE'),
+            'php_version' => env('FORGE_PHP_VERSION', 'php84'),
+            'database_type' => env('FORGE_DATABASE_TYPE', 'postgres18'),
+            'server_wait_seconds' => (int) env('FORGE_SERVER_WAIT_SECONDS', 1200),
+            'wait_seconds' => (int) env('FORGE_WAIT_SECONDS', 120),
+        ],
+
         // Our GitHub organization, where a managed host deploys each app's
         // private repository from. The token needs to create repositories
         // and push to them; Cloud's GitHub app must see the organization.

@@ -164,6 +164,44 @@ without a warning. The owner sees "This is our fault", and `/operations`
 lists the app under "Apps whose saved code is missing" until you restore
 the repository.
 
+## Publish owners' apps to Forge
+
+Owners' apps can go to Hetzner servers that Forge manages, instead of
+Laravel Cloud. Many apps share one server. Each app gets its own site, its
+own database and a free `on-forge.com` address with HTTPS, so you need no
+DNS for it.
+
+1. In Forge, connect GitHub so that Forge can read the repositories in
+   `BUILDER_GITHUB_ORGANIZATION`.
+2. In Forge, connect your Hetzner project. Write down the IDs of the
+   credential, the private network, the region and the server size.
+3. Set these values:
+
+    ```
+    BUILDER_PUBLISH_HOST=forge
+    FORGE_API_TOKEN=<a Forge API token>
+    FORGE_ORGANIZATION=<your Forge organization slug>
+    FORGE_SERVER_PREFIX=apps
+    FORGE_SITES_PER_SERVER=15
+    FORGE_HETZNER_CREDENTIAL=<credential ID>
+    FORGE_HETZNER_NETWORK=<network ID>
+    FORGE_HETZNER_REGION=<region ID>
+    FORGE_HETZNER_SIZE=<size ID>
+    ```
+
+The control plane puts each app on a server whose name starts with
+`apps-` and that has fewer than 15 sites. When every such server is full, it
+makes a new one on Hetzner through Forge. This takes about 10 minutes, and
+the publish waits for it. Leave the `FORGE_HETZNER_*` values empty to add
+servers by hand. Then a publish fails when every server is full.
+
+Not done yet for Forge:
+
+- A copy of the app's database before a release that changes how it
+  stores information. Laravel Cloud makes this copy; Forge does not yet.
+- The errors that an app raises online, and the cost per app on
+  `/operations`.
+
 ## Not proven yet
 
 - Starting and deleting runner machines through the Hetzner API is tested
@@ -173,5 +211,7 @@ the repository.
 - A new machine reads its private address from Hetzner's metadata
   service. The parsing is tested against the example answer in Hetzner's
   documentation, but not yet on a real machine.
+- Publishing to Forge is tested only against a fake API. The requests
+  match Forge's published API description. Publish one test app first.
 - New machines pull the box image from a registry. Push it with a version
   tag before you turn on `WORKSPACE_MACHINES_CLOUD`.

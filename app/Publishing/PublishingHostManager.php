@@ -4,6 +4,7 @@ namespace App\Publishing;
 
 use App\Projects\ProjectRepository;
 use App\Publishing\Contracts\PublishingHost;
+use App\Publishing\Hosts\ForgeHost;
 use App\Publishing\Hosts\GitBranchHost;
 use App\Publishing\Hosts\LaravelCloudHost;
 use Illuminate\Support\Manager;
@@ -27,6 +28,14 @@ class PublishingHostManager extends Manager
     public function createGitDriver(): PublishingHost
     {
         return new GitBranchHost($this->container->make(ProjectRepository::class));
+    }
+
+    /**
+     * Create the host that publishes to our Forge servers on Hetzner.
+     */
+    public function createForgeDriver(): PublishingHost
+    {
+        return $this->container->make(ForgeHost::class);
     }
 
     /**
