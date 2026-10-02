@@ -152,6 +152,12 @@ Two things hold data that cannot be made again:
 Restore both from the same time. A repository that is older than the
 database can be missing changes that the database says were kept.
 
+If a project's repository is missing, the control plane does not make it
+again from the original source, because that would drop the kept changes
+without a warning. The owner sees "This is our fault", and `/operations`
+lists the app under "Apps whose saved code is missing" until you restore
+the repository.
+
 ## Not proven yet
 
 - Starting and deleting runner machines through the Hetzner API is tested

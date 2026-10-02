@@ -16,6 +16,7 @@ use App\Models\BoxCommand;
 use App\Models\Deployment;
 use App\Models\Preview;
 use App\Models\PreviewRebuild;
+use App\Models\Project;
 use App\Models\Run;
 use App\Models\RunEvent;
 use App\Models\Runner;
@@ -23,6 +24,7 @@ use App\Models\Verification;
 use App\Models\VisualEdit;
 use App\Models\WorkerHeartbeat;
 use App\Models\Workspace;
+use App\Projects\ProjectRepository;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
@@ -61,6 +63,7 @@ class FindAttentionItems
             'workers' => $this->workers($now),
             'items' => array_values(array_filter([
                 $this->queueGivesUpEarly(),
+                $this->missingRepositories(),
                 $this->stuckRuns($now),
                 $this->expiredLeases($now),
                 $this->exhaustedBudgets($since),
@@ -365,6 +368,34 @@ class FindAttentionItems
             'at' => $runner->last_seen_at?->toIso8601String(),
             'href' => null,
         ]);
+    }
+
+    /**
+     * Projects whose repository was made once and is gone from the disk now,
+     * for example after a restore that left the repositories out. Their
+     * changes stop with "This is our fault" until the repository is back.
+     *
+     * @return AttentionItem
+     */
+    protected function missingRepositories(): array
+    {
+        $repository = app(ProjectRepository::class);
+        $missing = Project::query()->whereNotNull('repository_created_at')->orderBy('id')->lazyById()
+            ->reject(fn (Project $project) => $repository->exists($project))
+            ->values();
+
+        return [
+            'key' => 'repositories_missing',
+            'title' => 'Apps whose saved code is missing',
+            'count' => $missing->count(),
+            'href' => null,
+            'records' => array_values($missing->take(20)->map(fn (Project $project) => [
+                'label' => $project->name,
+                'detail' => 'No repository at '.$repository->path($project).'. Restore it from the backup taken with the database.',
+                'at' => $project->repository_created_at?->toIso8601String(),
+                'href' => null,
+            ])->all()),
+        ];
     }
 
     /**

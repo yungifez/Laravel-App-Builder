@@ -7,6 +7,7 @@ use App\Context\ProjectNotes;
 use App\Events\ProjectCommitted;
 use App\Models\Project;
 use App\Projects\Exceptions\RepositoryConflict;
+use App\Projects\Exceptions\RepositoryMissing;
 use App\Workspaces\Drivers\CopyExclusions;
 use Closure;
 use Illuminate\Contracts\Cache\Lock;
@@ -63,7 +64,17 @@ class ProjectRepository
     {
         return $this->locked($project, function () use ($project) {
             if ($this->exists($project)) {
+                if ($project->repository_created_at === null) {
+                    $project->forceFill(['repository_created_at' => now()])->save();
+                }
+
                 return $this->head($project);
+            }
+
+            // Made once and gone now: making it again from the source would
+            // quietly drop every change the owner kept since.
+            if ($project->repository_created_at !== null) {
+                throw RepositoryMissing::forProject($project->id);
             }
 
             if (! File::isDirectory($project->source_path)) {
@@ -90,6 +101,7 @@ class ProjectRepository
             $this->git($project, ['init', '--quiet', '--initial-branch='.config('builder.projects.branch')]);
             $this->git($project, ['add', '--all']);
             $this->commit($project, 'Import '.$project->name, null);
+            $project->forceFill(['repository_created_at' => now()])->save();
 
             return $this->tip($project);
         });
@@ -552,6 +564,10 @@ class ProjectRepository
      */
     public function git(Project $project, array $arguments, bool $throw = true, int $timeout = 60, array $env = []): ProcessResult
     {
+        if ($project->repository_created_at !== null && ! File::isDirectory($this->path($project))) {
+            throw RepositoryMissing::forProject($project->id);
+        }
+
         $result = Process::path($this->path($project))
             ->timeout($timeout)
             ->env([
