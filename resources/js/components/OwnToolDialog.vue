@@ -68,7 +68,7 @@ const ask = computed(
 const keepGoing = computed(() =>
     tool.value === 'claude'
         ? `while true; do claude -p "${ask.value}" --permission-mode acceptEdits --allowedTools "mcp__${props.name},Bash(curl:*),Bash(unzip:*),Bash(git:*),Bash(php:*),Bash(composer:*),Bash(npm:*)"; sleep 60; done`
-        : `while true; do codex exec --full-auto -c sandbox_workspace_write.network_access=true "${ask.value}"; sleep 60; done`,
+        : `while true; do codex exec --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c 'mcp_servers.${props.name}.default_tools_approval_mode="approve"' "${ask.value}"; sleep 60; done`,
 );
 
 const copied = ref<'connect' | 'ask' | 'keep' | null>(null);

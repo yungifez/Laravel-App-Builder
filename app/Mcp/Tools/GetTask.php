@@ -64,7 +64,9 @@ class GetTask extends Tool
         return implode("\n\n", array_filter([
             '## Hand the change back',
             $code ?? ($base === null ? null : __('Start from commit :base of the app.', ['base' => $base])),
-            $unkept ? __('Earlier changes that are not kept yet are applied under yours. Change only what this task asks.') : null,
+            $unkept ? ($code !== null
+                ? __('The code already holds earlier changes that are not kept yet. Change only what this task asks.')
+                : __('Earlier changes that are not kept yet are applied under yours. Change only what this task asks.')) : null,
             __('When you are done, call submit_change with the whole change as one patch, such as the output of `git add -N . && git diff --binary :base`, and a short summary. Then call check_status to see how the checks went.', ['base' => $code !== null || $base === null ? 'HEAD' : $base]),
         ]));
     }

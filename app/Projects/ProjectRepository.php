@@ -509,10 +509,11 @@ class ProjectRepository
      * (a queue worker, for example) created it; hooks never run.
      *
      * @param  list<string>  $arguments
+     * @param  array<string, string>  $env  More environment, such as a separate index
      *
      * @throws RuntimeException when the command fails and "throw" is set.
      */
-    public function git(Project $project, array $arguments, bool $throw = true, int $timeout = 60): ProcessResult
+    public function git(Project $project, array $arguments, bool $throw = true, int $timeout = 60, array $env = []): ProcessResult
     {
         $result = Process::path($this->path($project))
             ->timeout($timeout)
@@ -520,6 +521,7 @@ class ProjectRepository
                 'GIT_CONFIG_NOSYSTEM' => '1',
                 'GIT_TERMINAL_PROMPT' => '0',
                 ...$this->committer(),
+                ...$env,
             ])
             ->run(['git', '-c', 'safe.directory='.$this->path($project), '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...$arguments]);
 
