@@ -83,4 +83,17 @@ class BenchmarkTest extends TestCase
 
         $this->assertSame(1, $project->featureRequests()->count());
     }
+
+    public function test_a_run_that_gives_up_and_waits_for_the_owner_stops_the_benchmark(): void
+    {
+        $project = Project::factory()->for(User::factory(), 'owner')->create();
+        Sleep::whenFakingSleep(fn () => FeatureRequest::query()->latest('id')->firstOrFail()->latestRun
+            ->update(['status' => RunStatus::NeedsUserDecision, 'question' => null, 'error' => 'The checks did not pass.']));
+
+        $this->artisan('builder:benchmark', ['project' => $project->id, '--changes' => 3])
+            ->expectsOutputToContain('It stopped and waits for the owner. The checks did not pass.')
+            ->assertFailed();
+
+        $this->assertSame(1, $project->featureRequests()->count());
+    }
 }

@@ -79,6 +79,10 @@ class RunBenchmark extends Command
 
             if ($run?->status === RunStatus::NeedsUserDecision && $run->question !== null) {
                 $answerRunQuestion->handle($request, $owner, $run->question['recommended'] ?? $run->question['options'][0] ?? null);
+            } elseif ($run?->status === RunStatus::NeedsUserDecision) {
+                // No question: the run gave up and waits for the owner to
+                // change the request, which the benchmark never does.
+                return 'It stopped and waits for the owner. '.($run->error ?? '');
             } elseif ($run?->status === RunStatus::Completed) {
                 $kept = $acceptChange->handle($request, $owner);
 

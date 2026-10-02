@@ -161,6 +161,27 @@ function lostSession(session, started, error) {
     return session !== null && !started && !PROVIDER_ERROR.test(error ?? '');
 }
 
+/**
+ * The environment of the Claude agent's shell. Claude Code sets TMPDIR to
+ * an empty value in its Bash tool, so PHP and other tools fall back to the
+ * shared /tmp. There one workspace's phpstan cache, owned by its user,
+ * breaks the checks of every other workspace. The runner gives each
+ * workspace its own TMPDIR; a file Claude Code sources before each command
+ * puts it back.
+ */
+function claudeEnvironment() {
+    const tmp = process.env.TMPDIR;
+
+    if (!tmp) {
+        return undefined;
+    }
+
+    const file = join(tmp, 'agent-shell.sh');
+    writeFileSync(file, `export TMPDIR='${tmp.replaceAll("'", "'\\''")}'\n`);
+
+    return { ...process.env, CLAUDE_ENV_FILE: file };
+}
+
 async function runClaude(task, session, prompt) {
     const { query } = await import('@anthropic-ai/claude-agent-sdk');
     let providerError = null;
@@ -173,6 +194,7 @@ async function runClaude(task, session, prompt) {
             prompt,
             options: {
                 cwd: process.cwd(),
+                env: claudeEnvironment(),
                 model: task.model ?? undefined,
                 effort: task.effort ?? undefined,
                 resume: session ?? undefined,
