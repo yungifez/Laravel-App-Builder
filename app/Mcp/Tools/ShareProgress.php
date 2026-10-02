@@ -13,7 +13,7 @@ use Laravel\Mcp\Server\Attributes\Name;
 use Laravel\Mcp\Server\Tool;
 
 #[Name('share_progress')]
-#[Description('Tell the app\'s owner what you are doing now, in one plain sentence they understand, such as "Adding a page that lists each member\'s upcoming classes". They watch your work live. Call it each time you start a new step.')]
+#[Description('Tell the app\'s owner what you are doing now, in one plain sentence they understand, such as "Adding a page that lists each member\'s upcoming classes". They watch your work live. Call it when you start a new part of the change, alongside your next command; try_change takes the same sentence as `doing`.')]
 class ShareProgress extends Tool
 {
     public function __construct(protected WorkerTask $task) {}

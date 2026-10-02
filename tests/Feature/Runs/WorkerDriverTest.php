@@ -187,6 +187,10 @@ class WorkerDriverTest extends TestCase
         $this->assertContains('Tried it out', $story);
         $this->assertSame(1, app(DescribeRunProgress::class)->handle($run)['changed']);
 
+        // The sentence can ride along with a command, saving the tool a turn.
+        $this->tool('try_change', $token, ['patch' => $this->workersChange(), 'command' => ['cat', 'app/Models/Team.php'], 'doing' => 'Checking each team shows its description.'], ['builder.agents.workers.try_commands' => [['cat']]]);
+        $this->assertContains('Checking each team shows its description.', array_column(app(NarrateWork::class)->handle($run->refresh()), 'text'));
+
         $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.']);
         $this->assertContains('Adding a short description to each team.', array_column(app(NarrateWork::class)->handle($run->refresh()), 'text'), 'The story stays once it is handed back.');
     }

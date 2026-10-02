@@ -35,6 +35,7 @@ class TryChange extends Tool
             'patch' => ['present', 'nullable', 'string', 'max:'.((int) config('builder.agents.workers.max_patch_kb') * 1024)],
             'command' => ['required', 'array', 'min:1', 'max:50'],
             'command.*' => ['required', 'string', 'max:1000'],
+            'doing' => ['nullable', 'string', 'max:300'],
         ], [
             'patch.max' => __('The change is too large to try in one patch.'),
         ]);
@@ -51,6 +52,12 @@ class TryChange extends Tool
 
         /** @var list<string> $command */
         $command = array_values($input['command']);
+
+        // Saying what it does here saves the tool a turn of its own.
+        if (filled($input['doing'] ?? null)) {
+            $run->recordEvent('worker_progress', ['text' => trim($input['doing'])]);
+        }
+
         $run->recordEvent('worker_tried', [
             'command' => implode(' ', $command),
             'files' => array_column(PatchSummary::files((string) ($input['patch'] ?? '')), 'path'),
@@ -81,6 +88,7 @@ class TryChange extends Tool
         return [
             'patch' => $schema->string()->description('Your whole change so far as a unified diff against the starting commit, with new files included, such as the output of `git add -N . && git diff --binary HEAD`. Empty to run on the starting code.')->required(),
             'command' => $schema->array()->items($schema->string())->description('The command and its arguments, one per item, such as ["php", "artisan", "test", "--filter=Waitlist"].')->required(),
+            'doing' => $schema->string()->description('When you start a new part of the change: what you are doing now, in one plain sentence in the owner\'s words, as for share_progress.'),
         ];
     }
 }
