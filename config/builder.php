@@ -980,6 +980,22 @@ return [
             'report' => 'storage/logs/access/probes.jsonl',
         ],
 
+        // The time engine (direction 32): when the change's code works with
+        // dates, its own tests run with the clock stopped on an ordinary
+        // day, then at moments where date code often breaks (the last
+        // second of a year, the 31st of a month, a leap day). The command
+        // gets the moment, the report path and the test files; the file at
+        // "bootstrap" holds the extension that sets the clock. A test that
+        // passes on the ordinary day and fails at a moment twice sends the
+        // change back to be fixed.
+        'time' => [
+            'enabled' => (bool) env('BUILDER_TIME_SHIFTS', true),
+            'bootstrap' => 'storage/logs/time/bootstrap.php',
+            'command' => ['sh', '-c', 'moment=$1; report=$2; shift 2; rm -f "$report"; TIME_SHIFT_TO="$moment" php artisan test --bootstrap=storage/logs/time/bootstrap.php --extension=TimeShiftExtension --log-junit="$report" "$@" > /dev/null 2>&1 || true', 'sh'],
+            'timeout' => 300,
+            'report' => 'storage/logs/time/tests.xml',
+        ],
+
         // Evidence about the change itself, measured by running the app
         // with and without it once the checks pass. It never changes the
         // checks' result, and it runs last: the change is taken out of the

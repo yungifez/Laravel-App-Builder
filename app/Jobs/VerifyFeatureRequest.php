@@ -30,6 +30,7 @@ use App\Features\PatchSummary;
 use App\Features\ScreenCheck;
 use App\Features\TestMap;
 use App\Features\TestReport;
+use App\Features\TimeShifts;
 use App\Models\FeatureRequest;
 use App\Models\TestObservation;
 use App\Models\Verification;
@@ -210,6 +211,7 @@ class VerifyFeatureRequest implements ShouldQueue
 
             if ($checksPassed && in_array($acceptance, [self::OUTCOME_PASSED, self::OUTCOME_NOT_APPLICABLE], true)) {
                 $checksPassed = $this->probeAccess($driver, $runWorkspaceCommand, $workspace, $featureRequest);
+                $checksPassed = $this->shiftTime($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
                 $this->observeScreens($driver, $runWorkspaceCommand, $workspace, $featureRequest);
                 $this->observeFaults($driver, $runWorkspaceCommand, $workspace, $featureRequest);
 
@@ -1116,6 +1118,74 @@ class VerifyFeatureRequest implements ShouldQueue
             report($exception);
 
             return true;
+        }
+    }
+
+    /**
+     * When the change's code works with dates, run its own tests on an
+     * ordinary day and at moments where date code often breaks, and add
+     * the result as a check. Return false only when a test that passed on
+     * the ordinary day failed at a moment twice; a run that could not
+     * start proves nothing either way.
+     */
+    protected function shiftTime(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): bool
+    {
+        /** @var array{enabled: bool, bootstrap: string, command: list<string>, timeout: int, report: string} $config */
+        $config = config('builder.verification.time');
+        $patches = array_map(fn (FeatureRequest $request) => $request->patch, $featureRequest->lineage());
+        $tests = array_keys(NewTests::files($patches));
+
+        if (! $config['enabled'] || $tests === [] || ! array_any($patches, fn (?string $patch) => TimeShifts::touchesDates($patch))) {
+            return true;
+        }
+
+        try {
+            $read = fn (string $path) => (string) rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), '', report: false);
+            $durationMs = 0;
+            $run = function (string $at, array $files) use ($runWorkspaceCommand, $workspace, $config, $read, &$durationMs) {
+                $command = $runWorkspaceCommand->handle($workspace, array_values([...$config['command'], $at, $config['report'], ...$files]), $config['timeout']);
+
+                if ($command->lost) {
+                    throw new CommandLost($command->error_output);
+                }
+
+                $durationMs += $command->duration_ms;
+
+                return TestReport::fromJunit($read($config['report']));
+            };
+
+            $driver->writeFile((string) $workspace->driver_id, $config['bootstrap'], TimeShifts::bootstrap());
+            $control = $run(TimeShifts::CONTROL, $tests);
+
+            if (! collect($control)->contains('outcome', TestReport::PASSED)) {
+                return true;
+            }
+
+            $findings = TimeShifts::failing($control, array_map(fn (string $at) => $run($at, $tests), TimeShifts::MOMENTS));
+
+            // Once more, only where a test failed, so a test that fails now
+            // and then for another reason does not send the change back.
+            $again = [];
+
+            foreach (array_unique(array_column($findings, 'moment')) as $moment) {
+                $files = array_values(array_unique(array_column(array_filter($findings, fn (array $finding) => $finding['moment'] === $moment), 'file')));
+                $again[$moment] = $run(TimeShifts::MOMENTS[$moment], array_values(array_filter($tests, fn (string $path) => array_any($files, fn (string $file) => str_ends_with($file, '/'.$path) || $file === $path))));
+            }
+
+            $findings = TimeShifts::confirmed($findings, $again);
+
+            $passed = $findings === [];
+            $this->addResult(__('Dates at the edges'), 'checks', $passed ? self::OUTCOME_PASSED : self::OUTCOME_FAILED, durationMs: $durationMs, output: TimeShifts::describe($findings, count($control)));
+
+            return $passed;
+        } catch (CommandLost $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return true;
+        } finally {
+            rescue(fn () => $runWorkspaceCommand->handle($workspace, ['rm', '-f', $config['bootstrap']], 30), report: false);
         }
     }
 

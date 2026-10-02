@@ -3823,6 +3823,19 @@ owner confirms the team model yet; records with no matching route and routes
 that need other values are not probed. The scaffold no longer asks the form for the
 person who added a record: it comes from the signed-in user.
 
+**Dates at the edges (the time engine of direction 32).** When the change adds
+app code that works with dates (`now()`, Carbon, `addMonth()`, `endOfDay()` and
+the like), its own tests run again with the clock stopped. A PHPUnit extension,
+passed with `--bootstrap` and `--extension`, sets Carbon's clock before each
+test, so the app needs no change, and a test that sets its own time still wins.
+The tests run first on an ordinary day, then at the last second of a year, on
+the 31st of a month, on a leap day and at the end of February. A test that
+passes on the ordinary day and fails at a moment, and fails there again on a
+second run, fails the check "Dates at the edges": the change goes back with the
+test and the moment. A test that fails on the ordinary day is broken by the
+stopped clock, not by a date, and is left out. Time zones and daylight saving
+are not tried yet.
+
 **Out of V0:** the rest, including the introspection this relies on, beyond
 what V0's own verification already uses.
 
