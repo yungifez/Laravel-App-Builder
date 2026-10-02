@@ -90,10 +90,12 @@ namespace App\Features;
  * it was given, then sends or saves less. That is a finding of its own.
  *
  * One thing is read from a request or a command that sends to many: the
- * same email or outside call from one line, more than once. The first
- * one is made to fail, and the others must still leave. A loop that lets
- * the first failure through sends nothing to the people after it. A job
- * is left out: a queue tries a failed job again.
+ * same email from one line, more than once. The first one is made to
+ * fail, and the others must still leave. A loop that lets the first
+ * failure through sends nothing to the people after it. A job is left
+ * out: a queue tries a failed job again. An outside call is left out
+ * too: a loop that reads pages from a service is right to stop when one
+ * call fails.
  *
  * The last thing is read when the app's code catches the failure. A
  * request that then did nothing new, gave the same kind of answer as when
@@ -592,7 +594,7 @@ class AppFaults
             self::DONE_TWICE => 'A queue gives a job to a worker at least once. Make the job safe to run again: look for what it already made (firstOrCreate, a unique index), or record that it sent before it sends, and take that record back when the send fails.',
             self::SENT_AGAIN => 'A queue tries a failed job again. Save first and send last in the job, and take the save back when the send fails, so the next try sends.',
             self::NEVER_SENT => 'A queue tries a failed job again, and that try must send what the first could not. When the send fails, take back what the job saved before it: catch the failure, undo the save, and throw the failure again.',
-            self::REST_NOT_SENT => 'One failure must not stop the rest. Queue each one (Mail::to()->queue(), or one job for each), or catch the failure for each one, record it with report(), and go on with the next.',
+            self::REST_NOT_SENT => 'One failure must not stop the rest. Queue each one: Mail::to()->queue(), a notification that implements ShouldQueue, or one job for each person. Or catch the failure for each one, record it with report(), and go on with the next.',
             self::CALLED_AGAIN => 'A call that got no answer can still have arrived. Give the call an Idempotency-Key header with the same value on each try. When the service takes none, do not try the call again.',
             self::ANSWER_NOT_CHECKED => 'The HTTP client of Laravel throws nothing for an error answer. Call throw() on the answer, or ask successful() or failed() and stop when the call did not work.',
             self::NEEDS_JOB_DONE => 'Tests run a queued job where it is dispatched. In use a queue runs it after the response. Do what the request needs before it answers in the request, or run that work with dispatchSync().',
@@ -979,10 +981,11 @@ class AppFaults
     }
 
     /**
-     * Get the send that stopped the others when it failed: the request
-     * or the command sends the same thing from that line more than once
+     * Get the email that stopped the others when it failed: the request
+     * or the command sends the same email from that line more than once
      * when all works, and after the failure it did not send the rest. A
-     * send in a job is left out: a queue tries a failed job again.
+     * send in a job is left out: a queue tries a failed job again. An
+     * outside call is left out: the calls of a loop can need each other.
      *
      * @param  array{effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, cut: bool}  $hit
      * @param  int  $times  How many times the request did the same thing from the same line in the tests' normal run
@@ -992,7 +995,7 @@ class AppFaults
     {
         $failed = $hit['effects'][$place] ?? null;
 
-        if ($failed === null || $times < 2 || $hit['cut'] || ($failed['job'] ?? false) || ! is_string($failed['at'] ?? null)) {
+        if ($failed === null || $failed['kind'] !== 'mail' || $times < 2 || $hit['cut'] || ($failed['job'] ?? false) || ! is_string($failed['at'] ?? null)) {
             return [];
         }
 

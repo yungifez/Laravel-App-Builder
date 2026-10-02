@@ -640,7 +640,7 @@ class AppFaultsTest extends TestCase
         ], $measured['findings'] ?? null);
         $this->assertSame(
             'POST /orders: when mail App\Mail\Receipt failed at '.self::NEW.':4, one failure stopped the rest: the request sends from that line more than once when all works, and it did not send the others (caused in '.self::TEST.'). '
-                .'One failure must not stop the rest. Queue each one (Mail::to()->queue(), or one job for each), or catch the failure for each one, record it with report(), and go on with the next.',
+                .'One failure must not stop the rest. Queue each one: Mail::to()->queue(), a notification that implements ShouldQueue, or one job for each person. Or catch the failure for each one, record it with report(), and go on with the next.',
             AppFaults::finding($measured['findings'][0] ?? []),
         );
 
@@ -652,8 +652,11 @@ class AppFaultsTest extends TestCase
         $one = $this->measure([$mail], 500, [$mail]);
         // A trace that is not whole does not show what was sent after.
         $cut = $this->measure($normal, 500, [$mail], extra: ['cut' => true]);
+        // A loop of outside calls can be right to stop: one call can need the one before it.
+        $call = $this->called(self::NEW.':4');
+        $calls = $this->measure([$call, $call, $call], 500, [$call]);
 
-        $this->assertSame([['rest_not_sent'], [], [], []], array_map(fn (?array $measured) => array_column($measured['findings'] ?? [], 'kind'), [$left, $wentOn, $one, $cut]));
+        $this->assertSame([['rest_not_sent'], [], [], [], []], array_map(fn (?array $measured) => array_column($measured['findings'] ?? [], 'kind'), [$left, $wentOn, $one, $cut, $calls]));
     }
 
     public function test_a_job_that_sends_to_many_is_found_when_it_sends_the_first_ones_again_after_one_email_failed()

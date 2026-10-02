@@ -2169,8 +2169,10 @@ The trace of that request shows what stayed:
   line more than once when all works: an email to each person. The first one
   failed, and fewer left than in the normal run. One failure stopped the
   rest. A loop that catches the failure, records it and goes on is clean, and
-  so is one that queues each email. A send in a job is left out: a queue
-  tries a failed job again.
+  so is one that queues each email, or sends a queued notification. A send
+  in a job is left out: a queue tries a failed job again. An outside call is
+  left out too: a loop that reads pages from a service is right to stop when
+  one call fails.
 - **Called again.** An outside call got no answer, and the request made the
   same call again from the same line. A call that got no answer can still
   have arrived, so the service can do it twice: a payment taken twice.
