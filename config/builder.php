@@ -845,6 +845,20 @@ return [
             'strict' => 1.0,
         ],
 
+        // Where the app keeps its saves and its sends (direction 33, a
+        // shape rule), read from the recording: the role of the nearest of
+        // the app's own code to each one, such as an Action, a Service or
+        // a controller. When one role holds at least "share" of them, and
+        // at least "least" places, new code that saves or sends straight
+        // from a controller or a Livewire component goes to the reviewer
+        // as a note. No style is assumed, and it never sends a change back
+        // by itself.
+        'conventions' => [
+            'enabled' => (bool) env('BUILDER_CONVENTIONS', true),
+            'least' => 5,
+            'share' => 0.8,
+        ],
+
         // What the app leaves behind when one thing fails (direction 32).
         // Once the checks pass, the recorder makes one thing fail in one
         // request of one test: an email that cannot be sent, an outside

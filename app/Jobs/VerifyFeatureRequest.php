@@ -14,6 +14,7 @@ use App\Enums\VerificationStatus;
 use App\Features\AcceptanceSuite;
 use App\Features\AppBoundaries;
 use App\Features\AppContainment;
+use App\Features\AppConventions;
 use App\Features\AppDrift;
 use App\Features\AppFaults;
 use App\Features\AppRoutes;
@@ -216,6 +217,7 @@ class VerifyFeatureRequest implements ShouldQueue
             $this->observeBoundaries($featureRequest);
             $this->observeContainment($featureRequest);
             $this->observeDrift($featureRequest);
+            $this->observeConventions($featureRequest);
 
             $this->finish(match (true) {
                 $acceptance === self::OUTCOME_ERRORED => VerificationStatus::Errored,
@@ -886,6 +888,26 @@ class VerifyFeatureRequest implements ShouldQueue
                 'findings' => array_map(fn (array $finding) => [...$finding, 'name' => $names[$finding['area']] ?? $finding['area']], $grown),
             ]);
         });
+    }
+
+    /**
+     * Find where the app keeps its saves and its sends, and the change's
+     * new code that does that work straight from a controller or a Livewire
+     * component instead (direction 33). It runs nothing and never changes
+     * the checks' result.
+     */
+    protected function observeConventions(FeatureRequest $featureRequest): void
+    {
+        if (! config('builder.verification.conventions.enabled') || $this->requests === []) {
+            return;
+        }
+
+        rescue(fn () => $this->keepEvidence('conventions', AppConventions::measure(
+            $this->requests,
+            $featureRequest->patch,
+            config()->integer('builder.verification.conventions.least'),
+            config()->float('builder.verification.conventions.share'),
+        )));
     }
 
     /**

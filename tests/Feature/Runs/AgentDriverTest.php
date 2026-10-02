@@ -722,6 +722,23 @@ class AgentDriverTest extends TestCase
         $this->assertSame(RunStatus::Completed, $run->refresh()->status);
     }
 
+    public function test_the_reviewer_reads_new_code_that_bypasses_where_the_app_keeps_its_saves()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]));
+        ChangeReviewer::fake([['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]]]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, evidence: ['conventions' => ['conventions' => ['save' => ['role' => 'action', 'places' => 14, 'of' => 15]], 'findings' => [
+            ['work' => 'save', 'role' => 'controller', 'route' => 'PATCH /teams/{team}', 'at' => 'app/Http/Controllers/TeamController.php:22', 'in' => 'App\Http\Controllers\TeamController::update', 'test' => null],
+        ]]]);
+
+        // A note for the reviewer, never a send back by itself.
+        $this->assertSame([RunStatus::Completed, 0], [$run->refresh()->status, $run->repairs]);
+        ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'The rest of the app keeps almost all of its saves or sends in one kind of class')
+            && str_contains($prompt->prompt, 'PATCH /teams/{team}: a save at app/Http/Controllers/TeamController.php:22 in App\Http\Controllers\TeamController::update. Of the 15 saves seen in the rest of the app, 14 are in Action classes.'));
+    }
+
     public function test_the_agent_may_ask_to_keep_what_the_gate_found_but_only_the_owners_yes_lets_it_stay()
     {
         FeaturePlanner::fake([$this->plan()]);

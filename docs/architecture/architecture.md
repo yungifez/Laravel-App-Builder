@@ -1936,6 +1936,20 @@ owner reads it in the proof with "I want it this way". The numbers stay
 with the reviewer; the owner reads "steps of work"
 (`builder.verification.drift`).
 
+`AppConventions` reads where the app keeps its saves and its sends. For
+each one the recording names the nearest of the app's own code, and its
+folder gives the role: a controller, a Livewire component, an Action, a
+Service, a job, a listener, an observer or a model, at any depth
+(`App\Billing\Actions\Refund` is an Action). Places are counted once each,
+so one busy loop is one place. When one role holds at least 80% of the
+app's places and at least five of them, that is the app's convention. New
+code that saves or sends straight from a controller or a Livewire
+component in such an app goes to the reviewer: "Of the 15 saves seen in the
+rest of the app, 14 are in Action classes." No style is assumed. An app
+that saves from its controllers has no convention to bypass. It is a note,
+never a send back, because the plan may ask for exactly that
+(`builder.verification.conventions`).
+
 The recording only shows what the tests run, and it never shows the app
 start. So `BoundaryCode` also reads the PHP files the change touched, as the
 change leaves them, before anything takes the change out of the workspace.

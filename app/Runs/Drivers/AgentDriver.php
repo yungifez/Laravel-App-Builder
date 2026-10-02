@@ -10,6 +10,7 @@ use App\Ai\Agents\FeaturePlanner;
 use App\Enums\ModelRole;
 use App\Features\AcceptanceSelector;
 use App\Features\AppBoundaries;
+use App\Features\AppConventions;
 use App\Features\AppDrift;
 use App\Features\AppFaults;
 use App\Features\AppTraces;
@@ -337,6 +338,12 @@ abstract class AgentDriver implements ConstructionDriver
         if (($measured['containment']['findings'] ?? []) !== []) {
             $parts[] = "The rest of the app calls each of these outside services only from certain areas. So one place knows how to talk to each service. The new code calls them from somewhere else. Unless the plan asks for that, call them through the code that already does:\n"
                 .$this->list(array_map($this->contained(...), $measured['containment']['findings']));
+        }
+
+        if (($measured['conventions']['findings'] ?? []) !== []) {
+            $conventions = $measured['conventions']['conventions'];
+            $parts[] = "The rest of the app keeps almost all of its saves or sends in one kind of class, as recorded while the tests ran. The new code does that work straight from a controller or a Livewire component instead. Unless the plan asks for that, ask for the work to go through the app's own classes, as the rest of the app does:\n"
+                .$this->list(array_map(fn (array $finding) => AppConventions::describe($finding, $conventions), $measured['conventions']['findings']));
         }
 
         $grew = array_values(array_filter($measured['drift']['findings'] ?? [], fn (array $finding) => ! in_array(AppDrift::identity($finding), $accepted, true)));
