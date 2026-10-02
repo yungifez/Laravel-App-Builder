@@ -31,6 +31,10 @@ use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Events\JobQueued;
+use Illuminate\Routing\Events\ResponsePrepared;
+use Illuminate\Routing\Events\RouteMatched;
+use Illuminate\Routing\Events\Routing;
+use Illuminate\Routing\Router;
 use Illuminate\Session\SessionManager;
 use Illuminate\Support\Facades\Facade;
 use PDOException;
@@ -70,6 +74,12 @@ use WeakMap;
  * And it can name an outside call to answer. That call is made, and a
  * server error is given as its answer. The trace then says if the app's
  * code asked that answer for its status.
+ *
+ * A test can turn off all middleware, as each test of a Livewire component
+ * does. The recorder's own middleware then does not run, so the request is
+ * recorded from the router's events. A request that no answer came for
+ * ended in an error the test let through; in use the person gets the
+ * error page.
  *
  * Each trace also says what kind of answer the request gave, by names
  * only. And a trace of a caused failure says when the app caught that
@@ -172,6 +182,18 @@ class Recorder
     /** Whether the app wrote to its log after the failure this run caused. */
     protected bool $told = false;
 
+    /** Whether the router's events record this request, because no middleware runs. */
+    protected bool $loose = false;
+
+    /** The route of the request the router's events record. */
+    protected ?string $matched = null;
+
+    /** The recorder of an app with a request no answer has come for yet. */
+    protected static ?self $waiting = null;
+
+    /** Whether the last such request is written when PHP stops. */
+    protected static bool $atExit = false;
+
     protected Fakes $fakes;
 
     protected string $base;
@@ -193,6 +215,23 @@ class Recorder
     public function listen(): void
     {
         $events = $this->events = $this->app->make('events');
+
+        // The test before this one can have ended in a request no answer came for.
+        self::settle();
+
+        // With all middleware off, the router says when a request starts and what it answers.
+        $events->listen(Routing::class, fn (Routing $event) => $this->loosely($event->request));
+        $events->listen(RouteMatched::class, function (RouteMatched $event) {
+            if ($this->loose) {
+                $this->matched = '/'.ltrim($event->route->uri(), '/');
+            }
+        });
+        $events->listen(ResponsePrepared::class, function (ResponsePrepared $event) {
+            // The router prepares the answer more than once: the last one is the request's.
+            if ($this->loose) {
+                $this->respond($event->request, $event->response);
+            }
+        });
 
         // A run about a job that waits needs a sync queue that can hold it back.
         if (($this->fault['kind'] ?? null) === 'later') {
@@ -308,6 +347,8 @@ class Recorder
     public function start($request): void
     {
         $this->finish();
+        $this->loose = false;
+        $this->matched = null;
         $this->requests++;
         $this->jobs = 0;
         $this->running = [];
@@ -332,6 +373,58 @@ class Recorder
             'effects' => [],
             'blind' => [],
         ];
+    }
+
+    /**
+     * Start the trace of a request from the router, when a test turned off
+     * all middleware. A request the app makes to itself inside another one
+     * is part of that one.
+     */
+    protected function loosely($request): void
+    {
+        try {
+            if (! $this->app->shouldSkipMiddleware() || $this->nested()) {
+                return;
+            }
+
+            $this->start($request);
+            $this->loose = true;
+            self::$waiting = $this;
+
+            if (! self::$atExit) {
+                self::$atExit = true;
+                register_shutdown_function(self::settle(...));
+            }
+        } catch (Throwable) {
+            //
+        }
+    }
+
+    /**
+     * Determine if the router handles a request inside another request.
+     */
+    protected function nested(): bool
+    {
+        $dispatches = array_filter(
+            debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 150),
+            fn (array $frame) => ($frame['class'] ?? '') === Router::class && $frame['function'] === 'dispatch',
+        );
+
+        return count($dispatches) > 1;
+    }
+
+    /**
+     * Write the trace of a request no answer came for, once its test is over.
+     */
+    protected static function settle(): void
+    {
+        try {
+            self::$waiting?->finish();
+        } catch (Throwable) {
+            //
+        }
+
+        self::$waiting = null;
     }
 
     /**
@@ -582,6 +675,28 @@ class Recorder
 
         $operation = $this->operation;
         $this->operation = null;
+
+        if (self::$waiting === $this) {
+            self::$waiting = null;
+        }
+
+        // No answer left the router: an error did, which the test let
+        // through. In use the person gets the error page.
+        if ($this->loose && $operation['status'] === null) {
+            $operation = [...$operation, 'route' => $this->matched, 'status' => 500, 'refused' => true];
+
+            // A job that was held back did not run: the trace is not whole.
+            if ($this->held !== []) {
+                $this->held = [];
+                $operation['cut'] = true;
+            }
+
+            try {
+                $operation['blind'] = $this->fakes->hiding($this->hidden);
+            } catch (Throwable) {
+                //
+            }
+        }
 
         if ($operation['status'] === null) {
             return;

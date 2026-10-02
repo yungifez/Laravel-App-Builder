@@ -9,6 +9,7 @@ use Closure;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
@@ -32,6 +33,7 @@ use Tests\Fixtures\RecordedResource;
 use Tests\Fixtures\RecordedTellsOwner;
 use Tests\TestCase;
 use TraceRecorder\Provider;
+use TraceRecorder\Recorder;
 
 /**
  * The recorder that goes into the box image, loaded into this app the way
@@ -417,6 +419,62 @@ class TraceRecorderTest extends TestCase
         [$queued, $thrown] = $recorded();
         $this->assertSame([['job', false], ['query', true], ['query', false]], array_map(fn (array $effect) => [$effect['kind'], $effect['job'] ?? false], $queued['effects']));
         $this->assertSame(['/_failing/thrown', 500, true, ['query']], [$thrown['route'], $thrown['status'], $thrown['refused'], array_column($thrown['effects'], 'kind')]);
+    }
+
+    public function test_a_request_is_recorded_when_the_test_turned_off_all_middleware()
+    {
+        Route::post('/_loose/order', [RecordedApp::class, 'order']);
+        Route::get('/_loose/outer', fn () => tap(response()->noContent(), fn () => app('router')->dispatch(Request::create('/_loose/inner'))));
+        Route::get('/_loose/inner', [RecordedApp::class, 'quiet']);
+        $recorded = $this->record();
+        // Each test of a Livewire component does this.
+        $this->withoutMiddleware();
+
+        $this->post('/_loose/order')->assertNoContent();
+        $this->get('/_loose/outer')->assertNoContent();
+        $this->withMiddleware();
+        $this->post('/_loose/order')->assertNoContent();
+
+        $this->assertSame([
+            [0, 'POST', '/_loose/order', 204, ['query', 'mail']],
+            // A request the app makes to itself is part of the request around it.
+            [1, 'GET', '/_loose/outer', 204, []],
+            [2, 'POST', '/_loose/order', 204, ['query', 'mail']],
+        ], array_map(fn (array $request) => [$request['n'], $request['method'], $request['route'], $request['status'], array_column($request['effects'], 'kind')], $recorded()));
+    }
+
+    public function test_a_request_that_ends_in_an_error_with_all_middleware_off_is_recorded_as_the_error_page_the_person_gets()
+    {
+        Route::post('/_loose/order', [RecordedApp::class, 'order']);
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'mail');
+        $this->withoutMiddleware()->withoutExceptionHandling();
+
+        $this->post('/_loose/order')->assertNoContent();
+        rescue(fn () => $this->post('/_loose/order'), report: false);
+        // No answer came for the request. Its trace is written when the next one starts.
+        $this->assertCount(1, $recorded());
+        $this->post('/_loose/order')->assertNoContent();
+
+        $requests = $recorded();
+        $this->assertSame([[204, false], [500, true], [204, false]], array_map(fn (array $request) => [$request['status'], $request['refused']], $requests));
+        $this->assertSame(['/_loose/order', 1], [$requests[1]['route'], $requests[1]['fault']]);
+
+        $measured = $this->measureFailure($requests, 'mail message');
+        $this->assertSame([['saved_then_failed', 'mail message', 'update users']], array_map(fn (array $finding) => [$finding['kind'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
+    public function test_a_request_no_answer_came_for_is_written_when_the_next_test_starts_its_app()
+    {
+        Route::post('/_failing/thrown', [RecordedApp::class, 'thrown']);
+        $recorded = $this->record();
+        $this->withoutMiddleware()->withoutExceptionHandling();
+
+        rescue(fn () => $this->post('/_failing/thrown'), report: false);
+        $this->assertSame([], $recorded());
+        // The next test starts the recorder again, in its own app.
+        (new Recorder($this->app, $this->directory))->listen();
+
+        $this->assertSame([['/_failing/thrown', 500, true, ['query']]], array_map(fn (array $request) => [$request['route'], $request['status'], $request['refused'], array_column($request['effects'], 'kind')], $recorded()));
     }
 
     public function test_a_job_made_to_run_twice_shows_what_it_sent_and_added_both_times()

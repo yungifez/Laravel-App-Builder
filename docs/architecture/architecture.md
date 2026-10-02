@@ -1766,6 +1766,16 @@ coverage run that the test map already needs, so the suite does not run again.
 On the fixture it added about 1% to that run, and two runs gave the same
 lines. A box image without the recorder records nothing, and nothing is said.
 
+The recorder starts a request in its own middleware, the first one in. A
+test can turn off all middleware (`withoutMiddleware()`), and each test of a
+Livewire component does. The recorder then records the request from the
+router's events: it starts when the router looks for the route and takes the
+answer the router prepares. A request the app makes to itself inside another
+one is part of that one. When no answer comes, an error left the app that
+the test let through. In use the person gets the error page, so the request
+is recorded as a server error. Its line is written when the next request
+starts, when the next test starts its app, or when PHP stops.
+
 `AppTraces` reads the lines for four shapes
 (`builder.verification.traces`):
 
