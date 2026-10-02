@@ -393,6 +393,28 @@ class RecordedApp
     }
 
     /**
+     * Saves, then queues a job that catches an email that cannot be sent.
+     */
+    public function hushedLater(User $user, Request $request): Response
+    {
+        DB::table('users')->where('id', $user->id)->update(['name' => 'Queued']);
+        RecordedHushedJob::dispatch($request->boolean('recorded'));
+
+        return response()->noContent();
+    }
+
+    /**
+     * Saves, then queues a job that lets a failure of its email through.
+     */
+    public function workedLater(User $user): Response
+    {
+        DB::table('users')->where('id', $user->id)->update(['name' => 'Queued']);
+        RecordedJob::dispatch();
+
+        return response()->noContent();
+    }
+
+    /**
      * Catches a save that fails and answers as if it saved.
      */
     public function swallowed(): Response

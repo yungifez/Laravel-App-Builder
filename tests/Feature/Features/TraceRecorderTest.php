@@ -194,7 +194,7 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([null, 0, null], array_map(fn (array $request) => $request['fault'] ?? null, $requests));
 
         $points = AppFaults::points([$requests[0]], $this->wholeFilePatch());
-        $this->assertSame([['again', 0, 'job'], ['later', 0, 'later']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
+        $this->assertSame([['again', 0, 'job'], ['later', 0, 'later'], ['send', 1, 'mail']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
         $points[1]['fault']['request'] = 1;
 
         return [$requests, (array) AppFaults::measure($points, [1 => $requests], $this->wholeFilePatch())];
@@ -819,6 +819,58 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
     }
 
+    public function test_a_job_of_a_request_that_catches_a_failure_hid_it()
+    {
+        $user = User::factory()->create();
+        Route::post('/_failing/hushed-later/{user}', [RecordedApp::class, 'hushedLater']);
+        $recorded = $this->recordWithFailure(effect: 3, kind: 'mail');
+
+        $this->post("/_failing/hushed-later/{$user->id}")->assertNoContent();
+        $this->post("/_failing/hushed-later/{$user->id}")->assertNoContent();
+
+        $requests = $recorded();
+        $this->assertSame([[204, null, false], [204, 3, true]], array_map(fn (array $request) => [$request['status'], $request['fault'] ?? null, $request['quiet'] ?? false], $requests));
+        $this->assertSame([['query', false], ['job', false], ['query', true], ['mail', true]], array_map(fn (array $effect) => [$effect['kind'], $effect['job'] ?? false], $requests[1]['effects']));
+
+        $measured = $this->measureFailure($requests, 'mail message', RecordedHushedJob::PATH);
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['failure_hidden', 'POST /_failing/hushed-later/{user}', 'mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed']], $measured['findings']));
+    }
+
+    public function test_a_job_of_a_request_that_records_a_failure_or_lets_it_through_is_clean()
+    {
+        $user = User::factory()->create();
+        Route::post('/_failing/hushed-later/{user}', [RecordedApp::class, 'hushedLater']);
+        Route::post('/_failing/worked-later/{user}', [RecordedApp::class, 'workedLater']);
+        $recorded = $this->recordWithFailure(effect: 3, kind: 'mail');
+
+        $this->post("/_failing/hushed-later/{$user->id}?recorded=1")->assertNoContent();
+        $this->post("/_failing/hushed-later/{$user->id}?recorded=1")->assertNoContent();
+
+        $requests = $recorded();
+        $this->assertSame([3, false], [$requests[1]['fault'] ?? null, $requests[1]['quiet'] ?? false]);
+        $measured = $this->measureFailure($requests, 'mail message', RecordedHushedJob::PATH);
+        $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+
+        // The failure of the job reaches the request here. In use it stays on the queue, after the answer,
+        // so what the request saved before it is not held against the request.
+        $this->app->forgetInstance(Recorder::class);
+        File::delete("{$this->directory}/trace.jsonl");
+        $let = [
+            ['test' => null, 'method' => 'POST', 'route' => '/orders', 'status' => 204, 'refused' => false, 'blind' => [], 'cut' => false, 'n' => 0, 'shape' => [], 'effects' => [
+                ['kind' => 'query', 'open' => 0, 'sql' => 'update "users" set "name" = ?', 'at' => 'app/Http/Controllers/OrderController.php:3'],
+                ['kind' => 'job', 'open' => 0, 'what' => 'App\\Jobs\\SendReceipt', 'at' => 'app/Http/Controllers/OrderController.php:4'],
+                ['kind' => 'mail', 'open' => 0, 'what' => 'message', 'at' => 'app/Jobs/SendReceipt.php:3', 'job' => true],
+            ]],
+        ];
+        $let[0]['test'] = 'Tests\\Feature\\OrderTest::test_order';
+        $patch = "diff --git a/app/Jobs/SendReceipt.php b/app/Jobs/SendReceipt.php\n--- /dev/null\n+++ b/app/Jobs/SendReceipt.php\n@@ -0,0 +1,5 @@\n".str_repeat("+//\n", 5);
+        $points = AppFaults::points($let, $patch);
+        $this->assertSame([['again', 1, 'job'], ['later', 1, 'later'], ['send', 2, 'mail']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
+        $failed = [[...$let[0], 'status' => 500, 'refused' => true, 'fault' => 2, 'shape' => []]];
+        $this->assertSame([1, []], array_values(array_intersect_key((array) AppFaults::measure($points, [2 => $failed], $patch), ['run' => 1, 'findings' => 1])));
+    }
+
     public function test_a_job_of_the_framework_that_delivers_a_notification_is_marked_and_is_no_place_to_run_twice()
     {
         $user = User::factory()->create();
@@ -838,7 +890,7 @@ class TraceRecorderTest extends TestCase
         // It still waits on a queue: a worker runs what the notification says.
         $this->assertSame(['later'], array_column(AppFaults::points([$told], $this->wholeFilePatch()), 'fails'));
         // The job changes a row after it sends: that save is a place of its own.
-        $this->assertSame(['again', 'retry', 'later'], array_column(AppFaults::points([$worked], $this->wholeFilePatch()), 'fails'));
+        $this->assertSame(['again', 'retry', 'later', 'send'], array_column(AppFaults::points([$worked], $this->wholeFilePatch()), 'fails'));
     }
 
     public function test_a_job_tried_again_after_its_save_failed_shows_what_it_sent_both_times()
@@ -862,7 +914,7 @@ class TraceRecorderTest extends TestCase
         $this->assertSame(1, User::query()->where('name', 'Told')->count());
 
         $points = AppFaults::points([$requests[0]], $this->wholeFilePatch());
-        $this->assertSame([['again', 0, 'job'], ['retry', 3, 'query'], ['later', 0, 'later']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
+        $this->assertSame([['again', 0, 'job'], ['retry', 3, 'query'], ['later', 0, 'later'], ['send', 2, 'mail']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
         $points[1]['fault']['request'] = 1;
 
         $measured = (array) AppFaults::measure($points, [1 => $requests], $this->wholeFilePatch());
@@ -913,7 +965,7 @@ class TraceRecorderTest extends TestCase
         $this->assertSame(1, User::query()->where('name', 'Told')->count());
 
         $points = AppFaults::points([$requests[0]], $this->wholeFilePatch());
-        $this->assertSame([['send', 5, 'mail'], ['again', 0, 'job'], ['retry', 3, 'query'], ['later', 0, 'later']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
+        $this->assertSame([['send', 5, 'mail'], ['again', 0, 'job'], ['retry', 3, 'query'], ['later', 0, 'later'], ['send', 2, 'mail']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
         $points[3]['fault']['request'] = 1;
 
         $measured = (array) AppFaults::measure($points, [3 => $requests], $this->wholeFilePatch());
@@ -965,7 +1017,7 @@ class TraceRecorderTest extends TestCase
         $this->assertNotContains(['mail', true], $did($requests[1]));
 
         $points = AppFaults::points([$requests[0]], $this->wholeFilePatch());
-        $this->assertSame([['again', 1, 'job'], ['later', 1, 'later'], ['save', 4, 'query']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
+        $this->assertSame([['again', 1, 'job'], ['later', 1, 'later'], ['save', 4, 'query'], ['send', 3, 'mail']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
         $points[1]['fault']['request'] = 1;
 
         $measured = (array) AppFaults::measure($points, [1 => $requests], $this->wholeFilePatch());

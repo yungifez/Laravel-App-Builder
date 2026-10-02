@@ -20,7 +20,9 @@ namespace App\Features;
  * the app lost one part of what it was saving but kept another. The last
  * one is how a request that saves in steps, with no transaction around
  * them, is found. What a job on the queue does is left out of these
- * three: in use that job runs later, by itself.
+ * three: in use that job runs later, by itself. An email or an outside
+ * call the job makes is still made to fail in it, for one question only:
+ * does the job hide the failure (the last thing below).
  *
  * A fourth thing is read from a job that ran twice: what it sent or added
  * both times. A queue gives a job to a worker at least once, so a job
@@ -180,13 +182,14 @@ class AppFaults
 
     /**
      * Find the places where a failure can be caused: each email and outside
-     * call a request makes, each outside call the app's code makes itself
-     * and does more after, the last save of each transaction a request
-     * commits, the last save the app's code makes outside a transaction
-     * once the request has saved or sent something, each job the sync
-     * queue ran that sent or added something, each job that sent or saved
-     * something or that the request does more after, and each event with
-     * found listeners to run in the reverse order. Only requests that ran the change's code are used.
+     * call a request makes, also from the app's code in a job, each outside
+     * call the app's code makes itself and does more after, the last save
+     * of each transaction a request commits, the last save the app's code
+     * makes outside a transaction once the request has saved or sent
+     * something, each job the sync queue ran that sent or added something,
+     * each job that sent or saved something or that the request does more
+     * after, and each event with found listeners to run in the reverse
+     * order. Only requests that ran the change's code are used.
      *
      * One place is tried in one test: the first that reaches it. A send
      * or a save takes the first test where the app's log can be seen, when
@@ -195,9 +198,10 @@ class AppFaults
      * The places come in the order to try them, so a small budget goes to
      * the ones that tell the most: places on the change's own lines, then
      * places another reading of the change suspects (the same line, or the
-     * same route), then what cannot be taken back before what can. The
-     * order comes only from the trace, the patch and those findings, so
-     * the same change gives the same order.
+     * same route), then what cannot be taken back before what can, and
+     * last what a job of a request sends. The order comes only from the
+     * trace, the patch and those findings, so the same change gives the
+     * same order.
      *
      * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, direct?: bool, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, dark?: bool, shape?: list<string>, events?: list<array{what: string, at: string|null, listeners: list<string>}>}>  $requests  From AppTraces::parse(), of the tests' normal run
      * @param  list<array{route: string, at?: string|null}>  $suspected  Findings of the other engines about the change, such as AppTraces and AppBoundaries give
@@ -209,6 +213,7 @@ class AppFaults
         $new = fn (array $effect): bool => is_string($effect['at'] ?? null) && AppTraces::onAddedLine($effect['at'], $added);
         $points = [];
         $dark = [];
+        $inner = [];
 
         foreach ($requests as $request) {
             $filter = self::filter($request['test']);
@@ -242,8 +247,9 @@ class AppFaults
                 }
 
                 if ($effect['job'] ?? false) {
-                    // A job that ran by itself is all of its trace: what it sends can fail in it.
-                    if ($alone && in_array($effect['kind'], self::FAILS, true)) {
+                    // What the app's code sends in a job can fail there. A job of
+                    // the framework that delivers one email has no code to catch it.
+                    if (in_array($effect['kind'], self::FAILS, true) && is_string($effect['at'] ?? null) && ! self::delivered($request['effects'], $place)) {
                         $found[] = [self::SEND, $place, $effect];
                     }
 
@@ -304,6 +310,7 @@ class AppFaults
                 }
 
                 $dark[$key] = $request['dark'] ?? false;
+                $inner[$key] = $fails === self::SEND && ! $alone && ($failed['job'] ?? false);
                 $points[$key] = [
                     'fails' => $fails,
                     'route' => $route,
@@ -353,17 +360,18 @@ class AppFaults
 
         $routes = array_fill_keys(array_column($suspected, 'route'), true);
         $lines = array_fill_keys(array_filter(array_column($suspected, 'at'), is_string(...)), true);
-        $order = fn (array $point): array => [
-            $point['own'] ? 0 : 1,
-            isset($lines[$point['at'] ?? '']) || isset($routes[$point['route']]) ? 0 : 1,
-            self::ORDER[$point['fails'] === self::RETRY ? 'job' : $point['fault']['kind']] ?? count(self::ORDER),
+        $order = fn (string $key): array => [
+            $points[$key]['own'] ? 0 : 1,
+            isset($lines[$points[$key]['at'] ?? '']) || isset($routes[$points[$key]['route']]) ? 0 : 1,
+            // A send in a job of a request answers one question only, so it comes after the rest.
+            ($inner[$key] ?? false) ? count(self::ORDER) : self::ORDER[$points[$key]['fails'] === self::RETRY ? 'job' : $points[$key]['fault']['kind']] ?? count(self::ORDER),
         ];
-        $points = array_values($points);
+        $keys = array_keys($points);
 
         // Places that are alike stay in the order the trace gave them.
-        usort($points, fn (array $one, array $other) => $order($one) <=> $order($other));
+        usort($keys, fn (string $one, string $other) => $order($one) <=> $order($other));
 
-        return $points;
+        return array_map(fn (string $key) => $points[$key], $keys);
     }
 
     /**
@@ -615,8 +623,9 @@ class AppFaults
         if ($fails === self::SEND) {
             return array_filter([
                 // The person got an error page, but what the request saved
-                // before the failure is still there.
-                self::SAVED_THEN_FAILED => $hit['status'] >= 500 ? $kept : [],
+                // before the failure is still there. A send that failed in
+                // a job fails on the queue in use, after the answer.
+                self::SAVED_THEN_FAILED => $hit['status'] >= 500 && ! ($hit['effects'][$place]['job'] ?? false) ? $kept : [],
                 self::CALLED_AGAIN => self::calledAgain($hit['effects'], $place, $times),
                 self::FAILURE_HIDDEN => self::hidden($hit, $was),
             ]);
@@ -948,6 +957,24 @@ class AppFaults
         }
 
         return $sent;
+    }
+
+    /**
+     * Determine if a thing a job did was done by a job of the framework
+     * that delivers one email, notification or broadcast: the nearest job
+     * before it in the trace is such a job.
+     *
+     * @param  list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>  $effects
+     */
+    protected static function delivered(array $effects, int $place): bool
+    {
+        for ($at = $place - 1; $at >= 0; $at--) {
+            if ($effects[$at]['kind'] === 'job') {
+                return $effects[$at]['delivers'] ?? false;
+            }
+        }
+
+        return false;
     }
 
     /**

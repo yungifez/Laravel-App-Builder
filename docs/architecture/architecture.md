@@ -2267,7 +2267,13 @@ owner's wait has a limit. A place whose failure did not happen is counted as
 of the request, because in use that job runs later on a queue. The job as a
 whole is the place, and the save after its send is a second place of the
 job. Both are tried with the jobs, before the saves of the request. They
-are the change's when the change queues the job or wrote what it does. A
+are the change's when the change queues the job or wrote what it does. An
+email or an outside call the app's code makes in the job is a place too, for
+one question: does the job catch the failure and write nothing to the log.
+These places are tried last. A failure the job lets through is not held
+against the request, because in use it stays on the queue, after the
+answer. A job of the framework that delivers one email has no code of the
+app to catch the failure, and gives no such place. A
 job the app sends to the sync queue by name is different: in use it runs
 where the app dispatches it, once, and its error is the request's. The
 recorder reads the connection the job names, does not mark the job, and
