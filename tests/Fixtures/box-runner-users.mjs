@@ -82,7 +82,11 @@ const server = createServer(async (request, response) => {
 
         if (results.size === next) {
             phase++;
-            phase < phases.length ? release() : finish();
+            if (phase < phases.length) {
+                release();
+            } else {
+                finish();
+            }
         }
     }
 
