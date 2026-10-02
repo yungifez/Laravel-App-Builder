@@ -115,7 +115,8 @@ runner. It never sees this repository, `.env` or the database.
   as root, so code in a workspace cannot read its token, stop it, or read
   another workspace.
 - In production, runners live on machines of their own. See
-  [Runner machines](docs/runner-machines.md).
+  [Runner machines](docs/runner-machines.md). To deploy the control plane
+  itself, see [Deploying the control plane](docs/deploying.md).
 - Previews listen inside the runner. Set `BUILDER_PREVIEW_LISTEN_HOST=0.0.0.0`
   so the control plane can reach them at `http://runner:{port}`.
 - After changing `resources/box-runner`, restart the runner only:
