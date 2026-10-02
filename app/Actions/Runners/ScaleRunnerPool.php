@@ -27,6 +27,13 @@ class ScaleRunnerPool
      */
     public const PAUSED_UNTIL = 'workspaces:machines:paused-until';
 
+    /**
+     * Why no machine starts, for the operator.
+     */
+    public const PAUSED_BECAUSE = 'workspaces:machines:paused-because';
+
+    protected const NEVER_ANSWERED = 'The last new machine never answered. Check WORKSPACE_MACHINES_BOX_IMAGE and that machines can reach the control plane.';
+
     public function __construct(
         private MachineCloudManager $clouds,
         private PoolProvider $pool,
@@ -64,13 +71,20 @@ class ScaleRunnerPool
             // Redis gives a stored number back as a string.
             $pausedUntil = (int) Cache::get(self::PAUSED_UNTIL, 0);
 
-            // A machine that never answers will not answer the next time
-            // either; starting another each pass only pays for more.
+            // A machine that never answers, or a cloud that refuses one,
+            // fails the same way the next time; trying each pass only pays
+            // for more machines or fills the log.
             if ($pausedUntil > now()->getTimestamp()) {
-                return [...$done, sprintf('Not starting machines until %s: the last new machine never answered. Check WORKSPACE_MACHINES_BOX_IMAGE and that machines can reach the control plane.', Carbon::createFromTimestamp($pausedUntil)->format('H:i'))];
+                return [...$done, sprintf('Not starting machines until %s. %s', Carbon::createFromTimestamp($pausedUntil)->format('H:i'), Cache::get(self::PAUSED_BECAUSE, self::NEVER_ANSWERED))];
             }
 
-            return [...$done, $this->start($name, $cloud)];
+            try {
+                return [...$done, $this->start($name, $cloud)];
+            } catch (Throwable $exception) {
+                $this->pauseStarting("The cloud would not start a machine: {$exception->getMessage()}", $exception);
+
+                return [...$done, "Could not start a machine: {$exception->getMessage()}"];
+            }
         }
 
         if ($machines->count() > (int) config('workspaces.machines.min') && $spare - $capacity >= $wanted) {
@@ -129,7 +143,7 @@ class ScaleRunnerPool
                 ->orWhere(fn ($query) => $query->whereNull('last_seen_at')->where('created_at', '<', $since)))
             ->each(function (Runner $runner) use (&$done) {
                 if ($runner->last_seen_at === null) {
-                    $this->pauseStarting($runner);
+                    $this->pauseStarting(self::NEVER_ANSWERED, new RuntimeException("Machine [{$runner->name}] started, but its runner never asked for work."));
                 }
 
                 try {
@@ -148,13 +162,14 @@ class ScaleRunnerPool
      * Stop starting machines for a while, and tell the operator, since a
      * machine whose runner never answered points at a setup problem.
      */
-    protected function pauseStarting(Runner $runner): void
+    protected function pauseStarting(string $because, Throwable $exception): void
     {
-        $minutes = (int) config('workspaces.machines.boot_retry_minutes');
+        $until = now()->addMinutes((int) config('workspaces.machines.boot_retry_minutes'));
 
-        Cache::put(self::PAUSED_UNTIL, now()->addMinutes($minutes)->getTimestamp(), now()->addMinutes($minutes));
+        Cache::put(self::PAUSED_UNTIL, $until->getTimestamp(), $until);
+        Cache::put(self::PAUSED_BECAUSE, $because, $until);
 
-        report(new RuntimeException("Machine [{$runner->name}] started, but its runner never asked for work. No machine starts for {$minutes} minutes."));
+        report($exception);
     }
 
     /**

@@ -222,7 +222,9 @@ one of these things:
   the runner on a new machine never asked for work, no machine starts for
   `WORKSPACE_MACHINES_BOOT_RETRY_MINUTES` (30). A wrong box image or
   control plane address makes every machine fail, so the pool does not
-  pay for new ones. `runners:scale` and the log tell you when this occurs.
+  pay for new ones. The same pause follows when the cloud refuses to start
+  a machine, for example when the project reached its server limit. The
+  operations page, `runners:scale` and the log tell you when this occurs.
 - It deletes machines in the pool that no runner belongs to.
 
 Hetzner bills each machine by the started hour, so the pool costs little

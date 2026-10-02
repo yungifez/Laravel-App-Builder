@@ -146,6 +146,7 @@ class AttentionTest extends TestCase
         Runner::factory()->create(['name' => 'fine', 'last_seen_at' => now(), 'disk_free_mb' => 50000]);
         // As Redis gives it back: a string.
         Cache::put(ScaleRunnerPool::PAUSED_UNTIL, (string) now()->addMinutes(20)->getTimestamp());
+        Cache::put(ScaleRunnerPool::PAUSED_BECAUSE, 'The cloud would not start a machine: server limit reached');
 
         $attention = $this->attention();
         $labels = fn (string $key) => collect($this->item($attention, $key)['records'] ?? [])->pluck('label')->all();
@@ -154,6 +155,7 @@ class AttentionTest extends TestCase
         $this->assertStringContainsString('runners:remove --gone', $this->item($attention, 'runners_quiet')['records'][0]['detail']);
         $this->assertSame(['Runner full'], $labels('runners_full'));
         $this->assertSame(1, $this->item($attention, 'machine_starts_paused')['count']);
+        $this->assertSame('The cloud would not start a machine: server limit reached', $this->item($attention, 'machine_starts_paused')['records'][0]['detail']);
 
         Cache::forget(ScaleRunnerPool::PAUSED_UNTIL);
         $this->assertNull($this->item($this->attention(), 'machine_starts_paused'));

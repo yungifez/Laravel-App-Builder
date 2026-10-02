@@ -31,6 +31,11 @@ class RunnerScalingTest extends TestCase
     /** @var list<string> */
     protected array $deleted = [];
 
+    /**
+     * Why the fake Hetzner refuses to start a machine, if it does.
+     */
+    protected ?string $refuse = null;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -54,6 +59,10 @@ class RunnerScalingTest extends TestCase
 
             if ($request->method() === 'GET' && $path === '/v1/servers') {
                 return Http::response(['servers' => collect($this->servers)->map(fn (string $runner, string $id) => ['id' => (int) $id, 'labels' => ['builder-pool' => 'builder', 'builder-runner' => $runner]])->values()->all(), 'meta' => ['pagination' => ['next_page' => null]]]);
+            }
+
+            if ($request->method() === 'POST' && $path === '/v1/servers' && $this->refuse !== null) {
+                return Http::response(['error' => ['code' => 'resource_limit_exceeded', 'message' => $this->refuse]], 403);
             }
 
             if ($request->method() === 'POST' && $path === '/v1/servers') {
@@ -233,6 +242,23 @@ class RunnerScalingTest extends TestCase
         $this->travel(2)->minutes();
         $this->artisan('runners:scale')->expectsOutputToContain('Started machine')->assertSuccessful();
         $this->assertSame(1, Runner::query()->count());
+    }
+
+    public function test_a_cloud_that_refuses_a_machine_is_not_asked_again_for_a_while()
+    {
+        Exceptions::fake();
+        $this->refuse = 'server limit reached';
+
+        $this->artisan('runners:scale')->expectsOutputToContain('Could not start a machine: Hetzner could not start a machine: server limit reached')->assertSuccessful();
+        $this->assertSame(0, Runner::query()->count());
+        Exceptions::assertReported(RuntimeException::class);
+
+        $this->artisan('runners:scale')->expectsOutputToContain('The cloud would not start a machine')->assertSuccessful();
+        Http::assertSentCount(3);
+
+        $this->refuse = null;
+        $this->travel(31)->minutes();
+        $this->artisan('runners:scale')->expectsOutputToContain('Started machine')->assertSuccessful();
     }
 
     public function test_the_pause_holds_when_the_cache_gives_the_time_back_as_text()

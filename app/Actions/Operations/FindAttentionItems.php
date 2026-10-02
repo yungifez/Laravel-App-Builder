@@ -380,8 +380,8 @@ class FindAttentionItems
             'count' => $paused ? 1 : 0,
             'href' => null,
             'records' => $paused ? [[
-                'label' => 'The last new machine never answered',
-                'detail' => 'No machine starts until '.CarbonImmutable::createFromTimestamp($until)->format('H:i').'. Check WORKSPACE_MACHINES_BOX_IMAGE and that machines can reach the control plane.',
+                'label' => 'No machine starts until '.CarbonImmutable::createFromTimestamp($until)->format('H:i'),
+                'detail' => Str::limit((string) Cache::get(ScaleRunnerPool::PAUSED_BECAUSE, ''), 240) ?: null,
                 'at' => null,
                 'href' => null,
             ]] : [],
