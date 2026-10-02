@@ -517,6 +517,13 @@ class DescribeProof
                 'Your app does some work on its own (:address) and leaves part of it for later. If :failure during that part, it carries on as if it worked. Nothing is written down, so you would not find out.',
             ],
         ];
+        // A file the app moved is not gone: it is not where the app looks for it.
+        $moved = [
+            AppFaults::FILE_GONE => [
+                'If :failure at :address, your app has already moved a file. What it kept still points to where the file was, and the file is not there.',
+                'Your app does some work on its own (:address). If :failure during that work, it has already moved a file. What it kept still points to where the file was, and the file is not there.',
+            ],
+        ];
         // The recording already said that this is sent before saving ends.
         $said = AppTraces::findings($verification->evidence['traces'] ?? null, AppTraces::SENT_BEFORE_SAVED) !== [];
         // Work that sends twice each time it starts over is said once.
@@ -535,7 +542,9 @@ class DescribeProof
                 $work = AppRoutes::work($found[0]['route']);
                 $job = AppTraces::job($found[0]['route']) !== null;
                 $inJob = ($found[0]['job'] ?? false) && isset($later[$kind]);
+                $notThere = isset($moved[$kind]) && str_contains($found[0]['what'], 'file move');
                 $gap = __(match (true) {
+                    $notThere => $moved[$kind][$work === null ? 0 : 1],
                     $work === null => $inJob ? $later[$kind][0] : $text,
                     $job => $queued[$kind] ?? $alone[$kind],
                     default => $inJob ? $later[$kind][1] : $alone[$kind],
@@ -544,6 +553,7 @@ class DescribeProof
                     'failure' => match (true) {
                         str_starts_with($found[0]['failed'], 'mail') => __('an email cannot be sent'),
                         str_starts_with($found[0]['failed'], 'http') => __('an outside service does not answer'),
+                        $found[0]['failed'] === 'file move' => __('a file cannot be moved'),
                         str_starts_with($found[0]['failed'], 'file') => __('a file cannot be stored'),
                         default => __('saving fails'),
                     },

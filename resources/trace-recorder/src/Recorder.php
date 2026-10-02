@@ -43,6 +43,8 @@ use Illuminate\Routing\Events\Routing;
 use Illuminate\Routing\Router;
 use Illuminate\Session\SessionManager;
 use Illuminate\Support\Facades\Facade;
+use League\Flysystem\UnableToCopyFile;
+use League\Flysystem\UnableToMoveFile;
 use League\Flysystem\UnableToWriteFile;
 use Mockery\LegacyMockInterface;
 use PDOException;
@@ -62,7 +64,7 @@ use WeakMap;
 
 /**
  * Records what one request does: its queries, its transactions, what it
- * queues and sends and the files it writes to or deletes from a disk, in order, each with
+ * queues and sends and the files it writes to, moves on or deletes from a disk, in order, each with
  * the line of the app's code it came from. One line of JSON is written per
  * request.
  *
@@ -287,7 +289,7 @@ class Recorder
         $events->listen(ArtisanStarting::class, fn (ArtisanStarting $event) => $this->hear($event->artisan));
         $this->hear($this->console());
 
-        // The app's disks say when the app writes or deletes a file. An app that has
+        // The app's disks say when the app writes, moves or deletes a file. An app that has
         // disks of a class of its own keeps them, and they are not seen.
         try {
             $this->app->extend('filesystem', fn ($files) => is_object($files) && $files::class === FilesystemManager::class ? SeenFiles::over($files, $this->app, $this) : $files);
@@ -1056,6 +1058,25 @@ class Recorder
     public function stored(string $path): void
     {
         $this->effect(['kind' => 'file', 'what' => 'write'], fails: fn () => UnableToWriteFile::atLocation($path, 'No space left on device'));
+    }
+
+    /**
+     * Note a file the app copies on one of its disks now. A copy writes a
+     * file, and is made to fail the way a write is.
+     */
+    public function copied(string $from, string $to): void
+    {
+        $this->effect(['kind' => 'file', 'what' => 'write'], fails: fn () => UnableToCopyFile::fromLocationTo($from, $to));
+    }
+
+    /**
+     * Note a file the app moves on one of its disks now. The run that
+     * names it makes the move fail: the framework then gives the app's
+     * code false, or throws when the disk's config says so.
+     */
+    public function moved(string $from, string $to): void
+    {
+        $this->effect(['kind' => 'file', 'what' => 'move'], fails: fn () => UnableToMoveFile::fromLocationTo($from, $to));
     }
 
     /**

@@ -7,7 +7,7 @@ use League\Flysystem\DecoratedAdapter;
 
 /**
  * Stands in for the app's disks (the Storage facade): each disk it makes
- * tells the recorder of every file the app writes or deletes (see SeenDisk). A disk
+ * tells the recorder of every file the app writes, copies, moves or deletes (see SeenDisk). A disk
  * the app made before the recorder started, or makes with a driver of its
  * own, is not seen.
  */

@@ -112,7 +112,9 @@ namespace App\Features;
  * puts a deleted file back, so what the app kept still points to a file
  * that is gone. A save in steps after a delete is a place for that reason.
  * The same is read when a send fails after the delete, and the request
- * then does not make a save it makes when all works.
+ * then does not make a save it makes when all works. A file the app
+ * moves counts the same: what the app kept still points to where the
+ * file was. A move is also made to fail, the way a write is.
  *
  * The last thing is read when the app's code catches the failure. A
  * request that then did nothing new, gave the same kind of answer as when
@@ -299,7 +301,7 @@ class AppFaults
                     // What the app's code sends in a job can fail there. The last
                     // send from one line is the place: what the job sent before
                     // it is then seen when the job is tried again.
-                    if (in_array($effect['kind'], self::FAILS, true) && ! self::gone($effect) && is_string($effect['at'] ?? null) && ! self::inside($request['effects'], $place)) {
+                    if (self::fails($effect) && is_string($effect['at'] ?? null) && ! self::inside($request['effects'], $place)) {
                         $found[self::name($effect).'|'.$effect['at']] = [self::SEND, $place, $effect];
                     }
 
@@ -331,7 +333,7 @@ class AppFaults
                     $jobs[] = [self::LATER, $place, $effect, array_any([...$its, ...$after], $new), 'later'];
                 }
 
-                if (in_array($effect['kind'], self::FAILS, true) && ! self::gone($effect)) {
+                if (self::fails($effect)) {
                     $found[] = [self::SEND, $place, $effect];
                 } elseif ($effect['open'] > 0 && AppTraces::writes($effect)) {
                     $last = [self::SAVE, $place, $effect];
@@ -554,9 +556,14 @@ class AppFaults
         };
         $end = $command || $job ? "the {$run} ended" : 'the response';
         // A disk gives false for a write that failed, so no code has to catch anything to go on.
-        $hid = str_starts_with($finding['failed'], 'file ') ? 'went on as if the file was stored' : 'caught the failure and hid it';
+        $hid = match (true) {
+            $finding['failed'] === 'file move' => 'went on as if the file was moved',
+            str_starts_with($finding['failed'], 'file ') => 'went on as if the file was stored',
+            default => 'caught the failure and hid it',
+        };
+        $gone = str_contains($finding['what'], 'file move') ? 'moved a file' : 'deleted a file';
         // A save that fails is lost itself. A send that fails stops the save after it.
-        $lost = array_any(self::FAILS, fn (string $kind) => str_starts_with($finding['failed'], "{$kind} ")) ? "the {$run} did not make a save it makes when all works, but had already deleted a file" : "the save was lost but the {$run} had already deleted a file";
+        $lost = array_any(self::FAILS, fn (string $kind) => str_starts_with($finding['failed'], "{$kind} ")) ? "the {$run} did not make a save it makes when all works, but had already {$gone}" : "the save was lost but the {$run} had already {$gone}";
 
         $said = match ($finding['kind']) {
             self::DONE_TWICE => "when {$finding['failed']}{$at(', queued at', ',')} ran a second time, it sent or added the same thing again: {$finding['what']}",
@@ -594,8 +601,13 @@ class AppFaults
     {
         $command = AppTraces::command($finding['route']) !== null;
 
+        $moved = 'Move the file after the save, in the same DB::transaction(), and throw when move() gives false: the transaction then puts the save back.';
+
         $fix = match (true) {
-            $finding['kind'] === self::FAILURE_HIDDEN && str_starts_with($finding['failed'], 'file ') => "A write to a disk that fails gives false, and throws only when the disk's config has 'throw' => true. Ask what put(), store() or storeAs() gave back, or set 'throw' => true for the disk. Then do not go on as if the file is there: tell the person what did not happen, or let the job or the command fail.",
+            $finding['kind'] === self::FAILURE_HIDDEN && $finding['failed'] === 'file move' => "A move on a disk that fails gives false, and throws only when the disk's config has 'throw' => true. Ask what move() gave back. Then do not go on as if the file is at its new place. {$moved}",
+            ! $command && $finding['kind'] === self::SAVED_THEN_FAILED && $finding['failed'] === 'file move' => "A person who sees the error tries again, and the save happens twice. {$moved}",
+            $finding['kind'] === self::FILE_GONE && str_contains($finding['what'], 'file move') => "What the app kept still points to where the file was. {$moved}",
+            $finding['kind'] === self::FAILURE_HIDDEN && str_starts_with($finding['failed'], 'file ') => "A write to a disk that fails gives false, and throws only when the disk's config has 'throw' => true. Ask what put(), store(), storeAs() or copy() gave back, or set 'throw' => true for the disk. Then do not go on as if the file is there: tell the person what did not happen, or let the job or the command fail.",
             ($finding['job'] ?? false) && $finding['kind'] === self::FAILURE_HIDDEN => 'A queue takes a job that ends without an error as done, and does not try it again. Let the job fail, or record the failure with report().',
             ! $command && $finding['kind'] === self::SAVED_THEN_FAILED && str_starts_with($finding['failed'], 'file ') => 'A person who sees the error tries again, and the save happens twice. Store the file before the save, so a write that fails leaves nothing behind. Or catch the failure, record it with report(), and tell the person what did not happen.',
             $command && $finding['kind'] === self::SAVED_THEN_FAILED => 'The schedule runs the command again, and what the failed run saved is still there: the command then skips that work or does it twice. Save that the work is done only after the send worked, or make the command safe to run again.',
@@ -1204,13 +1216,25 @@ class AppFaults
     }
 
     /**
-     * Determine if a thing is a file the app deleted from a disk.
+     * Determine if a thing is a file the app deleted from a disk, or moved
+     * on it: the file is not where it was.
      *
      * @param  array{kind: string, sql?: string, what?: string}  $effect
      */
     protected static function gone(array $effect): bool
     {
-        return $effect['kind'] === 'file' && ($effect['what'] ?? null) === 'delete';
+        return $effect['kind'] === 'file' && in_array($effect['what'] ?? null, ['delete', 'move'], true);
+    }
+
+    /**
+     * Determine if a thing is one that can be made to fail: an email, an
+     * outside call, or a file the app writes or moves. A delete is not.
+     *
+     * @param  array{kind: string, sql?: string, what?: string}  $effect
+     */
+    protected static function fails(array $effect): bool
+    {
+        return in_array($effect['kind'], self::FAILS, true) && ! ($effect['kind'] === 'file' && ($effect['what'] ?? null) === 'delete');
     }
 
     /**

@@ -557,6 +557,16 @@ class ChangeProofTest extends TestCase
             $proof(['run' => 1, 'findings' => [$finding('file_gone', 'POST /profile/photo', 'file write')]])->where('kind', 'gap')->pluck('text')->all(),
         );
 
+        // A file the app moved is said as moved, and a move that fails as a move.
+        $this->assertSame(
+            ['If saving fails at /documents/{document}/publish, your app has already moved a file. What it kept still points to where the file was, and the file is not there.'],
+            $proof(['run' => 1, 'findings' => [[...$finding('file_gone', 'POST /documents/{document}/publish', 'update documents'), 'what' => 'file move']]])->where('kind', 'gap')->pluck('text')->all(),
+        );
+        $this->assertSame(
+            ['If a file cannot be moved at /documents/{document}/publish, your app carries on as if it worked. The person sees the same as when it works, and nothing is written down, so you would not find out.'],
+            $proof(['run' => 1, 'findings' => [$finding('failure_hidden', 'POST /documents/{document}/publish', 'file move')]])->where('kind', 'gap')->pluck('text')->all(),
+        );
+
         // Work that sends twice only when its save fails is said in its own words,
         // and once when it also sends twice each time it starts over.
         $again = $finding('sent_again', 'POST /orders', 'job App\Jobs\SendReceipt');

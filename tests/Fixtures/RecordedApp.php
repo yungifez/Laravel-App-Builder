@@ -497,6 +497,33 @@ class RecordedApp
     }
 
     /**
+     * Moves a file on a disk, then saves its new place. A careful request
+     * saves first, in a transaction, and throws when the move fails.
+     */
+    public function moved(Request $request): Response
+    {
+        if ($request->boolean('careful')) {
+            DB::transaction(function () {
+                DB::table('users')->where('id', 0)->update(['name' => 'notes/kept.txt']);
+                throw_unless(Storage::disk('recorded')->move('notes/draft.txt', 'notes/kept.txt'), RuntimeException::class, 'The note was not moved.');
+            });
+        } else {
+            Storage::disk('recorded')->move('notes/draft.txt', 'notes/kept.txt');
+            DB::table('users')->where('id', 0)->update(['name' => 'notes/kept.txt']);
+        }
+
+        return response()->noContent();
+    }
+
+    /**
+     * Copies a file on a disk and says what the disk gave back.
+     */
+    public function copied(): JsonResponse
+    {
+        return response()->json(['copied' => Storage::disk('recorded')->copy('notes/note.txt', 'notes/copy.txt')]);
+    }
+
+    /**
      * Catches a save that fails and answers as if it saved.
      */
     public function swallowed(): Response

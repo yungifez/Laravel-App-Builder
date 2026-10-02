@@ -464,7 +464,7 @@ class AppFaultsTest extends TestCase
         ], $hidden['findings'] ?? null);
         $this->assertSame(
             'POST /orders: when file write failed at '.self::NEW.':4, the app went on as if the file was stored: the request did nothing new, gave the same kind of answer as when all worked, and wrote nothing to the log (caused in '.self::TEST.'). '
-                ."A write to a disk that fails gives false, and throws only when the disk's config has 'throw' => true. Ask what put(), store() or storeAs() gave back, or set 'throw' => true for the disk. Then do not go on as if the file is there: tell the person what did not happen, or let the job or the command fail.",
+                ."A write to a disk that fails gives false, and throws only when the disk's config has 'throw' => true. Ask what put(), store(), storeAs() or copy() gave back, or set 'throw' => true for the disk. Then do not go on as if the file is there: tell the person what did not happen, or let the job or the command fail.",
             AppFaults::finding($hidden['findings'][0]),
         );
 
@@ -544,6 +544,46 @@ class AppFaultsTest extends TestCase
         $this->assertSame([], $this->measure([$new, $save, $gone], 302, [$new])['findings'] ?? null);
         // A request that made every save it makes kept nothing that names the file: only the kept save is said.
         $this->assertSame(['saved_then_failed'], array_column($this->measure([$save, $gone, $mail], 500, [$save, $gone, $mail])['findings'] ?? [], 'kind'));
+    }
+
+    public function test_a_file_the_app_moves_is_a_place_and_is_not_where_it_was_when_the_save_after_it_is_lost()
+    {
+        $move = $this->stored(self::NEW.':3', 'move');
+        $save = $this->asked('update "orders" set "receipt" = ? where "id" = ?', self::NEW.':4');
+        $shape = ['shape' => ['status 204']];
+        $moved = 'Move the file after the save, in the same DB::transaction(), and throw when move() gives false: the transaction then puts the save back.';
+
+        // The move can fail, and the save after it can be lost.
+        $this->assertSame([['send', 'file move', 'file'], ['save', 'update orders', 'query']], array_map(fn (array $point) => [$point['fails'], $point['failed'], $point['fault']['kind']], $this->points([$this->recorded('POST', '/orders', 302, [$move, $save])])));
+
+        // The disk gave false and the app saved the new place all the same.
+        $hidden = $this->measure([$move, $save], 302, [$move, $save], extra: ['quiet' => true, ...$shape], was: $shape);
+        $this->assertSame([['failure_hidden', 'file move', 'file move']], array_map(fn (array $finding) => [$finding['kind'], $finding['failed'], $finding['what']], $hidden['findings'] ?? []));
+        $this->assertSame(
+            'POST /orders: when file move failed at '.self::NEW.':3, the app went on as if the file was moved: the request did nothing new, gave the same kind of answer as when all worked, and wrote nothing to the log (caused in '.self::TEST.'). '
+                ."A move on a disk that fails gives false, and throws only when the disk's config has 'throw' => true. Ask what move() gave back. Then do not go on as if the file is at its new place. {$moved}",
+            AppFaults::finding($hidden['findings'][0]),
+        );
+
+        // The file was moved and the save of its new place was lost.
+        $lost = $this->measure([$move, $save], 500, [$move, $save], point: 1);
+        $this->assertSame([['file_gone', 'update orders', 'file move']], array_map(fn (array $finding) => [$finding['kind'], $finding['failed'], $finding['what']], $lost['findings'] ?? []));
+        $this->assertSame(
+            'POST /orders: when update orders failed at '.self::NEW.':4, the save was lost but the request had already moved a file, and nothing puts it back: file move (caused in '.self::TEST.'). '
+                ."What the app kept still points to where the file was. {$moved}",
+            AppFaults::finding($lost['findings'][0]),
+        );
+
+        // A disk that throws after a save outside a transaction leaves the save.
+        $first = $this->asked('update "orders" set "receipt" = ? where "id" = ?', self::NEW.':2');
+        $thrown = $this->measure([$first, $move], 500, [$first, $move]);
+        $this->assertSame(['saved_then_failed'], array_column($thrown['findings'] ?? [], 'kind'));
+        $this->assertStringEndsWith("the save happens twice. {$moved}", AppFaults::finding($thrown['findings'][0]));
+
+        // A save in a transaction that the failed move put back leaves nothing.
+        $inside = [['kind' => 'begin', 'open' => 1], $this->asked('update "orders" set "receipt" = ? where "id" = ?', self::NEW.':2', open: 1), $this->stored(self::NEW.':3', 'move', open: 1)];
+        $clean = $this->measure([...$inside, ['kind' => 'commit', 'open' => 0]], 500, [...$inside, ['kind' => 'rollback', 'open' => 0]]);
+        $this->assertSame([1, []], [$clean['run'] ?? null, $clean['findings'] ?? null]);
     }
 
     public function test_only_the_last_save_in_steps_is_a_place_and_only_after_the_apps_code_saved_or_sent()

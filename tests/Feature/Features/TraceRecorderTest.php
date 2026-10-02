@@ -1575,6 +1575,82 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([1, 0, []], [$measured['run'], $measured['missed'], $measured['findings']]);
     }
 
+    public function test_a_move_made_to_fail_shows_an_app_that_carries_on_as_if_the_file_was_moved()
+    {
+        Route::post('/_stored/moved', [RecordedApp::class, 'moved']);
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'file');
+        Storage::fake('recorded');
+
+        Storage::disk('recorded')->put('notes/draft.txt', 'A note');
+        $this->post('/_stored/moved')->assertNoContent();
+        Storage::disk('recorded')->assertExists('notes/kept.txt');
+        Storage::disk('recorded')->move('notes/kept.txt', 'notes/draft.txt');
+        // The disk gives false and throws nothing, so the request saves the new place and answers as usual.
+        $this->post('/_stored/moved')->assertNoContent();
+        Storage::disk('recorded')->assertMissing('notes/kept.txt');
+
+        $requests = $recorded();
+        $this->assertSame([[['file', 'move'], ['query', null]], [['file', 'move'], ['query', null]]], array_map(fn (array $request) => array_map(fn (array $effect) => [$effect['kind'], $effect['what'] ?? null], $request['effects']), $requests));
+        $this->assertStringNotContainsString('draft.txt', File::get("{$this->directory}/trace.jsonl"));
+
+        $measured = $this->measureFailure($requests, 'file move');
+        $this->assertSame([['failure_hidden', 'POST /_stored/moved', 'file move', 'file move']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+        $this->assertStringContainsString('the app went on as if the file was moved', AppFaults::finding($measured['findings'][0]));
+    }
+
+    public function test_a_file_moved_before_a_save_that_fails_is_not_where_what_was_kept_says()
+    {
+        Route::post('/_stored/moved', [RecordedApp::class, 'moved']);
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'query');
+        Storage::fake('recorded');
+
+        Storage::disk('recorded')->put('notes/draft.txt', 'A note');
+        $this->post('/_stored/moved')->assertNoContent();
+        Storage::disk('recorded')->move('notes/kept.txt', 'notes/draft.txt');
+        $this->post('/_stored/moved')->assertStatus(500);
+        // The new place was not saved, and the file is there.
+        Storage::disk('recorded')->assertMissing('notes/draft.txt');
+
+        $measured = $this->measureFailure($recorded(), 'update users');
+        $this->assertSame([['file_gone', 'POST /_stored/moved', 'update users', 'file move']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+        $this->assertStringContainsString('the request had already moved a file', AppFaults::finding($measured['findings'][0]));
+    }
+
+    public function test_an_app_that_saves_first_in_a_transaction_and_throws_when_the_move_fails_is_clean()
+    {
+        Route::post('/_stored/moved', [RecordedApp::class, 'moved']);
+        $recorded = $this->recordWithFailure(effect: 2, kind: 'file');
+        Storage::fake('recorded');
+
+        Storage::disk('recorded')->put('notes/draft.txt', 'A note');
+        $this->post('/_stored/moved?careful=1')->assertNoContent();
+        Storage::disk('recorded')->move('notes/kept.txt', 'notes/draft.txt');
+        $this->post('/_stored/moved?careful=1')->assertStatus(500);
+
+        $requests = $recorded();
+        $this->assertSame(['begin', 'query', 'file', 'rollback'], array_column($requests[1]['effects'], 'kind'));
+
+        $measured = $this->measureFailure($requests, 'file move');
+        $this->assertSame([1, 0, []], [$measured['run'], $measured['missed'], $measured['findings']]);
+    }
+
+    public function test_a_copy_is_a_write_and_is_made_to_fail_the_same_way()
+    {
+        Route::post('/_stored/copied', [RecordedApp::class, 'copied']);
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'file');
+        Storage::fake('recorded');
+
+        Storage::disk('recorded')->put('notes/note.txt', 'A note');
+        $this->post('/_stored/copied')->assertExactJson(['copied' => true]);
+        Storage::disk('recorded')->delete('notes/copy.txt');
+        $this->post('/_stored/copied')->assertExactJson(['copied' => false]);
+        Storage::disk('recorded')->assertMissing('notes/copy.txt');
+
+        $requests = $recorded();
+        $this->assertSame([[['file', 'write']], [['file', 'write']]], array_map(fn (array $request) => array_map(fn (array $effect) => [$effect['kind'], $effect['what'] ?? null], $request['effects']), $requests));
+        $this->assertSame(0, $requests[1]['fault'] ?? null);
+    }
+
     public function test_what_a_json_answer_tells_the_person_is_read_by_its_names_at_every_depth()
     {
         Route::post('/_hidden/screen', [RecordedApp::class, 'screened']);

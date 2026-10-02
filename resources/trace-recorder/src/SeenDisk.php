@@ -6,9 +6,9 @@ use League\Flysystem\DecoratedAdapter;
 
 /**
  * Stands around one disk of the app (see SeenFiles): it tells the recorder
- * of each file the app writes or deletes, then does what the disk does.
- * Only that a file is written or deleted is noted, never its name or what
- * is in it.
+ * of each file the app writes, copies, moves or deletes, then does what
+ * the disk does. Only that it happens is noted, never the name of the
+ * file or what is in it.
  */
 class SeenDisk extends DecoratedAdapter
 {
@@ -26,6 +26,20 @@ class SeenDisk extends DecoratedAdapter
         $this->traceRecorder?->stored((string) ($arguments[0] ?? ''));
 
         parent::writeStream(...$arguments);
+    }
+
+    public function copy(...$arguments): void
+    {
+        $this->traceRecorder?->copied((string) ($arguments[0] ?? ''), (string) ($arguments[1] ?? ''));
+
+        parent::copy(...$arguments);
+    }
+
+    public function move(...$arguments): void
+    {
+        $this->traceRecorder?->moved((string) ($arguments[0] ?? ''), (string) ($arguments[1] ?? ''));
+
+        parent::move(...$arguments);
     }
 
     public function delete(...$arguments): void

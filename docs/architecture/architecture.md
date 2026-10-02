@@ -2087,8 +2087,8 @@ can be caused, in requests that ran the change's code:
   disk with a driver of the app's own is not seen. Only that a file was
   written is recorded, never its name. A file is not counted among what the
   app sent: a file that stays after a save was lost is not held against the
-  change. Each file a request deletes is recorded too. A delete is not made
-  to fail.
+  change. A copy is a write. A move is made to fail the same way. Each file
+  a request deletes is recorded too. A delete is not made to fail.
 - **An answer.** Each outside call the app's code makes itself, when the
   app's code sends or saves something after it. The call does not fail. It
   is made, and a server error is given as its answer. Laravel's HTTP client
@@ -2164,7 +2164,10 @@ The trace of that request shows what stayed:
   gone. The same is found when an email, a call or a file write fails
   after the delete, and the request then does not make a save it makes
   when all works. The coder is told to delete the file last, after the
-  save is kept.
+  save is kept. A file the app moved counts the same: what the app kept
+  still points to where the file was. The coder is told to move the file
+  after the save, in the same transaction, and to throw when the move
+  fails.
 - **Done twice.** A job ran twice, and both runs sent the same thing or
   added the same row from the same line. A queue gives a job to a worker at
   least once, so a job must be safe to run again. An outside call the
