@@ -263,6 +263,12 @@ class DescribeRunProgress
         $asked = count($run->plan['acceptance_criteria'] ?? []);
         $kept = count($run->plan['preserve'] ?? []);
 
+        $since = (int) $run->events()->where('type', 'status')->where('data->to', RunStatus::Reviewing->value)->max('sequence');
+
+        if ($run->events()->where('type', 'review_stopped')->where('sequence', '>', $since)->exists()) {
+            return ['text' => __('This is our fault: our check of your change stopped. Checking it again'), 'changed' => 0];
+        }
+
         if ($asked === 0) {
             return null;
         }

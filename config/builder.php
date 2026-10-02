@@ -331,6 +331,9 @@ return [
             'minutes' => (int) env('BUILDER_RUN_MAX_MINUTES', 20),
             // Attempts to fix a change that failed verification or review.
             'repairs' => (int) env('BUILDER_RUN_MAX_REPAIRS', 4),
+            // Times a change that passed its checks is reviewed again after
+            // the review stopped on our side, before the run fails.
+            'review_restarts' => (int) env('BUILDER_RUN_MAX_REVIEW_RESTARTS', 3),
             // What all changes together may spend on AI in one day, in US
             // dollars; a run stops once today's spend reaches it. 0 turns
             // the limit off.

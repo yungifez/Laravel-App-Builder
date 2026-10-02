@@ -78,6 +78,15 @@ class ExecuteRun implements ShouldQueue
             return;
         }
 
+        // The change passed its checks, so a review that stops is our fault,
+        // not the change's. Leave it waiting for `runs:reconcile` to review
+        // it again, rather than make the owner's tool write it again.
+        if ($run->status === RunStatus::Reviewing && $run->events()->where('type', 'review_stopped')->count() < (int) config('builder.construction.budgets.review_restarts')) {
+            $run->recordEvent('review_stopped', ['error' => $exception === null ? null : class_basename($exception)]);
+
+            return;
+        }
+
         app(FailRun::class)->handle($run, __('This is our fault: something on our side stopped while I worked on this. Nothing in your app changed. Try again.'), cause: 'worker_stopped');
     }
 }

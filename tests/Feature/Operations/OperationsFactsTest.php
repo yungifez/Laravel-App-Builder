@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Operations;
 
+use App\Actions\Runs\DescribeRunProgress;
 use App\Actions\Runs\RecordModelUsage;
 use App\Actions\Runs\StartRun;
 use App\Actions\Runs\TransitionRun;
@@ -84,6 +85,27 @@ class OperationsFactsTest extends TestCase
         $this->assertSame(RunStatus::Failed, $run->status);
         $this->assertSame('worker_stopped', $run->stop_reason);
         $this->assertSame('worker_stopped', $run->events()->where('type', 'status')->reorder('sequence', 'desc')->value('data')['reason']);
+    }
+
+    public function test_a_review_that_stops_is_reviewed_again_before_the_run_fails()
+    {
+        config(['builder.construction.budgets.review_restarts' => 2]);
+        $run = Run::factory()->create(['status' => RunStatus::Reviewing]);
+
+        // The change passed its checks: twice it waits to be reviewed again.
+        foreach ([1, 2] as $stopped) {
+            (new ExecuteRun($run))->failed(new RuntimeException('reviewer down'));
+
+            $this->assertSame(RunStatus::Reviewing, $run->refresh()->status);
+            $this->assertSame($stopped, $run->events()->where('type', 'review_stopped')->count());
+        }
+
+        $this->assertStringStartsWith('This is our fault', app(DescribeRunProgress::class)->handle($run)['text'] ?? '');
+
+        (new ExecuteRun($run))->failed(new RuntimeException('reviewer down'));
+
+        $this->assertSame(RunStatus::Failed, $run->refresh()->status);
+        $this->assertSame('worker_stopped', $run->stop_reason);
     }
 
     public function test_a_model_call_is_counted_once_however_often_a_retried_job_records_it()
