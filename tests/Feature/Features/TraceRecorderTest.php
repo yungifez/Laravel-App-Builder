@@ -941,7 +941,10 @@ class TraceRecorderTest extends TestCase
 
         $measured = $this->measureFailure($requests, 'mail message', RecordedHushedJob::PATH);
         $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
-        $this->assertSame([['failure_hidden', 'POST /_failing/hushed-later/{user}', 'mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed']], $measured['findings']));
+        $this->assertSame([['failure_hidden', 'POST /_failing/hushed-later/{user}', 'mail message', true]], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['job'] ?? false], $measured['findings']));
+        // The coder is told about the job, not about a person who sees an answer.
+        $this->assertStringContainsString('in a job the request queued, the job caught the failure and hid it', AppFaults::finding($measured['findings'][0]));
+        $this->assertStringEndsWith('A queue takes a job that ends without an error as done, and does not try it again. Let the job fail, or record the failure with report().', AppFaults::finding($measured['findings'][0]));
     }
 
     public function test_a_job_of_a_request_that_records_a_failure_or_lets_it_through_is_clean()

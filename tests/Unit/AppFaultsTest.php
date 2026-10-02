@@ -605,7 +605,7 @@ class AppFaultsTest extends TestCase
         $measured = $this->measure($normal, 500, [...$normal, $again, $asks], point: $send);
 
         $this->assertSame([
-            ['kind' => 'never_sent', 'route' => 'POST /orders', 'failed' => 'mail App\Mail\Receipt', 'what' => 'mail App\Mail\Receipt', 'at' => self::NEW.':4', 'test' => self::TEST],
+            ['kind' => 'never_sent', 'route' => 'POST /orders', 'failed' => 'mail App\Mail\Receipt', 'what' => 'mail App\Mail\Receipt', 'at' => self::NEW.':4', 'test' => self::TEST, 'job' => true],
         ], $measured['findings'] ?? null);
         $this->assertSame(
             'POST /orders: when mail App\Mail\Receipt failed at '.self::NEW.':4 and the job was tried again, the second try did not send it: what the first try left behind made the job stop, so it is never sent (caused in '.self::TEST.'). '
@@ -672,7 +672,7 @@ class AppFaultsTest extends TestCase
         $measured = $this->measure($normal, 500, [...$normal, $again, $mail, $mail, $mail], point: $send($normal));
 
         $this->assertSame([
-            ['kind' => 'sent_again', 'route' => 'POST /orders', 'failed' => 'mail App\Mail\Receipt', 'what' => 'mail App\Mail\Receipt', 'at' => self::NEW.':4', 'test' => self::TEST],
+            ['kind' => 'sent_again', 'route' => 'POST /orders', 'failed' => 'mail App\Mail\Receipt', 'what' => 'mail App\Mail\Receipt', 'at' => self::NEW.':4', 'test' => self::TEST, 'job' => true],
         ], $measured['findings'] ?? null);
         $this->assertSame(
             'POST /orders: when mail App\Mail\Receipt failed at '.self::NEW.':4 and the job was tried again, the job started from the top and sent again what it had sent before the failure: mail App\Mail\Receipt (caused in '.self::TEST.'). '

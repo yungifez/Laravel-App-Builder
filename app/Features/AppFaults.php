@@ -232,7 +232,7 @@ class AppFaults
      *
      * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, direct?: bool, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, dark?: bool, shape?: list<string>, events?: list<array{what: string, at: string|null, listeners: list<string>}>}>  $requests  From AppTraces::parse(), of the tests' normal run
      * @param  list<array{route: string, at?: string|null}>  $suspected  Findings of the other engines about the change, such as AppTraces and AppBoundaries give
-     * @return list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string, what?: string}, times: int, own: bool, was?: array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool, shape?: list<string>}}>
+     * @return list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string, what?: string}, times: int, own: bool, job?: bool, was?: array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool, shape?: list<string>}}>
      */
     public static function points(array $requests, ?string $patch, array $suspected = []): array
     {
@@ -354,6 +354,8 @@ class AppFaults
                     'times' => count(self::same($request['effects'], $failed)),
                     // A job is also the change's when the change wrote what it does.
                     'own' => $new($failed) || ($point[3] ?? false),
+                    // The failure is in a job the request queued, not in the request.
+                    ...($inner[$key] ? ['job' => true] : []),
                     // What the failure is compared with: the same request when all worked.
                     ...(in_array($fails, [self::LATER, self::ANSWER, self::SEND, self::SAVE, self::RETRY], true) ? ['was' => [
                         'status' => $request['status'],
@@ -416,9 +418,9 @@ class AppFaults
      * job that waits is missed too when its two runs have the same shape
      * but the shape cannot say that they left the same behind.
      *
-     * @param  list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string, what?: string}, times: int, own: bool, was?: array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool, shape?: list<string>}}>  $points  From points()
+     * @param  list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string, what?: string}, times: int, own: bool, job?: bool, was?: array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool, shape?: list<string>}}>  $points  From points()
      * @param  array<int, list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, asked?: bool, quiet?: bool, shape?: list<string>}>>  $runs  What was recorded when each place's failure was caused, by the place's position in $points; a place not tried is absent
-     * @return array{points: int, run: int, missed: int, existing: int, findings: list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}>}|null
+     * @return array{points: int, run: int, missed: int, existing: int, findings: list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string, job?: bool}>}|null
      */
     public static function measure(array $points, array $runs, ?string $patch): ?array
     {
@@ -462,6 +464,7 @@ class AppFaults
                     'what' => implode(', ', array_slice(array_unique(array_map(self::name(...), $effects)), 0, 6)),
                     'at' => $point['at'],
                     'test' => $point['test'],
+                    ...(($point['job'] ?? false) ? ['job' => true] : []),
                 ];
             }
         }
@@ -491,9 +494,9 @@ class AppFaults
      * what they are (identity()). They are counted as "accepted", not held
      * against the change.
      *
-     * @param  array{points: int, run: int, missed: int, existing: int, findings: list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}>, accepted?: int}|null  $measured  From measure()
+     * @param  array{points: int, run: int, missed: int, existing: int, findings: list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string, job?: bool}>, accepted?: int}|null  $measured  From measure()
      * @param  list<string>  $accepted  The identities accepted
-     * @return array{points: int, run: int, missed: int, existing: int, findings: list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}>, accepted?: int}|null
+     * @return array{points: int, run: int, missed: int, existing: int, findings: list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string, job?: bool}>, accepted?: int}|null
      */
     public static function without(?array $measured, array $accepted): ?array
     {
@@ -514,7 +517,7 @@ class AppFaults
      * Say what the app left behind at one place, as the trace of the
      * caused failure shows it.
      *
-     * @param  array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}  $finding  From measure()
+     * @param  array{kind: string, route: string, failed: string, what: string, at: string|null, test: string, job?: bool}  $finding  From measure()
      */
     public static function describe(array $finding): string
     {
@@ -544,7 +547,9 @@ class AppFaults
             self::SAVED_THEN_FAILED => "when {$finding['failed']} failed{$at(' at')}, the {$run} ended in ".($command ? 'an error' : 'a server error')." but had already saved: {$finding['what']}",
             self::SENT_THEN_LOST => "when {$finding['failed']} failed{$at(' at')}, the save was lost but the {$run} had already sent: {$finding['what']}",
             self::SAVED_IN_PART => "when {$finding['failed']} failed{$at(' at')}, the save was lost but the {$run} kept what it had saved before it, with no transaction around both: {$finding['what']}",
-            self::FAILURE_HIDDEN => "when {$finding['failed']} failed{$at(' at')}, the app caught the failure and hid it: the {$run} did nothing new, ".($command || $job ? 'ended the same' : 'gave the same kind of answer').' as when all worked, and wrote nothing to the log',
+            self::FAILURE_HIDDEN => ($finding['job'] ?? false)
+                ? "when {$finding['failed']} failed{$at(' at')}, in a job the {$run} queued, the job caught the failure and hid it: it ended with no error, did nothing new, and wrote nothing to the log"
+                : "when {$finding['failed']} failed{$at(' at')}, the app caught the failure and hid it: the {$run} did nothing new, ".($command || $job ? 'ended the same' : 'gave the same kind of answer').' as when all worked, and wrote nothing to the log',
             default => "when {$finding['failed']} failed{$at(' at')}, {$finding['kind']}: {$finding['what']}",
         };
 
@@ -556,13 +561,14 @@ class AppFaults
      * sends the change back by itself: the failure was caused and the
      * trace shows what stayed.
      *
-     * @param  array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}  $finding  From measure()
+     * @param  array{kind: string, route: string, failed: string, what: string, at: string|null, test: string, job?: bool}  $finding  From measure()
      */
     public static function finding(array $finding): string
     {
         $command = AppTraces::command($finding['route']) !== null;
 
         $fix = match (true) {
+            ($finding['job'] ?? false) && $finding['kind'] === self::FAILURE_HIDDEN => 'A queue takes a job that ends without an error as done, and does not try it again. Let the job fail, or record the failure with report().',
             $command && $finding['kind'] === self::SAVED_THEN_FAILED => 'The schedule runs the command again, and what the failed run saved is still there: the command then skips that work or does it twice. Save that the work is done only after the send worked, or make the command safe to run again.',
             $command && $finding['kind'] === self::FAILURE_HIDDEN => 'No one reads what a command prints when the schedule runs it. Let it fail, or record the failure with report().',
             $finding['kind'] === self::SENT_AGAIN && ! str_starts_with($finding['failed'], 'job ') => 'A queue tries a failed job again from the top. Send each email from its own job (queue the email, or dispatch one job for each person). Or record each one before the job sends it, and take only that record back when its send fails.',
@@ -599,8 +605,8 @@ class AppFaults
     /**
      * Get the findings of one kind.
      *
-     * @param  array{findings?: list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}>}|null  $measured  From measure()
-     * @return list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}>
+     * @param  array{findings?: list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string, job?: bool}>}|null  $measured  From measure()
+     * @return list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string, job?: bool}>
      */
     public static function findings(?array $measured, string $kind): array
     {

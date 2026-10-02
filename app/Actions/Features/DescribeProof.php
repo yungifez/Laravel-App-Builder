@@ -507,6 +507,13 @@ class DescribeProof
             AppFaults::SENT_AGAIN => 'Your app does some work on its own (:address). If :failure during that work and it starts over, it sends the same thing twice.',
             AppFaults::NEVER_SENT => 'Your app does some work on its own (:address). If :failure during that work and it starts over, it does not try to send again. What it had to send is never sent.',
         ];
+        // A failure in work the app leaves for later has no person who sees an answer.
+        $later = [
+            AppFaults::FAILURE_HIDDEN => [
+                'Your app does some work on its own after someone uses :address. If :failure during that work, it carries on as if it worked. Nothing is written down, so you would not find out.',
+                'Your app does some work on its own (:address) and leaves part of it for later. If :failure during that part, it carries on as if it worked. Nothing is written down, so you would not find out.',
+            ],
+        ];
         // The recording already said that this is sent before saving ends.
         $said = AppTraces::findings($verification->evidence['traces'] ?? null, AppTraces::SENT_BEFORE_SAVED) !== [];
         // Work that sends twice each time it starts over is said once.
@@ -524,10 +531,11 @@ class DescribeProof
                 $found = $accepted ? $found : AppFaults::findings($left, $kind);
                 $work = AppRoutes::work($found[0]['route']);
                 $job = AppTraces::job($found[0]['route']) !== null;
+                $inJob = ($found[0]['job'] ?? false) && isset($later[$kind]);
                 $gap = __(match (true) {
-                    $work === null => $text,
+                    $work === null => $inJob ? $later[$kind][0] : $text,
                     $job => $queued[$kind] ?? $alone[$kind],
-                    default => $alone[$kind],
+                    default => $inJob ? $later[$kind][1] : $alone[$kind],
                 }, [
                     'address' => $work === null ? AppRoutes::address($found[0]['route']) : "“{$work}”",
                     'failure' => match (true) {

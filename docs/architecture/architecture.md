@@ -2196,7 +2196,10 @@ The trace of that request shows what stayed:
 - **Failure hidden.** A send or a save failed, the app's code caught the
   failure, and the request carried on as if it worked: an empty `catch`
   around an email. The person sees the same as when it worked, and no one
-  can find out later.
+  can find out later. When the failure was in a job the request queued, the
+  finding says so (`job`). The coder then reads the fix for a job, and the
+  owner reads it as work the app does on its own: no person sees an answer
+  there.
 
 A save in a transaction is lost when the transaction rolls back. A save in
 steps is lost when the request ends in a server error. An app that catches

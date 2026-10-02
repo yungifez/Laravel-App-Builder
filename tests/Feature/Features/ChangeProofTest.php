@@ -596,6 +596,15 @@ class ChangeProofTest extends TestCase
             ['mail App\Mail\Receipt', 'http POST api.stripe.com', 'insert orders'],
         ));
 
+        // A failure hidden in work the app leaves for later has no person who sees an answer.
+        $this->assertSame([
+            ['Your app does some work on its own after someone uses /orders. If an email cannot be sent during that work, it carries on as if it worked. Nothing is written down, so you would not find out.'],
+            ['Your app does some work on its own (“reminders send”) and leaves part of it for later. If an email cannot be sent during that part, it carries on as if it worked. Nothing is written down, so you would not find out.'],
+        ], array_map(
+            fn (string $route) => $proof(['run' => 1, 'findings' => [[...$finding('failure_hidden', $route, 'mail App\Mail\Receipt'), 'job' => true]]])->where('kind', 'gap')->pluck('text')->all(),
+            ['POST /orders', 'ARTISAN reminders:send'],
+        ));
+
         // Work the app does on its own at set times has no person and no address: it is said by its name.
         $this->assertSame([
             ['Your app does some work on its own (“reminders send”). If an email cannot be sent during that work, it stops, but it has already saved part of it. The next time, it may skip that part or do it twice.'],
