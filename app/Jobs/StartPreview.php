@@ -120,8 +120,8 @@ class StartPreview implements ShouldQueue
             $port = $allocatePreviewPort->handle();
             $this->preview->update(['port' => $port]);
 
-            $driver->startService((string) $workspace->driver_id, $this->serverCommand($port), $port);
             $upstream = $driver->serviceUrl((string) $workspace->driver_id, $port);
+            $driver->startService((string) $workspace->driver_id, $this->serverCommand($port, (string) parse_url($upstream, PHP_URL_HOST)), $port);
 
             $this->waitUntilReady($upstream);
 
@@ -151,11 +151,14 @@ class StartPreview implements ShouldQueue
 
     /**
      * Build the web server command: PHP's built-in server with Laravel's
-     * router, told its public URL through the environment.
+     * router, told its public URL through the environment. It listens only
+     * at the address the control plane reaches it at (on a runner hosted
+     * apart, its private network address), unless "listen_host" says
+     * otherwise.
      *
      * @return list<string>
      */
-    protected function serverCommand(int $port): array
+    protected function serverCommand(int $port, string $reachedAt): array
     {
         $environment = $this->preview->environment();
         $environment['PHP_CLI_SERVER_WORKERS'] ??= '4';
@@ -166,7 +169,7 @@ class StartPreview implements ShouldQueue
             'env',
             ...array_map(fn (string $name, string $value) => "{$name}={$value}", array_keys($environment), $environment),
             'sh', '-c', 'cd public && exec "$@"', 'sh',
-            'php', '-S', config('builder.preview.listen_host').":{$port}",
+            'php', '-S', (config('builder.preview.listen_host') ?? $reachedAt).":{$port}",
             '../vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php',
         ];
     }

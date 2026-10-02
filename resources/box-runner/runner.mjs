@@ -20,6 +20,9 @@
 //   RUNNER_URL    the control plane's base URL, for example http://laravel.test
 //   RUNNER_TOKEN  this runner's token
 //   RUNNER_ROOT   where workspaces live (default /workspaces)
+//   RUNNER_SERVICE_HOST  the address the control plane reaches this
+//                 machine's previews at, such as its private network
+//                 address; previews listen only there
 
 import { execFileSync, spawn } from 'node:child_process';
 import {
@@ -37,6 +40,7 @@ import { Readable } from 'node:stream';
 const url = (process.env.RUNNER_URL ?? '').replace(/\/$/, '');
 const token = process.env.RUNNER_TOKEN ?? '';
 const root = process.env.RUNNER_ROOT ?? '/workspaces';
+const serviceHost = process.env.RUNNER_SERVICE_HOST || null;
 
 // Children never inherit the runner's token or settings.
 delete process.env.RUNNER_TOKEN;
@@ -663,7 +667,7 @@ async function main() {
 
     for (;;) {
         try {
-            settings = await api('hello');
+            settings = await api('hello', { service_host: serviceHost });
             break;
         } catch (error) {
             console.error(`Waiting for the control plane: ${error.message}`);

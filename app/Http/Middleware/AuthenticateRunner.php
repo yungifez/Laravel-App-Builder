@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Runner;
 use App\Workspaces\Boxes\BoxProviderManager;
 use Closure;
 use Illuminate\Http\Request;
@@ -29,6 +30,13 @@ class AuthenticateRunner
         abort_if($runner === null, 401);
 
         $request->attributes->set('runner', $runner);
+
+        // A pool runner counts as online while it keeps asking; a write at
+        // most every few seconds is enough for that.
+        Runner::query()
+            ->where('name', $runner)
+            ->where(fn ($query) => $query->whereNull('last_seen_at')->orWhere('last_seen_at', '<', now()->subSeconds(15)))
+            ->update(['last_seen_at' => now()]);
 
         return $next($request);
     }

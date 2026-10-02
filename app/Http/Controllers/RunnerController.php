@@ -2,19 +2,26 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\RunnerHelloRequest;
 use App\Http\Requests\RunnerSocketAuthRequest;
+use App\Models\Runner;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
 class RunnerController extends Controller
 {
     /**
      * Tell a runner who it is, how often to poll and where its doorbell is.
      */
-    public function hello(Request $request): JsonResponse
+    public function hello(RunnerHelloRequest $request): JsonResponse
     {
         $runner = (string) $request->attributes->get('runner');
         $socketUrl = config('workspaces.drivers.runner.socket_url');
+
+        // A runner in the pool says where its previews are reached; the
+        // static runner has no row and is reached at its configured host.
+        if ($request->filled('service_host')) {
+            Runner::query()->where('name', $runner)->update(['service_host' => $request->validated('service_host'), 'last_seen_at' => now()]);
+        }
 
         return response()->json([
             'runner' => $runner,

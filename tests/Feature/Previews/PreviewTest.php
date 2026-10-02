@@ -77,6 +77,22 @@ class PreviewTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('preview.status', 'ready'));
     }
 
+    public function test_without_a_listen_host_the_app_listens_only_where_we_reach_it()
+    {
+        // On a runner hosted apart, that is its private address: the
+        // preview never opens to the machine's public network.
+        config(['builder.preview.listen_host' => null]);
+        Http::fake(['*/up' => Http::response('ok')]);
+        $request = FeatureRequest::factory()->generated()->create();
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $preview = $request->previews()->sole();
+        $command = $this->driver->services[0]['command'];
+        $workspaceId = $this->driver->copies[0]['workspace'];
+        $this->assertSame(['php', '-S', "{$workspaceId}.test:{$preview->port}"], array_slice($command, array_search('php', $command, true), 3));
+    }
+
     public function test_a_preview_gets_the_keys_of_the_apps_services_but_never_sends_real_email()
     {
         Http::fake(['*/up' => Http::response('ok')]);

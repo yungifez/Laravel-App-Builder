@@ -10,7 +10,8 @@ use App\Workspaces\WorkspaceSpec;
  * development, holding every workspace as a directory. Nothing is created or
  * destroyed here: the runner makes and removes the directories itself.
  *
- * Workspaces on one runner share its user, so this is for trusted apps only.
+ * Each workspace runs as a user of its own, but all share one machine and
+ * its network, so production uses the pool of runners instead.
  */
 class StaticProvider implements BoxProvider
 {

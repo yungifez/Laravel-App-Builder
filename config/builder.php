@@ -968,9 +968,10 @@ return [
         'idle_minutes' => (int) env('BUILDER_PREVIEW_IDLE_MINUTES', 30),
         'max_minutes' => (int) env('BUILDER_PREVIEW_MAX_MINUTES', 240),
         'boot_seconds' => 30,
-        // Address the app's web server binds to inside the workspace. Use
-        // 0.0.0.0 for container drivers, which are reached at their own address.
-        'listen_host' => env('BUILDER_PREVIEW_LISTEN_HOST', '127.0.0.1'),
+        // Address the app's web server binds to inside the workspace. Unset,
+        // it listens only where the control plane reaches it, so a runner
+        // hosted apart never opens previews to its public network.
+        'listen_host' => env('BUILDER_PREVIEW_LISTEN_HOST'),
         'request_timeout' => 60,
 
         // Ports the app's web server may listen on inside a workspace.

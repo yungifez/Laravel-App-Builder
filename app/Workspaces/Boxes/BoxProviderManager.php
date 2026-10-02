@@ -4,6 +4,7 @@ namespace App\Workspaces\Boxes;
 
 use App\Workspaces\Boxes\Contracts\BoxProvider;
 use App\Workspaces\Boxes\Providers\DockerProvider;
+use App\Workspaces\Boxes\Providers\PoolProvider;
 use App\Workspaces\Boxes\Providers\StaticProvider;
 use Illuminate\Support\Manager;
 
@@ -50,6 +51,14 @@ class BoxProviderManager extends Manager
             token: (string) $this->config->get('workspaces.boxes.static.token'),
             serviceHost: (string) $this->config->get('workspaces.boxes.static.service_host'),
         );
+    }
+
+    /**
+     * Create the provider for a pool of runners on machines of their own.
+     */
+    public function createPoolDriver(): BoxProvider
+    {
+        return new PoolProvider;
     }
 
     /**

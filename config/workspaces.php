@@ -134,8 +134,8 @@ return [
     |--------------------------------------------------------------------------
     |
     | Where the runner driver gets its boxes. "static" is one runner that is
-    | already running, such as the runner container in local development; it
-    | holds every workspace, so it is for trusted apps only. "docker" makes a
+    | already running, such as the runner container in local development.
+    | "pool" is many runners on machines of their own, for production. "docker" makes a
     | container per workspace on this machine, to try the lifecycle of real
     | boxes locally. A provider for a hosting service is added as another
     | entry here and in App\Workspaces\Boxes\BoxProviderManager.
@@ -147,6 +147,15 @@ return [
             'runner' => env('WORKSPACE_RUNNER_NAME', 'local'),
             'token' => env('WORKSPACE_RUNNER_TOKEN', ''),
             'service_host' => env('WORKSPACE_RUNNER_SERVICE_HOST', 'runner'),
+        ],
+
+        // Runners on machines of their own, usually small VMs hosted apart
+        // from the control plane, each holding many workspaces. Add one with
+        // `php artisan runners:add {name}`. A runner counts as online while
+        // it asked for work in the last "online_seconds"; new workspaces go
+        // only to online runners.
+        'pool' => [
+            'online_seconds' => (int) env('WORKSPACE_RUNNER_ONLINE_SECONDS', 120),
         ],
 
         // One container per workspace, through the box service in
