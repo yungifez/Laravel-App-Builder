@@ -6,6 +6,7 @@ import AuthLayout from '@/layouts/AuthLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import WorkspaceLayout from '@/layouts/WorkspaceLayout.vue';
 import { initializeFlashToast } from '@/lib/flashToast';
+import { rememberScreen } from '@/lib/screen';
 import { rememberTimeZone, settleDates } from '@/lib/when';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
@@ -60,6 +61,7 @@ void createInertiaApp({
     if (typeof window !== 'undefined') {
         settleDates();
         rememberTimeZone();
+        rememberScreen();
     }
 });
 

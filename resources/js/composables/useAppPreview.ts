@@ -1,4 +1,4 @@
-import { router, usePoll } from '@inertiajs/vue3';
+import { router, usePage, usePoll } from '@inertiajs/vue3';
 import {
     computed,
     onBeforeUnmount,
@@ -26,6 +26,7 @@ import {
     withUnit,
 } from '@/lib/visualProperties';
 import { newParts } from '@/lib/partKinds';
+import { WIDE_SCREEN } from '@/lib/screen';
 import type { NewPartKind } from '@/lib/partKinds';
 import { show as showPreview } from '@/routes/previews';
 import type {
@@ -190,9 +191,9 @@ export function useAppPreview(source: Source) {
     const visited = ref<string[]>([]);
     const visitedAt = ref(-1);
     // Start at the owner's own screen size: a phone edits the phone layout.
-    // The server cannot see the screen, so the browser sets it once mounted
-    // (see below); setting it here would not match the server's page.
-    const device = ref<Device>('base');
+    // The server knows it from a cookie the browser left; the browser checks
+    // it once mounted (see below), for a first visit or a new screen.
+    const device = ref<Device>(usePage().props.wideScreen ? 'lg' : 'base');
     const selected = ref<SelectedElement | null>(null);
     const onlyThisOne = ref(true);
     const saveError = ref<string | null>(null);
@@ -217,9 +218,7 @@ export function useAppPreview(source: Source) {
 
     // What only the browser knows: the screen and the owner's choices.
     onMounted(() => {
-        if (window.matchMedia('(min-width: 1024px)').matches) {
-            device.value = 'lg';
-        }
+        device.value = window.matchMedia(WIDE_SCREEN).matches ? 'lg' : 'base';
 
         fine.value = remembered(FINE_KEY);
         moveFreely.value = remembered(FREE_KEY);

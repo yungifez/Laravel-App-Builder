@@ -29,4 +29,18 @@ class PageClockTest extends TestCase
             ->get(route('projects.index'))
             ->assertInertia(fn (Assert $page) => $page->where('clock.timeZone', 'UTC'));
     }
+
+    public function test_pages_know_a_wide_screen_from_the_browsers_cookie()
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->withUnencryptedCookie('screen', 'wide')
+            ->get(route('projects.index'))
+            ->assertInertia(fn (Assert $page) => $page->where('wideScreen', true));
+
+        $this->withUnencryptedCookie('screen', 'narrow')
+            ->get(route('projects.index'))
+            ->assertInertia(fn (Assert $page) => $page->where('wideScreen', false));
+    }
 }

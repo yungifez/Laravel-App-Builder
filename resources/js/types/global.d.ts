@@ -22,6 +22,7 @@ declare module '@inertiajs/core' {
             auth: Auth;
             sidebarOpen: boolean;
             clock: { locale: string; timeZone: string };
+            wideScreen: boolean;
             notifications: Notifications | null;
             [key: string]: unknown;
         };

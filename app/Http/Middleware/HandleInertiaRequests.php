@@ -55,6 +55,9 @@ class HandleInertiaRequests extends Middleware
                 'locale' => str_replace('_', '-', $request->getPreferredLanguage() ?? 'en'),
                 'timeZone' => in_array($zone = $request->cookie('time_zone'), timezone_identifiers_list(), true) ? $zone : 'UTC',
             ],
+            // Whether the owner's screen is wide, so the app is first drawn
+            // at the size it stays at. The browser leaves this in a cookie.
+            'wideScreen' => $request->cookie('screen') === 'wide',
         ];
     }
 
