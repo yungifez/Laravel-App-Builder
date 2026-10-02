@@ -5,6 +5,7 @@ namespace App\Workspaces\Boxes;
 use App\Enums\BoxCommandStatus;
 use App\Events\RunnerHasWork;
 use App\Models\BoxCommand;
+use App\Models\Runner;
 use Closure;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Date;
@@ -47,7 +48,9 @@ class BoxChannel
     /**
      * Wait until the command ends. A runner that does not take the command
      * within "answer_seconds", or does not finish it within its timeout plus
-     * "grace_seconds", has lost it.
+     * "grace_seconds", has lost it. So has a pool runner that took it and
+     * then stopped asking for work, as when its machine went away: a long
+     * build then fails in minutes, not when its timeout runs out.
      *
      * While waiting, "whileRunning" is called several times a second. When it
      * throws, the command is cancelled before the exception is passed on.
@@ -65,6 +68,7 @@ class BoxChannel
         // database.
         $pollMs = (int) config('workspaces.drivers.runner.poll_ms');
         $waitMs = min(20, $pollMs);
+        $checkRunnerAt = Date::now();
 
         while (true) {
             $command->refresh();
@@ -85,6 +89,17 @@ class BoxChannel
 
             if ($command->status === BoxCommandStatus::Queued && $answerBy->isPast()) {
                 return $this->lose($command, 'No runner took the command.');
+            }
+
+            if ($command->status === BoxCommandStatus::Claimed && $checkRunnerAt->isPast()) {
+                $checkRunnerAt = Date::now()->addSeconds(5);
+
+                if ($this->runnerGone($command->runner)) {
+                    // Should it come back, it stops the command.
+                    $this->cancel($command);
+
+                    return $this->lose($command, 'The runner stopped answering.');
+                }
             }
 
             if ($finishBy->isPast()) {
@@ -141,6 +156,20 @@ class BoxChannel
             BoxCommand::whereKey($command->id)->whereNull('cancel_requested_at')->update(['cancel_requested_at' => $now]);
             $this->ring($command->runner);
         }
+    }
+
+    /**
+     * Tell whether a pool runner has stopped asking for work. A runner that
+     * runs commands asks every few seconds, so one that has not asked for
+     * "online_seconds" is gone. Runners outside the pool are never judged
+     * this way.
+     */
+    protected function runnerGone(string $runner): bool
+    {
+        return Runner::query()
+            ->where('name', $runner)
+            ->where('last_seen_at', '<', Date::now()->subSeconds((int) config('workspaces.boxes.pool.online_seconds')))
+            ->exists();
     }
 
     /**

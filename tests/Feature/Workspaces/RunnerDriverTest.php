@@ -4,6 +4,7 @@ namespace Tests\Feature\Workspaces;
 
 use App\Enums\BoxCommandStatus;
 use App\Models\BoxCommand;
+use App\Models\Runner;
 use App\Workspaces\Boxes\BoxProviderManager;
 use App\Workspaces\Drivers\RunnerDriver;
 use App\Workspaces\WorkspaceManager;
@@ -105,6 +106,21 @@ class RunnerDriverTest extends TestCase
         $command = BoxCommand::sole();
         $this->assertNotNull($command->cancel_requested_at);
         $this->assertSame([$command->id], $this->runner->cancelled);
+    }
+
+    public function test_a_command_is_lost_soon_when_its_pool_runner_stops_asking_for_work()
+    {
+        // The runner took the command, then its machine went away.
+        $this->runner->on('exec', fn () => null);
+        Runner::factory()->create(['name' => 'local', 'last_seen_at' => now()->subMinutes(10)]);
+        $started = microtime(true);
+
+        $result = $this->driver->exec('workspace-1', ['php', 'artisan', 'test'], 600);
+
+        $this->assertLessThan(10, microtime(true) - $started);
+        $this->assertTrue($result->timedOut);
+        $this->assertSame('The runner stopped answering.', $result->errorOutput);
+        $this->assertSame(BoxCommandStatus::Lost, BoxCommand::sole()->status);
     }
 
     public function test_files_travel_both_ways_and_paths_stay_inside_the_workspace()
