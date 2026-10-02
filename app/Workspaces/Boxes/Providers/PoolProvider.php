@@ -7,6 +7,7 @@ use App\Models\Runner;
 use App\Models\Workspace;
 use App\Workspaces\Boxes\Contracts\BoxProvider;
 use App\Workspaces\WorkspaceSpec;
+use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -45,7 +46,7 @@ class PoolProvider implements BoxProvider
     {
         // Workspaces asked for at the same moment are placed one at a time,
         // each seeing the ones placed before it.
-        return Cache::lock(self::RESERVATIONS.':lock', 10)->block(10, function () use ($spec) {
+        return $this->placing(function () use ($spec) {
             $limit = (int) config('workspaces.boxes.pool.max_workspaces');
 
             // A draining runner keeps its workspaces but gets no new ones; a
@@ -69,6 +70,21 @@ class PoolProvider implements BoxProvider
 
             return $box;
         });
+    }
+
+    /**
+     * Run a step that must not overlap with placing workspaces, such as
+     * taking a machine out of the pool, so no workspace lands on a machine
+     * as it goes.
+     *
+     * @template TResult
+     *
+     * @param  Closure(): TResult  $step
+     * @return TResult
+     */
+    public function placing(Closure $step): mixed
+    {
+        return Cache::lock(self::RESERVATIONS.':lock', 30)->block(15, $step);
     }
 
     public function runnerFor(string $box): string

@@ -32,6 +32,7 @@ class ListRunners extends Command
             $runners->map(fn (Runner $runner) => [
                 $runner->name,
                 match (true) {
+                    $runner->last_seen_at === null => 'starting',
                     ! $online->contains($runner->id) => 'offline',
                     $runner->draining_at !== null => 'draining',
                     default => 'online',

@@ -203,6 +203,65 @@ can keep them closed to everything else.
 `tests/Fixtures/box-runner-firewall.mjs` proves these rules. Run it as root
 in the box image with `--cap-add NET_ADMIN`.
 
+## Let the pool grow and shrink on Hetzner
+
+Instead of adding machines by hand, the control plane can start and delete
+them on Hetzner Cloud. Each minute, `runners:scale` (in the scheduler) does
+one of these things:
+
+- It starts a machine when fewer than `WORKSPACE_MACHINES_SPARE_WORKSPACES`
+  places are free.
+- It deletes a machine that held nothing for
+  `WORKSPACE_MACHINES_EMPTY_MINUTES`, if the pool still has enough room
+  without it.
+- It deletes a machine whose runner did not ask for work for
+  `WORKSPACE_MACHINES_BOOT_MINUTES`, and closes the workspaces on it.
+- It deletes machines in the pool that no runner belongs to.
+
+Hetzner bills by the hour, so the pool costs little when nobody works.
+
+1. In Hetzner Cloud, make a project for the pool. Make an API token with
+   read and write access. Make a private network that includes the control
+   plane, and a firewall (see [Set the cloud firewall](#5-set-the-cloud-firewall)).
+2. Push the box image to a registry that new machines can pull from.
+3. Set these values in the control plane's `.env`:
+
+    ```
+    WORKSPACE_DRIVER=runner
+    WORKSPACE_BOX_PROVIDER=pool
+    WORKSPACE_RUNNER_MAX_WORKSPACES=8
+    WORKSPACE_MACHINES_CLOUD=hetzner
+    WORKSPACE_MACHINES_HETZNER_TOKEN=<the API token>
+    WORKSPACE_MACHINES_HETZNER_SERVER_TYPE=cx33
+    WORKSPACE_MACHINES_HETZNER_LOCATION=fsn1
+    WORKSPACE_MACHINES_HETZNER_NETWORK=<the network's id>
+    WORKSPACE_MACHINES_HETZNER_FIREWALL=<the firewall's id>
+    WORKSPACE_MACHINES_BOX_IMAGE=<registry>/builder-box:<version>
+    WORKSPACE_MACHINES_MIN=1
+    WORKSPACE_MACHINES_MAX=3
+    ```
+
+4. Make sure that the scheduler runs (`php artisan schedule:work`, or a cron
+   entry for `schedule:run`).
+5. Run `php artisan runners:scale` once. Then run `php artisan runners:list`.
+   A new machine shows as `starting`, then as `online` after a few minutes.
+
+Each new machine runs a boot script once. The script installs Docker if
+the image has none, writes the runner's settings to
+`/etc/builder-runner.env`, and starts the runner as the same service as in
+[Run the runner as a service](#3-run-the-runner-as-a-service). The
+machine's token is in the script, and Hetzner keeps the script as the
+machine's user data. Workspace users cannot read it: the firewall blocks
+the metadata address.
+
+If two control planes, for example staging and production, share one
+Hetzner project, give each its own `WORKSPACE_MACHINES_POOL_LABEL`. The
+scaler touches only machines with its own label.
+
+Machines added by hand stay in the pool, and the scaler does not delete
+them. Another cloud is added as a driver in
+`app/Workspaces/Machines/MachineCloudManager.php`.
+
 ## Replace a token
 
 If a token leaks, or a person who knew it leaves, give the machine a new

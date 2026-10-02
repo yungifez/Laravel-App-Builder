@@ -8,6 +8,7 @@ use App\Operations\WorkerPulse;
 use App\Runs\Agents\CodingAgentManager;
 use App\Runs\ConstructionDriverManager;
 use App\Workspaces\Boxes\BoxProviderManager;
+use App\Workspaces\Machines\MachineCloudManager;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\DevCommands;
@@ -32,6 +33,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(ConstructionDriverManager::class);
         $this->app->singleton(CodingAgentManager::class);
         $this->app->singleton(BoxProviderManager::class);
+        $this->app->singleton(MachineCloudManager::class);
         $this->app->singleton(WorkerPulse::class);
     }
 

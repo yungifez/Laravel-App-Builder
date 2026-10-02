@@ -173,4 +173,52 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Runner Machines on a Cloud
+    |--------------------------------------------------------------------------
+    |
+    | With a "cloud", the pool grows and shrinks by itself: `runners:scale`
+    | (every minute) starts a machine when fewer than "spare_workspaces"
+    | places are free, and deletes a cloud machine that held nothing for
+    | "empty_minutes", keeping at least "min" and at most "max" machines.
+    | It needs "boxes.pool.max_workspaces" to know how much a machine holds.
+    | Without a cloud, machines are added by hand with `runners:add`. A cloud
+    | is added in App\Workspaces\Machines\MachineCloudManager.
+    |
+    */
+
+    'machines' => [
+        'cloud' => env('WORKSPACE_MACHINES_CLOUD'),
+        'min' => (int) env('WORKSPACE_MACHINES_MIN', 0),
+        'max' => (int) env('WORKSPACE_MACHINES_MAX', 3),
+        'spare_workspaces' => (int) env('WORKSPACE_MACHINES_SPARE_WORKSPACES', 2),
+        'empty_minutes' => (int) env('WORKSPACE_MACHINES_EMPTY_MINUTES', 20),
+        // A machine whose runner has not asked for work this long after it
+        // started, or after it last asked, is deleted.
+        'boot_minutes' => (int) env('WORKSPACE_MACHINES_BOOT_MINUTES', 10),
+        // The box image each machine runs, from a registry it can pull from.
+        'box_image' => env('WORKSPACE_MACHINES_BOX_IMAGE'),
+        // Where a machine's runner reaches the control plane; the app's
+        // address when left out.
+        'control_plane_url' => env('WORKSPACE_MACHINES_CONTROL_PLANE_URL'),
+        // Names this control plane's machines on the cloud. Give each
+        // control plane that shares a cloud project its own.
+        'pool_label' => env('WORKSPACE_MACHINES_POOL_LABEL', 'builder'),
+
+        'clouds' => [
+            'hetzner' => [
+                'token' => env('WORKSPACE_MACHINES_HETZNER_TOKEN'),
+                'server_type' => env('WORKSPACE_MACHINES_HETZNER_SERVER_TYPE', 'cx33'),
+                'image' => env('WORKSPACE_MACHINES_HETZNER_IMAGE', 'docker-ce'),
+                'location' => env('WORKSPACE_MACHINES_HETZNER_LOCATION', 'fsn1'),
+                // The private network and the cloud firewall, by id.
+                'network' => env('WORKSPACE_MACHINES_HETZNER_NETWORK'),
+                'firewall' => env('WORKSPACE_MACHINES_HETZNER_FIREWALL'),
+                // SSH keys by name or id, separated by commas.
+                'ssh_keys' => env('WORKSPACE_MACHINES_HETZNER_SSH_KEYS'),
+            ],
+        ],
+    ],
+
 ];

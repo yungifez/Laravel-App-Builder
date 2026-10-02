@@ -18,6 +18,8 @@ use Illuminate\Support\Carbon;
  *
  * @property int $id
  * @property string $name
+ * @property string|null $cloud
+ * @property string|null $cloud_id
  * @property string $token_hash
  * @property string|null $service_host
  * @property int|null $disk_free_mb
@@ -26,7 +28,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'token_hash', 'service_host', 'disk_free_mb', 'last_seen_at', 'draining_at'])]
+#[Fillable(['name', 'cloud', 'cloud_id', 'token_hash', 'service_host', 'disk_free_mb', 'last_seen_at', 'draining_at'])]
 #[Hidden(['token_hash'])]
 class Runner extends Model
 {
