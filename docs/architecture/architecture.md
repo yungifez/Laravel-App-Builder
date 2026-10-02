@@ -2575,7 +2575,20 @@ checked does not build on the last one sent. It keeps each under
 Only code goes back. Information people saved stays, and so does how it is
 stored: a down-migration could lose what they saved. When the newer version
 changed `database/migrations/`, the panel says so before the owner goes back.
-Backups and restoring into a clean environment are not built yet.
+
+### A copy before storage changes
+
+A release that changes `database/migrations/` since the last version sent may
+lose information, and going back does not undo that. So `PublishDeployment`
+asks the host for a copy first (`PublishingHost::backup`) and records its id as
+`backup_id`. The first release has nothing to copy. Laravel Cloud takes a
+snapshot of the shared database cluster. The Git branch host keeps no copies
+and returns null. When a host keeps copies but cannot save one, the release
+stops before anything goes online. The panel tells the owner a copy was saved.
+
+A copy comes back only with an operator's help. Cloud restores a snapshot into
+a new cluster, so the app moves to it rather than being overwritten. Restoring
+into a clean environment from the panel is not built yet.
 
 ### Outside services and their keys
 
