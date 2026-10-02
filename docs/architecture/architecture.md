@@ -2077,7 +2077,9 @@ name in the code, and the names in its props. So an app that records the
 failure, tells the person, or does something else about it is clean.
 Nothing is said when the log cannot be
 seen: a test put a fake in place of the events or the log, or turned off
-the app's handling of errors, where `report()` does nothing. One limit: an
+the app's handling of errors, where `report()` does nothing. The trace
+marks such a request (`dark`). When more than one test reaches the same send
+or save, the place takes the first test where the log can be seen. One limit: an
 app that tells the person in other words under the same name, or saves
 another value with the same statement, and records nothing, is a finding.
 The coder was told to catch a failure only together

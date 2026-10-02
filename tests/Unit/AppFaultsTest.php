@@ -221,6 +221,30 @@ class AppFaultsTest extends TestCase
         $this->assertSame('POST /orders', $points[0]['route']);
     }
 
+    public function test_a_send_or_a_save_takes_the_first_test_where_the_apps_log_can_be_seen()
+    {
+        $other = fn (string $test, array $extra = []) => ['test' => "Tests\\Feature\\OrderTest::{$test}", ...$extra];
+        $order = fn (array $extra) => $this->recorded('POST', '/orders', 302, [$this->mailed(self::NEW.':4'), $this->job(self::NEW.':5'), $this->done($this->mailed('app/Jobs/SendReceipt.php:9'))], $extra);
+        $points = $this->points([
+            $order($other('test_first', ['dark' => true])),
+            $order($other('test_second', ['dark' => true])),
+            $order($other('test_third')),
+            $order($other('test_fourth')),
+            $this->recorded('POST', '/refunds', 302, [$this->mailed(self::NEW.':4')], $other('test_fifth', ['dark' => true])),
+        ]);
+
+        $this->assertSame([
+            // The email keeps its place in the order, and is tried where a hidden failure can be found.
+            ['send', 'POST /orders', 'test_third'],
+            // No test sees the log: the first one is as good as the others.
+            ['send', 'POST /refunds', 'test_fifth'],
+            // For a job, the log says nothing: the first test stays.
+            ['again', 'POST /orders', 'test_first'],
+            ['later', 'POST /orders', 'test_first'],
+        ], array_map(fn (array $point) => [$point['fails'], $point['route'], $point['filter']], $points));
+        $this->assertSame('Tests\\Feature\\OrderTest::test_third', $points[0]['fault']['test']);
+    }
+
     public function test_places_another_engine_suspects_are_tried_before_the_rest_and_after_the_changes_own()
     {
         $old = 'app/Actions';

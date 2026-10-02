@@ -73,7 +73,8 @@ use WeakMap;
  *
  * Each trace also says what kind of answer the request gave, by names
  * only. And a trace of a caused failure says when the app caught that
- * failure and wrote nothing to its log after it.
+ * failure and wrote nothing to its log after it. A trace says too when
+ * the app's log cannot be seen in the request, so that nothing is known.
  */
 class Recorder
 {
@@ -355,6 +356,10 @@ class Recorder
         try {
             $this->operation['shape'] = $this->shape($request, $response);
 
+            if (! $this->seen()) {
+                $this->operation['dark'] = true;
+            }
+
             if ($status < 500 && $this->quiet()) {
                 $this->operation['quiet'] = true;
             }
@@ -366,16 +371,24 @@ class Recorder
     /**
      * Determine if the app caught the failure this run caused and wrote
      * nothing to its log after it. Nothing is said when the log cannot be
-     * seen: a test put a fake in place of the events or the log, or
-     * turned off the app's handling of errors, where report() does
-     * nothing.
+     * seen.
      */
     protected function quiet(): bool
     {
         return isset($this->operation['fault'])
             && in_array($this->fault['kind'] ?? null, ['mail', 'http', 'query'], true)
             && ! $this->told
-            && $this->app->make('events') === $this->events
+            && $this->seen();
+    }
+
+    /**
+     * Determine if the app's log can be seen in this request. It cannot
+     * when a test put a fake in place of the events or the log, or turned
+     * off the app's handling of errors, where report() does nothing.
+     */
+    protected function seen(): bool
+    {
+        return $this->app->make('events') === $this->events
             && $this->app->make('log') instanceof LogManager
             && $this->app->make(ExceptionHandler::class) instanceof Handler;
     }

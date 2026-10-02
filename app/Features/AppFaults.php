@@ -175,6 +175,10 @@ class AppFaults
      * something or that the request does more after, and each event with
      * found listeners to run in the reverse order. Only requests that ran the change's code are used.
      *
+     * One place is tried in one test: the first that reaches it. A send
+     * or a save takes the first test where the app's log can be seen, when
+     * there is one: only there is a failure the app hides found.
+     *
      * The places come in the order to try them, so a small budget goes to
      * the ones that tell the most: places on the change's own lines, then
      * places another reading of the change suspects (the same line, or the
@@ -182,7 +186,7 @@ class AppFaults
      * order comes only from the trace, the patch and those findings, so
      * the same change gives the same order.
      *
-     * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, direct?: bool, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, shape?: list<string>, events?: list<array{what: string, at: string|null, listeners: list<string>}>}>  $requests  From AppTraces::parse(), of the tests' normal run
+     * @param  list<array{test: string|null, method: string, route: string|null, status: int, refused: bool, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool, direct?: bool, frames?: list<string>}>, blind: list<string>, cut: bool, n?: int, fault?: int, dark?: bool, shape?: list<string>, events?: list<array{what: string, at: string|null, listeners: list<string>}>}>  $requests  From AppTraces::parse(), of the tests' normal run
      * @param  list<array{route: string, at?: string|null}>  $suspected  Findings of the other engines about the change, such as AppTraces and AppBoundaries give
      * @return list<array{fails: string, route: string, failed: string, at: string|null, test: string, filter: string, fault: array{test: string, request: int, effect: int, kind: string, what?: string}, times: int, own: bool, was?: array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool, shape?: list<string>}}>
      */
@@ -191,6 +195,7 @@ class AppFaults
         $added = AppTraces::addedLines($patch);
         $new = fn (array $effect): bool => is_string($effect['at'] ?? null) && AppTraces::onAddedLine($effect['at'], $added);
         $points = [];
+        $dark = [];
 
         foreach ($requests as $request) {
             $filter = self::filter($request['test']);
@@ -270,8 +275,17 @@ class AppFaults
 
             foreach ([...$found, ...($apart === null ? [] : [$apart]), ...$answers, ...$jobs] as $point) {
                 [$fails, $at, $failed] = $point;
+                $key = implode('|', [$fails, $route, self::name($failed), $failed['at'] ?? '']);
+                // A test where the app's log cannot be seen gives its
+                // place to a later test where it can.
+                $seen = ($dark[$key] ?? false) && ! ($request['dark'] ?? false) && in_array($fails, [self::SEND, self::SAVE], true);
 
-                $points[implode('|', [$fails, $route, self::name($failed), $failed['at'] ?? ''])] ??= [
+                if (isset($points[$key]) && ! $seen) {
+                    continue;
+                }
+
+                $dark[$key] = $request['dark'] ?? false;
+                $points[$key] = [
                     'fails' => $fails,
                     'route' => $route,
                     'failed' => self::name($failed),

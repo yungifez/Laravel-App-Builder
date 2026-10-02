@@ -803,6 +803,7 @@ class TraceRecorderTest extends TestCase
 
         $requests = $recorded();
         $this->assertSame([false, true], array_map(fn (array $request) => $request['quiet'] ?? false, $requests));
+        $this->assertSame([false, false], array_map(fn (array $request) => $request['dark'] ?? false, $requests));
         // The answer is kept by its names: the route it leads to and what it tells the person, not the words.
         $this->assertSame([['flash status', 'to /_hidden/receipt'], ['flash status', 'to /_hidden/receipt']], array_column($requests, 'shape'));
         $this->assertStringNotContainsString('on its way', File::get("{$this->directory}/trace.jsonl"));
@@ -922,6 +923,8 @@ class TraceRecorderTest extends TestCase
         $requests = $recorded();
         $this->assertSame(0, $requests[1]['fault']);
         $this->assertSame([false, false], array_map(fn (array $request) => $request['quiet'] ?? false, $requests));
+        // The trace says so, and another test for the same place is taken when there is one.
+        $this->assertSame([true, true], array_map(fn (array $request) => $request['dark'] ?? false, $requests));
 
         $measured = $this->measureFailure($requests, 'mail message');
         $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
