@@ -1839,6 +1839,17 @@ the recorder named the phases and the tests reached the new code without a
 finding, the proof says so. Like the other measurements, it never changes
 the checks' result by itself.
 
+A finding the recording proves also sends the change back for a fix, as
+the safety scan does (`builder.verification.boundaries.send_back`). This
+is deterministic: no model decides it, and the reviewer can add findings
+but cannot take this one away. The coder is told where to do the work
+instead ("…seen in a test run. A check of who may act runs many times per
+page…"). A finding that only moved, or one the owner said they want, does
+not send the change back. A finding read from the code only is likely, not
+proven, and stays with the reviewer. When the fixes run out, the change
+stops for the owner with the finding in its proof. The owner can then say
+they want it and let the change keep trying.
+
 The recording only shows what the tests run, and it never shows the app
 start. So `BoundaryCode` also reads the PHP files the change touched, as the
 change leaves them, before anything takes the change out of the workspace.

@@ -613,6 +613,36 @@ class AgentDriverTest extends TestCase
         ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'so nothing in them may save, queue or send. Nothing else the code the change added saved or sent in those parts.'
             ."\nLeft out above: 1 found in those parts that the owner said the change does on purpose, after reading what each costs. Do not hold them against the change.")
             && ! str_contains($prompt->prompt, 'TeamPolicy.php:9'));
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+    }
+
+    public function test_saving_while_laravel_checks_who_may_act_sends_the_change_back_even_when_the_reviewer_approves()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder(
+            $this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]),
+            $this->writes([], 'Moved the save out of the policy.'),
+        );
+        $approve = ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]];
+        ChangeReviewer::fake([$approve, $approve]);
+        $boundaries = fn (array $findings) => ['boundaries' => ['phased' => 30, 'unknown' => 0, 'existing' => 0, 'findings' => $findings, 'read' => [
+            ['kind' => 'changed_while_booting', 'what' => 'query', 'at' => 'app/Providers/AppServiceProvider.php:14', 'in' => 'App\Providers\AppServiceProvider::boot'],
+        ]]];
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, evidence: $boundaries([
+            ['kind' => 'changed_while_authorizing', 'route' => 'GET /teams', 'what' => 'update teams', 'at' => 'app/Policies/TeamPolicy.php:9', 'in' => 'App\Policies\TeamPolicy::view', 'test' => null],
+        ]));
+
+        $run->refresh();
+        $this->assertSame(1, $run->repairs);
+        $this->assertFalse($run->review['approved']);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'GET /teams while Laravel checked whether the person may act: update teams at app/Policies/TeamPolicy.php:9 in App\Policies\TeamPolicy::view, seen in a test run. A check of who may act runs many times per page'));
+
+        // What was only read from the code is the reviewer's to judge.
+        $this->passVerification($run, evidence: $boundaries([]));
+
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
     }
 
     public function test_the_reviewer_reads_calls_to_an_outside_service_from_outside_its_area()

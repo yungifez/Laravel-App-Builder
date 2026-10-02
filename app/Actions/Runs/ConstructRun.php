@@ -6,6 +6,7 @@ use App\Actions\Context\AssessPreservation;
 use App\Actions\Context\AssessVerifyItems;
 use App\Actions\Context\ClassifyChange;
 use App\Actions\Context\CompileContext;
+use App\Actions\Features\AcceptFindings;
 use App\Actions\Features\RequestVerification;
 use App\Actions\Operations\SummarizeSpend;
 use App\Actions\Previews\RequestPreview;
@@ -16,6 +17,7 @@ use App\Context\ContextPack;
 use App\Context\ProjectContext;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Features\AppBoundaries;
 use App\Features\Exceptions\CannotGenerateFeature;
 use App\Features\InventedColours;
 use App\Features\PatchSummary;
@@ -73,6 +75,7 @@ class ConstructRun
         private FormatChange $formatChange,
         private RequestPreview $requestPreview,
         private SummarizeSpend $summarizeSpend,
+        private AcceptFindings $acceptFindings,
     ) {}
 
     /**
@@ -382,6 +385,15 @@ class ConstructRun
         if ($driver->canRepair() && config('builder.verification.design_scan')) {
             $review = $review->withBlockingFindings(array_map(InventedColours::finding(...), InventedColours::found($featureRequest->patch)));
             $review = $review->withBlockingFindings(array_map(UndescribedImages::finding(...), UndescribedImages::found($featureRequest->patch)));
+        }
+
+        // What the recording proves the change saved or sent where Laravel
+        // expects nothing to change sends it back by itself (direction 33).
+        // The reviewer can add to this, never take from it. What the owner
+        // said the change does on purpose is left out.
+        if ($driver->canRepair() && config('builder.verification.boundaries.send_back')) {
+            $boundaries = AppBoundaries::without($verification->evidence['boundaries'] ?? null, $this->acceptFindings->identities($featureRequest));
+            $review = $review->withBlockingFindings(array_map(AppBoundaries::finding(...), $boundaries['findings'] ?? []));
         }
 
         if ($driver->canRepair() && config('builder.verification.screens.enabled')) {

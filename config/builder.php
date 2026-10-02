@@ -771,11 +771,14 @@ return [
         // What the change's code saved or sent where Laravel expects nothing
         // to change (direction 33): while it checks who may act, checks
         // what was sent, or builds the answer. Read from the recording
-        // above, which names the phase of each thing a request did. The
-        // reviewer holds each finding against the plan; it never changes
-        // the checks' result.
+        // above, which names the phase of each thing a request did. With
+        // "send_back", what the recording shows the change's own lines did
+        // sends the change back for a fix, as the safety scan does, unless
+        // the owner said they want it. What was only read from the code
+        // goes to the reviewer. It never changes the checks' result.
         'boundaries' => [
             'enabled' => (bool) env('BUILDER_BOUNDARIES', true),
+            'send_back' => (bool) env('BUILDER_BOUNDARIES_SEND_BACK', true),
             'phases' => ['authorization', 'validation', 'rendering'],
         ],
 

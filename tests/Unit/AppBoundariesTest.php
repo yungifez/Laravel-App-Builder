@@ -190,4 +190,12 @@ class AppBoundariesTest extends TestCase
         $this->assertSame([], AppBoundaries::findings($measured, AppBoundaries::CHANGED_WHILE_AUTHORIZING));
         $this->assertCount(1, AppBoundaries::findings($measured, AppBoundaries::CHANGED_WHILE_RENDERING));
     }
+
+    public function test_each_finding_says_where_to_do_the_work_instead()
+    {
+        $finding = fn (string $kind, ?string $in) => AppBoundaries::finding(['kind' => $kind, 'route' => 'POST /posts', 'what' => 'update posts', 'at' => self::NEW.':3', 'in' => $in, 'test' => null]);
+
+        $this->assertSame('POST /posts while Laravel checked the input: update posts at '.self::NEW.':3 in App\\Http\\Requests\\StorePost::rules, seen in a test run. The input is checked before the app decides to act, so this stays when the request is refused later. Do this in the code that handles the request, after the input passes.', $finding(AppBoundaries::CHANGED_WHILE_VALIDATING, 'App\\Http\\Requests\\StorePost::rules'));
+        $this->assertSame('POST /posts while Laravel built the response: update posts at '.self::NEW.':3, seen in a test run. A response can be built more than once per request. Do this in the code that handles the request and give the response the result.', $finding(AppBoundaries::CHANGED_WHILE_RENDERING, null));
+    }
 }

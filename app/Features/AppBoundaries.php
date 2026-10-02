@@ -215,6 +215,40 @@ class AppBoundaries
     }
 
     /**
+     * Say what a finding the recording proves is, and how to fix it, for
+     * the coder. A finding seen running sends the change back by itself;
+     * what was only read from the code goes to the reviewer.
+     *
+     * @param  array{kind: string, route: string, what: string, at: string|null, in: string|null, test: string|null}  $finding  From measure()
+     */
+    public static function finding(array $finding): string
+    {
+        [$while, $fix] = match ($finding['kind']) {
+            self::CHANGED_WHILE_AUTHORIZING => [
+                'while Laravel checked whether the person may act',
+                'A check of who may act runs many times per page, once per row or link, so it must only answer yes or no. Do this in the code that handles the request.',
+            ],
+            self::CHANGED_WHILE_VALIDATING => [
+                'while Laravel checked the input',
+                'The input is checked before the app decides to act, so this stays when the request is refused later. Do this in the code that handles the request, after the input passes.',
+            ],
+            default => [
+                'while Laravel built the response',
+                'A response can be built more than once per request. Do this in the code that handles the request and give the response the result.',
+            ],
+        };
+
+        return __(':route :while: :what:at:in, seen in a test run. :fix', [
+            'route' => $finding['route'],
+            'while' => $while,
+            'what' => $finding['what'],
+            'at' => $finding['at'] === null ? '' : " at {$finding['at']}",
+            'in' => $finding['in'] === null ? '' : " in {$finding['in']}",
+            'fix' => $fix,
+        ]);
+    }
+
+    /**
      * Get the findings of one kind.
      *
      * @param  array{findings?: list<array{kind: string, route: string, what: string, at: string|null, in: string|null, test: string|null}>}|null  $measured  From measure()
