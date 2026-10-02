@@ -13,6 +13,7 @@ use App\Context\Capability;
 use App\Context\ProjectNotes;
 use App\Enums\VerificationStatus;
 use App\Features\AcceptanceSuite;
+use App\Features\AccessProbes;
 use App\Features\AppBoundaries;
 use App\Features\AppContainment;
 use App\Features\AppConventions;
@@ -35,6 +36,7 @@ use App\Models\Verification;
 use App\Models\Workspace;
 use App\Models\WorkspaceCommand;
 use App\Projects\ProjectRepository;
+use App\Runs\Plan;
 use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\Drivers\CopyExclusions;
 use App\Workspaces\Exceptions\CommandLost;
@@ -207,6 +209,7 @@ class VerifyFeatureRequest implements ShouldQueue
             $this->readBoundaryCode($driver, $workspace, $featureRequest);
 
             if ($checksPassed && in_array($acceptance, [self::OUTCOME_PASSED, self::OUTCOME_NOT_APPLICABLE], true)) {
+                $checksPassed = $this->probeAccess($driver, $runWorkspaceCommand, $workspace, $featureRequest);
                 $this->observeScreens($driver, $runWorkspaceCommand, $workspace, $featureRequest);
                 $this->observeFaults($driver, $runWorkspaceCommand, $workspace, $featureRequest);
 
@@ -1021,6 +1024,72 @@ class VerifyFeatureRequest implements ShouldQueue
 
             $this->keepEvidence('faults', AppFaults::measure($points, $runs, $featureRequest->patch));
         });
+    }
+
+    /**
+     * Try who may do what with the records the plan described, through the
+     * app's own routes, and add the result as a check. Return false only
+     * when a refused actor got through; a probe that could not run proves
+     * nothing either way.
+     */
+    protected function probeAccess(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): bool
+    {
+        /** @var array{enabled: bool, probes: int, test: string, routes: array{command: list<string>, report: string}, command: list<string>, timeout: int, report: string} $config */
+        $config = config('builder.verification.access');
+
+        if (! $config['enabled']) {
+            return true;
+        }
+
+        try {
+            $records = array_values(collect($featureRequest->lineage())
+                ->flatMap(fn (FeatureRequest $request) => $request->latestRun?->plan === null ? [] : Plan::fromArray($request->latestRun->plan)->dataShape)
+                ->keyBy('name')
+                ->filter(fn (array $record) => ($record['access'] ?? null) !== null)
+                ->all());
+
+            if ($records === []) {
+                return true;
+            }
+
+            $read = fn (string $path) => (string) rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), '', report: false);
+            $routes = $runWorkspaceCommand->handle($workspace, $config['routes']['command'], 60);
+
+            if ($this->outcome($routes) !== self::OUTCOME_PASSED) {
+                return true;
+            }
+
+            $planned = AccessProbes::plan($records, $read($config['routes']['report']), $config['probes']);
+
+            if ($planned['probes'] === []) {
+                return true;
+            }
+
+            $driver->writeFile((string) $workspace->driver_id, $config['test'], AccessProbes::test($planned['probes'], $config['report']));
+            $command = $runWorkspaceCommand->handle($workspace, [...$config['command'], $config['test']], $config['timeout']);
+            $runWorkspaceCommand->handle($workspace, ['rm', '-f', $config['test']], 30);
+
+            if ($command->lost) {
+                throw new CommandLost($command->error_output);
+            }
+
+            $measured = AccessProbes::measure($planned['probes'], AccessProbes::parse($read($config['report'])));
+
+            if ($measured['tried'] === 0) {
+                return true;
+            }
+
+            $passed = $measured['findings'] === [];
+            $this->addResult(__('Who may see and change records'), 'checks', $passed ? self::OUTCOME_PASSED : self::OUTCOME_FAILED, durationMs: $command->duration_ms, output: AccessProbes::describe($measured, $planned['unmatched']));
+
+            return $passed;
+        } catch (CommandLost $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return true;
+        }
     }
 
     /**

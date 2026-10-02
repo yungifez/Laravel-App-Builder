@@ -1,0 +1,161 @@
+<?php
+
+namespace Tests\Feature\Features;
+
+use App\Actions\Features\RequestVerification;
+use App\Enums\VerificationStatus;
+use App\Models\FeatureRequest;
+use App\Models\Run;
+use App\Workspaces\CommandResult;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\FakesWorkspaces;
+use Tests\Fakes\FakeWorkspaceDriver;
+use Tests\TestCase;
+
+class AccessProbeVerificationTest extends TestCase
+{
+    use FakesWorkspaces, RefreshDatabase;
+
+    protected FakeWorkspaceDriver $driver;
+
+    protected const ROUTES = ['sh', '-c', 'list the routes'];
+
+    protected const PROBE = ['sh', '-c', 'run the probes', 'sh'];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->driver = $this->fakeWorkspaces();
+
+        config([
+            'builder.verification.workspace_driver' => 'fake',
+            'builder.verification.setup' => [],
+            'builder.verification.checks' => [['name' => 'Tests', 'command' => ['php', 'artisan', 'test'], 'timeout' => 300]],
+            'builder.verification.security.enabled' => false,
+            'builder.verification.screens.enabled' => false,
+            'builder.verification.change_evidence.enabled' => false,
+            'builder.verification.access' => [
+                'enabled' => true,
+                'probes' => 40,
+                'test' => 'tests/Feature/AccessProbeTest.php',
+                'routes' => ['command' => self::ROUTES, 'report' => 'routes.json'],
+                'command' => self::PROBE,
+                'timeout' => 60,
+                'report' => 'probes.jsonl',
+            ],
+        ]);
+    }
+
+    /**
+     * A change whose plan says only the person who added a booking may
+     * remove it.
+     */
+    protected function change(): FeatureRequest
+    {
+        $change = FeatureRequest::factory()->generated()->create();
+        Run::factory()->for($change)->create(['plan' => [
+            'summary' => 'Members book rooms.',
+            'acceptance_criteria' => ['A member can book a room.'],
+            'assumptions' => [],
+            'tasks' => ['Let members book rooms.'],
+            'steps' => [],
+            'acceptance' => [],
+            'solution_key' => null,
+            'data_shape' => [[
+                'name' => 'Booking',
+                'fields' => [['name' => 'user', 'type' => 'belongs_to', 'required' => true, 'choices' => [], 'of' => 'User']],
+                'access' => ['view' => 'everyone', 'create' => 'everyone', 'update' => 'everyone', 'delete' => 'creator'],
+            ]],
+        ]]);
+
+        return $change;
+    }
+
+    /**
+     * Answer the route list with a delete route for bookings, and the
+     * probes with what each one did.
+     *
+     * @param  list<string>  $lines
+     */
+    protected function answer(array $lines): void
+    {
+        $this->driver->onExec = function (string $workspace, array $command) use ($lines) {
+            if ($command === self::ROUTES) {
+                $this->driver->files["{$workspace}:routes.json"] = (string) json_encode([
+                    ['domain' => null, 'method' => 'DELETE', 'uri' => 'bookings/{booking}', 'name' => 'bookings.destroy', 'action' => 'App\Http\Controllers\BookingController@destroy', 'middleware' => ['web']],
+                ]);
+            }
+
+            if (array_slice($command, 0, 4) === self::PROBE) {
+                $this->driver->files["{$workspace}:probes.jsonl"] = implode("\n", $lines);
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+    }
+
+    public function test_a_refused_person_who_got_through_fails_the_checks_and_says_how(): void
+    {
+        // The visitor was sent to sign in; another person removed the booking.
+        $this->answer(['{"id":0,"status":302,"changed":false,"invalid":false}', '{"id":1,"status":302,"changed":true,"invalid":false}']);
+        $change = $this->change();
+
+        app(RequestVerification::class)->handle($change);
+
+        $verification = $change->verifications()->sole();
+        $result = collect($verification->results)->firstWhere('name', 'Who may see and change records');
+        $this->assertSame(VerificationStatus::Failed, $verification->status);
+        $this->assertSame(['checks', 'failed'], [$result['stage'], $result['outcome']]);
+        $this->assertStringContainsString('A signed-in person who did not add it could remove a booking: DELETE /bookings/{booking} answered 302.', $result['output']);
+
+        // The probe ran with its test's path, and the test was taken out after.
+        $commands = array_column($this->driver->executed, 'command');
+        $this->assertContains([...self::PROBE, 'tests/Feature/AccessProbeTest.php'], $commands);
+        $this->assertContains(['rm', '-f', 'tests/Feature/AccessProbeTest.php'], $commands);
+        $this->assertStringContainsString('class AccessProbeTest extends TestCase', $this->written());
+    }
+
+    public function test_probes_that_were_all_refused_pass_and_probes_that_proved_nothing_add_no_check(): void
+    {
+        $this->answer(['{"id":0,"status":302,"changed":false,"invalid":false}', '{"id":1,"status":403,"changed":false,"invalid":false}']);
+        $refused = $this->change();
+
+        app(RequestVerification::class)->handle($refused);
+
+        $result = collect($refused->verifications()->sole()->results)->firstWhere('name', 'Who may see and change records');
+        $this->assertSame('passed', $result['outcome']);
+
+        $this->answer(['{"id":0,"status":500,"changed":false,"invalid":false}']);
+        $broken = $this->change();
+
+        app(RequestVerification::class)->handle($broken);
+
+        $this->assertNull(collect($broken->verifications()->sole()->results)->firstWhere('name', 'Who may see and change records'));
+    }
+
+    public function test_a_plan_without_rules_sends_no_probes(): void
+    {
+        $this->answer([]);
+        $change = FeatureRequest::factory()->generated()->create();
+        Run::factory()->for($change)->create();
+
+        app(RequestVerification::class)->handle($change);
+
+        $this->assertNotContains(self::ROUTES, array_column($this->driver->executed, 'command'));
+    }
+
+    /**
+     * Get the probe test the verification wrote into the workspace.
+     */
+    protected function written(): string
+    {
+        foreach ($this->driver->files as $key => $contents) {
+            if (str_ends_with($key, ':tests/Feature/AccessProbeTest.php')) {
+                return $contents;
+            }
+        }
+
+        return '';
+    }
+}

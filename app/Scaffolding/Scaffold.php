@@ -311,9 +311,13 @@ class Scaffold
     protected function request(array $record): string
     {
         $name = $record['name'];
+
+        // The person who added a record is the signed-in user, never a
+        // value the form sends: anyone could name someone else.
+        $creator = in_array('creator', $record['access'] ?? [], true) ? self::creator($record['fields']) : null;
         $rules = array_map(
             fn (array $field) => var_export(FieldType::attribute($field), true).' => ['.implode(', ', array_map(fn (string $rule) => var_export($rule, true), FieldType::from($field['type'])->rules($field))).'],',
-            $record['fields'],
+            array_values(array_filter($record['fields'], fn (array $field) => FieldType::attribute($field) !== $creator)),
         );
 
         return <<<PHP

@@ -114,7 +114,7 @@ class ScaffoldTest extends TestCase
     public function test_who_may_do_what_gives_the_policy_and_the_tests_that_guard_it()
     {
         $access = ['view' => 'creator', 'create' => 'signed_in', 'update' => 'creator', 'delete' => 'everyone'];
-        $files = (new Scaffold)->files([['name' => 'Booking', 'fields' => [self::field('user', 'belongs_to', of: 'User')], 'access' => $access]], [], new DateTimeImmutable);
+        $files = (new Scaffold)->files([['name' => 'Booking', 'fields' => [self::field('user', 'belongs_to', of: 'User'), self::field('starts_at', 'datetime')], 'access' => $access]], [], new DateTimeImmutable);
 
         $policy = $files['app/Policies/BookingPolicy.php'];
         $test = $files['tests/Feature/BookingAccessTest.php'];
@@ -132,6 +132,10 @@ class ScaffoldTest extends TestCase
         $this->assertStringContainsString("\$this->assertFalse(Gate::forUser(User::factory()->create())->allows('update', \$record));", $test);
         $this->assertStringContainsString('public function test_anyone_signed_in_can_add_bookings(): void', $test);
         $this->assertStringContainsString('public function test_anyone_can_remove_a_booking(): void', $test);
+
+        // Who added it comes from the signed-in user, not from the form.
+        $this->assertStringNotContainsString("'user_id'", $files['app/Http/Requests/StoreBookingRequest.php']);
+        $this->assertStringContainsString("'starts_at' => ['required', 'date'],", $files['app/Http/Requests/StoreBookingRequest.php']);
 
         $this->assertArrayNotHasKey('app/Policies/CustomerPolicy.php', (new Scaffold)->files([self::customer()], [], new DateTimeImmutable));
     }

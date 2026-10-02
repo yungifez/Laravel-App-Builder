@@ -955,6 +955,27 @@ return [
             'report' => 'storage/logs/faults/trace.jsonl',
         ],
 
+        // Who may do what with the records the plan described (§26.11).
+        // Once the checks pass, "test" is written with one probe per
+        // route and refused actor: a signed-out visitor, and another
+        // signed-in person where only the person who added a record may
+        // use it. "command" runs it with the test's path after it, and
+        // each probe adds a line to "report". A refused actor that
+        // changed, removed, added or saw a record fails the check, so the
+        // change goes back for a fix. At most "probes" are tried.
+        'access' => [
+            'enabled' => (bool) env('BUILDER_ACCESS_PROBES', true),
+            'probes' => (int) env('BUILDER_ACCESS_PROBE_LIMIT', 40),
+            'test' => 'tests/Feature/AccessProbeTest.php',
+            'routes' => [
+                'command' => ['sh', '-c', 'mkdir -p storage/logs/access && php artisan route:list --json > storage/logs/access/routes.json'],
+                'report' => 'storage/logs/access/routes.json',
+            ],
+            'command' => ['sh', '-c', 'rm -f storage/logs/access/probes.jsonl && { php artisan test "$1" > storage/logs/access/test.log 2>&1 || true; }', 'sh'],
+            'timeout' => 300,
+            'report' => 'storage/logs/access/probes.jsonl',
+        ],
+
         // Evidence about the change itself, measured by running the app
         // with and without it once the checks pass. It never changes the
         // checks' result, and it runs last: the change is taken out of the

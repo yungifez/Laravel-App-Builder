@@ -3736,7 +3736,27 @@ time, and snapshots to reset. Races need a real server (the preview host) and
 parallel requests. Testing production is out of scope unless a later policy
 explicitly allows it, and then only read-only.
 
-**Out of V0:** all of it, including the introspection this relies on, beyond
+**What is built: probes from the plan's own rules.** When the plan states
+who may do what with a new record (§9), that statement is the intent, so no
+model turns prose into expectations. Once the checks pass, the verification
+lists the routes with `route:list --json` and matches each to the record by
+Laravel's conventions: a route parameter named after the model gives view
+(GET, or update for `edit`), update (PUT, PATCH) and delete (DELETE); a POST
+at the same controller, or named `{table}.store`, gives create. For each
+route and each actor the rules refuse (a signed-out visitor, and another
+signed-in person where only the person who added a record may use it), one
+generated test method builds the record with its factory, sends the request
+and notes the status and whether the record was added, changed or removed.
+Only that is evidence: a refused actor who changed data, or got a 200 on a
+page, fails the check "Who may see and change records", and the change goes
+back for a fix with the route and the rule. A request that broke, or whose
+values were turned down first, proves nothing and is counted, never judged.
+Routes that need other values (a team), records with no matching route, and
+records the app already had are not probed yet; tenant isolation waits for
+the team model to be found. The scaffold no longer asks the form for the
+person who added a record: it comes from the signed-in user.
+
+**Out of V0:** the rest, including the introspection this relies on, beyond
 what V0's own verification already uses.
 
 ### 26.12 Visual properties on a Tailwind substrate (version 15)
