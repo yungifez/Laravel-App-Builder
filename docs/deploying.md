@@ -204,10 +204,12 @@ Forge copies each app's database every night and keeps 7 copies
 changes how the app stores information. When that copy fails, or
 `FORGE_BACKUP_STORAGE` is empty, the release does not go online.
 
-Not done yet for Forge:
+The control plane reads the errors that an app raises online from the
+app's log file in Forge, `storage/logs/laravel.log`. New sites write to
+this one file (`LOG_STACK=single`). If an owner's app writes its log
+somewhere else, its owner is not told about its errors.
 
-- The errors that an app raises online, and the cost per app on
-  `/operations`.
+Not done yet for Forge: the cost per app on `/operations`.
 
 ## Not proven yet
 

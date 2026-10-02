@@ -9,6 +9,8 @@ use App\Models\Project;
 use App\Models\User;
 use App\Projects\ProjectRepository;
 use App\Publishing\GitHubRepositories;
+use App\Publishing\PublishingHostManager;
+use Carbon\CarbonImmutable;
 use Dotenv\Dotenv;
 use GuzzleHttp\Client;
 use GuzzleHttp\Promise\Create;
@@ -72,6 +74,11 @@ class ForgePublishingTest extends TestCase
      * @var list<array<string, mixed>>
      */
     protected array $copies = [];
+
+    /**
+     * The end of the app's log file, as Forge reads it.
+     */
+    protected string $applicationLog = '';
 
     /**
      * How Forge's next copy of the database ends.
@@ -192,6 +199,7 @@ class ForgePublishingTest extends TestCase
         $this->assertSame('https://'.$this->address(), $settings['APP_URL']);
         $this->assertSame('pgsql', $settings['DB_CONNECTION']);
         $this->assertSame('app_'.$this->project->id, $settings['DB_DATABASE']);
+        $this->assertSame('single', $settings['LOG_STACK']);
         $this->assertSame($database['password'], $settings['DB_PASSWORD']);
 
         // The settings are written before the release starts.
@@ -349,6 +357,28 @@ class ForgePublishingTest extends TestCase
         $this->assertSame(1, $this->sentCount('POST', 'orgs/acme/servers/7/sites/41/deployments'));
     }
 
+    public function test_errors_the_app_raises_online_are_read_from_its_log()
+    {
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+        $this->applicationLog = implode("\n", [
+            '[2026-10-02 09:59:00] production.ERROR: Too early {"exception":"[object] (RuntimeException(code: 0): Too early at /home/forge/app/routes/web.php:3)"}',
+            '[2026-10-02 10:05:00] production.INFO: Order placed {"order":4}',
+            '[2026-10-02 10:06:00] production.ERROR: Undefined variable $total {"userId":4,"exception":"[object] (ErrorException(code: 0): Undefined variable $total at /home/forge/app/app/Http/Controllers/CartController.php:21)"}',
+            '[stacktrace]',
+            '#0 /home/forge/app/vendor/laravel/framework/src/Illuminate/Foundation/Bootstrap/HandleExceptions.php(258): handleError()',
+            '[2026-10-02 10:07:30] production.CRITICAL: SQLSTATE[08006] could not connect {"exception":"[object] (Illuminate\\\\Database\\\\QueryException(code: 7): could not connect)"}',
+            '[2026-10-02 10:08:00] production.ERROR: Payment failed []',
+        ]);
+
+        $errors = app(PublishingHostManager::class)->driver('forge')->errors(Deployment::sole(), CarbonImmutable::parse('2026-10-02 10:00:00', 'UTC'), CarbonImmutable::parse('2026-10-02 11:00:00', 'UTC'));
+
+        $this->assertSame([
+            ['class' => 'ErrorException', 'message' => 'Undefined variable $total', 'at' => '2026-10-02T10:06:00+00:00'],
+            ['class' => 'Illuminate\\Database\\QueryException', 'message' => 'SQLSTATE[08006] could not connect', 'at' => '2026-10-02T10:07:30+00:00'],
+            ['class' => null, 'message' => 'Payment failed', 'at' => '2026-10-02T10:08:00+00:00'],
+        ], $errors);
+    }
+
     /**
      * Commit a new migration and publish it.
      */
@@ -399,6 +429,7 @@ class ForgePublishingTest extends TestCase
                 'type' => 'backups',
                 'attributes' => ['status' => $this->copyStatus, 'finished_at' => 1790000000],
             ]],
+            $method === 'GET' && $path === 'orgs/acme/servers/7/sites/41/logs/application' => ['data' => ['id' => '41', 'type' => 'applicationLogs', 'attributes' => ['content' => $this->applicationLog]]],
             default => [500, ['message' => "Unexpected request: {$method} {$path}"]],
         };
 

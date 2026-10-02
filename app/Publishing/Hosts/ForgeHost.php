@@ -160,7 +160,34 @@ class ForgeHost implements PublishingHost
 
     public function errors(Deployment $deployment, CarbonImmutable $from, CarbonImmutable $to): ?array
     {
-        return null;
+        $state = $deployment->project->host_state ?? [];
+
+        if (! isset($state['server'], $state['site'])) {
+            return null;
+        }
+
+        // Forge gives the end of the app's own log file, in Laravel's
+        // format: "[time] env.LEVEL: message {context}".
+        $log = $this->forge()->siteApplicationLog($this->organization(), (int) $state['server'], (int) $state['site']);
+        preg_match_all('/^\[([0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9:.]+(?:[+-][0-9]{2}:?[0-9]{2})?)\] [\w-]+\.(?:ERROR|CRITICAL|ALERT|EMERGENCY): (.*)$/m', $log, $entries, PREG_SET_ORDER);
+
+        $errors = [];
+
+        foreach ($entries as [, $time, $line]) {
+            $at = CarbonImmutable::parse($time, 'UTC');
+
+            if ($at->lessThan($from) || $at->greaterThan($to)) {
+                continue;
+            }
+
+            $errors[] = [
+                'class' => preg_match('/"exception":"\[object\] \(([\w\\\\]+)\(code: /', $line, $class) === 1 ? str_replace('\\\\', '\\', $class[1]) : null,
+                'message' => trim((string) preg_replace('/ (\{".*|\[\])$/', '', $line)),
+                'at' => $at->toIso8601String(),
+            ];
+        }
+
+        return $errors;
     }
 
     public function spend(): ?array
@@ -229,6 +256,8 @@ class ForgeHost implements PublishingHost
             'APP_ENV' => 'production',
             'APP_DEBUG' => 'false',
             'APP_URL' => $url,
+            // Forge reads errors from this one file (see errors()).
+            'LOG_STACK' => 'single',
             'DB_CONNECTION' => $this->databaseDriver(),
             'DB_HOST' => '127.0.0.1',
             'DB_DATABASE' => "app_{$project->id}",
