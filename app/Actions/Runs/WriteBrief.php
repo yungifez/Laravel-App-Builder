@@ -5,6 +5,7 @@ namespace App\Actions\Runs;
 use App\Context\Capability;
 use App\Context\ProjectNotes;
 use App\Models\Run;
+use App\Models\RunEvent;
 use App\Runs\Plan;
 use App\Workspaces\WorkspaceFiles;
 use Illuminate\Support\Facades\Config;
@@ -95,6 +96,10 @@ class WriteBrief
             "## Acceptance criteria\n\nAdd or update a test for each one: the change is only accepted when every criterion is checked by a test in the change. Only tests under ".Capability::suiteLocation()." are run by the checks, so put them there.\n\n".$this->list($plan->acceptanceCriteria),
         );
 
+        if (($scaffolded = $this->scaffolded($run)) !== []) {
+            $sections[] = "## Files already written from the data shape\n\nThese hold the new records the plan stores: the migration, model, factory and form request, with names and rules taken from one shape so they agree. Build on them rather than writing them again, and change them where the request needs it. Each form request asks the model's policy, so write the policy that says who may.\n\n".$this->list($scaffolded);
+        }
+
         $sections[] = $this->observability($this->outside($run));
         $sections[] = self::compatibility($run->featureRequest->project->keepsOldWorking());
 
@@ -125,6 +130,20 @@ class WriteBrief
         }
 
         return implode("\n\n", $sections);
+    }
+
+    /**
+     * List the files written from the plan's data shape before the agent
+     * started.
+     *
+     * @return list<string>
+     */
+    protected function scaffolded(Run $run): array
+    {
+        return array_values(array_unique($run->events()->where('type', 'scaffolded')->get()
+            ->flatMap(fn (RunEvent $event) => (array) ($event->data['files'] ?? []))
+            ->map(strval(...))
+            ->all()));
     }
 
     /**

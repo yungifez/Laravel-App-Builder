@@ -86,6 +86,7 @@ class ConstructRun
         private AcceptFindings $acceptFindings,
         private ProposeFindings $proposeFindings,
         private ReadProjectContext $readProjectContext,
+        private ScaffoldDataShape $scaffoldDataShape,
     ) {}
 
     /**
@@ -247,6 +248,13 @@ class ConstructRun
     {
         $workspace = $this->prepareRunWorkspace->handle($run, $lease);
         $plan = $this->planFor($run);
+
+        // A worker outside our boxes writes in its own copy of the app, so
+        // the files are written only where our agents work.
+        if ($run->driver !== 'worker' && ($scaffolded = $this->scaffoldDataShape->handle($workspace, $plan)) !== []) {
+            $this->recordEvent($run, $lease, 'scaffolded', ['files' => $scaffolded]);
+        }
+
         $account = $driver->build($run, $plan, new ToolSession($this->toolExecutor, $run, $lease));
 
         $this->recordEvent($run, $lease, 'build_finished', ['attempt' => $run->repairs, 'account' => Str::limit($account, 2000)]);

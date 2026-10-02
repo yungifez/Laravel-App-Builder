@@ -1136,6 +1136,24 @@ follow from it, and are never traded against it.
    is safe there and a wrong answer costs one retry
    ([§11](#execution-router)).
 
+**What is built.** The planner returns `data_shape`: each new record with
+typed fields (`string`, `text`, `integer`, `decimal`, `boolean`, `date`,
+`datetime`, `email`, `choice` with its values, `belongs_to` with the model
+it links to). `Plan::dataShape` keeps a shape only when it holds together; a
+broken one is dropped, and the agent then writes those parts as before.
+Before the coding agent starts, `ScaffoldDataShape` writes the migration,
+model, factory and store form request for each record the app does not
+have yet (`App\Scaffolding\Scaffold`, with the type table in `FieldType`).
+It follows the app's own way of naming fillable fields, never writes over a
+file, and skips a record whose model or create migration exists. The form
+request asks the model's policy, so nobody may create one until a policy
+says who may. The brief lists the files under "Files already written from
+the data shape", and the run records them as a `scaffolded` event. A worker
+outside our boxes gets no scaffold, since it works in its own copy. Not built
+yet: who may create, change or remove a record, and so the policy, routes and
+access tests; showing the owner the shape in plain words; small-model
+repairs.
+
 **Rejected: sub-agents by file type.** "A small agent writes the request
 class" moves the risk to the hand-off. To brief it, the larger agent must
 already decide the fields, rules and permissions, which is the hard part; the

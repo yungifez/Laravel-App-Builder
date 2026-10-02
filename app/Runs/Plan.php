@@ -3,8 +3,10 @@
 namespace App\Runs;
 
 use App\Runs\Exceptions\ConstructionFailed;
+use App\Scaffolding\FieldType;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 /**
  * The saved intent a run builds against, also shown as the change brief:
@@ -30,6 +32,7 @@ final readonly class Plan
      * @param  string|null  $answer  The reply when the owner only asked about the app, so nothing is built
      * @param  list<string>  $next  What the owner might ask for next, in their words, offered as one-tap follow-ups
      * @param  string|null  $goal  How the change serves the goal the owner wrote in the notes, if it does
+     * @param  list<array{name: string, fields: list<array{name: string, type: string, required: bool, choices: list<string>, of: string|null}>}>  $dataShape  The records the change stores, stated once so every part agrees (§9)
      */
     public function __construct(
         public string $summary,
@@ -48,6 +51,7 @@ final readonly class Plan
         public ?string $answer = null,
         public array $next = [],
         public ?string $goal = null,
+        public array $dataShape = [],
     ) {}
 
     /**
@@ -135,7 +139,69 @@ final readonly class Plan
             answer: filled($valid['answer'] ?? null) ? trim($valid['answer']) : null,
             next: self::next($valid['next'] ?? []),
             goal: filled($valid['goal'] ?? null) ? trim($valid['goal']) : null,
+            dataShape: self::dataShape($data['data_shape'] ?? []),
         );
+    }
+
+    /**
+     * Read the records the change stores. A shape that does not hold
+     * together is dropped, not refused: the coding agent then writes those
+     * parts itself, as it would without a shape.
+     *
+     * @return list<array{name: string, fields: list<array{name: string, type: string, required: bool, choices: list<string>, of: string|null}>}>
+     */
+    public static function dataShape(mixed $shape): array
+    {
+        $name = 'regex:/^[A-Z][A-Za-z0-9]{0,59}$/';
+        $validator = Validator::make(['records' => $shape], [
+            'records' => ['array', 'max:10'],
+            'records.*.name' => ['required', 'string', $name, 'distinct'],
+            'records.*.fields' => ['required', 'array', 'min:1', 'max:40'],
+            'records.*.fields.*.name' => ['required', 'string', 'regex:/^[a-z][a-z0-9_]{0,59}$/', 'not_in:id,created_at,updated_at'],
+            'records.*.fields.*.type' => ['required', Rule::enum(FieldType::class)],
+            'records.*.fields.*.required' => ['required', 'boolean'],
+            'records.*.fields.*.choices' => ['present', 'array', 'max:20'],
+            'records.*.fields.*.choices.*' => ['string', 'regex:/^[a-z0-9_]{1,60}$/'],
+            'records.*.fields.*.of' => ['present', 'nullable', 'string', $name],
+        ]);
+
+        if ($validator->fails()) {
+            return [];
+        }
+
+        /** @var list<array{name: string, fields: list<array{name: string, type: string, required: bool, choices: list<string>, of: string|null}>}> $records */
+        $records = array_values($validator->validated()['records']);
+        $read = [];
+
+        foreach ($records as $record) {
+            $fields = [];
+
+            foreach ($record['fields'] as $field) {
+                $type = FieldType::from($field['type']);
+                $choices = array_values(array_unique($field['choices']));
+
+                if (($type === FieldType::Choice && count($choices) < 2) || ($type === FieldType::BelongsTo && $field['of'] === null)) {
+                    return [];
+                }
+
+                $fields[FieldType::attribute($field)] = [
+                    'name' => $field['name'],
+                    'type' => $type->value,
+                    'required' => (bool) $field['required'],
+                    'choices' => $type === FieldType::Choice ? $choices : [],
+                    'of' => $type === FieldType::BelongsTo ? $field['of'] : null,
+                ];
+            }
+
+            // Two fields stored in one column cannot both be meant.
+            if (count($fields) !== count($record['fields'])) {
+                return [];
+            }
+
+            $read[] = ['name' => $record['name'], 'fields' => array_values($fields)];
+        }
+
+        return $read;
     }
 
     /**
@@ -268,7 +334,7 @@ final readonly class Plan
     /**
      * Restore a plan saved on a run.
      *
-     * @param  array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>, understood_as?: string|null, current_behavior?: string|null, preserve?: list<array{area: string|null, statement: string}>, commit_subject?: string|null, answer?: string|null, next?: list<string>, goal?: string|null}  $data
+     * @param  array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>, understood_as?: string|null, current_behavior?: string|null, preserve?: list<array{area: string|null, statement: string}>, commit_subject?: string|null, answer?: string|null, next?: list<string>, goal?: string|null, data_shape?: list<array{name: string, fields: list<array{name: string, type: string, required: bool, choices: list<string>, of: string|null}>}>}  $data
      */
     public static function fromArray(array $data): self
     {
@@ -288,13 +354,14 @@ final readonly class Plan
             answer: $data['answer'] ?? null,
             next: $data['next'] ?? [],
             goal: $data['goal'] ?? null,
+            dataShape: $data['data_shape'] ?? [],
         );
     }
 
     /**
      * Get the plan as stored on the run.
      *
-     * @return array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities: list<string>, understood_as: string|null, current_behavior: string|null, preserve: list<array{area: string|null, statement: string}>, commit_subject: string|null, answer: string|null, next: list<string>, goal: string|null}
+     * @return array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities: list<string>, understood_as: string|null, current_behavior: string|null, preserve: list<array{area: string|null, statement: string}>, commit_subject: string|null, answer: string|null, next: list<string>, goal: string|null, data_shape: list<array{name: string, fields: list<array{name: string, type: string, required: bool, choices: list<string>, of: string|null}>}>}
      */
     public function toArray(): array
     {
@@ -314,6 +381,7 @@ final readonly class Plan
             'answer' => $this->answer,
             'next' => $this->next,
             'goal' => $this->goal,
+            'data_shape' => $this->dataShape,
         ];
     }
 }
