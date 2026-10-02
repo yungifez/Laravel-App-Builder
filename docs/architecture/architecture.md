@@ -1905,10 +1905,14 @@ can be caused, in requests that ran the change's code:
   The save is refused, and the job is run again, the way a queue tries a
   failed job again.
 - **A job that waits.** Each job the sync queue ran in a request, when the
-  job did something and the app's code did something after it. This place
-  does not fail. Tests run a queued job where it is dispatched. In use it
-  waits on a queue and runs after the response. So the job is held back and
-  runs when the response is made. A job the app sends to the sync queue by
+  job sent or saved something, or the app's code did something after it.
+  This place does not fail. Tests run a queued job where it is dispatched.
+  In use it waits on a queue, and a worker runs it after the response. So
+  the job is held back and runs when the response is made, the way a worker
+  runs it: no one is signed in, and the request and the session are empty.
+  A job of the framework that delivers an email or a notification is a
+  place here too: the worker runs what the app's code puts in it. A job the
+  app sends to the sync queue by
   name (`dispatch_sync`, or a job that names the `sync` connection) is not
   such a job, and is never held.
 - **An event.** Each event a request dispatches that has two or more
@@ -1926,7 +1930,11 @@ refuses the write before it runs. A job is run again when it is done, the
 way a queue runs it again when a worker stops before it marks the job as
 done. The second run is marked in the trace, and an error in it stays in it.
 For a job that waits, the recorder puts a sync queue in place that asks it
-before each job, and only in that run. For an answer, the recorder puts a
+before each job, and only in that run. Before the held job runs, the
+recorder gives the app an empty request and an empty session, and has the
+app forget its guards, which hold the signed-in person. It puts all three
+back when the job is done, so the rest of the test runs as before. For an
+answer, the recorder puts a
 middleware on the HTTP client the same way. The call still reaches a fake
 of the test, and then gets a 500 as its answer. For an event, the fault also names
 the event. The recorder puts its found
@@ -1957,6 +1965,12 @@ The trace of that request shows what stayed:
 - **Needs its job done.** A job ran after the response and not where it
   was dispatched, and the request did not do the same. What the request
   does after it dispatches a job only works when the job is done.
+- **Job needs the request.** A job ran after the response the way a worker
+  runs it, and the job did not do the same. A send, or a save of its code
+  that stayed, is missing or new from its line. A job that takes the
+  person or what they sent from the request it was dispatched in
+  (`auth()->user()`, `request()`, `session()`), and not from what it was
+  given, finds nothing on a queue.
 - **Depends on order.** The found listeners of an event ran in the reverse
   order, and the request did not do the same. A send, or a save of the
   app's code that stayed, is missing or new from its line, or the answer
@@ -1999,6 +2013,10 @@ listener's when the listener is among the app's code on the way to it
 waits is compared the same way. The two groups are what jobs did and what
 the app's code did after the job was dispatched. A request that reads the
 table its job saves to, with the same shape in both runs, is `missed`.
+What differs among the things the job did is the job's finding (job needs
+the request). What differs in the rest is the request's (needs its job
+done). One limit: a job that finds no person and carries on with the same
+shape, such as an update that now changes no row, is not seen.
 
 A finding counts against a change only when the failed effect, or what
 stayed, comes from a line the change added. The rest is counted (`existing`)
@@ -2030,7 +2048,7 @@ is said. A second run that the trace cut short is missed. An email that a test
 fakes is a place too: the stand-in of the fake fails it the same way, before
 the fake takes it.
 
-The reviewer blocks all nine, unless the request or the plan asks for
+The reviewer blocks all ten, unless the request or the plan asks for
 exactly that. The owner reads each in the proof: "If saving fails at /invitations,
 your app has already sent something. People are told about something that
 was not saved." When failures were caused and nothing stayed: "We made things
@@ -2051,6 +2069,10 @@ nothing says which comes first. When they happen the other way round, your
 app does not do the same things." For a job that waits: "Your app does some
 work on its own after someone uses /orders, and does not wait for it. But
 what your app does next only goes right when that work is already done."
+For a job that needs the request: "Your app does some work on its own after
+someone uses /orders. That work runs a moment later. By then your app no
+longer knows who the person is or what they sent, and the work does not do
+the same things."
 On the fixture the reference change has 2 places, both clean,
 in about 2 seconds. A copy of it that sends an email before its last save is
 found.

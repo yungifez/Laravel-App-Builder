@@ -66,6 +66,12 @@ namespace App\Features;
  * response. So the job is held back until the response is made, and the
  * request must do the same without it. The two runs are compared the
  * same way as the two orders of an event.
+ *
+ * The job must do the same too. A worker of a queue has no request: no
+ * one is signed in, and what the person sent and their session are not
+ * there. The job that was held back runs that way. A job that takes
+ * the person from the request it was dispatched in, and not from what
+ * it was given, then sends or saves less. That is a finding of its own.
  */
 class AppFaults
 {
@@ -84,6 +90,8 @@ class AppFaults
     public const DEPENDS_ON_ORDER = 'depends_on_order';
 
     public const NEEDS_JOB_DONE = 'needs_job_done';
+
+    public const JOB_NEEDS_REQUEST = 'job_needs_request';
 
     public const ANSWER_NOT_CHECKED = 'answer_not_checked';
 
@@ -130,9 +138,9 @@ class AppFaults
      * and does more after, the last save of each transaction a request
      * commits, the last save the app's code makes outside a transaction
      * once the request has saved or sent something, each job the sync
-     * queue ran that sent or added something, each job the request does
-     * more after, and each event with found listeners to run in the
-     * reverse order. Only requests that ran the change's code are used.
+     * queue ran that sent or added something, each job that sent or saved
+     * something or that the request does more after, and each event with
+     * found listeners to run in the reverse order. Only requests that ran the change's code are used.
      *
      * The places come in the order to try them, so a small budget goes to
      * the ones that tell the most: places on the change's own lines, then
@@ -200,11 +208,13 @@ class AppFaults
                     $jobs[] = [self::RETRY, $late, $effect, array_any($ran, $new), 'query'];
                 }
 
-                // What the app's code does after a job that ran here: in
-                // use the job waits on a queue and has not run by then.
-                [$its, $after] = $effect['kind'] === 'job' && self::ran($request['effects'], $place) !== [] ? self::around($request['effects'], $place) : [[], []];
+                // A job that ran here: in use it waits on a queue and runs
+                // after the response, where no one is signed in. What the
+                // app's code does after it has not waited for it.
+                $does = $effect['kind'] === 'job' ? self::ran($request['effects'], $place) : [];
+                [$its, $after] = $does !== [] ? self::around($request['effects'], $place) : [[], []];
 
-                if ($after !== []) {
+                if ($after !== [] || array_any($does, fn (array $effect, int $at) => in_array($effect['kind'], self::SENT, true) || (isset($stayed[$at]) && is_string($effect['at'] ?? null)))) {
                     $jobs[] = [self::LATER, $place, $effect, array_any([...$its, ...$after], $new), 'later'];
                 }
 
@@ -381,8 +391,21 @@ class AppFaults
     {
         $place = $hit['fault'] ?? 0;
 
-        if ($fails === self::REORDER || $fails === self::LATER) {
-            return array_filter([($fails === self::REORDER ? self::DEPENDS_ON_ORDER : self::NEEDS_JOB_DONE) => $was === null ? [] : self::changed($was, $hit)]);
+        if ($fails === self::REORDER) {
+            return array_filter([self::DEPENDS_ON_ORDER => $was === null ? [] : self::changed($was, $hit)]);
+        }
+
+        if ($fails === self::LATER) {
+            // What the job did in another way is the job's: it ran the way
+            // a worker runs it. The rest is the request's, which did not
+            // wait for the job.
+            $changed = $was === null ? [] : self::changed($was, $hit);
+            $its = fn (array $effect): bool => $effect['job'] ?? false;
+
+            return array_filter([
+                self::NEEDS_JOB_DONE => array_values(array_filter($changed, fn (array $effect) => ! $its($effect))),
+                self::JOB_NEEDS_REQUEST => array_values(array_filter($changed, $its)),
+            ]);
         }
 
         if ($fails === self::ANSWER) {
@@ -473,7 +496,7 @@ class AppFaults
      *
      * @param  array{status: int, did: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, listeners: list<string>, apart: bool}  $was
      * @param  array{status: int, effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>}  $hit
-     * @return list<array{kind: string, open: int, what: string, at: string|null}>
+     * @return list<array{kind: string, open: int, what: string, at: string|null, job?: bool}>
      */
     protected static function changed(array $was, array $hit): array
     {
@@ -485,7 +508,7 @@ class AppFaults
             $less = count($before[$key] ?? []) - count($after[$key] ?? []);
 
             if ($less !== 0) {
-                $changed[] = ['kind' => $less > 0 ? 'missing' : 'added', 'open' => 0, 'what' => self::name($same[0]), 'at' => $same[0]['at'] ?? null];
+                $changed[] = ['kind' => $less > 0 ? 'missing' : 'added', 'open' => 0, 'what' => self::name($same[0]), 'at' => $same[0]['at'] ?? null, ...(($same[0]['job'] ?? false) ? ['job' => true] : [])];
             }
         }
 

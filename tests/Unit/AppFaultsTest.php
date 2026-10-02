@@ -265,8 +265,8 @@ class AppFaultsTest extends TestCase
         $this->assertSame([], $this->points([$this->recorded('POST', '/orders', 302, $effects, ['cut' => true])]));
 
         // In use the job runs later, on a queue: its email and its save are not the request's.
-        // The job is a place by itself, and so is the save it makes after its email.
-        $this->assertSame(['again', 'retry'], array_column($this->points([$this->recorded('POST', '/orders', 302, [
+        // The job is a place by itself, and so are the save it makes after its email and its wait on a queue.
+        $this->assertSame(['again', 'retry', 'later'], array_column($this->points([$this->recorded('POST', '/orders', 302, [
             $this->asked('insert into "orders" ("total") values (?)', self::NEW.':3'),
             ['kind' => 'job', 'what' => 'App\Jobs\SendReceipt', 'open' => 0, 'at' => self::NEW.':4'],
             [...$this->mailed('app/Jobs/SendReceipt.php:20'), 'job' => true],
@@ -384,26 +384,33 @@ class AppFaultsTest extends TestCase
         );
         $receipt = $this->done($this->asked('insert into "receipts" ("order_id") values (?)', 'app/Jobs/SendReceipt.php:20'));
         $ran = $this->asked('select * from "orders" where "id" = ?', self::NEW.':3');
+        // A job that sent or saved something also waits on a queue: that is a place of its own.
+        $waits = ['later', 'job App\Jobs\SendReceipt', self::NEW.':4', true, 0, 'later'];
 
         // The change queues the job: the place is the change's.
-        $this->assertSame([['again', 'job App\Jobs\SendReceipt', self::NEW.':4', true, 0, 'job']], $places([$this->job(self::NEW.':4'), $receipt]));
+        $this->assertSame([['again', 'job App\Jobs\SendReceipt', self::NEW.':4', true, 0, 'job'], $waits], $places([$this->job(self::NEW.':4'), $receipt]));
         // Code the app already had queues it: the place is tried after the change's own.
-        $this->assertSame([['again', 'job App\Jobs\SendReceipt', 'app/Actions/PlaceOrder.php:9', false, 1, 'job']], $places([$ran, $this->job('app/Actions/PlaceOrder.php:9'), $receipt]));
+        $this->assertSame([
+            ['again', 'job App\Jobs\SendReceipt', 'app/Actions/PlaceOrder.php:9', false, 1, 'job'],
+            ['later', 'job App\Jobs\SendReceipt', 'app/Actions/PlaceOrder.php:9', false, 1, 'later'],
+        ], $places([$ran, $this->job('app/Actions/PlaceOrder.php:9'), $receipt]));
         // The change wrote what the job does: the place is the change's too.
-        $this->assertSame([true], array_column($places([$this->job('app/Actions/PlaceOrder.php:9'), $this->done($this->mailed(self::NEW.':4'))]), 3));
+        $this->assertSame([true, true], array_column($places([$this->job('app/Actions/PlaceOrder.php:9'), $this->done($this->mailed(self::NEW.':4'))]), 3));
 
-        // A job that only reads, or makes a change that can be made again, is no place.
-        $this->assertSame([], $places([$this->job(self::NEW.':4'), $this->done($this->asked('select * from "orders"', 'app/Jobs/SendReceipt.php:19')), $this->done($this->asked('update "orders" set "receipt_sent_at" = ?', 'app/Jobs/SendReceipt.php:21'))]));
+        // A job that makes a change that can be made again is no place to run twice. A job that only reads is no place at all.
+        $this->assertSame([$waits], $places([$this->job(self::NEW.':4'), $this->done($this->asked('select * from "orders"', 'app/Jobs/SendReceipt.php:19')), $this->done($this->asked('update "orders" set "receipt_sent_at" = ?', 'app/Jobs/SendReceipt.php:21'))]));
+        $this->assertSame([], $places([$this->job(self::NEW.':4'), $this->done($this->asked('select * from "orders"', 'app/Jobs/SendReceipt.php:19'))]));
         // An insert that says what to do when the row is there is made to run twice.
-        $this->assertSame([], $places([$this->job(self::NEW.':4'), $this->done($this->asked('insert into "receipts" ("order_id") values (?) on conflict ("order_id") do nothing', 'app/Jobs/SendReceipt.php:20'))]));
-        $this->assertSame([], $places([$this->job(self::NEW.':4'), $this->done($this->asked('insert ignore into `receipts` (`order_id`) values (?)', 'app/Jobs/SendReceipt.php:20'))]));
+        $this->assertSame([$waits], $places([$this->job(self::NEW.':4'), $this->done($this->asked('insert into "receipts" ("order_id") values (?) on conflict ("order_id") do nothing', 'app/Jobs/SendReceipt.php:20'))]));
+        $this->assertSame([$waits], $places([$this->job(self::NEW.':4'), $this->done($this->asked('insert ignore into `receipts` (`order_id`) values (?)', 'app/Jobs/SendReceipt.php:20'))]));
         // An insert the job put back did not stay.
         $this->assertSame([], $places([$this->job(self::NEW.':4'), $this->done(['kind' => 'begin', 'open' => 1]), [...$receipt, 'open' => 1], $this->done(['kind' => 'rollback', 'open' => 0])]));
-        // A job of the framework that delivers one email has no code of the app to make safe.
-        $this->assertSame([], $places([[...$this->job(self::NEW.':4'), 'delivers' => true], $this->done($this->mailed(null))]));
+        // A job of the framework that delivers one email has no code of the app to make safe for a
+        // second run. A worker still runs what the email says, so its wait on a queue is a place.
+        $this->assertSame([$waits], $places([[...$this->job(self::NEW.':4'), 'delivers' => true], $this->done($this->mailed(null))]));
         // What a job inside the job does is the outer job's. The outer job queued it and then
         // saved: a second try queues it again, so that save is the outer job's second place.
-        $this->assertSame([0, 2], array_column($places([$this->job(self::NEW.':4'), $this->done($this->job('app/Jobs/SendReceipt.php:18')), $receipt]), 4));
+        $this->assertSame([['again', 0], ['retry', 2], ['later', 0]], array_map(fn (array $place) => [$place[0], $place[4]], $places([$this->job(self::NEW.':4'), $this->done($this->job('app/Jobs/SendReceipt.php:18')), $receipt])));
     }
 
     public function test_a_job_that_ran_twice_is_found_when_it_sent_or_added_the_same_thing_both_times()
@@ -419,8 +426,8 @@ class AppFaultsTest extends TestCase
         $measured = $this->measure([$this->job(self::NEW.':4'), ...$run], 302, [$this->job(self::NEW.':4'), ...$run, $again, ...$run]);
 
         // The row that is changed again stays as it was, so it is not named.
-        // The change the job makes after its email is a second place, not tried here.
-        $this->assertSame(['points' => 2, 'run' => 1, 'missed' => 0, 'existing' => 0], array_diff_key($measured, ['findings' => 1]));
+        // The change the job makes after its email is a second place, and its wait on a queue a third. They are not tried here.
+        $this->assertSame(['points' => 3, 'run' => 1, 'missed' => 0, 'existing' => 0], array_diff_key($measured, ['findings' => 1]));
         $this->assertSame([
             ['kind' => 'done_twice', 'route' => 'POST /orders', 'failed' => 'job App\Jobs\SendReceipt', 'what' => 'insert receipts, mail App\Mail\Receipt', 'at' => self::NEW.':4', 'test' => self::TEST],
         ], $measured['findings']);
@@ -463,12 +470,13 @@ class AppFaultsTest extends TestCase
         $this->assertSame([
             ['again', 'job App\Jobs\SendReceipt', self::NEW.':4', 2, 'job'],
             ['retry', 'job App\Jobs\SendReceipt', self::NEW.':4', 6, 'query'],
+            ['later', 'job App\Jobs\SendReceipt', self::NEW.':4', 2, 'later'],
             ['save', 'update products', self::NEW.':5', 1, 'query'],
         ], $places([$this->asked('insert into "orders" ("total") values (?)', self::NEW.':3'), $stock, $this->job(self::NEW.':4'), $asks, $mail, $marks, $logs]));
         // A job that saves first and sends last has no save to lose after the send.
-        $this->assertSame(['again'], array_column($places([$this->job(self::NEW.':4'), $marks, $mail]), 0));
-        // A job of the framework is no place.
-        $this->assertSame([], $places([[...$this->job(self::NEW.':4'), 'delivers' => true], $mail, $marks]));
+        $this->assertSame(['again', 'later'], array_column($places([$this->job(self::NEW.':4'), $marks, $mail]), 0));
+        // A job of the framework has no save of the app to lose. Only its wait on a queue is a place.
+        $this->assertSame(['later'], array_column($places([[...$this->job(self::NEW.':4'), 'delivers' => true], $mail, $marks]), 0));
     }
 
     public function test_a_job_tried_again_after_its_save_failed_is_found_when_it_sent_the_same_thing_again()
@@ -481,7 +489,7 @@ class AppFaultsTest extends TestCase
 
         $measured = $this->measure($normal, 500, [...$normal, $again, $asks, $mail, $marks], point: 1);
 
-        $this->assertSame(['points' => 2, 'run' => 1, 'missed' => 0, 'existing' => 0], array_diff_key((array) $measured, ['findings' => 1]));
+        $this->assertSame(['points' => 3, 'run' => 1, 'missed' => 0, 'existing' => 0], array_diff_key((array) $measured, ['findings' => 1]));
         $this->assertSame([
             ['kind' => 'sent_again', 'route' => 'POST /orders', 'failed' => 'job App\Jobs\SendReceipt', 'what' => 'mail App\Mail\Receipt', 'at' => self::NEW.':4', 'test' => self::TEST],
         ], $measured['findings'] ?? null);
@@ -623,11 +631,46 @@ class AppFaultsTest extends TestCase
 
         // The change wrote what the request does after the job, so the place is the change's.
         $this->assertSame([['later', 0, 'later', true], ['again', 0, 'job', false]], $places([$job, $adds, $reads]));
-        // Nothing of the app's code comes after the job, or the job did nothing that was seen.
-        $this->assertSame([['again', 0, 'job', true]], $places([$this->job(self::NEW.':4'), $adds]));
+        // Nothing of the app's code comes after the job. The job saved, so it is still a place: a worker runs it.
+        $this->assertSame([['again', 0, 'job', true], ['later', 0, 'later', true]], $places([$this->job(self::NEW.':4'), $adds]));
+        // The job did nothing that was seen.
         $this->assertSame([], $places([$this->job(self::NEW.':4'), $reads]));
         // What the framework does by itself after the job is not the app's.
-        $this->assertSame([['again', 0, 'job', true]], $places([$this->job(self::NEW.':4'), $adds, $this->asked('update "sessions" set "payload" = ?', null)]));
+        $this->assertSame([['again', 0, 'job', true], ['later', 0, 'later', true]], $places([$this->job(self::NEW.':4'), $adds, $this->asked('update "sessions" set "payload" = ?', null)]));
+    }
+
+    public function test_a_job_that_waits_is_found_when_the_job_does_not_do_the_same_the_way_a_worker_runs_it()
+    {
+        $job = $this->job(self::NEW.':4');
+        $thanks = $this->done($this->mailed('app/Jobs/SendReceipt.php:20'));
+        $marks = $this->done($this->asked('update "orders" set "receipt_sent_at" = ?', 'app/Jobs/SendReceipt.php:21'));
+        $asks = $this->asked('select * from "customers" where "id" = ?', self::NEW.':5');
+        $mail = $this->mailed(self::NEW.':5');
+
+        // The job found no one to send to, and stopped.
+        $measured = $this->heldBack([$job, $thanks, $marks], 302, [$job]);
+
+        $this->assertSame(['points' => 3, 'run' => 1, 'missed' => 0, 'existing' => 0], array_diff_key((array) $measured, ['findings' => 1]));
+        $this->assertSame([
+            ['kind' => 'job_needs_request', 'route' => 'POST /orders', 'failed' => 'job App\Jobs\SendReceipt', 'what' => 'missing mail App\Mail\Receipt, missing update orders', 'at' => self::NEW.':4', 'test' => self::TEST],
+        ], $measured['findings'] ?? null);
+
+        // The job did the same: it was given what it needs.
+        $clean = $this->heldBack([$job, $thanks, $marks], 302, [$job, $thanks, $marks]);
+        $this->assertSame(['points' => 3, 'run' => 1, 'missed' => 0, 'existing' => 0, 'findings' => []], $clean);
+
+        // The request did not wait for the job, and the job did not do the same: each is said by itself.
+        $both = $this->heldBack([$job, $thanks, $asks, $mail], 302, [$job, $asks]);
+        $this->assertSame([
+            ['needs_job_done', 'missing mail App\Mail\Receipt'],
+            ['job_needs_request', 'missing mail App\Mail\Receipt'],
+        ], array_map(fn (array $finding) => [$finding['kind'], $finding['what']], $both['findings'] ?? []));
+
+        // Code the app already had queues the job and wrote what it does: it is counted, not held against the change.
+        $old = $this->job('app/Actions/PlaceOrder.php:9');
+        $ran = $this->asked('select * from "orders" where "id" = ?', self::NEW.':3');
+        $existing = $this->heldBack([$ran, $old, $thanks], 302, [$ran, $old], ['fault' => 1]);
+        $this->assertSame([1, 0, 1, []], [$existing['run'] ?? null, $existing['missed'] ?? null, $existing['existing'] ?? null, $existing['findings'] ?? null]);
     }
 
     public function test_a_job_that_waits_is_found_when_the_request_does_not_do_the_same_without_it()

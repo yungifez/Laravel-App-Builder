@@ -577,6 +577,11 @@ class ChangeProofTest extends TestCase
         );
 
         $this->assertSame(
+            ['Your app does some work on its own after someone uses /orders. That work runs a moment later. By then your app no longer knows who the person is or what they sent, and the work does not do the same things.'],
+            $proof(['run' => 1, 'findings' => [$finding('job_needs_request', 'POST /orders', 'job App\Jobs\SendReceipt')]])->where('kind', 'gap')->pluck('text')->all(),
+        );
+
+        $this->assertSame(
             ['If an outside service says it could not do what your app asked at /orders/{order}/pay, your app does not look at that answer. It carries on as if the service did it.'],
             $proof(['run' => 1, 'findings' => [$finding('answer_not_checked', 'POST /orders/{order}/pay', 'http POST api.stripe.com')]])->where('kind', 'gap')->pluck('text')->all(),
         );

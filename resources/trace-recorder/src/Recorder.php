@@ -18,12 +18,14 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Events\RequestSending;
 use Illuminate\Http\Client\Factory as HttpClient;
 use Illuminate\Http\Client\Response as ClientResponse;
+use Illuminate\Http\Request;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Notifications\Events\NotificationSending;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Events\JobQueued;
+use Illuminate\Session\SessionManager;
 use Illuminate\Support\Facades\Facade;
 use PDOException;
 use PHPUnit\Framework\TestCase;
@@ -55,7 +57,9 @@ use WeakMap;
  * itself then run in the reverse order for that one request.
  *
  * And it can name a job the sync queue runs. That job is then held back
- * until the response is made, the way a real queue runs it later.
+ * until the response is made, and runs the way a worker of a real queue
+ * runs it later: no one is signed in, and the request and the session
+ * are empty.
  *
  * And it can name an outside call to answer. That call is made, and a
  * server error is given as its answer. The trace then says if the app's
@@ -633,14 +637,21 @@ class Recorder
     }
 
     /**
-     * Run the jobs that were held back. An error in one stays in it,
-     * because in use it happens on the queue and not in the request.
+     * Run the jobs that were held back, the way a worker runs them. An
+     * error in one stays in it, because in use it happens on the queue
+     * and not in the request.
      */
     protected function release(): void
     {
         $held = $this->held;
         $this->held = [];
+
+        if ($held === []) {
+            return;
+        }
+
         $this->releasing = true;
+        $back = $this->asWorker();
 
         try {
             foreach ($held as $run) {
@@ -651,8 +662,65 @@ class Recorder
                 }
             }
         } finally {
+            $back();
             $this->releasing = false;
         }
+    }
+
+    /**
+     * Make the app the way a queue worker has it: the request is an empty
+     * one, the session is empty and no one is signed in. A job that
+     * takes the person or what they sent from the request it was
+     * dispatched in then finds nothing, the way it does in use.
+     *
+     * @return Closure(): void Puts back what the request had
+     */
+    protected function asWorker(): Closure
+    {
+        $back = [];
+        $swap = function (string $name, object $with) use (&$back) {
+            $had = $this->app->make($name);
+            $this->app->instance($name, $with);
+            Facade::clearResolvedInstance($name);
+
+            $back[] = function () use ($name, $had) {
+                $this->app->instance($name, $had);
+                Facade::clearResolvedInstance($name);
+            };
+        };
+
+        try {
+            $swap('request', Request::create((string) $this->app->make('config')->get('app.url', 'http://localhost')));
+
+            if ($this->app->bound('session')) {
+                $sessions = new SessionManager($this->app);
+                $store = $sessions->driver();
+                $swap('session', $sessions);
+                $swap('session.store', $store);
+            }
+
+            if ($this->app->bound('auth')) {
+                // The guards hold the person. New ones are made from the empty request and session.
+                $auth = $this->app->make('auth');
+                $guards = (new ReflectionObject($auth))->getProperty('guards');
+                $had = $guards->getValue($auth);
+                $auth->forgetGuards();
+
+                $back[] = fn () => $guards->setValue($auth, $had);
+            }
+        } catch (Throwable) {
+            //
+        }
+
+        return function () use (&$back) {
+            foreach (array_reverse($back) as $undo) {
+                try {
+                    $undo();
+                } catch (Throwable) {
+                    //
+                }
+            }
+        };
     }
 
     /**

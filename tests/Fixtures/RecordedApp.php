@@ -244,6 +244,16 @@ class RecordedApp
         return response()->noContent();
     }
 
+    /**
+     * Queues a job that thanks the person, and does nothing after it.
+     */
+    public function thanked(Request $request): Response
+    {
+        RecordedPersonalJob::dispatch($request->string('from')->toString(), $request->user()?->email);
+
+        return response()->noContent();
+    }
+
     public function told(User $user): Response
     {
         $user->notify(new RecordedQueuedNotice);

@@ -26,6 +26,7 @@ use Tests\Fixtures\RecordedJob;
 use Tests\Fixtures\RecordedMail;
 use Tests\Fixtures\RecordedMarksReady;
 use Tests\Fixtures\RecordedNotice;
+use Tests\Fixtures\RecordedPersonalJob;
 use Tests\Fixtures\RecordedQueuedNotice;
 use Tests\Fixtures\RecordedResource;
 use Tests\Fixtures\RecordedTellsOwner;
@@ -153,6 +154,38 @@ class TraceRecorderTest extends TestCase
 
         $points = AppFaults::points([$requests[0]], $this->wholeFilePatch());
         $this->assertSame([['send', 1, 'http'], ['answer', 1, 'answer'], ['save', 2, 'query']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
+        $points[1]['fault']['request'] = 1;
+
+        return [$requests, (array) AppFaults::measure($points, [1 => $requests], $this->wholeFilePatch())];
+    }
+
+    /**
+     * Thank a signed-in person three times with a queued job. The second
+     * time the job is held back and runs the way a worker runs it.
+     * Measure that place.
+     *
+     * @param  array<string, string>  $sent
+     * @return array{0: list<array<string, mixed>>, 1: array<string, mixed>}
+     */
+    protected function thankOnAQueue(array $sent): array
+    {
+        $user = User::factory()->create();
+        Route::post('/_failing/thanked', [RecordedApp::class, 'thanked']);
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'later');
+        $this->actingAs($user);
+
+        foreach (range(0, 2) as $request) {
+            $this->post('/_failing/thanked', $sent)->assertNoContent();
+        }
+
+        // The worker's empty request was only for the job: the person is still signed in.
+        $this->assertSame([$user->id, '/_failing/thanked'], [auth()->id(), '/'.request()->path()]);
+
+        $requests = $recorded();
+        $this->assertSame([null, 0, null], array_map(fn (array $request) => $request['fault'] ?? null, $requests));
+
+        $points = AppFaults::points([$requests[0]], $this->wholeFilePatch());
+        $this->assertSame([['again', 0, 'job'], ['later', 0, 'later']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
         $points[1]['fault']['request'] = 1;
 
         return [$requests, (array) AppFaults::measure($points, [1 => $requests], $this->wholeFilePatch())];
@@ -428,9 +461,10 @@ class TraceRecorderTest extends TestCase
         // The job is named as the notification it delivers; the app wrote no code in it.
         $this->assertSame([[[RecordedQueuedNotice::class, true]], [[RecordedJob::class, false]]], [$jobs($told), $jobs($worked)]);
         $this->assertContains('mail', array_column(array_filter($told['effects'], fn (array $effect) => $effect['job'] ?? false), 'kind'));
-        $this->assertSame([], AppFaults::points([$told], $this->wholeFilePatch()));
+        // It still waits on a queue: a worker runs what the notification says.
+        $this->assertSame(['later'], array_column(AppFaults::points([$told], $this->wholeFilePatch()), 'fails'));
         // The job changes a row after it sends: that save is a place of its own.
-        $this->assertSame(['again', 'retry'], array_column(AppFaults::points([$worked], $this->wholeFilePatch()), 'fails'));
+        $this->assertSame(['again', 'retry', 'later'], array_column(AppFaults::points([$worked], $this->wholeFilePatch()), 'fails'));
     }
 
     public function test_a_job_tried_again_after_its_save_failed_shows_what_it_sent_both_times()
@@ -454,7 +488,7 @@ class TraceRecorderTest extends TestCase
         $this->assertSame(1, User::query()->where('name', 'Told')->count());
 
         $points = AppFaults::points([$requests[0]], $this->wholeFilePatch());
-        $this->assertSame([['again', 0, 'job'], ['retry', 3, 'query']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
+        $this->assertSame([['again', 0, 'job'], ['retry', 3, 'query'], ['later', 0, 'later']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
         $points[1]['fault']['request'] = 1;
 
         $measured = (array) AppFaults::measure($points, [1 => $requests], $this->wholeFilePatch());
@@ -513,6 +547,40 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([['needs_job_done', 'POST /_failing/waited', 'job '.RecordedCarefulJob::class, 'missing mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
     }
 
+    public function test_a_job_that_takes_the_person_from_the_request_sends_nothing_when_a_worker_runs_it()
+    {
+        [$requests, $measured] = $this->thankOnAQueue(['from' => 'person']);
+
+        $this->assertSame([['job', 'mail'], ['job'], ['job', 'mail']], array_map(fn (array $request) => array_column($request['effects'], 'kind'), $requests));
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['job_needs_request', 'POST /_failing/thanked', 'job '.RecordedPersonalJob::class, 'missing mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
+    public function test_a_job_that_takes_what_the_person_sent_from_the_request_sends_nothing_when_a_worker_runs_it()
+    {
+        [, $measured] = $this->thankOnAQueue(['from' => 'sent', 'email' => 'sent@example.com']);
+
+        $this->assertSame([1, 0, ['job_needs_request']], [$measured['run'], $measured['missed'], array_column($measured['findings'], 'kind')]);
+    }
+
+    public function test_a_job_that_reads_the_session_sends_nothing_when_a_worker_runs_it()
+    {
+        $this->withSession(['email' => 'session@example.com']);
+
+        [, $measured] = $this->thankOnAQueue(['from' => 'session']);
+
+        $this->assertSame([1, 0, ['job_needs_request']], [$measured['run'], $measured['missed'], array_column($measured['findings'], 'kind')]);
+        $this->assertSame('session@example.com', session('email'));
+    }
+
+    public function test_a_job_that_was_given_what_it_needs_does_the_same_when_a_worker_runs_it()
+    {
+        [$requests, $measured] = $this->thankOnAQueue(['from' => 'given']);
+
+        $this->assertSame([['job', 'mail'], ['job', 'mail'], ['job', 'mail']], array_map(fn (array $request) => array_column($request['effects'], 'kind'), $requests));
+        $this->assertSame([1, 0, []], [$measured['run'], $measured['missed'], $measured['findings']]);
+    }
+
     public function test_a_job_the_app_sends_to_the_sync_queue_by_name_is_not_held_back()
     {
         Route::post('/_failing/ran', [RecordedApp::class, 'ran']);
@@ -542,7 +610,7 @@ class TraceRecorderTest extends TestCase
 
         // In use that job runs once and now. It is no place for a second run or a wait: its email and its last save are places of the request.
         $points = AppFaults::points([$request], $this->wholeFilePatch());
-        $this->assertSame([['again', 3, 'job'], ['retry', 6, 'query'], ['send', 1, 'mail'], ['save', 2, 'query']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
+        $this->assertSame([['again', 3, 'job'], ['retry', 6, 'query'], ['later', 3, 'later'], ['send', 1, 'mail'], ['save', 2, 'query']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
     }
 
     public function test_an_event_whose_found_listeners_run_in_the_reverse_order_shows_what_the_request_did_not_do()
