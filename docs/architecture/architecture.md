@@ -1643,12 +1643,14 @@ the coder can fix count against the repairs budget
 **Common safety mistakes are found by pattern, on added lines only.** The
 review scans the lines a change adds for unescaped Blade output (`{!! !!}`),
 `v-html`, queries built from values mixed into their text, models open to
-every field, and committed `.env` files (`builder.verification.safety_scan`).
-Each one found is a blocking finding that names the line and the safe way.
-Code the app already had is never held against a change. A comment on the
-line, or the line above, that says why it is safe lets it through: a reason
-a person can read and question. The owner sees the clean result as one line
-of the change's proof.
+every field, committed `.env` files, and live secret keys written into any
+file, such as a Stripe or AWS key or a private key
+(`builder.verification.safety_scan`). Each one found is a blocking finding
+that names the line and the safe way. Code the app already had is never
+held against a change. A comment on the line, or the line above, that says
+why it is safe lets it through: a reason a person can read and question. A
+secret key is never let through this way, because anyone with the code can
+use it. The owner sees the clean result as one line of the change's proof.
 
 **Shortcuts in PHP code are found by an analyser, on added lines only.**
 When a change touches the app's PHP code (not its tests), verification runs

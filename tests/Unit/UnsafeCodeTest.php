@@ -76,4 +76,21 @@ class UnsafeCodeTest extends TestCase
             UnsafeCode::finding(['rule' => 'unescaped_output', 'path' => 'resources/views/team.blade.php', 'line' => 4]),
         );
     }
+
+    public function test_a_secret_key_written_into_the_code_is_found_whatever_its_comment_says()
+    {
+        $stripe = 'sk_live_'.str_repeat('a1B2', 6);
+        $patch = implode("\n", [
+            $this->adding('app/Services/Billing.php', ['    // safe: only used in tests', "    \$key = '{$stripe}';"]),
+            $this->adding('config/services.php', ["        'key' => env('STRIPE_SECRET'),", "        'test' => 'sk_test_".str_repeat('x', 24)."',"]),
+            $this->adding('storage/keys/deploy', ['-----BEGIN OPENSSH PRIVATE KEY-----']),
+        ]);
+
+        $this->assertSame([
+            ['rule' => 'secret_in_code', 'path' => 'app/Services/Billing.php', 'line' => 4],
+            ['rule' => 'secret_in_code', 'path' => 'storage/keys/deploy', 'line' => 3],
+        ], UnsafeCode::found($patch));
+        $this->assertSame('Line 4 of app/Services/Billing.php writes a secret key into the code, where anyone with the code can read it and use it. Read it from a setting instead: config() in the code, env() in a file under config/, and the setting name with no value in .env.example.', UnsafeCode::finding(UnsafeCode::found($patch)[0]));
+        $this->assertFalse(UnsafeCode::scans($this->adding('storage/keys/deploy', ['nothing'])));
+    }
 }
