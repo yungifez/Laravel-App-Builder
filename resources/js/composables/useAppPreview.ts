@@ -1211,7 +1211,7 @@ export function useAppPreview(source: Source) {
     // A rebuild takes a few seconds; asking each second shows it sooner.
     const { start, stop } = usePoll(
         1000,
-        { only: ['preview', 'edits'] },
+        { only: ['preview', 'edits', 'designEdits'] },
         { autoStart: false },
     );
 
@@ -1277,7 +1277,7 @@ export function useAppPreview(source: Source) {
                 changes: batch.values,
             },
             {
-                only: ['edits', 'preview'],
+                only: ['edits', 'preview', 'designEdits'],
                 // Other visits, such as looking at the part again, must
                 // not cancel a save.
                 async: true,
@@ -1380,7 +1380,7 @@ export function useAppPreview(source: Source) {
                 revision: head.value ?? element.value?.revision,
             },
             {
-                only: ['edits', 'preview'],
+                only: ['edits', 'preview', 'designEdits'],
                 async: true,
                 preserveScroll: true,
                 preserveState: true,
@@ -1521,7 +1521,7 @@ export function useAppPreview(source: Source) {
             revision: head.value ?? element.value?.revision,
         };
         const options = {
-            only: ['edits', 'preview'],
+            only: ['edits', 'preview', 'designEdits'],
             async: true,
             preserveScroll: true,
             preserveState: true,
@@ -1647,7 +1647,7 @@ export function useAppPreview(source: Source) {
                 places: part.places ?? [],
             },
             {
-                only: ['edits', 'preview'],
+                only: ['edits', 'preview', 'designEdits'],
                 async: true,
                 preserveScroll: true,
                 preserveState: true,
@@ -1709,7 +1709,7 @@ export function useAppPreview(source: Source) {
                 revision: head.value ?? element.value?.revision,
             },
             {
-                only: ['edits', 'preview'],
+                only: ['edits', 'preview', 'designEdits'],
                 async: true,
                 preserveScroll: true,
                 preserveState: true,
@@ -1783,7 +1783,7 @@ export function useAppPreview(source: Source) {
                     head.value ?? element.value?.revision ?? preview.revision,
             },
             {
-                only: ['edits', 'preview'],
+                only: ['edits', 'preview', 'designEdits'],
                 async: true,
                 preserveScroll: true,
                 preserveState: true,
@@ -1901,7 +1901,7 @@ export function useAppPreview(source: Source) {
                 revision: head.value ?? element.value?.revision,
             },
             {
-                only: ['edits', 'preview'],
+                only: ['edits', 'preview', 'designEdits'],
                 async: true,
                 preserveScroll: true,
                 preserveState: true,
@@ -2355,7 +2355,7 @@ export function useAppPreview(source: Source) {
         }
 
         const options = {
-            only: ['edits', 'preview'],
+            only: ['edits', 'preview', 'designEdits'],
             async: true,
             preserveScroll: true,
             preserveState: true,
