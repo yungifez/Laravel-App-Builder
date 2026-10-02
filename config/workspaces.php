@@ -197,6 +197,9 @@ return [
         // A machine whose runner has not asked for work this long after it
         // started, or after it last asked, is deleted.
         'boot_minutes' => (int) env('WORKSPACE_MACHINES_BOOT_MINUTES', 10),
+        // After a new machine's runner never answered, no machine starts
+        // for this long: a wrong image or address fails every machine.
+        'boot_retry_minutes' => (int) env('WORKSPACE_MACHINES_BOOT_RETRY_MINUTES', 30),
         // The box image each machine runs, from a registry it can pull from.
         'box_image' => env('WORKSPACE_MACHINES_BOX_IMAGE'),
         // Where a machine's runner reaches the control plane; the app's

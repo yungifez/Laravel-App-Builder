@@ -10,7 +10,9 @@ use App\Workspaces\Machines\MachineCloudManager;
 use App\Workspaces\Machines\RunnerBootScript;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -20,6 +22,11 @@ use Throwable;
  */
 class ScaleRunnerPool
 {
+    /**
+     * Until when no machine starts, after one whose runner never answered.
+     */
+    public const PAUSED_UNTIL = 'workspaces:machines:paused-until';
+
     public function __construct(
         private MachineCloudManager $clouds,
         private PoolProvider $pool,
@@ -54,6 +61,14 @@ class ScaleRunnerPool
 
         if ($machines->count() < (int) config('workspaces.machines.max')
             && ($spare < $wanted || $machines->count() < (int) config('workspaces.machines.min'))) {
+            $pausedUntil = Cache::get(self::PAUSED_UNTIL);
+
+            // A machine that never answers will not answer the next time
+            // either; starting another each pass only pays for more.
+            if (is_int($pausedUntil) && $pausedUntil > now()->getTimestamp()) {
+                return [...$done, sprintf('Not starting machines until %s: the last new machine never answered. Check WORKSPACE_MACHINES_BOX_IMAGE and that machines can reach the control plane.', Carbon::createFromTimestamp($pausedUntil)->format('H:i'))];
+            }
+
             return [...$done, $this->start($name, $cloud)];
         }
 
@@ -112,6 +127,10 @@ class ScaleRunnerPool
                 ->where('last_seen_at', '<', $since)
                 ->orWhere(fn ($query) => $query->whereNull('last_seen_at')->where('created_at', '<', $since)))
             ->each(function (Runner $runner) use (&$done) {
+                if ($runner->last_seen_at === null) {
+                    $this->pauseStarting($runner);
+                }
+
                 try {
                     $closed = $this->retireRunner->gone($runner);
                     $done[] = "Deleted machine [{$runner->name}]: its runner stopped answering. Closed {$closed} workspace(s) on it.";
@@ -122,6 +141,19 @@ class ScaleRunnerPool
             });
 
         return $done;
+    }
+
+    /**
+     * Stop starting machines for a while, and tell the operator, since a
+     * machine whose runner never answered points at a setup problem.
+     */
+    protected function pauseStarting(Runner $runner): void
+    {
+        $minutes = (int) config('workspaces.machines.boot_retry_minutes');
+
+        Cache::put(self::PAUSED_UNTIL, now()->addMinutes($minutes)->getTimestamp(), now()->addMinutes($minutes));
+
+        report(new RuntimeException("Machine [{$runner->name}] started, but its runner never asked for work. No machine starts for {$minutes} minutes."));
     }
 
     /**

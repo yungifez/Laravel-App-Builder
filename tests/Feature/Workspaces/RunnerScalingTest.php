@@ -9,8 +9,10 @@ use App\Workspaces\Machines\RunnerBootScript;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
+use RuntimeException;
 use Tests\TestCase;
 
 class RunnerScalingTest extends TestCase
@@ -38,6 +40,7 @@ class RunnerScalingTest extends TestCase
             'workspaces.machines.spare_workspaces' => 2,
             'workspaces.machines.empty_minutes' => 20,
             'workspaces.machines.boot_minutes' => 10,
+            'workspaces.machines.boot_retry_minutes' => 30,
             'workspaces.machines.box_image' => 'registry.example.test/builder-box:1',
             'workspaces.machines.control_plane_url' => 'https://builder.example.test',
             'workspaces.machines.clouds.hetzner.token' => 'hetzner-test-token',
@@ -173,6 +176,38 @@ class RunnerScalingTest extends TestCase
         $this->assertFalse(Runner::query()->whereKey($neverBooted->id)->exists());
         $this->assertFalse(Runner::query()->whereKey($silent->id)->exists());
         $this->assertSame(0, Workspace::query()->where('driver_id', 'like', 'silent--%')->whereNot('status', WorkspaceStatus::Destroyed)->count());
+    }
+
+    public function test_no_machine_starts_for_a_while_after_a_new_one_never_answered()
+    {
+        Exceptions::fake();
+        $this->onCloud('never', '8', holding: 0, createdAt: now()->subMinutes(11), lastSeen: false);
+
+        // The machine is deleted, and the pool, now empty, does not start
+        // another one that would fail the same way.
+        $this->artisan('runners:scale')->expectsOutputToContain('never answered')->assertSuccessful();
+        $this->assertSame(['8'], $this->deleted);
+        $this->assertSame(0, Runner::query()->count());
+        Exceptions::assertReported(fn (RuntimeException $exception) => str_contains($exception->getMessage(), 'never asked for work'));
+
+        $this->travel(29)->minutes();
+        $this->artisan('runners:scale')->expectsOutputToContain('Not starting machines')->assertSuccessful();
+        $this->assertSame(0, Runner::query()->count());
+
+        $this->travel(2)->minutes();
+        $this->artisan('runners:scale')->expectsOutputToContain('Started machine')->assertSuccessful();
+        $this->assertSame(1, Runner::query()->count());
+    }
+
+    public function test_a_machine_that_went_silent_after_working_does_not_stop_new_ones()
+    {
+        $silent = $this->onCloud('silent', '9', holding: 0, createdAt: now()->subDay());
+        $silent->update(['last_seen_at' => now()->subMinutes(15)]);
+
+        $this->artisan('runners:scale')->assertSuccessful();
+
+        $this->assertSame(['9'], $this->deleted);
+        $this->assertSame(1, Runner::query()->count(), 'A new machine starts in its place.');
     }
 
     public function test_a_stray_machine_on_the_cloud_is_deleted_and_a_runner_waiting_for_its_id_gets_it()

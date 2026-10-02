@@ -215,7 +215,11 @@ one of these things:
   `WORKSPACE_MACHINES_EMPTY_MINUTES`, if the pool still has enough room
   without it.
 - It deletes a machine whose runner did not ask for work for
-  `WORKSPACE_MACHINES_BOOT_MINUTES`, and closes the workspaces on it.
+  `WORKSPACE_MACHINES_BOOT_MINUTES`, and closes the workspaces on it. If
+  the runner on a new machine never asked for work, no machine starts for
+  `WORKSPACE_MACHINES_BOOT_RETRY_MINUTES` (30). A wrong box image or
+  control plane address makes every machine fail, so the pool does not
+  pay for new ones. `runners:scale` and the log tell you when this occurs.
 - It deletes machines in the pool that no runner belongs to.
 
 Hetzner bills by the hour, so the pool costs little when nobody works.
