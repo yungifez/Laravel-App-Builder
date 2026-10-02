@@ -1855,7 +1855,11 @@ the job's name as the route. Most tests of a request put a fake in place of
 the queue, so the job's own test is where the job runs. The job is then run
 a second time, and tried again after its last save failed, the same way as
 a job a request dispatched. It is not held back, because no request ran
-before it. A job the app runs after its answer, a closure a test queues,
+before it. An email or an outside call the job makes is made to fail in it
+too: a queue takes a job that ends without an error as done, so a job that
+catches the failure and writes nothing to the log hid it. A job that lets
+the failure through is clean, because the queue then tries it again or
+keeps it as failed. A job the app runs after its answer, a closure a test queues,
 and a job of the framework that delivers one email are not recorded. One
 limit: a test that calls `handle()` on the job itself reaches no queue, and
 the job is not seen.

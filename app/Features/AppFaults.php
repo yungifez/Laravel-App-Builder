@@ -90,7 +90,10 @@ namespace App\Features;
  * Most tests of a request put a fake in place of the queue, so the job's
  * own test is where the job runs. It is run a second time, and tried again
  * after its last save failed, the same way as a job a request dispatched.
- * It is not held back: nothing ran before it that it could need.
+ * It is not held back: nothing ran before it that it could need. An email
+ * or an outside call it makes is made to fail in it too. A queue takes a
+ * job that ends without an error as done, so a job that catches that
+ * failure and writes nothing to the log hid it.
  */
 class AppFaults
 {
@@ -220,6 +223,7 @@ class AppFaults
             }
 
             $route = $request['method'].' '.($request['route'] ?? '?');
+            $alone = $request['method'] === AppTraces::JOB;
             $stayed = AppTraces::saved($request['effects']);
             $found = [];
             $jobs = [];
@@ -238,6 +242,11 @@ class AppFaults
                 }
 
                 if ($effect['job'] ?? false) {
+                    // A job that ran by itself is all of its trace: what it sends can fail in it.
+                    if ($alone && in_array($effect['kind'], self::FAILS, true)) {
+                        $found[] = [self::SEND, $place, $effect];
+                    }
+
                     continue;
                 }
 
@@ -262,7 +271,7 @@ class AppFaults
                 $does = $effect['kind'] === 'job' ? self::ran($request['effects'], $place) : [];
                 [$its, $after] = $does !== [] ? self::around($request['effects'], $place) : [[], []];
 
-                if ($request['method'] !== AppTraces::JOB && ($after !== [] || array_any($does, fn (array $effect, int $at) => in_array($effect['kind'], self::SENT, true) || (isset($stayed[$at]) && is_string($effect['at'] ?? null))))) {
+                if (! $alone && ($after !== [] || array_any($does, fn (array $effect, int $at) => in_array($effect['kind'], self::SENT, true) || (isset($stayed[$at]) && is_string($effect['at'] ?? null))))) {
                     $jobs[] = [self::LATER, $place, $effect, array_any([...$its, ...$after], $new), 'later'];
                 }
 
@@ -470,10 +479,15 @@ class AppFaults
     public static function describe(array $finding): string
     {
         $at = fn (string $before, string $after = '') => $finding['at'] === null ? '' : "{$before} {$finding['at']}{$after}";
-        // An artisan command has no response and no status: it ends well or it does not.
+        // An artisan command, or a job that ran by itself, has no response and no status: it ends well or it does not.
         $command = AppTraces::command($finding['route']) !== null;
-        $run = $command ? 'command' : 'request';
-        $end = $command ? 'the command ended' : 'the response';
+        $job = AppTraces::job($finding['route']) !== null;
+        $run = match (true) {
+            $command => 'command',
+            $job => 'job',
+            default => 'request',
+        };
+        $end = $command || $job ? "the {$run} ended" : 'the response';
 
         $said = match ($finding['kind']) {
             self::DONE_TWICE => "when {$finding['failed']}{$at(', queued at', ',')} ran a second time, it sent or added the same thing again: {$finding['what']}",
@@ -486,7 +500,7 @@ class AppFaults
             self::SAVED_THEN_FAILED => "when {$finding['failed']} failed{$at(' at')}, the {$run} ended in ".($command ? 'an error' : 'a server error')." but had already saved: {$finding['what']}",
             self::SENT_THEN_LOST => "when {$finding['failed']} failed{$at(' at')}, the save was lost but the {$run} had already sent: {$finding['what']}",
             self::SAVED_IN_PART => "when {$finding['failed']} failed{$at(' at')}, the save was lost but the {$run} kept what it had saved before it, with no transaction around both: {$finding['what']}",
-            self::FAILURE_HIDDEN => "when {$finding['failed']} failed{$at(' at')}, the app caught the failure and hid it: the {$run} did nothing new, ".($command ? 'ended the same' : 'gave the same kind of answer').' as when all worked, and wrote nothing to the log',
+            self::FAILURE_HIDDEN => "when {$finding['failed']} failed{$at(' at')}, the app caught the failure and hid it: the {$run} did nothing new, ".($command || $job ? 'ended the same' : 'gave the same kind of answer').' as when all worked, and wrote nothing to the log',
             default => "when {$finding['failed']} failed{$at(' at')}, {$finding['kind']}: {$finding['what']}",
         };
 
@@ -507,6 +521,7 @@ class AppFaults
         $fix = match (true) {
             $command && $finding['kind'] === self::SAVED_THEN_FAILED => 'The schedule runs the command again, and what the failed run saved is still there: the command then skips that work or does it twice. Save that the work is done only after the send worked, or make the command safe to run again.',
             $command && $finding['kind'] === self::FAILURE_HIDDEN => 'No one reads what a command prints when the schedule runs it. Let it fail, or record the failure with report().',
+            AppTraces::job($finding['route']) !== null && $finding['kind'] === self::FAILURE_HIDDEN => 'A queue takes a job that ends without an error as done, and does not try it again. Let the job fail, or record the failure with report().',
             default => self::fix($finding['kind']),
         };
 

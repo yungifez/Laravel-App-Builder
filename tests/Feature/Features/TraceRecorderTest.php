@@ -29,6 +29,7 @@ use Tests\Fixtures\RecordedApp;
 use Tests\Fixtures\RecordedCarefulJob;
 use Tests\Fixtures\RecordedCommand;
 use Tests\Fixtures\RecordedEvent;
+use Tests\Fixtures\RecordedHushedJob;
 use Tests\Fixtures\RecordedJob;
 use Tests\Fixtures\RecordedMail;
 use Tests\Fixtures\RecordedMarksReady;
@@ -725,8 +726,8 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([['done'], RecordedJob::class, null], [$requests[0]['shape'], $requests[0]['effects'][0]['what'], $requests[0]['effects'][0]['at']]);
         $this->assertSame(['job', [RecordedJob::class.'::handle']], [$requests[0]['effects'][1]['phase'], $requests[0]['effects'][1]['frames']]);
         $this->assertStringStartsWith('tests/Fixtures/RecordedJob.php:', (string) $requests[0]['effects'][1]['at']);
-        // It is run a second time and tried again. It is not held back: no request ran before it.
-        $this->assertSame(['again', 'retry'], array_column(AppFaults::points([$requests[0]], $this->wholeFilePatch('tests/Fixtures/RecordedJob.php')), 'fails'));
+        // Its email is made to fail, and it is run a second time and tried again. It is not held back: no request ran before it.
+        $this->assertSame(['send', 'again', 'retry'], array_column(AppFaults::points([$requests[0]], $this->wholeFilePatch('tests/Fixtures/RecordedJob.php')), 'fails'));
     }
 
     public function test_a_job_that_runs_by_itself_and_is_not_safe_to_run_again_is_found()
@@ -764,12 +765,58 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([], AppTraces::measure($requests, $this->wholeFilePatch('tests/Fixtures/RecordedCarefulJob.php'))['findings'] ?? null);
 
         $points = AppFaults::points([$requests[0]], $this->wholeFilePatch('tests/Fixtures/RecordedCarefulJob.php'));
-        $this->assertSame([['again', 0, 'job'], ['retry', 3, 'query']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
-        $points[1]['fault']['request'] = 1;
+        $this->assertSame([['send', 2, 'mail'], ['again', 0, 'job'], ['retry', 3, 'query']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
+        $points[2]['fault']['request'] = 1;
 
-        $measured = (array) AppFaults::measure($points, [1 => $requests], $this->wholeFilePatch('tests/Fixtures/RecordedCarefulJob.php'));
+        $measured = (array) AppFaults::measure($points, [2 => $requests], $this->wholeFilePatch('tests/Fixtures/RecordedCarefulJob.php'));
         $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
         $this->assertSame([['sent_again', 'JOB '.RecordedCarefulJob::class, 'job '.RecordedCarefulJob::class, 'mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
+    public function test_a_job_that_runs_by_itself_and_catches_a_failure_hid_it()
+    {
+        $recorded = $this->recordWithFailure(effect: 2, kind: 'mail');
+
+        RecordedHushedJob::dispatch();
+        RecordedHushedJob::dispatch();
+
+        $requests = $recorded();
+        $this->assertSame([[200, ['done'], null, false], [200, ['done'], 2, true]], array_map(fn (array $request) => [$request['status'], $request['shape'], $request['fault'] ?? null, $request['quiet'] ?? false], $requests));
+
+        $measured = $this->measureFailure($requests, 'mail message', RecordedHushedJob::PATH);
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['failure_hidden', 'JOB '.RecordedHushedJob::class, 'mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed']], $measured['findings']));
+        $this->assertStringContainsString('the job did nothing new, ended the same as when all worked, and wrote nothing to the log', AppFaults::describe($measured['findings'][0]));
+        $this->assertStringContainsString('A queue takes a job that ends without an error as done', AppFaults::finding($measured['findings'][0]));
+    }
+
+    public function test_a_job_that_runs_by_itself_and_records_or_lets_through_a_failure_is_clean()
+    {
+        $recorded = $this->recordWithFailure(effect: 2, kind: 'mail');
+
+        RecordedHushedJob::dispatch(recorded: true);
+        RecordedHushedJob::dispatch(recorded: true);
+
+        $requests = $recorded();
+        $this->assertSame([[200, null, false], [200, 2, false]], array_map(fn (array $request) => [$request['status'], $request['fault'] ?? null, $request['quiet'] ?? false], $requests));
+        $measured = $this->measureFailure($requests, 'mail message', RecordedHushedJob::PATH);
+        $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+    }
+
+    public function test_a_job_that_runs_by_itself_and_fails_with_its_email_is_clean()
+    {
+        $recorded = $this->recordWithFailure(effect: 2, kind: 'mail');
+
+        RecordedJob::dispatch();
+        // The queue has the failed job: it tries it again, or keeps it as failed.
+        rescue(function () {
+            RecordedJob::dispatch();
+        }, report: false);
+
+        $requests = $recorded();
+        $this->assertSame([[200, ['done'], null], [500, ['error'], 2]], array_map(fn (array $request) => [$request['status'], $request['shape'], $request['fault'] ?? null], $requests));
+        $measured = $this->measureFailure($requests, 'mail message', 'tests/Fixtures/RecordedJob.php');
+        $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
     }
 
     public function test_a_job_of_the_framework_that_delivers_a_notification_is_marked_and_is_no_place_to_run_twice()
