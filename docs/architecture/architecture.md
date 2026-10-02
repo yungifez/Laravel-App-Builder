@@ -1909,7 +1909,8 @@ can be caused, in requests that ran the change's code:
   does not fail. Tests run a queued job where it is dispatched. In use it
   waits on a queue and runs after the response. So the job is held back and
   runs when the response is made. A job the app sends to the sync queue by
-  name (`dispatch_sync`) runs in place in use too, and is never held.
+  name (`dispatch_sync`, or a job that names the `sync` connection) is not
+  such a job, and is never held.
 - **An event.** Each event a request dispatches that has two or more
   listeners Laravel found by itself (event discovery). This place does not
   fail. The found listeners run in the reverse order. Laravel takes found
@@ -2014,6 +2015,12 @@ of the request, because in use that job runs later on a queue. The job as a
 whole is the place, and the save after its send is a second place of the
 job. Both are tried with the jobs, before the saves of the request. They
 are the change's when the change queues the job or wrote what it does. A
+job the app sends to the sync queue by name is different: in use it runs
+where the app dispatches it, once, and its error is the request's. The
+recorder reads the connection the job names, does not mark the job, and
+what the job does is a place of the request. A queued listener or a queued
+email that names the `sync` connection in its own class, and an encrypted
+job, keep the mark: the job the queue gets does not show that name. A
 job that waits is the job's third place, and is the change's too when the
 change wrote what the request does after the job. An
 event is tried with the jobs too. It is the change's when the change

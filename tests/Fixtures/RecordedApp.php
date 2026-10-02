@@ -233,6 +233,17 @@ class RecordedApp
         return response()->noContent();
     }
 
+    /**
+     * Runs one job in place by name, then queues one.
+     */
+    public function both(): Response
+    {
+        dispatch_sync(new RecordedJob);
+        RecordedJob::dispatch();
+
+        return response()->noContent();
+    }
+
     public function told(User $user): Response
     {
         $user->notify(new RecordedQueuedNotice);

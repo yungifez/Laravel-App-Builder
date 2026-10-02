@@ -129,7 +129,7 @@ class Recorder
     /** How many jobs the sync queue is running now, one inside the other. */
     protected int $jobs = 0;
 
-    /** @var list<int|null> The place in the trace of each job the sync queue is running now */
+    /** @var list<int|false|null> The place in the trace of each job the sync queue is running now; false for a job the app runs in place */
     protected array $running = [];
 
     /** @var list<Closure(): mixed> The jobs held back until the response is made */
@@ -212,6 +212,13 @@ class Recorder
         $events->listen(JobProcessing::class, function (JobProcessing $event) {
             // The sync queue runs a job where it is dispatched, without queueing it.
             if ($event->connectionName === 'sync') {
+                // A job the app runs in place by name is part of the request in use too.
+                if ($this->inPlace($event->job)) {
+                    $this->running[] = false;
+
+                    return;
+                }
+
                 // A job that was held back is noted where it was dispatched.
                 $noted = $this->releasing && $this->jobs === 0;
                 $this->running[] = $this->operation === null || $noted ? null : count($this->operation['effects']);
@@ -225,8 +232,13 @@ class Recorder
         });
         $events->listen([JobProcessed::class, JobExceptionOccurred::class], function (JobProcessed|JobExceptionOccurred $event) {
             if ($event->connectionName === 'sync') {
-                $this->jobs = max(0, $this->jobs - 1);
                 $place = array_pop($this->running);
+
+                if ($place === false) {
+                    return;
+                }
+
+                $this->jobs = max(0, $this->jobs - 1);
 
                 if ($event instanceof JobProcessed) {
                     $this->again($event->job, $place);
@@ -429,7 +441,7 @@ class Recorder
      * Add one thing the request did, with how many transactions of its own
      * were open around it and the code of the app it came from.
      * What a job on the sync queue does is marked: in use that job runs
-     * later, on a queue.
+     * later, on a queue. A job the app runs in place by name is not marked.
      *
      * @param  array<string, mixed>  $effect
      * @param  (Closure(): Throwable)|null  $fails  How this thing fails in use, when it can be made to
@@ -511,6 +523,24 @@ class Recorder
             'Illuminate\\Mail\\SendQueuedMailable',
             'Illuminate\\Broadcasting\\BroadcastEvent',
         ], true);
+    }
+
+    /**
+     * Determine if the app sent a job to the sync queue by name
+     * (`dispatch_sync`, or a connection the job names). In use that job
+     * runs where it is dispatched too, once, and its error is the
+     * request's. Only the name of the connection is read from the job.
+     */
+    protected function inPlace(object $job): bool
+    {
+        try {
+            $command = method_exists($job, 'payload') ? ($job->payload()['data']['command'] ?? null) : null;
+            $command = is_string($command) ? @unserialize($command, ['allowed_classes' => false]) : null;
+        } catch (Throwable) {
+            return false;
+        }
+
+        return is_object($command) && (((array) $command)['connection'] ?? null) === 'sync';
     }
 
     /**

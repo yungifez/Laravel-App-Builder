@@ -522,8 +522,27 @@ class TraceRecorderTest extends TestCase
         $this->post('/_failing/ran')->assertNoContent();
 
         $requests = $recorded();
-        $this->assertSame(['job', 'query', 'mail', 'query'], array_column($requests[1]['effects'], 'kind'));
+        $this->assertSame(['query', 'mail', 'query'], array_column($requests[1]['effects'], 'kind'));
         $this->assertSame([[null, $requests[0]['effects']]], [[$requests[1]['fault'] ?? null, $requests[1]['effects']]]);
+    }
+
+    public function test_a_job_the_app_runs_in_place_by_name_is_part_of_the_request()
+    {
+        Route::post('/_recorded/both', [RecordedApp::class, 'both']);
+        $recorded = $this->record();
+
+        $this->post('/_recorded/both')->assertNoContent();
+
+        [$request] = $recorded();
+        $did = array_map(fn (array $effect) => [AppTraces::verb($effect['sql'] ?? '') ?: $effect['kind'], $effect['job'] ?? false], $request['effects']);
+
+        // Only the job the queue takes is marked. The one before it ran where the app's code is.
+        $this->assertSame([['insert', false], ['mail', false], ['update', false], ['job', false], ['insert', true], ['mail', true], ['update', true]], $did);
+        $this->assertStringStartsWith('tests/Fixtures/RecordedJob.php:', $request['effects'][1]['at']);
+
+        // In use that job runs once and now. It is no place for a second run or a wait: its email and its last save are places of the request.
+        $points = AppFaults::points([$request], $this->wholeFilePatch());
+        $this->assertSame([['again', 3, 'job'], ['retry', 6, 'query'], ['send', 1, 'mail'], ['save', 2, 'query']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
     }
 
     public function test_an_event_whose_found_listeners_run_in_the_reverse_order_shows_what_the_request_did_not_do()
