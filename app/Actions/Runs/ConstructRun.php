@@ -342,6 +342,7 @@ class ConstructRun
             projectContext: $pack->text ?? '',
             classification: $classification,
             areaNames: array_map(fn ($capability) => $capability->name, $projectContext->capabilities),
+            changeEvidence: $verification->evidence ?? [],
         ));
 
         $verified = $this->assessVerifyItems->handle($plan, $review, (string) $featureRequest->patch, $verification->results ?? []);
