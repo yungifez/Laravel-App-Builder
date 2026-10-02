@@ -7,6 +7,7 @@ use App\Actions\Runs\AcquireRunLease;
 use App\Actions\Runs\PrepareRunWorkspace;
 use App\Context\ProjectNotes;
 use App\Enums\RunStatus;
+use App\Features\AppDrift;
 use App\Jobs\ExecuteRun;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -149,6 +150,23 @@ class ChangeAcceptanceTest extends TestCase
         $this->assertSame($request->refresh()->commit_sha, $triaged['commit']);
         $this->assertSame(['real', 'not_real'], array_column($triaged['shortcuts'], 'verdict'));
         $this->assertSame(2, $request->latestRun->events()->where('type', 'model_call')->where('data->role', 'triage')->count());
+    }
+
+    public function test_keeping_a_change_moves_each_areas_ceiling_down_and_up_only_where_the_owner_wants_it()
+    {
+        $request = $this->completedChange(self::ADD_COMMENT);
+        $this->project->forceFill(['drift_ceilings' => ['billing' => 5.0, 'blog' => 3.0, 'orders' => 2.0]])->save();
+        Verification::factory()->for($request)->create(['evidence' => ['drift' => ['areas' => [
+            'billing' => ['requests' => 4, 'effects' => 8, 'per' => 2.0],
+            'blog' => ['requests' => 4, 'effects' => 40, 'per' => 10.0],
+            'orders' => ['requests' => 4, 'effects' => 16, 'per' => 4.0],
+        ], 'findings' => []]]]);
+        $request->acceptedFindings()->create(['kind' => AppDrift::GREW, 'identity' => AppDrift::GREW.'|blog', 'user_id' => $this->owner->id]);
+
+        $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $request))->assertSessionHasNoErrors();
+
+        // Orders grew without the owner's word, so later changes are held to the old ceiling.
+        $this->assertSame(['billing' => 2.2, 'blog' => 11, 'orders' => 2], $this->project->refresh()->drift_ceilings);
     }
 
     public function test_a_shortcut_a_follow_up_took_out_is_not_weighed()

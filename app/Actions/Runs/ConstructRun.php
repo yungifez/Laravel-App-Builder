@@ -22,6 +22,7 @@ use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Features\AppBoundaries;
 use App\Features\AppContainment;
+use App\Features\AppDrift;
 use App\Features\AppFaults;
 use App\Features\BoundaryCode;
 use App\Features\Exceptions\CannotGenerateFeature;
@@ -512,6 +513,15 @@ class ConstructRun
         }
 
         $careful = $featureRequest->project->careful_areas ?? [];
+
+        // Work that grew far past an area's ceiling, in a careful area.
+        foreach ($evidence['drift']['findings'] ?? [] as $finding) {
+            $identity = AppDrift::identity($finding);
+
+            if ($finding['far'] && in_array($finding['area'], $careful, true) && ! in_array($identity, $accepted, true)) {
+                $gate[] = ['kind' => AppDrift::GREW, 'identity' => $identity, 'text' => AppDrift::finding($finding, $finding['name'])];
+            }
+        }
 
         if ($careful === [] || (($boundaries['read'] ?? []) === [] && ($evidence['containment']['findings'] ?? []) === [])) {
             return $gate;

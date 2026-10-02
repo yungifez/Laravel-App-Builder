@@ -821,6 +821,22 @@ return [
             'asks' => (int) env('BUILDER_PROPOSAL_ASKS', 3),
         ],
 
+        // How much work the app does per request in each area of its notes
+        // (direction 33, a drift measure): the queries, and what it queues
+        // and sends, of the area's own files, read from the recording. Each
+        // area keeps a ceiling, set when a change is kept, with "slack" of
+        // room. Work more than "tolerance" past it goes to the reviewer as
+        // a note. In a part the owner asked to be extra careful with, work
+        // more than "strict" past it sends the change back. An area seen in
+        // fewer than "least" requests is not measured.
+        'drift' => [
+            'enabled' => (bool) env('BUILDER_DRIFT', true),
+            'least' => 3,
+            'slack' => 0.1,
+            'tolerance' => 0.25,
+            'strict' => 1.0,
+        ],
+
         // What the app leaves behind when one thing fails (direction 32).
         // Once the checks pass, the recorder makes one thing fail in one
         // request of one test: an email that cannot be sent, an outside

@@ -8,7 +8,8 @@ that does not count a finding that only moved (§16.1), exceptions the owner
 gives in the proof for one change (§16.3: the agent may propose one with a
 reason, only the owner grants it, and the agent may ask about at most three
 findings per change; the owner-level budget and review dates wait for
-developer roles), strict mode per area ("Be extra careful here"),
+developer roles), strict mode per area ("Be extra careful here"), the
+drift measure of work per request per area with its ratchet (§16.1),
 containment read from where the app already calls each outside service
 (reviewer only, not yet confirmed by developers), the job that runs twice,
 the job retried after its save failed, the outside call made again after no

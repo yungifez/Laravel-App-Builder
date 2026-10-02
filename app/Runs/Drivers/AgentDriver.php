@@ -10,6 +10,7 @@ use App\Ai\Agents\FeaturePlanner;
 use App\Enums\ModelRole;
 use App\Features\AcceptanceSelector;
 use App\Features\AppBoundaries;
+use App\Features\AppDrift;
 use App\Features\AppFaults;
 use App\Features\AppTraces;
 use App\Features\NewTests;
@@ -336,6 +337,13 @@ abstract class AgentDriver implements ConstructionDriver
         if (($measured['containment']['findings'] ?? []) !== []) {
             $parts[] = "The rest of the app calls each of these outside services only from certain areas. So one place knows how to talk to each service. The new code calls them from somewhere else. Unless the plan asks for that, call them through the code that already does:\n"
                 .$this->list(array_map($this->contained(...), $measured['containment']['findings']));
+        }
+
+        $grew = array_values(array_filter($measured['drift']['findings'] ?? [], fn (array $finding) => ! in_array(AppDrift::identity($finding), $accepted, true)));
+
+        if ($grew !== []) {
+            $parts[] = "The work each request does grew in these areas of the app, counted from the recording: the queries, and what each request queued and sent, of each area's own files. The count depends on the tests, so judge it against the plan. Growth the plan does not need is a reason to ask for eager loading or less repeated work:\n"
+                .$this->list(array_map(fn (array $finding) => AppDrift::describe($finding, $finding['name']), $grew));
         }
 
         if (isset($measured['faults'])) {

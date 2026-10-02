@@ -27,6 +27,7 @@ use Laravel\Sanctum\HasApiTokens;
  * @property bool $started_here Whether the app was started here from the template, not brought in
  * @property bool|null $keep_old_working The owner's choice to keep old data and links working; null leaves it to mayBeInUse()
  * @property list<string>|null $careful_areas The keys of the areas the owner asked to be extra careful with
+ * @property array<string, float|int>|null $drift_ceilings The most work per request each area may do, by area key (AppDrift)
  * @property string|null $deploy_remote The Git remote the hosting platform deploys from, credentials included
  * @property string|null $live_url Where the hosting platform serves the app
  * @property string|null $deploy_branch
@@ -75,6 +76,7 @@ class Project extends Model
             'started_here' => 'boolean',
             'keep_old_working' => 'boolean',
             'careful_areas' => 'array',
+            'drift_ceilings' => 'array',
             'service_keys' => 'encrypted:array',
             'share_token' => 'encrypted',
             'share_expires_at' => 'datetime',

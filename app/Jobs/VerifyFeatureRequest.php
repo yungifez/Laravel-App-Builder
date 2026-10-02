@@ -14,6 +14,7 @@ use App\Enums\VerificationStatus;
 use App\Features\AcceptanceSuite;
 use App\Features\AppBoundaries;
 use App\Features\AppContainment;
+use App\Features\AppDrift;
 use App\Features\AppFaults;
 use App\Features\AppRoutes;
 use App\Features\AppTraces;
@@ -214,6 +215,7 @@ class VerifyFeatureRequest implements ShouldQueue
             $this->observeTraces($featureRequest);
             $this->observeBoundaries($featureRequest);
             $this->observeContainment($featureRequest);
+            $this->observeDrift($featureRequest);
 
             $this->finish(match (true) {
                 $acceptance === self::OUTCOME_ERRORED => VerificationStatus::Errored,
@@ -852,6 +854,37 @@ class VerifyFeatureRequest implements ShouldQueue
                 $featureRequest->patch,
                 fn (string $path) => array_map(fn (string $key) => $names[$key] ?? $key, $context->claiming($path)),
             ));
+        });
+    }
+
+    /**
+     * Count the work per request in each area of the app, and find the
+     * areas where it grew past the ceiling set when the app was last kept
+     * (direction 33, a drift measure). The areas are the project's notes
+     * before the change. It runs nothing and never changes the checks'
+     * result.
+     */
+    protected function observeDrift(FeatureRequest $featureRequest): void
+    {
+        if (! config('builder.verification.drift.enabled') || $this->requests === []) {
+            return;
+        }
+
+        rescue(function () use ($featureRequest) {
+            $context = app(ReadProjectContext::class)->current($featureRequest->project);
+            $names = array_map(fn (Capability $capability) => $capability->name, $context->capabilities);
+            $measured = AppDrift::measure($this->requests, $context->claiming(...), config()->integer('builder.verification.drift.least'));
+
+            if ($measured === []) {
+                return;
+            }
+
+            $grown = AppDrift::grown($measured, $featureRequest->project->drift_ceilings ?? [], config()->float('builder.verification.drift.tolerance'), config()->float('builder.verification.drift.strict'));
+
+            $this->keepEvidence('drift', [
+                'areas' => $measured,
+                'findings' => array_map(fn (array $finding) => [...$finding, 'name' => $names[$finding['area']] ?? $finding['area']], $grown),
+            ]);
         });
     }
 

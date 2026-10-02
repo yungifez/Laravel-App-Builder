@@ -695,6 +695,33 @@ class AgentDriverTest extends TestCase
         $this->assertSame(RunStatus::Completed, $run->refresh()->status);
     }
 
+    public function test_work_that_grew_far_sends_the_change_back_only_in_a_part_the_owner_is_careful_with()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder(
+            $this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]),
+            $this->writes([], 'Loaded the invoices with their lines.'),
+        );
+        $approve = ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]];
+        ChangeReviewer::fake([$approve, $approve]);
+        $drift = fn (array $findings) => ['drift' => ['areas' => [], 'findings' => $findings]];
+        $blog = ['area' => 'blog', 'per' => 9.0, 'ceiling' => 3.0, 'far' => true, 'name' => 'Blog'];
+
+        $request = $this->request();
+        $request->project->forceFill(['careful_areas' => ['billing']])->save();
+        $run = app(StartRun::class)->handle($request)->refresh();
+        $this->passVerification($run, evidence: $drift([['area' => 'billing', 'per' => 12.0, 'ceiling' => 4.0, 'far' => true, 'name' => 'Billing'], $blog]));
+
+        $this->assertSame(1, $run->refresh()->repairs);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'B1: Billing now does 12 things per request while the tests run') && ! str_contains($prompt, 'Blog now does'));
+        // Elsewhere it is a note the reviewer judges against the plan.
+        ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'The work each request does grew in these areas of the app') && str_contains($prompt->prompt, 'Blog: 9 things per request, up from at most 3 when the app was last kept'));
+
+        $this->passVerification($run, evidence: $drift([$blog]));
+
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+    }
+
     public function test_the_agent_may_ask_to_keep_what_the_gate_found_but_only_the_owners_yes_lets_it_stay()
     {
         FeaturePlanner::fake([$this->plan()]);

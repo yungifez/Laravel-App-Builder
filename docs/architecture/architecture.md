@@ -1875,6 +1875,19 @@ boundary finding read from the code only, and a call to an outside service
 from outside the code that already calls it (`AppContainment`). Elsewhere
 they stay with the reviewer, because the plan may ask for them.
 
+`AppDrift` counts the work each request does in each area of the notes:
+the queries, and what the area's own files queue and send, read from the
+recording. An area seen in fewer than three requests is not measured. Each
+area keeps a ceiling in the control plane (`projects.drift_ceilings`), set
+when a change is kept. The ceiling moves down when the area does less. It
+moves up only when the owner said they want the growth, so twenty small
+increases cannot add up unnoticed. Work more than 25% past the ceiling is a
+note for the reviewer, because the count depends on the tests. In a careful
+area, work more than twice the ceiling sends the change back, and the
+owner reads it in the proof with "I want it this way". The numbers stay
+with the reviewer; the owner reads "steps of work"
+(`builder.verification.drift`).
+
 The recording only shows what the tests run, and it never shows the app
 start. So `BoundaryCode` also reads the PHP files the change touched, as the
 change leaves them, before anything takes the change out of the workspace.

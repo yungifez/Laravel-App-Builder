@@ -9,6 +9,7 @@ use App\Context\NotesDocument;
 use App\Enums\VerificationStatus;
 use App\Features\AppBoundaries;
 use App\Features\AppContainment;
+use App\Features\AppDrift;
 use App\Features\AppFaults;
 use App\Features\AppRoutes;
 use App\Features\AppTraces;
@@ -59,7 +60,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return $this->asked($featureRequest, array_values(collect($lines)->unique('text')->all()));
@@ -82,6 +83,7 @@ class DescribeProof
 
         $careful = [
             AppContainment::CALLED_ELSEWHERE => 'In a part you asked me to be extra careful with, your app now talks to an outside service from a new place.',
+            AppDrift::GREW => 'In a part you asked me to be extra careful with, your app now does much more work each time someone uses it.',
             AppBoundaries::CHANGED_WHILE_BOOTING => 'In a part you asked me to be extra careful with, your app now does something each time it starts.',
             AppBoundaries::CHANGED_WHILE_AUTHORIZING => 'In a part you asked me to be extra careful with, your app may save or send something while it checks who may do something.',
             AppBoundaries::CHANGED_WHILE_VALIDATING => 'In a part you asked me to be extra careful with, your app may save or send something while it checks what was filled in.',
@@ -411,6 +413,40 @@ class DescribeProof
         }
 
         return [['kind' => 'passed', 'text' => __('While its tests used the new code, your app never saved or sent anything while checking who may do something, checking what was filled in, or putting a page together.')]];
+    }
+
+    /**
+     * Say where the change made a part the owner asked to be extra careful
+     * with do far more work each time someone uses it (direction 33, a
+     * drift measure). Elsewhere growth is only a note for the reviewer, so
+     * the owner reads nothing about it. The owner may say they want it:
+     * then that part is held to the new amount from now on.
+     *
+     * @return list<array{kind: string, text: string, decision?: array{change: string, finding: string, accepted: bool}}>
+     */
+    protected function drift(FeatureRequest $featureRequest, Verification $verification): array
+    {
+        $careful = $featureRequest->project->careful_areas ?? [];
+        $found = array_values(array_filter($verification->evidence['drift']['findings'] ?? [], fn (array $finding) => $finding['far'] && in_array($finding['area'], $careful, true)));
+
+        if ($found === []) {
+            return [];
+        }
+
+        $accepted = $this->acceptFindings->identities($featureRequest);
+        $left = array_values(array_filter($found, fn (array $finding) => ! in_array(AppDrift::identity($finding), $accepted, true)));
+        $finding = $left[0] ?? $found[0];
+        $words = ['name' => $finding['name'], 'per' => $finding['per'], 'ceiling' => $finding['ceiling']];
+        $line = $left !== []
+            ? ['kind' => 'gap', 'text' => __('In :name, a part you asked me to be extra careful with, your app now does about :per steps of work each time someone uses it, up from :ceiling. More work makes it slower.', $words)]
+            : ['kind' => 'chosen', 'text' => __('You said you want this: :name now does about :per steps of work each time someone uses it, up from :ceiling. From now on I hold it to that.', $words)];
+
+        // A kept change is part of the app: there is nothing left to decide.
+        if (! $featureRequest->isAccepted()) {
+            $line['decision'] = ['change' => $featureRequest->uuid, 'finding' => AppDrift::GREW, 'accepted' => $left === []];
+        }
+
+        return [$line];
     }
 
     /**

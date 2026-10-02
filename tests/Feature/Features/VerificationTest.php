@@ -1089,6 +1089,36 @@ class VerificationTest extends TestCase
         ]], $change->verifications()->sole()->evidence['containment']);
     }
 
+    public function test_the_work_per_request_of_each_area_is_kept_with_the_areas_that_grew_past_their_ceiling()
+    {
+        $map = ['sh', '-c', 'make the test map'];
+        config([
+            'builder.verification.test_map' => [...config('builder.verification.test_map'), 'command' => $map, 'report' => 'covered.txt', 'listing' => 'tests.xml'],
+            'builder.verification.traces' => ['enabled' => true, 'report' => 'trace.jsonl', 'repeats' => 3],
+            'builder.verification.drift' => ['enabled' => true, 'least' => 2, 'slack' => 0.1, 'tolerance' => 0.25, 'strict' => 1.0],
+        ]);
+        $this->mock(ReadProjectContext::class, fn ($mock) => $mock->shouldReceive('current')->andReturn(new ProjectContext(capabilities: [
+            'billing' => new Capability('billing', 'Billing', paths: ['app/Billing/*']),
+        ])));
+        $this->driver->onExec = function (string $workspace, array $command) use ($map) {
+            if ($command === $map) {
+                $request = fn (int $queries) => json_encode(['test' => 'Tests\Feature\InvoiceTest::test_people_read_invoices', 'method' => 'GET', 'route' => '/invoices', 'status' => 200, 'refused' => false, 'blind' => [], 'effects' => array_fill(0, $queries, ['kind' => 'query', 'sql' => 'select * from invoices', 'open' => 0, 'at' => 'app/Billing/Invoices.php:12'])]);
+                $this->driver->files["{$workspace}:trace.jsonl"] = $request(4)."\n".$request(6);
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        $change = FeatureRequest::factory()->generated()->create(['patch' => $this->changeWithTests()]);
+        $change->project->forceFill(['drift_ceilings' => ['billing' => 2.0]])->save();
+
+        app(RequestVerification::class)->handle($change);
+
+        $this->assertSame([
+            'areas' => ['billing' => ['requests' => 2, 'effects' => 10, 'per' => 5]],
+            'findings' => [['area' => 'billing', 'per' => 5, 'ceiling' => 2, 'far' => true, 'name' => 'Billing']],
+        ], $change->verifications()->sole()->evidence['drift']);
+    }
+
     public function test_one_failure_at_a_time_is_caused_where_the_changes_code_sends_and_what_stayed_is_kept()
     {
         $map = ['sh', '-c', 'make the test map'];

@@ -2,6 +2,7 @@
 
 namespace App\Actions\Features;
 
+use App\Features\AppDrift;
 use App\Features\AppFaults;
 use App\Features\BoundaryCode;
 use App\Models\FeatureRequest;
@@ -38,6 +39,7 @@ class AcceptFindings
         $found = [
             ...array_map(BoundaryCode::identity(...), array_filter([...$boundaries['findings'] ?? [], ...$boundaries['read'] ?? []], fn (array $finding) => $finding['kind'] === $kind)),
             ...array_map(AppFaults::identity(...), AppFaults::findings($evidence['faults'] ?? null, $kind)),
+            ...array_map(AppDrift::identity(...), $kind === AppDrift::GREW ? $evidence['drift']['findings'] ?? [] : []),
         ];
 
         if ($found === []) {

@@ -6,6 +6,7 @@ use App\Actions\Features\RetryFeatureRequest;
 use App\Context\ProjectNotes;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Features\AppDrift;
 use App\Features\CodeShortcuts;
 use App\Jobs\TriageShortcuts;
 use App\Models\FeatureRequest;
@@ -13,6 +14,7 @@ use App\Models\User;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class AcceptChange
@@ -95,6 +97,8 @@ class AcceptChange
             ]);
         });
 
+        $this->ratchetDrift($featureRequest);
+
         // Nothing waits on the answer, so it runs after the owner has moved on.
         foreach ($pending as $request) {
             if (config('builder.verification.shortcuts.triage.enabled') && CodeShortcuts::scans($request->patch)) {
@@ -103,6 +107,27 @@ class AcceptChange
         }
 
         return $featureRequest->refresh();
+    }
+
+    /**
+     * Set each area's ceiling of work per request from the checks of the
+     * change just kept (direction 33, a drift measure). It moves down when
+     * an area does less, and up only where the owner said they want the
+     * growth.
+     */
+    protected function ratchetDrift(FeatureRequest $featureRequest): void
+    {
+        $measured = $featureRequest->verifications()->latest('id')->first()?->evidence['drift']['areas'] ?? null;
+
+        if (! config('builder.verification.drift.enabled') || $measured === null) {
+            return;
+        }
+
+        $wanted = $featureRequest->acceptedFindings()->where('kind', AppDrift::GREW)->pluck('identity')
+            ->map(fn (mixed $identity) => Str::after((string) $identity, AppDrift::GREW.'|'))->all();
+        $project = $featureRequest->project;
+
+        $project->forceFill(['drift_ceilings' => AppDrift::ratchet($measured, $project->drift_ceilings ?? [], config()->float('builder.verification.drift.slack'), array_values($wanted))])->save();
     }
 
     /**
