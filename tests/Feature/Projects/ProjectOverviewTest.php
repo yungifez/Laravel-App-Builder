@@ -5,6 +5,7 @@ namespace Tests\Feature\Projects;
 use App\Enums\DeploymentStatus;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Enums\VerificationStatus;
 use App\Models\Deployment;
 use App\Models\FeatureRequest;
 use App\Models\Preview;
@@ -109,7 +110,20 @@ class ProjectOverviewTest extends TestCase
 
         $this->actingAs($project->owner)
             ->get(route('projects.show', $project))
-            ->assertInertia(fn (Assert $page) => $page->where('changes.0.proved', 1));
+            ->assertInertia(fn (Assert $page) => $page->where('changes.0.proved', 1)->where('changes.0.passing', 0));
+
+        // None seen to fail without it: its tests are said to pass, once
+        // every check passed, but not to prove it.
+        $waiting->verifications()->delete();
+        $verification = Verification::factory()->for($waiting)->create(['evidence' => ['new_tests' => []]]);
+
+        $this->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page->where('changes.0.proved', 0)->where('changes.0.passing', 0));
+
+        $verification->update(['status' => VerificationStatus::Unverified]);
+
+        $this->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page->where('changes.0.proved', 0)->where('changes.0.passing', 2));
     }
 
     public function test_a_change_that_could_not_finish_is_not_still_being_worked_on()

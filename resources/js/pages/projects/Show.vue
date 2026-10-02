@@ -1861,6 +1861,18 @@ function sendOnEnter(event: KeyboardEvent): void {
                                                             : `${item.proved} tests prove it works`
                                                     }}</span
                                                 >
+                                                <span
+                                                    v-else-if="item.passing > 0"
+                                                    class="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground"
+                                                    data-test="change-passing"
+                                                    ><ShieldCheck
+                                                        class="size-3"
+                                                    />{{
+                                                        item.passing === 1
+                                                            ? 'Its new test passes'
+                                                            : `Its ${item.passing} new tests pass`
+                                                    }}</span
+                                                >
                                             </span>
                                             <!-- Amber only where the owner
                                                  holds a change up. -->

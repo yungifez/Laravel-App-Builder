@@ -91,6 +91,9 @@ export type ChangeItem = {
     question: string | null;
     /** How many of its tests fail without it, for a change to try. */
     proved: number;
+    /** When none was seen to fail without it, how many tests it added
+     * pass along with every other check. */
+    passing: number;
     /** Nothing of it is kept, so it can be marked as not needed. */
     dismissable: boolean;
     updated_at: string | null;

@@ -6,7 +6,9 @@ use App\Actions\Features\RetryFeatureRequest;
 use App\Enums\ChangeState;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Enums\VerificationStatus;
 use App\Features\NewTests;
+use App\Features\PatchSummary;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use Illuminate\Support\Collection;
@@ -22,7 +24,7 @@ class SummarizeChanges
      * owner. Otherwise a kept request wins, so a kept follow-up does not
      * leave its parent "waiting" for ever.
      *
-     * @return list<array{id: string, prompt: string, background: bool, summary: string|null, state: string, stopped_by_owner: bool, asks: bool, question: string|null, proved: int, dismissable: bool, updated_at: string|null}>
+     * @return list<array{id: string, prompt: string, background: bool, summary: string|null, state: string, stopped_by_owner: bool, asks: bool, question: string|null, proved: int, passing: int, dismissable: bool, updated_at: string|null}>
      */
     public function handle(Project $project): array
     {
@@ -35,6 +37,8 @@ class SummarizeChanges
             ->map(function (FeatureRequest $root) use ($requests) {
                 $thread = $this->thread($root, $requests)->sortByDesc('id')->values();
                 [$state, $shown] = $this->state($thread);
+                $toTry = $state === ChangeState::Waiting && $shown->status !== FeatureRequestStatus::Generating;
+                [$proved, $passing] = $toTry ? $this->proof($shown) : [0, 0];
 
                 // Set aside by the owner; a kept change is in the app and
                 // stays kept.
@@ -63,7 +67,10 @@ class SummarizeChanges
                     'question' => $asks ? ($shown->latestRun?->question['text'] ?? null) : null,
                     // A change to try says how many of its tests fail
                     // without it, so the list shows it was proved, not only made.
-                    'proved' => $state === ChangeState::Waiting && ! $asks ? $this->proved($shown) : 0,
+                    'proved' => $proved,
+                    // Otherwise, how many tests it added that pass with every
+                    // other check: checked, though not proved.
+                    'passing' => $passing,
                     // The ask can be marked as not needed: nothing of it is kept.
                     'dismissable' => $state !== ChangeState::Kept,
                     'updated_at' => ($shown->reverted_at ?? $shown->accepted_at ?? $shown->updated_at)?->toIso8601String(),
@@ -106,12 +113,18 @@ class SummarizeChanges
 
     /**
      * Count the tests a change added that fail without it and pass with it.
+     * When none was seen to fail without it, count the tests it added that
+     * pass, once every check passed.
+     *
+     * @return array{int, int}
      */
-    protected function proved(FeatureRequest $request): int
+    protected function proof(FeatureRequest $request): array
     {
-        $measured = $request->verifications()->latest('id')->first()?->evidence['new_tests'] ?? [];
+        $verification = $request->verifications()->latest('id')->first();
+        $proved = count(NewTests::ending($verification?->evidence['new_tests'] ?? [], NewTests::FAILED, $request->patch));
+        $checked = in_array($verification?->status, [VerificationStatus::Passed, VerificationStatus::Unverified], true);
 
-        return count(NewTests::ending($measured, NewTests::FAILED, $request->patch));
+        return [$proved, $proved === 0 && $checked ? count(PatchSummary::addedTests($request->patch)) : 0];
     }
 
     /**
