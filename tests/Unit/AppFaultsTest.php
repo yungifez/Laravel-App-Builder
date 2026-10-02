@@ -548,6 +548,40 @@ class AppFaultsTest extends TestCase
         $this->assertSame([[1, []], [1, []], [1, []]], array_map(fn (array $measured) => [$measured['run'], $measured['findings']], [$stopped, $other, $undone]));
     }
 
+    public function test_a_job_that_ran_twice_is_not_held_to_an_outside_call_the_service_can_take_twice()
+    {
+        $again = $this->done([...$this->job(null), 'again' => true]);
+        $marks = $this->done($this->asked('update "orders" set "paid_at" = ?', 'app/Jobs/SendReceipt.php:23'));
+        $mail = $this->done($this->mailed('app/Jobs/SendReceipt.php:22'));
+        $plain = $this->done($this->called('app/Jobs/SendReceipt.php:21'));
+        $keyed = $this->done($this->called('app/Jobs/SendReceipt.php:21', keyed: true));
+        $read = $this->done($this->called('app/Jobs/SendReceipt.php:21', 'GET'));
+        $put = $this->done($this->called('app/Jobs/SendReceipt.php:21', 'PUT'));
+        $places = fn (array $call) => array_column($this->points([$this->recorded('POST', '/orders', 302, [$this->job(self::NEW.':4'), $call, $marks])]), 'fails');
+
+        // A call that does not say which call it is can be done twice by the service:
+        // the job is run twice, and tried again after its save failed.
+        $this->assertSame(['again', 'retry', 'later', 'send'], $places($plain));
+        // A call with an idempotency key, a call that only reads, and a call that puts the
+        // same thing there again: a second run does no harm, so none is tried.
+        $this->assertSame(array_fill(0, 3, ['later', 'send']), [$places($keyed), $places($read), $places($put)]);
+
+        // A job that also sends an email is run twice for the email. Only the email is held against it.
+        $run = [$keyed, $mail, $marks];
+        $normal = [$this->job(self::NEW.':4'), ...$run];
+        $twice = $this->measure($normal, 302, [...$normal, $again, ...$run]);
+        $retried = $this->measure($normal, 500, [...$normal, $again, ...$run], point: 1);
+        $this->assertSame([['done_twice' => 'mail App\\Mail\\Receipt'], ['sent_again' => 'mail App\\Mail\\Receipt']], array_map(fn (?array $measured) => array_column($measured['findings'] ?? [], 'what', 'kind'), [$twice, $retried]));
+
+        // The same job with a call that has no key: the call is held against it too.
+        $run = [$plain, $mail, $marks];
+        $normal = [$this->job(self::NEW.':4'), ...$run];
+        $this->assertSame(
+            [['done_twice' => 'http POST pay.example, mail App\\Mail\\Receipt'], ['sent_again' => 'http POST pay.example, mail App\\Mail\\Receipt']],
+            array_map(fn (?array $measured) => array_column($measured['findings'] ?? [], 'what', 'kind'), [$this->measure($normal, 302, [...$normal, $again, ...$run]), $this->measure($normal, 500, [...$normal, $again, ...$run], point: 1)]),
+        );
+    }
+
     public function test_the_last_save_a_job_makes_after_it_sent_is_a_place_tried_with_the_jobs()
     {
         $places = fn (array $effects) => array_map(
@@ -1072,7 +1106,7 @@ class AppFaultsTest extends TestCase
         );
         $this->assertSame(
             'POST /orders: when job App\Jobs\SendReceipt ran a second time, it sent or added the same thing again: mail App\Mail\Receipt (caused in '.self::TEST.'). '
-                .'A queue gives a job to a worker at least once. Make the job safe to run again: look for what it already made (firstOrCreate, a unique index), or record that it sent before it sends, and take that record back when the send fails.',
+                .'A queue gives a job to a worker at least once. Make the job safe to run again: look for what it already made (firstOrCreate, a unique index), or record that it sent before it sends, and take that record back when the send fails. Give an outside call an Idempotency-Key header with the same value on each run.',
             AppFaults::finding($twice),
         );
 

@@ -2151,7 +2151,10 @@ The trace of that request shows what stayed:
   code from before it was kept: an order without its items.
 - **Done twice.** A job ran twice, and both runs sent the same thing or
   added the same row from the same line. A queue gives a job to a worker at
-  least once, so a job must be safe to run again.
+  least once, so a job must be safe to run again. An outside call the
+  service can take twice is not held against the job, here or under "sent
+  again": a GET, a PUT, a DELETE, or a call with an idempotency key. A job
+  with only such calls is not run twice at all.
 - **Sent again.** A save failed in a job after the job sent something, the
   job was tried again, and it sent the same thing again from the same line.
   A job that asks if it ran before passes the run above. It fails here when

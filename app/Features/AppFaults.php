@@ -30,8 +30,11 @@ namespace App\Features;
  * shape is compared: the same send or the same insert from the same line
  * in both runs. A change that is made again (an update, a delete, or an
  * insert that says what to do when the row is there) is not held against
- * the job. A job of the framework that delivers one email, notification
- * or broadcast is not run twice: it has no code of the app to make safe.
+ * the job. An outside call the service can take twice is not held
+ * against it either: a GET, a PUT, a DELETE, or a call that says which
+ * call it is (an idempotency key). A job of the framework that delivers
+ * one email, notification or broadcast is not run twice: it has no code
+ * of the app to make safe.
  *
  * A fifth thing is read when an outside call gets no answer: the app
  * makes the same call again. A call that got no answer may still have
@@ -591,7 +594,7 @@ class AppFaults
             self::SENT_THEN_LOST => 'People are told about something that was not saved. Send after the save is kept: after the transaction, or with afterCommit().',
             self::SAVED_IN_PART => 'Put the saves that belong together in one DB::transaction().',
             self::FAILURE_HIDDEN => 'No one finds a failure that the code catches and does not record. Let it fail, or record it with report() and tell the person what did not happen.',
-            self::DONE_TWICE => 'A queue gives a job to a worker at least once. Make the job safe to run again: look for what it already made (firstOrCreate, a unique index), or record that it sent before it sends, and take that record back when the send fails.',
+            self::DONE_TWICE => 'A queue gives a job to a worker at least once. Make the job safe to run again: look for what it already made (firstOrCreate, a unique index), or record that it sent before it sends, and take that record back when the send fails. Give an outside call an Idempotency-Key header with the same value on each run.',
             self::SENT_AGAIN => 'A queue tries a failed job again. Save first and send last in the job, and take the save back when the send fails, so the next try sends.',
             self::NEVER_SENT => 'A queue tries a failed job again, and that try must send what the first could not. When the send fails, take back what the job saved before it: catch the failure, undo the save, and throw the failure again.',
             self::REST_NOT_SENT => 'One failure must not stop the rest. Queue each one: Mail::to()->queue(), a notification that implements ShouldQueue, or one job for each person. Or catch the failure for each one, record it with report(), and go on with the next.',
@@ -1043,7 +1046,7 @@ class AppFaults
             return [];
         }
 
-        $sent = fn (array $effect, int $at = -1): bool => $at !== $place && ($effect['job'] ?? false) && ! ($effect['again'] ?? false) && in_array($effect['kind'], self::SENT, true);
+        $sent = fn (array $effect, int $at = -1): bool => $at !== $place && ($effect['job'] ?? false) && ! ($effect['again'] ?? false) && in_array($effect['kind'], self::SENT, true) && ! self::takesTwice($effect);
         $normal = self::byName(array_values(array_filter($was['did'], $sent)));
         $both = self::byName(array_values(array_filter($hit['effects'], $sent, ARRAY_FILTER_USE_BOTH)));
         $first = self::byName(array_values(array_filter($hit['effects'], fn (array $effect, int $at) => $at < $marker && $sent($effect, $at), ARRAY_FILTER_USE_BOTH)));
@@ -1086,7 +1089,8 @@ class AppFaults
         $late = null;
 
         foreach ($ran as $at => $effect) {
-            if (in_array($effect['kind'], self::SENT, true)) {
+            // A call the service can take twice does no harm when it is made again.
+            if (in_array($effect['kind'], self::SENT, true) && ! self::takesTwice($effect)) {
                 $sent = true;
             } elseif ($sent && AppTraces::writes($effect)) {
                 $late = $at;
@@ -1118,16 +1122,29 @@ class AppFaults
     /**
      * Determine if a thing is done twice when the job that did it runs
      * twice: a send, or an insert that stayed and says nothing about a row
-     * that is already there.
+     * that is already there. An outside call the service can take twice
+     * is not.
      *
-     * @param  array{kind: string, sql?: string}  $effect
+     * @param  array{kind: string, sql?: string, what?: string, keyed?: bool}  $effect
      */
     protected static function repeats(array $effect, bool $stayed): bool
     {
         $sql = $effect['sql'] ?? '';
 
-        return in_array($effect['kind'], self::SENT, true)
+        return (in_array($effect['kind'], self::SENT, true) && ! self::takesTwice($effect))
             || ($stayed && AppTraces::verb($sql) === 'insert' && preg_match('/\bon\s+(conflict|duplicate\s+key)\b|^\s*insert\s+(or\s+)?ignore\b|^\s*insert\s+or\s+replace\b/i', $sql) !== 1);
+    }
+
+    /**
+     * Determine if an outside call can be made again with no harm: the
+     * service can take it twice. A GET, a PUT and a DELETE can, and so
+     * can a call that says which call it is (an idempotency key).
+     *
+     * @param  array{kind: string, sql?: string, what?: string, keyed?: bool}  $effect
+     */
+    protected static function takesTwice(array $effect): bool
+    {
+        return $effect['kind'] === 'http' && (($effect['keyed'] ?? false) || preg_match('/^http (POST|PATCH) /', self::name($effect)) !== 1);
     }
 
     /**
