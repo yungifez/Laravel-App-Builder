@@ -955,18 +955,22 @@ return [
             'report' => 'storage/logs/faults/trace.jsonl',
         ],
 
-        // Who may do what with the records the plan described (§26.11).
-        // Once the checks pass, "test" is written with one probe per
-        // route and refused actor: a signed-out visitor, and another
-        // signed-in person where only the person who added a record may
-        // use it. "command" runs it with the test's path after it, and
-        // each probe adds a line to "report". A refused actor that
+        // Who may do what with the records of a change (§26.11). Once the
+        // checks pass, "test" is written with one probe per route and
+        // refused actor: a signed-out visitor, and another signed-in person
+        // where only the person who added a record may use it. Records the
+        // app already had answer to its own policy, on the routes of the
+        // controllers the change touched. There, "models" is also written
+        // and run to find the app's teams, and a person outside a team tries
+        // the team's routes. "command" runs the test with its path after
+        // it, and each probe adds a line to "report". A refused actor that
         // changed, removed, added or saw a record fails the check, so the
         // change goes back for a fix. At most "probes" are tried.
         'access' => [
             'enabled' => (bool) env('BUILDER_ACCESS_PROBES', true),
             'probes' => (int) env('BUILDER_ACCESS_PROBE_LIMIT', 40),
             'test' => 'tests/Feature/AccessProbeTest.php',
+            'models' => 'storage/logs/access/models.php',
             'routes' => [
                 'command' => ['sh', '-c', 'mkdir -p storage/logs/access && php artisan route:list --json > storage/logs/access/routes.json'],
                 'report' => 'storage/logs/access/routes.json',

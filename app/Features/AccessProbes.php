@@ -20,9 +20,10 @@ use Illuminate\Support\Str;
  *
  * @phpstan-import-type Record from Scaffold
  *
- * @phpstan-type Probe array{record: string, noun: string, creator: string|null, action: string, actor: string, rule: string, method: string, uri: string, param: string, key: string|null}
+ * @phpstan-type Scope array{param: string, model: string, key: string}
+ * @phpstan-type Probe array{record: string, noun: string, creator: string|null, action: string, actor: string, rule: string, method: string, uri: string, param: string, key: string|null, scope: Scope|null}
  * @phpstan-type Observed array{id: int, status: int, changed: bool, invalid: bool, policy: bool|null}
- * @phpstan-type Finding array{record: string, noun: string, creator: string|null, action: string, actor: string, rule: string, method: string, uri: string, param: string, key: string|null, status: int}
+ * @phpstan-type Finding array{record: string, noun: string, creator: string|null, action: string, actor: string, rule: string, method: string, uri: string, param: string, key: string|null, scope: Scope|null, status: int}
  */
 class AccessProbes
 {
@@ -66,12 +67,12 @@ class AccessProbes
 
                     $probes[] = [
                         'record' => $record['name'],
-                        'noun' => $record['label'] ?? Str::of($record['name'])->snake(' ')->lower()->toString(),
+                        'noun' => $record['label'] ?? self::words($record['name']),
                         'creator' => Scaffold::creator($record['fields']),
                         'action' => $route['action'],
                         'actor' => $actor,
                         'rule' => $rule,
-                        ...array_intersect_key($route, array_flip(['method', 'uri', 'param', 'key'])),
+                        ...array_intersect_key($route, array_flip(['method', 'uri', 'param', 'key', 'scope'])),
                     ];
                 }
             }
@@ -114,18 +115,166 @@ class AccessProbes
                 foreach ([self::GUEST, self::STRANGER] as $actor) {
                     $probes[] = [
                         'record' => $model,
-                        'noun' => Str::of($model)->snake(' ')->lower()->toString(),
+                        'noun' => self::words($model),
                         'creator' => null,
                         'action' => $route['action'],
                         'actor' => $actor,
                         'rule' => 'policy',
-                        ...array_intersect_key($route, array_flip(['method', 'uri', 'param', 'key'])),
+                        ...array_intersect_key($route, array_flip(['method', 'uri', 'param', 'key', 'scope'])),
                     ];
                 }
             }
         }
 
         return array_slice($probes, 0, $limit);
+    }
+
+    /**
+     * Plan probes across teams: a signed-in person outside a team tries
+     * the team's own routes and the routes of the records it owns. No rule
+     * needs stating: crossing a team is always a finding (§26.10), so the
+     * policy is not asked. Only the routes of controllers the change
+     * touched are tried.
+     *
+     * @param  array{tenants: list<string>, owned: array<string, array{tenant: string, key: string}>}  $teams  From introspection()
+     * @param  list<string>  $controllers  Controllers the change touched, by class name
+     * @return list<Probe>
+     */
+    public static function forTenants(array $teams, string $routeList, array $controllers, int $limit): array
+    {
+        $routes = json_decode(trim($routeList), true);
+        $probes = [];
+
+        if (! is_array($routes) || ! array_is_list($routes) || $controllers === []) {
+            return [];
+        }
+
+        $records = [
+            ...array_map(fn (string $tenant) => [$tenant, null], $teams['tenants']),
+            ...array_map(fn (string $model, array $owned) => [$model, ['model' => $owned['tenant'], 'key' => $owned['key']]], array_keys($teams['owned']), $teams['owned']),
+        ];
+
+        foreach ($records as [$model, $tenant]) {
+            foreach (self::routesFor($model, $routes, $tenant) as $route) {
+                if ($route['action'] === 'create' || ! in_array($route['controller'], $controllers, true)) {
+                    continue;
+                }
+
+                $probes[] = [
+                    'record' => $model,
+                    'noun' => self::words($model),
+                    'creator' => null,
+                    'action' => $route['action'],
+                    'actor' => self::STRANGER,
+                    'rule' => 'tenant:'.($tenant['model'] ?? $model),
+                    ...array_intersect_key($route, array_flip(['method', 'uri', 'param', 'key', 'scope'])),
+                ];
+            }
+        }
+
+        return array_slice($probes, 0, $limit);
+    }
+
+    /**
+     * The script that lists the app's teams, run with the app's own PHP:
+     * models with members (a many-to-many link to the user model) and, for
+     * each other model, the team it belongs to and by which column. It
+     * reads only what the models declare, through their return types.
+     */
+    public static function introspection(): string
+    {
+        return <<<'PHP'
+<?php
+
+require getcwd().'/vendor/autoload.php';
+$app = require getcwd().'/bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+$user = config('auth.providers.users.model');
+$models = [];
+
+foreach (glob(app_path('Models/*.php')) ?: [] as $file) {
+    $class = 'App\\Models\\'.basename($file, '.php');
+
+    if (class_exists($class) && is_subclass_of($class, Illuminate\Database\Eloquent\Model::class) && ! (new ReflectionClass($class))->isAbstract()) {
+        $models[] = $class;
+    }
+}
+
+$relations = function (string $class, string $type) {
+    $found = [];
+
+    foreach ((new ReflectionClass($class))->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+        $returns = $method->getReturnType();
+
+        if ($method->class === $class && $method->getNumberOfParameters() === 0 && $returns instanceof ReflectionNamedType && is_a($returns->getName(), $type, true)) {
+            try {
+                $found[] = (new $class)->{$method->name}();
+            } catch (Throwable) {
+            }
+        }
+    }
+
+    return $found;
+};
+
+$tenants = [];
+
+foreach ($models as $class) {
+    foreach ($relations($class, Illuminate\Database\Eloquent\Relations\BelongsToMany::class) as $relation) {
+        if ($relation->getRelated() instanceof $user && $class !== $user) {
+            $tenants[] = class_basename($class);
+        }
+    }
+}
+
+$owned = [];
+
+foreach ($models as $class) {
+    foreach ($relations($class, Illuminate\Database\Eloquent\Relations\BelongsTo::class) as $relation) {
+        if ($class !== $user && in_array(class_basename($relation->getRelated()), $tenants, true) && ! isset($owned[class_basename($class)])) {
+            $owned[class_basename($class)] = ['tenant' => class_basename($relation->getRelated()), 'key' => $relation->getForeignKeyName()];
+        }
+    }
+}
+
+echo json_encode(['tenants' => array_values(array_unique($tenants)), 'owned' => $owned]), "\n";
+
+PHP;
+    }
+
+    /**
+     * Read what introspection() printed, or null when it printed nothing
+     * usable.
+     *
+     * @return array{tenants: list<string>, owned: array<string, array{tenant: string, key: string}>}|null
+     */
+    public static function teams(string $output): ?array
+    {
+        $data = json_decode(trim((string) Str::of($output)->trim()->explode("\n")->last()), true);
+
+        if (! is_array($data) || ! is_array($data['tenants'] ?? null) || ! is_array($data['owned'] ?? null)) {
+            return null;
+        }
+
+        $word = fn (mixed $value) => is_string($value) && preg_match('/^\w+$/', $value) === 1;
+        $owned = [];
+
+        foreach ($data['owned'] as $model => $link) {
+            if ($word($model) && is_array($link) && $word($link['tenant'] ?? null) && $word($link['key'] ?? null)) {
+                $owned[(string) $model] = ['tenant' => $link['tenant'], 'key' => $link['key']];
+            }
+        }
+
+        return ['tenants' => array_values(array_filter($data['tenants'], $word)), 'owned' => $owned];
+    }
+
+    /**
+     * Say a model's name in words.
+     */
+    protected static function words(string $model): string
+    {
+        return Str::of($model)->snake(' ')->lower()->toString();
     }
 
     /**
@@ -143,11 +292,14 @@ class AccessProbes
     /**
      * Find the routes that work on a model, by Laravel's conventions: a
      * parameter named after it, or adding one at the same controller.
+     * A route under the record's team, such as teams/{team}/rooms/{room},
+     * is found too when the team is given.
      *
      * @param  list<mixed>  $routes
-     * @return list<array{action: string, method: string, uri: string, param: string, key: string|null, controller: string|null}>
+     * @param  array{model: string, key: string}|null  $tenant
+     * @return list<array{action: string, method: string, uri: string, param: string, key: string|null, controller: string|null, scope: Scope|null}>
      */
-    protected static function routesFor(string $model, array $routes): array
+    protected static function routesFor(string $model, array $routes, ?array $tenant = null): array
     {
         $name = Str::camel($model);
         $controllers = [];
@@ -172,7 +324,14 @@ class AccessProbes
                 continue;
             }
 
-            // A route that needs another value, such as a team, is left out.
+            $scope = null;
+
+            if ($tenant !== null && count($params) === 2 && Str::camel($params[0][1]) === Str::camel($tenant['model'])) {
+                $scope = ['param' => $params[0][1], 'model' => $tenant['model'], 'key' => $tenant['key']];
+                $params = [$params[1]];
+            }
+
+            // A route that needs another value is left out.
             if (count($params) !== 1 || Str::camel($params[0][1]) !== $name) {
                 continue;
             }
@@ -188,14 +347,14 @@ class AccessProbes
                 };
 
                 if ($action !== null) {
-                    $found[] = ['action' => $action, 'method' => $method, 'uri' => $uri, 'param' => $params[0][1], 'key' => ($params[0][2] ?? '') === '' ? null : $params[0][2], 'controller' => $controller];
+                    $found[] = ['action' => $action, 'method' => $method, 'uri' => $uri, 'param' => $params[0][1], 'key' => ($params[0][2] ?? '') === '' ? null : $params[0][2], 'controller' => $controller, 'scope' => $scope];
                 }
             }
         }
 
         foreach ($adding as $route) {
             if (($route['controller'] !== null && in_array($route['controller'], $controllers, true)) || $route['name'] === Str::snake(Str::pluralStudly($model)).'.store') {
-                $found[] = ['action' => 'create', 'method' => 'POST', 'uri' => $route['uri'], 'param' => '', 'key' => null, 'controller' => $route['controller']];
+                $found[] = ['action' => 'create', 'method' => 'POST', 'uri' => $route['uri'], 'param' => '', 'key' => null, 'controller' => $route['controller'], 'scope' => null];
             }
         }
 
@@ -214,7 +373,7 @@ class AccessProbes
 
         foreach ($probes as $id => $probe) {
             $methods[] = sprintf(
-                "    public function test_probe_%d(): void\n    {\n        \$this->probe(%d, %s, %s, %s, %s, %s, %s, %s, %s, %s);\n    }",
+                "    public function test_probe_%d(): void\n    {\n        \$this->probe(%d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);\n    }",
                 $id,
                 $id,
                 var_export('App\\Models\\'.$probe['record'], true),
@@ -226,6 +385,7 @@ class AccessProbes
                 var_export($probe['key'], true),
                 var_export($probe['actor'], true),
                 var_export($probe['rule'] === 'policy', true),
+                $probe['scope'] === null ? 'null' : sprintf("['param' => %s, 'model' => %s, 'key' => %s]", ...array_values(array_map(fn (string $value) => var_export($value, true), $probe['scope']))),
             );
         }
 
@@ -255,14 +415,21 @@ class AccessProbeTest extends TestCase
      * and, when asked, what the app's own policy says about it first.
      *
      * @param  class-string<\Illuminate\Database\Eloquent\Model>  \$model
+     * @param  array{param: string, model: string, key: string}|null  \$scope  The team in the address, when there is one
      */
-    private function probe(int \$id, string \$model, ?string \$creator, string \$action, string \$method, string \$uri, string \$param, ?string \$key, string \$actor, bool \$askPolicy): void
+    private function probe(int \$id, string \$model, ?string \$creator, string \$action, string \$method, string \$uri, string \$param, ?string \$key, string \$actor, bool \$askPolicy, ?array \$scope): void
     {
         \$owner = User::factory()->create();
         \$record = \$model::factory()->create(\$creator === null ? [] : [\$creator => \$owner->getKey()]);
         \$before = \$record->fresh()?->getAttributes() ?? [];
         \$count = \$model::query()->count();
         \$url = \$param === '' ? \$uri : (string) preg_replace('/\{'.\$param.'(:\w+)?\??\}/', (string) (\$key === null ? \$record->getRouteKey() : \$record->getAttribute(\$key)), \$uri);
+
+        if (\$scope !== null) {
+            \$team = ('App\\\\Models\\\\'.\$scope['model'])::query()->findOrFail(\$record->getAttribute(\$scope['key']));
+            \$url = (string) preg_replace('/\{'.\$scope['param'].'(:\w+)?\??\}/', (string) \$team->getRouteKey(), \$url);
+        }
+
         \$payload = in_array(\$action, ['create', 'update'], true)
             ? array_map(fn (mixed \$value) => match (true) {
                 \$value instanceof DateTimeInterface => \$value->format('Y-m-d H:i:s'),
@@ -380,23 +547,31 @@ PHP;
         $lines = [];
 
         foreach ($measured['findings'] as $finding) {
-            $who = $finding['actor'] === self::GUEST ? 'Someone who is not signed in' : 'A signed-in person who did not add it';
+            $team = str_starts_with($finding['rule'], 'tenant:') ? self::words(Str::after($finding['rule'], 'tenant:')) : null;
+            $who = match (true) {
+                $finding['actor'] === self::GUEST => 'Someone who is not signed in',
+                $team !== null => "A signed-in person outside the {$team}",
+                default => 'A signed-in person who did not add it',
+            };
             $did = match ($finding['action']) {
                 'view' => "could see a {$finding['noun']}",
                 'create' => "could add a {$finding['noun']}",
                 'update' => $finding['method'] === 'GET' ? "could open the form to change a {$finding['noun']}" : "could change a {$finding['noun']}",
                 default => "could remove a {$finding['noun']}",
             };
-            $rule = match ($finding['rule']) {
-                'policy' => "The app's own {$finding['record']} policy refuses this",
-                'creator' => 'The plan allows only the person who added it',
+            $rule = match (true) {
+                $team !== null => "Nobody outside a {$team} may reach it or its records",
+                $finding['rule'] === 'policy' => "The app's own {$finding['record']} policy refuses this",
+                $finding['rule'] === 'creator' => 'The plan allows only the person who added it',
                 default => 'The plan allows only people who are signed in',
             };
 
-            $lines[] = "{$who} {$did}: {$finding['method']} {$finding['uri']} answered {$finding['status']}. {$rule}. Make this route check the {$finding['record']} policy.";
+            $fix = $team === null ? "Make this route check the {$finding['record']} policy." : "Make this route check that the person belongs to the {$team}.";
+
+            $lines[] = "{$who} {$did}: {$finding['method']} {$finding['uri']} answered {$finding['status']}. {$rule}. {$fix}";
         }
 
-        $lines[] = "Tried {$measured['tried']} requests as a signed-out visitor and as another signed-in person; {$measured['refused']} were refused, as they should be.";
+        $lines[] = "Tried {$measured['tried']} requests as a signed-out visitor and as another signed-in person; {$measured['refused']} ".($measured['refused'] === 1 ? 'was' : 'were').' refused, as they should be.';
 
         if ($measured['untried'] > 0) {
             $lines[] = "{$measured['untried']} could not be judged: the request broke, or the values sent were turned down first.";

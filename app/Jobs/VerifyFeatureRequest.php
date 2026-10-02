@@ -1034,7 +1034,7 @@ class VerifyFeatureRequest implements ShouldQueue
      */
     protected function probeAccess(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): bool
     {
-        /** @var array{enabled: bool, probes: int, test: string, routes: array{command: list<string>, report: string}, command: list<string>, timeout: int, report: string} $config */
+        /** @var array{enabled: bool, probes: int, test: string, models: string, routes: array{command: list<string>, report: string}, command: list<string>, timeout: int, report: string} $config */
         $config = config('builder.verification.access');
 
         if (! $config['enabled']) {
@@ -1070,12 +1070,22 @@ class VerifyFeatureRequest implements ShouldQueue
             $planned = AccessProbes::plan($records, $read($config['routes']['report']), $config['probes']);
 
             if ($controllers !== []) {
+                // Crossing a team is tried first; the policy is not asked there.
+                $driver->writeFile((string) $workspace->driver_id, $config['models'], AccessProbes::introspection());
+                $teams = AccessProbes::teams($runWorkspaceCommand->handle($workspace, ['php', $config['models']], 60)->output);
+                $runWorkspaceCommand->handle($workspace, ['rm', '-f', $config['models']], 30);
+                $planned['probes'] = [...$planned['probes'], ...($teams === null ? [] : AccessProbes::forTenants($teams, $read($config['routes']['report']), $controllers, $config['probes'] - count($planned['probes'])))];
+                $tried = array_map(fn (array $probe) => "{$probe['actor']} {$probe['method']} {$probe['uri']}", $planned['probes']);
+
                 $policies = $runWorkspaceCommand->handle($workspace, ['find', 'app/Policies', '-name', '*Policy.php', '-type', 'f'], 30);
                 $models = array_values(array_diff(
                     preg_match_all('#app/Policies/(\w+)Policy\.php#', $policies->output, $found) > 0 ? $found[1] : [],
                     array_column($records, 'name'),
                 ));
-                $planned['probes'] = [...$planned['probes'], ...AccessProbes::fromPolicies($models, $read($config['routes']['report']), $controllers, $config['probes'] - count($planned['probes']))];
+                $planned['probes'] = [...$planned['probes'], ...array_filter(
+                    AccessProbes::fromPolicies($models, $read($config['routes']['report']), $controllers, $config['probes'] - count($planned['probes'])),
+                    fn (array $probe) => ! in_array("{$probe['actor']} {$probe['method']} {$probe['uri']}", $tried, true),
+                )];
             }
 
             if ($planned['probes'] === []) {

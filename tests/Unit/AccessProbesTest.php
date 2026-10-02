@@ -95,7 +95,7 @@ class AccessProbesTest extends TestCase
 
         $test = AccessProbes::test($probes, 'storage/logs/access/probes.jsonl');
 
-        $this->assertStringContainsString("\$this->probe(1, 'App\\\\Models\\\\Booking', 'user_id', 'view', 'GET', '/bookings/{booking}', 'booking', NULL, 'stranger', false);", $test);
+        $this->assertStringContainsString("\$this->probe(1, 'App\\\\Models\\\\Booking', 'user_id', 'view', 'GET', '/bookings/{booking}', 'booking', NULL, 'stranger', false, null);", $test);
         $this->assertStringContainsString("base_path('storage/logs/access/probes.jsonl')", $test);
         $this->assertNotFalse(token_get_all($test, TOKEN_PARSE));
     }
@@ -158,5 +158,33 @@ class AccessProbesTest extends TestCase
 
         $this->assertSame(['tried' => 2, 'refused' => 1, 'untried' => 1], array_diff_key($measured, ['findings' => true]));
         $this->assertStringStartsWith("A signed-in person who did not add it could open the form to change a booking: GET /bookings/{booking}/edit answered 200. The app's own Booking policy refuses this.", AccessProbes::describe($measured, []));
+    }
+
+    public function test_a_person_outside_a_team_tries_the_routes_of_its_records_even_under_the_team(): void
+    {
+        $teams = AccessProbes::teams("Booting.\n".'{"tenants":["Team"],"owned":{"MeetingRoom":{"tenant":"Team","key":"team_id"},"Bad":{"tenant":"x;y","key":"id"}}}');
+        $routes = (string) json_encode([
+            ['domain' => null, 'method' => 'GET|HEAD', 'uri' => 'teams/{team}/rooms/{meetingRoom}', 'name' => null, 'action' => 'App\Http\Controllers\RoomController@show'],
+            ['domain' => null, 'method' => 'PUT', 'uri' => 'settings/teams/{team}', 'name' => null, 'action' => 'App\Http\Controllers\TeamController@update'],
+            ['domain' => null, 'method' => 'DELETE', 'uri' => 'rooms/{meetingRoom}', 'name' => null, 'action' => 'App\Http\Controllers\OtherController@destroy'],
+        ]);
+
+        $this->assertSame(['tenants' => ['Team'], 'owned' => ['MeetingRoom' => ['tenant' => 'Team', 'key' => 'team_id']]], $teams);
+        $this->assertNull(AccessProbes::teams('Class "Team" not found'));
+
+        $probes = AccessProbes::forTenants((array) $teams, $routes, ['App\Http\Controllers\RoomController', 'App\Http\Controllers\TeamController'], 10);
+
+        $this->assertSame(['PUT /settings/teams/{team}', 'GET /teams/{team}/rooms/{meetingRoom}'], array_map(fn (array $probe) => "{$probe['method']} {$probe['uri']}", $probes));
+        $this->assertSame(['stranger'], array_values(array_unique(array_column($probes, 'actor'))));
+        $this->assertSame(['param' => 'team', 'model' => 'Team', 'key' => 'team_id'], $probes[1]['scope']);
+        $this->assertNotFalse(token_get_all(AccessProbes::test($probes, 'probes.jsonl'), TOKEN_PARSE));
+
+        $measured = AccessProbes::measure($probes, AccessProbes::parse('{"id":1,"status":200,"changed":false,"invalid":false,"policy":null}'));
+        $this->assertStringStartsWith('A signed-in person outside the team could see a meeting room: GET /teams/{team}/rooms/{meetingRoom} answered 200. Nobody outside a team may reach it or its records. Make this route check that the person belongs to the team.', AccessProbes::describe($measured, []));
+    }
+
+    public function test_the_script_that_finds_the_teams_is_plain_php(): void
+    {
+        $this->assertNotFalse(token_get_all(AccessProbes::introspection(), TOKEN_PARSE));
     }
 }

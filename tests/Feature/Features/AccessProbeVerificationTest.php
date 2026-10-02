@@ -22,6 +22,11 @@ class AccessProbeVerificationTest extends TestCase
 
     protected const PROBE = ['sh', '-c', 'run the probes', 'sh'];
 
+    /**
+     * What the script that finds the app's teams prints.
+     */
+    protected string $teams = '{"tenants":[],"owned":{}}';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -39,6 +44,7 @@ class AccessProbeVerificationTest extends TestCase
                 'enabled' => true,
                 'probes' => 40,
                 'test' => 'tests/Feature/AccessProbeTest.php',
+                'models' => 'models.php',
                 'routes' => ['command' => self::ROUTES, 'report' => 'routes.json'],
                 'command' => self::PROBE,
                 'timeout' => 60,
@@ -89,6 +95,10 @@ class AccessProbeVerificationTest extends TestCase
 
             if ($command === ['find', 'app/Policies', '-name', '*Policy.php', '-type', 'f']) {
                 return new CommandResult(exitCode: 0, output: "app/Policies/BookingPolicy.php\napp/Policies/RoomPolicy.php\n", errorOutput: '', durationMs: 5);
+            }
+
+            if ($command === ['php', 'models.php']) {
+                return new CommandResult(exitCode: 0, output: $this->teams, errorOutput: '', durationMs: 5);
             }
 
             if (array_slice($command, 0, 4) === self::PROBE) {
@@ -181,5 +191,30 @@ class AccessProbeVerificationTest extends TestCase
         $result = collect($change->verifications()->sole()->results)->firstWhere('name', 'Who may see and change records');
         $this->assertSame('failed', $result['outcome']);
         $this->assertStringContainsString("could remove a booking: DELETE /bookings/{booking} answered 302. The app's own Booking policy refuses this.", $result['output']);
+    }
+
+    public function test_a_person_outside_the_team_is_tried_instead_of_asking_the_policy(): void
+    {
+        $this->teams = "Booting.\n".'{"tenants":["Team"],"owned":{"Booking":{"tenant":"Team","key":"team_id"}}}';
+        // The policy would allow it; the team rule does not ask.
+        $this->answer(['{"id":0,"status":302,"changed":true,"invalid":false,"policy":null}']);
+        $change = FeatureRequest::factory()->generated()->create(['patch' => implode("\n", [
+            'diff --git a/app/Http/Controllers/BookingController.php b/app/Http/Controllers/BookingController.php',
+            '--- a/app/Http/Controllers/BookingController.php',
+            '+++ b/app/Http/Controllers/BookingController.php',
+            '@@ -1 +1,2 @@',
+            ' <?php',
+            '+// Bookings',
+            '',
+        ])]);
+
+        app(RequestVerification::class)->handle($change);
+
+        $result = collect($change->verifications()->sole()->results)->firstWhere('name', 'Who may see and change records');
+        $this->assertSame('failed', $result['outcome']);
+        $this->assertStringContainsString('A signed-in person outside the team could remove a booking', $result['output']);
+        $test = $this->written();
+        $this->assertSame(1, substr_count($test, "'stranger', "), 'one probe for the outsider, not a second from the policy');
+        $this->assertSame(1, substr_count($test, "'guest', "));
     }
 }

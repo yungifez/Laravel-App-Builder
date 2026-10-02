@@ -3788,9 +3788,18 @@ routes of controllers the change touched, each probe first asks the policy
 (`Gate::forUser`) about the same actor and record, and only a request the
 policy refuses can be a finding ("the policy says no, the route said yes").
 Routes of untouched controllers are left alone, since their problems are not
-the change's. Routes that need other values (a team) and records with no
-matching route are not probed yet; tenant isolation waits for the team model
-to be found. The scaffold no longer asks the form for the
+the change's.
+
+**Tenant isolation, on the same touched routes.** A short script runs with the
+app's own PHP and reads what the models declare through their return types: a
+team is a model with a many-to-many link to the user model, and a record
+belongs to a team through its `BelongsTo` to it. A signed-in person outside
+the team then tries the team's own routes, the routes of the records it owns,
+and routes under the team (`teams/{team}/rooms/{room}`, with the room's own
+team in the address). Crossing a team needs no stated intent, so the policy is
+not asked, and these probes replace the policy probe for the same route. No
+owner confirms the team model yet; records with no matching route and routes
+that need other values are not probed. The scaffold no longer asks the form for the
 person who added a record: it comes from the signed-in user.
 
 **Out of V0:** the rest, including the introspection this relies on, beyond
