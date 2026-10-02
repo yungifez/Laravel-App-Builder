@@ -467,6 +467,31 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([['saved_then_failed', 'mail message', 'update users']], array_map(fn (array $finding) => [$finding['kind'], $finding['failed'], $finding['what']], $measured['findings']));
     }
 
+    public function test_an_error_a_test_let_through_with_all_middleware_off_is_recorded_with_the_status_of_its_error_page()
+    {
+        Route::post('/_failing/denied', [RecordedApp::class, 'denied']);
+        Route::post('/_failing/invalid', [RecordedApp::class, 'invalid']);
+        Route::post('/_failing/thrown', [RecordedApp::class, 'thrown']);
+        Route::post('/_failing/quiet', [RecordedApp::class, 'quiet']);
+        $recorded = $this->record();
+        $this->withoutMiddleware()->withoutExceptionHandling();
+
+        rescue(fn () => $this->post('/_failing/denied'), report: false);
+        rescue(fn () => $this->post('/_failing/invalid'), report: false);
+        rescue(fn () => $this->post('/_failing/thrown'), report: false);
+        // The status of one request is not kept for the next one.
+        $this->post('/_failing/quiet')->assertNoContent();
+        $this->withExceptionHandling()->post('/_failing/denied')->assertForbidden();
+
+        $this->assertSame([
+            ['/_failing/denied', 403, true],
+            ['/_failing/invalid', 422, true],
+            ['/_failing/thrown', 500, true],
+            ['/_failing/quiet', 204, false],
+            ['/_failing/denied', 403, true],
+        ], array_map(fn (array $request) => [$request['route'], $request['status'], $request['refused']], $recorded()));
+    }
+
     public function test_a_request_no_answer_came_for_is_written_when_the_next_test_starts_its_app()
     {
         Route::post('/_failing/thrown', [RecordedApp::class, 'thrown']);

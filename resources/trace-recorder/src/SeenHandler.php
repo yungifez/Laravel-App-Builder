@@ -10,7 +10,8 @@ use Throwable;
  * Stands in for the handler a test puts in place of the app's handling of
  * errors. That handler drops each report(), so the recorder could not tell
  * an app that records a failure from one that hides it. The stand-in tells
- * the recorder of each report(), then does what the test's handler does.
+ * the recorder of each report(), and of the error the test's handler
+ * throws again, then does what the test's handler does.
  */
 class SeenHandler implements ExceptionHandler, WithoutExceptionHandlingHandler
 {
@@ -34,7 +35,18 @@ class SeenHandler implements ExceptionHandler, WithoutExceptionHandlingHandler
 
     public function render($request, Throwable $e)
     {
-        return $this->handler->render($request, $e);
+        try {
+            return $this->handler->render($request, $e);
+        } catch (Throwable $thrown) {
+            // The test's handler throws the error again: the request ends in it.
+            try {
+                $this->recorder->thrown($thrown);
+            } catch (Throwable) {
+                //
+            }
+
+            throw $thrown;
+        }
     }
 
     public function renderForConsole($output, Throwable $e)

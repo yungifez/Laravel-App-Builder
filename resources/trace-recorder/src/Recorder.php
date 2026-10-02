@@ -191,6 +191,9 @@ class Recorder
     /** The route of the request the router's events record. */
     protected ?string $matched = null;
 
+    /** The status of the error a test let through in that request. */
+    protected ?int $ended = null;
+
     /** The recorder of an app with a request no answer has come for yet. */
     protected static ?self $waiting = null;
 
@@ -348,6 +351,7 @@ class Recorder
         $this->finish();
         $this->loose = false;
         $this->matched = null;
+        $this->ended = null;
         $this->requests++;
         $this->jobs = 0;
         $this->running = [];
@@ -682,14 +686,33 @@ class Recorder
         // The queue had the job before the error: it still runs.
         $this->release();
 
-        $status = method_exists($exception, 'getStatusCode') ? (int) $exception->getStatusCode() : (int) ($exception->status ?? 500);
-
         $this->operation['route'] = $this->route($request);
-        $this->operation['status'] = $status >= 400 ? $status : 500;
+        $this->operation['status'] = $this->status($exception);
         $this->operation['refused'] = true;
         $this->operation['blind'] = $this->fakes->hiding($this->hidden);
 
         $this->finish();
+    }
+
+    /**
+     * Note the error a test let through, when the router is the one that
+     * tells of the request: no answer will come for it.
+     */
+    public function thrown(Throwable $exception): void
+    {
+        if ($this->loose) {
+            $this->ended = $this->status($exception);
+        }
+    }
+
+    /**
+     * Get the status of the error page the person gets for an error.
+     */
+    protected function status(Throwable $exception): int
+    {
+        $status = method_exists($exception, 'getStatusCode') ? (int) $exception->getStatusCode() : (int) ($exception->status ?? 500);
+
+        return $status >= 400 ? $status : 500;
     }
 
     /**
@@ -711,9 +734,9 @@ class Recorder
         }
 
         // No answer left the router: an error did, which the test let
-        // through. In use the person gets the error page.
+        // through. In use the person gets the error page for that error.
         if ($this->loose && $operation['status'] === null) {
-            $operation = [...$operation, 'route' => $this->matched, 'status' => 500, 'refused' => true];
+            $operation = [...$operation, 'route' => $this->matched, 'status' => $this->ended ?? 500, 'refused' => true];
 
             // A job that was held back did not run: the trace is not whole.
             if ($this->held !== []) {

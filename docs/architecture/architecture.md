@@ -1795,8 +1795,9 @@ router's events: it starts when the router looks for the route and takes the
 answer the router prepares. A request the app makes to itself inside another
 one is part of that one. When no answer comes, an error left the app that
 the test let through. In use the person gets the error page, so the request
-is recorded as a server error. Its line is written when the next request
-starts, when the next test starts its app, or when PHP stops.
+is recorded with the status of that page: the one the error names, or a
+server error. Its line is written when the next request starts, when the
+next test starts its app, or when PHP stops.
 
 All Livewire components of an app share one route for what a person does on
 them, and a test renders a component at an address with a random part. So
