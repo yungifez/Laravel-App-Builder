@@ -29,7 +29,8 @@ class PoolProvider implements BoxProvider
 
     public function create(WorkspaceSpec $spec): string
     {
-        $runner = Runner::query()->online()->get()
+        // A draining runner keeps its workspaces but gets no new ones.
+        $runner = Runner::query()->online()->whereNull('draining_at')->get()
             ->sortBy(fn (Runner $runner) => [$this->load($runner), $runner->id])
             ->first();
 
@@ -68,7 +69,7 @@ class PoolProvider implements BoxProvider
     /**
      * Count the workspaces a runner holds.
      */
-    protected function load(Runner $runner): int
+    public function load(Runner $runner): int
     {
         return Workspace::query()
             ->where('driver', 'runner')

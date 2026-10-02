@@ -189,8 +189,39 @@ can keep them closed to everything else.
 `tests/Fixtures/box-runner-firewall.mjs` proves these rules. Run it as root
 in the box image with `--cap-add NET_ADMIN`.
 
+## Replace a token
+
+If a token leaks, or a person who knew it leaves, give the machine a new
+token:
+
+```
+php artisan runners:token vm1
+```
+
+The old token stops working immediately. Put the new token in
+`/etc/builder-runner.env` on the VM, then restart the runner with
+`sudo systemctl restart builder-runner`.
+
+## Remove a machine
+
+1. Start the removal:
+
+    ```
+    php artisan runners:remove vm1
+    ```
+
+    If the machine holds no workspaces, the command removes it, and its token
+    stops working. If it still holds workspaces, the command only drains it:
+    the machine gets no new workspaces, and the command shows how many it
+    still holds.
+
+2. Keep the runner running while it drains. It must stay online to close its
+   workspaces. They close when their people finish or when they sit idle.
+3. Run `php artisan runners:remove vm1` again until it says the machine is
+   removed.
+4. Stop and disable the service with
+   `sudo systemctl disable --now builder-runner`, or delete the VM.
+
 ## Limits
 
-- There is no command to remove a machine or to replace its token yet. To
-  replace a token, add the machine again under a new name.
 - Workspaces can reach the public internet. Package installs need it.

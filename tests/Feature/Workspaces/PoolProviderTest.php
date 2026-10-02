@@ -119,4 +119,44 @@ class PoolProviderTest extends TestCase
         $this->assertSame(1, Artisan::call('runners:add', ['name' => 'vm-2']));
         $this->assertSame(1, Artisan::call('runners:add', ['name' => 'vm1']));
     }
+
+    public function test_a_runner_gets_a_new_token_and_the_old_one_stops_working()
+    {
+        Artisan::call('runners:add', ['name' => 'vm1']);
+        preg_match('/RUNNER_TOKEN=(\S+)/', Artisan::output(), $old);
+
+        $this->assertSame(0, Artisan::call('runners:token', ['name' => 'vm1']));
+        preg_match('/RUNNER_TOKEN=(\S+)/', Artisan::output(), $new);
+
+        $this->assertNotSame($old[1], $new[1]);
+        $this->assertNull((new PoolProvider)->authenticate($old[1]));
+        $this->assertSame('vm1', (new PoolProvider)->authenticate($new[1]));
+        $this->assertSame(1, Artisan::call('runners:token', ['name' => 'nobody']));
+    }
+
+    public function test_a_runner_drains_and_is_removed_once_it_holds_no_workspaces()
+    {
+        $runner = Runner::factory()->create(['name' => 'vm1']);
+        $this->holding($runner, 1);
+        $this->holding($runner, 2, WorkspaceStatus::Destroyed);
+
+        $this->assertSame(1, Artisan::call('runners:remove', ['name' => 'vm1']));
+        $this->assertStringContainsString('still holds 1', Artisan::output());
+        $this->assertNotNull($runner->refresh()->draining_at);
+
+        // It keeps its workspace, but new ones go elsewhere, or nowhere.
+        try {
+            (new PoolProvider)->create($this->spec());
+            $this->fail('A draining runner got a new workspace.');
+        } catch (RuntimeException) {
+        }
+        Runner::factory()->create(['name' => 'vm2']);
+        $this->assertSame('vm2--workspace-new', (new PoolProvider)->create($this->spec()));
+
+        Workspace::query()->update(['status' => WorkspaceStatus::Destroyed]);
+
+        $this->assertSame(0, Artisan::call('runners:remove', ['name' => 'vm1']));
+        $this->assertFalse(Runner::query()->whereKey($runner->id)->exists());
+        $this->assertSame(1, Artisan::call('runners:remove', ['name' => 'vm1']));
+    }
 }

@@ -21,10 +21,11 @@ use Illuminate\Support\Carbon;
  * @property string $token_hash
  * @property string|null $service_host
  * @property Carbon|null $last_seen_at
+ * @property Carbon|null $draining_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'token_hash', 'service_host', 'last_seen_at'])]
+#[Fillable(['name', 'token_hash', 'service_host', 'last_seen_at', 'draining_at'])]
 #[Hidden(['token_hash'])]
 class Runner extends Model
 {
@@ -40,6 +41,7 @@ class Runner extends Model
     {
         return [
             'last_seen_at' => 'datetime',
+            'draining_at' => 'datetime',
         ];
     }
 
