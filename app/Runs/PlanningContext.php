@@ -3,6 +3,7 @@
 namespace App\Runs;
 
 use App\Context\ProjectContext;
+use App\Projects\Frontend;
 
 /**
  * The bounded view of the project a planner works from.
@@ -19,6 +20,7 @@ final readonly class PlanningContext
      * @param  bool  $keepOldWorking  Whether changes must carry the app's old data and links forward
      * @param  list<string>  $services  The outside services the app is connected to
      * @param  list<string>  $routes  The app's addresses and the code that handles each
+     * @param  Frontend|null  $frontend  What the app's screens are made with
      */
     public function __construct(
         public string $request,
@@ -34,6 +36,7 @@ final readonly class PlanningContext
         public bool $keepOldWorking = true,
         public array $services = [],
         public array $routes = [],
+        public ?Frontend $frontend = null,
     ) {}
 
     /**

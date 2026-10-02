@@ -4,6 +4,7 @@ namespace App\Actions\Context;
 
 use App\Features\UnsafeCode;
 use App\Models\Project;
+use App\Projects\Frontend;
 use App\Projects\ProjectRepository;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
@@ -21,7 +22,8 @@ class CheckProjectNotes
      */
     public function handle(Project $project): array
     {
-        $files = $this->repository->files($project, $this->repository->head($project));
+        $head = $this->repository->head($project);
+        $files = $this->repository->files($project, $head);
         $context = $this->readProjectContext->current($project);
         $findings = [];
         $secrets = UnsafeCode::secretFiles($files);
@@ -57,7 +59,8 @@ class CheckProjectNotes
             }
         }
 
-        $described = array_values(array_filter(Config::array('builder.context.described_paths'), is_string(...)));
+        // The app's own screens are described too, wherever its frontend keeps them.
+        $described = array_values(array_filter([...Config::array('builder.context.described_paths'), ...Frontend::of($this->repository, $project, $head)->pages], is_string(...)));
         $undescribed = array_values(array_filter(Config::array('builder.context.undescribed'), is_string(...)));
 
         $unclaimed = array_values(array_filter($files, fn (string $path) => Str::startsWith($path, $described)

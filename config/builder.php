@@ -549,6 +549,49 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Frontends
+    |--------------------------------------------------------------------------
+    |
+    | The ways a Laravel app draws its screens. The builder works on any of
+    | them: an app is the first stack whose packages its composer.json
+    | ("composer") and package.json ("npm") require, so the last one, which
+    | requires nothing, takes every other app. "pages" lists the folders its
+    | screens live in, which the notes are expected to describe.
+    |
+    */
+
+    'frontends' => [
+        'inertia-vue' => [
+            'label' => 'Inertia with Vue',
+            'composer' => ['inertiajs/inertia-laravel'],
+            'npm' => ['@inertiajs/vue3'],
+            'pages' => ['resources/js/pages/', 'resources/js/Pages/'],
+        ],
+        'inertia-react' => [
+            'label' => 'Inertia with React',
+            'composer' => ['inertiajs/inertia-laravel'],
+            'npm' => ['@inertiajs/react'],
+            'pages' => ['resources/js/pages/', 'resources/js/Pages/'],
+        ],
+        'inertia-svelte' => [
+            'label' => 'Inertia with Svelte',
+            'composer' => ['inertiajs/inertia-laravel'],
+            'npm' => ['@inertiajs/svelte'],
+            'pages' => ['resources/js/pages/', 'resources/js/Pages/'],
+        ],
+        'livewire' => [
+            'label' => 'Livewire',
+            'composer' => ['livewire/livewire'],
+            'pages' => ['resources/views/'],
+        ],
+        'blade' => [
+            'label' => 'Blade views',
+            'pages' => ['resources/views/'],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Project Context
     |--------------------------------------------------------------------------
     |
@@ -574,8 +617,9 @@ return [
 
         // The quick check reports files under these paths that no area
         // describes, except the "undescribed" patterns: framework plumbing
-        // every Laravel app has.
-        'described_paths' => json_decode((string) env('BUILDER_DESCRIBED_PATHS', '["app/", "routes/", "resources/js/pages/"]'), true) ?: [],
+        // every Laravel app has. The folders of the app's screens are added
+        // from its frontend (see "frontends").
+        'described_paths' => json_decode((string) env('BUILDER_DESCRIBED_PATHS', '["app/", "routes/"]'), true) ?: [],
         'undescribed' => [
             'app/Http/Controllers/Controller.php',
             'app/Providers/*',
@@ -630,12 +674,12 @@ return [
             ['name' => 'Create .env', 'command' => ['cp', '.env.example', '.env'], 'timeout' => 30],
             ['name' => 'Install PHP dependencies', 'command' => ['composer', 'install', '--no-interaction', '--prefer-dist', '--no-progress'], 'timeout' => 900],
             ['name' => 'Generate app key', 'command' => ['php', 'artisan', 'key:generate', '--no-interaction'], 'timeout' => 60],
-            ['name' => 'Install Node dependencies', 'command' => ['npm', 'ci', '--no-audit', '--no-fund'], 'timeout' => 600],
-            ['name' => 'Generate route helpers', 'command' => ['php', 'artisan', 'wayfinder:generate', '--with-form'], 'timeout' => 120],
+            ['name' => 'Install Node dependencies', 'command' => ['npm', 'ci', '--no-audit', '--no-fund'], 'timeout' => 600, 'needs' => 'package.json'],
+            ['name' => 'Generate route helpers', 'command' => ['php', 'artisan', 'wayfinder:generate', '--with-form'], 'timeout' => 120, 'needs' => 'vendor/laravel/wayfinder'],
             // Tests that open a page need the built screens, as in the
             // starter kits' own CI; without them every such test fails on
             // a missing Vite manifest and blames the app for our setup.
-            ['name' => 'Build the screens', 'command' => ['npm', 'run', 'build'], 'timeout' => 600],
+            ['name' => 'Build the screens', 'command' => ['npm', 'run', 'build'], 'timeout' => 600, 'needs' => 'package.json'],
         ],
 
         // The check that runs the project's whole test suite. When it passes,
@@ -671,7 +715,8 @@ return [
 
         // Test checks. A PHP test the change adds that starts Node itself
         // (to render a screen, most often) is a blocking finding: Laravel
-        // apps test screens with assertInertia or Pest browser tests.
+        // apps test screens with their frontend's own test helpers or Pest
+        // browser tests.
         'test_scan' => (bool) env('BUILDER_TEST_SCAN', true),
 
         // Shortcuts in the app's PHP code that cost the owner later: errors
@@ -945,13 +990,16 @@ return [
         // brought are sent back to be fixed. "light_repair" says when its
         // failure is one problem the coding agent's light model may fix:
         // true for any failure, or a pattern its output must match. A
-        // check with a test report counts its failed tests instead.
+        // check with a test report counts its failed tests instead. A step
+        // (here or in "setup") that "needs" a file does not apply to an app
+        // without it, so an app with other tools or no frontend build is
+        // checked with what it has.
         'checks' => [
             ['name' => 'Tests', 'command' => ['php', 'artisan', 'test', '--log-junit=storage/logs/junit.xml'], 'timeout' => 600, 'report' => 'storage/logs/junit.xml'],
-            ['name' => 'Static analysis', 'command' => ['vendor/bin/phpstan', 'analyse', '--no-progress'], 'timeout' => 600, 'light_repair' => '/\bFound 1 error\b/'],
-            ['name' => 'PHP formatting', 'command' => ['vendor/bin/pint', '--test'], 'timeout' => 300, 'files' => ['php'], 'light_repair' => true],
-            ['name' => 'Frontend format and lint', 'command' => ['npx', 'vp', 'check', '--no-error-on-unmatched-pattern'], 'timeout' => 300, 'files' => ['ts', 'vue', 'js', 'mjs', 'css', 'json', 'md']],
-            ['name' => 'TypeScript', 'command' => ['npm', 'run', 'types:check'], 'timeout' => 300],
+            ['name' => 'Static analysis', 'command' => ['vendor/bin/phpstan', 'analyse', '--no-progress'], 'timeout' => 600, 'light_repair' => '/\bFound 1 error\b/', 'needs' => 'vendor/bin/phpstan'],
+            ['name' => 'PHP formatting', 'command' => ['vendor/bin/pint', '--test'], 'timeout' => 300, 'files' => ['php'], 'light_repair' => true, 'needs' => 'vendor/bin/pint'],
+            ['name' => 'Frontend format and lint', 'command' => ['npx', 'vp', 'check', '--no-error-on-unmatched-pattern'], 'timeout' => 300, 'files' => ['ts', 'vue', 'js', 'mjs', 'css', 'json', 'md'], 'needs' => 'node_modules/.bin/vp'],
+            ['name' => 'TypeScript', 'command' => ['npm', 'run', 'types:check'], 'timeout' => 300, 'needs' => 'tsconfig.json'],
         ],
 
         // Known security problems in the packages the app uses, looked up
@@ -1024,12 +1072,13 @@ return [
         'ports' => [20000, 20999],
 
         // Commands that prepare the project to run, after the change is applied.
+        // A step that "needs" a file runs only in an app that has it.
         'setup' => [
             ['name' => 'Create .env', 'command' => ['cp', '.env.example', '.env'], 'timeout' => 30],
             ['name' => 'Install PHP dependencies', 'command' => ['composer', 'install', '--no-interaction', '--prefer-dist', '--no-progress'], 'timeout' => 900],
             ['name' => 'Generate app key', 'command' => ['php', 'artisan', 'key:generate', '--no-interaction'], 'timeout' => 60],
             ['name' => 'Create the database', 'command' => ['php', 'artisan', 'migrate', '--force', '--no-interaction'], 'timeout' => 120],
-            ['name' => 'Install Node dependencies', 'command' => ['npm', 'ci', '--no-audit', '--no-fund'], 'timeout' => 600],
+            ['name' => 'Install Node dependencies', 'command' => ['npm', 'ci', '--no-audit', '--no-fund'], 'timeout' => 600, 'needs' => 'package.json'],
         ],
 
         // Point-and-edit. An editable preview runs the locator after setup,
@@ -1042,7 +1091,7 @@ return [
         // Commands that build the frontend: after setup (and the locator),
         // and again after each visual edit.
         'build' => [
-            ['name' => 'Build the frontend', 'command' => ['npm', 'run', 'build'], 'timeout' => 600],
+            ['name' => 'Build the frontend', 'command' => ['npm', 'run', 'build'], 'timeout' => 600, 'needs' => 'package.json'],
         ],
 
         // Keep the frontend build running in watch mode in an editable

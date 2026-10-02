@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Actions\Features\OpenChangeForDesign;
 use App\Actions\Previews\AllocatePreviewPort;
 use App\Actions\Previews\StopPreview;
+use App\Actions\Workspaces\CheckStepNeeds;
 use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\PreviewStatus;
@@ -95,10 +96,7 @@ class StartPreview implements ShouldQueue
 
             $this->run($runWorkspaceCommand, $workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], 30, __('The workspace could not be prepared.'));
 
-            /** @var list<array{name: string, command: list<string>, timeout: int}> $setup */
-            $setup = config('builder.preview.setup', []);
-
-            foreach ($setup as $step) {
+            foreach (self::steps('setup', $workspace) as $step) {
                 $this->run($runWorkspaceCommand, $workspace, $step['command'], $step['timeout'], __('The setup step ":name" failed.', ['name' => $step['name']]));
             }
 
@@ -109,10 +107,7 @@ class StartPreview implements ShouldQueue
             }
 
             if (! ($this->preview->editable && $this->startWatching($driver, $runWorkspaceCommand, $workspace))) {
-                /** @var list<array{name: string, command: list<string>, timeout: int}> $build */
-                $build = config('builder.preview.build', []);
-
-                foreach ($build as $step) {
+                foreach (self::steps('build', $workspace) as $step) {
                     $this->run($runWorkspaceCommand, $workspace, $step['command'], $step['timeout'], __('The setup step ":name" failed.', ['name' => $step['name']]));
                 }
             }
@@ -175,6 +170,21 @@ class StartPreview implements ShouldQueue
     }
 
     /**
+     * Get the "setup" or "build" steps the app in the workspace can run, so
+     * an app with no package.json (Blade or Livewire with no build) still
+     * starts.
+     *
+     * @return list<array{name: string, command: list<string>, timeout: int, needs?: string}>
+     */
+    public static function steps(string $stage, Workspace $workspace): array
+    {
+        /** @var list<array{name: string, command: list<string>, timeout: int, needs?: string}> $steps */
+        $steps = config("builder.preview.{$stage}", []);
+
+        return app(CheckStepNeeds::class)->filter($workspace, $steps);
+    }
+
+    /**
      * Get the command that marks elements with their source location: in the
      * app, or in the files staged under "stage".
      *
@@ -228,7 +238,8 @@ class StartPreview implements ShouldQueue
      */
     protected function startWatching(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace): bool
     {
-        if (! config('builder.preview.watch.enabled')) {
+        // The watcher is a Node build; an app with no package.json has none.
+        if (! config('builder.preview.watch.enabled') || self::steps('build', $workspace) === []) {
             return false;
         }
 

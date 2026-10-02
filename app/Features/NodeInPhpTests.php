@@ -6,8 +6,9 @@ namespace App\Features;
  * PHP tests a change adds that start Node (or another JavaScript runtime)
  * themselves, most often to render a screen. That is slow, breaks with
  * the build tools, and is not how a Laravel app tests its screens: a test
- * checks what a page gets with Inertia's assertInertia, or opens it in a
- * Pest browser test.
+ * checks a screen with its frontend's own helpers (Inertia's assertInertia,
+ * Livewire::test, or assertSee on a Blade view), or opens it in a Pest
+ * browser test.
  *
  * Only the lines a change adds count. A test file counts when it starts a
  * process and names a JavaScript runtime as a command, both in its added
@@ -70,7 +71,7 @@ class NodeInPhpTests
      */
     public static function finding(array $found): string
     {
-        return __('Line :line of :path starts Node from a PHP test. That is slow, breaks when the build tools change, and is not how Laravel apps test their screens. Check what a page gets with Inertia\'s assertInertia (its component and props), or open it in a Pest browser test, and remove the script the test ran.', $found);
+        return __('Line :line of :path starts Node from a PHP test. That is slow, breaks when the build tools change, and is not how Laravel apps test their screens. Check the screen with the helpers the app\'s frontend has for tests (assertInertia for an Inertia page, Livewire::test for a Livewire component, assertSee for a Blade view), or open it in a Pest browser test, and remove the script the test ran.', $found);
     }
 
     /**

@@ -33,7 +33,7 @@ class NotesDrafter implements Agent, HasStructuredOutput
           - key: a short kebab-case key.
           - name: a plain name.
           - summary: one plain sentence on what people can do in it.
-          - paths: glob patterns for the files that belong to it, for example "app/Http/Controllers/Settings/*" or "resources/js/pages/teams/*". Use only paths from the file list. Include its tests.
+          - paths: glob patterns for the files that belong to it, for example "app/Http/Controllers/Settings/*" or the folder of its screens, such as "resources/js/pages/teams/*" or "resources/views/livewire/teams/*". Use only paths from the file list. Include its tests.
           - behaviors: what people can do in it, each with a kebab-case key and a plain name such as "Invite a member".
           - rules: what must always be true there, only when the code clearly enforces it (for example a policy or validation rule). Leave it empty rather than guess.
 

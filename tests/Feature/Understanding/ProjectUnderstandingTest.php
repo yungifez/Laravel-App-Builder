@@ -452,6 +452,20 @@ class ProjectUnderstandingTest extends TestCase
                 ])));
     }
 
+    public function test_the_quick_check_reads_the_screens_wherever_the_apps_frontend_keeps_them()
+    {
+        // A Livewire app keeps its screens in Blade views, not in Vue pages.
+        $this->repository->commitFiles($this->project, $this->repository->head($this->project), [
+            'composer.json' => json_encode(['require' => ['laravel/framework' => '^13', 'livewire/livewire' => '^4']], JSON_THROW_ON_ERROR),
+            'resources/views/livewire/plans.blade.php' => "<div></div>\n",
+        ], 'Add a screen', null);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('check', fn (Assert $page) => $page
+                ->where('check.3', ['title' => 'Some parts of the app are not described in any notes.', 'details' => ['app/Http/Controllers/PlanController.php', 'resources/views/livewire/plans.blade.php']])));
+    }
+
     public function test_the_quick_check_says_first_when_secret_settings_are_kept_in_the_app()
     {
         $this->repository->commitFiles($this->project, $this->repository->head($this->project), [

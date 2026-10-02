@@ -219,6 +219,31 @@ class VerificationTest extends TestCase
         $this->assertSame([], collect($featureRequest->verifications()->sole()->results)->firstWhere('name', 'Tests')['tests']);
     }
 
+    public function test_a_step_the_app_has_no_use_for_does_not_apply_to_it()
+    {
+        config([
+            'builder.verification.setup' => [
+                ['name' => 'Install', 'command' => ['composer', 'install'], 'timeout' => 600],
+                ['name' => 'Build the screens', 'command' => ['npm', 'run', 'build'], 'timeout' => 600, 'needs' => 'package.json'],
+            ],
+            'builder.verification.checks' => [
+                ['name' => 'Tests', 'command' => ['php', 'artisan', 'test'], 'timeout' => 300],
+                ['name' => 'TypeScript', 'command' => ['npm', 'run', 'types:check'], 'timeout' => 300, 'needs' => 'tsconfig.json'],
+            ],
+        ]);
+        // A Livewire app with no frontend build of its own.
+        $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(exitCode: $command[0] === 'test' ? 1 : 0, output: 'ok', errorOutput: '', durationMs: 5);
+        $featureRequest = FeatureRequest::factory()->generated()->create(['patch' => 'PATCH']);
+
+        app(RequestVerification::class)->handle($featureRequest);
+
+        $results = collect($featureRequest->verifications()->sole()->results)->keyBy('name');
+        $this->assertSame('passed', $results['Tests']['outcome']);
+        $this->assertSame(['not_applicable', 'The app has no package.json, so this does not apply to it.'], [$results['Build the screens']['outcome'], $results['Build the screens']['output']]);
+        $this->assertSame('not_applicable', $results['TypeScript']['outcome']);
+        $this->assertNotContains(['npm', 'run', 'build'], array_column($this->driver->executed, 'command'));
+    }
+
     public function test_a_change_without_protected_tests_is_unverified_not_passed()
     {
         $request = FeatureRequest::factory()->generated()->create(['acceptance' => null]);

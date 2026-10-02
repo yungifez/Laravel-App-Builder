@@ -7,6 +7,7 @@ use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\FeatureRequestStatus;
 use App\Models\Run;
 use App\Models\Workspace;
+use App\Projects\Frontend;
 use App\Runs\PlanningContext;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Support\Str;
@@ -59,7 +60,21 @@ class GatherPlanningContext
             keepOldWorking: $keepOldWorking,
             services: $featureRequest->project->connectedServices(),
             routes: in_array('artisan', $files, true) ? $this->routes($workspace) : [],
+            frontend: $this->frontend($workspace, $files),
         );
+    }
+
+    /**
+     * Name what the app's screens are made with, from its manifests, so the
+     * planner builds new screens the way the app builds its others.
+     *
+     * @param  list<string>  $files
+     */
+    protected function frontend(Workspace $workspace, array $files): Frontend
+    {
+        $manifests = $this->contents($workspace, array_values(array_intersect(['composer.json', 'package.json'], $files)));
+
+        return Frontend::detect($manifests['composer.json'] ?? null, $manifests['package.json'] ?? null);
     }
 
     /**

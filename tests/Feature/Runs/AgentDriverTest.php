@@ -123,6 +123,15 @@ class AgentDriverTest extends TestCase
         FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, "## Addresses in the app\n\nEach address and the code that handles it.\n\n- GET /teams/{team} → TeamController@show (teams.show)\n- POST / → Closure\n"));
     }
 
+    public function test_the_planner_is_told_what_the_apps_screens_are_made_with()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+
+        app(StartRun::class)->handle($this->request(['composer.json' => json_encode(['require' => ['laravel/framework' => '^13', 'livewire/livewire' => '^4']])]));
+
+        FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, "## Screens\n\nThe app's screens are made with Livewire, in resources/views/. Build new screens the same way, beside the ones it has."));
+    }
+
     public function test_the_planner_gets_no_addresses_from_an_app_that_cannot_list_them()
     {
         FeaturePlanner::fake([$this->plan()]);

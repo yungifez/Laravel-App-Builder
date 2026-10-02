@@ -8,22 +8,12 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Translation\PotentiallyTranslatedString;
 
 /**
- * The builder imports only the kind of application it knows how to change:
- * Laravel with Inertia and Vue. Anything else is refused with the reason,
- * before any copy is made.
+ * The builder imports any Laravel application, whatever its screens are
+ * made with (see App\Projects\Frontend). Anything else is refused with the
+ * reason, before any copy is made.
  */
 class SupportedApplication implements ValidationRule
 {
-    /**
-     * The packages an application must require, by manifest.
-     *
-     * @var array<string, list<string>>
-     */
-    public const REQUIRED_PACKAGES = [
-        'composer.json' => ['laravel/framework', 'inertiajs/inertia-laravel'],
-        'package.json' => ['vue', '@inertiajs/vue3'],
-    ];
-
     /**
      * Run the validation rule.
      *
@@ -43,23 +33,16 @@ class SupportedApplication implements ValidationRule
             return;
         }
 
-        foreach (self::REQUIRED_PACKAGES as $manifest => $packages) {
-            $contents = File::isFile("{$value}/{$manifest}") ? json_decode(File::get("{$value}/{$manifest}"), true) : null;
+        $composer = File::isFile($value.'/composer.json') ? json_decode(File::get($value.'/composer.json'), true) : null;
 
-            if (! is_array($contents)) {
-                $fail(__('This app has no readable :manifest.', ['manifest' => $manifest]));
+        if (! is_array($composer)) {
+            $fail(__('This app has no readable composer.json.'));
 
-                return;
-            }
+            return;
+        }
 
-            $required = array_merge((array) ($contents['require'] ?? []), (array) ($contents['dependencies'] ?? []), (array) ($contents['devDependencies'] ?? []));
-            $missing = array_values(array_diff($packages, array_keys($required)));
-
-            if ($missing !== []) {
-                $fail(__('I can only work on Laravel apps that use Inertia with Vue. This app does not use :packages.', ['packages' => implode(', ', $missing)]));
-
-                return;
-            }
+        if (! array_key_exists('laravel/framework', (array) ($composer['require'] ?? []))) {
+            $fail(__('I can only work on Laravel apps. This app does not use laravel/framework.'));
         }
     }
 }

@@ -2742,6 +2742,27 @@ connect them without a developer.
 
 ## 18. Imported applications
 
+Any Laravel application is imported, whatever its screens are made with:
+Inertia with Vue, React or Svelte, Livewire, or plain Blade views. The only
+requirement is `laravel/framework` in `composer.json` and an `artisan` file.
+`App\Projects\Frontend` names the stack from the packages the app requires,
+using the `builder.frontends` list; the last entry requires nothing, so every
+app is one of them. Each part that must know where the screens live asks it,
+so knowledge of one stack stays in one place:
+
+- the notes check expects the stack's screen folders to be described;
+- the planner is told what the screens are made with and where they live, so
+  new screens follow the app's own way;
+- the safety scan reads each stack's way to show raw HTML (`v-html`, `x-html`,
+  `dangerouslySetInnerHTML`, `{@html}`);
+- a setup step or check that `needs` a file (the Node install and build need
+  `package.json`, Wayfinder needs its package, TypeScript needs
+  `tsconfig.json`, static analysis needs PHPStan) does not apply to an app
+  without it, in previews, checks and publishing alike
+  (`App\Actions\Workspaces\CheckStepNeeds`).
+
+A stack not in the list still works, with fewer of these aids.
+
 1. Read-only introspection and a conformance report: supported as-is; harmless
    variation, recorded as the project's own conventions so agents follow them;
    problematic structure (missing authorization, unsafe patterns, abandoned

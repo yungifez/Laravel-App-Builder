@@ -65,19 +65,27 @@ class NotesDraftTest extends TestCase
         Queue::assertNothingPushed();
     }
 
-    public function test_only_laravel_apps_with_inertia_and_vue_are_imported()
+    public function test_any_laravel_app_is_imported_whatever_its_screens_are_made_with()
     {
+        Queue::fake();
         $noArtisan = $this->makeProjectSource(array_diff_key($this->laravelApp(), ['artisan' => true]));
-        $noVue = $this->makeProjectSource(['package.json' => json_encode(['dependencies' => ['react' => '^19']])] + $this->laravelApp());
+        $noLaravel = $this->makeProjectSource(['composer.json' => json_encode(['require' => ['symfony/console' => '^7']])] + $this->laravelApp());
+        $livewire = $this->makeProjectSource(['composer.json' => json_encode(['require' => ['laravel/framework' => '^13', 'livewire/livewire' => '^4']])] + array_diff_key($this->laravelApp(), ['package.json' => true]));
 
         $this->actingAs($this->owner)
             ->post(route('projects.store'), ['name' => 'Acme', 'source_path' => $noArtisan])
             ->assertSessionHasErrors(['source_path' => 'This folder is not a Laravel app: it has no artisan file.']);
 
-        $this->post(route('projects.store'), ['name' => 'Acme', 'source_path' => $noVue])
-            ->assertSessionHasErrors(['source_path' => 'I can only work on Laravel apps that use Inertia with Vue. This app does not use vue, @inertiajs/vue3.']);
+        $this->post(route('projects.store'), ['name' => 'Acme', 'source_path' => $noLaravel])
+            ->assertSessionHasErrors(['source_path' => 'I can only work on Laravel apps. This app does not use laravel/framework.']);
 
         $this->assertSame(0, $this->owner->projects()->count());
+
+        // A Livewire app with no package.json is a Laravel app too.
+        $this->post(route('projects.store'), ['name' => 'School', 'source_path' => $livewire])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(1, $this->owner->projects()->count());
     }
 
     public function test_the_draft_keeps_only_areas_that_fit_the_notes()

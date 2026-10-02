@@ -173,6 +173,10 @@ abstract class AgentDriver implements ConstructionDriver
             ));
         }
 
+        if ($context->frontend !== null && $context->frontend->pages !== []) {
+            $sections[] = "## Screens\n\nThe app's screens are made with {$context->frontend->label}, in ".implode(', ', $context->frontend->pages).'. Build new screens the same way, beside the ones it has.';
+        }
+
         if ($context->routes !== []) {
             $sections[] = "## Addresses in the app\n\nEach address and the code that handles it.\n\n".implode("\n", array_map(fn (string $route) => "- {$route}", $context->routes));
         }

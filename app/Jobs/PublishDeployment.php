@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Actions\Workspaces\CheckStepNeeds;
 use App\Actions\Workspaces\DestroyWorkspace;
 use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
@@ -193,11 +194,16 @@ class PublishDeployment implements ShouldQueue
      */
     protected function passes(RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace): bool
     {
-        /** @var list<array{name: string, command: list<string>, timeout: int}> $setup */
+        /** @var list<array{name: string, command: list<string>, timeout: int, needs?: string}> $setup */
         $setup = config('builder.verification.setup', []);
 
-        /** @var list<array{name: string, command: list<string>, timeout: int}> $checks */
+        /** @var list<array{name: string, command: list<string>, timeout: int, needs?: string}> $checks */
         $checks = config('builder.verification.checks', []);
+
+        // A step the app has no use for (no package.json, say) is left out.
+        $needs = app(CheckStepNeeds::class);
+        $setup = $needs->filter($workspace, $setup);
+        $checks = $needs->filter($workspace, $checks);
 
         $results = [];
         $passed = true;

@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Actions\Context\ReadProjectContext;
 use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\VisualEditing\CommitDesignEdits;
+use App\Actions\Workspaces\CheckStepNeeds;
 use App\Actions\Workspaces\DestroyWorkspace;
 use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
@@ -264,8 +265,16 @@ class VerifyFeatureRequest implements ShouldQueue
     {
         $allSucceeded = true;
         $steps = $this->configuredSteps($stage);
+        $needs = app(CheckStepNeeds::class);
 
         foreach ($steps as $index => $step) {
+            // An app without the file a step needs has no use for it.
+            if (! $needs->met($workspace, $step)) {
+                $this->addResult($step['name'], $stage, self::OUTCOME_NOT_APPLICABLE, output: __('The app has no :file, so this does not apply to it.', ['file' => $step['needs'] ?? '']));
+
+                continue;
+            }
+
             $files = isset($step['files']) ? $this->changedFiles($step['files']) : null;
 
             if ($files === []) {
@@ -1085,11 +1094,11 @@ class VerifyFeatureRequest implements ShouldQueue
     /**
      * Get the configured setup commands or checks.
      *
-     * @return list<array{name: string, command: list<string>, timeout: int, report?: string, files?: list<string>}>
+     * @return list<array{name: string, command: list<string>, timeout: int, report?: string, files?: list<string>, needs?: string}>
      */
     protected function configuredSteps(string $stage): array
     {
-        /** @var list<array{name: string, command: list<string>, timeout: int, report?: string, files?: list<string>}> $steps */
+        /** @var list<array{name: string, command: list<string>, timeout: int, report?: string, files?: list<string>, needs?: string}> $steps */
         $steps = config("builder.verification.{$stage}", []);
 
         return $steps;

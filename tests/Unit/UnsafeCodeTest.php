@@ -31,6 +31,9 @@ class UnsafeCodeTest extends TestCase
         $patch = implode("\n", [
             $this->adding('resources/views/team.blade.php', ['<p>{{ $team->name }}</p>', '<p>{!! $team->description !!}</p>']),
             $this->adding('resources/js/pages/Team.vue', ['<p v-html="team.description" />']),
+            $this->adding('resources/views/livewire/team.blade.php', ['<p x-html="description"></p>']),
+            $this->adding('resources/js/pages/Team.tsx', ['<p dangerouslySetInnerHTML={{ __html: team.description }} />']),
+            $this->adding('src/routes/Team.svelte', ['<p>{@html team.description}</p>']),
             $this->adding('app/Models/Team.php', ['    protected $guarded = [];']),
             $this->adding('app/Http/Controllers/TeamController.php', [
                 '$teams = Team::whereRaw("name = \'$name\'")->get();',
@@ -42,6 +45,10 @@ class UnsafeCodeTest extends TestCase
         $this->assertSame([
             ['rule' => 'unescaped_output', 'path' => 'resources/views/team.blade.php', 'line' => 4],
             ['rule' => 'raw_html', 'path' => 'resources/js/pages/Team.vue', 'line' => 3],
+            // Every frontend's way to show HTML as it is.
+            ['rule' => 'raw_html', 'path' => 'resources/views/livewire/team.blade.php', 'line' => 3],
+            ['rule' => 'raw_html', 'path' => 'resources/js/pages/Team.tsx', 'line' => 3],
+            ['rule' => 'raw_html', 'path' => 'src/routes/Team.svelte', 'line' => 3],
             ['rule' => 'open_fields', 'path' => 'app/Models/Team.php', 'line' => 3],
             // A file with the same mistake twice is named once, at its first.
             ['rule' => 'raw_query', 'path' => 'app/Http/Controllers/TeamController.php', 'line' => 3],

@@ -29,11 +29,14 @@ class UnsafeCode
             'problem' => 'shows text on a page without escaping it ({!! !!}), so people could put their own code on the page',
             'fix' => 'Use {{ }}, which escapes it.',
         ],
+        // Each frontend's way to show HTML as it is: Vue's v-html, Alpine's
+        // x-html (in Livewire and Blade views), React's
+        // dangerouslySetInnerHTML and Svelte's {@html}.
         'raw_html' => [
-            'files' => '/\.vue$/',
-            'pattern' => '/\bv-html\s*=/',
-            'problem' => 'shows HTML on a page as it is (v-html), so people could put their own code on the page',
-            'fix' => 'Show it as text with {{ }}, or build the markup in the template.',
+            'files' => '/\.(vue|blade\.php|jsx|tsx|svelte)$/',
+            'pattern' => '/\b[vx]-html\s*=|\bdangerouslySetInnerHTML\b|\{@html\b/',
+            'problem' => 'shows HTML on a page as it is, so people could put their own code on the page',
+            'fix' => 'Show it as text, which escapes it, or build the markup in the template.',
         ],
         'raw_query' => [
             'files' => '/^(?!tests\/).*\.php$/',
