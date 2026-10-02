@@ -23,6 +23,8 @@
 //   RUNNER_SERVICE_HOST  the address the control plane reaches this
 //                 machine's previews at, such as its private network
 //                 address; previews listen only there
+//   RUNNER_FIREWALL  "off" to leave the machine's firewall alone; by
+//                 default the runner fences workspaces in when it can
 
 import { execFileSync, spawn } from 'node:child_process';
 import {
@@ -206,6 +208,199 @@ function identity(name) {
     }
 
     return { ids: { uid: id, gid: id }, home: join(homes(), name) };
+}
+
+/**
+ * The firewall, on a machine where the runner may use iptables (root with
+ * NET_ADMIN, as on a runner VM). Workspace users may not reach private
+ * networks, where the control plane's database and cache live, or the
+ * cloud's metadata address. On this machine, a preview's port answers only
+ * its own workspace (and the control plane, which comes from outside).
+ * Without iptables, as in local Docker, the runner goes on without it.
+ */
+const FIREWALLS = [
+    {
+        program: 'iptables',
+        reject: 'icmp-port-unreachable',
+        private: [
+            '10.0.0.0/8',
+            '172.16.0.0/12',
+            '192.168.0.0/16',
+            '169.254.0.0/16',
+            '100.64.0.0/10',
+        ],
+    },
+    {
+        program: 'ip6tables',
+        reject: 'icmp6-port-unreachable',
+        private: ['fc00::/7', 'fe80::/10'],
+    },
+];
+const FENCE = 'BUILDER-WORKSPACES';
+const PORTS = 'BUILDER-PREVIEWS';
+let fences = [];
+
+function firewall(program, args) {
+    return execFileSync(program, ['-w', ...args], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+}
+
+/** Run a firewall change; one that cannot be made is reported, not fatal. */
+function fenceEach(change) {
+    for (const fence of fences) {
+        try {
+            change(fence);
+        } catch (error) {
+            console.error(`Firewall (${fence.program}): ${error.message}`);
+        }
+    }
+}
+
+/** Remove the preview rules a test picks out of the chain's listing. */
+function unfence(fence, pick) {
+    for (const rule of firewall(fence.program, ['-S', PORTS]).split('\n')) {
+        if (rule.startsWith(`-A ${PORTS} `) && pick(rule)) {
+            firewall(
+                fence.program,
+                ['-D', ...rule.slice(3).split(' ')].map((part) =>
+                    part.replace(/^"|"$/g, ''),
+                ),
+            );
+        }
+    }
+}
+
+/**
+ * Set the firewall up, keeping the preview rules of workspaces that are
+ * still here so a restart of the runner leaves them fenced.
+ */
+function fenceUp() {
+    if (!switching || process.env.RUNNER_FIREWALL === 'off') {
+        return;
+    }
+
+    for (const fence of FIREWALLS) {
+        try {
+            firewall(fence.program, ['-S', 'OUTPUT']);
+        } catch {
+            continue;
+        }
+
+        try {
+            for (const chain of [FENCE, PORTS]) {
+                try {
+                    firewall(fence.program, ['-N', chain]);
+                } catch {
+                    // Made by an earlier start.
+                }
+            }
+
+            const users = [
+                '-m',
+                'owner',
+                '--uid-owner',
+                `${FIRST_ID}-${LAST_ID}`,
+            ];
+            firewall(fence.program, ['-F', FENCE]);
+
+            for (const rule of [
+                ['-o', 'lo', '-j', PORTS],
+                ['-o', 'lo', '-j', 'RETURN'],
+                ['-p', 'udp', '--dport', '53', '-j', 'RETURN'],
+                ['-p', 'tcp', '--dport', '53', '-j', 'RETURN'],
+                ...fence.private.map((range) => [
+                    '-d',
+                    range,
+                    '-j',
+                    'REJECT',
+                    '--reject-with',
+                    fence.reject,
+                ]),
+            ]) {
+                firewall(fence.program, ['-A', FENCE, ...rule]);
+            }
+
+            try {
+                firewall(fence.program, [
+                    '-C',
+                    'OUTPUT',
+                    ...users,
+                    '-j',
+                    FENCE,
+                ]);
+            } catch {
+                firewall(fence.program, [
+                    '-I',
+                    'OUTPUT',
+                    '1',
+                    ...users,
+                    '-j',
+                    FENCE,
+                ]);
+            }
+
+            fences.push(fence);
+        } catch (error) {
+            console.error(
+                `Firewall (${fence.program}) is off: ${error.message}`,
+            );
+        }
+    }
+
+    const here = new Set(workspaces());
+    fenceEach((fence) =>
+        unfence(fence, (rule) => {
+            const owner = rule.match(/--comment "?builder:([^" ]+)/);
+
+            return owner === null || !here.has(owner[1]);
+        }),
+    );
+
+    console.log(
+        fences.length > 0
+            ? `Firewall is on (${fences.map((fence) => fence.program).join(', ')}).`
+            : 'Firewall is off: this machine does not let the runner use iptables.',
+    );
+}
+
+/** Let only the workspace's own user reach a preview port on this machine. */
+function fencePort(name, port, uid) {
+    fenceEach((fence) => {
+        // A port handed to another workspace before keeps no old rule.
+        unfence(fence, (rule) => rule.includes(` --dport ${port} `));
+        firewall(fence.program, [
+            '-A',
+            PORTS,
+            '-p',
+            'tcp',
+            '--dport',
+            String(port),
+            '-m',
+            'owner',
+            '!',
+            '--uid-owner',
+            String(uid),
+            '-m',
+            'comment',
+            '--comment',
+            `builder:${name}`,
+            '-j',
+            'REJECT',
+            '--reject-with',
+            'tcp-reset',
+        ]);
+    });
+}
+
+function unfenceWorkspace(name) {
+    fenceEach((fence) =>
+        unfence(
+            fence,
+            (rule) => /--comment "?builder:([^" ]+)/.exec(rule)?.[1] === name,
+        ),
+    );
 }
 
 function environment(as, extra = {}) {
@@ -412,6 +607,7 @@ const handlers = {
 
     async close(command) {
         stopServices(command.box);
+        unfenceWorkspace(command.box);
         rmSync(box(command.box), { recursive: true, force: true });
         rmSync(join(homes(), command.box), { recursive: true, force: true });
         rmSync(servicesDirectory(command.box), {
@@ -524,6 +720,7 @@ const handlers = {
         if (switching) {
             own(directory, as.ids.uid);
             chownSync(log, as.ids.uid, as.ids.gid);
+            fencePort(command.box, Number(port), as.ids.uid);
         }
 
         const service = spawn(
@@ -663,6 +860,8 @@ async function main() {
                 console.error(`Could not settle ${name}: ${error.message}`);
             }
         }
+
+        fenceUp();
     }
 
     for (;;) {

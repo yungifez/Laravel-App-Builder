@@ -168,6 +168,23 @@ class RunnerDriverTest extends TestCase
         $this->assertTrue($result->successful(), $result->output().$result->errorOutput());
     }
 
+    public function test_the_real_runner_fences_each_workspace_off_from_the_others_previews_and_the_private_network()
+    {
+        // The firewall needs root and iptables, as the runner has on a runner
+        // machine: run tests/Fixtures/box-runner-firewall.mjs there.
+        if (posix_geteuid() !== 0) {
+            $this->markTestSkipped('Needs root and iptables, as the runner has on its machine.');
+        }
+
+        $result = Process::timeout(90)->run(['node', base_path('tests/Fixtures/box-runner-firewall.mjs'), base_path('resources/box-runner/runner.mjs')]);
+
+        if ($result->exitCode() === 77) {
+            $this->markTestSkipped('This machine does not let the runner use iptables.');
+        }
+
+        $this->assertTrue($result->successful(), $result->output().$result->errorOutput());
+    }
+
     public function test_the_project_is_packed_without_secrets_and_the_archive_is_removed_afterwards()
     {
         $source = storage_path('framework/testing/source-'.Str::lower(Str::random(8)));

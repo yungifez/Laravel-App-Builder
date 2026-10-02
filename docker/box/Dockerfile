@@ -17,6 +17,12 @@ RUN cd /opt/screen-check && npm ci --omit=dev --no-audit --no-fund \
     && npx playwright-core install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
 
+# On a runner machine the runner fences workspaces off from each other's
+# previews and from the private network with iptables (box-runner/runner.mjs).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends iptables \
+    && rm -rf /var/lib/apt/lists/*
+
 # The shortcut scan reads the PHP a change touched with the Sloppy analyser.
 # It lives here, pinned and checked, so nothing is added to the app itself.
 ARG SLOPPY_VERSION=1.1.1
