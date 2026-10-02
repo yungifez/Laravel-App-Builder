@@ -2,7 +2,9 @@
 
 namespace Tests\Feature\Workspaces;
 
+use App\Enums\PreviewStatus;
 use App\Enums\WorkspaceStatus;
+use App\Models\Preview;
 use App\Models\Runner;
 use App\Models\Workspace;
 use App\Workspaces\Boxes\BoxProviderManager;
@@ -158,5 +160,25 @@ class PoolProviderTest extends TestCase
         $this->assertSame(0, Artisan::call('runners:remove', ['name' => 'vm1']));
         $this->assertFalse(Runner::query()->whereKey($runner->id)->exists());
         $this->assertSame(1, Artisan::call('runners:remove', ['name' => 'vm1']));
+    }
+
+    public function test_a_machine_that_is_gone_for_good_is_removed_with_its_workspaces_closed()
+    {
+        $runner = Runner::factory()->create(['name' => 'vm1']);
+        $this->holding($runner, 2);
+        $preview = Preview::factory()->ready()->create(['workspace_id' => Workspace::query()->value('id')]);
+
+        // A machine that still asks for work is not gone.
+        $this->assertSame(1, Artisan::call('runners:remove', ['name' => 'vm1', '--gone' => true]));
+        $this->assertSame(2, (new PoolProvider)->load($runner));
+
+        $runner->update(['last_seen_at' => now()->subHour()]);
+
+        $this->assertSame(0, Artisan::call('runners:remove', ['name' => 'vm1', '--gone' => true]));
+        $this->assertStringContainsString('2 workspace(s) on it are closed', Artisan::output());
+        $this->assertFalse(Runner::query()->whereKey($runner->id)->exists());
+        $this->assertSame(0, Workspace::query()->whereNot('status', WorkspaceStatus::Destroyed)->count());
+        $this->assertSame(PreviewStatus::Stopped, $preview->refresh()->status);
+        $this->assertStringContainsString('This is our fault', (string) $preview->error);
     }
 }

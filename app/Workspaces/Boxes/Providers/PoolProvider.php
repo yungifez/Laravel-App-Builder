@@ -7,6 +7,7 @@ use App\Models\Runner;
 use App\Models\Workspace;
 use App\Workspaces\Boxes\Contracts\BoxProvider;
 use App\Workspaces\WorkspaceSpec;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -71,10 +72,19 @@ class PoolProvider implements BoxProvider
      */
     public function load(Runner $runner): int
     {
+        return $this->workspacesOn($runner)->count();
+    }
+
+    /**
+     * Get the workspaces a runner holds.
+     *
+     * @return Builder<Workspace>
+     */
+    public function workspacesOn(Runner $runner): Builder
+    {
         return Workspace::query()
             ->where('driver', 'runner')
             ->where('driver_id', 'like', $runner->name.self::SEPARATOR.'%')
-            ->whereNot('status', WorkspaceStatus::Destroyed)
-            ->count();
+            ->whereNot('status', WorkspaceStatus::Destroyed);
     }
 }

@@ -222,6 +222,20 @@ The old token stops working immediately. Put the new token in
 4. Stop and disable the service with
    `sudo systemctl disable --now builder-runner`, or delete the VM.
 
+### If the machine is gone for good
+
+If the VM is deleted or cannot start again, its workspaces cannot close on
+it. Remove it with `--gone`:
+
+```
+php artisan runners:remove vm1 --gone
+```
+
+The control plane closes the machine's workspaces and stops their previews.
+The people who used them can start their apps again on another machine.
+Runs that were working on the machine stop. The command refuses
+while the machine still asks for work, so make sure the runner is stopped.
+
 ## Limits
 
 - Workspaces can reach the public internet. Package installs need it.
