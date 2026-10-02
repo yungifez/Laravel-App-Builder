@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { router, useHttp } from '@inertiajs/vue3';
-import { LoaderCircle, UserRound } from '@lucide/vue';
+import { LoaderCircle, UserRound, UserRoundPlus } from '@lucide/vue';
 import { ref } from 'vue';
 import { toast } from 'vue-sonner';
+import PreviewPersonController from '@/actions/App/Http/Controllers/PreviewPersonController';
 import PreviewSignInController from '@/actions/App/Http/Controllers/PreviewSignInController';
 import { Button } from '@/components/ui/button';
 import {
@@ -10,6 +11,7 @@ import {
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuLabel,
+    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { PreviewPerson } from '@/types';
@@ -68,6 +70,35 @@ async function signInAs(person: PreviewPerson): Promise<void> {
         signingIn.value = null;
     }
 }
+
+// A new app has nobody to be yet, so the owner can make someone, with the
+// app's own example details, and be them at once.
+const make = useHttp({ to: '/' });
+
+async function makePerson(): Promise<void> {
+    make.to = props.path;
+    signingIn.value = 'new';
+
+    try {
+        const { person, url } = (await make.post(
+            PreviewPersonController.store.url(props.projectId, {
+                query: { copy: props.copy },
+            }),
+        )) as { person: PreviewPerson; url: string };
+
+        emit('open', url);
+        toast(`You are signed in as ${label(person)}, a new test person`);
+    } catch {
+        const errors = make.errors as Record<string, string | undefined>;
+
+        toast.error(
+            errors.app ??
+                'Your app could not make a test person. This is our fault. Try again.',
+        );
+    } finally {
+        signingIn.value = null;
+    }
+}
 </script>
 
 <template>
@@ -103,8 +134,7 @@ async function signInAs(person: PreviewPerson): Promise<void> {
                 class="px-2 py-1.5 text-sm text-muted-foreground"
                 data-test="sign-in-as-nobody"
             >
-                Nobody has signed up yet. Sign up in your app, and you can come
-                back here to be anyone who did, with no password.
+                Nobody has signed up yet.
             </p>
             <template v-else>
                 <DropdownMenuItem
@@ -121,6 +151,17 @@ async function signInAs(person: PreviewPerson): Promise<void> {
                         class="w-full truncate text-xs text-muted-foreground"
                         >{{ person.email }}</span
                     >
+                </DropdownMenuItem>
+            </template>
+            <template v-if="people !== undefined">
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                    :disabled="signingIn !== null"
+                    data-test="sign-in-as-new"
+                    @select="makePerson"
+                >
+                    <UserRoundPlus class="size-4" />
+                    Make a test person
                 </DropdownMenuItem>
             </template>
         </DropdownMenuContent>

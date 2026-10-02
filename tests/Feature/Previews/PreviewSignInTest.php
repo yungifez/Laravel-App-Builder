@@ -116,4 +116,40 @@ class PreviewSignInTest extends TestCase
             ->assertJsonValidationErrors('to');
         $this->assertSame([], $this->driver->executed);
     }
+
+    public function test_the_owner_makes_a_test_person_and_is_signed_in_as_them()
+    {
+        $this->driver->onExec = fn (string $workspaceId, array $command) => new CommandResult(
+            exitCode: 0,
+            output: ($command[3] ?? null) === '--'
+                ? json_encode(['name' => 'acme-session', 'value' => 'sealed-session-id', 'minutes' => 90])
+                : "Some notice\n".json_encode(['id' => '12', 'name' => 'Ada', 'email' => 'ada@example.test']),
+            errorOutput: '',
+            durationMs: 5,
+        );
+
+        $response = $this->actingAs($this->owner)
+            ->postJson(route('preview-people.store', $this->project), ['to' => '/classes'])
+            ->assertOk()
+            ->assertJsonPath('person', ['id' => '12', 'name' => 'Ada', 'email' => 'ada@example.test']);
+
+        // The app makes them with its own factory, then signs in the one made.
+        $this->assertStringContainsString('::factory()->create()', $this->driver->executed[0]['command'][2]);
+        $this->assertSame(['--', '12'], array_slice($this->driver->executed[1]['command'], 3));
+        $this->get((string) $response->json('url'))->assertRedirect('/classes');
+    }
+
+    public function test_an_app_that_cannot_make_people_says_to_sign_up_instead()
+    {
+        $this->driver->onExec = fn () => new CommandResult(exitCode: 5, output: '', errorOutput: '', durationMs: 5);
+
+        $this->actingAs($this->owner)
+            ->postJson(route('preview-people.store', $this->project))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['app' => 'Sign up in your app instead']);
+
+        $this->actingAs(User::factory()->create())
+            ->postJson(route('preview-people.store', $this->project))
+            ->assertForbidden();
+    }
 }

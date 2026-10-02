@@ -2,6 +2,7 @@
 
 namespace App\Actions\Previews;
 
+use App\Models\Preview;
 use App\Models\Project;
 use Illuminate\Support\Facades\Cache;
 
@@ -48,7 +49,7 @@ class ReadPreviewPeople
             return null;
         }
 
-        $output = (string) Cache::remember("previews:{$preview->id}:people", now()->addSeconds(4), fn () => rescue(
+        $output = (string) Cache::remember(self::key($preview), now()->addSeconds(4), fn () => rescue(
             fn () => $this->runPreviewCommand->handle($preview, ['php', '-r', self::SCRIPT, '--', (string) self::LIMIT], 60, ''),
             '',
             report: false,
@@ -64,5 +65,18 @@ class ReadPreviewPeople
             'name' => is_string($person['name'] ?? null) ? $person['name'] : null,
             'email' => is_string($person['email'] ?? null) ? $person['email'] : null,
         ] : null, $people)));
+    }
+
+    /**
+     * Forget who was read, after someone was added.
+     */
+    public static function forget(Preview $preview): void
+    {
+        Cache::forget(self::key($preview));
+    }
+
+    protected static function key(Preview $preview): string
+    {
+        return "previews:{$preview->id}:people";
     }
 }
