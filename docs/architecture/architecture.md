@@ -1957,7 +1957,9 @@ can be caused, in requests that ran the change's code:
   order its code gives them, and are not a place.
 
 For each place, verification runs the one test that made the request again,
-with `TRACE_RECORDER_FAULT` naming the test, the request and the effect. The
+with `TRACE_RECORDER_FAULT` naming the test, the request and the effect. It
+picks the test by its method, or by the sentence that names it when the test
+is written in Pest. The
 recorder then makes that one effect fail the way it fails in use: the mail
 transport cannot connect, the outside call times out, or the database
 refuses the write before it runs. A job is run again when it is done, the

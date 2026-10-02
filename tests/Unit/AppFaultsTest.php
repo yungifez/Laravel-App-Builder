@@ -258,6 +258,13 @@ class AppFaultsTest extends TestCase
         $this->assertCount(1, $this->points([$this->recorded('POST', '/orders', 302, $effects)]));
         $this->assertSame('test_customers_order', $this->points([$this->recorded('POST', '/orders', 302, $effects, ['test' => self::TEST.' with data set "a::b"'])])[0]['filter']);
 
+        // Pest names a test by a sentence, and its filter reads the sentence, not the method it made.
+        $filter = fn (string $test) => $this->points([$this->recorded('POST', '/orders', 302, $effects, ['test' => $test])])[0]['filter'];
+        $this->assertSame('::it.orders(?: with data set |$)', $filter('P\Tests\Feature\OrderTest::__pest_evaluable_it_orders'));
+        $this->assertSame('::it.orders(?: with data set |$)', $filter('P\Tests\Feature\OrderTest::__pest_evaluable_it_orders with data set "(\'a::b\')"'));
+        $this->assertSame('::.orders.{1,2}....it.keeps.{2,3}total(?: with data set |$)', $filter("P\\Tests\\Feature\\OrderTest::__pest_evaluable__orders__\u{2192}_it_keeps___total"));
+        $this->assertSame(1, preg_match('/'.$filter("P\\Tests\\Feature\\OrderTest::__pest_evaluable__orders__\u{2192}_it_keeps___total").'/i', "Tests\\Feature\\OrderTest::`orders` \u{2192} it keeps _total"));
+
         // No test, a name a filter cannot take, no place among the test's requests, or a trace cut short.
         $this->assertSame([], $this->points([$this->recorded('POST', '/orders', 302, $effects, ['test' => null])]));
         $this->assertSame([], $this->points([$this->recorded('POST', '/orders', 302, $effects, ['test' => 'Tests\Feature\OrderTest::it orders (twice)'])]));

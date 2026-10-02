@@ -128,6 +128,11 @@ class AppFaults
     protected const ORDER = ['http' => 0, 'mail' => 0, 'answer' => 0, 'job' => 1, 'later' => 1, 'event' => 1, 'query' => 2];
 
     /**
+     * How Pest starts the method it makes for a test named by a sentence.
+     */
+    protected const SENTENCE = '__pest_evaluable_';
+
+    /**
      * The most findings kept, so one change cannot fill the row.
      */
     protected const KEPT = 40;
@@ -808,12 +813,23 @@ class AppFaults
     /**
      * Get what picks the test out of the suite: its method, without the
      * data set it ran with. Null when the name is not one a test runner's
-     * filter can take as it is.
+     * filter can take.
+     *
+     * Pest makes the method of a test from the sentence that names it, and
+     * its filter reads the sentence, not the method. An underscore in the
+     * method is a space or a sign of the sentence, and two are an
+     * underscore or two signs. The filter takes any character there.
      */
     protected static function filter(?string $test): ?string
     {
         $name = (string) preg_replace('/ with data set .*$/s', '', (string) $test);
         $method = substr((string) strrchr($name, ':'), 1);
+
+        if (preg_match('/^'.self::SENTENCE.'([\w\x80-\xff]+)$/', $method, $sentence) === 1) {
+            $any = fn (array $signs): string => strlen($signs[0]) === 1 ? '.' : '.{'.intdiv(strlen($signs[0]) + 1, 2).','.strlen($signs[0]).'}';
+
+            return '::'.preg_replace_callback('/_+|[\x80-\xff]/', $any, $sentence[1]).'(?: with data set |$)';
+        }
 
         return preg_match('/^\w+$/', $method) === 1 ? $method : null;
     }
