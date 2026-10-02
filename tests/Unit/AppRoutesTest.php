@@ -81,6 +81,13 @@ class AppRoutesTest extends TestCase
         ], AppRoutes::opened($changes));
         $this->assertSame([], AppRoutes::opened(null));
         $this->assertSame('/teams', AppRoutes::address('GET /teams'));
+        // Livewire's own address means nothing to the owner; its component does.
+        $this->assertSame('the send receipt part of a page', AppRoutes::address('POST /livewire-3f2a/update#send-receipt@send'));
+        $this->assertSame('the order list part of a page', AppRoutes::address('GET /livewire-unit-test-endpoint#orders.order-list'));
+        $this->assertSame('the cart part of a page', AppRoutes::address('POST /livewire-3f2a/update#pages::cart@add'));
+        $this->assertSame('the one part of a page', AppRoutes::address('POST /livewire-3f2a/update#one+two@save+three+more'));
+        $this->assertSame('the send receipt part of a page', AppRoutes::address('GET /livewire-unit-test-endpoint#App\\Livewire\\SendReceipt'));
+        $this->assertSame('a part of a page', AppRoutes::address('GET /livewire-unit-test-endpoint'));
     }
 
     public function test_a_new_route_that_changes_something_with_no_check_on_who_may_use_it_is_found()

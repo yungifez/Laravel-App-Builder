@@ -143,11 +143,24 @@ class AppRoutes
     }
 
     /**
-     * Get a route's address as the owner sees it in the browser.
+     * Get a route's address as the owner sees it in the browser. A
+     * Livewire request goes to Livewire's own address, which the owner
+     * never sees, so it is named by its component instead: the recorder
+     * writes "/livewire-…/update#send-receipt@send", with "+" between
+     * components when a request updates several.
      */
     public static function address(string $route): string
     {
-        return Str::after($route, ' ');
+        $address = Str::after($route, ' ');
+
+        if (! str_starts_with($address, '/livewire-')) {
+            return $address;
+        }
+
+        // The first component, as "send-receipt", "pages::cart", "orders.list" or a class name.
+        $name = Str::of($address)->after('#')->before('+')->before('@')->afterLast('\\')->afterLast('::')->afterLast('.')->snake()->replace(['-', '_'], ' ')->squish()->value();
+
+        return ! str_contains($address, '#') || $name === '' ? __('a part of a page') : __('the :name part of a page', ['name' => $name]);
     }
 
     /**
