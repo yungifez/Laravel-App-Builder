@@ -55,6 +55,9 @@ services:
             dockerfile: ../docker/box/Dockerfile
         image: builder-box
         entrypoint: ['node', '/opt/box-runner/runner.mjs']
+        # A process that outlives its parent is reaped, not left as a zombie
+        # under the runner (closing a workspace stops every one of them).
+        init: true
         environment:
             RUNNER_URL: 'http://laravel.test'
             RUNNER_TOKEN: '${WORKSPACE_RUNNER_TOKEN:-}'

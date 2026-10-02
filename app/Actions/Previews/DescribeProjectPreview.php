@@ -3,6 +3,7 @@
 namespace App\Actions\Previews;
 
 use App\Enums\PreviewStatus;
+use App\Features\OwnerWording;
 use App\Models\Project;
 use App\Projects\ProjectRepository;
 
@@ -28,7 +29,9 @@ class DescribeProjectPreview
         return [
             'id' => $preview->uuid,
             'status' => $preview->status->value,
-            'error' => $preview->error,
+            // The owner reads why in one line; the commands' output after it
+            // stays with the preview for operators.
+            'error' => OwnerWording::message(strtok((string) $preview->error, "\n") ?: null),
             'origin' => rtrim($preview->url(), '/'),
             'revision' => $preview->revision,
             // A rebuild that failed is not coming: the error says so instead.

@@ -746,6 +746,18 @@ class VisualEditingTest extends TestCase
                     ->where('element.reason', 'behind')));
     }
 
+    public function test_a_preview_that_could_not_start_tells_the_owner_why_without_the_command_output()
+    {
+        $preview = $this->runningPreview();
+        $preview->update(['status' => PreviewStatus::Failed, 'error' => "The setup step \"Create the database\" failed.\n  2026_08_22_062418_create_profiles_table ..... 251.25ms DONE"]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('preview.error', 'The setup step "Create the database" failed.'));
+
+        $this->assertStringContainsString('create_profiles_table', (string) $preview->refresh()->error, 'Operators keep the detail.');
+    }
+
     public function test_the_gateway_adds_the_overlay_to_editable_pages_and_lets_only_the_builder_embed_them()
     {
         $preview = $this->runningPreview(['session_hash' => hash('sha256', 'secret'), 'session_expires_at' => now()->addHour()]);
