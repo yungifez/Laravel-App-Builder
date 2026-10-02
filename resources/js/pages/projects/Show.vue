@@ -23,6 +23,7 @@ import {
     ChevronDown,
     ExternalLink,
     ImagePlus,
+    ListChecks,
     Lock,
     MessageSquare,
     Monitor,
@@ -93,6 +94,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
 import { useAppPreview } from '@/composables/useAppPreview';
+import { useFormFill } from '@/composables/useFormFill';
 import { usePanelWidth } from '@/composables/usePanelWidth';
 import { morph } from '@/lib/morph';
 import { when } from '@/lib/when';
@@ -660,6 +662,21 @@ const browsing = computed(() =>
                   ),
           },
 );
+
+// One tap fills the form on the page on show with example details, in
+// the app or in the copy of the change the owner tries.
+const formFill = useFormFill(() =>
+    copyFrameOnShow.value
+        ? { frame: changeCopyFrame.value, origin: changeCopyOrigin.value }
+        : { frame: app.frame, origin: props.preview?.origin ?? null },
+);
+// While the owner designs, a click in the app picks a part instead.
+const canFill = computed(() => formFill.empty.value > 0 && !designing.value);
+
+function fillForm(): void {
+    showing.value = 'app';
+    formFill.fill();
+}
 
 // The bar over the app shows while the app runs.
 const toolbarShown = computed(
@@ -2295,6 +2312,24 @@ function sendOnEnter(event: KeyboardEvent): void {
                         >
                             <ExternalLink class="size-4" />
                         </a>
+                    </Button>
+                    <!-- It stays in place and only greys out on a page
+                         with nothing to fill, so nothing jumps. -->
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        class="size-9"
+                        :disabled="!canFill"
+                        aria-label="Fill the form with example details"
+                        :title="
+                            canFill
+                                ? 'Fill the form with example details'
+                                : 'Nothing to fill on this page'
+                        "
+                        data-test="preview-fill"
+                        @click="fillForm"
+                    >
+                        <ListChecks class="size-4" />
                     </Button>
                 </div>
                 <!-- Before and after sit in the bar, between moving around

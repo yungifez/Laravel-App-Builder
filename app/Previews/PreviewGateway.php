@@ -317,6 +317,8 @@ class PreviewGateway
         $this->letBuilderShow($response);
 
         $this->addScript($response, File::get(resource_path('preview-tools/alive.js')));
+        // The builder's "Fill the form" button works on every page.
+        $this->addScript($response, File::get(resource_path('preview-tools/fill.js')));
 
         if ($preview->editable) {
             $this->prepareForEditing($response);

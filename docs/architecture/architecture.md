@@ -2713,6 +2713,17 @@ reads the preview's workspace, so the app itself does not change.
   address that needs nothing filled in, with a lock when a visitor must
   sign in. Picking one opens it in the app on show. Framework addresses
   that answer with data, not a page, are left out.
+- **Fill the form** (built). One tap beside Back and Forward puts example
+  details in every empty field of the page on show, the way typing does,
+  so the app's own code sees them. Nothing is sent: the owner looks, then
+  presses the app's own button. A script the gateway adds to every page
+  does the filling; it acts only on messages from the builder's origin,
+  answers only to it, and tells it counts, never what a field holds. A
+  sign-in form is left alone ("Sign in as" does that), as are search
+  boxes, cards and one-time codes. A new password is made at random on
+  each fill, only where the app asks for a new one; nobody knows it, and
+  the owner comes back with "Sign in as". Each fill is a new example
+  person, so an app that takes an email once takes a second sign-up.
 - **Jobs** need no tab while previews run queued work at once
   (`QUEUE_CONNECTION=sync`).
 
