@@ -272,7 +272,7 @@ PHP;
     /**
      * Say a model's name in words.
      */
-    protected static function words(string $model): string
+    public static function words(string $model): string
     {
         return Str::of($model)->snake(' ')->lower()->toString();
     }
@@ -299,7 +299,7 @@ PHP;
      * @param  array{model: string, key: string}|null  $tenant
      * @return list<array{action: string, method: string, uri: string, param: string, key: string|null, controller: string|null, scope: Scope|null}>
      */
-    protected static function routesFor(string $model, array $routes, ?array $tenant = null): array
+    public static function routesFor(string $model, array $routes, ?array $tenant = null): array
     {
         $name = Str::camel($model);
         $controllers = [];

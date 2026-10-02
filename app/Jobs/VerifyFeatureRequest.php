@@ -27,6 +27,7 @@ use App\Features\CodeShortcuts;
 use App\Features\NewCode;
 use App\Features\NewTests;
 use App\Features\PatchSummary;
+use App\Features\ReplayProbes;
 use App\Features\ScreenCheck;
 use App\Features\TestMap;
 use App\Features\TestReport;
@@ -38,6 +39,7 @@ use App\Models\Workspace;
 use App\Models\WorkspaceCommand;
 use App\Projects\ProjectRepository;
 use App\Runs\Plan;
+use App\Scaffolding\Scaffold;
 use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\Drivers\CopyExclusions;
 use App\Workspaces\Exceptions\CommandLost;
@@ -50,6 +52,9 @@ use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 
+/**
+ * @phpstan-import-type Record from Scaffold
+ */
 class VerifyFeatureRequest implements ShouldQueue
 {
     use Queueable;
@@ -212,6 +217,7 @@ class VerifyFeatureRequest implements ShouldQueue
             if ($checksPassed && in_array($acceptance, [self::OUTCOME_PASSED, self::OUTCOME_NOT_APPLICABLE], true)) {
                 $checksPassed = $this->probeAccess($driver, $runWorkspaceCommand, $workspace, $featureRequest);
                 $checksPassed = $this->shiftTime($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
+                $checksPassed = $this->replayForms($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
                 $this->observeScreens($driver, $runWorkspaceCommand, $workspace, $featureRequest);
                 $this->observeFaults($driver, $runWorkspaceCommand, $workspace, $featureRequest);
 
@@ -1044,19 +1050,11 @@ class VerifyFeatureRequest implements ShouldQueue
         }
 
         try {
-            $records = array_values(collect($featureRequest->lineage())
-                ->flatMap(fn (FeatureRequest $request) => $request->latestRun?->plan === null ? [] : Plan::fromArray($request->latestRun->plan)->dataShape)
-                ->keyBy('name')
-                ->filter(fn (array $record) => ($record['access'] ?? null) !== null)
-                ->all());
+            $records = array_values(array_filter($this->plannedRecords($featureRequest), fn (array $record) => ($record['access'] ?? null) !== null));
 
             // Records the app already had answer to its own policy, on the
             // routes of the controllers the change touched.
-            $controllers = array_values(collect($this->touched)
-                ->reject(fn (bool $deleted, string $path) => $deleted || ! preg_match('#^app/Http/Controllers/(.+)\.php$#', $path))
-                ->keys()
-                ->map(fn (string $path) => 'App\\Http\\Controllers\\'.str_replace('/', '\\', substr($path, 21, -4)))
-                ->all());
+            $controllers = $this->touchedControllers();
 
             if ($records === [] && $controllers === []) {
                 return true;
@@ -1119,6 +1117,99 @@ class VerifyFeatureRequest implements ShouldQueue
 
             return true;
         }
+    }
+
+    /**
+     * Send each form that adds a record the change works on twice, and add
+     * the result as a check. Return false only when the database refused
+     * the second send as a duplicate and the page broke; a probe that
+     * could not run proves nothing either way.
+     */
+    protected function replayForms(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): bool
+    {
+        /** @var array{enabled: bool, probes: int, test: string, command: list<string>, timeout: int, report: string} $config */
+        $config = config('builder.verification.replay');
+        /** @var array{command: list<string>, report: string} $routes */
+        $routes = config('builder.verification.access.routes');
+
+        if (! $config['enabled']) {
+            return true;
+        }
+
+        try {
+            $records = $this->plannedRecords($featureRequest);
+            $controllers = $this->touchedControllers();
+
+            if ($records === [] && $controllers === []) {
+                return true;
+            }
+
+            $read = fn (string $path) => (string) rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), '', report: false);
+
+            if ($this->outcome($runWorkspaceCommand->handle($workspace, $routes['command'], 60)) !== self::OUTCOME_PASSED) {
+                return true;
+            }
+
+            $models = $controllers === [] ? [] : (preg_match_all('#app/Models/(\w+)\.php#', $runWorkspaceCommand->handle($workspace, ['find', 'app/Models', '-maxdepth', '1', '-name', '*.php', '-type', 'f'], 30)->output, $found) > 0 ? $found[1] : []);
+            $probes = ReplayProbes::plan($records, $models, $read($routes['report']), $controllers, $config['probes']);
+
+            if ($probes === []) {
+                return true;
+            }
+
+            $driver->writeFile((string) $workspace->driver_id, $config['test'], ReplayProbes::test($probes, $config['report']));
+            $command = $runWorkspaceCommand->handle($workspace, [...$config['command'], $config['test']], $config['timeout']);
+            $runWorkspaceCommand->handle($workspace, ['rm', '-f', $config['test']], 30);
+
+            if ($command->lost) {
+                throw new CommandLost($command->error_output);
+            }
+
+            $measured = ReplayProbes::measure($probes, ReplayProbes::parse($read($config['report'])));
+
+            if ($measured['tried'] === 0) {
+                return true;
+            }
+
+            $passed = $measured['findings'] === [];
+            $this->addResult(__('Sending a form twice'), 'checks', $passed ? self::OUTCOME_PASSED : self::OUTCOME_FAILED, durationMs: $command->duration_ms, output: ReplayProbes::describe($measured));
+
+            return $passed;
+        } catch (CommandLost $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return true;
+        }
+    }
+
+    /**
+     * Get the records the plans of the change and its earlier rounds
+     * described, the latest of each name.
+     *
+     * @return list<Record>
+     */
+    protected function plannedRecords(FeatureRequest $featureRequest): array
+    {
+        return array_values(collect($featureRequest->lineage())
+            ->flatMap(fn (FeatureRequest $request) => $request->latestRun?->plan === null ? [] : Plan::fromArray($request->latestRun->plan)->dataShape)
+            ->keyBy('name')
+            ->all());
+    }
+
+    /**
+     * Get the controllers the change added or changed, by class name.
+     *
+     * @return list<string>
+     */
+    protected function touchedControllers(): array
+    {
+        return array_values(collect($this->touched)
+            ->reject(fn (bool $deleted, string $path) => $deleted || ! preg_match('#^app/Http/Controllers/(.+)\.php$#', $path))
+            ->keys()
+            ->map(fn (string $path) => 'App\\Http\\Controllers\\'.str_replace('/', '\\', substr($path, 21, -4)))
+            ->all());
     }
 
     /**

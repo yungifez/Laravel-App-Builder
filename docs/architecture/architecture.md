@@ -3838,6 +3838,18 @@ test and the moment. A test that fails on the ordinary day is broken by the
 stopped clock, not by a date, and is left out. Time zones and daylight saving
 are not tried yet.
 
+**Sending a form twice (the replay engine of direction 32).** People click
+twice, go back and send again, or lose the answer on a slow line. For each
+record the plan describes, and each model whose controller the change touched,
+the route that adds it (matched as above) gets the same values twice from one
+signed-in person, in a generated test. Only a second send that the database
+refuses as a duplicate (`UniqueConstraintViolationException`) is a finding: the
+page broke where a rule should have given a message. It fails the check
+"Sending a form twice", with the columns the database named, never the values.
+A first send that was turned down proves nothing, and a second record is not
+judged, since the app may want two. Jobs that run twice are the fault
+engine's (§12).
+
 **Out of V0:** the rest, including the introspection this relies on, beyond
 what V0's own verification already uses.
 

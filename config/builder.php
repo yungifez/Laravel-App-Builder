@@ -980,6 +980,21 @@ return [
             'report' => 'storage/logs/access/probes.jsonl',
         ],
 
+        // The replay engine (direction 32): each form that adds a record the
+        // change works on is sent twice as one signed-in person, in a test
+        // written to "test" and taken out after. When the database refuses
+        // the second send as a duplicate and the page breaks, the change
+        // goes back to check the value first. The routes come from the
+        // access block's route list.
+        'replay' => [
+            'enabled' => (bool) env('BUILDER_REPLAY_PROBES', true),
+            'probes' => (int) env('BUILDER_REPLAY_PROBE_LIMIT', 10),
+            'test' => 'tests/Feature/ReplayProbeTest.php',
+            'command' => ['sh', '-c', 'rm -f storage/logs/access/replay.jsonl && { php artisan test "$1" > storage/logs/access/replay.log 2>&1 || true; }', 'sh'],
+            'timeout' => 300,
+            'report' => 'storage/logs/access/replay.jsonl',
+        ],
+
         // The time engine (direction 32): when the change's code works with
         // dates, its own tests run with the clock stopped on an ordinary
         // day, then at moments where date code often breaks (the last
