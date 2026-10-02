@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Form } from '@inertiajs/vue3';
 import { useResizeObserver } from '@vueuse/core';
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,29 @@ const scale = computed(() =>
         : Math.min(1, paneSize.value.width / drawnWidth.value),
 );
 
+// An app can take a few seconds to draw itself. Past a moment, the pane
+// says so, rather than stay empty; a quick one shows no message at all.
+const slow = ref(false);
+let slowTimer: ReturnType<typeof setTimeout> | undefined;
+
+watch(
+    () =>
+        props.state.running &&
+        props.state.frames.length > 0 &&
+        !props.state.drawn,
+    (waiting) => {
+        clearTimeout(slowTimer);
+        slow.value = false;
+
+        if (waiting) {
+            slowTimer = setTimeout(() => (slow.value = true), 800);
+        }
+    },
+    { immediate: true },
+);
+
+onBeforeUnmount(() => clearTimeout(slowTimer));
+
 // The overlay in the app draws its handles bigger by as much as the app is
 // drawn smaller, so they stay easy to grab.
 watch(scale, (value) => (props.state.zoom = value), { immediate: true });
@@ -60,6 +83,15 @@ watch(scale, (value) => (props.state.zoom = value), { immediate: true });
         <template
             v-if="state.running && !state.lost && state.frames.length > 0"
         >
+            <!-- Behind the app, which covers it once drawn. -->
+            <div
+                v-if="slow"
+                class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center"
+                data-test="preview-opening"
+            >
+                <Spinner class="size-6" />
+                <p class="text-sm text-muted-foreground">Opening your app…</p>
+            </div>
             <iframe
                 v-for="(appFrame, index) in state.frames"
                 :key="appFrame.key"
