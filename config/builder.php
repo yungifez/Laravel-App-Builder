@@ -1005,7 +1005,9 @@ return [
         // how many people can have it open at once.
         'share_days' => (int) env('BUILDER_PREVIEW_SHARE_DAYS', 7),
         'shared_sessions' => 50,
-        'idle_minutes' => (int) env('BUILDER_PREVIEW_IDLE_MINUTES', 30),
+        // A preview is idle when no tab shows it, and starts again in
+        // seconds, so it can stop soon after.
+        'idle_minutes' => (int) env('BUILDER_PREVIEW_IDLE_MINUTES', 10),
         'max_minutes' => (int) env('BUILDER_PREVIEW_MAX_MINUTES', 240),
         // How many previews one owner can have running at once. Each holds
         // a server, so starting one more stops the owner's least used one.
