@@ -406,6 +406,52 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([['handling', 'update', $app('thrown')], ['error', 'select', $app('reported')]], $seen($thrown));
     }
 
+    public function test_a_kind_of_thing_named_in_the_recording_folder_fails_in_every_request_until_the_file_goes()
+    {
+        Route::post('/_failing/order', [RecordedApp::class, 'order']);
+        $recorded = $this->record();
+
+        $this->post('/_failing/order')->assertNoContent();
+
+        // The owner of the app on show says its email is down: each email fails from now on.
+        File::put("{$this->directory}/fault.json", json_encode(['kind' => 'mail']));
+        $this->post('/_failing/order')->assertStatus(500);
+        $this->post('/_failing/order')->assertStatus(500);
+
+        // A kind that cannot be made to fail, or a file that says nothing, lets all work.
+        File::put("{$this->directory}/fault.json", json_encode(['kind' => 'query']));
+        $this->post('/_failing/order')->assertNoContent();
+        File::put("{$this->directory}/fault.json", json_encode(['kind' => null]));
+        $this->post('/_failing/order')->assertNoContent();
+
+        $requests = $recorded();
+        $this->assertSame([204, 500, 500, 204, 204], array_column($requests, 'status'));
+        $this->assertSame([false, true, true, false, false], array_map(fn (array $request) => isset($request['fault']), $requests));
+        $this->assertSame(1, $requests[1]['fault']);
+        // The email that failed is marked in the trace as written, so the owner reads which one it was.
+        $written = array_map(fn (string $line) => json_decode($line, true), array_filter(explode("\n", File::get("{$this->directory}/trace.jsonl"))));
+        $this->assertSame([false, true], array_map(fn (array $effect) => $effect['failed'] ?? false, $written[1]['effects']));
+    }
+
+    public function test_a_full_trace_is_moved_aside_so_an_app_in_use_cannot_fill_the_disk()
+    {
+        Route::post('/_failing/order', [RecordedApp::class, 'receipt']);
+        $this->record();
+
+        // A trace that has grown past its bound, as a busy app on show leaves.
+        File::put("{$this->directory}/trace.old.jsonl", "older\n");
+        File::put("{$this->directory}/trace.jsonl", str_repeat('x', Recorder::MAX_BYTES + 1)."\n");
+
+        $this->post('/_failing/order')->assertNoContent();
+
+        $lines = array_filter(explode("\n", File::get("{$this->directory}/trace.jsonl")));
+        $this->assertCount(1, $lines, 'The new trace holds only the request after the move.');
+        $this->assertSame('POST', json_decode(reset($lines), true)['method']);
+        $this->assertSame(Recorder::MAX_BYTES + 2, File::size("{$this->directory}/trace.old.jsonl"), 'The full trace took the place of the one before it.');
+        // Two traces at most: the folder stays within twice the bound.
+        $this->assertSame(['trace.jsonl', 'trace.old.jsonl'], array_values(array_filter(array_map('basename', File::files($this->directory)), fn (string $name) => str_starts_with($name, 'trace'))));
+    }
+
     public function test_nothing_fails_for_another_test_or_another_kind_of_thing()
     {
         Route::post('/_failing/order', [RecordedApp::class, 'receipt']);

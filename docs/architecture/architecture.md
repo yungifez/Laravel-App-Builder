@@ -2724,6 +2724,33 @@ reads the preview's workspace, so the app itself does not change.
   each fill, only where the app asks for a new one; nobody knows it, and
   the owner comes back with "Sign in as". Each fill is a new example
   person, so an app that takes an email once takes a second sign-up.
+- **What happened** (built). A tab says, newest first, what the app did
+  behind each of its last pages in plain words: "Sent a form on
+  /bookings · Saved a new booking · Sent an email: Booking confirmed",
+  "Opened /bookings · Looked at bookings, rooms". It reads the trace the
+  recorder (§12) writes while the app is on show: the preview
+  server loads `/opt/trace-recorder/prepend.php` from the box image
+  through PHP's own prepend setting (`php -d auto_prepend_file=`), and
+  the recorder writes `storage/logs/recorder/trace.jsonl` in the
+  workspace, a path the app's own `.gitignore` keeps out of its
+  repository. Nothing is added to the app. The tab reads the end of the
+  trace through the driver and follows along while the owner looks. A
+  trace past 4 MB is moved aside (one old copy kept), so a busy app
+  cannot fill the workspace disk. The trace holds routes, table names,
+  class names and hosts: never field values, headers or cookies.
+  `BUILDER_PREVIEW_RECORDER=false` turns it off. Reads of framework
+  tables (sessions, cache, jobs) are not something the app did and are
+  left out; saves are said on their own, so only a read is "looked at".
+- **What if it fails** (built). A select in the same tab lets the owner
+  pretend one kind of thing is down while they use the app: "Email is
+  down", "Outside services do not answer", "Storage is full". The
+  builder writes `storage/logs/recorder/fault.json` in the workspace;
+  the recorder reads it as each request starts and makes every thing of
+  that kind fail, so the owner sees the page a visitor would see and the
+  tab says what could not be done. Nothing is sent or stored for real
+  either way. The warning stays on screen until the owner picks "All
+  works", and the preview server drops the file when it starts, so a
+  restarted app starts with all working.
 - **Jobs** need no tab while previews run queued work at once
   (`QUEUE_CONNECTION=sync`).
 

@@ -71,7 +71,8 @@ class PreviewTest extends TestCase
         $this->assertSame($preview->port, $service['port']);
         $this->assertContains("APP_URL=http://{$preview->host}.preview.test", $service['command']);
         $this->assertContains('MAIL_MAILER=log', $service['command']);
-        $this->assertSame(['php', '-S', "127.0.0.1:{$preview->port}"], array_slice($service['command'], array_search('php', $service['command'], true), 3));
+        // The server loads the trace recorder, which "What happened" reads.
+        $this->assertSame(['php', '-d', 'auto_prepend_file=/opt/trace-recorder/prepend.php', '-S', "127.0.0.1:{$preview->port}"], array_slice($service['command'], array_search('php', $service['command'], true), 5));
         $this->assertSame("http://{$workspaceId}.test:{$preview->port}", $preview->upstream_url);
 
         $this->get(route('feature-requests.show', $request))
@@ -111,7 +112,7 @@ class PreviewTest extends TestCase
         $preview = $request->previews()->sole();
         $command = $this->driver->services[0]['command'];
         $workspaceId = $this->driver->copies[0]['workspace'];
-        $this->assertSame(['php', '-S', "{$workspaceId}.test:{$preview->port}"], array_slice($command, array_search('php', $command, true), 3));
+        $this->assertSame(['-S', "{$workspaceId}.test:{$preview->port}"], array_slice($command, array_search('-S', $command, true), 2));
     }
 
     public function test_a_preview_gets_the_keys_of_the_apps_services_but_never_sends_real_email()

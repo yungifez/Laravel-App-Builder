@@ -95,6 +95,13 @@ use WeakMap;
  * server error is given as its answer. The trace then says if the app's
  * code asked that answer for its status.
  *
+ * While a person uses the app, a file "fault.json" in the recording folder
+ * can name one kind of thing ("mail", "http" or "file"). Every thing of
+ * that kind then fails, in every request, for as long as the file is
+ * there: the owner of the app sees what a visitor would see when the mail
+ * server, an outside service or the disk is down. A test run never has
+ * that file in its folder.
+ *
  * A test can turn off all middleware, as each test of a Livewire component
  * does. The recorder's own middleware then does not run, so the request is
  * recorded from the router's events. A request that no answer came for
@@ -257,6 +264,38 @@ class Recorder
         $this->fakes = new Fakes($app, $this);
         $this->test = $this->runningTest();
         $this->fault = $this->faultToCause();
+    }
+
+    /**
+     * The kinds of thing that can be made to fail for as long as the app is used.
+     */
+    public const LIVE = ['mail', 'http', 'file'];
+
+    /**
+     * How big the trace grows before it is moved aside. The folder holds
+     * at most two traces, so an app that is used a lot stays within bounds.
+     */
+    public const MAX_BYTES = 4_000_000;
+
+    /**
+     * The kind of thing that fails in every request now, outside a test.
+     */
+    protected ?string $live = null;
+
+    /**
+     * Read the kind of thing to make fail now, from the recording folder.
+     * It is read as each request starts, so a change takes at once.
+     */
+    protected function liveFault(): ?string
+    {
+        try {
+            $file = rtrim($this->directory, '/').'/fault.json';
+            $fault = is_file($file) ? json_decode((string) file_get_contents($file), true) : null;
+        } catch (Throwable) {
+            return null;
+        }
+
+        return is_array($fault) && in_array($fault['kind'] ?? null, self::LIVE, true) ? $fault['kind'] : null;
     }
 
     /**
@@ -432,6 +471,7 @@ class Recorder
         $this->matched = null;
         $this->ended = null;
         $this->requests++;
+        $this->live = $this->liveFault();
         $this->jobs = 0;
         $this->running = [];
         $this->held = [];
@@ -764,7 +804,7 @@ class Recorder
     protected function quiet(): bool
     {
         return isset($this->operation['fault'])
-            && in_array($this->fault['kind'] ?? null, ['mail', 'http', 'file', 'query'], true)
+            && in_array($this->fault['kind'] ?? $this->live, ['mail', 'http', 'file', 'query'], true)
             && ! $this->told
             && $this->seen();
     }
@@ -1034,7 +1074,15 @@ class Recorder
         }
 
         try {
-            file_put_contents(rtrim($this->directory, '/').'/trace.jsonl', json_encode($operation, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE)."\n", FILE_APPEND | LOCK_EX);
+            $trace = rtrim($this->directory, '/').'/trace.jsonl';
+
+            // A busy app on show must not fill the disk: a full trace is
+            // moved aside, in place of the one before it, and a new one starts.
+            if (is_file($trace) && filesize($trace) > self::MAX_BYTES) {
+                rename($trace, rtrim($this->directory, '/').'/trace.old.jsonl');
+            }
+
+            file_put_contents($trace, json_encode($operation, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE)."\n", FILE_APPEND | LOCK_EX);
         } catch (Throwable) {
             //
         }
@@ -1193,10 +1241,16 @@ class Recorder
             $failing = $fails !== null && $this->fault !== null && ! isset($this->operation['fault'])
                 && $this->fault === ['request' => $this->requests - 1, 'effect' => $place, 'kind' => $effect['kind']];
 
+            // While the app is in use, every thing of the kind that is down fails, not one.
+            if ($fails !== null && $this->live === $effect['kind']) {
+                $failing = true;
+                $effect['failed'] = true;
+            }
+
             $this->operation['effects'][] = $effect;
 
             if ($failing) {
-                $this->operation['fault'] = $place;
+                $this->operation['fault'] ??= $place;
             }
         } catch (Throwable) {
             //

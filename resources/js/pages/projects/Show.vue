@@ -57,6 +57,7 @@ import ProjectExperimentController from '@/actions/App/Http/Controllers/ProjectE
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
 import AppData from '@/components/AppData.vue';
 import AppEmails from '@/components/AppEmails.vue';
+import AppHappenings from '@/components/AppHappenings.vue';
 import AppProblems from '@/components/AppProblems.vue';
 import AppSchedule from '@/components/AppSchedule.vue';
 import AppPreview from '@/components/AppPreview.vue';
@@ -120,6 +121,7 @@ import type {
     SentEmail,
     SentNotice,
     AppColor,
+    AppHappenings as AppHappened,
     AppPage,
     AppProblem,
     SavedRows,
@@ -149,6 +151,7 @@ const props = defineProps<{
     data?: SavedTable[] | null;
     rows?: SavedRows | null;
     schedule?: ScheduledTask[] | null;
+    happenings?: AppHappened;
     files?: StoredFile[] | null;
     pages?: AppPage[] | null;
     colors?: AppColor[];
@@ -235,7 +238,7 @@ const app = useAppPreview({
 
 // Beside the app, what it does behind the page: the emails it sent, the
 // problems it ran into, the data it saved and what it runs on its own.
-type Behind = 'app' | 'emails' | 'problems' | 'data' | 'schedule';
+type Behind = 'app' | 'emails' | 'problems' | 'data' | 'schedule' | 'happened';
 const showing = ref<Behind>('app');
 
 // Looked for every few seconds while the app runs, so what is new is
@@ -261,7 +264,9 @@ watch(
                     ? ['data', 'files']
                     : value === 'emails'
                       ? ['emails', 'notices']
-                      : [value],
+                      : value === 'happened'
+                        ? ['happenings']
+                        : [value],
         }),
 );
 
@@ -271,6 +276,18 @@ const noticesPoll = usePoll(5000, { only: ['notices'] }, { autoStart: false });
 watch(
     () => showing.value === 'emails' && app.running && !app.lost,
     (looking) => (looking ? noticesPoll.start() : noticesPoll.stop()),
+);
+
+// What the app did follows along while the owner looks at it.
+const happenedPoll = usePoll(
+    4000,
+    { only: ['happenings'] },
+    { autoStart: false },
+);
+
+watch(
+    () => showing.value === 'happened' && app.running && !app.lost,
+    (looking) => (looking ? happenedPoll.start() : happenedPoll.stop()),
 );
 
 // Saved data is read by running the app, so only while the owner looks.
@@ -436,6 +453,7 @@ const showingTabs = computed(() => [
     },
     { key: 'data' as const, label: 'Saved data', count: 0 },
     { key: 'schedule' as const, label: 'Schedule', count: 0 },
+    { key: 'happened' as const, label: 'What happened', count: 0 },
 ]);
 
 // Any page of the app is one pick away, as in a browser's address bar,
@@ -621,7 +639,9 @@ watch(
                           ? ['schedule']
                           : showing.value === 'emails'
                             ? ['notices']
-                            : []),
+                            : showing.value === 'happened'
+                              ? ['happenings']
+                              : []),
                 ],
             });
         }
@@ -2481,6 +2501,13 @@ function sendOnEnter(event: KeyboardEvent): void {
                 class="min-h-0 flex-1"
                 :project-id="project.id"
                 :problems="problems"
+                :copy="copy"
+            />
+            <AppHappenings
+                v-if="showing === 'happened' && (!changeCopy || changeCopyRuns)"
+                class="min-h-0 flex-1"
+                :project-id="project.id"
+                :happenings="happenings"
                 :copy="copy"
             />
             <AppSchedule

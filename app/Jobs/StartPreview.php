@@ -157,15 +157,43 @@ class StartPreview implements ShouldQueue
     {
         $environment = $this->preview->environment();
         $environment['PHP_CLI_SERVER_WORKERS'] ??= '4';
+        $recorder = $this->recorder();
 
         // Laravel's router script serves from the current directory, so the
         // server starts inside public/, as `artisan serve` does.
         return [
             'env',
             ...array_map(fn (string $name, string $value) => "{$name}={$value}", array_keys($environment), $environment),
-            'sh', '-c', 'cd public && exec "$@"', 'sh',
-            'php', '-S', (config('builder.preview.listen_host') ?? $reachedAt).":{$port}",
+            'sh', '-c', $recorder === null ? 'cd public && exec "$@"' : $recorder['shell'], 'sh',
+            ...($recorder === null ? [] : [$recorder['directory']]),
+            'php', ...($recorder === null ? [] : ['-d', 'auto_prepend_file='.$recorder['prepend']]),
+            '-S', (config('builder.preview.listen_host') ?? $reachedAt).":{$port}",
             '../vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php',
+        ];
+    }
+
+    /**
+     * How the server loads the trace recorder, which "What happened" and
+     * "What if it fails" read: the recorder's folder is made in the
+     * workspace, and a fault the owner set before this start is dropped,
+     * so the app starts with all working. Nothing when the recorder is
+     * off or not in the image.
+     *
+     * @return array{shell: string, directory: string, prepend: string}|null
+     */
+    protected function recorder(): ?array
+    {
+        if (! Config::boolean('builder.preview.recorder.enabled')) {
+            return null;
+        }
+
+        $prepend = Config::string('builder.preview.recorder.prepend');
+
+        return [
+            // $1 is the recorder's folder; the rest is the server command.
+            'shell' => 'if [ -f '.escapeshellarg($prepend).' ]; then mkdir -p "$1" && rm -f "$1/fault.json" && export TRACE_RECORDER_DIR="$PWD/$1"; fi; shift; cd public && exec "$@"',
+            'directory' => trim(Config::string('builder.preview.recorder.directory'), '/'),
+            'prepend' => $prepend,
         ];
     }
 

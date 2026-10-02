@@ -19,7 +19,15 @@ spl_autoload_register(function (string $class): void {
 });
 
 (function (string $directory): void {
-    $discovered = getcwd().'/bootstrap/cache/packages.php';
+    // The app's root is the working directory, or the one above it: the
+    // server of an app on show runs inside public/, as `artisan serve` does.
+    $root = (string) getcwd();
+
+    if (! is_file($root.'/bootstrap/cache/packages.php') && is_file(dirname($root).'/bootstrap/cache/packages.php')) {
+        $root = dirname($root);
+    }
+
+    $discovered = $root.'/bootstrap/cache/packages.php';
     $manifest = rtrim($directory, '/').'/packages.php';
 
     if (! is_file($discovered)) {
