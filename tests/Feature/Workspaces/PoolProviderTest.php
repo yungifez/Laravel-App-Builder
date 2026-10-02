@@ -166,6 +166,32 @@ class PoolProviderTest extends TestCase
         $this->assertSame(0, $pool->waiting());
     }
 
+    public function test_whoever_waits_for_a_machine_is_called_each_time_and_can_stop_the_wait()
+    {
+        config(['workspaces.boxes.pool.max_workspaces' => 1, 'workspaces.machines.cloud' => 'hetzner', 'workspaces.machines.boot_minutes' => 10]);
+        $this->holding(Runner::factory()->create(['name' => 'full', 'last_seen_at' => now()->addHour()]), 1);
+        $pool = new PoolProvider;
+        $calls = 0;
+        $spec = $this->spec();
+        $spec->whileWaiting = function () use (&$calls) {
+            if (++$calls === 3) {
+                throw new RuntimeException('The run was cancelled.');
+            }
+        };
+        Sleep::fake();
+
+        try {
+            $pool->create($spec);
+            $this->fail('A cancelled wait went on.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('The run was cancelled.', $exception->getMessage());
+        }
+
+        $this->assertSame(3, $calls);
+        Sleep::assertSleptTimes(2);
+        $this->assertSame(0, $pool->waiting());
+    }
+
     public function test_on_a_cloud_a_workspace_gives_up_when_no_machine_comes()
     {
         config(['workspaces.boxes.pool.max_workspaces' => 1, 'workspaces.machines.cloud' => 'hetzner', 'workspaces.machines.boot_minutes' => 10]);

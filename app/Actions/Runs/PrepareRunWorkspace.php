@@ -5,16 +5,19 @@ namespace App\Actions\Runs;
 use App\Actions\Workspaces\DestroyWorkspace;
 use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
+use App\Enums\RunStatus;
 use App\Enums\WorkspaceStatus;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\Workspace;
 use App\Projects\ProjectRepository;
 use App\Runs\Exceptions\ConstructionFailed;
+use App\Runs\Exceptions\RunCancelled;
 use App\Runs\RunLease;
 use App\Workspaces\Drivers\CopyExclusions;
 use App\Workspaces\WorkspaceFiles;
 use App\Workspaces\WorkspaceManager;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -48,7 +51,7 @@ class PrepareRunWorkspace
 
         $featureRequest = $run->featureRequest;
         $project = $featureRequest->project;
-        $workspace = $this->provisionWorkspace->handle($project->owner, (string) config('builder.construction.workspace_driver'));
+        $workspace = $this->provisionWorkspace->handle($project->owner, (string) config('builder.construction.workspace_driver'), $this->whileWaiting($run, $lease));
 
         try {
             $driver = $this->workspaces->driver($workspace->driver);
@@ -120,5 +123,36 @@ class PrepareRunWorkspace
         }
 
         return $result->output;
+    }
+
+    /**
+     * Make the step that runs while the workspace waits for a machine with
+     * room: keep the lease, which would run out during a long wait, stop
+     * when the owner cancels, and tell the owner once what the wait is for.
+     *
+     * @return Closure(): void
+     */
+    protected function whileWaiting(Run $run, RunLease $lease): Closure
+    {
+        $told = false;
+
+        return function () use ($run, $lease, &$told) {
+            DB::transaction(function () use ($run, $lease, &$told) {
+                $locked = Run::query()->lockForUpdate()->findOrFail($run->id);
+
+                $lease->assertHeldOn($locked);
+
+                if ($locked->status === RunStatus::Cancelling) {
+                    throw RunCancelled::forRun($locked->id);
+                }
+
+                $locked->extendLease();
+
+                if (! $told) {
+                    $locked->recordEvent('waiting_for_machine');
+                    $told = true;
+                }
+            });
+        };
     }
 }

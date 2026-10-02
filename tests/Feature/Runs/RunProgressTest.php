@@ -120,6 +120,18 @@ class RunProgressTest extends TestCase
         $this->assertSame('Reading how your app is put together', $this->progress($run)['text']);
     }
 
+    public function test_the_owner_sees_the_run_wait_for_a_machine()
+    {
+        $run = Run::factory()->create(['status' => RunStatus::Planning]);
+        $run->recordEvent('status', ['from' => 'queued', 'to' => 'planning']);
+        $run->recordEvent('waiting_for_machine');
+
+        $this->assertSame('Getting a computer ready to work on your app. This can take a few minutes', $this->progress($run)['text']);
+
+        $run->recordEvent('workspace_ready', ['workspace_id' => 1]);
+        $this->assertSame('Reading how your app is put together', $this->progress($run)['text']);
+    }
+
     /**
      * Describe the run's progress, without the short cache.
      *

@@ -71,6 +71,13 @@ class PoolProvider implements BoxProvider
 
                 $waiter ??= Str::random(16);
                 $this->wait($waiter, $deadline->getTimestamp());
+
+                // The one who asked keeps its own claims alive meanwhile, or
+                // stops the wait by throwing.
+                if ($spec->whileWaiting !== null) {
+                    ($spec->whileWaiting)();
+                }
+
                 Sleep::for(5)->seconds();
             }
         } finally {

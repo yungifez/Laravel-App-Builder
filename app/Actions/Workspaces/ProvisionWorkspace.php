@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Workspaces\WorkspaceManager;
 use App\Workspaces\WorkspaceSpec;
+use Closure;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -16,14 +17,18 @@ class ProvisionWorkspace
 
     /**
      * Start a workspace for the owner with the configured driver and size.
+     * When it has to wait for room, "whileWaiting" runs every few seconds.
+     *
+     * @param  (Closure(): void)|null  $whileWaiting
      *
      * @throws Throwable when the driver cannot start the workspace; the
      *                   workspace is then marked as failed.
      */
-    public function handle(User $owner, ?string $driver = null): Workspace
+    public function handle(User $owner, ?string $driver = null, ?Closure $whileWaiting = null): Workspace
     {
         $driver ??= $this->workspaces->getDefaultDriver();
         $spec = WorkspaceSpec::fromConfig('workspace-'.Str::lower((string) Str::ulid()), $this->workspaces->imageFor($driver));
+        $spec->whileWaiting = $whileWaiting;
 
         $workspace = $owner->workspaces()->create([
             'driver' => $driver,

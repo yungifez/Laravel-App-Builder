@@ -349,6 +349,7 @@ class DescribeChangeHistory
             'created' => 'Queued with the '.($data['driver'] ?? '?').' driver',
             'lease_acquired' => ($data['took_over'] ?? false) ? 'A worker took the run over' : 'A worker picked the run up',
             'status' => ($data['from'] ?? '?').' → '.($data['to'] ?? '?').(isset($data['reason']) ? " ({$data['reason']})" : '').(isset($data['question']) ? ': '.Str::limit((string) $data['question'], 200) : ''),
+            'waiting_for_machine' => 'Waited for a runner machine with room',
             'workspace_ready' => 'Workspace ready',
             'context_compiled' => 'Context compiled',
             'build_finished' => 'Coding attempt '.((int) ($data['attempt'] ?? 0) + 1).' finished',

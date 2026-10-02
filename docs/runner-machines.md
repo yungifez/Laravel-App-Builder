@@ -213,7 +213,9 @@ one of these things:
   places are free. Workspaces that wait for room count as places in use.
   When the pool is full, a new workspace waits up to
   `WORKSPACE_MACHINES_BOOT_MINUTES` for a machine instead of failing. Without
-  a cloud, it fails at once.
+  a cloud, it fails at once. A change that waits keeps its worker's lease,
+  tells the owner that a computer is getting ready, and stops waiting when
+  the owner cancels it.
 - It deletes a machine that held nothing for
   `WORKSPACE_MACHINES_EMPTY_MINUTES`, if the pool still has enough room
   without it.

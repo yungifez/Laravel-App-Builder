@@ -196,9 +196,10 @@ class DescribeRunProgress
      */
     protected function planning(Run $run): array
     {
-        $last = $run->events()->whereIn('type', ['status', 'workspace_ready', 'compatibility'])->reorder('sequence', 'desc')->value('type');
+        $last = $run->events()->whereIn('type', ['status', 'waiting_for_machine', 'workspace_ready', 'compatibility'])->reorder('sequence', 'desc')->value('type');
 
         $text = match (true) {
+            $last === 'waiting_for_machine' => __('Getting a computer ready to work on your app. This can take a few minutes'),
             $last === 'compatibility' => __('Deciding what to change, and how to prove it works'),
             $last === 'workspace_ready', $run->workspace?->status === WorkspaceStatus::Ready => __('Reading how your app is put together'),
             default => __('Getting a copy of your app ready'),

@@ -2,14 +2,21 @@
 
 namespace App\Workspaces;
 
+use Closure;
+
 class WorkspaceSpec
 {
+    /**
+     * @param  (Closure(): void)|null  $whileWaiting  run every few seconds while
+     *                                                the workspace waits for room
+     */
     public function __construct(
         public string $name,
         public string $image,
         public float $cpus,
         public int $memoryMb,
         public int $pids,
+        public ?Closure $whileWaiting = null,
     ) {}
 
     /**

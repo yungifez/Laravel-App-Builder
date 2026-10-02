@@ -5,6 +5,7 @@ namespace Tests\Feature\Runs;
 use App\Actions\Runs\AcquireRunLease;
 use App\Actions\Runs\CancelRun;
 use App\Actions\Runs\CompleteRunVerification;
+use App\Actions\Runs\PrepareRunWorkspace;
 use App\Actions\Runs\StartRun;
 use App\Actions\Runs\TransitionRun;
 use App\Enums\FeatureRequestStatus;
@@ -24,6 +25,7 @@ use App\Runs\ConstructionDriverManager;
 use App\Runs\Contracts\ConstructionDriver;
 use App\Runs\Exceptions\InvalidRunTransition;
 use App\Runs\Exceptions\LeaseLost;
+use App\Runs\Exceptions\RunCancelled;
 use App\Runs\Exceptions\RunLeaseHeld;
 use App\Runs\Plan;
 use App\Runs\PlanningContext;
@@ -205,6 +207,26 @@ class RunLifecycleTest extends TestCase
         $this->assertSame(FeatureRequestStatus::Cancelled, $featureRequest->refresh()->status);
         $this->assertSame(WorkspaceStatus::Destroyed, $run->workspace->status);
         $this->assertSame(0, $run->verifications()->count());
+    }
+
+    public function test_a_run_waiting_for_a_machine_keeps_its_lease_and_stops_when_cancelled()
+    {
+        $run = Run::factory()->create(['status' => RunStatus::Planning]);
+        $lease = app(AcquireRunLease::class)->handle($run, 'worker-a');
+        $this->assertNotNull($lease);
+        $whileWaiting = (fn () => $this->whileWaiting($run, $lease))->call(app(PrepareRunWorkspace::class));
+
+        $this->travel(4)->minutes();
+        $whileWaiting();
+        $whileWaiting();
+
+        $this->assertTrue($run->refresh()->lease_expires_at->gt(now()->addMinutes(4)));
+        $this->assertSame(1, $run->events()->where('type', 'waiting_for_machine')->count());
+
+        app(CancelRun::class)->handle($run);
+
+        $this->expectException(RunCancelled::class);
+        $whileWaiting();
     }
 
     public function test_other_users_cannot_cancel_a_run()
