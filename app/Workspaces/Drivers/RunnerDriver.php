@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use RuntimeException;
+use Throwable;
 
 /**
  * Runs each workspace in a box with a runner in it. The provider only
@@ -41,7 +42,17 @@ class RunnerDriver implements WorkspaceDriver
     {
         $box = $this->provider->create($spec);
 
-        $this->channel->call($box, 'open', [], $this->fileSeconds);
+        try {
+            $this->channel->call($box, 'open', [], $this->fileSeconds);
+        } catch (Throwable $exception) {
+            // The box may be half made on its machine, and no workspace
+            // records it to close it later. Ask its runner to clear it when
+            // it can, without waiting: a runner that is gone would only
+            // hold this failure up.
+            rescue(fn () => $this->channel->send($box, 'close', [], $this->fileSeconds));
+
+            throw $exception;
+        }
 
         return $box;
     }

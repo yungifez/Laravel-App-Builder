@@ -55,6 +55,20 @@ class RunnerDriverTest extends TestCase
         $this->assertSame('http://runner:8123', $this->driver->serviceUrl($box, 8123));
     }
 
+    public function test_a_box_that_did_not_open_is_cleared_on_its_machine()
+    {
+        $this->runner->on('open', fn () => ['exit_code' => 1, 'output' => '', 'error_output' => 'No space left on device', 'timed_out' => false, 'duration_ms' => 3]);
+
+        try {
+            $this->driver->create(new WorkspaceSpec('workspace-1', 'box', 1, 256, 64));
+            $this->fail('A box that did not open must fail.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('No space left on device', $exception->getMessage());
+        }
+
+        $this->assertSame(['open', 'close'], array_column($this->runner->received, 'type'));
+    }
+
     public function test_a_command_runs_in_the_box_and_its_credentials_do_not_outlive_it()
     {
         $this->runner->on('exec', fn (array $payload) => [
