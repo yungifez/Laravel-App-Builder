@@ -12,6 +12,8 @@ developer roles), strict mode per area ("Be extra careful here"), the
 drift measure of work per request per area with its ratchet (§16.1),
 the app's own convention for where it saves and sends, read from the
 recording (a shape rule, reviewer only),
+new calls between areas, from the recorded chains (coupling drift,
+reviewer only),
 containment read from where the app already calls each outside service
 (reviewer only, not yet confirmed by developers), the job that runs twice,
 the job retried after its save failed, the outside call made again after no

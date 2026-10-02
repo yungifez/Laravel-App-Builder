@@ -739,6 +739,23 @@ class AgentDriverTest extends TestCase
             && str_contains($prompt->prompt, 'PATCH /teams/{team}: a save at app/Http/Controllers/TeamController.php:22 in App\Http\Controllers\TeamController::update. Of the 15 saves seen in the rest of the app, 14 are in Action classes.'));
     }
 
+    public function test_the_reviewer_reads_a_call_between_areas_that_only_the_change_makes()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]));
+        ChangeReviewer::fake([['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]]]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, evidence: ['coupling' => ['known' => 4, 'findings' => [
+            ['from' => 'Teams', 'to' => 'Billing', 'caller' => 'App\Http\Controllers\TeamController::update', 'callee' => 'App\Billing\Charge::handle', 'route' => 'PATCH /teams/{team}', 'test' => null],
+        ]]]);
+
+        // A note for the reviewer, never a send back by itself.
+        $this->assertSame([RunStatus::Completed, 0], [$run->refresh()->status, $run->repairs]);
+        ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'While the tests ran, 4 calls from one area of the app into another were seen in the rest of the app.')
+            && str_contains($prompt->prompt, '- Teams now calls into Billing: App\Http\Controllers\TeamController::update calls App\Billing\Charge::handle (PATCH /teams/{team})'));
+    }
+
     public function test_the_agent_may_ask_to_keep_what_the_gate_found_but_only_the_owners_yes_lets_it_stay()
     {
         FeaturePlanner::fake([$this->plan()]);

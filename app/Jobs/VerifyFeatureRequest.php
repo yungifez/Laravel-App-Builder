@@ -15,6 +15,7 @@ use App\Features\AcceptanceSuite;
 use App\Features\AppBoundaries;
 use App\Features\AppContainment;
 use App\Features\AppConventions;
+use App\Features\AppCoupling;
 use App\Features\AppDrift;
 use App\Features\AppFaults;
 use App\Features\AppRoutes;
@@ -218,6 +219,7 @@ class VerifyFeatureRequest implements ShouldQueue
             $this->observeContainment($featureRequest);
             $this->observeDrift($featureRequest);
             $this->observeConventions($featureRequest);
+            $this->observeCoupling($featureRequest);
 
             $this->finish(match (true) {
                 $acceptance === self::OUTCOME_ERRORED => VerificationStatus::Errored,
@@ -908,6 +910,30 @@ class VerifyFeatureRequest implements ShouldQueue
             config()->integer('builder.verification.conventions.least'),
             config()->float('builder.verification.conventions.share'),
         )));
+    }
+
+    /**
+     * Find the calls from one area of the app into another that only the
+     * change's code makes (direction 33). The areas are the project's
+     * notes before the change. It runs nothing and never changes the
+     * checks' result.
+     */
+    protected function observeCoupling(FeatureRequest $featureRequest): void
+    {
+        if (! config('builder.verification.coupling.enabled') || $this->requests === []) {
+            return;
+        }
+
+        rescue(function () use ($featureRequest) {
+            $context = app(ReadProjectContext::class)->current($featureRequest->project);
+            $names = array_map(fn (Capability $capability) => $capability->name, $context->capabilities);
+
+            $this->keepEvidence('coupling', AppCoupling::measure(
+                $this->requests,
+                $featureRequest->patch,
+                fn (string $path) => array_map(fn (string $key) => $names[$key] ?? $key, $context->claiming($path)),
+            ));
+        });
     }
 
     /**

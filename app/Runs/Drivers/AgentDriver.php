@@ -11,6 +11,7 @@ use App\Enums\ModelRole;
 use App\Features\AcceptanceSelector;
 use App\Features\AppBoundaries;
 use App\Features\AppConventions;
+use App\Features\AppCoupling;
 use App\Features\AppDrift;
 use App\Features\AppFaults;
 use App\Features\AppTraces;
@@ -338,6 +339,11 @@ abstract class AgentDriver implements ConstructionDriver
         if (($measured['containment']['findings'] ?? []) !== []) {
             $parts[] = "The rest of the app calls each of these outside services only from certain areas. So one place knows how to talk to each service. The new code calls them from somewhere else. Unless the plan asks for that, call them through the code that already does:\n"
                 .$this->list(array_map($this->contained(...), $measured['containment']['findings']));
+        }
+
+        if (($measured['coupling']['findings'] ?? []) !== []) {
+            $parts[] = sprintf("While the tests ran, %d calls from one area of the app into another were seen in the rest of the app. The new code makes one area call into another that it did not call before. Each such call ties the two areas together. Unless the plan asks for it, ask for the work to stay in its own area, or to go through code the two areas already share:\n", $measured['coupling']['known'])
+                .$this->list(array_map(AppCoupling::describe(...), $measured['coupling']['findings']));
         }
 
         if (($measured['conventions']['findings'] ?? []) !== []) {

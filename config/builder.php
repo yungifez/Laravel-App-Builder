@@ -868,6 +868,15 @@ return [
             'share' => 0.8,
         ],
 
+        // Which areas of the notes call into which others (direction 33, a
+        // drift measure), read from the chain of the app's own code that
+        // the recording keeps for each thing a request did. A dependency
+        // between areas that only the change's code makes goes to the
+        // reviewer as a note. It never sends a change back.
+        'coupling' => [
+            'enabled' => (bool) env('BUILDER_COUPLING', true),
+        ],
+
         // What the app leaves behind when one thing fails (direction 32).
         // Once the checks pass, the recorder makes one thing fail in one
         // request of one test: an email that cannot be sent, an outside

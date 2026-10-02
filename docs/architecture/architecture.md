@@ -1971,6 +1971,17 @@ that saves from its controllers has no convention to bypass. It is a note,
 never a send back, because the plan may ask for exactly that
 (`builder.verification.conventions`).
 
+`AppCoupling` reads which areas of the notes call into which others. The
+recording keeps the chain of the app's own code on the way to each thing a
+request did, nearest first. A class's file comes from Laravel's own
+autoload (`App\Billing\Charge` is `app/Billing/Charge.php`). Where one link
+of a chain is in one area and the next in another, the first area depends
+on the second. Chains through no file the change touched show what the app
+already depends on. A dependency seen only in chains through the change's
+files is new, and goes to the reviewer: "Orders now calls into Billing:
+OrderController::store calls SendInvoice::handle". It is a drift signal, so
+it never sends a change back (`builder.verification.coupling`).
+
 The recording only shows what the tests run, and it never shows the app
 start. So `BoundaryCode` also reads the PHP files the change touched, as the
 change leaves them, before anything takes the change out of the workspace.
