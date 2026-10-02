@@ -20,6 +20,7 @@ use App\Models\RunEvent;
 use App\Projects\ProjectRepository;
 use App\Runs\Drivers\WorkerDriver;
 use App\Runs\Plan;
+use App\Scaffolding\ShapeWording;
 use Illuminate\Support\Str;
 
 class DescribeFeatureRequest
@@ -242,7 +243,9 @@ class DescribeFeatureRequest
                 'summary' => $run->plan['summary'],
                 'answer' => $run->plan['answer'] ?? null,
                 'acceptance_criteria' => $run->plan['acceptance_criteria'],
-                'assumptions' => $run->plan['assumptions'],
+                // What a new record keeps and who may use it is decided
+                // for the owner like any assumption, so it is shown first.
+                'assumptions' => [...app(ShapeWording::class)->describe(Plan::fromArray($run->plan)->dataShape), ...$run->plan['assumptions']],
                 'understood_as' => $run->plan['understood_as'] ?? null,
                 'current_behavior' => $run->plan['current_behavior'] ?? null,
                 'preserve' => array_column(Plan::fromArray($run->plan)->preserve, 'statement'),

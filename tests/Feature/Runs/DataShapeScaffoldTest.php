@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Runs;
 
+use App\Actions\Features\DescribeFeatureRequest;
 use App\Actions\Runs\StartRun;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
@@ -64,10 +65,10 @@ class DataShapeScaffoldTest extends TestCase
     public function test_the_files_the_data_shape_fixes_are_written_before_the_agent_starts()
     {
         FeaturePlanner::fake([$this->plan([
-            ['name' => 'Booking', 'fields' => [
-                ['name' => 'team', 'type' => 'belongs_to', 'required' => true, 'choices' => [], 'of' => 'Team'],
-                ['name' => 'status', 'type' => 'choice', 'required' => true, 'choices' => ['pending', 'confirmed'], 'of' => null],
-            ]],
+            ['name' => 'Booking', 'label' => 'booking', 'fields' => [
+                ['name' => 'team', 'type' => 'belongs_to', 'required' => true, 'choices' => [], 'of' => 'Team', 'label' => 'the team booked'],
+                ['name' => 'status', 'type' => 'choice', 'required' => true, 'choices' => ['pending', 'confirmed'], 'of' => null, 'label' => 'whether it is settled'],
+            ], 'access' => null],
         ])]);
 
         $run = app(StartRun::class)->handle($featureRequest = $this->request())->refresh();
@@ -88,6 +89,13 @@ class DataShapeScaffoldTest extends TestCase
         $brief = $this->agent->tasks[0]->prompt;
         $this->assertStringContainsString('## Files already written from the data shape', $brief);
         $this->assertStringContainsString('- app/Models/Booking.php', $brief);
+
+        // The owner sees what is kept in their words, first among the
+        // decisions made for them.
+        $this->assertSame(
+            'For each booking I keep: the team booked and whether it is settled (pending or confirmed).',
+            app(DescribeFeatureRequest::class)->handle($featureRequest)['run']['plan']['assumptions'][0],
+        );
     }
 
     public function test_a_record_the_app_already_has_is_left_to_the_agent()

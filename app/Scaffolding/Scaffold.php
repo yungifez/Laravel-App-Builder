@@ -15,9 +15,9 @@ use Illuminate\Support\Str;
  * Only new records are written. A record whose model the app already has is
  * left to the coding agent, since changing it means reading what is there.
  *
- * @phpstan-type Field array{name: string, type: string, required: bool, choices: list<string>, of: string|null}
+ * @phpstan-type Field array{name: string, type: string, required: bool, choices: list<string>, of: string|null, label?: string}
  * @phpstan-type Access array{view: string, create: string, update: string, delete: string}
- * @phpstan-type Record array{name: string, fields: list<Field>, access?: Access|null}
+ * @phpstan-type Record array{name: string, fields: list<Field>, access?: Access|null, label?: string}
  */
 class Scaffold
 {

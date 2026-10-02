@@ -166,6 +166,8 @@ final readonly class Plan
             'records.*.fields.*.choices' => ['present', 'array', 'max:20'],
             'records.*.fields.*.choices.*' => ['string', 'regex:/^[a-z0-9_]{1,60}$/'],
             'records.*.fields.*.of' => ['present', 'nullable', 'string', $name],
+            'records.*.label' => ['sometimes', 'nullable', 'string', 'max:80'],
+            'records.*.fields.*.label' => ['sometimes', 'nullable', 'string', 'max:80'],
             'records.*.access' => ['sometimes', 'nullable', 'array:'.implode(',', Scaffold::ACTIONS)],
             ...collect(Scaffold::ACTIONS)->mapWithKeys(fn (string $action) => [
                 "records.*.access.{$action}" => ['required_with:records.*.access', Rule::in(Scaffold::WHO)],
@@ -197,6 +199,7 @@ final readonly class Plan
                     'required' => (bool) $field['required'],
                     'choices' => $type === FieldType::Choice ? $choices : [],
                     'of' => $type === FieldType::BelongsTo ? $field['of'] : null,
+                    ...self::label($field['label'] ?? null),
                 ];
             }
 
@@ -217,10 +220,23 @@ final readonly class Plan
                 'name' => $record['name'],
                 'fields' => array_values($fields),
                 'access' => $access === null ? null : array_map(strval(...), array_intersect_key($access, array_flip(Scaffold::ACTIONS))),
+                ...self::label($record['label'] ?? null),
             ];
         }
 
         return $read;
+    }
+
+    /**
+     * Keep what the owner calls a record or field, when the planner said.
+     *
+     * @return array{label?: string}
+     */
+    protected static function label(?string $label): array
+    {
+        $label = Str::squish((string) $label);
+
+        return $label === '' ? [] : ['label' => $label];
     }
 
     /**

@@ -1154,8 +1154,13 @@ the person who added a booking can change it"). The form request asks the
 policy, so without access in the shape nobody may create one until the
 agent writes a policy. The brief lists the files under "Files already written from
 the data shape", and the run records them as a `scaffolded` event. A worker
-outside our boxes gets no scaffold, since it works in its own copy. Not built
-yet: routes and controllers; showing the owner the shape in plain words;
+outside our boxes gets no scaffold, since it works in its own copy. The owner reads the
+shape first among the decisions made for them ("I decided … for you"):
+`ShapeWording` puts the planner's labels for each record and field into fixed
+sentences ("For each booking I keep: who booked, when it starts and a note if
+there is one. Only the person who added a booking can see, change or remove
+it."), so no code name reaches them. Not built yet: routes and controllers;
+asking about the shape before building when it is hard to change later;
 small-model repairs.
 
 **Rejected: sub-agents by file type.** "A small agent writes the request
