@@ -74,6 +74,35 @@ class PoolProviderTest extends TestCase
         $this->assertSame('roomy--workspace-new', (new PoolProvider)->create($this->spec()));
     }
 
+    public function test_workspaces_still_opening_count_toward_a_runners_load()
+    {
+        config(['workspaces.boxes.pool.max_workspaces' => 2]);
+        Runner::factory()->create(['name' => 'first']);
+        Runner::factory()->create(['name' => 'second']);
+        $pool = new PoolProvider;
+
+        // None is recorded on a workspace yet, as while their boxes open.
+        $placed = [$pool->create($this->spec('a')), $pool->create($this->spec('b')), $pool->create($this->spec('c')), $pool->create($this->spec('d'))];
+
+        $this->assertEqualsCanonicalizing(['first--a', 'second--b', 'first--c', 'second--d'], $placed);
+        $this->expectExceptionMessage('with room');
+        $pool->create($this->spec('e'));
+    }
+
+    public function test_an_opened_box_counts_once_and_a_closed_one_not_at_all()
+    {
+        $runner = Runner::factory()->create(['name' => 'vm1']);
+        $pool = new PoolProvider;
+        $box = $pool->create($this->spec());
+        $this->assertSame(1, $pool->load($runner));
+
+        $workspace = Workspace::factory()->create(['driver' => 'runner', 'driver_id' => $box, 'status' => WorkspaceStatus::Ready]);
+        $this->assertSame(1, $pool->load($runner));
+
+        $workspace->update(['status' => WorkspaceStatus::Destroyed]);
+        $this->assertSame(0, $pool->load($runner));
+    }
+
     public function test_no_workspace_is_made_when_no_runner_is_online()
     {
         Runner::factory()->offline()->create();
