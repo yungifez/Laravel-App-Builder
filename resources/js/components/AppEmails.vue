@@ -2,15 +2,18 @@
 import { router } from '@inertiajs/vue3';
 import { ArrowLeft, Mail, Trash2 } from '@lucide/vue';
 import { useScreen } from '@/composables/useScreen';
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import PreviewEmailController from '@/actions/App/Http/Controllers/PreviewEmailController';
 import { when } from '@/lib/when';
-import type { SentEmail } from '@/types';
+import type { SentEmail, SentNotice } from '@/types';
 
 const props = defineProps<{
     projectId: string;
     emails: SentEmail[] | undefined;
+    // What the app left for people inside the app, such as what its bell
+    // shows. Read by running the app, so it can come a moment later.
+    notices: SentNotice[] | undefined;
     // Where the app on show is served. A link there opens in the app.
     origin: string | null;
     // The change the owner is trying, when the tools work on its copy.
@@ -22,12 +25,42 @@ const emit = defineEmits<{ open: [href: string] }>();
 const wide = useScreen('(min-width: 768px)');
 const chosenId = ref<string | null>(null);
 
-// Deleted emails leave the list at once; they come back only if the app
+// The list waits a moment for the notices, so it does not jump when they
+// come. An app that is slow to answer does not hold the emails back.
+const waited = ref(false);
+onMounted(() => setTimeout(() => (waited.value = true), 1500));
+
+type Message = SentEmail & { inApp: boolean; read: boolean };
+
+// Deleted messages leave the list at once; they come back only if the app
 // could not mark them.
 const deleting = ref<Set<string>>(new Set());
-const emails = computed(() =>
-    props.emails?.filter((email) => !deleting.value.has(email.id)),
-);
+const emails = computed<Message[] | undefined>(() => {
+    if (
+        props.emails === undefined ||
+        (props.notices === undefined && !waited.value)
+    ) {
+        return undefined;
+    }
+
+    const at = (message: Message) => Date.parse(message.sent_at ?? '') || 0;
+
+    return [
+        ...props.emails.map((email) => ({
+            ...email,
+            inApp: false,
+            read: false,
+        })),
+        ...(props.notices ?? []).map((notice) => ({
+            ...notice,
+            from: '',
+            html: null,
+            inApp: true,
+        })),
+    ]
+        .filter((message) => !deleting.value.has(message.id))
+        .sort((one, other) => at(other) - at(one));
+});
 
 function remove(ids: string[]): void {
     deleting.value = new Set([...deleting.value, ...ids]);
@@ -42,7 +75,7 @@ function remove(ids: string[]): void {
         }),
         {
             data: { emails: ids },
-            only: ['emails'],
+            only: ['emails', 'notices'],
             preserveScroll: true,
             preserveState: true,
             onError: (errors) => {
@@ -50,7 +83,8 @@ function remove(ids: string[]): void {
                     [...deleting.value].filter((id) => !ids.includes(id)),
                 );
                 toast.error(
-                    errors.app ?? 'The emails could not be deleted. Try again.',
+                    errors.app ??
+                        'The messages could not be deleted. Try again.',
                 );
             },
         },
@@ -127,7 +161,7 @@ const pieces = computed(() =>
             v-if="emails === undefined"
             class="flex flex-1 items-center justify-center text-sm text-muted-foreground"
         >
-            Looking for emails…
+            Looking for messages…
         </div>
 
         <div
@@ -136,10 +170,11 @@ const pieces = computed(() =>
             data-test="app-emails-empty"
         >
             <Mail class="size-6 text-muted-foreground" />
-            <p class="text-lg font-medium">No emails yet</p>
+            <p class="text-lg font-medium">No messages yet</p>
             <p class="max-w-xs text-sm text-muted-foreground">
-                Emails your app sends, like a password reset, show here. Nobody
-                really gets them while you try your app.
+                Emails your app sends, like a password reset, show here. So do
+                the notices it shows people inside the app. Nobody really gets
+                the emails while you try your app.
             </p>
         </div>
 
@@ -153,7 +188,7 @@ const pieces = computed(() =>
                 >
                     <span class="tabular-nums"
                         >{{ emails.length }}
-                        {{ emails.length === 1 ? 'email' : 'emails' }}</span
+                        {{ emails.length === 1 ? 'message' : 'messages' }}</span
                     >
                     <button
                         type="button"
@@ -166,7 +201,7 @@ const pieces = computed(() =>
                 </div>
                 <ul
                     class="min-h-0 flex-1 overflow-y-auto"
-                    aria-label="Emails your app sent"
+                    aria-label="Messages your app sent"
                 >
                     <li v-for="email in emails" :key="email.id">
                         <button
@@ -191,7 +226,10 @@ const pieces = computed(() =>
                                 >
                             </span>
                             <span class="truncate text-xs text-muted-foreground"
-                                >To {{ email.to }}</span
+                                >To {{ email.to
+                                }}{{
+                                    email.inApp ? ' · inside your app' : ''
+                                }}</span
                             >
                         </button>
                     </li>
@@ -208,7 +246,7 @@ const pieces = computed(() =>
                         v-if="!wide"
                         type="button"
                         class="-ml-1 grid size-11 shrink-0 place-items-center"
-                        aria-label="All emails"
+                        aria-label="All messages"
                         @click="chosenId = null"
                     >
                         <ArrowLeft class="size-4" />
@@ -217,15 +255,26 @@ const pieces = computed(() =>
                         <h2 class="truncate text-base font-medium">
                             {{ chosen.subject || 'No subject' }}
                         </h2>
-                        <p class="truncate text-xs text-muted-foreground">
+                        <p
+                            v-if="chosen.inApp"
+                            class="truncate text-xs text-muted-foreground"
+                            data-test="app-email-in-app"
+                        >
+                            To {{ chosen.to }} · inside your app ·
+                            {{ chosen.read ? 'opened' : 'not opened yet' }}
+                        </p>
+                        <p
+                            v-else
+                            class="truncate text-xs text-muted-foreground"
+                        >
                             To {{ chosen.to }} · From {{ chosen.from }}
                         </p>
                     </div>
                     <button
                         type="button"
                         class="-mr-1 grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground sm:size-8"
-                        aria-label="Delete this email"
-                        title="Delete this email"
+                        aria-label="Delete this message"
+                        title="Delete this message"
                         data-test="app-email-delete"
                         @click="remove([chosen.id])"
                     >
@@ -239,7 +288,7 @@ const pieces = computed(() =>
                     :key="chosen.id"
                     :srcdoc="chosen.html"
                     sandbox="allow-same-origin"
-                    title="The email"
+                    title="The message"
                     class="min-h-0 flex-1 bg-white"
                     data-test="app-email-body"
                     @load="watchLinks"

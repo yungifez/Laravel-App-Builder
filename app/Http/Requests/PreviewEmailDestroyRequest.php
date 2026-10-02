@@ -27,7 +27,8 @@ class PreviewEmailDestroyRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'emails' => ['required', 'array', 'max:50'],
+            // The list holds up to 50 emails and 50 notices.
+            'emails' => ['required', 'array', 'max:100'],
             'emails.*' => ['required', 'string', 'regex:/^[0-9a-f]{40}$/'],
         ];
     }

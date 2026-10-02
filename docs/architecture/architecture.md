@@ -2679,7 +2679,12 @@ reads the preview's workspace, so the app itself does not change.
   each email in it and lists them newest first. An email opens as its
   reader sees it, in a sandboxed frame without scripts. A link to the app
   opens that page in the app on show, so sign-up, password reset and
-  verify-email flows can be tried to the end.
+  verify-email flows can be tried to the end. The tab is named Messages:
+  the same list holds the notices the app left for people inside the app
+  (Laravel's database notification channel, such as what a bell shows),
+  newest first with the email. A notice says who it is for, what it is
+  called and what it holds, and if the person has opened it. Notices are
+  read through the app itself, only while the owner looks at the tab.
 - **Problems** (built). The same log file holds the app's errors. The
   tab lists them in plain words, newest first, with the place in the code
   that caused them. The same fault met again is counted, not listed again.

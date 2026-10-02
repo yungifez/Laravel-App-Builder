@@ -116,6 +116,7 @@ import type {
     AppService,
     ProjectTelemetry,
     SentEmail,
+    SentNotice,
     AppColor,
     AppPage,
     AppProblem,
@@ -140,6 +141,7 @@ const props = defineProps<{
     publishing: ProjectPublishing;
     services: AppService[];
     emails?: SentEmail[];
+    notices?: SentNotice[];
     people?: PreviewPerson[] | null;
     problems?: AppProblem[];
     data?: SavedTable[] | null;
@@ -251,7 +253,22 @@ watch(
     showing,
     (value) =>
         value !== 'app' &&
-        router.reload({ only: value === 'data' ? ['data', 'files'] : [value] }),
+        router.reload({
+            only:
+                value === 'data'
+                    ? ['data', 'files']
+                    : value === 'emails'
+                      ? ['emails', 'notices']
+                      : [value],
+        }),
+);
+
+// Notices are read by running the app, so only while the owner looks.
+const noticesPoll = usePoll(5000, { only: ['notices'] }, { autoStart: false });
+
+watch(
+    () => showing.value === 'emails' && app.running && !app.lost,
+    (looking) => (looking ? noticesPoll.start() : noticesPoll.stop()),
 );
 
 // Saved data is read by running the app, so only while the owner looks.
@@ -409,7 +426,7 @@ watch(
 
 const showingTabs = computed(() => [
     { key: 'app' as const, label: 'App', count: 0 },
-    { key: 'emails' as const, label: 'Emails', count: unseenEmails.value },
+    { key: 'emails' as const, label: 'Messages', count: unseenEmails.value },
     {
         key: 'problems' as const,
         label: 'Problems',
@@ -600,7 +617,9 @@ watch(
                         ? ['data', 'files']
                         : showing.value === 'schedule'
                           ? ['schedule']
-                          : []),
+                          : showing.value === 'emails'
+                            ? ['notices']
+                            : []),
                 ],
             });
         }
@@ -2456,6 +2475,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                 class="min-h-0 flex-1"
                 :project-id="project.id"
                 :emails="emails"
+                :notices="notices"
                 :origin="changeCopyOrigin ?? preview?.origin ?? null"
                 :copy="copy"
                 @open="openInApp"

@@ -26,19 +26,35 @@ class LoggedEmails
     public static function in(string $log, int $limit = 50): array
     {
         $emails = [];
-        $deleted = [];
 
         foreach (LogEntries::in($log) as $entry) {
             if ($entry['level'] === 'DEBUG' && ($email = self::read($entry['message'], $entry['time'])) !== null) {
                 $emails[] = $email;
-            } elseif ($entry['level'] === 'INFO' && str_starts_with($entry['message'], self::DELETED)) {
+            }
+        }
+
+        $deleted = self::deleted($log);
+        $emails = array_filter($emails, fn (array $email) => ! isset($deleted[$email['id']]));
+
+        return array_slice(array_reverse($emails), 0, $limit);
+    }
+
+    /**
+     * Get what the log marks as deleted, by id.
+     *
+     * @return array<string, true>
+     */
+    public static function deleted(string $log): array
+    {
+        $deleted = [];
+
+        foreach (LogEntries::in($log) as $entry) {
+            if ($entry['level'] === 'INFO' && str_starts_with($entry['message'], self::DELETED)) {
                 $deleted += array_fill_keys(explode(' ', substr($entry['message'], strlen(self::DELETED))), true);
             }
         }
 
-        $emails = array_filter($emails, fn (array $email) => ! isset($deleted[$email['id']]));
-
-        return array_slice(array_reverse($emails), 0, $limit);
+        return $deleted;
     }
 
     /**

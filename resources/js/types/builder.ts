@@ -490,6 +490,16 @@ export type SentEmail = {
     text: string | null;
 };
 
+/** A notice the app on show left for a person inside the app, such as what its bell shows. */
+export type SentNotice = {
+    id: string;
+    sent_at: string | null;
+    to: string;
+    subject: string;
+    text: string;
+    read: boolean;
+};
+
 /** A kind of problem the app on show ran into, counted each time. */
 export type AppProblem = {
     id: string;

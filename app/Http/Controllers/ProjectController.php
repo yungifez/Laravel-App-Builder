@@ -7,6 +7,7 @@ use App\Actions\Previews\DescribeProjectPreview;
 use App\Actions\Previews\ReadPreviewData;
 use App\Actions\Previews\ReadPreviewEmails;
 use App\Actions\Previews\ReadPreviewFiles;
+use App\Actions\Previews\ReadPreviewNotices;
 use App\Actions\Previews\ReadPreviewPages;
 use App\Actions\Previews\ReadPreviewPeople;
 use App\Actions\Previews\ReadPreviewProblems;
@@ -159,7 +160,7 @@ class ProjectController extends Controller
      * app running beside it, and the design panel for changing how it looks.
      * The element the owner selected is loaded on request.
      */
-    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails, ReadPreviewPeople $readPreviewPeople, ReadPreviewProblems $readPreviewProblems, ReadPreviewData $readPreviewData, ReadPreviewRows $readPreviewRows, ReadPreviewSchedule $readPreviewSchedule, ReadPreviewFiles $readPreviewFiles, ReadPreviewPages $readPreviewPages, ReadAppColors $readAppColors, DescribeDesignEdits $describeDesignEdits, DesignDrafts $designDrafts): Response
+    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails, ReadPreviewNotices $readPreviewNotices, ReadPreviewPeople $readPreviewPeople, ReadPreviewProblems $readPreviewProblems, ReadPreviewData $readPreviewData, ReadPreviewRows $readPreviewRows, ReadPreviewSchedule $readPreviewSchedule, ReadPreviewFiles $readPreviewFiles, ReadPreviewPages $readPreviewPages, ReadAppColors $readAppColors, DescribeDesignEdits $describeDesignEdits, DesignDrafts $designDrafts): Response
     {
         Gate::authorize('view', $project);
 
@@ -191,6 +192,8 @@ class ProjectController extends Controller
             // While they try a change, the page names its copy, and this and
             // the other tools beside the app read that copy.
             'emails' => Inertia::optional(fn () => $readPreviewEmails->handle($project)),
+            // And the notices it left for people inside the app.
+            'notices' => Inertia::optional(fn () => $readPreviewNotices->handle($project)),
             // Who the owner can sign in to the app on show as, one tap each.
             'people' => Inertia::optional(fn () => $readPreviewPeople->handle($project)),
             // And the problems it ran into while the owner tried it.
