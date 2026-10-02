@@ -313,6 +313,8 @@ class ProjectController extends Controller
                         // Which check runs now, while it is checked first.
                         'doing' => $deployment->status === DeploymentStatus::Checking ? DescribeRunProgress::checks(count($deployment->checks ?? [])) : null,
                         'error' => $deployment->error,
+                        // A copy of the app's information was saved first.
+                        'backed_up' => $deployment->backup_id !== null,
                         // When the version it put back first came online.
                         'restores' => $deployment->restores?->finished_at?->toIso8601String(),
                         'health' => $deployment->health ?? [],
@@ -332,7 +334,7 @@ class ProjectController extends Controller
      * changed how the app stores information: going back leaves that as it
      * is, so the earlier version may not expect it.
      *
-     * @return array{id: int, at: string|null, stored: bool}|null
+     * @return array{id: int, at: string|null, stored: bool, copy: bool}|null
      */
     protected function previousVersion(Project $project, ProjectRepository $repository): ?array
     {
@@ -349,6 +351,9 @@ class ProjectController extends Controller
             'id' => $previous->id,
             'at' => $previous->finished_at?->toIso8601String(),
             'stored' => collect(array_keys($changed))->contains(fn (string $file) => str_starts_with($file, 'database/migrations/')),
+            // A copy of the information from before the newer version, which
+            // we can bring back.
+            'copy' => $online->backup_id !== null,
         ];
     }
 

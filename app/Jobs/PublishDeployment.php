@@ -80,8 +80,16 @@ class PublishDeployment implements ShouldQueue
             }
 
             $this->deployment->update(['status' => DeploymentStatus::Pushing, 'release_sha' => $this->releaseCommit($repository)]);
+            $host = $hosts->driver($this->deployment->host ?? $project->publishingHost());
 
-            $hosts->driver($this->deployment->host ?? $project->publishingHost())->release($project, $this->deployment);
+            // A release that changes how information is stored may lose
+            // some of it, and going back does not undo that, so the host
+            // saves a copy first.
+            if ($this->changesStorage($repository)) {
+                $this->deployment->update(['backup_id' => $host->backup($project, $this->deployment)]);
+            }
+
+            $host->release($project, $this->deployment);
             $project->refresh();
 
             // The host takes it from here; it is online only once the host
@@ -146,6 +154,28 @@ class PublishDeployment implements ShouldQueue
             null,
             "refs/releases/{$this->deployment->id}",
         );
+    }
+
+    /**
+     * Determine if the release changes the app's migrations since the last
+     * version sent. The first release has no information to keep yet.
+     */
+    protected function changesStorage(ProjectRepository $repository): bool
+    {
+        $project = $this->deployment->project;
+        $sent = $project->deployments()
+            ->whereKeyNot($this->deployment->id)
+            ->whereNotNull('pushed_at')
+            ->latest('id')
+            ->first();
+
+        if ($sent === null) {
+            return false;
+        }
+
+        $changed = array_keys($repository->changedFiles($project, $sent->commit_sha, $this->deployment->commit_sha));
+
+        return collect($changed)->contains(fn (string $file) => str_starts_with($file, 'database/migrations/'));
     }
 
     /**

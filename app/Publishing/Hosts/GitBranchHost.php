@@ -42,6 +42,12 @@ class GitBranchHost implements PublishingHost
         }
     }
 
+    public function backup(Project $project, Deployment $deployment): ?string
+    {
+        // The owner's own hosting keeps its own backups.
+        return null;
+    }
+
     public function progress(Deployment $deployment): ReleaseProgress
     {
         return ReleaseProgress::Unknown;

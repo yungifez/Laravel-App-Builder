@@ -80,6 +80,31 @@ class LaravelCloudHost implements PublishingHost
         }
     }
 
+    public function backup(Project $project, Deployment $deployment): ?string
+    {
+        $cluster = config('builder.publishing.laravel_cloud.database_cluster');
+
+        // An app without a database in our cluster keeps nothing to copy.
+        if (blank($cluster) || ! isset($project->host_state['database'])) {
+            return null;
+        }
+
+        try {
+            // Cloud copies the whole cluster; bringing one app's database
+            // back from it is an operator's job for now.
+            $snapshot = $this->cloud()->post("/databases/clusters/{$cluster}/snapshots", [
+                'name' => "before-release-{$deployment->id}",
+                'description' => "Before release {$deployment->id}",
+            ])->throw();
+        } catch (Throwable $exception) {
+            report($exception);
+
+            throw new PublishingFailed(__('I could not save a copy of your app\'s information first, so I did not publish. Your app online has not changed.'), previous: $exception);
+        }
+
+        return (string) $snapshot->json('data.id');
+    }
+
     public function progress(Deployment $deployment): ReleaseProgress
     {
         if ($deployment->host_release_id === null) {

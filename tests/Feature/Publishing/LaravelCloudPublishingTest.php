@@ -37,6 +37,11 @@ class LaravelCloudPublishingTest extends TestCase
      */
     protected array $releaseStatuses = ['build.running', 'deployment.succeeded'];
 
+    /**
+     * Whether Cloud saves a copy of the database when asked.
+     */
+    protected bool $snapshots = true;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -87,6 +92,9 @@ class LaravelCloudPublishingTest extends TestCase
                 $path === '/orgs/acme-apps/repos' => Http::response(['full_name' => 'acme-apps/acme-shop-'.$this->project->id], 201),
                 $path === '/api/applications' => Http::response(['data' => ['id' => 'app-1', 'relationships' => ['defaultEnvironment' => ['data' => ['id' => 'env-1']]]]], 201),
                 $path === '/api/databases/clusters/cluster-1/databases' => Http::response(['data' => ['id' => 'db-1']], 201),
+                $path === '/api/databases/clusters/cluster-1/snapshots' => $this->snapshots
+                    ? Http::response(['data' => ['id' => 'snap-1', 'attributes' => ['status' => 'pending']]], 201)
+                    : Http::response(['message' => 'Server Error'], 500),
                 $path === '/api/environments/env-1' => Http::response(['data' => ['id' => 'env-1', 'attributes' => ['vanity_domain' => 'acme-shop.laravel.cloud']]]),
                 $path === '/api/environments/env-1/variables' => Http::response(['data' => ['id' => 'env-1']]),
                 $path === '/api/environments/env-1/deployments' => Http::response(['data' => ['id' => 'release-'.Deployment::query()->count(), 'attributes' => ['status' => 'pending']]], 201),
@@ -145,6 +153,47 @@ class LaravelCloudPublishingTest extends TestCase
         $this->assertSame(DeploymentStatus::Published, Deployment::query()->latest('id')->firstOrFail()->status);
         Http::assertSentCount(11 + 6);
         $this->assertCount(1, Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/api/applications')));
+    }
+
+    public function test_a_copy_of_the_information_is_saved_before_a_release_that_changes_how_it_is_stored()
+    {
+        $this->fakeHosts();
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+        $repository = app(ProjectRepository::class);
+        $repository->commitFiles($this->project, $repository->head($this->project), ['a.txt' => "a\n"], 'Add a', null);
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+        $repository->commitFiles($this->project, $repository->head($this->project), ['database/migrations/2026_01_01_000000_add_notes.php' => "<?php\n"], 'Add notes', null);
+
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project))->assertSessionHasNoErrors();
+
+        [$first, $plain, $storage] = Deployment::query()->oldest('id')->get()->all();
+        $this->assertNull($first->backup_id);
+        $this->assertNull($plain->backup_id);
+        $this->assertSame('snap-1', $storage->backup_id);
+        $this->assertSame(DeploymentStatus::Published, $storage->status);
+        Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/snapshots') && $request['name'] === 'before-release-'.$storage->id);
+        $this->assertCount(1, Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/snapshots')));
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('publishing.previous.copy', true));
+    }
+
+    public function test_without_a_copy_the_release_does_not_go_online()
+    {
+        $this->fakeHosts();
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+        $repository = app(ProjectRepository::class);
+        $repository->commitFiles($this->project, $repository->head($this->project), ['database/migrations/2026_01_01_000000_add_notes.php' => "<?php\n"], 'Add notes', null);
+        $this->snapshots = false;
+
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+
+        $deployment = Deployment::query()->latest('id')->firstOrFail();
+        $this->assertSame(DeploymentStatus::Failed, $deployment->status);
+        $this->assertNull($deployment->backup_id);
+        $this->assertSame("I could not save a copy of your app's information first, so I did not publish. Your app online has not changed.", $deployment->error);
+        $this->assertCount(1, Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/env-1/deployments')));
     }
 
     public function test_the_keys_of_the_apps_services_go_online_with_each_release()

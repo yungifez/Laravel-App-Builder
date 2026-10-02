@@ -36,6 +36,15 @@ interface PublishingHost
     public function release(Project $project, Deployment $deployment): void;
 
     /**
+     * Save a copy of the app's stored information before a release changes
+     * how it is stored, and get the host's id for the copy, or null when the
+     * host keeps no copies for us.
+     *
+     * @throws PublishingFailed when the host keeps copies but could not save one.
+     */
+    public function backup(Project $project, Deployment $deployment): ?string;
+
+    /**
      * Get how far the host is with taking the deployment online.
      */
     public function progress(Deployment $deployment): ReleaseProgress;

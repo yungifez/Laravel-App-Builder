@@ -423,6 +423,17 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                         information. That stays, and the earlier version may not
                         expect it.
                     </p>
+                    <p
+                        v-if="
+                            publishing.previous.stored &&
+                            publishing.previous.copy
+                        "
+                        class="text-muted-foreground"
+                        data-test="go-back-copy"
+                    >
+                        A copy of your information from before it is kept. Ask
+                        us if you need it back.
+                    </p>
                     <div class="flex gap-2">
                         <Button
                             :disabled="processing"
@@ -496,6 +507,10 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                             </template>
                         </li>
                     </ul>
+                    <p v-if="latest?.backed_up" class="text-muted-foreground">
+                        It changes how your app keeps information, so a copy of
+                        that information was saved first.
+                    </p>
                     <p v-if="latest" class="font-mono text-muted-foreground">
                         {{ latest.commit.slice(0, 7) }}
                     </p>

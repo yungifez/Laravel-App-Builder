@@ -761,6 +761,8 @@ export type DeploymentSummary = {
         | 'needs_attention'
         | 'failed';
     commit: string;
+    /** A copy of the app's information was saved before it went out. */
+    backed_up: boolean;
     /** When the version it put back first came online, when it goes back. */
     restores: string | null;
     checks: { name: string; passed: boolean }[];
@@ -799,7 +801,13 @@ export type ProjectPublishing = {
     } | null;
     /** The version the owner can go back to, with whether the newer one
      * changed how the app stores information. */
-    previous: { id: number; at: string | null; stored: boolean } | null;
+    previous: {
+        id: number;
+        at: string | null;
+        stored: boolean;
+        /** A copy of the information from before the newer version is kept. */
+        copy: boolean;
+    } | null;
     deployments: DeploymentSummary[];
 };
 

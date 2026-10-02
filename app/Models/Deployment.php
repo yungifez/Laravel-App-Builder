@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property string $commit_sha
  * @property int|null $restores_deployment_id The earlier publish this one puts back online
  * @property string|null $release_sha The commit sent to the host, when it is not commit_sha
+ * @property string|null $backup_id The host's copy of the app's information, saved before this release changed how it is stored
  * @property string $branch
  * @property string|null $host The host it was published to
  * @property string|null $host_release_id The host's own ID for this release, when it has one
@@ -38,7 +39,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['user_id', 'commit_sha', 'restores_deployment_id', 'release_sha', 'branch', 'host', 'host_release_id', 'host_status', 'status', 'checks', 'error', 'pushed_at', 'confirmed_at', 'health', 'live_errors', 'live_errors_checked_at', 'finished_at'])]
+#[Fillable(['user_id', 'commit_sha', 'restores_deployment_id', 'release_sha', 'backup_id', 'branch', 'host', 'host_release_id', 'host_status', 'status', 'checks', 'error', 'pushed_at', 'confirmed_at', 'health', 'live_errors', 'live_errors_checked_at', 'finished_at'])]
 class Deployment extends Model
 {
     /** @use HasFactory<DeploymentFactory> */
