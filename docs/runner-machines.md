@@ -272,8 +272,15 @@ If two control planes, for example staging and production, share one
 Hetzner project, give each its own `WORKSPACE_MACHINES_POOL_LABEL`. The
 scaler touches only machines with its own label.
 
+To give the machines a new box image, push it with a new tag and set
+`WORKSPACE_MACHINES_BOX_IMAGE` to that tag. The scaler then replaces the
+machines on the older image, one at a time, oldest first. It stops giving
+the machine new workspaces and deletes it when its last workspace closes.
+New machines start on the new image when the pool needs room. Always use
+a new tag: the scaler compares tags, not image contents.
+
 Machines added by hand stay in the pool, and the scaler does not delete
-them. Another cloud is added as a driver in
+or replace them. Another cloud is added as a driver in
 `app/Workspaces/Machines/MachineCloudManager.php`.
 
 ## Replace a token

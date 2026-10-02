@@ -60,7 +60,7 @@ class ScaleRunnerPool
 
         $name = (string) $this->clouds->getDefaultDriver();
         $cloud = $this->clouds->driver($name);
-        $done = [...$this->deleteStrays($name, $cloud), ...$this->retireSilent($name), ...$this->finishDraining($name)];
+        $done = [...$this->deleteStrays($name, $cloud), ...$this->retireSilent($name), ...$this->finishDraining($name), ...$this->replaceOutdated($name)];
 
         $machines = Runner::query()->where('cloud', $name)->whereNull('draining_at')->get();
         $spare = $this->spare($capacity);
@@ -191,6 +191,40 @@ class ScaleRunnerPool
     }
 
     /**
+     * Take one machine that runs an older box image out of the pool, so a
+     * new image reaches every machine. The work on it finishes undisturbed,
+     * and the pool starts a machine on the new image when it needs the room.
+     * Only one drains at a time, so the pool never loses much room at once.
+     *
+     * @return list<string>
+     */
+    protected function replaceOutdated(string $name): array
+    {
+        $image = (string) config('workspaces.machines.box_image');
+        $machines = Runner::query()->where('cloud', $name);
+
+        if ($image === '' || (clone $machines)->whereNotNull('draining_at')->exists()) {
+            return [];
+        }
+
+        $outdated = $machines->whereNull('draining_at')
+            ->whereNotNull('box_image')
+            ->where('box_image', '!=', $image)
+            ->oldest()
+            ->first();
+
+        if ($outdated === null) {
+            return [];
+        }
+
+        $holding = $this->retireRunner->handle($outdated);
+
+        return [$holding === 0
+            ? "Deleted machine [{$outdated->name}]: it ran an older box image."
+            : "Draining machine [{$outdated->name}]: it runs an older box image. It is deleted once its {$holding} workspace(s) close."];
+    }
+
+    /**
      * Count the free places new workspaces can go to, including those on
      * cloud machines still starting.
      */
@@ -224,7 +258,7 @@ class ScaleRunnerPool
         } while (Runner::query()->where('name', $runnerName)->exists());
 
         $token = Str::random(64);
-        $runner = Runner::query()->create(['name' => $runnerName, 'cloud' => $name, 'token_hash' => Runner::hashToken($token)]);
+        $runner = Runner::query()->create(['name' => $runnerName, 'cloud' => $name, 'box_image' => $image, 'token_hash' => Runner::hashToken($token)]);
 
         try {
             $runner->update(['cloud_id' => $cloud->create($runnerName, $this->bootScript->make(

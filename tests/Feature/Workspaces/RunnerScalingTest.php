@@ -139,6 +139,45 @@ class RunnerScalingTest extends TestCase
         $this->artisan('runners:scale')->expectsOutputToContain('Started machine')->assertSuccessful();
     }
 
+    public function test_machines_on_an_older_box_image_are_replaced_one_at_a_time()
+    {
+        $busy = $this->onCloud('busy', '7', holding: 2);
+        $empty = $this->onCloud('empty', '8', holding: 0);
+        $current = $this->onCloud('current', '9', holding: 0);
+        $busy->forceFill(['box_image' => 'registry.example.test/builder-box:0', 'created_at' => now()->subDay()])->save();
+        $empty->update(['box_image' => 'registry.example.test/builder-box:0']);
+        $current->update(['box_image' => 'registry.example.test/builder-box:1']);
+
+        // The oldest goes first, and its work finishes before it is deleted.
+        $this->artisan('runners:scale')->expectsOutputToContain('Draining machine [busy]')->assertSuccessful();
+        $this->assertNotNull($busy->refresh()->draining_at);
+        $this->assertNull($empty->refresh()->draining_at);
+
+        // While one drains, no other is taken out.
+        $this->artisan('runners:scale')->assertSuccessful();
+        $this->assertNull($empty->refresh()->draining_at);
+
+        Workspace::query()->where('driver_id', 'like', 'busy--%')->update(['status' => WorkspaceStatus::Destroyed]);
+        // Once it is gone, the next one is taken out in the same pass.
+        $this->artisan('runners:scale')
+            ->expectsOutputToContain('Deleted machine [busy]: it finished draining')
+            ->expectsOutputToContain('Deleted machine [empty]: it ran an older box image')
+            ->assertSuccessful();
+
+        $this->assertEqualsCanonicalizing(['7', '8'], $this->deleted);
+        $this->assertTrue(Runner::query()->whereKey($current->id)->exists());
+        $this->assertSame('registry.example.test/builder-box:1', Runner::query()->latest('id')->first()?->box_image);
+    }
+
+    public function test_machines_added_by_hand_are_never_replaced_for_their_image()
+    {
+        $this->onCloud('busy', '7', holding: 3)->update(['box_image' => null]);
+
+        $this->artisan('runners:scale')->assertSuccessful();
+
+        $this->assertSame([], $this->deleted);
+    }
+
     public function test_no_more_machines_start_than_the_most_allowed()
     {
         config(['workspaces.machines.max' => 1]);
