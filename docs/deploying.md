@@ -31,7 +31,8 @@ with a disk that lasts, not a platform with a temporary disk.
 ## 1. Create the server
 
 1. In Forge, create an **App server** on Hetzner. Use at least 4 GB of
-   memory (for example `cx33`). Choose PHP 8.4 and PostgreSQL. Forge installs
+   memory: `cx23` (2 CPUs, 4 GB) to start, or `cx33` (4 CPUs, 8 GB) for
+   more owners. Choose PHP 8.4 and PostgreSQL. Forge installs
    Redis, Node and Nginx.
 2. In the Hetzner console, attach the server to the private network. Write
    down its private address. The runner machines use it.
