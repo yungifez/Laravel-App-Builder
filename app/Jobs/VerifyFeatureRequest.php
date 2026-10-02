@@ -1121,6 +1121,13 @@ class VerifyFeatureRequest implements ShouldQueue
                 return true;
             }
 
+            // Which rules of earlier kept changes this change broke, for the
+            // evolution measure: a rule the app forgot is the cost it tracks.
+            $this->keepEvidence('earlier_rules', array_values(array_unique(array_map(
+                fn (array $finding) => "{$finding['record']} {$finding['action']}",
+                array_filter($measured['findings'], fn (array $finding) => ! in_array($finding['record'], $names, true) && $finding['rule'] !== 'policy' && ! str_starts_with($finding['rule'], 'tenant:')),
+            ))));
+
             $passed = $measured['findings'] === [];
             $this->addResult(__('Who may see and change records'), 'checks', $passed ? self::OUTCOME_PASSED : self::OUTCOME_FAILED, durationMs: $command->duration_ms, output: AccessProbes::describe($measured, $planned['unmatched']));
 

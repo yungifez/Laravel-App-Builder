@@ -1201,6 +1201,40 @@ return [
         ],
     ],
 
+    // The Evolution Benchmark (direction 21 §15): how a project's changes
+    // went as the app grew. `builder:benchmark` asks for "changes" in order,
+    // one at a time, as an owner would, and keeps each one whose run
+    // completes; `builder:evolution` cuts the kept changes into windows
+    // that end at the "checkpoints". Each change builds on the ones before
+    // and adds a rule the later ones must keep. "wait" is how long one
+    // change may take, in seconds.
+    'benchmark' => [
+        'checkpoints' => [1, 5, 10, 20, 35, 50],
+        'wait' => (int) env('BUILDER_BENCHMARK_WAIT', 3600),
+        'changes' => [
+            'Let team members book a meeting room for a start and end time.',
+            'A room cannot be booked twice for times that overlap.',
+            'Only the person who made a booking can change or cancel it.',
+            'Team admins can add, rename and remove rooms; other members cannot.',
+            'Show each member their upcoming bookings on the dashboard.',
+            'Rooms have a capacity. A booking says how many people come, and cannot be more than the room holds.',
+            'Email the member when their booking is made, changed or cancelled.',
+            'People from one team must never see or book another team\'s rooms.',
+            'Bookings can repeat every week until a chosen date.',
+            'Contractors can book only between 9:00 and 17:00 on weekdays.',
+            'Suspended members keep their past bookings but cannot make new ones.',
+            'Bookings longer than four hours need a team admin to approve them first.',
+            'Keep a history of who made, changed or cancelled each booking, and show it to team admins.',
+            'Members can belong to more than one team and switch between them.',
+            'Team admins can close a room for maintenance on chosen days; nobody can book it then.',
+            'Remind members by email one hour before their booking starts.',
+            'Team admins can download a month of their team\'s bookings as a CSV file.',
+            'When a booking is cancelled, offer the time to the first member on that room\'s waiting list.',
+            'Add a read-only JSON API that lists a team\'s rooms and their free times, for other tools.',
+            'Managers can invite contractors to the team, but only team admins can invite members.',
+        ],
+    ],
+
     'developer_reviews' => [
         // The change's code is shown up to this size; the rest is in the
         // code download.

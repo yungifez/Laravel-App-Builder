@@ -4634,10 +4634,23 @@ compiled packet, same model and code) tests it directly.
   reports no cost is priced from config when its model is named), the
   decision model's calls, and which changes a publish contains. No prompts
   or customer code appear on list screens.
-- **Evolution Benchmark (later):** a fixed sequence of 20–50 realistic
+- **Evolution Benchmark (running):** a fixed sequence of 20–50 realistic
   changes to one app, measured at changes 1, 5, 10, 20, 35 and 50 for
   regressions, corrective prompts, cost and missed rules. This project is the
-  first one.
+  first one. Built: `php artisan builder:benchmark {project} --changes=N`
+  asks for the next N changes of `builder.benchmark.changes` (20 changes to a
+  room-booking app, each adding a rule the later ones must keep), one at a
+  time, as an owner would. It answers a question with its recommended option,
+  keeps a change whose run completes, and stops at a change that fails.
+  `php artisan builder:evolution {project}` (`--json` for machines) cuts any
+  project's kept changes into windows ending at the checkpoints. Each request
+  counts toward the first change kept after it was asked, so abandoned and
+  repaired work is part of what a kept change cost. Per window: cost and
+  tokens per kept change, first tries that passed, repairs, owner steps
+  (adjustments, retries, stops), tests a change broke that passed on its
+  starting commit (caught by the checks), rules of earlier kept changes it
+  broke (§26.11, recorded as `earlier_rules` evidence), changes undone, and
+  the median hours from ask to keep.
 - **Learned relationships:** when kept changes show two areas changing
   together repeatedly, the relationship becomes a `history` Effect (see the
   test-impact entry). Later: propose it to the owner ("Remember this

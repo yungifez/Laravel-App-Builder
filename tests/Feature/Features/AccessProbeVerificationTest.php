@@ -133,6 +133,7 @@ class AccessProbeVerificationTest extends TestCase
         $this->assertSame(VerificationStatus::Failed, $verification->status);
         $this->assertSame(['checks', 'failed'], [$result['stage'], $result['outcome']]);
         $this->assertStringContainsString('A signed-in person who did not add it could remove a booking: DELETE /bookings/{booking} answered 302.', $result['output']);
+        $this->assertSame([], $verification->evidence['earlier_rules'] ?? null, 'the change\'s own rule is not an earlier one');
 
         // The probe ran with its test's path, and the test was taken out after.
         $commands = array_column($this->driver->executed, 'command');
@@ -244,6 +245,7 @@ class AccessProbeVerificationTest extends TestCase
         $result = collect($change->verifications()->sole()->results)->firstWhere('name', 'Who may see and change records');
         $this->assertSame('failed', $result['outcome']);
         $this->assertStringContainsString('A signed-in person who did not add it could remove a booking', $result['output']);
+        $this->assertSame(['Booking delete'], $change->verifications()->sole()->evidence['earlier_rules'] ?? null);
     }
 
     public function test_a_rule_of_an_undone_change_or_one_no_probe_proved_is_not_tried(): void
