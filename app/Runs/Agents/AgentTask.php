@@ -18,5 +18,7 @@ final readonly class AgentTask
         // A small, well-defined task: the agent's light model may take it.
         public bool $light = false,
         public ?array $resume = null,
+        // The agent to try first, ahead of the configured order.
+        public ?string $prefer = null,
     ) {}
 }

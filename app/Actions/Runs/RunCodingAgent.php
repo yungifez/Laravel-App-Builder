@@ -53,7 +53,7 @@ class RunCodingAgent
         $snapshot = $this->snapshot($workspace);
         $previous = null;
 
-        foreach ($this->order() as $adapter) {
+        foreach ($this->order($task->prefer) as $adapter) {
             if ($previous !== null) {
                 $this->restore($workspace, $snapshot);
                 $this->recordEvent($run, $lease, 'failover', [
@@ -74,6 +74,8 @@ class RunCodingAgent
             $this->recordEvent($run, $lease, 'model_call', [
                 'role' => 'coder',
                 ...$outcome->toArray(),
+                // So a light repair that did not pass is not tried light again.
+                'light' => $task->light,
                 'cost_usd' => $outcome->costUsd ?? $estimate,
                 'cost_source' => match (true) {
                     $outcome->costUsd !== null => 'reported',
@@ -161,16 +163,21 @@ class RunCodingAgent
     }
 
     /**
-     * Get the agents in the order to try them: configured order, with agents
-     * whose circuit is open moved to the end.
+     * Get the agents in the order to try them: configured order, or the
+     * preferred agent first, with agents whose circuit is open moved to the
+     * end.
      *
      * @return list<string>
      */
-    protected function order(): array
+    protected function order(?string $prefer = null): array
     {
         $threshold = (int) config('builder.agents.circuit.failures');
         $open = fn (string $adapter) => (int) Cache::get($this->circuitKey($adapter), 0) >= $threshold;
         $order = $this->agents->order();
+
+        if ($prefer !== null && in_array($prefer, $order, true)) {
+            $order = [$prefer, ...array_values(array_diff($order, [$prefer]))];
+        }
 
         return [
             ...array_values(array_filter($order, fn (string $adapter) => ! $open($adapter))),

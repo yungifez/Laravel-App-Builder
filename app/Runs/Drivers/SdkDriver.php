@@ -17,6 +17,7 @@ use App\Runs\Agents\CodingAgentManager;
 use App\Runs\Exceptions\BudgetExhausted;
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Plan;
+use App\Runs\RepairTier;
 use App\Runs\Review;
 use App\Runs\ReviewEvidence;
 use App\Runs\ToolSession;
@@ -45,6 +46,7 @@ class SdkDriver extends AgentDriver
         protected RunWorkspaceCommand $runWorkspaceCommand,
         protected ExtractCandidateChange $extractCandidateChange,
         protected WriteBrief $writeBrief,
+        protected RepairTier $repairTier,
     ) {
         parent::__construct($acceptanceSelector, $recordModelUsage);
     }
@@ -53,16 +55,27 @@ class SdkDriver extends AgentDriver
     {
         $workspace = $run->workspace ?? throw new ConstructionFailed(__('The run has no workspace.'));
 
-        // A background tidy-up goes to the light model first, on a smaller budget.
-        $light = ($run->featureRequest->tidy['tier'] ?? null) === 'light';
+        // A background tidy-up goes to the light model first, on a smaller
+        // budget, and so does a repair of one problem a check can judge.
+        $tidy = ($run->featureRequest->tidy['tier'] ?? null) === 'light';
+        $escalate = $this->escalation($run);
+        $light = $escalate === null && ($tidy || $this->repairTier->light($run));
+
+        if ($escalate !== null) {
+            $run->recordEvent('escalated', $escalate);
+        }
 
         $outcome = $this->runCodingAgent->handle($run, $tools->lease(), $workspace, new AgentTask(
             prompt: $this->writeBrief->handle($run, $plan),
             maxTurns: (int) config('builder.agents.max_turns'),
-            maxBudgetUsd: (float) ($light ? config('builder.verification.shortcuts.tidy.max_budget_usd') : config('builder.agents.max_budget_usd')),
+            maxBudgetUsd: (float) ($tidy ? config('builder.verification.shortcuts.tidy.max_budget_usd') : config('builder.agents.max_budget_usd')),
             timeoutSeconds: (int) config('builder.construction.budgets.minutes') * 60,
             light: $light,
-            resume: $this->resumeFor($run),
+            // The other agent starts fresh, with the whole brief and the
+            // problems, rather than inside the session that stalled.
+            resume: $resume = $escalate === null ? $this->resumeFor($run) : null,
+            // A repair stays with the agent whose session it continues.
+            prefer: $escalate['to'] ?? $resume['adapter'] ?? null,
         ));
 
         $this->restoreProtectedPaths($run);
@@ -80,6 +93,25 @@ class SdkDriver extends AgentDriver
         }
 
         return (string) $outcome->summary;
+    }
+
+    /**
+     * After "escalate_after" repairs that did not pass, hand the next repair
+     * to the other agent (§11): new eyes on the same problems. It happens
+     * once; later repairs continue with whichever agent built last.
+     *
+     * @return array{from: string, to: string}|null
+     */
+    protected function escalation(Run $run): ?array
+    {
+        if ($run->feedback === null || $run->repairs !== (int) config('builder.agents.escalate_after') + 1) {
+            return null;
+        }
+
+        $from = $this->lastBuild($run)->data['adapter'] ?? null;
+        $to = array_values(array_diff($this->agents->order(), [$from]))[0] ?? null;
+
+        return is_string($from) && is_string($to) ? ['from' => $from, 'to' => $to] : null;
     }
 
     /**

@@ -1161,7 +1161,7 @@ sentences ("For each booking I keep: who booked, when it starts and a note if
 there is one. Only the person who added a booking can see, change or remove
 it."), so no code name reaches them. Not built yet: routes and controllers;
 asking about the shape before building when it is hard to change later;
-small-model repairs.
+shapes for records the app already has.
 
 **Rejected: sub-agents by file type.** "A small agent writes the request
 class" moves the risk to the hand-off. To brief it, the larger agent must
@@ -1544,6 +1544,27 @@ Each comes back only when the experiment shows the need.
 | Implement                                        | coding engine per task class                                      | after 2 failed repairs: stronger model or a different provider |
 | Repair that a local check can judge              | cheap model, one error at a time                                  | after 1 refused repair: back to the implementing agent         |
 | Independent review                               | only when triggered, on a different provider than the implementer | —                                                              |
+
+**Light repairs (built).** `RepairTier` sends a repair to each agent's
+`light_model` when the checks sent back exactly one new problem a check can
+judge: one failed test in the test report, one new problem in a check that
+failed before the change too, or a check whose `light_repair` setting
+matches (any formatting failure; static analysis output with "Found 1
+error"). Several problems, several failing checks, a timeout or a check that
+does not say how many problems it found go to the usual model. The pass
+continues the agent's session, so the light model reads only the problem.
+After a light repair that did not pass, the next repair goes to the usual
+model; the coder's `model_call` event records `light`.
+`builder.agents.light_repairs` turns it off.
+
+**Another agent after two failed repairs (built).** A repair continues the
+session of the agent that built last, so it is tried first. After
+`builder.agents.escalate_after` repairs (two) that did not pass, the next
+repair goes once to the next agent in `builder.agents.order`. It starts
+fresh with the whole brief and the problems, not inside the session that
+stalled, and the run records an `escalated` event (never shown to the
+owner). Later repairs continue the new agent's session. A stronger model of
+the same provider is not a tier yet.
 
 **Review triggers:** the behaviour diff touches permissions, money, deletion,
 external communication, tenant data or migrations; the covering tests are weak;

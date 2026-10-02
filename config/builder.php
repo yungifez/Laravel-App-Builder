@@ -485,6 +485,15 @@ return [
         'max_turns' => (int) env('BUILDER_AGENT_MAX_TURNS', 80),
         'max_budget_usd' => (float) env('BUILDER_AGENT_MAX_BUDGET_USD', 5),
 
+        // A repair of one problem a check can judge (one failing test, one
+        // static analysis error) goes to each agent's light_model. After a
+        // light repair that did not pass, the next goes to the usual model.
+        'light_repairs' => (bool) env('BUILDER_AGENT_LIGHT_REPAIRS', true),
+
+        // After this many repairs that did not pass, the next repair goes to
+        // the next agent in "order", which starts fresh with the whole brief.
+        'escalate_after' => (int) env('BUILDER_AGENT_ESCALATE_AFTER', 2),
+
         'circuit' => [
             'failures' => 3,
             'minutes' => 10,
@@ -924,11 +933,14 @@ return [
         // lines written, and the rest of the app is not the change's to
         // tidy. A check without it runs on the whole app, and when it fails
         // it runs again on the starting commit, so only problems the change
-        // brought are sent back to be fixed.
+        // brought are sent back to be fixed. "light_repair" says when its
+        // failure is one problem the coding agent's light model may fix:
+        // true for any failure, or a pattern its output must match. A
+        // check with a test report counts its failed tests instead.
         'checks' => [
             ['name' => 'Tests', 'command' => ['php', 'artisan', 'test', '--log-junit=storage/logs/junit.xml'], 'timeout' => 600, 'report' => 'storage/logs/junit.xml'],
-            ['name' => 'Static analysis', 'command' => ['vendor/bin/phpstan', 'analyse', '--no-progress'], 'timeout' => 600],
-            ['name' => 'PHP formatting', 'command' => ['vendor/bin/pint', '--test'], 'timeout' => 300, 'files' => ['php']],
+            ['name' => 'Static analysis', 'command' => ['vendor/bin/phpstan', 'analyse', '--no-progress'], 'timeout' => 600, 'light_repair' => '/\bFound 1 error\b/'],
+            ['name' => 'PHP formatting', 'command' => ['vendor/bin/pint', '--test'], 'timeout' => 300, 'files' => ['php'], 'light_repair' => true],
             ['name' => 'Frontend format and lint', 'command' => ['npx', 'vp', 'check', '--no-error-on-unmatched-pattern'], 'timeout' => 300, 'files' => ['ts', 'vue', 'js', 'mjs', 'css', 'json', 'md']],
             ['name' => 'TypeScript', 'command' => ['npm', 'run', 'types:check'], 'timeout' => 300],
         ],
