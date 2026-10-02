@@ -20,6 +20,7 @@ use App\Enums\RunStatus;
 use App\Features\AppBoundaries;
 use App\Features\Exceptions\CannotGenerateFeature;
 use App\Features\InventedColours;
+use App\Features\NodeInPhpTests;
 use App\Features\PatchSummary;
 use App\Features\ScreenCheck;
 use App\Features\TestChanges;
@@ -385,6 +386,10 @@ class ConstructRun
         if ($driver->canRepair() && config('builder.verification.design_scan')) {
             $review = $review->withBlockingFindings(array_map(InventedColours::finding(...), InventedColours::found($featureRequest->patch)));
             $review = $review->withBlockingFindings(array_map(UndescribedImages::finding(...), UndescribedImages::found($featureRequest->patch)));
+        }
+
+        if ($driver->canRepair() && config('builder.verification.test_scan')) {
+            $review = $review->withBlockingFindings(array_map(NodeInPhpTests::finding(...), NodeInPhpTests::found($featureRequest->patch)));
         }
 
         // What the recording proves the change saved or sent where Laravel

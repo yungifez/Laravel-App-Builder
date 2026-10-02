@@ -140,6 +140,31 @@ class WorkerDriverTest extends TestCase
             ->assertSee('Commands run only while the change waits for you.');
     }
 
+    public function test_a_test_that_starts_node_itself_is_sent_back_with_the_laravel_way()
+    {
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $test = <<<'PATCH'
+            diff --git a/tests/Feature/TeamScreenTest.php b/tests/Feature/TeamScreenTest.php
+            new file mode 100644
+            --- /dev/null
+            +++ b/tests/Feature/TeamScreenTest.php
+            @@ -0,0 +1,3 @@
+            +<?php
+            +
+            +(new Symfony\Component\Process\Process(['node', 'tests/render.mjs']))->mustRun();
+
+            PATCH;
+
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange().$test, 'summary' => 'Added a description.']);
+        $this->verify($run, VerificationStatus::Passed);
+
+        $this->assertSame(RunStatus::Implementing, $run->refresh()->status);
+        $fix = (string) $this->tool('get_task', $token)->json('result.content.0.text');
+        $this->assertStringContainsString('Line 3 of tests/Feature/TeamScreenTest.php starts Node from a PHP test.', $fix);
+        $this->assertStringContainsString('assertInertia', $fix);
+    }
+
     public function test_a_patch_that_does_not_apply_is_refused_with_the_reason_and_can_be_handed_back_again()
     {
         $run = $this->startRun();

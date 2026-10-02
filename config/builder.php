@@ -652,6 +652,11 @@ return [
         // is sent back to fix it.
         'design_scan' => (bool) env('BUILDER_DESIGN_SCAN', true),
 
+        // Test checks. A PHP test the change adds that starts Node itself
+        // (to render a screen, most often) is a blocking finding: Laravel
+        // apps test screens with assertInertia or Pest browser tests.
+        'test_scan' => (bool) env('BUILDER_TEST_SCAN', true),
+
         // Shortcuts in the app's PHP code that cost the owner later: errors
         // caught and ignored, and the database asked once per row. The PHP
         // files a change touched are read by the Sloppy analyser
