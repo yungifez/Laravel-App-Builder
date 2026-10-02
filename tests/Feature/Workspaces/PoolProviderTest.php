@@ -12,6 +12,7 @@ use App\Workspaces\Boxes\Providers\PoolProvider;
 use App\Workspaces\WorkspaceSpec;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Sleep;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -130,6 +131,57 @@ class PoolProviderTest extends TestCase
         $this->expectException(RuntimeException::class);
 
         (new PoolProvider)->create($this->spec());
+    }
+
+    public function test_without_a_cloud_a_full_pool_refuses_at_once()
+    {
+        Sleep::fake();
+        config(['workspaces.boxes.pool.max_workspaces' => 1, 'workspaces.machines.cloud' => null]);
+        $this->holding(Runner::factory()->create(['name' => 'full']), 1);
+
+        try {
+            (new PoolProvider)->create($this->spec());
+            $this->fail('A full pool without a cloud gave out a place.');
+        } catch (RuntimeException) {
+            Sleep::assertNeverSlept();
+        }
+    }
+
+    public function test_on_a_cloud_a_workspace_waits_for_a_machine_and_counts_as_waiting()
+    {
+        config(['workspaces.boxes.pool.max_workspaces' => 1, 'workspaces.machines.cloud' => 'hetzner', 'workspaces.machines.boot_minutes' => 10]);
+        $this->holding(Runner::factory()->create(['name' => 'full']), 1);
+        $pool = new PoolProvider;
+        $seenWaiting = null;
+
+        Sleep::fake();
+        Sleep::whenFakingSleep(function () use ($pool, &$seenWaiting) {
+            $seenWaiting ??= $pool->waiting();
+            // A new machine comes up while the workspace waits.
+            Runner::query()->firstOrCreate(['name' => 'fresh'], Runner::factory()->raw(['name' => 'fresh']));
+        });
+
+        $this->assertSame('fresh--workspace-new', $pool->create($this->spec()));
+        $this->assertSame(1, $seenWaiting);
+        $this->assertSame(0, $pool->waiting());
+    }
+
+    public function test_on_a_cloud_a_workspace_gives_up_when_no_machine_comes()
+    {
+        config(['workspaces.boxes.pool.max_workspaces' => 1, 'workspaces.machines.cloud' => 'hetzner', 'workspaces.machines.boot_minutes' => 10]);
+        $this->holding(Runner::factory()->create(['name' => 'full', 'last_seen_at' => now()->addHour()]), 1);
+        $pool = new PoolProvider;
+        Sleep::fake(syncWithCarbon: true);
+
+        try {
+            $pool->create($this->spec());
+            $this->fail('A full pool gave out a place.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('No runner is online with room', $exception->getMessage());
+        }
+
+        Sleep::assertSleptTimes(120);
+        $this->assertSame(0, $pool->waiting());
     }
 
     public function test_previews_are_reached_at_the_address_their_runner_reported()

@@ -10,6 +10,7 @@ use App\Workspaces\WorkspaceSpec;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -42,7 +43,56 @@ class PoolProvider implements BoxProvider
      */
     protected const RESERVATION_SECONDS = 300;
 
+    /**
+     * Where workspaces waiting for room are kept, so the pool on a cloud
+     * starts machines for them too.
+     */
+    protected const WAITING = 'workspaces:pool:waiting';
+
     public function create(WorkspaceSpec $spec): string
+    {
+        // On a cloud, a full pool starts a machine within minutes, so the
+        // workspace waits for it. Without one, more room comes only when
+        // someone adds a machine.
+        $deadline = now()->addMinutes(config('workspaces.machines.cloud') ? (int) config('workspaces.machines.boot_minutes') : 0);
+        $waiter = null;
+
+        try {
+            while (true) {
+                $box = $this->place($spec);
+
+                if ($box !== null) {
+                    return $box;
+                }
+
+                if (now()->gte($deadline)) {
+                    throw new RuntimeException('No runner is online with room to hold the workspace.');
+                }
+
+                $waiter ??= Str::random(16);
+                $this->wait($waiter, $deadline->getTimestamp());
+                Sleep::for(5)->seconds();
+            }
+        } finally {
+            if ($waiter !== null) {
+                $this->placing(fn () => Cache::put(self::WAITING, array_diff_key($this->waiters(), [$waiter => true]), self::RESERVATION_SECONDS));
+            }
+        }
+    }
+
+    /**
+     * Count the workspaces waiting for room.
+     */
+    public function waiting(): int
+    {
+        return count($this->waiters());
+    }
+
+    /**
+     * Put a box for the workspace on the online runner holding the fewest,
+     * or return null when none has room.
+     */
+    protected function place(WorkspaceSpec $spec): ?string
     {
         // Workspaces asked for at the same moment are placed one at a time,
         // each seeing the ones placed before it.
@@ -62,7 +112,7 @@ class PoolProvider implements BoxProvider
                 ->first()['runner'] ?? null;
 
             if ($runner === null) {
-                throw new RuntimeException('No runner is online with room to hold the workspace.');
+                return null;
             }
 
             $box = $runner->name.self::SEPARATOR.$spec->name;
@@ -139,6 +189,26 @@ class PoolProvider implements BoxProvider
         $reservations = Cache::get(self::RESERVATIONS, []);
 
         return array_filter(is_array($reservations) ? $reservations : [], fn (mixed $until) => is_int($until) && $until > now()->getTimestamp());
+    }
+
+    /**
+     * Note that a workspace waits for room, until the given time.
+     */
+    protected function wait(string $waiter, int $until): void
+    {
+        $this->placing(fn () => Cache::put(self::WAITING, [...$this->waiters(), $waiter => $until], self::RESERVATION_SECONDS + 60));
+    }
+
+    /**
+     * Get the workspaces waiting for room, with when each gives up.
+     *
+     * @return array<string, int>
+     */
+    protected function waiters(): array
+    {
+        $waiters = Cache::get(self::WAITING, []);
+
+        return array_filter(is_array($waiters) ? $waiters : [], fn (mixed $until) => is_int($until) && $until > now()->getTimestamp());
     }
 
     /**

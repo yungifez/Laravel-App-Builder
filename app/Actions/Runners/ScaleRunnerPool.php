@@ -189,7 +189,8 @@ class ScaleRunnerPool
 
         $starting = Runner::query()->whereNotNull('cloud')->whereNull('last_seen_at')->whereNull('draining_at')->count();
 
-        return (int) $ready + $starting * $capacity;
+        // Workspaces waiting for room already need the places there are.
+        return (int) $ready + $starting * $capacity - $this->pool->waiting();
     }
 
     /**

@@ -119,6 +119,17 @@ class RunnerScalingTest extends TestCase
         $this->artisan('runners:list')->expectsOutputToContain('starting')->assertSuccessful();
     }
 
+    public function test_workspaces_waiting_for_room_make_the_pool_start_a_machine()
+    {
+        // Two free places, as many as wanted, so no machine would start.
+        $this->onCloud('half', '7', holding: 2);
+        $this->artisan('runners:scale')->expectsOutputToContain('right size')->assertSuccessful();
+
+        Cache::put('workspaces:pool:waiting', ['a' => now()->addMinutes(5)->getTimestamp()]);
+
+        $this->artisan('runners:scale')->expectsOutputToContain('Started machine')->assertSuccessful();
+    }
+
     public function test_no_more_machines_start_than_the_most_allowed()
     {
         config(['workspaces.machines.max' => 1]);

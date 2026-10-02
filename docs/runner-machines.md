@@ -210,7 +210,10 @@ them on Hetzner Cloud. Each minute, `runners:scale` (in the scheduler) does
 one of these things:
 
 - It starts a machine when fewer than `WORKSPACE_MACHINES_SPARE_WORKSPACES`
-  places are free.
+  places are free. Workspaces that wait for room count as places in use.
+  When the pool is full, a new workspace waits up to
+  `WORKSPACE_MACHINES_BOOT_MINUTES` for a machine instead of failing. Without
+  a cloud, it fails at once.
 - It deletes a machine that held nothing for
   `WORKSPACE_MACHINES_EMPTY_MINUTES`, if the pool still has enough room
   without it.
