@@ -161,9 +161,11 @@ the repository.
 ## Not proven yet
 
 - Starting and deleting runner machines through the Hetzner API is tested
-  only against a fake API. Try one start and one delete in a test project
+  only against a fake API. The requests match Hetzner's published API
+  description. Try one start and one delete in a test project
   first.
-- How a new machine finds its private address from Hetzner's metadata
-  service is not tested on a real machine.
+- A new machine reads its private address from Hetzner's metadata
+  service. The parsing is tested against the example answer in Hetzner's
+  documentation, but not yet on a real machine.
 - New machines pull the box image from a registry. Push it with a version
   tag before you turn on `WORKSPACE_MACHINES_CLOUD`.

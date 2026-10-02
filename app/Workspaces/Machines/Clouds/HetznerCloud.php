@@ -114,6 +114,13 @@ class HetznerCloud implements MachineCloud
             throw new RuntimeException('Hetzner has no API token. Set WORKSPACE_MACHINES_HETZNER_TOKEN.');
         }
 
+        // The label is part of each machine's name, which Hetzner wants as a
+        // hostname of at most 63 characters, so say what is wrong before
+        // Hetzner refuses with a less clear error.
+        if (! preg_match('/^[a-z0-9]([a-z0-9-]{0,50}[a-z0-9])?$/', $this->pool)) {
+            throw new RuntimeException('WORKSPACE_MACHINES_POOL_LABEL must be 1 to 52 lower-case letters, digits or dashes, and start and end with a letter or digit.');
+        }
+
         return Http::baseUrl(self::API)->withToken($this->token)->acceptJson()->timeout(30);
     }
 

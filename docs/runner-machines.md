@@ -272,6 +272,8 @@ the metadata address.
 
 If two control planes, for example staging and production, share one
 Hetzner project, give each its own `WORKSPACE_MACHINES_POOL_LABEL`. The
+label is part of each machine's name, so use 1 to 52 lower-case letters,
+digits or dashes. The
 scaler touches only machines with its own label.
 
 To give the machines a new box image, push it with a new tag and set
