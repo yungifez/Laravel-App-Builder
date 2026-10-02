@@ -3,9 +3,10 @@
 namespace App\VisualEditing;
 
 /**
- * The words written directly inside an element in a Vue template. Only
- * plain words can be changed in place: no other elements among them, no
- * `{{ }}`, and no `v-text` or `v-html` on the element. Anything else
+ * The words written directly inside an element in a Vue template or a
+ * Blade view. Only plain words can be changed in place: no other elements
+ * among them, no `{{ }}`, `{!! !!}` or Blade directive, and no `v-text`,
+ * `v-html` or `x-html` on the element. Anything else
  * depends on the app, so it is left to the coding agent.
  */
 class TemplateText
@@ -24,14 +25,15 @@ class TemplateText
         $startTag = substr($contents, $element->start, $element->end - $element->start);
         $close = strpos($contents, '<', $element->end);
 
-        if ($close === false || preg_match('/\s(?:v-text|v-html|:innerHTML|:textContent)\b/', $startTag) === 1 || substr_compare($contents, '</'.$element->tag, $close, strlen($element->tag) + 2) !== 0) {
+        if ($close === false || preg_match('/\s(?:v-text|v-html|x-text|x-html|:innerHTML|:textContent)\b/', $startTag) === 1 || substr_compare($contents, '</'.$element->tag, $close, strlen($element->tag) + 2) !== 0) {
             return null;
         }
 
         $inner = substr($contents, $element->end, $close - $element->end);
         $value = trim($inner);
 
-        if ($value === '' || str_contains($value, '{{')) {
+        // Words printed by Blade ({!! !!}, @lang and the like) are the app's.
+        if ($value === '' || str_contains($value, '{{') || str_contains($value, '{!!') || preg_match('/(?<![\w@])@(?:if|unless|isset|foreach|for|forelse|else|php|lang|choice|json|csrf|include|auth|guest|can|env)\b/', $value) === 1) {
             return null;
         }
 

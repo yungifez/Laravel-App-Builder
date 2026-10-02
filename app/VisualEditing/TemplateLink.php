@@ -3,7 +3,7 @@
 namespace App\VisualEditing;
 
 /**
- * Where a link in a Vue template goes, when it is written as a plain
+ * Where a link in a Vue template or a Blade view goes, when it is written as a plain
  * `href="…"`. A bound `:href` depends on the app, so it is left to the
  * coding agent.
  */
@@ -19,7 +19,8 @@ class TemplateLink
         $startTag = substr($contents, $element->start, $element->end - $element->start);
 
         // A "\s" before "href" leaves out ":href" and "v-bind:href".
-        if (preg_match('/\shref\s*=\s*(["\'])(.*?)\1/s', $startTag, $match, PREG_OFFSET_CAPTURE) !== 1) {
+        // One printed by Blade ("{{ route('home') }}") is the app's to choose.
+        if (preg_match('/\shref\s*=\s*(["\'])(.*?)\1/s', $startTag, $match, PREG_OFFSET_CAPTURE) !== 1 || preg_match('/\{\{|\{!!/', $match[2][0]) === 1) {
             return null;
         }
 

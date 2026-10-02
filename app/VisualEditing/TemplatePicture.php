@@ -3,7 +3,7 @@
 namespace App\VisualEditing;
 
 /**
- * Which file a picture in a Vue template shows, when it is written as a
+ * Which file a picture in a Vue template or a Blade view shows, when it is written as a
  * plain `src="…"`. A bound `:src` depends on the app, so it is left to the
  * coding agent.
  */
@@ -29,7 +29,8 @@ class TemplatePicture
         $startTag = substr($contents, $element->start, $element->end - $element->start);
 
         // A "\s" before "src" leaves out ":src", "v-bind:src" and "srcset".
-        if (preg_match('/\ssrc\s*=\s*(["\'])(.*?)\1/s', $startTag, $match, PREG_OFFSET_CAPTURE) !== 1) {
+        // One printed by Blade ("{{ asset('logo.png') }}") is the app's to choose.
+        if (preg_match('/\ssrc\s*=\s*(["\'])(.*?)\1/s', $startTag, $match, PREG_OFFSET_CAPTURE) !== 1 || preg_match('/\{\{|\{!!/', $match[2][0]) === 1) {
             return null;
         }
 

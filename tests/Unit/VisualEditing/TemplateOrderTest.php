@@ -228,4 +228,48 @@ class TemplateOrderTest extends TestCase
     {
         return (int) TemplateElement::offset(self::TEMPLATE, $line, $column);
     }
+
+    public function test_a_blade_view_is_read_whole_and_parts_move_only_within_their_block()
+    {
+        $blade = <<<'BLADE'
+            {{-- <p>not an element</p> --}}
+            <div>
+                <h1>{{ $title }}</h1>
+                @foreach ($students as $student)
+                    <p>{{ $student->name }}</p>
+                    <span>{!! $student->note !!}</span>
+                @endforeach
+                @if ($students->isEmpty())
+                    <em>None</em>
+                @else
+                    <strong>Some</strong>
+                @endif
+                <a href="mailto:office@school.test">Mail</a>
+                <script>if (a < b) { document.write('<i>') }</script>
+                @php $tag = '<b>'; @endphp
+            </div>
+            <footer>End</footer>
+            BLADE;
+        $at = fn (int $line, int $column) => (int) TemplateElement::offset($blade, $line, $column);
+
+        // Both roots, every element, and nothing from comments, PHP or scripts.
+        $this->assertSame(['div', 'h1', 'p', 'span', 'em', 'strong', 'a', 'script', 'footer'], array_map(fn (array $element) => preg_match('/^<([\w.:-]+)/', $element['head'], $tag) === 1 ? $tag[1] : null, TemplateOrder::elements($blade)));
+
+        // Within one pass of the loop, parts change places.
+        $moved = TemplateOrder::move($blade, $at(6, 9), $at(5, 9), 'before');
+        $this->assertStringContainsString("@foreach (\$students as \$student)\n        <span>{!! \$student->note !!}</span>\n        <p>", $moved['contents']);
+
+        // Nothing moves into or out of a list or a condition, or between its branches.
+        foreach ([[$at(3, 5), $at(5, 9)], [$at(13, 5), $at(9, 9)], [$at(9, 9), $at(11, 9)]] as [$from, $to]) {
+            try {
+                TemplateOrder::move($blade, $from, $to, 'after');
+                $this->fail('A part moved across a Blade block.');
+            } catch (InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+
+        // Around a block, siblings of the same block still move.
+        $this->assertStringContainsString("<a href=\"mailto:office@school.test\">Mail</a>\n    <h1>", TemplateOrder::move($blade, $at(3, 5), $at(13, 5), 'after')['contents']);
+    }
 }

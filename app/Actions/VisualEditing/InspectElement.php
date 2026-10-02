@@ -217,12 +217,25 @@ class InspectElement
      */
     protected function sharedComponent(Preview $preview, string $head, string $file): ?array
     {
-        if (! str_contains($file, '/components/') || ! str_ends_with($file, '.vue')) {
+        if (! str_contains($file, '/components/')) {
             return null;
         }
 
-        $name = pathinfo($file, PATHINFO_FILENAME);
-        $result = $this->repository->git($preview->project, ['grep', '-l', '-E', "<{$name}([[:space:]/>]|$)", $head, '--', '*.vue'], throw: false);
+        // A Vue component is used by its file name; an anonymous Blade
+        // component by "x-" and its path under components/, with dots, as
+        // in <x-forms.input> (and a folder's index.blade.php by the folder).
+        if (str_ends_with($file, '.vue')) {
+            $name = $tag = pathinfo($file, PATHINFO_FILENAME);
+            $files = '*.vue';
+        } elseif (str_ends_with($file, '.blade.php')) {
+            $name = (string) preg_replace('/\.index$/', '', str_replace('/', '.', Str::of($file)->afterLast('/components/')->beforeLast('.blade.php')->value()));
+            $tag = 'x-'.$name;
+            $files = '*.blade.php';
+        } else {
+            return null;
+        }
+
+        $result = $this->repository->git($preview->project, ['grep', '-l', '-E', '<'.str_replace('.', '\\.', $tag).'([[:space:]/>]|$)', $head, '--', $files], throw: false);
         $uses = count(array_filter(explode("\n", trim($result->output()))));
 
         return ['name' => $name, 'uses' => $uses];

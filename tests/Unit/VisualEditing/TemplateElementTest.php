@@ -77,4 +77,26 @@ class TemplateElementTest extends TestCase
         $this->assertNull(TemplateElement::at(self::TEMPLATE, 2, 6));
         $this->assertNull(TemplateElement::at(self::TEMPLATE, 99, 1));
     }
+
+    public function test_it_reads_a_blade_start_tag_whose_php_holds_a_closing_bracket()
+    {
+        $blade = <<<'BLADE'
+            <div {{ $attributes->merge(['id' => 'x']) }} class="p-4 @container">
+                <span @class(['font-bold' => $count > 1]) class="text-sm">Hi</span>
+                <p class="mt-2 {{ $user->active ? 'text-green-600' : '' }}">On</p>
+                <x-button wire:click="save" @click="open = true" class="w-full">Save</x-button>
+            </div>
+            BLADE;
+
+        $box = TemplateElement::at($blade, 1, 1);
+        $this->assertSame(['div', 'p-4 @container', true], [$box->tag, $box->classes['value'], $box->editable()]);
+        $this->assertSame(strpos($blade, "\n") + 0, $box->end);
+
+        // Classes the app chooses with Blade are left to the coding agent.
+        $this->assertFalse(TemplateElement::at($blade, 2, 5)->editable());
+        $this->assertFalse(TemplateElement::at($blade, 3, 5)->editable());
+
+        $button = TemplateElement::at($blade, 4, 5);
+        $this->assertSame(['x-button', 'w-full', true], [$button->tag, $button->classes['value'], $button->editable()]);
+    }
 }

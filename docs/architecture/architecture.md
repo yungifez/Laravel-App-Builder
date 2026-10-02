@@ -2442,8 +2442,8 @@ Resolved progressively when the user clicks in the preview; any level may be
 
 ```
 element     DOM path, visible text, screenshot crop, current classes
-source      file:line:col in the Vue template, component name
-screen      Inertia page, route, URL
+source      file:line:col in the Vue template or Blade view, component name
+screen      page component or view, route, URL
 behavior    keys (Wayfinder action bound to the element, or the page's view behaviour)
 capability, actors, permissions, side effects   (from the Product Behavior Graph)
 impl_refs   component, policy, action, tests
@@ -2456,7 +2456,20 @@ seeded with exactly what the user pointed at.
 
 A Vite plugin stamps elements with `data-source` from the single-file-component
 compiler's source locations; Vue's development metadata gives component names;
-the Wayfinder index links elements to behaviours. Conventions for generated
+the Wayfinder index links elements to behaviours.
+
+Implemented: `resources/preview-tools/locate-sources.mjs` stamps Vue files
+(with the app's Vue compiler, loaded only when it finds one) and Blade
+views, Livewire's included, so the designer works whatever the screens are
+made with (§18). A Blade view is read tag by tag; echoes, comments, PHP and
+script contents are skipped. A Blade component (`<x-…>`) is marked where it
+is used, as a Vue component is, and a Livewire tag is left alone because it
+passes what it gets to the component's code. `@foreach` and Alpine `x-for`
+mark a part as repeated; `@if`, `@unless` and the like mark it as shown at
+times. The edit writers read Blade too: a class, link or picture printed by
+Blade (`{{ }}`, `@class`) is left to the coding agent, and a part moves only
+within one branch of one block, never into or out of an `@if` or
+`@foreach`. Conventions for generated
 code: meaningful component names, every server action through Wayfinder, no
 dynamic component resolution for interactive elements. Production output stays
 clean.

@@ -3,13 +3,14 @@
 namespace App\VisualEditing;
 
 /**
- * An element's start tag in a Vue template, found at the line and column the
- * preview's source locator stamped, and its classes when they can be edited
- * in place.
+ * An element's start tag in a Vue template or a Blade view, found at the
+ * line and column the preview's source locator stamped, and its classes
+ * when they can be edited in place.
  *
  * Classes are editable when they are written as a static `class="…"`, or as
- * the first string of `:class="cn('…', …)"`. Any other `:class` binding
- * depends on the app's state, so it is left to the coding agent.
+ * the first string of `:class="cn('…', …)"`. Any other `:class` binding,
+ * a Blade `@class(…)`, or a class with `{{ }}` in it depends on the app's
+ * state, so it is left to the coding agent.
  */
 class TemplateElement
 {
@@ -61,6 +62,23 @@ class TemplateElement
                 return new self($tag, $offset, $end, $static ?? self::fromClassHelper($bound), $bound !== null && ($static !== null || self::fromClassHelper($bound) === null));
             }
 
+            // Blade inside a start tag: an echo such as
+            // {{ $attributes->merge(…) }}, or a directive with arguments
+            // such as @class([…]). Either may hold a ">" that is not the
+            // tag's end.
+            if (preg_match('/\G\s*(\{\{.*?\}\}|\{!!.*?!!\})/s', $contents, $echo, 0, $position) === 1) {
+                $position += strlen($echo[0]);
+
+                continue;
+            }
+
+            if (preg_match('/\G\s*@(\w+)\s*\(/', $contents, $directive, 0, $position) === 1) {
+                $bound = $directive[1] === 'class' ? ['offset' => $position, 'length' => 0, 'value' => ''] : $bound;
+                $position = self::balanced($contents, $position + strlen($directive[0]) - 1);
+
+                continue;
+            }
+
             if (preg_match('/\G\s*([^\s=\/>"\']+)(?:\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>"\']+)))?/', $contents, $attribute, PREG_OFFSET_CAPTURE, $position) !== 1) {
                 return null;
             }
@@ -68,7 +86,11 @@ class TemplateElement
             $name = $attribute[1][0];
             $value = self::captured($attribute);
 
-            if ($name === 'class' && $value !== null) {
+            // Classes printed by Blade are the app's to choose. Tailwind's
+            // own "@" (as in "@container") is a class like any other.
+            if ($name === 'class' && $value !== null && preg_match('/\{\{|\{!!|@(?:if|unless|isset|auth|guest|can|env|production|foreach|else|endif)\b/', $value['value']) === 1) {
+                $bound = $value;
+            } elseif ($name === 'class' && $value !== null) {
                 $static = $value;
             } elseif (in_array($name, [':class', 'v-bind:class'], true) && $value !== null) {
                 $bound = $value;
@@ -148,6 +170,32 @@ class TemplateElement
         $offset += $column - 1;
 
         return $offset < strlen($contents) ? $offset : null;
+    }
+
+    /**
+     * Get the offset just after the ")" that closes the "(" at an offset,
+     * stepping over quoted strings.
+     */
+    public static function balanced(string $contents, int $offset): int
+    {
+        $depth = 0;
+        $length = strlen($contents);
+
+        for ($at = $offset; $at < $length; $at++) {
+            $character = $contents[$at];
+
+            if ($character === '"' || $character === "'") {
+                for ($at++; $at < $length && $contents[$at] !== $character; $at++) {
+                    $at += $contents[$at] === '\\' ? 1 : 0;
+                }
+            } elseif ($character === '(') {
+                $depth++;
+            } elseif ($character === ')' && --$depth === 0) {
+                return $at + 1;
+            }
+        }
+
+        return $length;
     }
 
     /**

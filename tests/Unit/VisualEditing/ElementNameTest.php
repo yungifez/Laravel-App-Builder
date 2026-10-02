@@ -16,6 +16,8 @@ class ElementNameTest extends TestCase
     #[TestWith(['CardTitle', 'a card title'])]
     #[TestWith(['AppLogoIcon', 'an app logo icon'])]
     #[TestWith(['router-link', 'a router link'])]
+    #[TestWith(['x-forms.input', 'a forms input'])]
+    #[TestWith(['livewire:student-list', 'a student list'])]
     #[TestWith(['_', 'a box'])]
     public function test_a_tag_reads_as_words(string $tag, string $words)
     {

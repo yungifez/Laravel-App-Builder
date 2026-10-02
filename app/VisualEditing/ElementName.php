@@ -58,7 +58,9 @@ class ElementName
             return self::WORDS[strtolower($tag)];
         }
 
-        // A component's name says what it is: "CardTitle" is a card title.
+        // A component's name says what it is: "CardTitle" is a card title,
+        // and Blade's "x-forms.input" is a forms input.
+        $tag = (string) preg_replace('/^(?:x[-:]|livewire[-:])/', '', $tag);
         $words = strtolower(trim(preg_replace('/[^A-Za-z]+/', ' ', Str::snake($tag, ' ')) ?? ''));
 
         if ($words === '') {

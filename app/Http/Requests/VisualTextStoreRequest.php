@@ -39,13 +39,13 @@ class VisualTextStoreRequest extends FormRequest
             'target' => ['required', 'string', 'max:600'],
             'instance' => ['boolean'],
             'before' => ['required', 'string', 'max:2000'],
-            // A template would read "{{" as code.
-            'text' => ['required', 'string', 'max:2000', 'not_regex:/\{\{|\}\}/'],
+            // A template would read "{{" (or Blade's "{!!") as code.
+            'text' => ['required', 'string', 'max:2000', 'not_regex:/\{\{|\}\}|\{!!|!!\}/'],
             'revision' => ['required', 'string', 'regex:/^[0-9a-f]{40,64}$/'],
             // The files the page is drawn from, nearest first, where words
             // shown through "{{ }}" may be written.
             'places' => ['nullable', 'list', 'max:40'],
-            'places.*' => ['string', 'max:300', 'regex:/^(?!\/)(?!.*\.\.)[\w@.\/-]+\.vue$/'],
+            'places.*' => ['string', 'max:300', 'regex:/^(?!\/)(?!.*\.\.)[\w@.\/-]+\.(?:vue|blade\.php)$/'],
         ];
     }
 

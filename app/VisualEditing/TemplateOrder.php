@@ -12,6 +12,12 @@ use InvalidArgumentException;
  * so every element's whole extent (start tag to end tag) and parent are
  * known. Only siblings (elements with the same parent) change places, and
  * never in a way that splits a `v-if` from its `v-else`.
+ *
+ * A Blade view (a file with no top-level `<template>`) is read whole, and
+ * its echoes, comments, PHP and script contents are skipped too. Its
+ * directives that hold markup (`@if`, `@foreach` and the like) are
+ * boundaries: siblings change places only within the same branch of the
+ * same block, so a part never moves into or out of a condition or a list.
  */
 class TemplateOrder
 {
@@ -20,6 +26,22 @@ class TemplateOrder
      * Matched as written: `<Link>` is a component that closes, not `<link>`.
      */
     protected const VOID = ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'];
+
+    /**
+     * Blade directives that hold markup until their @end… (or, for a
+     * section, @show and the like).
+     */
+    protected const BLADE_BLOCKS = ['if', 'unless', 'isset', 'empty', 'auth', 'guest', 'can', 'cannot', 'canany', 'env', 'production', 'switch', 'error', 'session', 'hasSection', 'sectionMissing', 'foreach', 'forelse', 'for', 'while', 'push', 'prepend', 'pushOnce', 'prependOnce', 'once', 'fragment', 'component', 'persist', 'teleport', 'section'];
+
+    /**
+     * Blade directives that end one branch of a block and begin the next.
+     */
+    protected const BLADE_BRANCHES = ['else', 'elseif', 'elseauth', 'elseguest', 'elsecan', 'elsecannot', 'elsecanany', 'elseenv', 'case', 'default'];
+
+    /**
+     * Blade directives whose contents are not markup.
+     */
+    protected const BLADE_RAW = ['php', 'verbatim', 'script', 'assets'];
 
     /**
      * Move the element whose "<" is at one offset to just before or after
@@ -35,11 +57,11 @@ class TemplateOrder
             throw new InvalidArgumentException("Unknown placement [{$placement}].");
         }
 
-        $elements = self::elements($contents);
+        $elements = self::read($contents);
         $moved = self::find($elements, $offset);
         $target = self::find($elements, $targetOffset);
 
-        if ($moved === $target || $elements[$moved]['parent'] !== $elements[$target]['parent']) {
+        if ($moved === $target || $elements[$moved]['parent'] !== $elements[$target]['parent'] || $elements[$moved]['block'] !== $elements[$target]['block']) {
             throw new InvalidArgumentException('Only an element and its sibling can change places.');
         }
 
@@ -222,35 +244,55 @@ class TemplateOrder
     }
 
     /**
-     * Read every element in the file's top-level template, in order.
+     * Read every element in the file's top-level template (or the whole
+     * Blade view), in order.
      *
      * @return list<array{start: int, end: int, parent: int|null, head: string}> Where each starts and ends, its parent's index, and its start tag
      */
     public static function elements(string $contents): array
     {
-        if (preg_match('/^<template\b/m', $contents, $match, PREG_OFFSET_CAPTURE) !== 1) {
-            return [];
-        }
+        return array_map(fn (array $element) => ['start' => $element['start'], 'end' => $element['end'], 'parent' => $element['parent'], 'head' => $element['head']], self::read($contents));
+    }
 
-        /** @var list<array{tag: string, start: int, end: int, parent: int|null, head: string}> $elements */
+    /**
+     * Read every element, with the Blade block branch it sits in ("" for
+     * none, and always in a Vue template).
+     *
+     * @return list<array{start: int, end: int, parent: int|null, head: string, block: string}>
+     */
+    protected static function read(string $contents): array
+    {
+        $blade = preg_match('/^<template\b/m', $contents, $match, PREG_OFFSET_CAPTURE) !== 1;
+
+        /** @var list<array{tag: string, start: int, end: int, parent: int|null, head: string, block: string}> $elements */
         $elements = [];
         /** @var list<int> $open */
         $open = [];
         /** @var array<int, int> $ends Where each closed element's end tag ends */
         $ends = [];
-        $position = $match[0][1];
+        /** @var list<int> $blocks The Blade block branches around the position, outermost first */
+        $blocks = [];
+        $branches = 0;
+        $position = $blade ? 0 : $match[0][1];
         $length = strlen($contents);
+        $skipped = ['<!--' => '-->', '{{' => '}}', '{{--' => '--}}', '{!!' => '!!}', '<?php' => '?>'];
 
         while ($position < $length) {
-            if (preg_match('/<!--|\{\{|<\/?[A-Za-z]/', $contents, $next, PREG_OFFSET_CAPTURE, $position) !== 1) {
+            if (preg_match($blade ? '/\{\{--|\{!!|<!--|\{\{|<\?php|<\/?[A-Za-z]|@/' : '/<!--|\{\{|<\/?[A-Za-z]/', $contents, $next, PREG_OFFSET_CAPTURE, $position) !== 1) {
                 break;
             }
 
             [$token, $position] = $next[0];
 
-            if ($token === '<!--' || $token === '{{') {
-                $close = strpos($contents, $token === '<!--' ? '-->' : '}}', $position);
-                $position = $close === false ? $length : $close + ($token === '<!--' ? 3 : 2);
+            if (isset($skipped[$token])) {
+                $close = strpos($contents, $skipped[$token], $position + strlen($token));
+                $position = $close === false ? $length : $close + strlen($skipped[$token]);
+
+                continue;
+            }
+
+            if ($token === '@') {
+                $position = self::directive($contents, $position, $blocks, $branches);
 
                 continue;
             }
@@ -271,7 +313,9 @@ class TemplateOrder
                     }
                 }
 
-                if ($open === []) {
+                // A Vue file's template ends with its root; a Blade view
+                // has as many roots as it likes.
+                if ($open === [] && ! $blade) {
                     break;
                 }
 
@@ -292,6 +336,7 @@ class TemplateOrder
                 'end' => $element->end,
                 'parent' => $open === [] ? null : $open[count($open) - 1],
                 'head' => substr($contents, $position, $element->end - $position),
+                'block' => implode('/', $blocks),
             ];
 
             if (! $element->selfClosing($contents) && ! in_array($element->tag, self::VOID, true)) {
@@ -299,6 +344,12 @@ class TemplateOrder
             }
 
             $position = $element->end;
+
+            // What a script or style holds in a view is not markup.
+            if ($blade && preg_match('/^(script|style)$/i', $element->tag) === 1 && ! $element->selfClosing($contents)) {
+                $close = stripos($contents, '</'.$element->tag, $position);
+                $position = $close === false ? $length : $close;
+            }
         }
 
         return array_map(fn (array $element, int $index) => [
@@ -306,7 +357,54 @@ class TemplateOrder
             'end' => $ends[$index] ?? $element['end'],
             'parent' => $element['parent'],
             'head' => $element['head'],
+            'block' => $element['block'],
         ], $elements, array_keys($elements));
+    }
+
+    /**
+     * Read the Blade directive at "@", opening, branching or closing a
+     * block, and get where it ends. "@@" is an escaped "@", and an "@" in a
+     * word (an email address) is not a directive.
+     *
+     * @param  list<int>  $blocks
+     */
+    protected static function directive(string $contents, int $position, array &$blocks, int &$branches): int
+    {
+        if (($contents[$position + 1] ?? '') === '@' || ($position > 0 && preg_match('/\w/', $contents[$position - 1]) === 1)) {
+            return $position + 2;
+        }
+
+        if (preg_match('/\G@([A-Za-z]\w*)/', $contents, $match, 0, $position) !== 1) {
+            return $position + 1;
+        }
+
+        $name = $match[1];
+        $end = $position + strlen($match[0]);
+        $argument = null;
+
+        if (preg_match('/\G\s*\(/', $contents, $opening, 0, $end) === 1) {
+            $close = TemplateElement::balanced($contents, $end + strlen($opening[0]) - 1);
+            $argument = substr($contents, $end + strlen($opening[0]), max(0, $close - 1 - $end - strlen($opening[0])));
+            $end = $close;
+        }
+
+        if (in_array($name, self::BLADE_RAW, true) && ! ($name === 'php' && $argument !== null)) {
+            $close = strpos($contents, '@end'.$name, $end);
+
+            return $close === false ? strlen($contents) : $close + strlen('@end'.$name);
+        }
+
+        if ($name === 'empty' && $argument === null || in_array($name, self::BLADE_BRANCHES, true)) {
+            if ($blocks !== []) {
+                $blocks[array_key_last($blocks)] = ++$branches;
+            }
+        } elseif (in_array($name, self::BLADE_BLOCKS, true) && ! ($name === 'section' && str_contains((string) $argument, ','))) {
+            $blocks[] = ++$branches;
+        } elseif (str_starts_with($name, 'end') || in_array($name, ['show', 'stop', 'overwrite', 'append'], true)) {
+            array_pop($blocks);
+        }
+
+        return $end;
     }
 
     /**

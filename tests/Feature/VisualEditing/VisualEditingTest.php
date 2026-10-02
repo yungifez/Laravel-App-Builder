@@ -154,6 +154,55 @@ class VisualEditingTest extends TestCase
                 ->where('element.shared', ['name' => 'Button', 'uses' => 1])));
     }
 
+    public function test_the_owner_designs_a_livewire_view_like_any_other_screen()
+    {
+        Queue::fake();
+        $view = 'resources/views/livewire/students.blade.php';
+        $students = <<<'BLADE'
+            <div class="flex gap-4 {{ $dark ? 'bg-black' : '' }}">
+                <h1 class="text-xl">Students</h1>
+                <x-forms.button wire:click="add">Add</x-forms.button>
+            </div>
+
+            BLADE;
+        $this->repository->commitFiles($this->project, $this->editedHead(), [
+            $view => $students,
+            'resources/views/components/forms/button.blade.php' => "<button {{ \$attributes->merge(['class' => 'px-3']) }}>{{ \$slot }}</button>\n",
+        ], 'Add the students screen', null);
+        $preview = $this->runningPreview();
+
+        // Classes Blade prints are the app's; a shared Blade component says how often it is used.
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', ['project' => $this->project, 'target' => "{$view}:1:1"]))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('element', fn (Assert $page) => $page
+                ->where('element.tag', 'div')
+                ->where('element.editable', false)));
+        $this->get(route('projects.show', ['project' => $this->project, 'target' => 'resources/views/components/forms/button.blade.php:1:1']))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('element', fn (Assert $page) => $page
+                ->where('element.shared', ['name' => 'forms.button', 'uses' => 1])));
+
+        $this->post(route('visual-edits.store', $this->project), [
+            'preview' => $preview->uuid,
+            'target' => "{$view}:2:5",
+            'revision' => $preview->revision,
+            'expected' => 'text-xl',
+            'device' => 'base',
+            'changes' => ['text_size' => '2xl'],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertStringContainsString('<h1 class="text-2xl">Students</h1>', (string) $this->repository->show($this->project, $this->editedHead(), $view));
+
+        $this->post(route('visual-texts.store', $this->project), [
+            'preview' => $preview->uuid,
+            'target' => "{$view}:2:5",
+            'before' => 'Students',
+            'text' => 'Pupils',
+            'revision' => $this->editedHead(),
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame(str_replace('<h1 class="text-xl">Students</h1>', '<h1 class="text-2xl">Pupils</h1>', $students), $this->repository->show($this->project, $this->editedHead(), $view));
+    }
+
     public function test_a_selection_outside_the_project_is_ignored()
     {
         $this->runningPreview();

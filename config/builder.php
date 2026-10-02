@@ -1103,11 +1103,12 @@ return [
         ],
 
         // Point-and-edit. An editable preview runs the locator after setup,
-        // which marks each element with the template line it comes from.
+        // which marks each element with the template line it comes from, in
+        // Vue files and Blade views alike.
         'locator' => [
             'node' => env('BUILDER_AGENT_NODE', 'node'),
             'path' => env('BUILDER_PREVIEW_LOCATOR', resource_path('preview-tools/locate-sources.mjs')),
-            'directories' => ['resources/js'],
+            'directories' => ['resources/js', 'resources/views'],
         ],
         // Commands that build the frontend: after setup (and the locator),
         // and again after each visual edit.
