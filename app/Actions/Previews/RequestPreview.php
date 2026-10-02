@@ -13,7 +13,10 @@ use Illuminate\Validation\ValidationException;
 
 class RequestPreview
 {
-    public function __construct(private StopPreview $stopPreview) {}
+    public function __construct(
+        private StopPreview $stopPreview,
+        private MakeRoomForPreview $makeRoomForPreview,
+    ) {}
 
     /**
      * Start a preview of the request's change, replacing any running one.
@@ -31,6 +34,8 @@ class RequestPreview
         $featureRequest->previews()
             ->whereIn('status', [PreviewStatus::Starting, PreviewStatus::Ready])
             ->each(fn (Preview $preview) => $this->stopPreview->handle($preview));
+
+        $this->makeRoomForPreview->handle($featureRequest->project);
 
         return DB::transaction(function () use ($featureRequest) {
             $preview = $featureRequest->previews()->create([

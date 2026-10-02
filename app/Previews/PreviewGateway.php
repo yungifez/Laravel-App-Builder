@@ -33,6 +33,12 @@ class PreviewGateway
     public const SESSION_PATH = '__builder/session';
 
     /**
+     * The path a page of the app calls while someone can see it, so the
+     * preview keeps running (resources/preview-tools/alive.js).
+     */
+    public const ALIVE_PATH = '__builder/alive';
+
+    /**
      * How many places one preview can be open in at once, such as the
      * builder and a tab of its own.
      */
@@ -76,7 +82,18 @@ class PreviewGateway
             return $this->page(403, __('This page has closed. Open the app again from the builder, or from the link you were sent.'));
         }
 
-        $this->recordActivity($preview);
+        if ($request->path() === self::ALIVE_PATH) {
+            $this->recordActivity($preview);
+
+            return new Response('', 204, ['Cache-Control' => 'no-store']);
+        }
+
+        // Requests a page makes by itself, such as polling, do not count:
+        // a tab left open in the background would keep the app running.
+        // Opening a page does, and an open page says when it is seen.
+        if ($this->opensPage($request)) {
+            $this->recordActivity($preview);
+        }
 
         return $this->forward($request, $preview);
     }
@@ -222,6 +239,17 @@ class PreviewGateway
     }
 
     /**
+     * Tell whether the request opens a page. Browsers say so; a client
+     * that does not, such as curl, is counted as a person.
+     */
+    protected function opensPage(Request $request): bool
+    {
+        $mode = $request->headers->get('Sec-Fetch-Mode');
+
+        return $mode === null || $mode === 'navigate';
+    }
+
+    /**
      * Relay the request to the preview's app and its response back.
      *
      * The app sees the preview host, so the links it generates point at the
@@ -287,6 +315,8 @@ class PreviewGateway
 
         $response->headers->set('X-Robots-Tag', 'noindex, nofollow');
         $this->letBuilderShow($response);
+
+        $this->addScript($response, File::get(resource_path('preview-tools/alive.js')));
 
         if ($preview->editable) {
             $this->prepareForEditing($response);

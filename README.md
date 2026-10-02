@@ -310,7 +310,12 @@ takes the owner to `http://{host}.preview.localhost:8000`.
 - **Lifetime.** `php artisan previews:reap` (every five minutes) stops
   previews that are past `BUILDER_PREVIEW_MAX_MINUTES` or idle for
   `BUILDER_PREVIEW_IDLE_MINUTES`, and stopping removes the workspace and its
-  server. Starting a preview again replaces the running one.
+  server. Starting a preview again replaces the running one. A preview is
+  in use when someone opens one of its pages, or while a page is in view:
+  each page pings `/__builder/alive` once a minute while its tab is visible.
+  Requests a page makes by itself, such as polling, do not count. An owner
+  can have `BUILDER_PREVIEW_MAX_RUNNING_PER_OWNER` previews running (3 by
+  default). Starting one more stops the one they used least recently.
 
 The gateway relays plain HTTP only: previews serve built assets, not the Vite
 dev server, so there is no hot reload yet. The Docker workspace driver can run

@@ -1007,6 +1007,10 @@ return [
         'shared_sessions' => 50,
         'idle_minutes' => (int) env('BUILDER_PREVIEW_IDLE_MINUTES', 30),
         'max_minutes' => (int) env('BUILDER_PREVIEW_MAX_MINUTES', 240),
+        // How many previews one owner can have running at once. Each holds
+        // a server, so starting one more stops the owner's least used one.
+        // 0 means no limit.
+        'max_running_per_owner' => (int) env('BUILDER_PREVIEW_MAX_RUNNING_PER_OWNER', 3),
         'boot_seconds' => 30,
         // Address the app's web server binds to inside the workspace. Unset,
         // it listens only where the control plane reaches it, so a runner

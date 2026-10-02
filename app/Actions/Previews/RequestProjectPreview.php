@@ -17,6 +17,7 @@ class RequestProjectPreview
 {
     public function __construct(
         private StopPreview $stopPreview,
+        private MakeRoomForPreview $makeRoomForPreview,
         private ProjectRepository $repository,
         private DesignDrafts $designDrafts,
     ) {}
@@ -40,6 +41,8 @@ class RequestProjectPreview
             ->whereNull('feature_request_id')
             ->whereIn('status', [PreviewStatus::Starting, PreviewStatus::Ready])
             ->each(fn (Preview $preview) => $this->stopPreview->handle($preview));
+
+        $this->makeRoomForPreview->handle($project);
 
         return DB::transaction(function () use ($project) {
             $preview = $project->previews()->create([

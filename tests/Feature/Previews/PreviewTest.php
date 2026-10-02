@@ -6,6 +6,7 @@ use App\Enums\PreviewStatus;
 use App\Jobs\StartPreview;
 use App\Models\FeatureRequest;
 use App\Models\Preview;
+use App\Models\Project;
 use App\Models\User;
 use App\Previews\PreviewGateway;
 use App\Workspaces\CommandResult;
@@ -75,6 +76,26 @@ class PreviewTest extends TestCase
 
         $this->get(route('feature-requests.show', $request))
             ->assertInertia(fn (Assert $page) => $page->where('preview.status', 'ready'));
+    }
+
+    public function test_an_app_with_no_package_json_starts_without_node()
+    {
+        Http::fake(['*/up' => Http::response('ok')]);
+        config(['builder.preview.setup' => [
+            ['name' => 'Install', 'command' => ['composer', 'install'], 'timeout' => 600],
+            ['name' => 'Install Node dependencies', 'command' => ['npm', 'ci'], 'timeout' => 600, 'needs' => 'package.json'],
+        ]]);
+        // A Blade or Livewire app may have no frontend build at all.
+        $this->driver->onExec = fn (string $id, array $command) => new CommandResult(exitCode: $command === ['test', '-e', 'package.json'] ? 1 : 0, output: '', errorOutput: '', durationMs: 5);
+        $request = FeatureRequest::factory()->generated()->create();
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $this->assertSame(PreviewStatus::Ready, $request->previews()->sole()->status);
+        $commands = array_column($this->driver->executed, 'command');
+        $this->assertContains(['composer', 'install'], $commands);
+        $this->assertNotContains(['npm', 'ci'], $commands);
+        $this->assertNotContains(['npm', 'run', 'build'], $commands);
     }
 
     public function test_without_a_listen_host_the_app_listens_only_where_we_reach_it()
@@ -402,6 +423,59 @@ class PreviewTest extends TestCase
         $this->assertSame(PreviewStatus::Ready, $active->refresh()->status);
     }
 
+    public function test_only_opening_a_page_or_a_page_in_view_keeps_a_preview_running()
+    {
+        $preview = $this->previewWithSession('secret-value');
+        $preview->update(['last_seen_at' => now()->subMinutes(10)]);
+        Http::fake(['http://127.0.0.1:20001/*' => Http::response('<html><body><h1>Teams</h1></body></html>', 200, ['Content-Type' => 'text/html'])]);
+        $url = "http://{$preview->host}.preview.test";
+
+        // A page polling in a tab nobody looks at.
+        $this->previewRequest('GET', "{$url}/livewire/update", ['builder_preview' => 'secret-value'], [], ['HTTP_SEC_FETCH_MODE' => 'cors'])->assertOk();
+        $this->assertTrue($preview->refresh()->last_seen_at->lt(now()->subMinutes(9)));
+
+        // A page in view says so, and the app never hears of it.
+        $this->previewRequest('POST', "{$url}/__builder/alive", ['builder_preview' => 'secret-value'], [], ['HTTP_SEC_FETCH_MODE' => 'cors'])->assertNoContent();
+        $this->assertTrue($preview->refresh()->last_seen_at->gt(now()->subMinute()));
+        Http::assertSentCount(1);
+
+        // Opening a page counts, and the page carries the keep-alive.
+        $preview->update(['last_seen_at' => now()->subMinutes(10)]);
+        $page = $this->previewRequest('GET', "{$url}/teams", ['builder_preview' => 'secret-value'], [], ['HTTP_SEC_FETCH_MODE' => 'navigate']);
+        $this->assertStringContainsString('/__builder/alive', (string) $page->getContent());
+        $this->assertTrue($preview->refresh()->last_seen_at->gt(now()->subMinute()));
+    }
+
+    public function test_an_owner_at_the_running_limit_gets_the_new_preview_and_the_least_used_one_stops()
+    {
+        config(['builder.preview.max_running_per_owner' => 2]);
+        Http::fake(['*/up' => Http::response('ok')]);
+        $request = FeatureRequest::factory()->generated()->create();
+        $owner = $request->project->owner;
+        $otherProject = Project::factory()->for($owner, 'owner')->create();
+        $old = Preview::factory()->ready()->for($otherProject)->create(['last_seen_at' => now()->subMinutes(20)]);
+        $recent = Preview::factory()->ready()->for($otherProject)->create(['last_seen_at' => now()->subMinute()]);
+        $someoneElses = Preview::factory()->ready()->create(['last_seen_at' => now()->subHour()]);
+
+        $this->actingAs($owner)->post(route('feature-requests.previews.store', $request));
+
+        $this->assertSame(PreviewStatus::Ready, $request->previews()->sole()->status);
+        $this->assertSame(PreviewStatus::Stopped, $old->refresh()->status);
+        $this->assertStringContainsString('make room', (string) $old->error);
+        $this->assertSame(PreviewStatus::Ready, $recent->refresh()->status);
+        $this->assertSame(PreviewStatus::Ready, $someoneElses->refresh()->status);
+    }
+
+    public function test_the_keep_alive_needs_the_preview_session()
+    {
+        $preview = $this->previewWithSession('secret-value');
+        $preview->update(['last_seen_at' => now()->subMinutes(10)]);
+
+        $this->previewRequest('POST', "http://{$preview->host}.preview.test/__builder/alive", ['builder_preview' => 'wrong'])->assertForbidden();
+
+        $this->assertTrue($preview->refresh()->last_seen_at->lt(now()->subMinutes(9)));
+    }
+
     public function test_a_preview_whose_app_stopped_on_our_side_is_marked_stopped()
     {
         $stopped = Preview::factory()->ready()->create(['upstream_url' => 'http://127.0.0.1:20002']);
@@ -425,12 +499,13 @@ class PreviewTest extends TestCase
      *
      * @param  array<string, string>  $cookies
      * @param  array<string, string>  $parameters
+     * @param  array<string, string>  $server
      */
-    protected function previewRequest(string $method, string $url, array $cookies = [], array $parameters = []): TestResponse
+    protected function previewRequest(string $method, string $url, array $cookies = [], array $parameters = [], array $server = []): TestResponse
     {
         $header = implode('; ', array_map(fn (string $name, string $value) => "{$name}={$value}", array_keys($cookies), $cookies));
 
-        return $this->call($method, $url, $parameters, $cookies, [], $header === '' ? [] : ['HTTP_COOKIE' => $header]);
+        return $this->call($method, $url, $parameters, $cookies, [], [...$server, ...($header === '' ? [] : ['HTTP_COOKIE' => $header])]);
     }
 
     /**
