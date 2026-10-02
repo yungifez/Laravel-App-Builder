@@ -263,6 +263,8 @@ export type Run = {
         name: string;
         /** Their tool is connected to the whole app and picks it up. */
         whole_app: boolean;
+        /** Their tool handed a change back. */
+        wrote: boolean;
     } | null;
     plan: {
         summary: string;

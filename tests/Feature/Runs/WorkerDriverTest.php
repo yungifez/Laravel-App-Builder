@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Runs;
 
+use App\Actions\Features\DescribeFeatureRequest;
 use App\Actions\Projects\ConnectOwnTool;
 use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Runs\DescribeRunProgress;
@@ -143,6 +144,20 @@ class WorkerDriverTest extends TestCase
             ->assertSee('No change waits for you now. The last one ended')
             ->assertSee('stopped on our side, not because of your work')
             ->assertSee('This is our fault: something on our side stopped.');
+    }
+
+    public function test_a_connected_tool_needs_no_offer_to_connect_and_the_thread_says_it_wrote_the_change()
+    {
+        $run = $this->startRun();
+        $token = app(ConnectOwnTool::class)->handle($run->featureRequest->project);
+        $describe = fn () => app(DescribeFeatureRequest::class)->handle($run->featureRequest->refresh());
+
+        $this->assertFalse($describe()['featureRequest']['can_work_yourself']);
+        $this->assertFalse($describe()['run']['yours']['wrote']);
+
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.']);
+
+        $this->assertTrue($describe()['run']['yours']['wrote']);
     }
 
     public function test_the_worker_runs_commands_on_its_change_in_our_workspace_which_stays_as_it_was()

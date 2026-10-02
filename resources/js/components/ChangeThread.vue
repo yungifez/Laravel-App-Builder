@@ -14,6 +14,7 @@ import {
     Minimize2,
     SearchCheck,
     Sparkles,
+    SquareTerminal,
     Target,
     Undo2,
 } from '@lucide/vue';
@@ -615,6 +616,19 @@ const checks = computed(() => {
                                 aria-label="Your goal"
                             />
                             {{ run.plan.goal }}
+                        </p>
+                        <!-- Whose tool wrote it, once it handed it back -->
+                        <p
+                            v-if="run?.yours?.wrote && !theirs"
+                            class="flex gap-1.5 text-xs text-muted-foreground"
+                            data-test="thread-written-by"
+                        >
+                            <SquareTerminal
+                                class="mt-0.5 size-3.5 shrink-0"
+                                aria-hidden="true"
+                            />
+                            Your own Claude Code or Codex wrote this. I checked
+                            it the same way as my own.
                         </p>
 
                         <!-- How it is being made, step by step -->
@@ -1400,9 +1414,10 @@ const checks = computed(() => {
                                         class="flex items-baseline gap-1.5 text-xs"
                                         :title="file.path"
                                     >
-                                        <span class="shrink-0 font-mono">{{
-                                            file.name
-                                        }}</span>
+                                        <span
+                                            class="min-w-0 truncate font-mono"
+                                            >{{ file.name }}</span
+                                        >
                                         <span
                                             class="min-w-0 flex-1 truncate text-muted-foreground"
                                             >{{ file.folder }}</span
@@ -1547,9 +1562,12 @@ const checks = computed(() => {
                                         class="flex min-w-0 flex-1 items-baseline gap-1.5 text-xs"
                                         :title="file.path"
                                     >
-                                        <span class="shrink-0 font-mono">{{
-                                            file.path.split('/').pop()
-                                        }}</span>
+                                        <span
+                                            class="min-w-0 truncate font-mono"
+                                            >{{
+                                                file.path.split('/').pop()
+                                            }}</span
+                                        >
                                         <span
                                             class="min-w-0 truncate text-muted-foreground"
                                             >{{

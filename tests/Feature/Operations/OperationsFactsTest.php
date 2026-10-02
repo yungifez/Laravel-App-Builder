@@ -106,6 +106,9 @@ class OperationsFactsTest extends TestCase
 
         $this->assertSame(RunStatus::Failed, $run->refresh()->status);
         $this->assertSame('worker_stopped', $run->stop_reason);
+        // The owner hears that the change passed its checks, not only that
+        // something stopped.
+        $this->assertStringContainsString('passed its checks', (string) $run->error);
     }
 
     public function test_a_model_call_is_counted_once_however_often_a_retried_job_records_it()

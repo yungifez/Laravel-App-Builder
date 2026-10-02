@@ -75,7 +75,9 @@ class DescribeFeatureRequest
                 'can_retry' => RetryFeatureRequest::retryable($featureRequest),
                 'can_keep_trying' => KeepTryingRun::possible($featureRequest),
                 'can_continue' => RequestFollowUp::continuable($featureRequest),
-                'can_work_yourself' => HandChangeToOwner::available($featureRequest),
+                // Once the owner's tool writes every change, it needs no
+                // connection of its own for this one.
+                'can_work_yourself' => ! ConnectOwnTool::connected($featureRequest->project) && HandChangeToOwner::available($featureRequest),
             ],
             'parent' => $parent === null ? null : ['id' => $parent->uuid, 'prompt' => $parent->prompt],
             'earlier' => $this->earlier($featureRequest),
@@ -204,6 +206,9 @@ class DescribeFeatureRequest
                 // decided to build, never a question we answer ourselves.
                 'waiting' => in_array($run->status, ConnectOwnTool::connected($featureRequest->project) ? [RunStatus::Implementing] : [RunStatus::Queued, RunStatus::Planning, RunStatus::Implementing], true)
                     && app(WorkerDriver::class)->submission($run) === null,
+                // Their tool handed a change back, so the thread can say who
+                // wrote it.
+                'wrote' => app(WorkerDriver::class)->submission($run) !== null,
                 'address' => route('mcp.task'),
                 // What their tool calls the connection: the app's own name.
                 'name' => Str::slug($featureRequest->project->name) ?: 'app',

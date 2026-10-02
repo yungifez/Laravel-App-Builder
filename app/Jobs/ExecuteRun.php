@@ -87,6 +87,8 @@ class ExecuteRun implements ShouldQueue
             return;
         }
 
-        app(FailRun::class)->handle($run, __('This is our fault: something on our side stopped while I worked on this. Nothing in your app changed. Try again.'), cause: 'worker_stopped');
+        app(FailRun::class)->handle($run, $run->status === RunStatus::Reviewing
+            ? __('This is our fault: your change passed its checks, but my last look over it kept stopping on our side, so I did not keep it. Nothing in your app changed. Try again.')
+            : __('This is our fault: something on our side stopped while I worked on this. Nothing in your app changed. Try again.'), cause: 'worker_stopped');
     }
 }
