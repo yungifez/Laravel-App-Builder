@@ -102,6 +102,10 @@ class WriteBrief
             $sections[] = self::services($services);
         }
 
+        if (Config::boolean('builder.verification.faults.enabled') && Config::boolean('builder.verification.faults.send_back')) {
+            $sections[] = self::FAILURES;
+        }
+
         $sections[] = self::DISCRETION;
 
         if ($plan->preserve !== []) {
@@ -209,6 +213,25 @@ class WriteBrief
             $services,
         ));
     }
+
+    /**
+     * What must hold when something fails. A change that breaks one of
+     * these is sent back, so the coder is told before it writes the code.
+     * This says what must hold and never how it is checked: a coder that
+     * knows the check can write code that passes it and still does harm.
+     */
+    public const FAILURES = <<<'TEXT'
+    ## When something fails
+
+    An email, a save or a call to an outside service can fail at any time. A queue can run a job late, or twice. The change must hold up when that happens:
+    - Send only after the save is kept: after the transaction, or with `afterCommit()`. No one may be told about something that was then not saved.
+    - A request that saved must not end in an error because a send failed: the person tries again and it saves twice. Queue what the request sends.
+    - Put saves that belong together in one `DB::transaction()`.
+    - Never catch a failure and carry on as if it worked. Let it fail, or record it with `report()` and tell the person what did not happen.
+    - Make a queued job safe to run again. Give it what it needs through its constructor: a queue worker has no request, no session and no signed-in person.
+    - Do not count on a queued job being done before the request answers, or on the order in which the listeners of one event run.
+    - Ask the answer of an outside call how it went (`throw()`, `successful()`, `failed()`) before you carry on. Try a call again only with the same `Idempotency-Key` header on each try.
+    TEXT;
 
     /**
      * The repository can belong to the customer and go anywhere, so what

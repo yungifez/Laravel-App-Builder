@@ -2155,7 +2155,10 @@ Each of the eleven sends the change back for a fix by itself, as the safety
 scan does (`builder.verification.faults.send_back`). No model decides it:
 the failure was caused, and the trace shows what stayed. The coder is told
 what stayed and how to avoid it ("…A queue gives a job to a worker at least
-once. Make the job safe to run again…"). A place where the failure did not
+once. Make the job safe to run again…"). While these findings send a change
+back, the brief gives the coder the same rules before it writes code
+(`WriteBrief::FAILURES`). The brief says what must hold and never how it is
+checked. A place where the failure did not
 happen says nothing and sends nothing back. The reviewer reads the same
 findings. It can add to them, but it cannot take one away. Only the owner
 can: each of these lines in the proof has "I want it this way", as a

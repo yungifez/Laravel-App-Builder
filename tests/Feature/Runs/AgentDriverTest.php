@@ -879,6 +879,27 @@ class AgentDriverTest extends TestCase
             && str_contains($prompt, 'never class, table or route names'));
     }
 
+    public function test_the_coder_is_told_what_must_hold_when_something_fails_and_never_how_it_is_checked()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+
+        app(StartRun::class)->handle($this->request());
+
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, WriteBrief::FAILURES));
+        $this->assertStringContainsString('Never catch a failure and carry on as if it worked.', WriteBrief::FAILURES);
+        $this->assertDoesNotMatchRegularExpression('/\b(check(s|ed)?|tests?|trace\w*|record(er|ed|ing)|caused?|faults?|findings?|sent back|held back)\b/i', WriteBrief::FAILURES);
+    }
+
+    public function test_the_coder_is_not_told_what_must_hold_when_a_failure_sends_no_change_back()
+    {
+        config(['builder.verification.faults.send_back' => false]);
+        FeaturePlanner::fake([$this->plan()]);
+
+        app(StartRun::class)->handle($this->request());
+
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, '## Write as the app\'s own developer') && ! str_contains($prompt, '## When something fails'));
+    }
+
     public function test_an_app_nobody_uses_yet_is_changed_in_place_without_keeping_the_old_way()
     {
         FeaturePlanner::fake([$this->plan()]);

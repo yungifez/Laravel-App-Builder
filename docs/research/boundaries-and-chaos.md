@@ -468,6 +468,14 @@ charge." That is the cheapest prevention there is, with two limits:
 - **It says what, never how.** The brief names the property, not the
   engine, the recorder or the fault places (the trade-secret rule).
 
+**Built in its smallest form (session 19).** The brief holds the generic
+properties only (`WriteBrief::FAILURES`), not ones read from the plan. It
+holds them only while a fault finding sends a change back. The first limit
+is met by a caused failure, not by a static rule: "failure hidden"
+(architecture §12) sends the change back when the app catches a caused
+failure, carries on the same and records nothing. One gap stays: a place
+past the budget is not tried, so a hidden failure there is not found.
+
 ## 10. Chaos tests architecture
 
 Every fault run is also a recording. It shows effects on the paths that
