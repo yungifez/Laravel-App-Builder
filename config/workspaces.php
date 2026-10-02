@@ -153,9 +153,11 @@ return [
         // from the control plane, each holding many workspaces. Add one with
         // `php artisan runners:add {name}`. A runner counts as online while
         // it asked for work in the last "online_seconds"; new workspaces go
-        // only to online runners.
+        // only to online runners. A runner holding "max_workspaces" gets no
+        // more, so a small machine is not overloaded (0: no limit).
         'pool' => [
             'online_seconds' => (int) env('WORKSPACE_RUNNER_ONLINE_SECONDS', 120),
+            'max_workspaces' => (int) env('WORKSPACE_RUNNER_MAX_WORKSPACES', 0),
         ],
 
         // One container per workspace, through the box service in

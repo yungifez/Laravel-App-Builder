@@ -30,13 +30,18 @@ class PoolProvider implements BoxProvider
 
     public function create(WorkspaceSpec $spec): string
     {
-        // A draining runner keeps its workspaces but gets no new ones.
+        $limit = (int) config('workspaces.boxes.pool.max_workspaces');
+
+        // A draining runner keeps its workspaces but gets no new ones; a full
+        // one gets none until some close.
         $runner = Runner::query()->online()->whereNull('draining_at')->get()
-            ->sortBy(fn (Runner $runner) => [$this->load($runner), $runner->id])
-            ->first();
+            ->map(fn (Runner $runner) => ['runner' => $runner, 'load' => $this->load($runner)])
+            ->reject(fn (array $candidate) => $limit > 0 && $candidate['load'] >= $limit)
+            ->sortBy(fn (array $candidate) => [$candidate['load'], $candidate['runner']->id])
+            ->first()['runner'] ?? null;
 
         if ($runner === null) {
-            throw new RuntimeException('No runner is online to hold the workspace.');
+            throw new RuntimeException('No runner is online with room to hold the workspace.');
         }
 
         return $runner->name.self::SEPARATOR.$spec->name;

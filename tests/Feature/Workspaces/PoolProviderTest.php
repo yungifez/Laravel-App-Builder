@@ -56,6 +56,24 @@ class PoolProviderTest extends TestCase
         $this->assertSame('quiet', (new PoolProvider)->runnerFor($box));
     }
 
+    public function test_a_full_runner_gets_no_new_workspace()
+    {
+        config(['workspaces.boxes.pool.max_workspaces' => 2]);
+        $full = Runner::factory()->create(['name' => 'full']);
+        $this->holding($full, 2);
+
+        try {
+            (new PoolProvider)->create($this->spec());
+            $this->fail('A full runner got a new workspace.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('with room', $exception->getMessage());
+        }
+
+        $this->holding(Runner::factory()->create(['name' => 'roomy']), 1);
+
+        $this->assertSame('roomy--workspace-new', (new PoolProvider)->create($this->spec()));
+    }
+
     public function test_no_workspace_is_made_when_no_runner_is_online()
     {
         Runner::factory()->offline()->create();

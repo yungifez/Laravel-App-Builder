@@ -31,7 +31,16 @@ uses it.
     WORKSPACE_DRIVER=runner
     WORKSPACE_BOX_PROVIDER=pool
     WORKSPACE_RUNNER_SOCKET_URL=wss://<the Reverb address the VM can reach>
+    WORKSPACE_RUNNER_MAX_WORKSPACES=4
     ```
+
+    `WORKSPACE_RUNNER_MAX_WORKSPACES` is the most workspaces one machine
+    holds. A full machine gets no new workspaces until some close. `0` means
+    no limit. Each workspace can use up to `WORKSPACE_MEMORY_MB` of memory
+    (2 GB by default), but most of the time it uses much less. Start with
+    twice the machine's memory divided by that size, for example 4 for a
+    4 GB machine. Watch the machine's memory, and change the value if
+    necessary.
 
 2. Add the machine. Use lowercase letters and digits only:
 
