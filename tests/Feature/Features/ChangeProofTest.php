@@ -605,6 +605,14 @@ class ChangeProofTest extends TestCase
             fn (string $kind) => $proof(['run' => 1, 'findings' => [$finding($kind, 'ARTISAN reminders:send', 'mail App\Mail\Reminder')]])->where('kind', 'gap')->pluck('text')->all(),
             ['saved_then_failed', 'failure_hidden', 'done_twice'],
         ));
+        // A job that was seen by itself is said by its name too.
+        $this->assertSame([
+            ['Your app does some work on its own (“send reminder”). If that work is cut off and starts over, it sends or adds the same thing twice.'],
+            ['Your app does some work on its own (“send reminder”). If saving fails during that work and it starts over, it sends the same thing twice.'],
+        ], array_map(
+            fn (string $kind) => $proof(['run' => 1, 'findings' => [$finding($kind, 'JOB App\\Jobs\\SendReminder', 'job App\\Jobs\\SendReminder')]])->where('kind', 'gap')->pluck('text')->all(),
+            ['done_twice', 'sent_again'],
+        ));
 
         // The recording already said it sends before saving ends: it is said once.
         $twice = $proof(['run' => 1, 'findings' => [$finding('sent_then_lost', 'POST /invitations', 'insert invitations')]], ['traces' => ['requests' => 40, 'reached' => 12, 'unseen' => 0, 'existing' => 0, 'repeats' => [], 'findings' => [

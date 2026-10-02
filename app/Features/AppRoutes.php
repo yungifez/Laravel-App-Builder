@@ -151,6 +151,12 @@ class AppRoutes
      */
     public static function address(string $route): string
     {
+        $work = self::work($route);
+
+        if ($work !== null) {
+            return __('the work “:name”', ['name' => $work]);
+        }
+
         $address = Str::after($route, ' ');
 
         if (! str_starts_with($address, '/livewire-')) {
@@ -161,6 +167,19 @@ class AppRoutes
         $name = Str::of($address)->after('#')->before('+')->before('@')->afterLast('\\')->afterLast('::')->afterLast('.')->snake()->replace(['-', '_'], ' ')->squish()->value();
 
         return ! str_contains($address, '#') || $name === '' ? __('a part of a page') : __('the :name part of a page', ['name' => $name]);
+    }
+
+    /**
+     * Get the name of work the app does on its own, with no person there
+     * and so no address: a command the schedule runs, or a job on a queue.
+     * The recorder writes "ARTISAN reminders:send" and
+     * "JOB App\Jobs\SendReminder". Null for a route a person uses.
+     */
+    public static function work(string $route): ?string
+    {
+        $name = AppTraces::command($route) ?? AppTraces::job($route);
+
+        return $name === null ? null : Str::of($name)->afterLast('\\')->snake()->replace([':', '-', '_', '.'], ' ')->squish()->value();
     }
 
     /**

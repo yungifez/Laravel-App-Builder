@@ -31,9 +31,11 @@ use Illuminate\Log\LogManager;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Notifications\Events\NotificationSending;
 use Illuminate\Queue\Events\JobExceptionOccurred;
+use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Events\JobQueued;
+use Illuminate\Queue\Jobs\Job;
 use Illuminate\Routing\Events\ResponsePrepared;
 use Illuminate\Routing\Events\RouteMatched;
 use Illuminate\Routing\Events\Routing;
@@ -98,6 +100,10 @@ use WeakMap;
  * with no one there. It has no status: one that ended well is written as
  * 200, and one that did not as 500. The console's own events tell of it.
  *
+ * A job of the app's own code that runs with no request or command around
+ * it is recorded the same way, with the job's name as its route: a test
+ * dispatched it, or something the test did. In use a queue runs it.
+ *
  * Each trace also says what kind of answer the request gave, by names
  * only. And a trace of a caused failure says when the app caught that
  * failure and wrote nothing to its log after it. A trace says too when
@@ -111,6 +117,11 @@ class Recorder
      * What a trace has as its method when it is of an artisan command.
      */
     public const COMMAND = 'ARTISAN';
+
+    /**
+     * What a trace has as its method when it is of a job that ran by itself.
+     */
+    public const JOB = 'JOB';
 
     /**
      * The most things kept for one request, so one request cannot fill the file.
@@ -217,8 +228,8 @@ class Recorder
     /** The status of the error a test let through in that request. */
     protected ?int $ended = null;
 
-    /** What the artisan command that is recorded now was given, which tells it apart from one it calls. */
-    protected ?object $command = null;
+    /** What tells the command or the job that is recorded now apart from one it starts: what the command was given, or the job as the queue has it. */
+    protected ?object $alone = null;
 
     /** The recorder of an app with a request no answer has come for yet. */
     protected static ?self $waiting = null;
@@ -254,13 +265,13 @@ class Recorder
         // With all middleware off, the router says when a request starts and what it answers.
         $events->listen(Routing::class, fn (Routing $event) => $this->loosely($event->request));
         $events->listen(RouteMatched::class, function (RouteMatched $event) {
-            if ($this->loose && $this->command === null) {
+            if ($this->loose && $this->alone === null) {
                 $this->matched = $this->route($event->request, $event->route);
             }
         });
         $events->listen(ResponsePrepared::class, function (ResponsePrepared $event) {
             // The router prepares the answer more than once: the last one is the request's.
-            if ($this->loose && $this->command === null) {
+            if ($this->loose && $this->alone === null) {
                 $this->respond($event->request, $event->response);
             }
         });
@@ -316,7 +327,7 @@ class Recorder
             // The sync queue runs a job where it is dispatched, without queueing it.
             if ($event->connectionName === 'sync') {
                 // A job the app runs in place by name is part of the request in use too.
-                if ($this->inPlace($event->job)) {
+                if (! $this->job($event->job) && $this->inPlace($event->job)) {
                     $this->running[] = false;
 
                     return;
@@ -348,6 +359,17 @@ class Recorder
                 } else {
                     $this->retry($event->job, $place);
                 }
+
+                if ($event instanceof JobProcessed && $event->job === $this->alone) {
+                    $this->end(false, 'done');
+                }
+            }
+        });
+        // A job that failed has told the app so by now (its failed() method).
+        // A job that was tried again and then worked says only that it was tried.
+        $events->listen([JobFailed::class, 'Illuminate\\Queue\\Events\\JobAttempted'], function (object $event) {
+            if ($this->alone !== null && ($event->job ?? null) === $this->alone) {
+                $this->end(true, 'error');
             }
         });
         // A report() of the app ends in its log too.
@@ -388,7 +410,7 @@ class Recorder
     {
         $this->finish();
         $this->loose = false;
-        $this->command = null;
+        $this->alone = null;
         $this->matched = null;
         $this->ended = null;
         $this->requests++;
@@ -425,7 +447,7 @@ class Recorder
     protected function loosely($request): void
     {
         try {
-            if (! $this->app->shouldSkipMiddleware() || $this->command !== null || $this->nested()) {
+            if (! $this->app->shouldSkipMiddleware() || $this->alone !== null || $this->nested()) {
                 return;
             }
 
@@ -498,12 +520,12 @@ class Recorder
         try {
             $command = $event->getCommand();
 
-            if ($this->command !== null || $command === null || $this->inside() || ! $this->ownCommand($command)) {
+            if ($this->alone !== null || $command === null || $this->inside() || ! $this->ownCommand($command)) {
                 return;
             }
 
             $this->begin(self::COMMAND);
-            $this->command = $event->getInput();
+            $this->alone = $event->getInput();
             $this->matched = (string) $command->getName();
             $this->wait();
         } catch (Throwable) {
@@ -516,7 +538,7 @@ class Recorder
      */
     protected function erred(ConsoleErrorEvent $event): void
     {
-        if ($this->command !== null && $event->getInput() === $this->command) {
+        if ($this->alone !== null && $event->getInput() === $this->alone) {
             $this->ended = 500;
         }
     }
@@ -526,7 +548,21 @@ class Recorder
      */
     protected function done(ConsoleTerminateEvent $event): void
     {
-        if ($this->operation === null || $this->command === null || $event->getInput() !== $this->command) {
+        if ($this->alone === null || $event->getInput() !== $this->alone) {
+            return;
+        }
+
+        // The number an error ends a command with is the error's own, so it is not kept.
+        $this->end($event->getExitCode() !== 0, $this->ended === null ? 'exit '.$event->getExitCode() : 'error');
+    }
+
+    /**
+     * Note how a command or a job that is recorded by itself ended, and
+     * write its trace.
+     */
+    protected function end(bool $failed, string $shape): void
+    {
+        if ($this->operation === null) {
             return;
         }
 
@@ -534,14 +570,11 @@ class Recorder
             // The queue had the job before an error: it still runs.
             $this->release();
 
-            $failed = $event->getExitCode() !== 0;
-
             $this->operation['route'] = $this->matched;
             $this->operation['status'] = $failed ? 500 : 200;
             $this->operation['refused'] = $failed;
             $this->operation['blind'] = $this->fakes->hiding($this->hidden);
-            // The number an error ends a command with is the error's own, so it is not kept.
-            $this->operation['shape'] = [$this->ended === null ? 'exit '.$event->getExitCode() : 'error'];
+            $this->operation['shape'] = [$shape];
 
             if (! $this->seen()) {
                 $this->operation['dark'] = true;
@@ -558,16 +591,57 @@ class Recorder
     }
 
     /**
-     * Determine if a command starts inside a request or another command.
+     * Start the trace of a job of the app's own code that runs with no
+     * request or command around it. A job of the framework that delivers
+     * one email or notification has no code of the app in it. A request
+     * the router's events record stays open after its answer, so a job
+     * that runs after that answer, outside the request, ends it.
      */
-    protected function inside(): bool
+    protected function job(object $job): bool
     {
-        $commands = 0;
+        try {
+            $free = $this->operation === null || ($this->loose && $this->alone === null && $this->operation['status'] !== null);
 
+            if (! $free || ! $job instanceof Job || $this->inside(0) || $this->delivers($job) || ! $this->ownJob($job)) {
+                return false;
+            }
+
+            $this->begin(self::JOB);
+            $this->alone = $job;
+            $this->matched = (string) $job->resolveName();
+            $this->wait();
+
+            return true;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * Determine if a job is the app's own code, by the file its class is
+     * written in. A closure a test queues is the test's.
+     */
+    protected function ownJob(Job $job): bool
+    {
+        $name = (string) $job->resolveName();
+        $file = class_exists($name) ? (new ReflectionClass($name))->getFileName() : null;
+
+        return is_string($file) && $this->own($file) && $file !== $this->testFile;
+    }
+
+    /**
+     * Determine if a command or a job starts inside a request or a
+     * command: one it is a part of, or one this recorder does not record,
+     * such as the work an app does after its answer.
+     *
+     * @param  int  $commands  How many commands the console may be running: one is the command itself
+     */
+    protected function inside(int $commands = 1): bool
+    {
         foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 150) as $frame) {
-            $call = ($frame['class'] ?? '').'::'.$frame['function'];
+            $class = $frame['class'] ?? '';
 
-            if ($call === Kernel::class.'::handle' || $call === Router::class.'::dispatch' || ($call === SymfonyConsole::class.'::doRunCommand' && ++$commands > 1)) {
+            if ($class === Kernel::class || ($class === Router::class && $frame['function'] === 'dispatch') || ($class === SymfonyConsole::class && $frame['function'] === 'doRunCommand' && --$commands < 0)) {
                 return true;
             }
         }
@@ -912,7 +986,7 @@ class Recorder
 
         $operation = $this->operation;
         $this->operation = null;
-        $this->command = null;
+        $this->alone = null;
 
         if (self::$waiting === $this) {
             self::$waiting = null;
@@ -1587,7 +1661,7 @@ class Recorder
      */
     protected function byTestTools(): bool
     {
-        if ($this->command !== null) {
+        if ($this->alone !== null) {
             return $this->byTestToolsInCommand();
         }
 
@@ -1605,16 +1679,18 @@ class Recorder
     }
 
     /**
-     * The same for a command: the search stops where the recorded command
-     * starts, which is the last place the console runs a command from.
+     * The same for a command or a job that is recorded by itself: the
+     * search stops where it starts, which is the last place the console
+     * runs a command from, or the queue runs a job from.
      */
     protected function byTestToolsInCommand(): bool
     {
         $tools = null;
         $started = null;
+        $from = $this->alone instanceof Job ? Job::class.'::fire' : SymfonyConsole::class.'::doRunCommand';
 
         foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 150) as $position => $frame) {
-            if (($frame['class'] ?? '').'::'.$frame['function'] === SymfonyConsole::class.'::doRunCommand') {
+            if (($frame['class'] ?? '').'::'.$frame['function'] === $from) {
                 $started = $position;
             }
 

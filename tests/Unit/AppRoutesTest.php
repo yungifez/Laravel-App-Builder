@@ -88,6 +88,10 @@ class AppRoutesTest extends TestCase
         $this->assertSame('the one part of a page', AppRoutes::address('POST /livewire-3f2a/update#one+two@save+three+more'));
         $this->assertSame('the send receipt part of a page', AppRoutes::address('GET /livewire-unit-test-endpoint#App\\Livewire\\SendReceipt'));
         $this->assertSame('a part of a page', AppRoutes::address('GET /livewire-unit-test-endpoint'));
+        // Work the app does on its own has no address: it is said by its name.
+        $this->assertSame('the work “reminders send”', AppRoutes::address('ARTISAN reminders:send'));
+        $this->assertSame('the work “send late reminder”', AppRoutes::address('JOB App\\Jobs\\SendLateReminder'));
+        $this->assertSame(['orders prune old', 'send receipt', null], [AppRoutes::work('ARTISAN orders:prune-old'), AppRoutes::work('JOB App\\Listeners\\SendReceipt'), AppRoutes::work('POST /teams')]);
     }
 
     public function test_a_new_route_that_changes_something_with_no_check_on_who_may_use_it_is_found()

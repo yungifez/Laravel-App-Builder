@@ -85,6 +85,12 @@ namespace App\Features;
  * An artisan command of the app's own code is a place too (see
  * AppTraces). The schedule runs it with no one there, so no answer tells
  * a person of a failure: only its log and how it ended do.
+ *
+ * A job a test runs with no request or command around it is a place too.
+ * Most tests of a request put a fake in place of the queue, so the job's
+ * own test is where the job runs. It is run a second time, and tried again
+ * after its last save failed, the same way as a job a request dispatched.
+ * It is not held back: nothing ran before it that it could need.
  */
 class AppFaults
 {
@@ -256,7 +262,7 @@ class AppFaults
                 $does = $effect['kind'] === 'job' ? self::ran($request['effects'], $place) : [];
                 [$its, $after] = $does !== [] ? self::around($request['effects'], $place) : [[], []];
 
-                if ($after !== [] || array_any($does, fn (array $effect, int $at) => in_array($effect['kind'], self::SENT, true) || (isset($stayed[$at]) && is_string($effect['at'] ?? null)))) {
+                if ($request['method'] !== AppTraces::JOB && ($after !== [] || array_any($does, fn (array $effect, int $at) => in_array($effect['kind'], self::SENT, true) || (isset($stayed[$at]) && is_string($effect['at'] ?? null))))) {
                     $jobs[] = [self::LATER, $place, $effect, array_any([...$its, ...$after], $new), 'later'];
                 }
 

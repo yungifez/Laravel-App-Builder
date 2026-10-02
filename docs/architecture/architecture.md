@@ -1848,6 +1848,18 @@ too: a scheduled command that saves and then fails to send is found the
 same way a request is. A command that did not end well refused no one, so
 the shape for a write kept after a refusal is not read from it.
 
+A job of the app's own code that runs with no request or command around it
+is recorded the same way: a test dispatched it, or something the test did,
+such as an event with a queued listener. Its line has the method `JOB` and
+the job's name as the route. Most tests of a request put a fake in place of
+the queue, so the job's own test is where the job runs. The job is then run
+a second time, and tried again after its last save failed, the same way as
+a job a request dispatched. It is not held back, because no request ran
+before it. A job the app runs after its answer, a closure a test queues,
+and a job of the framework that delivers one email are not recorded. One
+limit: a test that calls `handle()` on the job itself reaches no queue, and
+the job is not seen.
+
 `AppTraces` reads the lines for four shapes
 (`builder.verification.traces`):
 

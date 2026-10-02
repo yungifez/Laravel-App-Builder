@@ -693,6 +693,85 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([['done_twice', 'POST /_failing/worked', 'job '.RecordedJob::class, 'insert users, mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
     }
 
+    public function test_a_job_that_runs_by_itself_is_recorded_the_way_a_request_is()
+    {
+        $user = User::factory()->create();
+        Route::post('/_job/inside', [RecordedApp::class, 'worked']);
+        $recorded = $this->record();
+
+        RecordedJob::dispatch();
+        // A job a request runs is part of that request.
+        $this->post('/_job/inside')->assertNoContent();
+        // The test runs this one in place. In use a queue runs it.
+        RecordedJob::dispatchSync();
+        // A closure the test queues is the test's own code, and a job that delivers a notification is the framework's.
+        dispatch(function () {
+            User::query()->count();
+        });
+        $user->notify(new RecordedQueuedNotice);
+        // The router's events leave a request open after its answer. The job after it is not part of it.
+        $this->withoutMiddleware()->post('/_job/inside')->assertNoContent();
+        RecordedJob::dispatch();
+
+        $requests = $recorded();
+        $once = [['job', false], ['query', true], ['mail', true], ['query', true]];
+        $this->assertSame([
+            [0, 'JOB', RecordedJob::class, 200, false, $once],
+            [1, 'POST', '/_job/inside', 204, false, $once],
+            [2, 'JOB', RecordedJob::class, 200, false, $once],
+            [3, 'POST', '/_job/inside', 204, false, $once],
+            [4, 'JOB', RecordedJob::class, 200, false, $once],
+        ], array_map(fn (array $request) => [$request['n'], $request['method'], $request['route'], $request['status'], $request['refused'], array_map(fn (array $effect) => [$effect['kind'], $effect['job'] ?? false], $request['effects'])], $requests));
+        $this->assertSame([['done'], RecordedJob::class, null], [$requests[0]['shape'], $requests[0]['effects'][0]['what'], $requests[0]['effects'][0]['at']]);
+        $this->assertSame(['job', [RecordedJob::class.'::handle']], [$requests[0]['effects'][1]['phase'], $requests[0]['effects'][1]['frames']]);
+        $this->assertStringStartsWith('tests/Fixtures/RecordedJob.php:', (string) $requests[0]['effects'][1]['at']);
+        // It is run a second time and tried again. It is not held back: no request ran before it.
+        $this->assertSame(['again', 'retry'], array_column(AppFaults::points([$requests[0]], $this->wholeFilePatch('tests/Fixtures/RecordedJob.php')), 'fails'));
+    }
+
+    public function test_a_job_that_runs_by_itself_and_is_not_safe_to_run_again_is_found()
+    {
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'job');
+
+        RecordedJob::dispatch();
+        RecordedJob::dispatch();
+
+        $requests = $recorded();
+        $this->assertSame([[200, null], [200, 0]], array_map(fn (array $request) => [$request['status'], $request['fault'] ?? null], $requests));
+        $this->assertSame(['job', 'query', 'mail', 'query', 'job', 'query', 'mail', 'query'], array_column($requests[1]['effects'], 'kind'));
+
+        $measured = $this->measureFailure($requests, 'job '.RecordedJob::class, 'tests/Fixtures/RecordedJob.php');
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['done_twice', 'JOB '.RecordedJob::class, 'job '.RecordedJob::class, 'insert users, mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
+    public function test_a_job_that_runs_by_itself_and_is_tried_again_after_its_save_failed_is_found()
+    {
+        User::factory()->create(['name' => 'Careful']);
+        $recorded = $this->recordWithFailure(effect: 3, kind: 'query');
+
+        RecordedCarefulJob::dispatch();
+        User::query()->where('name', 'Told')->update(['name' => 'Careful']);
+        // The failure of the job reaches the test here. In use it stays on the queue.
+        rescue(function () {
+            RecordedCarefulJob::dispatch();
+        }, report: false);
+
+        $requests = $recorded();
+        $this->assertSame([[200, false, ['done']], [500, true, ['error']]], array_map(fn (array $request) => [$request['status'], $request['refused'], $request['shape']], $requests));
+        $this->assertSame(['job', 'query', 'mail', 'query', 'job', 'query', 'mail', 'query'], array_column($requests[1]['effects'], 'kind'));
+        // A job that did not end well refused no one.
+        $this->assertSame([], AppTraces::measure($requests, $this->wholeFilePatch('tests/Fixtures/RecordedCarefulJob.php'))['findings'] ?? null);
+
+        $points = AppFaults::points([$requests[0]], $this->wholeFilePatch('tests/Fixtures/RecordedCarefulJob.php'));
+        $this->assertSame([['again', 0, 'job'], ['retry', 3, 'query']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
+        $points[1]['fault']['request'] = 1;
+
+        $measured = (array) AppFaults::measure($points, [1 => $requests], $this->wholeFilePatch('tests/Fixtures/RecordedCarefulJob.php'));
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['sent_again', 'JOB '.RecordedCarefulJob::class, 'job '.RecordedCarefulJob::class, 'mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
     public function test_a_job_of_the_framework_that_delivers_a_notification_is_marked_and_is_no_place_to_run_twice()
     {
         $user = User::factory()->create();

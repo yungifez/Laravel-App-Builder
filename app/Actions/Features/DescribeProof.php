@@ -26,7 +26,6 @@ use App\Models\Run;
 use App\Models\RunEvent;
 use App\Models\Verification;
 use App\Projects\ProjectRepository;
-use Illuminate\Support\Str;
 
 class DescribeProof
 {
@@ -498,6 +497,11 @@ class DescribeProof
             AppFaults::JOB_NEEDS_REQUEST => 'Your app does some work on its own (:address) and leaves part of it for later. By then something that part counts on is gone, and it does not do the same things.',
             AppFaults::DEPENDS_ON_ORDER => 'Your app does some work on its own (:address). It does a few things one after the other, and nothing says which comes first. When they happen the other way round, your app does not do the same things.',
         ];
+        // A job that was seen by itself is the whole of that work, not a part left for later.
+        $queued = [
+            AppFaults::DONE_TWICE => 'Your app does some work on its own (:address). If that work is cut off and starts over, it sends or adds the same thing twice.',
+            AppFaults::SENT_AGAIN => 'Your app does some work on its own (:address). If saving fails during that work and it starts over, it sends the same thing twice.',
+        ];
         // The recording already said that this is sent before saving ends.
         $said = AppTraces::findings($verification->evidence['traces'] ?? null, AppTraces::SENT_BEFORE_SAVED) !== [];
         // Work that sends twice each time it starts over is said once.
@@ -513,9 +517,14 @@ class DescribeProof
             if ($found !== [] && ! ($said && $kind === AppFaults::SENT_THEN_LOST) && ! ($twice && $kind === AppFaults::SENT_AGAIN)) {
                 $accepted = AppFaults::findings($left, $kind) === [];
                 $found = $accepted ? $found : AppFaults::findings($left, $kind);
-                $command = AppTraces::command($found[0]['route']);
-                $gap = __($command === null ? $text : $alone[$kind], [
-                    'address' => $command === null ? AppRoutes::address($found[0]['route']) : '“'.Str::of($command)->replace([':', '-', '_', '.'], ' ')->squish().'”',
+                $work = AppRoutes::work($found[0]['route']);
+                $job = AppTraces::job($found[0]['route']) !== null;
+                $gap = __(match (true) {
+                    $work === null => $text,
+                    $job => $queued[$kind] ?? $alone[$kind],
+                    default => $alone[$kind],
+                }, [
+                    'address' => $work === null ? AppRoutes::address($found[0]['route']) : "“{$work}”",
                     'failure' => match (true) {
                         str_starts_with($found[0]['failed'], 'mail') => __('an email cannot be sent'),
                         str_starts_with($found[0]['failed'], 'http') => __('an outside service does not answer'),

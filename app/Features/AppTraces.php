@@ -20,7 +20,9 @@ namespace App\Features;
  *
  * An artisan command of the app's own code is recorded the way a request
  * is: its method is COMMAND and its route is the command's name. It ended
- * well (200) or it did not (500).
+ * well (200) or it did not (500). A job of the app that ran with no request
+ * or command around it is recorded the same way: its method is JOB and its
+ * route is the job's name.
  */
 class AppTraces
 {
@@ -34,6 +36,11 @@ class AppTraces
      * The method a trace has when it is of an artisan command.
      */
     public const COMMAND = 'ARTISAN';
+
+    /**
+     * The method a trace has when it is of a job that ran by itself.
+     */
+    public const JOB = 'JOB';
 
     /**
      * The shortcut a repeated lookup is: the database asked once for each
@@ -195,8 +202,8 @@ class AppTraces
             $kind = match (true) {
                 $request['cut'] => null,
                 in_array($request['method'], ['GET', 'HEAD'], true) => self::SAVED_ON_READ,
-                // A command that did not end well refused no one.
-                $request['refused'] && $request['method'] !== self::COMMAND => self::KEPT_AFTER_REFUSAL,
+                // A command or a job that did not end well refused no one.
+                $request['refused'] && ! in_array($request['method'], [self::COMMAND, self::JOB], true) => self::KEPT_AFTER_REFUSAL,
                 default => null,
             };
 
@@ -261,6 +268,15 @@ class AppTraces
     public static function command(string $route): ?string
     {
         return str_starts_with($route, self::COMMAND.' ') ? substr($route, strlen(self::COMMAND) + 1) : null;
+    }
+
+    /**
+     * Get the name of the job a route is of, when the job ran by itself.
+     * Null for a request or a command.
+     */
+    public static function job(string $route): ?string
+    {
+        return str_starts_with($route, self::JOB.' ') ? substr($route, strlen(self::JOB) + 1) : null;
     }
 
     /**
