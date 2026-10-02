@@ -393,12 +393,30 @@ class PreviewTest extends TestCase
         $expired = Preview::factory()->ready()->create(['expires_at' => now()->subMinute()]);
         $idle = Preview::factory()->ready()->create(['last_seen_at' => now()->subMinutes(31)]);
         $active = Preview::factory()->ready()->create(['last_seen_at' => now()->subMinutes(5)]);
+        Http::fake(['*' => Http::response('ok')]);
 
         $this->artisan('previews:reap')->assertSuccessful();
 
         $this->assertSame(PreviewStatus::Stopped, $expired->refresh()->status);
         $this->assertSame(PreviewStatus::Stopped, $idle->refresh()->status);
         $this->assertSame(PreviewStatus::Ready, $active->refresh()->status);
+    }
+
+    public function test_a_preview_whose_app_stopped_on_our_side_is_marked_stopped()
+    {
+        $stopped = Preview::factory()->ready()->create(['upstream_url' => 'http://127.0.0.1:20002']);
+        $failing = Preview::factory()->ready()->create(['upstream_url' => 'http://127.0.0.1:20003']);
+        Http::fake([
+            '127.0.0.1:20002*' => fn () => throw new ConnectionException('Connection refused'),
+            '127.0.0.1:20003*' => Http::response('Server error', 500),
+        ]);
+
+        $this->artisan('previews:reap')->assertSuccessful();
+
+        $this->assertSame(PreviewStatus::Stopped, $stopped->refresh()->status);
+        $this->assertStringContainsString('This is our fault', (string) $stopped->error);
+        // An app that answers with an error page still runs.
+        $this->assertSame(PreviewStatus::Ready, $failing->refresh()->status);
     }
 
     /**
