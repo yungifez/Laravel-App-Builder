@@ -184,6 +184,14 @@ return [
             'database_type' => env('FORGE_DATABASE_TYPE', 'postgres18'),
             'server_wait_seconds' => (int) env('FORGE_SERVER_WAIT_SECONDS', 1200),
             'wait_seconds' => (int) env('FORGE_WAIT_SECONDS', 120),
+
+            // Where copies of each app's database go: a storage provider's
+            // ID from Forge. A copy is made each night, kept for
+            // "backup_retention" copies, and before every release that
+            // changes how the app stores information.
+            'backup_storage' => env('FORGE_BACKUP_STORAGE'),
+            'backup_retention' => (int) env('FORGE_BACKUP_RETENTION', 7),
+            'backup_wait_seconds' => (int) env('FORGE_BACKUP_WAIT_SECONDS', 600),
         ],
 
         // Our GitHub organization, where a managed host deploys each app's
@@ -1208,6 +1216,17 @@ return [
             'remember_days' => 7,
         ],
         'overlay' => resource_path('preview-tools/overlay.js'),
+
+        // "What happened" and "What if it fails" beside the app on show
+        // need the trace recorder inside the app (BUILDER_TRACE_RECORDER in
+        // the box image, loaded through PHP's own prepend setting, never
+        // added to the app). It records into "directory" in the workspace,
+        // a path the app's own .gitignore leaves out of its repository.
+        'recorder' => [
+            'enabled' => (bool) env('BUILDER_PREVIEW_RECORDER', true),
+            'prepend' => env('BUILDER_TRACE_RECORDER', '/opt/trace-recorder').'/prepend.php',
+            'directory' => 'storage/logs/recorder',
+        ],
 
         // The app's log inside the workspace. Email the app sends is written
         // here, and the builder shows it to the owner.

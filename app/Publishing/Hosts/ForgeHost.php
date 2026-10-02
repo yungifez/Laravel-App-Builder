@@ -16,6 +16,8 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Str;
 use Laravel\Forge\ForgeManager;
+use Laravel\Forge\Resources\Backup;
+use Laravel\Forge\Resources\BackupConfiguration;
 use Laravel\Forge\Resources\Server;
 use Laravel\Forge\Resources\Site;
 use RuntimeException;
@@ -89,9 +91,52 @@ class ForgeHost implements PublishingHost
 
     public function backup(Project $project, Deployment $deployment): ?string
     {
-        // Copies before a release come with the server's backup settings,
-        // which Forge does not have yet for these servers.
-        return null;
+        $state = $project->host_state ?? [];
+
+        // An app that was never published keeps nothing to copy yet.
+        if (! isset($state['server'], $state['database'])) {
+            return null;
+        }
+
+        try {
+            $forge = $this->forge();
+            $organization = $this->organization();
+            $server = (int) $state['server'];
+
+            if (! isset($state['backups'])) {
+                $state['backups'] = (string) $this->backupConfiguration($project, $server, (int) $state['database']);
+                $project->update(['host_state' => $state]);
+            }
+
+            $configuration = (int) $state['backups'];
+            $before = $this->backupIds($server, $configuration);
+
+            $forge->createBackup($organization, $server, $configuration);
+
+            $copy = $forge->retry((int) config('builder.publishing.forge.backup_wait_seconds'), function () use ($forge, $organization, $server, $configuration, $before) {
+                foreach ($forge->backups($organization, $server, $configuration)->lazy() as $backup) {
+                    if (! $backup instanceof Backup || in_array($backup->id, $before, true)) {
+                        continue;
+                    }
+
+                    if (str_contains((string) $backup->status, 'fail')) {
+                        throw new RuntimeException("Forge could not copy the database (backup {$backup->id}).");
+                    }
+
+                    return filled($backup->finishedAt) ? $backup : null;
+                }
+
+                return null;
+            });
+        } catch (Throwable $exception) {
+            report($exception);
+
+            throw new PublishingFailed(__('I could not save a copy of your app\'s information first, so I did not publish. Your app online has not changed.'), previous: $exception);
+        }
+
+        /** @var Backup $copy */
+        // Forge needs both IDs to bring the copy back.
+        return "{$configuration}/{$copy->id}";
     }
 
     public function progress(Deployment $deployment): ReleaseProgress
@@ -252,6 +297,59 @@ class ForgeHost implements PublishingHost
                 return $current->isReady ? $current : null;
             });
         });
+    }
+
+    /**
+     * Make the app's backup settings: a copy each night, kept for a week,
+     * in our storage. Forge does not answer with the new settings' ID, so
+     * they are found by name.
+     */
+    protected function backupConfiguration(Project $project, int $server, int $database): int
+    {
+        $storage = config('builder.publishing.forge.backup_storage');
+
+        if (blank($storage)) {
+            throw new RuntimeException('There is no storage for copies of apps\' databases (FORGE_BACKUP_STORAGE).');
+        }
+
+        $forge = $this->forge();
+        $organization = $this->organization();
+        $name = "app-{$project->id}";
+
+        $forge->createBackupConfiguration($organization, $server, [
+            'storage_provider_id' => (int) $storage,
+            'name' => $name,
+            'directory' => $name,
+            'frequency' => 'daily',
+            'time' => '03:00',
+            'database_ids' => [$database],
+            'retention' => (int) config('builder.publishing.forge.backup_retention'),
+        ]);
+
+        foreach ($forge->backupConfigurations($organization, $server)->lazy() as $configuration) {
+            if ($configuration instanceof BackupConfiguration && $configuration->name === $name) {
+                return (int) $configuration->id;
+            }
+        }
+
+        throw new RuntimeException("Forge did not keep the backup settings {$name}.");
+    }
+
+    /**
+     * Get the IDs of the copies Forge already has, so a new one can be told
+     * apart from them.
+     *
+     * @return list<int|null>
+     */
+    protected function backupIds(int $server, int $configuration): array
+    {
+        $ids = [];
+
+        foreach ($this->forge()->backups($this->organization(), $server, $configuration)->lazy() as $backup) {
+            $ids[] = $backup instanceof Backup ? $backup->id : null;
+        }
+
+        return $ids;
     }
 
     /**

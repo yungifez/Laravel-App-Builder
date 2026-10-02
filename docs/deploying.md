@@ -187,7 +187,11 @@ DNS for it.
     FORGE_HETZNER_NETWORK=<network ID>
     FORGE_HETZNER_REGION=<region ID>
     FORGE_HETZNER_SIZE=<size ID>
+    FORGE_BACKUP_STORAGE=<storage provider ID>
     ```
+
+4. In Forge, add a storage provider for database copies, for example
+   Hetzner Object Storage. Put its ID in `FORGE_BACKUP_STORAGE`.
 
 The control plane puts each app on a server whose name starts with
 `apps-` and that has fewer than 15 sites. When every such server is full, it
@@ -195,10 +199,13 @@ makes a new one on Hetzner through Forge. This takes about 10 minutes, and
 the publish waits for it. Leave the `FORGE_HETZNER_*` values empty to add
 servers by hand. Then a publish fails when every server is full.
 
+Forge copies each app's database every night and keeps 7 copies
+(`FORGE_BACKUP_RETENTION`). It also makes a copy before each release that
+changes how the app stores information. When that copy fails, or
+`FORGE_BACKUP_STORAGE` is empty, the release does not go online.
+
 Not done yet for Forge:
 
-- A copy of the app's database before a release that changes how it
-  stores information. Laravel Cloud makes this copy; Forge does not yet.
 - The errors that an app raises online, and the cost per app on
   `/operations`.
 

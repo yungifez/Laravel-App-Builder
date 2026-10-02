@@ -62,6 +62,23 @@ class ForgePublishingTest extends TestCase
     protected int $siteRefusals = 0;
 
     /**
+     * The app's backup settings and copies in Forge.
+     *
+     * @var list<array<string, mixed>>
+     */
+    protected array $backupConfigurations = [];
+
+    /**
+     * @var list<array<string, mixed>>
+     */
+    protected array $copies = [];
+
+    /**
+     * How Forge's next copy of the database ends.
+     */
+    protected string $copyStatus = 'success';
+
+    /**
      * What was asked of Forge: method, path and body.
      *
      * @var list<array{0: string, 1: string, 2: array<string, mixed>}>
@@ -115,6 +132,8 @@ class ForgePublishingTest extends TestCase
             'builder.publishing.forge.region' => null,
             'builder.publishing.forge.size' => null,
             'builder.publishing.forge.database_type' => 'postgres18',
+            'builder.publishing.forge.backup_storage' => '5',
+            'builder.publishing.forge.backup_retention' => 7,
             'builder.publishing.github.organization' => 'acme-apps',
             'builder.publishing.github.token' => 'github-token',
         ]);
@@ -279,6 +298,68 @@ class ForgePublishingTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('publishing.connected', false));
     }
 
+    public function test_a_copy_of_the_database_is_saved_before_a_release_that_changes_how_it_is_stored()
+    {
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+        $this->publishMigration('2026_01_01_000000_add_notes');
+        $this->publishMigration('2026_01_02_000000_add_tags');
+
+        [$first, $notes, $tags] = Deployment::query()->oldest('id')->get()->all();
+        // Nothing was online before the first publish, so nothing to copy.
+        $this->assertNull($first->backup_id);
+        $this->assertSame('61/71', $notes->backup_id);
+        $this->assertSame('61/72', $tags->backup_id);
+        $this->assertSame(DeploymentStatus::Published, $tags->status);
+
+        $settings = $this->sent('POST', 'orgs/acme/servers/7/database/backups');
+        $this->assertSame(5, $settings['storage_provider_id']);
+        $this->assertSame([31], $settings['database_ids']);
+        $this->assertSame('daily', $settings['frequency']);
+        $this->assertSame(7, $settings['retention']);
+        $this->assertSame(1, $this->sentCount('POST', 'orgs/acme/servers/7/database/backups'));
+        $this->assertSame('61', $this->project->refresh()->host_state['backups']);
+
+        // The copy is finished before the release starts.
+        $this->assertLessThan($this->lastPosition('POST', 'orgs/acme/servers/7/sites/41/deployments'), $this->lastPosition('POST', 'orgs/acme/servers/7/database/backups/61/instances'));
+    }
+
+    public function test_without_a_copy_the_release_does_not_go_online()
+    {
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+        $this->copyStatus = 'failed';
+
+        $this->publishMigration('2026_01_01_000000_add_notes');
+
+        $deployment = Deployment::query()->latest('id')->firstOrFail();
+        $this->assertSame(DeploymentStatus::Failed, $deployment->status);
+        $this->assertNull($deployment->backup_id);
+        $this->assertSame("I could not save a copy of your app's information first, so I did not publish. Your app online has not changed.", $deployment->error);
+        $this->assertSame(1, $this->sentCount('POST', 'orgs/acme/servers/7/sites/41/deployments'));
+    }
+
+    public function test_without_storage_for_copies_a_release_that_changes_storage_does_not_go_online()
+    {
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+        config(['builder.publishing.forge.backup_storage' => null]);
+
+        $this->publishMigration('2026_01_01_000000_add_notes');
+
+        $this->assertSame(DeploymentStatus::Failed, Deployment::query()->latest('id')->firstOrFail()->status);
+        $this->assertSame(0, $this->sentCount('POST', 'orgs/acme/servers/7/database/backups'));
+        $this->assertSame(1, $this->sentCount('POST', 'orgs/acme/servers/7/sites/41/deployments'));
+    }
+
+    /**
+     * Commit a new migration and publish it.
+     */
+    protected function publishMigration(string $name): void
+    {
+        $repository = app(ProjectRepository::class);
+        $repository->commitFiles($this->project, $repository->head($this->project), ["database/migrations/{$name}.php" => "<?php\n"], "Add {$name}", null);
+
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project))->assertSessionHasNoErrors();
+    }
+
     /**
      * Answer as Forge's API does, as its published description says.
      */
@@ -310,6 +391,14 @@ class ForgePublishingTest extends TestCase
             $method === 'PUT' && str_ends_with($path, '/sites/41/environment') => [202, $this->environment = $body['environment']],
             $method === 'POST' && str_ends_with($path, '/sites/41/deployments') => [202, ['data' => ['id' => '51', 'type' => 'deployments', 'attributes' => ['status' => 'queued']]]],
             $method === 'GET' && str_ends_with($path, '/sites/41/deployments/51') => ['data' => ['id' => '51', 'type' => 'deployments', 'attributes' => ['status' => array_shift($this->releaseStatuses) ?? 'finished']]],
+            $method === 'GET' && $path === 'orgs/acme/servers/7/database/backups' => ['data' => $this->backupConfigurations, 'meta' => ['next_cursor' => null]],
+            $method === 'POST' && $path === 'orgs/acme/servers/7/database/backups' => [202, $this->backupConfigurations[] = ['id' => '61', 'type' => 'backupConfigurations', 'attributes' => ['name' => $body['name']]]],
+            $method === 'GET' && $path === 'orgs/acme/servers/7/database/backups/61/instances' => ['data' => $this->copies, 'meta' => ['next_cursor' => null]],
+            $method === 'POST' && $path === 'orgs/acme/servers/7/database/backups/61/instances' => [202, $this->copies[] = [
+                'id' => (string) (71 + count($this->copies)),
+                'type' => 'backups',
+                'attributes' => ['status' => $this->copyStatus, 'finished_at' => 1790000000],
+            ]],
             default => [500, ['message' => "Unexpected request: {$method} {$path}"]],
         };
 
@@ -339,6 +428,11 @@ class ForgePublishingTest extends TestCase
     protected function sentCount(string $method, string $path): int
     {
         return count(array_filter($this->forgeRequests, fn (array $request) => $request[0] === $method && $request[1] === $path));
+    }
+
+    protected function lastPosition(string $method, string $path): int
+    {
+        return max(array_keys(array_filter($this->forgeRequests, fn (array $request) => $request[0] === $method && $request[1] === $path)) ?: [-1]);
     }
 
     protected function position(string $method, string $path): int
