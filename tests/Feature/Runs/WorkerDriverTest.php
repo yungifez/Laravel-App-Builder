@@ -16,16 +16,20 @@ use App\Actions\Runs\StartRun;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
 use App\Context\ProjectNotes;
+use App\Enums\PreviewStatus;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Jobs\ExecuteRun;
+use App\Jobs\StartPreview;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\Project;
 use App\Models\Run;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Illuminate\Testing\TestResponse;
@@ -177,6 +181,7 @@ class WorkerDriverTest extends TestCase
 
         $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.']);
         $preview = Preview::factory()->ready()->create(['project_id' => $run->featureRequest->project_id, 'feature_request_id' => $run->feature_request_id]);
+        Http::fake(['*' => Http::response('ok')]);
         $this->tool('check_status', $token)->assertSee('call open_preview');
 
         $this->mock(SignInToPreview::class, fn (MockInterface $mock) => $mock->shouldReceive('cookie')
@@ -201,6 +206,7 @@ class WorkerDriverTest extends TestCase
         $token = app(GrantWorkerAccess::class)->handle($run);
         $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.']);
         Preview::factory()->ready()->create(['project_id' => $run->featureRequest->project_id, 'feature_request_id' => $run->feature_request_id]);
+        Http::fake(['*' => Http::response('ok')]);
 
         $this->mock(MakePreviewPerson::class, fn (MockInterface $mock) => $mock->shouldReceive('in')->once()
             ->andReturn(['id' => '12', 'name' => 'Ada', 'email' => 'ada@example.test']));
@@ -211,12 +217,30 @@ class WorkerDriverTest extends TestCase
             ->assertSee('signed in as a test person the app made: ada@example.test');
     }
 
+    public function test_a_preview_that_stopped_on_our_side_starts_again_instead_of_giving_a_dead_link()
+    {
+        Queue::fake([VerifyFeatureRequest::class, StartPreview::class]);
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.']);
+        $dead = Preview::factory()->ready()->create(['project_id' => $run->featureRequest->project_id, 'feature_request_id' => $run->feature_request_id]);
+        Http::fake(fn () => throw new ConnectionException('Connection refused'));
+
+        $this->tool('open_preview', $token)
+            ->assertSee('This is our fault: the app with your change had stopped on our side.')
+            ->assertDontSee('grant=');
+
+        $this->assertNotSame(PreviewStatus::Ready, $dead->refresh()->status);
+        Queue::assertPushed(StartPreview::class, fn (StartPreview $job) => $job->preview->isNot($dead));
+    }
+
     public function test_a_person_the_app_cannot_sign_in_points_the_worker_to_a_test_person()
     {
         $run = $this->startRun();
         $token = app(GrantWorkerAccess::class)->handle($run);
         $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.']);
         Preview::factory()->ready()->create(['project_id' => $run->featureRequest->project_id, 'feature_request_id' => $run->feature_request_id]);
+        Http::fake(['*' => Http::response('ok')]);
 
         $this->mock(SignInToPreview::class, fn (MockInterface $mock) => $mock->shouldReceive('cookie')
             ->andThrow(ValidationException::withMessages(['person' => 'Your app could not sign them in. This is our fault. Try again.'])));

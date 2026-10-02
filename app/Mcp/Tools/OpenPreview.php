@@ -4,6 +4,7 @@ namespace App\Mcp\Tools;
 
 use App\Actions\Previews\GrantPreviewAccess;
 use App\Actions\Previews\MakePreviewPerson;
+use App\Actions\Previews\RequestPreview;
 use App\Actions\Previews\SignInToPreview;
 use App\Enums\PreviewStatus;
 use App\Enums\RunStatus;
@@ -11,7 +12,9 @@ use App\Models\Preview;
 use App\Models\Run;
 use App\Runs\WorkerTask;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\JsonSchema\Types\Type;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -28,6 +31,7 @@ class OpenPreview extends Tool
         protected GrantPreviewAccess $grantPreviewAccess,
         protected SignInToPreview $signInToPreview,
         protected MakePreviewPerson $makePreviewPerson,
+        protected RequestPreview $requestPreview,
     ) {}
 
     /**
@@ -51,6 +55,14 @@ class OpenPreview extends Tool
 
         if ($preview === null) {
             return Response::error(__('The app with your change is not running yet. It starts once your change applies: call check_status, then try again.'));
+        }
+
+        // A preview can stop on our side while it still counts as ready,
+        // as when its machine restarts. A link to it would open nothing.
+        if (! self::answers($preview)) {
+            $this->requestPreview->handle($preview->featureRequest);
+
+            return Response::error(__('This is our fault: the app with your change had stopped on our side. It is starting again now. Call open_preview again in a minute.'));
         }
 
         $person = $input['person'] ?? null;
@@ -99,6 +111,21 @@ class OpenPreview extends Tool
             ->where('status', PreviewStatus::Ready)
             ->latest('id')
             ->first();
+    }
+
+    /**
+     * Tell whether the running app still answers. Any answer counts, even
+     * an error page: only a closed or silent port means it stopped.
+     */
+    protected static function answers(Preview $preview): bool
+    {
+        try {
+            Http::timeout(5)->withOptions(['allow_redirects' => false])->get((string) $preview->upstream_url);
+
+            return true;
+        } catch (ConnectionException) {
+            return false;
+        }
     }
 
     /**
