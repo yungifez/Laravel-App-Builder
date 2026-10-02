@@ -86,6 +86,11 @@ class ForgePublishingTest extends TestCase
     protected string $copyStatus = 'success';
 
     /**
+     * What the publish said it was doing when Forge was asked for a server.
+     */
+    protected ?string $statusWhileMakingServer = null;
+
+    /**
      * What was asked of Forge: method, path and body.
      *
      * @var list<array{0: string, 1: string, 2: array<string, mixed>}>
@@ -251,6 +256,8 @@ class ForgePublishingTest extends TestCase
         // A server not named for our apps is never used.
         $this->assertSame(0, $this->sentCount('GET', 'orgs/acme/servers/8/sites'));
         $this->assertSame('9', $this->project->refresh()->host_state['server']);
+        // While the server is made, the owner is told why it takes long.
+        $this->assertSame('making_server', $this->statusWhileMakingServer);
     }
 
     public function test_when_every_server_is_full_and_none_can_be_made_the_owner_is_told_plainly()
@@ -405,7 +412,7 @@ class ForgePublishingTest extends TestCase
 
         $answer = match (true) {
             $method === 'GET' && $path === 'orgs/acme/servers' => ['data' => array_map($server, array_keys($this->servers), $this->servers), 'meta' => ['next_cursor' => null]],
-            $method === 'POST' && $path === 'orgs/acme/servers' => [202, ['data' => ['id' => '9', 'type' => 'servers', 'attributes' => ['name' => $body['name'], 'is_ready' => false]]]],
+            $method === 'POST' && $path === 'orgs/acme/servers' && ($this->statusWhileMakingServer = Deployment::sole()->host_status) !== '' => [202, ['data' => ['id' => '9', 'type' => 'servers', 'attributes' => ['name' => $body['name'], 'is_ready' => false]]]],
             $method === 'GET' && $path === 'orgs/acme/servers/9' => ['data' => $server(9, ['name' => 'apps-new'])],
             $method === 'GET' && preg_match('#^orgs/acme/servers/(\d+)/sites$#', $path, $match) === 1 => [
                 'data' => array_fill(0, $this->servers[(int) $match[1]]['sites'] ?? 0, ['id' => '1', 'type' => 'sites', 'attributes' => ['name' => 'other']]),

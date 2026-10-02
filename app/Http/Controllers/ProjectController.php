@@ -316,8 +316,18 @@ class ProjectController extends Controller
                         'status' => $deployment->status->value,
                         'commit' => $deployment->commit_sha,
                         'checks' => $deployment->checks ?? [],
-                        // Which check runs now, while it is checked first.
-                        'doing' => $deployment->status === DeploymentStatus::Checking ? DescribeRunProgress::checks(count($deployment->checks ?? [])) : null,
+                        // Which check runs now, while it is checked first,
+                        // and why sending it takes long when the host is
+                        // making the app's first home online.
+                        'doing' => match ($deployment->status) {
+                            DeploymentStatus::Checking => DescribeRunProgress::checks(count($deployment->checks ?? [])),
+                            DeploymentStatus::Pushing => match ($deployment->host_status) {
+                                'making_server' => __('Getting a new server ready for your app. This takes about 10 minutes'),
+                                'setting_up' => __('Setting up your app online for the first time. This takes a few minutes'),
+                                default => null,
+                            },
+                            default => null,
+                        },
                         'error' => $deployment->error,
                         // A copy of the app's information was saved first.
                         'backed_up' => $deployment->backup_id !== null,

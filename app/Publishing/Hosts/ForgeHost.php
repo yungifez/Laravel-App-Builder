@@ -68,7 +68,7 @@ class ForgeHost implements PublishingHost
             // A site whose database password is still kept did not get its
             // settings yet.
             if (! isset($state['site']) || isset($state['database_password'])) {
-                $state = $this->createSite($project, $state);
+                $state = $this->createSite($project, $deployment, $state);
             }
 
             // The keys for the app's outside services go with every release,
@@ -203,13 +203,16 @@ class ForgeHost implements PublishingHost
      * @param  array<string, string>  $state
      * @return array<string, string>
      */
-    protected function createSite(Project $project, array $state): array
+    protected function createSite(Project $project, Deployment $deployment, array $state): array
     {
         $forge = $this->forge();
         $organization = $this->organization();
 
+        // The owner is told this takes a few minutes, not left wondering.
+        $deployment->update(['host_status' => 'setting_up']);
+
         if (! isset($state['server'])) {
-            $state['server'] = (string) $this->serverWithRoom()->id;
+            $state['server'] = (string) $this->serverWithRoom($deployment)->id;
             $project->update(['host_state' => $state]);
         }
 
@@ -277,9 +280,9 @@ class ForgeHost implements PublishingHost
      * when all are full. Only one publish looks at a time, so two first
      * publishes do not both make a server.
      */
-    protected function serverWithRoom(): Server
+    protected function serverWithRoom(Deployment $deployment): Server
     {
-        return Cache::lock('builder:forge-server', $this->serverWait() + 60)->block($this->serverWait() + 60, function () {
+        return Cache::lock('builder:forge-server', $this->serverWait() + 60)->block($this->serverWait() + 60, function () use ($deployment) {
             $forge = $this->forge();
             $organization = $this->organization();
             $prefix = (string) config('builder.publishing.forge.server_prefix').'-';
@@ -302,6 +305,8 @@ class ForgeHost implements PublishingHost
             if (count(array_filter($hetzner, filled(...))) < 4) {
                 throw new RuntimeException('Every Forge server for apps is full, and the Hetzner IDs to make another are not set (FORGE_HETZNER_*).');
             }
+
+            $deployment->update(['host_status' => 'making_server']);
 
             // The SDK's own wait passes Forge's text ID where it needs a
             // number, so the wait for the server happens here.

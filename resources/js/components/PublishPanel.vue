@@ -144,7 +144,9 @@ const status = computed(() => {
                 icon: LoaderCircle,
                 tone: 'animate-spin text-muted-foreground',
                 title: 'Sending it to your hosting…',
-                detail: null,
+                detail: latest.value.doing
+                    ? `${latest.value.doing}. You can close this.`
+                    : null,
             };
         case latest.value?.status === 'confirming':
             return {
