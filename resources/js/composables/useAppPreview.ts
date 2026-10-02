@@ -13,6 +13,7 @@ import VisualEditController from '@/actions/App/Http/Controllers/VisualEditContr
 import VisualEditReversionController from '@/actions/App/Http/Controllers/VisualEditReversionController';
 import ThemeColorController from '@/actions/App/Http/Controllers/ThemeColorController';
 import VisualLinkController from '@/actions/App/Http/Controllers/VisualLinkController';
+import VisualMotionController from '@/actions/App/Http/Controllers/VisualMotionController';
 import VisualPictureController from '@/actions/App/Http/Controllers/VisualPictureController';
 import VisualMoveController from '@/actions/App/Http/Controllers/VisualMoveController';
 import VisualPartController from '@/actions/App/Http/Controllers/VisualPartController';
@@ -34,6 +35,7 @@ import type {
     Device,
     EditorPreview,
     InspectedElement,
+    MotionChoice,
     PagePart,
     SelectedElement,
     VisualEditSummary,
@@ -1727,6 +1729,62 @@ export function useAppPreview(source: Source) {
         );
     }
 
+    // Send how the part moves. The app rebuilds with it; Play then shows
+    // the new entrance.
+    function animate(motion: MotionChoice): void {
+        const preview = source.preview();
+        const part = selected.value;
+        const at = part?.instance ?? part?.source;
+        const now = element.value;
+
+        if (preview === null || part === null || !at || !now) {
+            return;
+        }
+
+        if (sending.value !== null || queue.value.length > 0 || moving.value) {
+            save();
+            setTimeout(() => animate(motion), 200);
+
+            return;
+        }
+
+        moving.value = true;
+        saveError.value = null;
+
+        router.post(
+            VisualMotionController.store.url(source.projectId()),
+            {
+                preview: preview.id,
+                target: at,
+                instance: Boolean(part.instance),
+                expected: now.classes,
+                motion,
+                revision: head.value ?? now.revision,
+            },
+            {
+                only: ['edits', 'preview', 'designEdits'],
+                async: true,
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => {
+                    last.value = null;
+                    head.value = null;
+                    known.value = null;
+                    inspect();
+                },
+                onError: (errors) => {
+                    saveError.value = Object.values(errors)[0] ?? null;
+                },
+                onFinish: () => (moving.value = false),
+            },
+        );
+    }
+
+    // Show the selected part come in again, as it does when its page opens.
+    function play(): void {
+        post({ type: 'play' });
+    }
+
     // Show a theme colour on every part drawn in it, before it is saved.
     function recolor(token: string, value: string): void {
         recolored.set(token, { value, revision: null });
@@ -2534,6 +2592,8 @@ export function useAppPreview(source: Source) {
         showSpacing,
         reword,
         relink,
+        animate,
+        play,
         repicture,
         follow,
         addressOf,

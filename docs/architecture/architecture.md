@@ -2372,6 +2372,24 @@ they fail, the edits wait and the owner is told why. Undo all throws the draft
 away (`DiscardDesignEdits`), and the app never had it. A kept draft is a kept
 change, so the app's history can undo it.
 
+**Motion is a few ready-made choices.** The Motion section of the design
+panel says in words how the selected part moves, for example "Slides in from
+the left, slowly." `MotionClasses` reads this from Tailwind classes: the
+entrance (`starting:`, Tailwind v4), speed (`duration-*`), wait (`delay-*`),
+what it does when pointed at, and any lasting motion (`animate-*`). The owner
+picks from fixed choices: Fade, Rise, Slide or Grow to come in; Lift or Grow
+when pointed at; Pulse, Bounce or Spin to keep moving; and a speed and a wait.
+`ChangeVisualMotion` writes them without a model. Movement goes under
+`motion-safe:`, so people who ask for less motion see a fade at most. Each
+kind of part gets a suggestion: a rise for a heading, a fade for a picture, a
+lift for a button or link. A part that moves in a way the choices cannot show
+(its own keyframes, or motion for one screen size) is only described. Its
+"Ask me to change how this moves" goes to the agent. The builder draws its
+preview without entrances, so they do not replay after every edit. **Play**
+replays the entrance: the overlay takes the part off the page for one style
+pass and puts it back. A motion edit is a `VisualEdit` with the kind
+`motion`. Undo swaps the classes back, as for a look.
+
 **Designing a change before it is kept.** A change that waits to be kept has
 its own branch, `changes/{id}` (`OpenChangeForDesign`). The branch holds the
 change's base, the changes it follows up on, and then the change itself.

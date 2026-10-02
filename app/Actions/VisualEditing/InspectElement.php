@@ -9,6 +9,7 @@ use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\Project;
 use App\Projects\ProjectRepository;
+use App\VisualEditing\MotionClasses;
 use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TailwindClasses;
 use App\VisualEditing\TemplateElement;
@@ -72,6 +73,9 @@ class InspectElement
             'picture' => $element?->tag === 'img' ? ['src' => TemplatePicture::in((string) $contents, $element)['value'] ?? null] : null,
             'classes' => $classes,
             'values' => TailwindClasses::effective($classes, $this->readAppColors->names($project)),
+            // How it moves, with the ready-made choice that suits this kind
+            // of part.
+            'motion' => [...MotionClasses::read($classes), 'suggested' => MotionClasses::suggested($element->tag ?? null)],
             'area' => $this->area($preview, $location->file),
             'origin' => $followed === null ? null : $this->origin($preview, $head, $location->file, $followed->line),
             'revision' => $head,

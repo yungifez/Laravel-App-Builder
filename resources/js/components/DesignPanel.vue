@@ -36,6 +36,7 @@ import {
     MousePointerClick,
     Pointer,
     Paintbrush,
+    Play,
     Plus,
     Redo2,
     Rows3,
@@ -99,6 +100,7 @@ import type {
     DesignEdits,
     EditorPreview,
     InspectedElement,
+    MotionChoice,
     VisualEditSummary,
     VisualProperty,
     VisualValue,
@@ -409,17 +411,125 @@ const tucked = computed(() =>
     ),
 );
 
+// How the part moves, from ready-made choices. The choice shows at once
+// and stays until the app has it. A part that moves in a way of its own
+// is only described; changing that is a question for the agent.
+const choosing = ref<MotionChoice | null>(null);
+const motion = computed(() => {
+    const read = element.value?.motion;
+
+    return read ? { ...read, ...choosing.value } : null;
+});
+watch(
+    () => element.value?.motion,
+    () => (choosing.value = null),
+);
+const movesHere = computed(
+    () =>
+        motion.value !== null &&
+        element.value?.editable === true &&
+        (allSections.value ||
+            motion.value.moves ||
+            Object.keys(motion.value.suggested).length > 0),
+);
+const motionChoices = {
+    entrance: [
+        { value: 'none', label: 'None' },
+        { value: 'fade', label: 'Fade' },
+        { value: 'rise', label: 'Rise' },
+        { value: 'slide', label: 'Slide' },
+        { value: 'zoom', label: 'Grow' },
+    ],
+    speed: [
+        { value: 'quick', label: 'Quick' },
+        { value: 'normal', label: 'Normal' },
+        { value: 'slow', label: 'Slow' },
+    ],
+    wait: [
+        { value: 'none', label: 'None' },
+        { value: 'short', label: 'Short' },
+        { value: 'long', label: 'Long' },
+    ],
+    hover: [
+        { value: 'none', label: 'None' },
+        { value: 'lift', label: 'Lift' },
+        { value: 'grow', label: 'Grow' },
+    ],
+    loop: [
+        { value: 'none', label: 'None' },
+        { value: 'pulse', label: 'Pulse' },
+        { value: 'bounce', label: 'Bounce' },
+        { value: 'spin', label: 'Spin' },
+    ],
+};
+const suggestedMotion = computed(() => {
+    const now = motion.value;
+
+    if (now === null || now.moves) {
+        return null;
+    }
+
+    const { entrance, hover } = now.suggested;
+    const words = [
+        entrance &&
+            {
+                fade: 'fade in',
+                rise: 'rise into place',
+                slide: 'slide in',
+                zoom: 'grow into place',
+                none: '',
+            }[entrance],
+        hover &&
+            { lift: 'lift when pointed at', grow: 'grow', none: '' }[hover],
+    ].filter(Boolean);
+
+    return words.length > 0
+        ? { choice: now.suggested, words: words.join(' and ') }
+        : null;
+});
+
+function moveAs(change: Partial<MotionChoice>): void {
+    const now = motion.value;
+
+    if (now === null) {
+        return;
+    }
+
+    const next: MotionChoice = {
+        entrance: now.entrance,
+        speed: now.speed,
+        wait: now.wait,
+        hover: now.hover,
+        loop: now.loop,
+        ...change,
+    };
+
+    choosing.value = next;
+    props.state.animate(next);
+}
+
+// Words to start the question with, when the owner asks about something
+// the panel cannot change.
+const askStart = ref('');
+
+function askAboutMotion(): void {
+    askStart.value = 'Change how this moves: ';
+    asking.value = true;
+}
+
 // One group of choices is open at a time, so the panel asks one thing.
 // Another part opens on the group that matters most for it, unless the
 // group already open is offered for it too.
-type Group = LookSection | 'pointed';
+type Group = LookSection | 'pointed' | 'motion';
 const opened = ref<Group | null>(null);
 const offered = (group: Group): boolean =>
     group === 'pointed'
         ? answersPointer.value
-        : shows(group) &&
-          (group !== 'layout' || arranges.value) &&
-          (group !== 'text' || hasWords.value);
+        : group === 'motion'
+          ? movesHere.value
+          : shows(group) &&
+            (group !== 'layout' || arranges.value) &&
+            (group !== 'text' || hasWords.value);
 const toggle = (group: Group): void => {
     opened.value = opened.value === group ? null : group;
 };
@@ -693,6 +803,10 @@ function describeEdit(edit: VisualEditSummary): string {
 
     if (edit.kind === 'theme') {
         return "Your app's colours";
+    }
+
+    if (edit.kind === 'motion') {
+        return 'Motion';
     }
 
     if (edit.kind === 'duplicate') {
@@ -2078,6 +2192,134 @@ const recent = computed(() => {
                                 />
                             </PanelSection>
 
+                            <!-- How it moves. Play shows its entrance
+                                 again, since the page in the builder
+                                 draws without one. -->
+                            <PanelSection
+                                v-if="movesHere && motion"
+                                name="Motion"
+                                :open="opened === 'motion'"
+                                :changed="motion.moves"
+                                data-test="motion"
+                                @toggle="toggle('motion')"
+                            >
+                                <div class="flex items-start gap-2">
+                                    <p
+                                        class="min-w-0 flex-1 py-1.5 text-xs text-muted-foreground"
+                                        data-test="motion-words"
+                                    >
+                                        {{ motion.words ?? 'It stays still.' }}
+                                    </p>
+                                    <Button
+                                        v-if="
+                                            motion.entrance !== 'none' ||
+                                            motion.loop !== 'none' ||
+                                            motion.custom
+                                        "
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        class="h-11 shrink-0 sm:h-7"
+                                        data-test="motion-play"
+                                        @click="state.play()"
+                                    >
+                                        <Play class="size-3.5" /> Play
+                                    </Button>
+                                </div>
+                                <button
+                                    v-if="suggestedMotion"
+                                    type="button"
+                                    class="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:min-h-8"
+                                    data-test="motion-suggested"
+                                    @click="moveAs(suggestedMotion.choice)"
+                                >
+                                    <Sparkles class="size-4 shrink-0" />
+                                    <span class="min-w-0 flex-1"
+                                        >Suggested: let it
+                                        {{ suggestedMotion.words }}</span
+                                    >
+                                </button>
+                                <template v-if="!motion.custom">
+                                    <Segmented
+                                        label="How it comes in"
+                                        caption="Comes in"
+                                        :value="motion.entrance"
+                                        :options="motionChoices.entrance"
+                                        @change="
+                                            moveAs({
+                                                entrance: ($event ??
+                                                    'none') as MotionChoice['entrance'],
+                                            })
+                                        "
+                                    />
+                                    <Segmented
+                                        label="When pointed at"
+                                        caption="Pointed at"
+                                        :value="motion.hover"
+                                        :options="motionChoices.hover"
+                                        @change="
+                                            moveAs({
+                                                hover: ($event ??
+                                                    'none') as MotionChoice['hover'],
+                                            })
+                                        "
+                                    />
+                                    <Reveal
+                                        :open="
+                                            motion.entrance !== 'none' ||
+                                            motion.hover !== 'none'
+                                        "
+                                    >
+                                        <Segmented
+                                            label="Speed"
+                                            caption="Speed"
+                                            :value="motion.speed"
+                                            :options="motionChoices.speed"
+                                            @change="
+                                                moveAs({
+                                                    speed: ($event ??
+                                                        'normal') as MotionChoice['speed'],
+                                                })
+                                            "
+                                        />
+                                        <Segmented
+                                            label="Wait before it starts"
+                                            caption="Wait"
+                                            :value="motion.wait"
+                                            :options="motionChoices.wait"
+                                            @change="
+                                                moveAs({
+                                                    wait: ($event ??
+                                                        'none') as MotionChoice['wait'],
+                                                })
+                                            "
+                                        />
+                                    </Reveal>
+                                    <Segmented
+                                        label="Keeps moving"
+                                        caption="Keeps"
+                                        :value="motion.loop"
+                                        :options="motionChoices.loop"
+                                        @change="
+                                            moveAs({
+                                                loop: ($event ??
+                                                    'none') as MotionChoice['loop'],
+                                            })
+                                        "
+                                    />
+                                </template>
+                                <button
+                                    v-else
+                                    type="button"
+                                    class="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:min-h-8"
+                                    data-test="motion-ask"
+                                    @click="askAboutMotion()"
+                                >
+                                    <MessageSquare class="size-4 shrink-0" />
+                                    Ask me to change how this moves
+                                </button>
+                            </PanelSection>
+
                             <button
                                 v-if="tucked.length > 0"
                                 type="button"
@@ -2206,6 +2448,7 @@ const recent = computed(() => {
                                     rows="2"
                                     required
                                     aria-label="Your change"
+                                    :value="askStart"
                                     class="w-full rounded-md border bg-transparent px-3 py-2 text-base placeholder:text-muted-foreground md:text-sm"
                                     placeholder="Show the price next to each item"
                                 />

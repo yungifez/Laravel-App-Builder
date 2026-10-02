@@ -505,6 +505,26 @@ export type AppProblem = {
     stopped: string | null;
 };
 
+/** How a part moves, from the panel's ready-made choices. */
+export type MotionChoice = {
+    entrance: 'none' | 'fade' | 'rise' | 'slide' | 'zoom';
+    speed: 'quick' | 'normal' | 'slow';
+    wait: 'none' | 'short' | 'long';
+    hover: 'none' | 'lift' | 'grow';
+    loop: 'none' | 'pulse' | 'bounce' | 'spin';
+};
+
+export type Motion = MotionChoice & {
+    /** It moves at all: comes in, answers the pointer or keeps moving. */
+    moves: boolean;
+    /** It also moves in a way the choices cannot show. */
+    custom: boolean;
+    /** How it moves, in a sentence; null when it does not. */
+    words: string | null;
+    /** The choices that suit this kind of part. */
+    suggested: Partial<Pick<MotionChoice, 'entrance' | 'hover'>>;
+};
+
 export type InspectedElement = {
     target: string;
     file: string;
@@ -521,6 +541,8 @@ export type InspectedElement = {
      * a src of null when the app decides it. */
     picture: { src: string | null } | null;
     classes: string;
+    /** How it moves, read from its classes. */
+    motion: Motion;
     values: Record<
         Device,
         Partial<Record<VisualProperty, { value: VisualValue; from: Device }>>
@@ -641,7 +663,8 @@ export type VisualEditSummary = {
     tag: string;
     device: Device;
     /** A change to how the part looks, a move among its siblings, new
-     * words, a new address for a link, a new picture, a copy, or a removal. */
+     * words, a new address for a link, a new picture, a new way to move, a
+     * copy, or a removal. */
     kind:
         | 'look'
         | 'move'
@@ -649,6 +672,7 @@ export type VisualEditSummary = {
         | 'link'
         | 'picture'
         | 'theme'
+        | 'motion'
         | 'duplicate'
         | 'add'
         | 'remove';

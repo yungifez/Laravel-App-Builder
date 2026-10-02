@@ -1825,6 +1825,17 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
             }
         }
 
+        // Play the selected part's entrance again. A part drawn anew starts
+        // from its "starting" look and its animations start over, so it is
+        // taken off the page for one style pass and put back.
+        if (message.type === 'play' && selected?.isConnected) {
+            settle.remove();
+            const was = selected.style.display;
+            selected.style.display = 'none';
+            void selected.offsetWidth;
+            selected.style.display = was;
+        }
+
         // The space around the selected part shows only while the owner
         // works with it, so the part itself stays easy to see.
         if (message.type === 'spacing') {

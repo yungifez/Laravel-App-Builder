@@ -54,7 +54,7 @@ class RevertVisualEdit
                 $edit,
                 $edit->classes_after,
                 $edit->classes_before,
-                "Undo a change to how {$name} looks\n\nThis undoes commit {$edit->commit_sha}.",
+                ($edit->kind() === 'motion' ? "Undo a change to how {$name} moves" : "Undo a change to how {$name} looks")."\n\nThis undoes commit {$edit->commit_sha}.",
                 $owner,
             );
 

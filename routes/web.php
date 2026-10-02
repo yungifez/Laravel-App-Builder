@@ -65,6 +65,7 @@ use App\Http\Controllers\VerificationShotController;
 use App\Http\Controllers\VisualEditController;
 use App\Http\Controllers\VisualEditReversionController;
 use App\Http\Controllers\VisualLinkController;
+use App\Http\Controllers\VisualMotionController;
 use App\Http\Controllers\VisualMoveController;
 use App\Http\Controllers\VisualPartController;
 use App\Http\Controllers\VisualPictureController;
@@ -125,6 +126,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/visual-moves', [VisualMoveController::class, 'store'])->name('visual-moves.store');
     Route::post('projects/{project}/visual-texts', [VisualTextController::class, 'store'])->name('visual-texts.store');
     Route::post('projects/{project}/visual-links', [VisualLinkController::class, 'store'])->name('visual-links.store');
+    Route::post('projects/{project}/visual-motions', [VisualMotionController::class, 'store'])->name('visual-motions.store');
     Route::post('projects/{project}/theme-colors', [ThemeColorController::class, 'store'])->name('theme-colors.store');
     Route::post('projects/{project}/design-edits', [DesignEditsController::class, 'store'])->name('design-edits.store');
     Route::delete('projects/{project}/design-edits', [DesignEditsController::class, 'destroy'])->name('design-edits.destroy');

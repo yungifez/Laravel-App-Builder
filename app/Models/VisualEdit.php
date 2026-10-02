@@ -94,6 +94,12 @@ class VisualEdit extends Model
     public const THEME = 'theme';
 
     /**
+     * The key in "changes" of a new way for the element to move, with the
+     * ready-made choices of MotionClasses. It is undone like a new look.
+     */
+    public const MOTION = 'motion';
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -172,8 +178,8 @@ class VisualEdit extends Model
 
     /**
      * Get what kind of edit this is: a change to how the element looks, a
-     * move, new words, a new address for a link, a new picture, a copy, a
-     * new part, or taking it out.
+     * move, new words, a new address for a link, a new picture, a new way
+     * to move, a copy, a new part, or taking it out.
      */
     public function kind(): string
     {
@@ -183,6 +189,7 @@ class VisualEdit extends Model
             $this->relinks() => 'link',
             $this->repictures() => 'picture',
             $this->rethemes() => 'theme',
+            isset($this->getAttribute('changes')[self::MOTION]) => 'motion',
             isset($this->getAttribute('changes')[self::DUPLICATE]) => 'duplicate',
             isset($this->getAttribute('changes')[self::ADD]) => 'add',
             isset($this->getAttribute('changes')[self::REMOVE]) => 'remove',
