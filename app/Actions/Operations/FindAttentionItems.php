@@ -2,6 +2,7 @@
 
 namespace App\Actions\Operations;
 
+use App\Actions\Runners\ScaleRunnerPool;
 use App\Enums\BoxCommandStatus;
 use App\Enums\DeploymentStatus;
 use App\Enums\PreviewStatus;
@@ -14,12 +15,14 @@ use App\Models\Preview;
 use App\Models\PreviewRebuild;
 use App\Models\Run;
 use App\Models\RunEvent;
+use App\Models\Runner;
 use App\Models\Verification;
 use App\Models\VisualEdit;
 use App\Models\WorkerHeartbeat;
 use App\Models\Workspace;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
@@ -64,6 +67,9 @@ class FindAttentionItems
                 $this->stuckProvisioning($now),
                 $this->orphanedWorkspaces($now),
                 $this->lostBoxCommands($since),
+                $this->quietRunners($now),
+                $this->fullRunners(),
+                $this->pausedMachineStarts($now),
                 $this->liveErrors($since),
             ], fn (array $item) => $item['count'] > 0)),
             'failures' => $this->failures($since),
@@ -316,6 +322,70 @@ class FindAttentionItems
                 'href' => null,
             ];
         });
+    }
+
+    /**
+     * Runner machines that stopped asking for work, so no new workspace
+     * goes to them and the ones on them may be stuck. Draining runners and
+     * machines still starting are left out.
+     *
+     * @return AttentionItem
+     */
+    protected function quietRunners(CarbonImmutable $now): array
+    {
+        $query = Runner::query()
+            ->whereNull('draining_at')
+            ->where('last_seen_at', '<', $now->subSeconds((int) config('workspaces.boxes.pool.online_seconds')));
+
+        return $this->item('runners_quiet', 'Runner machines not answering', $query, fn (Runner $runner) => [
+            'label' => "Runner {$runner->name}",
+            'detail' => 'Last asked for work '.$runner->last_seen_at?->diffForHumans($now, short: true).($runner->cloud === null ? '. Start its runner again, or remove it with runners:remove --gone.' : '. The pool deletes the machine if it stays quiet.'),
+            'at' => $runner->last_seen_at?->toIso8601String(),
+            'href' => null,
+        ]);
+    }
+
+    /**
+     * Runner machines too full to take new workspaces.
+     *
+     * @return AttentionItem
+     */
+    protected function fullRunners(): array
+    {
+        $query = Runner::query()->whereNull('draining_at')->where('disk_free_mb', '<', (int) config('workspaces.boxes.pool.min_free_disk_mb'));
+
+        return $this->item('runners_full', 'Runner machines with a nearly full disk', $query, fn (Runner $runner) => [
+            'label' => "Runner {$runner->name}",
+            'detail' => "{$runner->disk_free_mb} MB free. New workspaces go to other machines.",
+            'at' => $runner->last_seen_at?->toIso8601String(),
+            'href' => null,
+        ]);
+    }
+
+    /**
+     * The cloud pool stopped starting machines because the last new one
+     * never answered.
+     *
+     * @return AttentionItem
+     */
+    protected function pausedMachineStarts(CarbonImmutable $now): array
+    {
+        // Redis gives a stored number back as a string.
+        $until = (int) Cache::get(ScaleRunnerPool::PAUSED_UNTIL, 0);
+        $paused = $until > $now->getTimestamp();
+
+        return [
+            'key' => 'machine_starts_paused',
+            'title' => 'Cloud machines not starting',
+            'count' => $paused ? 1 : 0,
+            'href' => null,
+            'records' => $paused ? [[
+                'label' => 'The last new machine never answered',
+                'detail' => 'No machine starts until '.CarbonImmutable::createFromTimestamp($until)->format('H:i').'. Check WORKSPACE_MACHINES_BOX_IMAGE and that machines can reach the control plane.',
+                'at' => null,
+                'href' => null,
+            ]] : [],
+        ];
     }
 
     /**

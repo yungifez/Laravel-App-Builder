@@ -4,6 +4,7 @@ namespace Tests\Feature\Operations;
 
 use App\Actions\Operations\FindAttentionItems;
 use App\Actions\Operations\SummarizeSpend;
+use App\Actions\Runners\ScaleRunnerPool;
 use App\Enums\PreviewStatus;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
@@ -14,12 +15,14 @@ use App\Models\Preview;
 use App\Models\PreviewRebuild;
 use App\Models\Project;
 use App\Models\Run;
+use App\Models\Runner;
 use App\Models\User;
 use App\Models\Verification;
 use App\Models\VisualEdit;
 use App\Models\WorkerHeartbeat;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -132,6 +135,28 @@ class AttentionTest extends TestCase
         $this->assertNotContains("Workspace {$inUse->id} (fake)", $labels('workspace_orphaned'));
         $this->assertContains("Workspace {$overdue->id} (fake)", $labels('workspace_cleanup_overdue'));
         $this->assertSame(["Workspace {$failed->id} (fake)"], $labels('workspace_cleanup_failed'));
+    }
+
+    public function test_runner_machines_that_need_the_operator_are_listed()
+    {
+        Runner::factory()->create(['name' => 'quiet', 'last_seen_at' => now()->subMinutes(10)]);
+        Runner::factory()->create(['name' => 'draining', 'last_seen_at' => now()->subMinutes(10), 'draining_at' => now()]);
+        Runner::factory()->create(['name' => 'starting', 'last_seen_at' => null]);
+        Runner::factory()->create(['name' => 'full', 'last_seen_at' => now(), 'disk_free_mb' => 100]);
+        Runner::factory()->create(['name' => 'fine', 'last_seen_at' => now(), 'disk_free_mb' => 50000]);
+        // As Redis gives it back: a string.
+        Cache::put(ScaleRunnerPool::PAUSED_UNTIL, (string) now()->addMinutes(20)->getTimestamp());
+
+        $attention = $this->attention();
+        $labels = fn (string $key) => collect($this->item($attention, $key)['records'] ?? [])->pluck('label')->all();
+
+        $this->assertSame(['Runner quiet'], $labels('runners_quiet'));
+        $this->assertStringContainsString('runners:remove --gone', $this->item($attention, 'runners_quiet')['records'][0]['detail']);
+        $this->assertSame(['Runner full'], $labels('runners_full'));
+        $this->assertSame(1, $this->item($attention, 'machine_starts_paused')['count']);
+
+        Cache::forget(ScaleRunnerPool::PAUSED_UNTIL);
+        $this->assertNull($this->item($this->attention(), 'machine_starts_paused'));
     }
 
     public function test_it_measures_the_time_from_saving_an_edit_to_the_preview_showing_it()

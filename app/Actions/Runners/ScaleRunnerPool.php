@@ -61,11 +61,12 @@ class ScaleRunnerPool
 
         if ($machines->count() < (int) config('workspaces.machines.max')
             && ($spare < $wanted || $machines->count() < (int) config('workspaces.machines.min'))) {
-            $pausedUntil = Cache::get(self::PAUSED_UNTIL);
+            // Redis gives a stored number back as a string.
+            $pausedUntil = (int) Cache::get(self::PAUSED_UNTIL, 0);
 
             // A machine that never answers will not answer the next time
             // either; starting another each pass only pays for more.
-            if (is_int($pausedUntil) && $pausedUntil > now()->getTimestamp()) {
+            if ($pausedUntil > now()->getTimestamp()) {
                 return [...$done, sprintf('Not starting machines until %s: the last new machine never answered. Check WORKSPACE_MACHINES_BOX_IMAGE and that machines can reach the control plane.', Carbon::createFromTimestamp($pausedUntil)->format('H:i'))];
             }
 

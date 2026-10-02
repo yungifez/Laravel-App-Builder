@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Workspaces;
 
+use App\Actions\Runners\ScaleRunnerPool;
 use App\Enums\WorkspaceStatus;
 use App\Models\Runner;
 use App\Models\Workspace;
@@ -9,6 +10,7 @@ use App\Workspaces\Machines\RunnerBootScript;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
@@ -220,6 +222,16 @@ class RunnerScalingTest extends TestCase
         $this->travel(2)->minutes();
         $this->artisan('runners:scale')->expectsOutputToContain('Started machine')->assertSuccessful();
         $this->assertSame(1, Runner::query()->count());
+    }
+
+    public function test_the_pause_holds_when_the_cache_gives_the_time_back_as_text()
+    {
+        // Redis keeps a number as text.
+        Cache::put(ScaleRunnerPool::PAUSED_UNTIL, (string) now()->addMinutes(5)->getTimestamp());
+
+        $this->artisan('runners:scale')->expectsOutputToContain('Not starting machines')->assertSuccessful();
+
+        $this->assertSame(0, Runner::query()->count());
     }
 
     public function test_a_machine_that_went_silent_after_working_does_not_stop_new_ones()
