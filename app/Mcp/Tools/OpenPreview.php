@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools;
 
 use App\Actions\Previews\GrantPreviewAccess;
+use App\Actions\Previews\MakePreviewPerson;
 use App\Actions\Previews\SignInToPreview;
 use App\Enums\PreviewStatus;
 use App\Enums\RunStatus;
@@ -26,6 +27,7 @@ class OpenPreview extends Tool
         protected WorkerTask $task,
         protected GrantPreviewAccess $grantPreviewAccess,
         protected SignInToPreview $signInToPreview,
+        protected MakePreviewPerson $makePreviewPerson,
     ) {}
 
     /**
@@ -51,20 +53,35 @@ class OpenPreview extends Tool
             return Response::error(__('The app with your change is not running yet. It starts once your change applies: call check_status, then try again.'));
         }
 
+        $person = $input['person'] ?? null;
+        $made = null;
+
         try {
+            if ($person === 'new') {
+                $made = $this->makePreviewPerson->in($preview);
+                $person = $made['id'];
+            }
+
             // Kept apart from the owner's own grant and sessions, so the
             // tool never closes the app where the owner has it open.
             $url = $this->grantPreviewAccess->handle(
                 $preview,
                 $input['path'] ?? null,
-                filled($input['person'] ?? null) ? $this->signInToPreview->cookie($preview, $input['person']) : null,
+                filled($person) ? $this->signInToPreview->cookie($preview, $person) : null,
                 shared: true,
             );
         } catch (ValidationException $exception) {
-            return Response::error($exception->getMessage());
+            return Response::error(str_contains($exception->getMessage(), 'could not sign them in')
+                ? __('Nobody with that email or id can be signed in to the running app. Pass "new" as person to make a test person, or leave person out and sign up in the browser.')
+                : $exception->getMessage());
         }
 
-        return Response::text(__("Open this link now, once, in your browser tool. It works for one minute:\n\n:url\n\nIt shows the change as it last applied. The app keeps your browser signed in to it after that.", ['url' => $url]));
+        return Response::text(implode("\n\n", array_filter([
+            __('Open this link now, once, in your browser tool. It works for one minute:'),
+            $url,
+            $made === null ? null : __('You are signed in as a test person the app made: :who.', ['who' => $made['email'] ?? $made['name'] ?? $made['id']]),
+            __('It shows the change as it last applied. The app keeps your browser signed in to it after that.'),
+        ])));
     }
 
     /**
@@ -93,7 +110,7 @@ class OpenPreview extends Tool
     {
         return [
             'path' => $schema->string()->description('The page to open, such as /classes. The front page when left out.'),
-            'person' => $schema->string()->description('The id of one of the app\'s people, from its users table, to be signed in as. Left out, nobody is signed in.'),
+            'person' => $schema->string()->description('One of the app\'s people to be signed in as: their email address, such as one its seeders make, their id, or "new" to make a test person. Left out, nobody is signed in.'),
         ];
     }
 }

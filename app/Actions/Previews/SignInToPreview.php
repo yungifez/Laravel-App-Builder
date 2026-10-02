@@ -10,9 +10,10 @@ class SignInToPreview
 {
     /**
      * Sign one person in through the app itself, as its own sign-in would:
-     * its default guard starts a session in its own session store. What
-     * comes back is the app's session cookie, sealed with the app's key the
-     * way its middleware seals cookies, for the preview host to set.
+     * its default guard starts a session in its own session store. The
+     * person is named by id or by email address. What comes back is the
+     * app's session cookie, sealed with the app's key the way its
+     * middleware seals cookies, for the preview host to set.
      */
     protected const SCRIPT = <<<'PHP'
         require 'vendor/autoload.php';
@@ -20,7 +21,7 @@ class SignInToPreview
         $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
         $guard = auth()->guard();
         if (! $guard instanceof Illuminate\Auth\SessionGuard) { exit(3); }
-        $person = $guard->getProvider()->retrieveById($argv[1]);
+        $person = str_contains($argv[1], '@') ? $guard->getProvider()->retrieveByCredentials(['email' => $argv[1]]) : $guard->getProvider()->retrieveById($argv[1]);
         if ($person === null) { exit(4); }
         $session = $guard->getSession();
         $session->start();

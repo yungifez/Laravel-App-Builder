@@ -2,6 +2,7 @@
 
 namespace App\Actions\Previews;
 
+use App\Models\Preview;
 use App\Models\Project;
 use Illuminate\Validation\ValidationException;
 
@@ -40,6 +41,18 @@ class MakePreviewPerson
         $preview = $this->readPreviewLog->preview($project)
             ?? throw ValidationException::withMessages(['app' => __('Your app is not running. Start it and try again.')]);
 
+        return $this->in($preview);
+    }
+
+    /**
+     * Make a test person in a running preview.
+     *
+     * @return array{id: string, name: string|null, email: string|null}
+     *
+     * @throws ValidationException when the app cannot make one.
+     */
+    public function in(Preview $preview): array
+    {
         $output = $this->runPreviewCommand->handle(
             $preview,
             ['php', '-r', self::SCRIPT],

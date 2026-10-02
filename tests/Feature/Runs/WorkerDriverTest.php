@@ -4,6 +4,7 @@ namespace Tests\Feature\Runs;
 
 use App\Actions\Features\DescribeFeatureRequest;
 use App\Actions\Previews\GrantPreviewAccess;
+use App\Actions\Previews\MakePreviewPerson;
 use App\Actions\Previews\SignInToPreview;
 use App\Actions\Projects\ConnectOwnTool;
 use App\Actions\Runs\CompleteRunVerification;
@@ -28,6 +29,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Illuminate\Testing\TestResponse;
+use Illuminate\Validation\ValidationException;
 use Mockery;
 use Mockery\MockInterface;
 use Tests\Concerns\PreparesRuns;
@@ -191,6 +193,35 @@ class WorkerDriverTest extends TestCase
         $this->assertNull($preview->refresh()->grant_hash);
 
         $this->tool('open_preview', $token, ['path' => '//evil.example'])->assertSee('path');
+    }
+
+    public function test_the_worker_signs_in_as_a_test_person_it_asks_the_app_to_make()
+    {
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.']);
+        Preview::factory()->ready()->create(['project_id' => $run->featureRequest->project_id, 'feature_request_id' => $run->feature_request_id]);
+
+        $this->mock(MakePreviewPerson::class, fn (MockInterface $mock) => $mock->shouldReceive('in')->once()
+            ->andReturn(['id' => '12', 'name' => 'Ada', 'email' => 'ada@example.test']));
+        $this->mock(SignInToPreview::class, fn (MockInterface $mock) => $mock->shouldReceive('cookie')
+            ->once()->with(Mockery::any(), '12')->andReturn(['name' => 'app_session', 'value' => 'sealed', 'minutes' => 120]));
+
+        $this->tool('open_preview', $token, ['person' => 'new'])
+            ->assertSee('signed in as a test person the app made: ada@example.test');
+    }
+
+    public function test_a_person_the_app_cannot_sign_in_points_the_worker_to_a_test_person()
+    {
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.']);
+        Preview::factory()->ready()->create(['project_id' => $run->featureRequest->project_id, 'feature_request_id' => $run->feature_request_id]);
+
+        $this->mock(SignInToPreview::class, fn (MockInterface $mock) => $mock->shouldReceive('cookie')
+            ->andThrow(ValidationException::withMessages(['person' => 'Your app could not sign them in. This is our fault. Try again.'])));
+
+        $this->tool('open_preview', $token, ['person' => 'nobody@example.test'])->assertSee('as person to make a test person');
     }
 
     public function test_the_worker_runs_commands_on_its_change_in_our_workspace_which_stays_as_it_was()
