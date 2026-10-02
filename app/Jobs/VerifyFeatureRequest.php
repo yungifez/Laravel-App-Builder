@@ -2,14 +2,17 @@
 
 namespace App\Jobs;
 
+use App\Actions\Context\ReadProjectContext;
 use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Workspaces\DestroyWorkspace;
 use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
+use App\Context\Capability;
 use App\Context\ProjectNotes;
 use App\Enums\VerificationStatus;
 use App\Features\AcceptanceSuite;
 use App\Features\AppBoundaries;
+use App\Features\AppContainment;
 use App\Features\AppFaults;
 use App\Features\AppRoutes;
 use App\Features\AppTraces;
@@ -209,6 +212,7 @@ class VerifyFeatureRequest implements ShouldQueue
 
             $this->observeTraces($featureRequest);
             $this->observeBoundaries($featureRequest);
+            $this->observeContainment($featureRequest);
 
             $this->finish(match (true) {
                 $acceptance === self::OUTCOME_ERRORED => VerificationStatus::Errored,
@@ -823,6 +827,31 @@ class VerifyFeatureRequest implements ShouldQueue
             $this->boundaryCode,
             config('builder.verification.boundaries.phases'),
         )));
+    }
+
+    /**
+     * Find calls the change's code makes to an outside service from outside
+     * the areas the rest of the app calls it from (direction 33). The areas
+     * are the project's notes before the change, so a change cannot move
+     * an area's paths to make room for its own call. It runs nothing and
+     * never changes the checks' result.
+     */
+    protected function observeContainment(FeatureRequest $featureRequest): void
+    {
+        if (! config('builder.verification.boundaries.enabled') || $this->requests === []) {
+            return;
+        }
+
+        rescue(function () use ($featureRequest) {
+            $context = app(ReadProjectContext::class)->current($featureRequest->project);
+            $names = array_map(fn (Capability $capability) => $capability->name, $context->capabilities);
+
+            $this->keepEvidence('containment', AppContainment::measure(
+                $this->requests,
+                $featureRequest->patch,
+                fn (string $path) => array_map(fn (string $key) => $names[$key] ?? $key, $context->claiming($path)),
+            ));
+        });
     }
 
     /**

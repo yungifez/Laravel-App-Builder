@@ -2,7 +2,10 @@
 
 namespace Tests\Feature\Features;
 
+use App\Actions\Context\ReadProjectContext;
 use App\Actions\Features\RequestVerification;
+use App\Context\Capability;
+use App\Context\ProjectContext;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Jobs\ExecuteRun;
@@ -1045,6 +1048,45 @@ class VerificationTest extends TestCase
         app(RequestVerification::class)->handle($off);
 
         $this->assertArrayNotHasKey('boundaries', $off->verifications()->sole()->evidence ?? []);
+    }
+
+    public function test_a_call_to_an_outside_service_from_outside_the_area_the_app_calls_it_from_is_kept()
+    {
+        $map = ['sh', '-c', 'make the test map'];
+        config([
+            'builder.verification.test_map' => [...config('builder.verification.test_map'), 'command' => $map, 'report' => 'covered.txt', 'listing' => 'tests.xml'],
+            'builder.verification.traces' => ['enabled' => true, 'report' => 'trace.jsonl', 'repeats' => 3],
+            'builder.verification.boundaries' => ['enabled' => true, 'phases' => ['authorization', 'validation', 'rendering']],
+        ]);
+        $this->mock(ReadProjectContext::class, fn ($mock) => $mock->shouldReceive('current')->andReturn(new ProjectContext(capabilities: [
+            'billing' => new Capability('billing', 'Billing', paths: ['app/Billing/*']),
+        ])));
+        $controller = "<?php\nnamespace App\\Http\\Controllers;\nclass CheckoutController\n{\n    public function store()\n    {\n        \\Illuminate\\Support\\Facades\\Http::post('https://api.stripe.com/v1/charges');\n    }\n}\n";
+        $this->driver->onExec = function (string $workspace, array $command) use ($map) {
+            if ($command === $map) {
+                $this->driver->files["{$workspace}:trace.jsonl"] = json_encode(['test' => 'Tests\Feature\CheckoutTest::test_people_pay', 'method' => 'POST', 'route' => '/checkout', 'status' => 200, 'refused' => false, 'blind' => [], 'effects' => [
+                    ['kind' => 'http', 'what' => 'POST api.stripe.com', 'open' => 0, 'at' => 'app/Billing/StripeGateway.php:31', 'phase' => 'handling', 'frames' => ['App\Billing\StripeGateway::charge']],
+                    ['kind' => 'http', 'what' => 'POST api.stripe.com', 'open' => 0, 'at' => 'app/Http/Controllers/CheckoutController.php:7', 'phase' => 'handling', 'frames' => ['App\Http\Controllers\CheckoutController::store']],
+                ]]);
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        $patch = implode("\n", [
+            'diff --git a/app/Http/Controllers/CheckoutController.php b/app/Http/Controllers/CheckoutController.php',
+            'new file mode 100644',
+            '--- /dev/null',
+            '+++ b/app/Http/Controllers/CheckoutController.php',
+            '@@ -0,0 +1,9 @@',
+            ...array_map(fn (string $line) => '+'.$line, explode("\n", rtrim($controller, "\n"))),
+        ]);
+        $change = FeatureRequest::factory()->generated()->create(['patch' => $patch."\n".$this->changeWithTests()]);
+
+        app(RequestVerification::class)->handle($change);
+
+        $this->assertSame(['services' => 1, 'findings' => [
+            ['route' => 'POST /checkout', 'what' => 'http POST api.stripe.com', 'at' => 'app/Http/Controllers/CheckoutController.php:7', 'in' => 'App\Http\Controllers\CheckoutController::store', 'from' => [], 'home' => ['Billing'], 'test' => 'Tests\Feature\CheckoutTest::test_people_pay'],
+        ]], $change->verifications()->sole()->evidence['containment']);
     }
 
     public function test_one_failure_at_a_time_is_caused_where_the_changes_code_sends_and_what_stayed_is_kept()

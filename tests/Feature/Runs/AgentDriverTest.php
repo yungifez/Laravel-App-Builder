@@ -615,6 +615,23 @@ class AgentDriverTest extends TestCase
             && ! str_contains($prompt->prompt, 'TeamPolicy.php:9'));
     }
 
+    public function test_the_reviewer_reads_calls_to_an_outside_service_from_outside_its_area()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]));
+        ChangeReviewer::fake([['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]]]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, evidence: [
+            'containment' => ['services' => 1, 'findings' => [
+                ['route' => 'POST /teams', 'what' => 'http POST api.stripe.com', 'at' => 'app/Http/Controllers/TeamController.php:20', 'in' => 'App\Http\Controllers\TeamController::store', 'from' => [], 'home' => ['Billing'], 'test' => null],
+            ]],
+        ]);
+
+        ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, "The rest of the app calls each of these outside services only from certain areas. So one place knows how to talk to each service. The new code calls them from somewhere else. Unless the plan asks for that, call them through the code that already does:\n"
+            .'- POST /teams: http POST api.stripe.com at app/Http/Controllers/TeamController.php:20 in App\Http\Controllers\TeamController::store, in code no area claims; the rest of the app calls it only from Billing'));
+    }
+
     public function test_a_named_test_that_did_not_run_is_not_evidence_and_sends_the_change_back()
     {
         FeaturePlanner::fake([$this->plan()]);

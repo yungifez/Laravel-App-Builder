@@ -1872,6 +1872,17 @@ does not hold those findings against the change. Once the change is kept,
 the finding is part of the app as it was, so a later change that does more
 of the same is asked about again.
 
+**An outside service stays where the app already calls it from** (a
+containment rule, direction 33). Nobody declares these rules yet; they
+are read from the app. A service the recording shows the rest of the app
+calling only from code that some areas claim (the `paths` in the notes,
+read from the main branch, so a change cannot move them) is kept to those
+areas. A service already called from code no area claims is kept nowhere,
+and a service the app never called has no place yet. A call the change's
+own lines make from elsewhere goes to the reviewer (`containment`), with
+the areas that call it today, never to the owner's proof: whether a
+second place is wanted is for the plan to say.
+
 **The files that decide how the app is checked are protected** (direction
 33). `phpunit.xml`, `tests/Pest.php`, `phpstan.neon` (and their `.dist`
 forms) and `.github` join the protected paths

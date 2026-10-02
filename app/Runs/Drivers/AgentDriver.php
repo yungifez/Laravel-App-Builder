@@ -333,6 +333,11 @@ abstract class AgentDriver implements ConstructionDriver
                 .(($boundaries['read'] ?? []) === [] ? '' : "\nRead from the code the change added, not seen running; each is likely, so check the method before you hold it against the change:\n".$this->list(array_map($this->read(...), $boundaries['read'])));
         }
 
+        if (($measured['containment']['findings'] ?? []) !== []) {
+            $parts[] = "The rest of the app calls each of these outside services only from certain areas. So one place knows how to talk to each service. The new code calls them from somewhere else. Unless the plan asks for that, call them through the code that already does:\n"
+                .$this->list(array_map($this->contained(...), $measured['containment']['findings']));
+        }
+
         if (isset($measured['faults'])) {
             $faults = $measured['faults'];
             $parts[] = sprintf("One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer or got a server error as its answer, a save the database refused, or a queued job that ran a second time, whole or after a save in it was refused. Two more places have no failure. A queued job that sent or saved something, or that the request does more after: it ran after the response, the way a queue worker runs it, with no signed-in user and an empty request and session. An event with listeners that Laravel found by itself: its listeners ran in the reverse order. Of %d places where those requests send, save, run a job or dispatch such an event, %d were tried and the failure happened in %d.", $faults['points'], $faults['run'] + $faults['missed'], $faults['run'])
@@ -452,6 +457,21 @@ abstract class AgentDriver implements ConstructionDriver
         return "{$finding['route']} {$while}: {$finding['what']}"
             .($finding['at'] === null ? '' : " at {$finding['at']}")
             .($finding['in'] === null ? '' : " in {$finding['in']}")
+            .($finding['test'] === null ? '' : " (seen in {$finding['test']})");
+    }
+
+    /**
+     * Say one call the change's code makes to an outside service from
+     * outside the areas the rest of the app calls it from, for the reviewer.
+     *
+     * @param  array{route: string, what: string, at: string, in: string|null, from: list<string>, home: list<string>, test: string|null}  $finding
+     */
+    protected function contained(array $finding): string
+    {
+        return "{$finding['route']}: {$finding['what']} at {$finding['at']}"
+            .($finding['in'] === null ? '' : " in {$finding['in']}")
+            .', '.($finding['from'] === [] ? 'in code no area claims' : 'in '.implode(', ', $finding['from']))
+            .'; the rest of the app calls it only from '.implode(', ', $finding['home'])
             .($finding['test'] === null ? '' : " (seen in {$finding['test']})");
     }
 
