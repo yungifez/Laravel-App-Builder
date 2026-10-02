@@ -37,6 +37,7 @@ use Illuminate\Routing\Events\Routing;
 use Illuminate\Routing\Router;
 use Illuminate\Session\SessionManager;
 use Illuminate\Support\Facades\Facade;
+use Mockery\LegacyMockInterface;
 use PDOException;
 use PHPUnit\Framework\TestCase;
 use ReflectionObject;
@@ -84,7 +85,9 @@ use WeakMap;
  * Each trace also says what kind of answer the request gave, by names
  * only. And a trace of a caused failure says when the app caught that
  * failure and wrote nothing to its log after it. A trace says too when
- * the app's log cannot be seen in the request, so that nothing is known.
+ * the app's log cannot be seen in the request, so that nothing is known:
+ * a test put a fake or a mock in place of the events, the log or the
+ * handling of errors.
  */
 class Recorder
 {
@@ -315,11 +318,7 @@ class Recorder
             }
         });
         // A report() of the app ends in its log too.
-        $events->listen(MessageLogged::class, function () {
-            if (isset($this->operation['fault'])) {
-                $this->told = true;
-            }
-        });
+        $events->listen(MessageLogged::class, fn () => $this->reported());
         $events->listen(MessageSending::class, fn (MessageSending $event) => $this->mailed((string) ($event->data['__laravel_mailable'] ?? $event->data['__laravel_notification'] ?? 'message')));
         $events->listen(NotificationSending::class, fn (NotificationSending $event) => $this->effect(['kind' => 'notification', 'what' => $event->notification::class]));
         $events->listen(RequestSending::class, function (RequestSending $event) {
@@ -475,15 +474,31 @@ class Recorder
     }
 
     /**
+     * Note that the app wrote to its log, or reported an error, after the
+     * failure this run caused.
+     */
+    public function reported(): void
+    {
+        if (isset($this->operation['fault'])) {
+            $this->told = true;
+        }
+    }
+
+    /**
      * Determine if the app's log can be seen in this request. It cannot
-     * when a test put a fake in place of the events or the log, or turned
-     * off the app's handling of errors, where report() does nothing.
+     * when a test put a fake or a mock in place of the events, the log or
+     * the handling of errors. A test that only turned that handling off
+     * has a stand-in there, which sees each report().
      */
     protected function seen(): bool
     {
+        $log = $this->app->make('log');
+        $handler = $this->app->make(ExceptionHandler::class);
+        $real = fn (object $thing): bool => ! $thing instanceof LegacyMockInterface;
+
         return $this->app->make('events') === $this->events
-            && $this->app->make('log') instanceof LogManager
-            && $this->app->make(ExceptionHandler::class) instanceof Handler;
+            && $log instanceof LogManager && $real($log)
+            && ($handler instanceof SeenHandler || ($handler instanceof Handler && $real($handler)));
     }
 
     /**

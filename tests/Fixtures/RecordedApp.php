@@ -11,6 +11,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
@@ -329,8 +330,8 @@ class RecordedApp
 
     /**
      * Catches an email that cannot be sent. It carries on as if the
-     * email was sent, unless it is asked to record the failure or to tell
-     * the person.
+     * email was sent, unless it is asked to record the failure, to write
+     * it to the log or to tell the person.
      */
     public function hushed(Request $request): RedirectResponse
     {
@@ -339,6 +340,10 @@ class RecordedApp
         } catch (Throwable $exception) {
             if ($request->boolean('recorded')) {
                 report($exception);
+            }
+
+            if ($request->boolean('logged')) {
+                Log::warning('The receipt was not sent.');
             }
 
             if ($request->boolean('told')) {

@@ -4,7 +4,9 @@ namespace TraceRecorder;
 
 use Closure;
 use Illuminate\Contracts\Bus\Dispatcher;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Foundation\Testing\Concerns\WithoutExceptionHandlingHandler;
 use Illuminate\Notifications\ChannelManager;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Testing\Fakes\BusFake;
@@ -28,6 +30,10 @@ use Throwable;
  *
  * A fake this recorder does not know well enough is left as it is, and is
  * named as hiding what the request sent.
+ *
+ * A test can also turn off the app's handling of errors. The handler it
+ * puts in place drops each report(), so it gets a stand-in too (see
+ * SeenHandler).
  */
 class Fakes
 {
@@ -68,6 +74,16 @@ class Fakes
             } catch (Throwable) {
                 //
             }
+        }
+
+        try {
+            $handler = $this->app->make(ExceptionHandler::class);
+
+            if ($handler instanceof WithoutExceptionHandlingHandler && ! $handler instanceof SeenHandler) {
+                $this->app->instance(ExceptionHandler::class, new SeenHandler($handler, $this->recorder));
+            }
+        } catch (Throwable) {
+            //
         }
     }
 

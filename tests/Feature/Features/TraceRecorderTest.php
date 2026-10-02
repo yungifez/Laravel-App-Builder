@@ -7,6 +7,7 @@ use App\Features\AppTraces;
 use App\Models\User;
 use Closure;
 use Illuminate\Contracts\Debug\ExceptionHandler;
+use Illuminate\Foundation\Exceptions\Handler;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
@@ -15,6 +16,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Process;
@@ -968,17 +970,52 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
     }
 
-    public function test_nothing_is_said_about_a_caught_failure_when_the_test_turned_off_the_apps_handling_of_errors()
+    public function test_a_caught_failure_is_still_judged_when_the_test_turned_off_the_apps_handling_of_errors()
     {
         Route::post('/_hidden/receipt', [RecordedApp::class, 'hushed'])->middleware('web');
         $recorded = $this->recordWithFailure(effect: 0, kind: 'mail');
-        // report() does nothing now, so an empty log says nothing.
+        // The test's handler drops each report(). The recorder still sees it.
         $this->withoutExceptionHandling();
 
         $this->post('/_hidden/receipt')->assertSessionHas('status');
         $this->post('/_hidden/receipt')->assertSessionHas('status');
+        $hidden = $recorded();
+
+        $this->assertSame([false, true], array_map(fn (array $request) => $request['quiet'] ?? false, $hidden));
+        $this->assertSame([false, false], array_map(fn (array $request) => $request['dark'] ?? false, $hidden));
+        $this->assertSame(['failure_hidden'], array_column($this->measureFailure($hidden, 'mail message')['findings'], 'kind'));
+        // The test can still turn the handling back on: it gets the app's own handler.
+        $this->withExceptionHandling();
+        $this->assertSame($this->app->make(ExceptionHandler::class)::class, Handler::class);
+    }
+
+    public function test_an_app_that_records_a_caught_failure_is_clean_with_the_apps_handling_of_errors_off()
+    {
+        Route::post('/_hidden/receipt', [RecordedApp::class, 'hushed'])->middleware('web');
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'mail');
+        $this->withoutExceptionHandling();
+
+        $this->post('/_hidden/receipt?recorded=1')->assertSessionHas('status');
+        $this->post('/_hidden/receipt?recorded=1')->assertSessionHas('status');
 
         $requests = $recorded();
+        $this->assertSame([0, false, false], [$requests[1]['fault'], $requests[1]['quiet'] ?? false, $requests[1]['dark'] ?? false]);
+        $measured = $this->measureFailure($requests, 'mail message');
+        $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+    }
+
+    public function test_nothing_is_said_about_a_caught_failure_when_the_test_put_a_mock_in_place_of_the_log()
+    {
+        Route::post('/_hidden/receipt', [RecordedApp::class, 'hushed'])->middleware('web');
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'mail');
+        // The app writes the failure to the log, but the mock takes it: an empty log says nothing.
+        Log::spy();
+
+        $this->post('/_hidden/receipt?logged=1')->assertSessionHas('status');
+        $this->post('/_hidden/receipt?logged=1')->assertSessionHas('status');
+
+        $requests = $recorded();
+        Log::shouldHaveReceived('warning')->once();
         $this->assertSame(0, $requests[1]['fault']);
         $this->assertSame([false, false], array_map(fn (array $request) => $request['quiet'] ?? false, $requests));
         // The trace says so, and another test for the same place is taken when there is one.

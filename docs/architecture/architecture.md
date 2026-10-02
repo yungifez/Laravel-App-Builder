@@ -2104,9 +2104,12 @@ the same way, in a view and as JSON: the component it shows, which is a
 name in the code, and the names in its props. So an app that records the
 failure, tells the person, or does something else about it is clean.
 Nothing is said when the log cannot be
-seen: a test put a fake in place of the events or the log, or turned off
-the app's handling of errors, where `report()` does nothing. The trace
-marks such a request (`dark`). When more than one test reaches the same send
+seen: a test put a fake or a mock in place of the events, the log or the
+handling of errors. A test that only turned that handling off
+(`withoutExceptionHandling()`, as each test of a Livewire component does) is
+still judged: its handler drops each `report()`, so the recorder puts a
+stand-in there that sees the `report()` first. The trace
+marks a request where the log cannot be seen (`dark`). When more than one test reaches the same send
 or save, the place takes the first test where the log can be seen. One limit: an
 app that tells the person in other words under the same name, or saves
 another value with the same statement, and records nothing, is a finding.
