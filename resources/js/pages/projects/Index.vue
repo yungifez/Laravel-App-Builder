@@ -472,7 +472,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
                             </span>
 
                             <span
-                                class="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-xs whitespace-nowrap text-muted-foreground tabular-nums"
+                                class="mt-auto flex min-h-5 flex-wrap items-center justify-between gap-x-3 gap-y-2 text-xs whitespace-nowrap text-muted-foreground tabular-nums"
                             >
                                 <span class="flex items-center gap-3">
                                     <span
