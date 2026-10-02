@@ -1798,6 +1798,16 @@ the test let through. In use the person gets the error page, so the request
 is recorded as a server error. Its line is written when the next request
 starts, when the next test starts its app, or when PHP stops.
 
+All Livewire components of an app share one route for what a person does on
+them, and a test renders a component at an address with a random part. So
+the recorder adds the component, and the methods the request calls on it, to
+the route it records (`Wired`): `/livewire-…/update#send-receipt@send`, and
+`/livewire-unit-test-endpoint#send-receipt` for the test's first render.
+Each place then has its own name, the same in every run, and a finding on
+one component is not taken for a finding on another. The recorder reads the
+names from the request and the answer, not from Livewire's classes, so an
+app without Livewire is not changed.
+
 `AppTraces` reads the lines for four shapes
 (`builder.verification.traces`):
 

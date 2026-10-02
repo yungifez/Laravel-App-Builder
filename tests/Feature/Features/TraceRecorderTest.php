@@ -22,6 +22,8 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Str;
+use RuntimeException;
 use Tests\Fixtures\RecordedApp;
 use Tests\Fixtures\RecordedCarefulJob;
 use Tests\Fixtures\RecordedEvent;
@@ -477,6 +479,73 @@ class TraceRecorderTest extends TestCase
         (new Recorder($this->app, $this->directory))->listen();
 
         $this->assertSame([['/_failing/thrown', 500, true, ['query']]], array_map(fn (array $request) => [$request['route'], $request['status'], $request['refused'], array_column($request['effects'], 'kind')], $recorded()));
+    }
+
+    public function test_a_livewire_request_is_named_by_its_component_and_what_it_calls()
+    {
+        Route::post('/_wire/update', [RecordedApp::class, 'quiet']);
+        $recorded = $this->record();
+        $this->withoutMiddleware();
+
+        $component = fn (string $name, string ...$calls) => [
+            'snapshot' => json_encode(['data' => ['email' => 'owner@example.com'], 'memo' => ['id' => 'a1', 'name' => $name]]),
+            'calls' => array_map(fn (string $method) => ['method' => $method, 'params' => []], $calls),
+            'updates' => [],
+        ];
+        $wire = fn (array ...$components) => $this->post('/_wire/update', ['components' => $components], ['X-Livewire' => '1'])->assertNoContent();
+
+        $wire($component('send-receipt', 'send'));
+        $wire($component('orders.table'));
+        $this->withMiddleware();
+        $wire($component('send-receipt', 'send', 'send', '$refresh'), $component('pages::cart', 'add', 'remove', 'clear', 'pay'));
+        $wire($component('one'), $component('two'), $component('three'), $component('four'));
+        // A name no component can have, and a request that is not Livewire's.
+        $wire($component('send receipt', 'send'));
+        $this->post('/_wire/update', ['components' => [$component('send-receipt', 'send')]])->assertNoContent();
+
+        $this->assertSame([
+            '/_wire/update#send-receipt@send',
+            '/_wire/update#orders.table',
+            '/_wire/update#send-receipt@send,$refresh+pages::cart@add,remove,clear,more',
+            '/_wire/update#one+two+three+more',
+            '/_wire/update',
+            '/_wire/update',
+        ], array_column($recorded(), 'route'));
+    }
+
+    public function test_a_livewire_component_a_test_renders_has_the_same_name_in_every_run()
+    {
+        $page = fn (string $name) => '<div wire:snapshot="'.e(json_encode(['data' => [], 'memo' => ['name' => $name]])).'" wire:id="a1"><p wire:snapshot="'.e(json_encode(['memo' => ['name' => 'inner']])).'"></p></div>';
+        // Livewire's test helper keeps the component it renders in the route's closure.
+        $render = function (mixed $name, ?string $shown) use ($page): string {
+            $params = [];
+            Route::get($address = '/livewire-unit-test-endpoint/'.Str::random(20), function () use ($name, $params, $page, $shown) {
+                return $shown === null
+                    ? throw new RuntimeException('No component for '.get_debug_type($name).' with '.count($params).' values.')
+                    : response($page($shown));
+            });
+
+            return $address;
+        };
+        $recorded = $this->record();
+        $this->withoutMiddleware()->withoutExceptionHandling();
+
+        $this->get($render(RecordedApp::class, 'send-receipt'))->assertOk();
+        $this->get($render('send-receipt', 'send-receipt'))->assertOk();
+        // No answer came: the name is the one the test asked for.
+        rescue(fn () => $this->get($render(RecordedApp::class, null)), report: false);
+        rescue(fn () => $this->get($render(new RecordedApp, null)), report: false);
+        rescue(fn () => $this->get($render(['not a name'], null)), report: false);
+        $this->withMiddleware()->get($render('orders.table', 'orders.table'))->assertOk();
+
+        $this->assertSame([
+            ['/livewire-unit-test-endpoint#send-receipt', 200],
+            ['/livewire-unit-test-endpoint#send-receipt', 200],
+            ['/livewire-unit-test-endpoint#'.RecordedApp::class, 500],
+            ['/livewire-unit-test-endpoint#'.RecordedApp::class, 500],
+            ['/livewire-unit-test-endpoint', 500],
+            ['/livewire-unit-test-endpoint#orders.table', 200],
+        ], array_map(fn (array $request) => [$request['route'], $request['status']], $recorded()));
     }
 
     public function test_a_job_made_to_run_twice_shows_what_it_sent_and_added_both_times()

@@ -226,7 +226,7 @@ class Recorder
         $events->listen(Routing::class, fn (Routing $event) => $this->loosely($event->request));
         $events->listen(RouteMatched::class, function (RouteMatched $event) {
             if ($this->loose) {
-                $this->matched = '/'.ltrim($event->route->uri(), '/');
+                $this->matched = $this->route($event->request, $event->route);
             }
         });
         $events->listen(ResponsePrepared::class, function (ResponsePrepared $event) {
@@ -437,10 +437,9 @@ class Recorder
 
         $this->release();
 
-        $route = $request->route();
         $status = method_exists($response, 'getStatusCode') ? (int) $response->getStatusCode() : 0;
 
-        $this->operation['route'] = is_object($route) && method_exists($route, 'uri') ? '/'.ltrim($route->uri(), '/') : null;
+        $this->operation['route'] = $this->route($request, response: $response);
         $this->operation['status'] = $status;
         $this->operation['refused'] = $status >= 400 || $this->invalid($request);
         $this->operation['blind'] = $this->fakes->hiding($this->hidden);
@@ -457,6 +456,23 @@ class Recorder
             }
         } catch (Throwable) {
             //
+        }
+    }
+
+    /**
+     * Get the route of the request as its pattern. A request for a
+     * Livewire component names the component too.
+     */
+    protected function route($request, $route = null, $response = null): ?string
+    {
+        try {
+            $route ??= $request->route();
+
+            return is_object($route) && method_exists($route, 'uri')
+                ? Wired::route($request, $route, '/'.ltrim($route->uri(), '/'), $response)
+                : null;
+        } catch (Throwable) {
+            return null;
         }
     }
 
@@ -666,10 +682,9 @@ class Recorder
         // The queue had the job before the error: it still runs.
         $this->release();
 
-        $route = $request->route();
         $status = method_exists($exception, 'getStatusCode') ? (int) $exception->getStatusCode() : (int) ($exception->status ?? 500);
 
-        $this->operation['route'] = is_object($route) && method_exists($route, 'uri') ? '/'.ltrim($route->uri(), '/') : null;
+        $this->operation['route'] = $this->route($request);
         $this->operation['status'] = $status >= 400 ? $status : 500;
         $this->operation['refused'] = true;
         $this->operation['blind'] = $this->fakes->hiding($this->hidden);
