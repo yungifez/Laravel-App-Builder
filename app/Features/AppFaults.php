@@ -89,6 +89,12 @@ namespace App\Features;
  * the person from the request it was dispatched in, and not from what
  * it was given, then sends or saves less. That is a finding of its own.
  *
+ * One thing is read from a request or a command that sends to many: the
+ * same email or outside call from one line, more than once. The first
+ * one is made to fail, and the others must still leave. A loop that lets
+ * the first failure through sends nothing to the people after it. A job
+ * is left out: a queue tries a failed job again.
+ *
  * The last thing is read when the app's code catches the failure. A
  * request that then did nothing new, gave the same kind of answer as when
  * all worked, and wrote nothing to its log hid the failure: the person
@@ -128,6 +134,8 @@ class AppFaults
 
     public const NEVER_SENT = 'never_sent';
 
+    public const REST_NOT_SENT = 'rest_not_sent';
+
     public const DEPENDS_ON_ORDER = 'depends_on_order';
 
     public const NEEDS_JOB_DONE = 'needs_job_done';
@@ -149,6 +157,7 @@ class AppFaults
         self::DONE_TWICE,
         self::SENT_AGAIN,
         self::NEVER_SENT,
+        self::REST_NOT_SENT,
         self::CALLED_AGAIN,
         self::ANSWER_NOT_CHECKED,
         self::NEEDS_JOB_DONE,
@@ -526,6 +535,7 @@ class AppFaults
                 ? "when a save failed in {$finding['failed']}{$at(', queued at', ',')} and the job was tried again, it sent the same thing again: {$finding['what']}"
                 : "when {$finding['failed']} failed{$at(' at')} and the job was tried again, the job started from the top and sent again what it had sent before the failure: {$finding['what']}",
             self::NEVER_SENT => "when {$finding['failed']} failed{$at(' at')} and the job was tried again, the second try did not send it: what the first try left behind made the job stop, so it is never sent",
+            self::REST_NOT_SENT => "when {$finding['failed']} failed{$at(' at')}, one failure stopped the rest: the {$run} sends from that line more than once when all works, and it did not send the others",
             self::CALLED_AGAIN => "when {$finding['failed']}{$at(' at')} got no answer, the {$run} made the same call again with no idempotency key, so the service may do it twice",
             self::ANSWER_NOT_CHECKED => "when {$finding['failed']}{$at(' at')} was answered with a server error, the app's code did not ask the answer for its status and the {$run} went on as if the call worked: {$finding['what']}",
             self::NEEDS_JOB_DONE => "when {$finding['failed']}{$at(', queued at', ',')} ran after {$end}, the way a queue runs it, the {$run} did not do the same: {$finding['what']}",
@@ -576,6 +586,7 @@ class AppFaults
             self::DONE_TWICE => 'A queue gives a job to a worker at least once. Make the job safe to run again: look for what it already made (firstOrCreate, a unique index), or record that it sent before it sends, and take that record back when the send fails.',
             self::SENT_AGAIN => 'A queue tries a failed job again. Save first and send last in the job, and take the save back when the send fails, so the next try sends.',
             self::NEVER_SENT => 'A queue tries a failed job again, and that try must send what the first could not. When the send fails, take back what the job saved before it: catch the failure, undo the save, and throw the failure again.',
+            self::REST_NOT_SENT => 'One failure must not stop the rest. Queue each one (Mail::to()->queue(), or one job for each), or catch the failure for each one, record it with report(), and go on with the next.',
             self::CALLED_AGAIN => 'A call that got no answer can still have arrived. Give the call an Idempotency-Key header with the same value on each try. When the service takes none, do not try the call again.',
             self::ANSWER_NOT_CHECKED => 'The HTTP client of Laravel throws nothing for an error answer. Call throw() on the answer, or ask successful() or failed() and stop when the call did not work.',
             self::NEEDS_JOB_DONE => 'Tests run a queued job where it is dispatched. In use a queue runs it after the response. Do what the request needs before it answers in the request, or run that work with dispatchSync().',
@@ -656,6 +667,7 @@ class AppFaults
                 self::SAVED_THEN_FAILED => $hit['status'] >= 500 && ! ($hit['effects'][$place]['job'] ?? false) ? $kept : [],
                 self::CALLED_AGAIN => self::calledAgain($hit['effects'], $place, $times),
                 self::NEVER_SENT => self::neverSent($hit, $place),
+                self::REST_NOT_SENT => self::stopped($hit, $place, $times),
                 self::SENT_AGAIN => self::sentTwice($hit, $place, $was),
                 self::FAILURE_HIDDEN => self::hidden($hit, $was),
             ]);
@@ -958,6 +970,28 @@ class AppFaults
             fn (array $effect, int $at) => self::repeats($effect, isset($stayed[$at])) && isset($once[self::name($effect).'|'.($effect['at'] ?? '')]),
             ARRAY_FILTER_USE_BOTH,
         ));
+    }
+
+    /**
+     * Get the send that stopped the others when it failed: the request
+     * or the command sends the same thing from that line more than once
+     * when all works, and after the failure it did not send the rest. A
+     * send in a job is left out: a queue tries a failed job again.
+     *
+     * @param  array{effects: list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>, cut: bool}  $hit
+     * @param  int  $times  How many times the request did the same thing from the same line in the tests' normal run
+     * @return list<array{kind: string, open: int, sql?: string, what?: string, at?: string|null, job?: bool, again?: bool, delivers?: bool, keyed?: bool}>
+     */
+    protected static function stopped(array $hit, int $place, int $times): array
+    {
+        $failed = $hit['effects'][$place] ?? null;
+
+        if ($failed === null || $times < 2 || $hit['cut'] || ($failed['job'] ?? false) || ! is_string($failed['at'] ?? null)) {
+            return [];
+        }
+
+        // The one that failed is in the trace too, and did not leave.
+        return count(self::same($hit['effects'], $failed)) < $times ? [$failed] : [];
     }
 
     /**

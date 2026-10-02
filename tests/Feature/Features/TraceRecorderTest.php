@@ -894,6 +894,38 @@ class TraceRecorderTest extends TestCase
         $this->assertSame(['again'], array_column(AppFaults::points($requests, $this->wholeFilePatch(RecordedRoundJob::PATH)), 'fails'));
     }
 
+    public function test_a_request_that_sends_to_many_and_stops_at_the_first_failure_leaves_the_rest_unsent()
+    {
+        Route::post('/_failing/round', [RecordedApp::class, 'round']);
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'mail');
+
+        $this->post('/_failing/round')->assertNoContent();
+        $this->post('/_failing/round')->assertServerError();
+
+        $requests = $recorded();
+        $this->assertSame([[204, ['mail', 'mail']], [500, ['mail']]], array_map(fn (array $request) => [$request['status'], array_column($request['effects'], 'kind')], $requests));
+
+        $measured = $this->measureFailure($requests, 'mail message');
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['rest_not_sent', 'POST /_failing/round', 'mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed']], $measured['findings']));
+        $this->assertStringContainsString('one failure stopped the rest', AppFaults::describe($measured['findings'][0]));
+    }
+
+    public function test_a_request_that_sends_to_many_and_goes_on_after_a_failure_it_recorded_is_clean()
+    {
+        Route::post('/_failing/round', [RecordedApp::class, 'round']);
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'mail');
+
+        $this->post('/_failing/round?careful=1')->assertNoContent();
+        $this->post('/_failing/round?careful=1')->assertNoContent();
+
+        $requests = $recorded();
+        $this->assertSame([[null, ['mail', 'mail']], [0, ['mail', 'mail']]], array_map(fn (array $request) => [$request['fault'] ?? null, array_column($request['effects'], 'kind')], $requests));
+
+        $measured = $this->measureFailure($requests, 'mail message');
+        $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+    }
+
     public function test_a_job_of_a_request_that_catches_a_failure_hid_it()
     {
         $user = User::factory()->create();
@@ -1013,6 +1045,32 @@ class TraceRecorderTest extends TestCase
 
         $measured = $this->measureFailure($requests, 'job '.RecordedCarefulJob::class);
         $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+    }
+
+    public function test_a_queued_notification_held_back_until_the_response_keeps_the_line_that_dispatched_it()
+    {
+        $user = User::factory()->create();
+        Route::post('/_failing/told/{user}', [RecordedApp::class, 'told'])->middleware('web');
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'later');
+
+        $this->post("/_failing/told/{$user->id}")->assertNoContent();
+        $this->post("/_failing/told/{$user->id}")->assertNoContent();
+
+        $requests = $recorded();
+        $this->assertSame([null, 1], [$requests[0]['fault'] ?? null, $requests[1]['fault'] ?? null]);
+
+        // The framework's job has no code of the app in it. Its email came
+        // from the line that dispatched it, in both runs.
+        $mails = array_map(fn (array $request) => array_values(array_map(fn (array $effect) => $effect['at'], array_filter($request['effects'], fn (array $effect) => $effect['kind'] === 'mail'))), $requests);
+        $this->assertSame([[$requests[0]['effects'][1]['at']], [$requests[0]['effects'][1]['at']]], $mails);
+        $this->assertNotNull($mails[0][0]);
+
+        $points = AppFaults::points([$requests[0]], $this->wholeFilePatch());
+        $this->assertSame([['later', 1, 'later']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
+        $points[0]['fault']['request'] = 1;
+
+        $measured = (array) AppFaults::measure($points, [0 => $requests], $this->wholeFilePatch());
+        $this->assertSame([1, 0, []], [$measured['run'], $measured['missed'], $measured['findings']]);
     }
 
     public function test_a_job_held_back_until_the_response_shows_what_the_request_did_not_do_without_it()

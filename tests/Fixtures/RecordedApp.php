@@ -393,6 +393,28 @@ class RecordedApp
     }
 
     /**
+     * Sends one email to each of two people from one line. An email that
+     * cannot be sent stops the rest, unless it is asked to record the
+     * failure and go on.
+     */
+    public function round(Request $request): Response
+    {
+        foreach (['first@example.com', 'second@example.com'] as $to) {
+            try {
+                Mail::raw('Round', fn ($message) => $message->to($to));
+            } catch (Throwable $exception) {
+                if (! $request->boolean('careful')) {
+                    throw $exception;
+                }
+
+                report($exception);
+            }
+        }
+
+        return response()->noContent();
+    }
+
+    /**
      * Saves, then queues a job that catches an email that cannot be sent.
      */
     public function hushedLater(User $user, Request $request): Response

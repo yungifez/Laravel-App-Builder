@@ -204,8 +204,11 @@ class Recorder
     /** @var list<int|false|null> The place in the trace of each job the sync queue is running now; false for a job the app runs in place */
     protected array $running = [];
 
-    /** @var list<Closure(): mixed> The jobs held back until the response is made */
+    /** @var list<array{0: Closure(): mixed, 1: array<string, mixed>}> The jobs held back until the response is made, each with the code of the app that dispatched it */
     protected array $held = [];
+
+    /** @var array<string, mixed>|null The code of the app that dispatched the held job that runs now */
+    protected ?array $dispatched = null;
 
     /** Whether a job that was held back runs now. */
     protected bool $releasing = false;
@@ -1119,6 +1122,13 @@ class Recorder
 
             if ($origin) {
                 $effect = [...$effect, ...$this->cause()];
+
+                // A job with no code of the app in it, such as a queued
+                // email, came from the line that dispatched it. A held job
+                // runs with that line gone, so it is given back here.
+                if ($effect['at'] === null && $this->dispatched !== null) {
+                    $effect = [...$effect, ...$this->dispatched];
+                }
             }
 
             if ($this->jobs > 0) {
@@ -1282,7 +1292,7 @@ class Recorder
         }
 
         $this->operation['fault'] = $place;
-        $this->held[] = $run;
+        $this->held[] = [$run, array_intersect_key($this->operation['effects'][$place], ['at' => true, 'frames' => true])];
 
         return true;
     }
@@ -1305,7 +1315,9 @@ class Recorder
         $back = $this->asWorker();
 
         try {
-            foreach ($held as $run) {
+            foreach ($held as [$run, $dispatched]) {
+                $this->dispatched = $dispatched;
+
                 try {
                     $run();
                 } catch (Throwable) {
@@ -1315,6 +1327,7 @@ class Recorder
         } finally {
             $back();
             $this->releasing = false;
+            $this->dispatched = null;
         }
     }
 

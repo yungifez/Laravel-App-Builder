@@ -2106,7 +2106,9 @@ can be caused, in requests that ran the change's code:
   the job is held back and runs when the response is made, the way a worker
   runs it: no one is signed in, and the request and the session are empty.
   A job of the framework that delivers an email or a notification is a
-  place here too: the worker runs what the app's code puts in it. A job the
+  place here too: the worker runs what the app's code puts in it. What such
+  a job sends keeps the line that dispatched the job, in both runs, so the
+  same email is read as the same. A job the
   app sends to the sync queue by
   name (`dispatch_sync`, or a job that names the `sync` connection) is not
   such a job, and is never held.
@@ -2163,6 +2165,12 @@ The trace of that request shows what stayed:
   job that takes the mark back when the email fails is clean. An outside
   call is left out: a call that got no answer may have arrived, so a job
   that does not make it again can be right.
+- **Rest not sent.** A request or a command sends the same thing from one
+  line more than once when all works: an email to each person. The first one
+  failed, and fewer left than in the normal run. One failure stopped the
+  rest. A loop that catches the failure, records it and goes on is clean, and
+  so is one that queues each email. A send in a job is left out: a queue
+  tries a failed job again.
 - **Called again.** An outside call got no answer, and the request made the
   same call again from the same line. A call that got no answer can still
   have arrived, so the service can do it twice: a payment taken twice.
@@ -2301,7 +2309,7 @@ is said. A second run that the trace cut short is missed. An email that a test
 fakes is a place too: the stand-in of the fake fails it the same way, before
 the fake takes it.
 
-Each of the twelve sends the change back for a fix by itself, as the safety
+Each of the thirteen sends the change back for a fix by itself, as the safety
 scan does (`builder.verification.faults.send_back`). No model decides it:
 the failure was caused, and the trace shows what stayed. The coder is told
 what stayed and how to avoid it ("…A queue gives a job to a worker at least
@@ -2328,7 +2336,9 @@ owner reads that in its place: "If saving fails during that work and it
 starts over, it sends the same thing twice." When the job does not send
 after it starts over: "If an email cannot be sent during that work and it
 starts over, it does not try to send again. What it had to send is never
-sent." For a call made again: "If an outside service is slow to
+sent." For a failure that stops the rest: "Your app sends to several people
+at /news. If an email cannot be sent for one of them, your app stops there,
+and the people after them get nothing." For a call made again: "If an outside service is slow to
 answer at /orders/{order}/pay, your app asks it again. The service may then
 do the same thing twice, such as take a payment twice." For an answer that
 is not checked: "If an outside service says it could not do what your app

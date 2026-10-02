@@ -624,6 +624,38 @@ class AppFaultsTest extends TestCase
         $this->assertSame([[1, []], [1, []], [1, []]], array_map(fn (?array $measured) => [$measured['run'] ?? null, $measured['findings'] ?? null], [$sent, $tookIn, $cut]));
     }
 
+    public function test_a_request_that_sends_to_many_is_found_when_the_first_failure_stops_the_rest()
+    {
+        $mail = $this->mailed(self::NEW.':4');
+        $normal = [$mail, $mail, $mail];
+
+        // The first email from the line is the one made to fail.
+        $point = $this->points([$this->recorded('POST', '/orders', 302, $normal)])[0];
+        $this->assertSame(['send', 0, 3], [$point['fails'], $point['fault']['effect'], $point['times']]);
+
+        $measured = $this->measure($normal, 500, [$mail]);
+
+        $this->assertSame([
+            ['kind' => 'rest_not_sent', 'route' => 'POST /orders', 'failed' => 'mail App\Mail\Receipt', 'what' => 'mail App\Mail\Receipt', 'at' => self::NEW.':4', 'test' => self::TEST],
+        ], $measured['findings'] ?? null);
+        $this->assertSame(
+            'POST /orders: when mail App\Mail\Receipt failed at '.self::NEW.':4, one failure stopped the rest: the request sends from that line more than once when all works, and it did not send the others (caused in '.self::TEST.'). '
+                .'One failure must not stop the rest. Queue each one (Mail::to()->queue(), or one job for each), or catch the failure for each one, record it with report(), and go on with the next.',
+            AppFaults::finding($measured['findings'][0] ?? []),
+        );
+
+        // The app caught the failure and left the loop: the rest is still not sent.
+        $left = $this->measure($normal, 302, [$mail]);
+        // The app went on with the next one.
+        $wentOn = $this->measure($normal, 302, [$mail, $mail, $mail]);
+        // One email from the line has no others to stop.
+        $one = $this->measure([$mail], 500, [$mail]);
+        // A trace that is not whole does not show what was sent after.
+        $cut = $this->measure($normal, 500, [$mail], extra: ['cut' => true]);
+
+        $this->assertSame([['rest_not_sent'], [], [], []], array_map(fn (?array $measured) => array_column($measured['findings'] ?? [], 'kind'), [$left, $wentOn, $one, $cut]));
+    }
+
     public function test_a_job_that_sends_to_many_is_found_when_it_sends_the_first_ones_again_after_one_email_failed()
     {
         $mail = $this->done($this->mailed(self::NEW.':4'));

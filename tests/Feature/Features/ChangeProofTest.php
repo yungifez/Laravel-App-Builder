@@ -613,6 +613,14 @@ class ChangeProofTest extends TestCase
             fn (string $kind) => $proof(['run' => 1, 'findings' => [$finding($kind, 'JOB App\\Jobs\\SendReminder', 'job App\\Jobs\\SendReminder')]])->where('kind', 'gap')->pluck('text')->all(),
             ['done_twice', 'sent_again'],
         ));
+        // One failure that stops the rest is said with or without an address.
+        $this->assertSame([
+            ['Your app sends to several people at /orders. If an email cannot be sent for one of them, your app stops there, and the people after them get nothing.'],
+            ['Your app does some work on its own (“reminders send”) and sends to several people. If an email cannot be sent for one of them, it stops there, and the people after them get nothing.'],
+        ], array_map(
+            fn (string $route) => $proof(['run' => 1, 'findings' => [$finding('rest_not_sent', $route, 'mail App\Mail\Reminder')]])->where('kind', 'gap')->pluck('text')->all(),
+            ['POST /orders', 'ARTISAN reminders:send'],
+        ));
         // Work that sends to many and starts over after one email failed is said by what failed.
         $this->assertSame(
             ['Your app does some work on its own (“send reminder”). If an email cannot be sent during that work and it starts over, it sends the same thing twice.'],
