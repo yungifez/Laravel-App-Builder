@@ -1536,6 +1536,45 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([], AppFaults::points($requests, $this->wholeFilePatch()));
     }
 
+    public function test_an_old_file_deleted_before_a_new_file_that_is_not_stored_is_gone_and_the_save_never_happens()
+    {
+        Route::post('/_stored/replaced', [RecordedApp::class, 'replaced'])->middleware('web');
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'file');
+        Storage::fake('recorded');
+
+        Storage::disk('recorded')->put('notes/old.txt', 'An old note');
+        $this->post('/_stored/replaced')->assertSessionHas('status');
+        Storage::disk('recorded')->put('notes/old.txt', 'An old note');
+        // The app tells the person, but the old file is gone and no row names the new one.
+        $this->post('/_stored/replaced')->assertSessionHas('problem');
+        Storage::disk('recorded')->assertMissing('notes/old.txt');
+
+        $requests = $recorded();
+        $this->assertSame([['file', 'file', 'query'], ['file', 'file']], array_map(fn (array $request) => array_column($request['effects'], 'kind'), $requests));
+
+        $measured = $this->measureFailure($requests, 'file write');
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['file_gone', 'POST /_stored/replaced', 'file write', 'file delete']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+        $this->assertStringContainsString('the request did not make a save it makes when all works, but had already deleted a file', AppFaults::finding($measured['findings'][0]));
+    }
+
+    public function test_an_app_that_deletes_the_old_file_last_is_clean_when_the_new_file_is_not_stored()
+    {
+        Route::post('/_stored/replaced', [RecordedApp::class, 'replaced'])->middleware('web');
+        $recorded = $this->recordWithFailure(effect: 0, kind: 'file');
+        Storage::fake('recorded');
+
+        Storage::disk('recorded')->put('notes/old.txt', 'An old note');
+        $this->post('/_stored/replaced?careful=1')->assertSessionHas('status');
+        Storage::disk('recorded')->put('notes/old.txt', 'An old note');
+        $this->post('/_stored/replaced?careful=1')->assertSessionHas('problem');
+        // The row names the old file, and the old file is still there.
+        Storage::disk('recorded')->assertExists('notes/old.txt');
+
+        $measured = $this->measureFailure($recorded(), 'file write');
+        $this->assertSame([1, 0, []], [$measured['run'], $measured['missed'], $measured['findings']]);
+    }
+
     public function test_what_a_json_answer_tells_the_person_is_read_by_its_names_at_every_depth()
     {
         Route::post('/_hidden/screen', [RecordedApp::class, 'screened']);

@@ -497,7 +497,7 @@ class AppFaultsTest extends TestCase
         ], $steps['findings'] ?? null);
         $this->assertSame(
             'POST /orders: when delete orders failed at '.self::NEW.':4, the save was lost but the request had already deleted a file, and nothing puts it back: file delete (caused in '.self::TEST.'). '
-                .'What the app kept still points to a file that is gone. Delete the file after the save is kept: after the transaction, or in DB::afterCommit().',
+                .'What the app kept still points to a file that is gone. Delete the file last, after the save is kept: after the transaction, or in DB::afterCommit().',
             AppFaults::finding($steps['findings'][0]),
         );
 
@@ -509,6 +509,41 @@ class AppFaultsTest extends TestCase
         // A file the app wrote before the lost save only stays unused, and an app that took the failure in is not read.
         $this->assertSame(['send'], array_column($this->points([$this->recorded('POST', '/orders', 302, [$this->stored(self::NEW.':3'), $save])]), 'fails'));
         $this->assertSame([], $this->measure([$gone, $save], 302, [$gone, $save])['findings'] ?? null);
+    }
+
+    public function test_a_file_deleted_before_a_send_that_fails_is_found_when_the_save_after_it_does_not_happen()
+    {
+        $gone = $this->stored(self::NEW.':3', 'delete');
+        $new = $this->stored(self::NEW.':4');
+        $save = $this->asked('update "orders" set "receipt" = ? where "id" = ?', self::NEW.':5');
+
+        // The new file was not stored and the request stopped: the row still names the old file.
+        $replaced = $this->measure([$gone, $new, $save], 302, [$gone, $new]);
+        $this->assertSame([
+            ['kind' => 'file_gone', 'route' => 'POST /orders', 'failed' => 'file write', 'what' => 'file delete', 'at' => self::NEW.':4', 'test' => self::TEST],
+        ], $replaced['findings'] ?? null);
+        $this->assertSame(
+            'POST /orders: when file write failed at '.self::NEW.':4, the request did not make a save it makes when all works, but had already deleted a file, and nothing puts it back: file delete (caused in '.self::TEST.'). '
+                .'What the app kept still points to a file that is gone. Delete the file last, after the save is kept: after the transaction, or in DB::afterCommit().',
+            AppFaults::finding($replaced['findings'][0]),
+        );
+
+        // An email that fails after the delete stops the save the same way.
+        $mail = $this->mailed(self::NEW.':4');
+        $stopped = $this->measure([$gone, $mail, $save], 500, [$gone, $mail]);
+        $this->assertSame([['file_gone', 'mail App\Mail\Receipt', 'file delete']], array_map(fn (array $finding) => [$finding['kind'], $finding['failed'], $finding['what']], $stopped['findings'] ?? []));
+
+        // A save that a transaction put back is not made either.
+        $inside = [['kind' => 'begin', 'open' => 1], $this->asked('update "orders" set "receipt" = ? where "id" = ?', self::NEW.':2', open: 1), $this->stored(self::NEW.':3', 'delete', open: 1), $this->mailed(self::NEW.':4', open: 1)];
+        $undone = $this->measure([...$inside, ['kind' => 'commit', 'open' => 0]], 500, [...$inside, ['kind' => 'rollback', 'open' => 0]], point: 0);
+        $this->assertContains('file_gone', array_column($undone['findings'] ?? [], 'kind'));
+
+        // An app that made the save all the same kept nothing that names the old file.
+        $this->assertNotContains('file_gone', array_column($this->measure([$gone, $new, $save], 302, [$gone, $new, $save])['findings'] ?? [], 'kind'));
+        // An app that deletes the old file last had deleted nothing yet.
+        $this->assertSame([], $this->measure([$new, $save, $gone], 302, [$new])['findings'] ?? null);
+        // A request that made every save it makes kept nothing that names the file: only the kept save is said.
+        $this->assertSame(['saved_then_failed'], array_column($this->measure([$save, $gone, $mail], 500, [$save, $gone, $mail])['findings'] ?? [], 'kind'));
     }
 
     public function test_only_the_last_save_in_steps_is_a_place_and_only_after_the_apps_code_saved_or_sent()

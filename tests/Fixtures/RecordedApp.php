@@ -471,6 +471,32 @@ class RecordedApp
     }
 
     /**
+     * Puts a new file in the place of an old one and saves its name. It
+     * tells the person when the new file was not stored. A careful
+     * request deletes the old file last.
+     */
+    public function replaced(Request $request): RedirectResponse
+    {
+        $careful = $request->boolean('careful');
+
+        if (! $careful) {
+            Storage::disk('recorded')->delete('notes/old.txt');
+        }
+
+        if (! Storage::disk('recorded')->put('notes/new.txt', 'A note')) {
+            return redirect('/_stored/note')->with('problem', 'The note was not stored.');
+        }
+
+        DB::table('users')->where('id', 0)->update(['name' => 'notes/new.txt']);
+
+        if ($careful) {
+            Storage::disk('recorded')->delete('notes/old.txt');
+        }
+
+        return redirect('/_stored/note')->with('status', 'The note is stored.');
+    }
+
+    /**
      * Catches a save that fails and answers as if it saved.
      */
     public function swallowed(): Response

@@ -551,6 +551,12 @@ class ChangeProofTest extends TestCase
         ], $left->where('kind', 'gap')->pluck('text')->all());
         $this->assertFalse($left->contains(fn (array $line) => str_contains($line['text'], $clean)));
 
+        // A file deleted before a new file that was not stored is said by what failed.
+        $this->assertSame(
+            ['If a file cannot be stored at /profile/photo, your app has already deleted a file. What it kept still points to that file, and the file is gone.'],
+            $proof(['run' => 1, 'findings' => [$finding('file_gone', 'POST /profile/photo', 'file write')]])->where('kind', 'gap')->pluck('text')->all(),
+        );
+
         // Work that sends twice only when its save fails is said in its own words,
         // and once when it also sends twice each time it starts over.
         $again = $finding('sent_again', 'POST /orders', 'job App\Jobs\SendReceipt');

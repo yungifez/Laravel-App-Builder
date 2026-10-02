@@ -2161,7 +2161,10 @@ The trace of that request shows what stayed:
 - **File gone.** A save failed and was lost, but the app had deleted a file
   from a disk before it. Nothing puts a deleted file back, not a
   transaction either. What the app kept still points to a file that is
-  gone. The coder is told to delete the file after the save is kept.
+  gone. The same is found when an email, a call or a file write fails
+  after the delete, and the request then does not make a save it makes
+  when all works. The coder is told to delete the file last, after the
+  save is kept.
 - **Done twice.** A job ran twice, and both runs sent the same thing or
   added the same row from the same line. A queue gives a job to a worker at
   least once, so a job must be safe to run again. An outside call the
