@@ -12,7 +12,16 @@ pool.
   workspaces.
 - A private network between the VM and the control plane.
 - The box image, `builder-box`. Build it with `vendor/bin/sail build box`.
-  Copy it to the VM, for example through your private registry.
+  Copy it to the VM, for example through your private registry. The image
+  holds the runner and every tool a workspace needs (PHP, Composer, Node,
+  Chromium for the screen check, iptables).
+
+You can also install these tools on the VM as packages and run
+`resources/box-runner/runner.mjs` with Node, as root. Then you must put the
+agent runner, the preview tools and the screen check at the same paths as
+in the image (`/opt/...`, see `docker/box/Dockerfile`) and keep their
+versions the same. The box image is easier to keep the same, so this guide
+uses it.
 
 ## 1. Set up the control plane
 
@@ -33,20 +42,82 @@ pool.
     The command shows the machine's token one time only. Copy it now. The
     control plane keeps only a hash of it.
 
-## 2. Start the runner on the VM
+## 2. Join the private network
 
-Run the box image as root, on the host network, with permission to set the
-firewall:
+The control plane reaches previews on the VM through a private network. Use
+the private network of your hosting provider, or make one with Tailscale or
+WireGuard. Tailscale and WireGuard also work across hosting providers.
 
-```
-docker run -d --name runner --restart unless-stopped \
-  --network host --cap-add NET_ADMIN \
-  -e RUNNER_URL=https://<the control plane> \
-  -e RUNNER_TOKEN=<the token from runners:add> \
-  -e RUNNER_SERVICE_HOST=<the VM's private address> \
-  -v /srv/workspaces:/workspaces \
-  builder-box
-```
+**Tailscale:**
+
+1. Install Tailscale on the control plane and on the VM.
+2. Run `tailscale up` on each. Join both to the same tailnet.
+3. On the VM, get its address with `tailscale ip -4`. It starts with `100.`.
+   This is the VM's private address.
+
+**WireGuard:**
+
+1. Install WireGuard on the control plane and on the VM.
+2. Give each one an address in a private range, such as `10.10.0.1` (the
+   control plane) and `10.10.0.2` (the VM), and add each as the other's peer.
+3. Start the tunnel with `wg-quick up wg0` on each. Enable it at boot with
+   `systemctl enable wg-quick@wg0`.
+
+Workspace users cannot reach private ranges, which include the Tailscale
+range (`100.64.0.0/10`) and WireGuard addresses in `10.0.0.0/8`. So the
+private network is open to the runner and the control plane, but not to the
+code in a workspace.
+
+If the control plane is also on the private network, `RUNNER_URL` can use
+its private address. The tunnel encrypts the traffic.
+
+## 3. Run the runner as a service
+
+1. Put the runner's settings in a file that only root can read:
+
+    ```
+    sudo install -m 600 /dev/null /etc/builder-runner.env
+    sudoedit /etc/builder-runner.env
+    ```
+
+    ```
+    RUNNER_URL=https://<the control plane>
+    RUNNER_TOKEN=<the token from runners:add>
+    RUNNER_SERVICE_HOST=<the VM's private address>
+    ```
+
+2. Make the service file `/etc/systemd/system/builder-runner.service`:
+
+    ```
+    [Unit]
+    Description=Builder runner
+    Requires=docker.service
+    After=docker.service network-online.target
+    Wants=network-online.target
+
+    [Service]
+    Restart=always
+    RestartSec=5
+    ExecStartPre=-/usr/bin/docker rm -f runner
+    ExecStart=/usr/bin/docker run --rm --name runner \
+        --network host --cap-add NET_ADMIN \
+        --env-file /etc/builder-runner.env \
+        -v /srv/workspaces:/workspaces \
+        builder-box
+    ExecStop=/usr/bin/docker stop runner
+
+    [Install]
+    WantedBy=multi-user.target
+    ```
+
+3. Start it, and start it at boot:
+
+    ```
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now builder-runner
+    ```
+
+The settings:
 
 - `RUNNER_URL` is where the runner reaches the control plane. The runner only
   connects out. It accepts no connections.
@@ -56,9 +127,14 @@ docker run -d --name runner --restart unless-stopped \
 - `RUNNER_FIREWALL=off` tells the runner not to change the firewall. Use it
   only when you fence workspaces in another way.
 
-## 3. Make sure it works
+The runner runs as root in the container, on the host network, with
+permission to set the firewall (`--cap-add NET_ADMIN`). It needs root to give
+each workspace a user of its own. Workspaces stay in `/srv/workspaces` when
+the service restarts.
 
-Read the runner's log with `docker logs runner`. You must see these lines:
+## 4. Make sure it works
+
+Read the runner's log with `journalctl -u builder-runner`. You must see these lines:
 
 ```
 Firewall is on (iptables, ip6tables).
@@ -74,7 +150,7 @@ updates while the runner asks for work. A machine counts as online while it
 asked in the last 120 seconds (`WORKSPACE_RUNNER_ONLINE_SECONDS`). New
 workspaces go to the online machine that holds the fewest.
 
-## 4. Set the cloud firewall
+## 5. Set the cloud firewall
 
 Set these rules in your hosting provider's firewall for the VM:
 
@@ -82,11 +158,15 @@ Set these rules in your hosting provider's firewall for the VM:
 | --------- | --------------------------------------------------------------- |
 | Inbound   | Ports 20000–20999 from the control plane's private address only |
 | Inbound   | SSH from your own address only, if you need it                  |
+| Inbound   | UDP 51820 from the control plane, if you use WireGuard          |
+| Inbound   | UDP 41641, if you use Tailscale (it also works without it)      |
 | Outbound  | HTTPS to the control plane and Reverb                           |
 | Outbound  | HTTPS to the internet, so workspaces can install packages       |
 
 Block all other inbound traffic. Previews use ports 20000–20999
-(`config/builder.php`, `preview.ports`).
+(`config/builder.php`, `preview.ports`). With Tailscale or WireGuard, the
+control plane reaches these ports through the tunnel, so the cloud firewall
+can keep them closed to everything else.
 
 ## What the runner does to keep workspaces apart
 
