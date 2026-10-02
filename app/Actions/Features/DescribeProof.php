@@ -452,8 +452,9 @@ class DescribeProof
     /**
      * Say what the app left behind when one thing was made to fail while
      * its tests used the change's new code: an email that could not be
-     * sent, an outside service that did not answer, a save that did not
-     * work, or work the app does later that ran a second time. Each kind
+     * sent, an outside service that did not answer, a file that could not
+     * be stored, a save that did not work, or work the app does later that
+     * ran a second time. Each kind
      * of thing left behind, done twice, or asked for twice, is a gap the owner reads,
      * with the address where it happened (or the name of the work, when the
      * app does it on its own at set times), and the owner may say they want
@@ -541,6 +542,7 @@ class DescribeProof
                     'failure' => match (true) {
                         str_starts_with($found[0]['failed'], 'mail') => __('an email cannot be sent'),
                         str_starts_with($found[0]['failed'], 'http') => __('an outside service does not answer'),
+                        str_starts_with($found[0]['failed'], 'file') => __('a file cannot be stored'),
                         default => __('saving fails'),
                     },
                 ]);

@@ -242,11 +242,12 @@ class WriteBrief
     public const FAILURES = <<<'TEXT'
     ## When something fails
 
-    An email, a save or a call to an outside service can fail at any time. A queue can run a job late, or twice. The change must hold up when that happens:
+    An email, a save, a stored file or a call to an outside service can fail at any time. A queue can run a job late, or twice. The change must hold up when that happens:
     - Send only after the save is kept: after the transaction, or with `afterCommit()`. No one may be told about something that was then not saved.
     - A request that saved must not end in an error because a send failed: the person tries again and it saves twice. Queue what the request sends.
     - Put saves that belong together in one `DB::transaction()`.
     - Never catch a failure and carry on as if it worked. Let it fail, or record it with `report()` and tell the person what did not happen.
+    - When the change stores a file, ask what `put()`, `store()` or `storeAs()` gave back: it is `false` when the file was not stored. Do not carry on as if the file is there.
     - When the change sends to several people, one failure must not stop the rest. Queue each send, or catch its failure, record it with `report()` and go on.
     - Make a queued job safe to run again. When a send fails in it, take back what the job saved before the send, so the next try sends.
     - Give a queued job what it needs through its constructor: a queue worker has no request, no session and no signed-in person.

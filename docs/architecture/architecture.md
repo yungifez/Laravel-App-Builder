@@ -2080,6 +2080,14 @@ Nothing is random. `AppFaults` reads the recording for the places a failure
 can be caused, in requests that ran the change's code:
 
 - **A send.** Each mail and each outside call of a request.
+- **A file.** Each file a request writes to one of its disks (`Storage`).
+  The disk does not take the file. Laravel then gives the app's code
+  `false`, and throws only when the disk's config has `'throw' => true`.
+  The recorder stands around each disk the app makes after it started. A
+  disk with a driver of the app's own is not seen. Only that a file was
+  written is recorded, never its name. A file is not counted among what the
+  app sent: a file that stays after a save was lost is not held against the
+  change.
 - **An answer.** Each outside call the app's code makes itself, when the
   app's code sends or saves something after it. The call does not fail. It
   is made, and a server error is given as its answer. Laravel's HTTP client
@@ -2206,7 +2214,10 @@ The trace of that request shows what stayed:
   can find out later. When the failure was in a job the request queued, the
   finding says so (`job`). The coder then reads the fix for a job, and the
   owner reads it as work the app does on its own: no person sees an answer
-  there.
+  there. A file that was not stored is read the same way. With the
+  framework's default config no code has to catch anything: the write gives
+  `false`, and an app that does not ask carries on as if the file is there.
+  The coder is told to ask what `put()`, `store()` or `storeAs()` gave back.
 
 A save in a transaction is lost when the transaction rolls back. A save in
 steps is lost when the request ends in a server error. An app that catches
@@ -2351,7 +2362,10 @@ after it starts over: "If an email cannot be sent during that work and it
 starts over, it does not try to send again. What it had to send is never
 sent." For a failure that stops the rest: "Your app sends to several people
 at /news. If an email cannot be sent for one of them, your app stops there,
-and the people after them get nothing." For a call made again: "If an outside service is slow to
+and the people after them get nothing." For a file: "If a file cannot be
+stored at /photos, your app carries on as if it worked. The person sees the
+same as when it works, and nothing is written down, so you would not find
+out." For a call made again: "If an outside service is slow to
 answer at /orders/{order}/pay, your app asks it again. The service may then
 do the same thing twice, such as take a payment twice." For an answer that
 is not checked: "If an outside service says it could not do what your app

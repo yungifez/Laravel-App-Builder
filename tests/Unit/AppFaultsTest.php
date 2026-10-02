@@ -57,6 +57,16 @@ class AppFaultsTest extends TestCase
     }
 
     /**
+     * A file the app wrote to a disk, from a line of the app's code.
+     *
+     * @return array<string, mixed>
+     */
+    protected function stored(?string $at): array
+    {
+        return ['kind' => 'file', 'what' => 'write', 'open' => 0, 'at' => $at];
+    }
+
+    /**
      * A call to an outside service, from a line of the app's code. A
      * direct call is one that line made itself.
      *
@@ -431,6 +441,42 @@ class AppFaultsTest extends TestCase
         ];
 
         $this->assertSame(array_fill(0, 7, [1, []]), array_map(fn (?array $measured) => [$measured['run'] ?? null, $measured['findings'] ?? null], $measured));
+    }
+
+    public function test_a_file_the_app_stores_is_a_place_and_is_found_when_the_app_carries_on_without_it()
+    {
+        $saved = $this->asked('insert into "orders" ("total") values (?)', self::NEW.':3');
+        $file = $this->stored(self::NEW.':4');
+        $marks = $this->asked('update "orders" set "receipt" = ? where "id" = ?', self::NEW.':5');
+        $shape = ['shape' => ['flash status', 'to /orders/{order}']];
+
+        // A file is not counted among what the app sent: the save after it is no place, as it is after an email.
+        $this->assertSame([[['send', 'file write', 'file']], ['send', 'save']], [
+            array_map(fn (array $point) => [$point['fails'], $point['failed'], $point['fault']['kind']], $this->points([$this->recorded('POST', '/orders', 302, [$file, $marks])])),
+            array_column($this->points([$this->recorded('POST', '/orders', 302, [$this->mailed(self::NEW.':4'), $marks])]), 'fails'),
+        ]);
+
+        // The disk gave false and threw nothing: the request did the same and answered as usual.
+        $hidden = $this->measure([$file, $marks], 302, [$file, $marks], extra: ['quiet' => true, ...$shape], was: $shape);
+        $this->assertSame([
+            ['kind' => 'failure_hidden', 'route' => 'POST /orders', 'failed' => 'file write', 'what' => 'file write', 'at' => self::NEW.':4', 'test' => self::TEST],
+        ], $hidden['findings'] ?? null);
+        $this->assertSame(
+            'POST /orders: when file write failed at '.self::NEW.':4, the app went on as if the file was stored: the request did nothing new, gave the same kind of answer as when all worked, and wrote nothing to the log (caused in '.self::TEST.'). '
+                ."A write to a disk that fails gives false, and throws only when the disk's config has 'throw' => true. Ask what put(), store() or storeAs() gave back, or set 'throw' => true for the disk. Then do not go on as if the file is there: tell the person what did not happen, or let the job or the command fail.",
+            AppFaults::finding($hidden['findings'][0]),
+        );
+
+        // A disk that throws ends the request in an error, and what it saved before stays.
+        $thrown = $this->measure([$saved, $file], 500, [$saved, $file], point: 0);
+        $this->assertSame([['saved_then_failed', 'file write', 'insert orders']], array_map(fn (array $finding) => [$finding['kind'], $finding['failed'], $finding['what']], $thrown['findings'] ?? []));
+        $this->assertStringEndsWith('Store the file before the save, so a write that fails leaves nothing behind. Or catch the failure, record it with report(), and tell the person what did not happen.', AppFaults::finding($thrown['findings'][0]));
+
+        // An app that told the person, or wrote to its log, did not carry on as if the file is there.
+        $this->assertSame([[1, []], [1, []]], array_map(fn (?array $measured) => [$measured['run'] ?? null, $measured['findings'] ?? null], [
+            $this->measure([$file, $marks], 302, [$file], extra: ['quiet' => true, 'shape' => ['flash problem', 'to /orders/{order}']], was: $shape),
+            $this->measure([$file, $marks], 302, [$file, $marks], extra: $shape, was: $shape),
+        ]));
     }
 
     public function test_only_the_last_save_in_steps_is_a_place_and_only_after_the_apps_code_saved_or_sent()

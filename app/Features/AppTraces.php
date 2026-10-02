@@ -5,8 +5,9 @@ namespace App\Features;
 /**
  * What the app did while its tests used it, request by request, read from
  * the recorder in the box (direction 32). Each request's trace lists its
- * queries, its transactions and what it queued and sent, in order, each
- * with the line of the app's code it came from.
+ * queries, its transactions, what it queued and sent and the files it
+ * wrote to a disk, in order, each with the line of the app's code it came
+ * from.
  *
  * Four things are read from the shape of a trace alone, with no idea of
  * what the app is for: a request that only reads saved something, a

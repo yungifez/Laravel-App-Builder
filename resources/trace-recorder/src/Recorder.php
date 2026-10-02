@@ -16,6 +16,7 @@ use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Database\QueryException;
 use Illuminate\Events\Dispatcher as Events;
+use Illuminate\Filesystem\FilesystemManager;
 use Illuminate\Foundation\Console\ClosureCommand;
 use Illuminate\Foundation\Exceptions\Handler;
 use Illuminate\Foundation\Http\Kernel;
@@ -42,6 +43,7 @@ use Illuminate\Routing\Events\Routing;
 use Illuminate\Routing\Router;
 use Illuminate\Session\SessionManager;
 use Illuminate\Support\Facades\Facade;
+use League\Flysystem\UnableToWriteFile;
 use Mockery\LegacyMockInterface;
 use PDOException;
 use PHPUnit\Framework\TestCase;
@@ -59,9 +61,10 @@ use Throwable;
 use WeakMap;
 
 /**
- * Records what one request does: its queries, its transactions and what it
- * queues and sends, in order, each with the line of the app's code it came
- * from. One line of JSON is written per request.
+ * Records what one request does: its queries, its transactions, what it
+ * queues and sends and the files it writes to a disk, in order, each with
+ * the line of the app's code it came from. One line of JSON is written per
+ * request.
  *
  * It records no values (queries keep their placeholders) and no times, so
  * the same request on the same code gives the same trace.
@@ -74,8 +77,9 @@ use WeakMap;
  * thing of one request of one test (the place it has in a trace recorded
  * before), that thing fails the way it fails in use: the mail cannot be
  * sent, the outside call gets no answer, the write is refused before it
- * is made, the job runs a second time when it is done. The trace of that
- * request then shows what the app left behind.
+ * is made, the disk does not take the file, the job runs a second time
+ * when it is done. The trace of that request then shows what the app left
+ * behind.
  *
  * It can also name an event. The listeners Laravel found for that event by
  * itself then run in the reverse order for that one request.
@@ -282,6 +286,15 @@ class Recorder
         // The console says when a command starts and how it ended.
         $events->listen(ArtisanStarting::class, fn (ArtisanStarting $event) => $this->hear($event->artisan));
         $this->hear($this->console());
+
+        // The app's disks say when the app writes a file. An app that has
+        // disks of a class of its own keeps them, and they are not seen.
+        try {
+            $this->app->extend('filesystem', fn ($files) => is_object($files) && $files::class === FilesystemManager::class ? SeenFiles::over($files, $this->app, $this) : $files);
+            Facade::clearResolvedInstance('filesystem');
+        } catch (Throwable) {
+            //
+        }
 
         // A run about a job that waits needs a sync queue that can hold it back.
         if (($this->fault['kind'] ?? null) === 'later') {
@@ -749,7 +762,7 @@ class Recorder
     protected function quiet(): bool
     {
         return isset($this->operation['fault'])
-            && in_array($this->fault['kind'] ?? null, ['mail', 'http', 'query'], true)
+            && in_array($this->fault['kind'] ?? null, ['mail', 'http', 'file', 'query'], true)
             && ! $this->told
             && $this->seen();
     }
@@ -1032,6 +1045,17 @@ class Recorder
     public function mailed(string $what): void
     {
         $this->effect(['kind' => 'mail', 'what' => $what], fails: fn () => new TransportException('Connection could not be established with the mail server.'));
+    }
+
+    /**
+     * Note a file the app writes to one of its disks now. It is the one
+     * thing this run makes fail when the run names it: the disk refuses
+     * the write. The framework then gives the app's code false, or throws
+     * when the disk's config says so.
+     */
+    public function stored(string $path): void
+    {
+        $this->effect(['kind' => 'file', 'what' => 'write'], fails: fn () => UnableToWriteFile::atLocation($path, 'No space left on device'));
     }
 
     /**

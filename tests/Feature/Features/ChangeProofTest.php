@@ -586,14 +586,15 @@ class ChangeProofTest extends TestCase
             $proof(['run' => 1, 'findings' => [$finding('answer_not_checked', 'POST /orders/{order}/pay', 'http POST api.stripe.com')]])->where('kind', 'gap')->pluck('text')->all(),
         );
 
-        // A failure the app hides is said by what failed: an email, an outside service or a save.
+        // A failure the app hides is said by what failed: an email, an outside service, a file or a save.
         $this->assertSame([
             ['If an email cannot be sent at /orders, your app carries on as if it worked. The person sees the same as when it works, and nothing is written down, so you would not find out.'],
             ['If an outside service does not answer at /orders, your app carries on as if it worked. The person sees the same as when it works, and nothing is written down, so you would not find out.'],
+            ['If a file cannot be stored at /orders, your app carries on as if it worked. The person sees the same as when it works, and nothing is written down, so you would not find out.'],
             ['If saving fails at /orders, your app carries on as if it worked. The person sees the same as when it works, and nothing is written down, so you would not find out.'],
         ], array_map(
             fn (string $failed) => $proof(['run' => 1, 'findings' => [$finding('failure_hidden', 'POST /orders', $failed)]])->where('kind', 'gap')->pluck('text')->all(),
-            ['mail App\Mail\Receipt', 'http POST api.stripe.com', 'insert orders'],
+            ['mail App\Mail\Receipt', 'http POST api.stripe.com', 'file write', 'insert orders'],
         ));
 
         // The same thing at more than one place: the owner's choice is for all of them, so each is named.

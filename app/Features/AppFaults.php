@@ -100,6 +100,14 @@ namespace App\Features;
  * too: a loop that reads pages from a service is right to stop when one
  * call fails.
  *
+ * A file the app writes to one of its disks (Storage) is a place too: the
+ * disk does not take the file. Laravel then gives the app's code false,
+ * and throws only when the disk's config says so. An app that does not
+ * ask what the write gave back carries on as if the file is there. That
+ * is read the same way as a failure the app's code catches (the last
+ * thing below). A file is not counted among what the app sent: a file
+ * that stays after a save was lost is not held against the change.
+ *
  * The last thing is read when the app's code catches the failure. A
  * request that then did nothing new, gave the same kind of answer as when
  * all worked, and wrote nothing to its log hid the failure: the person
@@ -185,9 +193,9 @@ class AppFaults
     public const ANSWER = 'answer';
 
     /**
-     * What the recorder can make fail when the app sends it.
+     * What the recorder can make fail when the app sends or stores it.
      */
-    protected const FAILS = ['mail', 'http'];
+    protected const FAILS = ['mail', 'http', 'file'];
 
     /**
      * What has left the app once it happened. A notification is not
@@ -200,7 +208,7 @@ class AppFaults
      * What is tried first when the places are otherwise alike: what cannot
      * be taken back comes before what the database can put back.
      */
-    protected const ORDER = ['http' => 0, 'mail' => 0, 'answer' => 0, 'job' => 1, 'later' => 1, 'event' => 1, 'query' => 2];
+    protected const ORDER = ['http' => 0, 'mail' => 0, 'file' => 0, 'answer' => 0, 'job' => 1, 'later' => 1, 'event' => 1, 'query' => 2];
 
     /**
      * How Pest starts the method it makes for a test named by a sentence.
@@ -213,8 +221,8 @@ class AppFaults
     protected const KEPT = 40;
 
     /**
-     * Find the places where a failure can be caused: each email and outside
-     * call a request makes, also from the app's code in a job, each outside
+     * Find the places where a failure can be caused: each email, outside
+     * call and file write a request makes, also from the app's code in a job, each outside
      * call the app's code makes itself and does more after, the last save
      * of each transaction a request commits, the last save the app's code
      * makes outside a transaction once the request has saved or sent
@@ -536,6 +544,8 @@ class AppFaults
             default => 'request',
         };
         $end = $command || $job ? "the {$run} ended" : 'the response';
+        // A disk gives false for a write that failed, so no code has to catch anything to go on.
+        $hid = str_starts_with($finding['failed'], 'file ') ? 'went on as if the file was stored' : 'caught the failure and hid it';
 
         $said = match ($finding['kind']) {
             self::DONE_TWICE => "when {$finding['failed']}{$at(', queued at', ',')} ran a second time, it sent or added the same thing again: {$finding['what']}",
@@ -553,8 +563,8 @@ class AppFaults
             self::SENT_THEN_LOST => "when {$finding['failed']} failed{$at(' at')}, the save was lost but the {$run} had already sent: {$finding['what']}",
             self::SAVED_IN_PART => "when {$finding['failed']} failed{$at(' at')}, the save was lost but the {$run} kept what it had saved before it, with no transaction around both: {$finding['what']}",
             self::FAILURE_HIDDEN => ($finding['job'] ?? false)
-                ? "when {$finding['failed']} failed{$at(' at')}, in a job the {$run} queued, the job caught the failure and hid it: it ended with no error, did nothing new, and wrote nothing to the log"
-                : "when {$finding['failed']} failed{$at(' at')}, the app caught the failure and hid it: the {$run} did nothing new, ".($command || $job ? 'ended the same' : 'gave the same kind of answer').' as when all worked, and wrote nothing to the log',
+                ? "when {$finding['failed']} failed{$at(' at')}, in a job the {$run} queued, the job {$hid}: it ended with no error, did nothing new, and wrote nothing to the log"
+                : "when {$finding['failed']} failed{$at(' at')}, the app {$hid}: the {$run} did nothing new, ".($command || $job ? 'ended the same' : 'gave the same kind of answer').' as when all worked, and wrote nothing to the log',
             default => "when {$finding['failed']} failed{$at(' at')}, {$finding['kind']}: {$finding['what']}",
         };
 
@@ -573,7 +583,9 @@ class AppFaults
         $command = AppTraces::command($finding['route']) !== null;
 
         $fix = match (true) {
+            $finding['kind'] === self::FAILURE_HIDDEN && str_starts_with($finding['failed'], 'file ') => "A write to a disk that fails gives false, and throws only when the disk's config has 'throw' => true. Ask what put(), store() or storeAs() gave back, or set 'throw' => true for the disk. Then do not go on as if the file is there: tell the person what did not happen, or let the job or the command fail.",
             ($finding['job'] ?? false) && $finding['kind'] === self::FAILURE_HIDDEN => 'A queue takes a job that ends without an error as done, and does not try it again. Let the job fail, or record the failure with report().',
+            ! $command && $finding['kind'] === self::SAVED_THEN_FAILED && str_starts_with($finding['failed'], 'file ') => 'A person who sees the error tries again, and the save happens twice. Store the file before the save, so a write that fails leaves nothing behind. Or catch the failure, record it with report(), and tell the person what did not happen.',
             $command && $finding['kind'] === self::SAVED_THEN_FAILED => 'The schedule runs the command again, and what the failed run saved is still there: the command then skips that work or does it twice. Save that the work is done only after the send worked, or make the command safe to run again.',
             $command && $finding['kind'] === self::FAILURE_HIDDEN => 'No one reads what a command prints when the schedule runs it. Let it fail, or record the failure with report().',
             $finding['kind'] === self::SENT_AGAIN && ! str_starts_with($finding['failed'], 'job ') => 'A queue tries a failed job again from the top. Send each email from its own job (queue the email, or dispatch one job for each person). Or record each one before the job sends it, and take only that record back when its send fails.',

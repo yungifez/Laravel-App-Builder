@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Tests\Fixtures\RecordedApp;
@@ -1432,6 +1433,72 @@ class TraceRecorderTest extends TestCase
 
         $measured = $this->measureFailure($requests, 'mail message');
         $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+    }
+
+    public function test_a_file_write_made_to_fail_shows_an_app_that_carries_on_without_asking_the_disk()
+    {
+        Route::post('/_stored/note', [RecordedApp::class, 'stored'])->middleware('web');
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'file');
+        // A disk made after the recorder started tells it of each write.
+        Storage::fake('recorded');
+
+        $this->post('/_stored/note')->assertSessionHas('status');
+        Storage::disk('recorded')->assertExists('notes/note.txt');
+        Storage::disk('recorded')->delete('notes/note.txt');
+        // The disk gives false and throws nothing, so the request answers as usual.
+        $this->post('/_stored/note')->assertSessionHas('status');
+        Storage::disk('recorded')->assertMissing('notes/note.txt');
+
+        $requests = $recorded();
+        $this->assertSame([['query', 'file'], ['query', 'file']], array_map(fn (array $request) => array_column($request['effects'], 'kind'), $requests));
+        $this->assertSame(['write', RecordedApp::PATH], [$requests[0]['effects'][1]['what'], strstr((string) $requests[0]['effects'][1]['at'], ':', true)]);
+        $this->assertSame([false, true], array_map(fn (array $request) => $request['quiet'] ?? false, $requests));
+        // Only that a file was written is kept, not its name.
+        $this->assertStringNotContainsString('note.txt', File::get("{$this->directory}/trace.jsonl"));
+
+        $measured = $this->measureFailure($requests, 'file write');
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['failure_hidden', 'POST /_stored/note', 'file write', 'file write']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+        $this->assertStringContainsString('the app went on as if the file was stored', AppFaults::finding($measured['findings'][0]));
+    }
+
+    public function test_an_app_that_asks_the_disk_and_tells_the_person_the_file_was_not_stored_is_clean()
+    {
+        Route::post('/_stored/note', [RecordedApp::class, 'stored'])->middleware('web');
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'file');
+        Storage::fake('recorded');
+
+        $this->post('/_stored/note?careful=1')->assertSessionHas('status');
+        $this->post('/_stored/note?careful=1')->assertSessionHas('problem');
+
+        $measured = $this->measureFailure($recorded(), 'file write');
+        $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+    }
+
+    public function test_a_disk_that_throws_ends_the_request_in_an_error_and_what_it_saved_stays()
+    {
+        Route::post('/_stored/note', [RecordedApp::class, 'stored'])->middleware('web');
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'file');
+        Storage::fake('recorded', ['throw' => true]);
+
+        $this->post('/_stored/note')->assertSessionHas('status');
+        $this->post('/_stored/note')->assertStatus(500);
+
+        $measured = $this->measureFailure($recorded(), 'file write');
+        $this->assertSame([['saved_then_failed', 'file write', 'update users']], array_map(fn (array $finding) => [$finding['kind'], $finding['failed'], $finding['what']], $measured['findings']));
+        $this->assertStringContainsString('Store the file before the save', AppFaults::finding($measured['findings'][0]));
+    }
+
+    public function test_a_disk_the_app_made_before_the_recorder_started_still_works_and_is_not_seen()
+    {
+        Route::post('/_stored/note', [RecordedApp::class, 'stored'])->middleware('web');
+        Storage::fake('recorded');
+        $recorded = $this->record();
+
+        $this->post('/_stored/note')->assertSessionHas('status');
+
+        Storage::disk('recorded')->assertExists('notes/note.txt');
+        $this->assertSame(['query'], array_column($recorded()[0]['effects'], 'kind'));
     }
 
     public function test_what_a_json_answer_tells_the_person_is_read_by_its_names_at_every_depth()

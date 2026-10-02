@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
 use RuntimeException;
@@ -434,6 +435,22 @@ class RecordedApp
         RecordedJob::dispatch();
 
         return response()->noContent();
+    }
+
+    /**
+     * Saves, then writes a file to a disk. Only when asked does it look
+     * at what the disk gave back and tell the person.
+     */
+    public function stored(Request $request): RedirectResponse
+    {
+        DB::table('users')->where('id', 0)->update(['name' => 'Has a note']);
+        $stored = Storage::disk('recorded')->put('notes/note.txt', 'A note');
+
+        if ($request->boolean('careful') && ! $stored) {
+            return redirect('/_stored/note')->with('problem', 'The note was not stored.');
+        }
+
+        return redirect('/_stored/note')->with('status', 'The note is stored.');
     }
 
     /**
