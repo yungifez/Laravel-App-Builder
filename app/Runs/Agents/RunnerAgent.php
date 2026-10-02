@@ -6,6 +6,7 @@ use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Models\Workspace;
 use App\Runs\Contracts\CodingAgent;
 use App\Runs\Exceptions\LeaseLost;
+use App\Runs\ModelGateway;
 use App\Workspaces\WorkspaceManager;
 use Closure;
 use Throwable;
@@ -42,6 +43,7 @@ class RunnerAgent implements CodingAgent
         protected ?string $lightModel = null,
         protected ?string $effort = null,
         protected ?string $lightEffort = null,
+        protected ?ModelGateway $gateway = null,
     ) {}
 
     public function provider(): string
@@ -70,12 +72,25 @@ class RunnerAgent implements CodingAgent
             'sandbox' => $this->sandbox,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
 
+        $credentials = array_filter($this->credentials, fn (string $value) => $value !== '');
+        $opened = null;
+
+        // With the gateway on, the agent gets a token that opens it for this
+        // run in place of the key, so the key never enters the workspace.
+        // An agent signed in its own way, with no key, is left as it is.
+        $keyVariable = $this->gateway?->keyVariable($this->provider);
+
+        if ($this->gateway?->enabled() && $keyVariable !== null && isset($credentials[$keyVariable])) {
+            $opened = $this->gateway->open($this->provider, $task->timeoutSeconds);
+            $credentials = [...$credentials, ...$opened['environment']];
+        }
+
         try {
             $result = $this->runWorkspaceCommand->handle(
                 $workspace,
                 [(string) config('builder.agents.runner.node'), $this->runnerPath($workspace), $taskFile],
                 $task->timeoutSeconds,
-                array_filter($this->credentials, fn (string $value) => $value !== ''),
+                $credentials,
                 $whileRunning,
             );
         } catch (LeaseLost $exception) {
@@ -86,6 +101,11 @@ class RunnerAgent implements CodingAgent
             $this->removeTaskFiles($workspace);
 
             throw $exception;
+        } finally {
+            // The token dies with the run, even if the agent kept a copy.
+            if ($opened !== null) {
+                $this->gateway?->close($opened['token']);
+            }
         }
 
         $this->removeTaskFiles($workspace);

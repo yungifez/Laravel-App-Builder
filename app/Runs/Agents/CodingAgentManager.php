@@ -4,6 +4,7 @@ namespace App\Runs\Agents;
 
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Runs\Contracts\CodingAgent;
+use App\Runs\ModelGateway;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Support\Manager;
 
@@ -86,6 +87,7 @@ class CodingAgentManager extends Manager
             is_string($lightModel) && $lightModel !== '' ? $lightModel : null,
             is_string($effort) && $effort !== '' ? $effort : null,
             is_string($lightEffort) && $lightEffort !== '' ? $lightEffort : null,
+            $this->container->make(ModelGateway::class),
         );
     }
 }

@@ -499,6 +499,20 @@ return [
             'max_patch_kb' => (int) env('BUILDER_WORKER_MAX_PATCH_KB', 512),
         ],
 
+        // Our coding agents reach their model through the control plane:
+        // each run gets a token that opens the gateway for that run only,
+        // and the gateway sends the call on with the real key. So a key
+        // never goes into a workspace, where the agent has a shell. "url" is
+        // where the agent runner reaches the control plane. A run's token
+        // stops working after "max_requests" calls or "max_output_tokens"
+        // written, whatever the agent was told.
+        'gateway' => [
+            'enabled' => (bool) env('BUILDER_MODEL_GATEWAY', false),
+            'url' => env('BUILDER_MODEL_GATEWAY_URL', 'http://laravel.test'),
+            'max_requests' => (int) env('BUILDER_MODEL_GATEWAY_MAX_REQUESTS', 2000),
+            'max_output_tokens' => (int) env('BUILDER_MODEL_GATEWAY_MAX_OUTPUT_TOKENS', 2_000_000),
+        ],
+
         'reviewers' => [
             'anthropic' => ['provider' => 'openai', 'model' => env('BUILDER_OPENAI_REVIEWER_MODEL')],
             'openai' => ['provider' => 'anthropic', 'model' => env('BUILDER_ANTHROPIC_REVIEWER_MODEL')],

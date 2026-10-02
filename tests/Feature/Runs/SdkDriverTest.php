@@ -23,6 +23,7 @@ use App\Models\WorkspaceCommand;
 use App\Runs\Agents\AgentOutcome;
 use App\Runs\Agents\AgentTask;
 use App\Runs\Agents\CodingAgentManager;
+use App\Runs\ModelGateway;
 use Closure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -395,6 +396,37 @@ class SdkDriverTest extends TestCase
             ['kind' => 'changed', 'file' => 'agent-output.txt'],
         ], $run->events()->where('type', 'agent_story')->sole()->data['story'], 'Entries of an unknown kind are dropped.');
         $this->assertFalse(WorkspaceCommand::query()->get()->contains(fn (WorkspaceCommand $command) => str_contains((string) json_encode($command->command), 'test-anthropic-key')));
+    }
+
+    public function test_with_the_model_gateway_on_the_agent_gets_a_run_token_and_never_the_key()
+    {
+        config([
+            'ai.providers.anthropic.key' => 'test-anthropic-key',
+            'builder.agents.runner.path' => base_path('tests/Fixtures/gateway-agent-runner.mjs'),
+            'builder.agents.gateway.enabled' => true,
+            'builder.agents.gateway.url' => 'http://control-plane.test',
+        ]);
+        FeaturePlanner::fake([$this->plan()]);
+        $this->app->instance(ModelGateway::class, $gateway = new class extends ModelGateway
+        {
+            /** @var list<string> */
+            public array $tokens = [];
+
+            public function open(string $provider, int $seconds): array
+            {
+                $opened = parent::open($provider, $seconds);
+                $this->tokens[] = $opened['token'];
+
+                return $opened;
+            }
+        });
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame('key=gateway url=http://control-plane.test/api/gateway/anthropic', $run->events()->where('type', 'build_finished')->sole()->data['account']);
+        $this->assertFalse(WorkspaceCommand::query()->get()->contains(fn (WorkspaceCommand $command) => str_contains((string) json_encode($command->command), 'test-anthropic-key')));
+        $this->assertCount(1, $gateway->tokens);
+        $this->assertNull($gateway->grant($gateway->tokens[0]), 'The token is closed once the run ends.');
     }
 
     public function test_an_agent_that_reports_no_cost_is_priced_from_config_only_when_its_model_is_known()
