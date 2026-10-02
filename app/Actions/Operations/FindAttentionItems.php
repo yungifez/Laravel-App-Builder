@@ -9,6 +9,9 @@ use App\Enums\PreviewStatus;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Enums\WorkspaceStatus;
+use App\Jobs\ExecuteRun;
+use App\Jobs\PublishDeployment;
+use App\Jobs\VerifyFeatureRequest;
 use App\Models\BoxCommand;
 use App\Models\Deployment;
 use App\Models\Preview;
@@ -25,6 +28,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
+use ReflectionClass;
 
 /**
  * What an operator should look at now, platform wide. Every count comes
@@ -56,6 +60,7 @@ class FindAttentionItems
             'days' => $days,
             'workers' => $this->workers($now),
             'items' => array_values(array_filter([
+                $this->queueGivesUpEarly(),
                 $this->stuckRuns($now),
                 $this->expiredLeases($now),
                 $this->exhaustedBudgets($since),
@@ -360,6 +365,39 @@ class FindAttentionItems
             'at' => $runner->last_seen_at?->toIso8601String(),
             'href' => null,
         ]);
+    }
+
+    /**
+     * The queue hands a job to another worker once it has run for the
+     * connection's "retry_after" seconds. Below the longest job's timeout,
+     * a slow change is built or checked twice at the same time. Laravel's
+     * default of 90 seconds is far too low here, and a deploy that leaves
+     * the setting out of .env falls back to it.
+     *
+     * @return AttentionItem
+     */
+    protected function queueGivesUpEarly(): array
+    {
+        $connection = (string) config('queue.default');
+        $retryAfter = config("queue.connections.{$connection}.retry_after");
+        $longest = max(array_map(
+            fn (string $job) => (int) (new ReflectionClass($job))->getProperty('timeout')->getDefaultValue(),
+            [ExecuteRun::class, VerifyFeatureRequest::class, PublishDeployment::class],
+        ));
+        $early = is_numeric($retryAfter) && (int) $retryAfter <= $longest;
+
+        return [
+            'key' => 'queue_gives_up_early',
+            'title' => 'Slow jobs can run twice',
+            'count' => $early ? 1 : 0,
+            'href' => null,
+            'records' => $early ? [[
+                'label' => "The {$connection} queue gives a job to another worker after {$retryAfter} seconds",
+                'detail' => 'Jobs may run for up to '.$longest.' seconds. Set the connection\'s retry_after above that, for example REDIS_QUEUE_RETRY_AFTER='.($longest + 100).' for Redis, then restart the workers.',
+                'at' => null,
+                'href' => null,
+            ]] : [],
+        ];
     }
 
     /**

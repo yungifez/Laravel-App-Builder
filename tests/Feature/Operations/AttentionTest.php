@@ -161,6 +161,23 @@ class AttentionTest extends TestCase
         $this->assertNull($this->item($this->attention(), 'machine_starts_paused'));
     }
 
+    public function test_it_warns_when_the_queue_would_hand_a_slow_job_to_a_second_worker()
+    {
+        config(['queue.default' => 'redis', 'queue.connections.redis.retry_after' => 90]);
+
+        $item = $this->item($this->attention(), 'queue_gives_up_early');
+
+        $this->assertSame('The redis queue gives a job to another worker after 90 seconds', $item['records'][0]['label']);
+        $this->assertStringContainsString('REDIS_QUEUE_RETRY_AFTER=3700', $item['records'][0]['detail']);
+
+        config(['queue.connections.redis.retry_after' => 3700]);
+        $this->assertNull($this->item($this->attention(), 'queue_gives_up_early'));
+
+        // The sync queue runs jobs at once and never hands them on.
+        config(['queue.default' => 'sync']);
+        $this->assertNull($this->item($this->attention(), 'queue_gives_up_early'));
+    }
+
     public function test_it_measures_the_time_from_saving_an_edit_to_the_preview_showing_it()
     {
         $project = Project::factory()->create();
