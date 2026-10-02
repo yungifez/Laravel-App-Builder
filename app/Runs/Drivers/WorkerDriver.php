@@ -2,10 +2,12 @@
 
 namespace App\Runs\Drivers;
 
+use App\Actions\Runs\TryWorkerChange;
 use App\Context\ProjectNotes;
 use App\Enums\RunStatus;
 use App\Models\Run;
 use App\Models\RunEvent;
+use App\Models\Workspace;
 use App\Runs\Agents\RunnerAgent;
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\WaitingForWorker;
@@ -36,6 +38,18 @@ class WorkerDriver extends SdkDriver
         $submission = $this->submission($run) ?? throw new WaitingForWorker;
         $file = RunnerAgent::TASK_DIRECTORY.'/change.patch';
 
+        // A command the worker is trying uses the same workspace, so the
+        // change is applied once it ends.
+        return TryWorkerChange::lock($run)->block((int) config('builder.agents.workers.try_seconds') + 60, fn () => $this->apply($run, $workspace, $submission, $file));
+    }
+
+    /**
+     * Apply the handed-back patch to the baseline.
+     *
+     * @throws WaitingForWorker
+     */
+    protected function apply(Run $run, Workspace $workspace, RunEvent $submission, string $file): string
+    {
         // Each hand-in is the whole change, so a repair starts from the
         // baseline again. Ignored files (setup output, saved files) stay.
         $baseline = $this->extractCandidateChange->baseline($workspace);

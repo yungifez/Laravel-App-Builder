@@ -72,6 +72,7 @@ class GetTask extends Tool
             $unkept ? ($code !== null
                 ? __('The code already holds earlier changes that are not kept yet. Change only what this task asks.')
                 : __('Earlier changes that are not kept yet are applied under yours. Change only what this task asks.')) : null,
+            __('You need nothing installed to run the app: try_change runs php artisan, the tests and the other checks on your change on the app\'s own server, as the checks will.'),
             __('When you are done, call submit_change with the whole change as one patch, such as the output of `git add -N . && git diff --binary :base`, and a short summary. Then call check_status to see how the checks went.', ['base' => $code !== null || $base === null ? 'HEAD' : $base]),
         ]));
     }

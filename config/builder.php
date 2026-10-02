@@ -497,6 +497,17 @@ return [
             'project_days' => (int) env('BUILDER_WORKER_PROJECT_DAYS', 30),
             'per_minute' => (int) env('BUILDER_WORKER_PER_MINUTE', 60),
             'max_patch_kb' => (int) env('BUILDER_WORKER_MAX_PATCH_KB', 512),
+            // What the owner's tool may run on its change in our workspace
+            // (try_change), as the start of the command, and for how long.
+            'try_commands' => json_decode((string) env('BUILDER_WORKER_TRY_COMMANDS', ''), true) ?: [
+                ['php', 'artisan'],
+                ['vendor/bin/pest'],
+                ['vendor/bin/phpunit'],
+                ['vendor/bin/pint'],
+                ['vendor/bin/phpstan'],
+                ['npm', 'run'],
+            ],
+            'try_seconds' => (int) env('BUILDER_WORKER_TRY_SECONDS', 300),
         ],
 
         // Our coding agents reach their model through the control plane:

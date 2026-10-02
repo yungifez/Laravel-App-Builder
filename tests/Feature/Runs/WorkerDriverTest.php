@@ -102,6 +102,44 @@ class WorkerDriverTest extends TestCase
         $this->tool('get_task', $token)->assertSee('No test in the change checks: Teams have a nullable description.');
     }
 
+    public function test_the_worker_runs_commands_on_its_change_in_our_workspace_which_stays_as_it_was()
+    {
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $config = ['builder.agents.workers.try_commands' => [['cat'], ['sh', '-c']]];
+
+        $this->tool('try_change', $token, ['patch' => $this->workersChange(), 'command' => ['cat', 'app/Models/Team.php']], $config)
+            ->assertSee('Exit code 0.')
+            ->assertSee('public ?string $description = null;');
+
+        $made = (string) $this->tool('try_change', $token, ['patch' => $this->workersChange(), 'command' => ['sh', '-c', 'echo made > app/Made.php']], $config)
+            ->json('result.content.0.text');
+        $this->assertStringContainsString('+++ b/app/Made.php', $made);
+        $this->assertStringNotContainsString('Team.php', $made, 'Only what the command wrote comes back.');
+
+        $this->tool('try_change', $token, ['patch' => '', 'command' => ['cat', 'app/Models/Team.php']], $config)
+            ->assertDontSee('description')
+            ->assertDontSee('Made.php');
+        $this->assertSame(2 + 1, $run->events()->where('type', 'worker_tried')->count());
+    }
+
+    public function test_the_worker_hears_why_a_try_did_not_run()
+    {
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $config = ['builder.agents.workers.try_commands' => [['php', 'artisan']]];
+
+        $this->tool('try_change', $token, ['patch' => '', 'command' => ['rm', '-rf', 'app']], $config)
+            ->assertSee('This command cannot run here. Allowed commands start with: php artisan.');
+        $this->tool('try_change', $token, ['patch' => str_replace("'Team'", "'Crew'", $this->workersChange()), 'command' => ['php', 'artisan', 'about']], $config)
+            ->assertSee('Your patch did not apply')
+            ->assertDontSee('agent-task');
+
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.']);
+        $this->tool('try_change', $token, ['patch' => '', 'command' => ['php', 'artisan', 'about']], $config)
+            ->assertSee('Commands run only while the change waits for you.');
+    }
+
     public function test_a_patch_that_does_not_apply_is_refused_with_the_reason_and_can_be_handed_back_again()
     {
         $run = $this->startRun();
