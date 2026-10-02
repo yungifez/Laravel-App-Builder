@@ -394,7 +394,7 @@ class DescribeProof
             AppFaults::CALLED_AGAIN => 'If an outside service is slow to answer at :address, your app asks it again. The service may then do the same thing twice, such as take a payment twice.',
             AppFaults::ANSWER_NOT_CHECKED => 'If an outside service says it could not do what your app asked at :address, your app does not look at that answer. It carries on as if the service did it.',
             AppFaults::NEEDS_JOB_DONE => 'Your app does some work on its own after someone uses :address, and does not wait for it. But what your app does next only goes right when that work is already done.',
-            AppFaults::JOB_NEEDS_REQUEST => 'Your app does some work on its own after someone uses :address. That work runs a moment later. By then your app no longer knows who the person is or what they sent, and the work does not do the same things.',
+            AppFaults::JOB_NEEDS_REQUEST => 'Your app does some work on its own after someone uses :address. That work runs a moment later, after your app has answered. By then something it counts on is gone, such as who the person is, and it does not do the same things.',
             AppFaults::DEPENDS_ON_ORDER => 'When someone uses :address, your app does a few things one after the other, and nothing says which comes first. When they happen the other way round, your app does not do the same things.',
         ];
         // The recording already said that this is sent before saving ends.

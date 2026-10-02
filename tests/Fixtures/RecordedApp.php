@@ -254,6 +254,17 @@ class RecordedApp
         return response()->noContent();
     }
 
+    /**
+     * Queues a job about a person, then deletes the person.
+     */
+    public function dropped(User $user): Response
+    {
+        RecordedPersonalJob::dispatch('model', person: $user);
+        $user->delete();
+
+        return response()->noContent();
+    }
+
     public function told(User $user): Response
     {
         $user->notify(new RecordedQueuedNotice);

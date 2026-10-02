@@ -573,6 +573,32 @@ class TraceRecorderTest extends TestCase
         $this->assertSame('session@example.com', session('email'));
     }
 
+    public function test_a_job_about_a_row_the_request_deletes_after_it_queued_the_job_sends_nothing_when_a_worker_runs_it()
+    {
+        $users = User::factory()->count(2)->create();
+        Route::post('/_failing/dropped/{user}', [RecordedApp::class, 'dropped'])->middleware('web');
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'later');
+
+        $this->post("/_failing/dropped/{$users[0]->id}")->assertNoContent();
+        $this->post("/_failing/dropped/{$users[1]->id}")->assertNoContent();
+
+        $requests = $recorded();
+        $did = fn (array $request) => array_map(fn (array $effect) => [AppTraces::verb($effect['sql'] ?? '') ?: $effect['kind'], $effect['job'] ?? false], $request['effects']);
+
+        $this->assertSame([['select', false], ['job', false], ['select', true], ['mail', true], ['delete', false]], $did($requests[0]));
+        // The worker could not load the person: the row was gone when the job ran.
+        $this->assertSame([['select', false], ['job', false], ['delete', false], ['select', true]], array_slice($did($requests[1]), 0, 4));
+        $this->assertNotContains(['mail', true], $did($requests[1]));
+
+        $points = AppFaults::points([$requests[0]], $this->wholeFilePatch());
+        $this->assertSame([['again', 1, 'job'], ['later', 1, 'later'], ['save', 4, 'query']], array_map(fn (array $point) => [$point['fails'], $point['fault']['effect'], $point['fault']['kind']], $points));
+        $points[1]['fault']['request'] = 1;
+
+        $measured = (array) AppFaults::measure($points, [1 => $requests], $this->wholeFilePatch());
+        $this->assertSame([1, 0], [$measured['run'], $measured['missed']]);
+        $this->assertSame([['job_needs_request', 'POST /_failing/dropped/{user}', 'job '.RecordedPersonalJob::class, 'missing mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
     public function test_a_job_that_was_given_what_it_needs_does_the_same_when_a_worker_runs_it()
     {
         [$requests, $measured] = $this->thankOnAQueue(['from' => 'given']);

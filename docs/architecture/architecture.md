@@ -1982,7 +1982,9 @@ The trace of that request shows what stayed:
   that stayed, is missing or new from its line. A job that takes the
   person or what they sent from the request it was dispatched in
   (`auth()->user()`, `request()`, `session()`), and not from what it was
-  given, finds nothing on a queue.
+  given, finds nothing on a queue. A job that was given a model the request
+  deletes after it queued the job is found too: the worker cannot load the
+  model.
 - **Depends on order.** The found listeners of an event ran in the reverse
   order, and the request did not do the same. A send, or a save of the
   app's code that stayed, is missing or new from its line, or the answer
@@ -2082,9 +2084,9 @@ app does not do the same things." For a job that waits: "Your app does some
 work on its own after someone uses /orders, and does not wait for it. But
 what your app does next only goes right when that work is already done."
 For a job that needs the request: "Your app does some work on its own after
-someone uses /orders. That work runs a moment later. By then your app no
-longer knows who the person is or what they sent, and the work does not do
-the same things."
+someone uses /orders. That work runs a moment later, after your app has
+answered. By then something it counts on is gone, such as who the person
+is, and it does not do the same things."
 On the fixture the reference change has 2 places, both clean,
 in about 2 seconds. A copy of it that sends an email before its last save is
 found.

@@ -577,7 +577,7 @@ class ChangeProofTest extends TestCase
         );
 
         $this->assertSame(
-            ['Your app does some work on its own after someone uses /orders. That work runs a moment later. By then your app no longer knows who the person is or what they sent, and the work does not do the same things.'],
+            ['Your app does some work on its own after someone uses /orders. That work runs a moment later, after your app has answered. By then something it counts on is gone, such as who the person is, and it does not do the same things.'],
             $proof(['run' => 1, 'findings' => [$finding('job_needs_request', 'POST /orders', 'job App\Jobs\SendReceipt')]])->where('kind', 'gap')->pluck('text')->all(),
         );
 
