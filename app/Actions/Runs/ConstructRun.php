@@ -6,7 +6,10 @@ use App\Actions\Context\AssessPreservation;
 use App\Actions\Context\AssessVerifyItems;
 use App\Actions\Context\ClassifyChange;
 use App\Actions\Context\CompileContext;
+use App\Actions\Context\ReadProjectContext;
 use App\Actions\Features\AcceptFindings;
+use App\Actions\Features\AnswerFindingProposals;
+use App\Actions\Features\ProposeFindings;
 use App\Actions\Features\RequestVerification;
 use App\Actions\Operations\SummarizeSpend;
 use App\Actions\Previews\RequestPreview;
@@ -18,7 +21,9 @@ use App\Context\ProjectContext;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Features\AppBoundaries;
+use App\Features\AppContainment;
 use App\Features\AppFaults;
+use App\Features\BoundaryCode;
 use App\Features\Exceptions\CannotGenerateFeature;
 use App\Features\InventedColours;
 use App\Features\NodeInPhpTests;
@@ -78,6 +83,8 @@ class ConstructRun
         private RequestPreview $requestPreview,
         private SummarizeSpend $summarizeSpend,
         private AcceptFindings $acceptFindings,
+        private ProposeFindings $proposeFindings,
+        private ReadProjectContext $readProjectContext,
     ) {}
 
     /**
@@ -243,6 +250,9 @@ class ConstructRun
 
         $this->recordEvent($run, $lease, 'build_finished', ['attempt' => $run->repairs, 'account' => Str::limit($account, 2000)]);
 
+        // What the agent asked to keep, instead of fixing it, goes to the owner.
+        $this->proposeFindings->fromReply($run, $account);
+
         $formatted = $this->formatChange->handle($workspace);
 
         if ($formatted !== []) {
@@ -393,23 +403,19 @@ class ConstructRun
             $review = $review->withBlockingFindings(array_map(NodeInPhpTests::finding(...), NodeInPhpTests::found($featureRequest->patch)));
         }
 
-        // What the recording proves the change saved or sent where Laravel
-        // expects nothing to change sends it back by itself (direction 33).
-        // The reviewer can add to this, never take from it. What the owner
-        // said the change does on purpose is left out.
-        if ($driver->canRepair() && config('builder.verification.boundaries.send_back')) {
-            $boundaries = AppBoundaries::without($verification->evidence['boundaries'] ?? null, $this->acceptFindings->identities($featureRequest));
-            $review = $review->withBlockingFindings(array_map(AppBoundaries::finding(...), $boundaries['findings'] ?? []));
-        }
-
-        // So does what the app left behind when one thing was made to fail
-        // in the change's code (direction 32). The failure was caused and
-        // the trace shows what stayed; a place where it did not happen
-        // says nothing and is not here.
-        if ($driver->canRepair() && config('builder.verification.faults.send_back')) {
-            $faults = AppFaults::without($verification->evidence['faults'] ?? null, $this->acceptFindings->identities($featureRequest));
-            $review = $review->withBlockingFindings(array_map(AppFaults::finding(...), $faults['findings'] ?? []));
-        }
+        // The gate (direction 33): what a test run proves the change's own
+        // code did where Laravel expects nothing to change, and what a
+        // caused failure proves it left behind, sends the change back by
+        // itself. No model decides it, and the reviewer can add to it but
+        // never take from it. What the owner said the change does on purpose
+        // is left out. The agent may ask to keep a finding, but only the
+        // owner's yes lets it stay: until they answer, it holds the change.
+        $gate = $driver->canRepair() ? $this->gate($featureRequest, $verification) : [];
+        $pending = $this->proposeFindings->pending($featureRequest);
+        $asked = array_values(array_filter($gate, fn (array $finding) => in_array($finding['identity'], $pending, true)));
+        $gate = $this->proposeFindings->keyed($featureRequest, array_values(array_filter($gate, fn (array $finding) => ! in_array($finding['identity'], $pending, true))));
+        $review = $review->withBlockingFindings(array_column($gate, 'text'));
+        $review = $review->withBlockingFindings(array_map(fn (array $finding) => __(':text You asked the owner to keep this, so leave it as it is until they answer.', ['text' => $finding['text']]), $asked));
 
         if ($driver->canRepair() && config('builder.verification.screens.enabled')) {
             $review = $review->withBlockingFindings(array_map(ScreenCheck::finding(...), ScreenCheck::found($verification->screens, $featureRequest->patch)));
@@ -446,11 +452,23 @@ class ConstructRun
         }
 
         $details = array_map(fn (array $finding) => trim(($finding['file'] !== null ? "{$finding['file']}: " : '').$finding['summary']), $review->blockingFindings() ?: $review->findings);
+        $feedback = ['reason' => 'review_findings', 'details' => $details ?: [$review->summary], 'gate' => $gate];
+
+        // Only what the agent asked the owner to keep holds the change: the
+        // owner answers, not the agent. Their answer runs this review again.
+        if ($asked !== [] && count($review->blockingFindings()) === count($asked)) {
+            $this->stopForDecision($run, $lease, __('I asked you about something the checks found. Read it in how we know the change works, and answer.'), AnswerFindingProposals::STOP, [
+                ...$stored,
+                'feedback' => $feedback,
+            ]);
+
+            return;
+        }
 
         if ($driver->canRepair() && $run->repairs < $run->repairLimit()) {
             $this->transitionRun->handle($run, RunStatus::Implementing, $lease, [
                 'repairs' => $run->repairs + 1,
-                'feedback' => ['reason' => 'review_findings', 'details' => $details ?: [$review->summary]],
+                'feedback' => $feedback,
                 ...$stored,
             ], ['reason' => 'review_findings']);
 
@@ -460,8 +478,63 @@ class ConstructRun
         // The findings are kept so the owner can ask it to keep trying.
         $this->stopForDecision($run, $lease, __('The review found problems this run cannot fix: :summary', ['summary' => $review->summary]), 'review_findings', [
             ...$stored,
-            'feedback' => ['reason' => 'review_findings', 'details' => $details ?: [$review->summary]],
+            'feedback' => $feedback,
         ]);
+    }
+
+    /**
+     * Get what the gate holds against the change, each by what it is: what
+     * a test run proves its code did where Laravel expects nothing to
+     * change, and what a caused failure proves it left behind. In a part
+     * the owner asked to be extra careful with, what was only read from
+     * the code, and a call to an outside service from a new place, count
+     * too (strict mode). What the owner said they want is left out.
+     *
+     * @return list<array{kind: string, identity: string, text: string}>
+     */
+    protected function gate(FeatureRequest $featureRequest, Verification $verification): array
+    {
+        $accepted = $this->acceptFindings->identities($featureRequest);
+        $evidence = $verification->evidence ?? [];
+        $boundaries = AppBoundaries::without($evidence['boundaries'] ?? null, $accepted);
+        $gate = [];
+
+        if (config('builder.verification.boundaries.send_back')) {
+            foreach ($boundaries['findings'] ?? [] as $finding) {
+                $gate[] = ['kind' => $finding['kind'], 'identity' => BoundaryCode::identity($finding), 'text' => AppBoundaries::finding($finding)];
+            }
+        }
+
+        if (config('builder.verification.faults.send_back')) {
+            foreach (AppFaults::without($evidence['faults'] ?? null, $accepted)['findings'] ?? [] as $finding) {
+                $gate[] = ['kind' => $finding['kind'], 'identity' => AppFaults::identity($finding), 'text' => AppFaults::finding($finding)];
+            }
+        }
+
+        $careful = $featureRequest->project->careful_areas ?? [];
+
+        if ($careful === [] || (($boundaries['read'] ?? []) === [] && ($evidence['containment']['findings'] ?? []) === [])) {
+            return $gate;
+        }
+
+        $context = $this->readProjectContext->current($featureRequest->project);
+        $names = array_map(fn (Capability $capability) => $capability->name, array_filter($context->capabilities, fn (Capability $capability) => in_array($capability->key, $careful, true)));
+
+        foreach ($boundaries['read'] ?? [] as $finding) {
+            if (array_intersect($context->claiming((string) preg_replace('/:\d+$/', '', $finding['at'])), $careful) !== []) {
+                $gate[] = ['kind' => $finding['kind'], 'identity' => BoundaryCode::identity($finding), 'text' => AppBoundaries::readFinding($finding)];
+            }
+        }
+
+        foreach ($evidence['containment']['findings'] ?? [] as $finding) {
+            $identity = AppContainment::identity($finding);
+
+            if (! in_array($identity, $accepted, true) && array_intersect([...$finding['from'], ...$finding['home']], $names) !== []) {
+                $gate[] = ['kind' => AppContainment::CALLED_ELSEWHERE, 'identity' => $identity, 'text' => AppContainment::finding($finding)];
+            }
+        }
+
+        return $gate;
     }
 
     /**

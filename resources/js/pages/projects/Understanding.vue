@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/collapsible';
 import { when } from '@/lib/when';
 import { index, show } from '@/routes/projects';
+import { update as updateCareful } from '@/routes/projects/careful-areas';
 import { update as updateCompatibility } from '@/routes/projects/compatibility';
 import { index as developers } from '@/routes/projects/developers';
 import { show as showUnderstanding } from '@/routes/projects/understanding';
@@ -311,6 +312,16 @@ const compatibilityReason = computed(() => {
         ? 'On, because people may use your app. Changes carry what it already has forward.'
         : 'Off, because nobody uses your app yet. Changes are made cleanly, without keeping the old way working.';
 });
+
+// Changes to a part the owner is careful with go back for a fix over
+// smaller problems too, not only the ones a test run proves.
+function setCareful(area: string, careful: boolean): void {
+    router.put(
+        updateCareful(props.project.id).url,
+        { area, careful },
+        { preserveScroll: true },
+    );
+}
 
 function setCompatibility(keep: boolean | null): void {
     router.put(
@@ -622,6 +633,35 @@ function setCompatibility(keep: boolean | null): void {
                                         }}
                                     </p>
                                 </NotesPart>
+                                <div
+                                    class="flex items-start gap-3"
+                                    :data-test="`careful-${area.key}`"
+                                >
+                                    <Checkbox
+                                        :id="`careful-${area.key}`"
+                                        class="mt-0.5"
+                                        :model-value="area.careful"
+                                        @update:model-value="
+                                            setCareful(
+                                                area.key,
+                                                $event === true,
+                                            )
+                                        "
+                                    />
+                                    <label
+                                        :for="`careful-${area.key}`"
+                                        class="text-sm"
+                                    >
+                                        <span class="font-medium"
+                                            >Be extra careful here</span
+                                        >
+                                        <span
+                                            class="block text-muted-foreground"
+                                            >Changes to this part go back for a
+                                            fix over smaller problems too.</span
+                                        >
+                                    </label>
+                                </div>
                                 <ul
                                     v-if="area.behaviors.length"
                                     class="flex flex-wrap gap-x-4 gap-y-1 text-sm font-medium"

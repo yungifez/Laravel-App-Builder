@@ -26,6 +26,7 @@ use Laravel\Sanctum\HasApiTokens;
  * @property string $source_path
  * @property bool $started_here Whether the app was started here from the template, not brought in
  * @property bool|null $keep_old_working The owner's choice to keep old data and links working; null leaves it to mayBeInUse()
+ * @property list<string>|null $careful_areas The keys of the areas the owner asked to be extra careful with
  * @property string|null $deploy_remote The Git remote the hosting platform deploys from, credentials included
  * @property string|null $live_url Where the hosting platform serves the app
  * @property string|null $deploy_branch
@@ -73,6 +74,7 @@ class Project extends Model
             'understanding_seen_at' => 'datetime',
             'started_here' => 'boolean',
             'keep_old_working' => 'boolean',
+            'careful_areas' => 'array',
             'service_keys' => 'encrypted:array',
             'share_token' => 'encrypted',
             'share_expires_at' => 'datetime',
@@ -242,6 +244,15 @@ class Project extends Model
     public function keepsOldWorking(): bool
     {
         return $this->keep_old_working ?? $this->mayBeInUse();
+    }
+
+    /**
+     * Determine if the owner asked to be extra careful with an area: a
+     * change there is held to more of what the checks find.
+     */
+    public function isCareful(string $area): bool
+    {
+        return in_array($area, $this->careful_areas ?? [], true);
     }
 
     /**

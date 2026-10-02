@@ -416,26 +416,7 @@ abstract class AgentDriver implements ConstructionDriver
      */
     protected function read(array $finding): string
     {
-        $while = match ($finding['kind']) {
-            AppBoundaries::CHANGED_WHILE_AUTHORIZING => 'checks whether the person may act',
-            AppBoundaries::CHANGED_WHILE_VALIDATING => 'checks the input',
-            AppBoundaries::CHANGED_WHILE_RENDERING => 'builds the response',
-            AppBoundaries::CHANGED_WHILE_BOOTING => 'starts the app, for every request, command and queue worker',
-            default => $finding['kind'],
-        };
-
-        $does = match ($finding['what']) {
-            'save' => 'saves',
-            'mail' => 'sends mail',
-            'notification' => 'sends a notification',
-            'http' => 'calls another service',
-            'job' => 'queues a job',
-            'event' => 'fires an event',
-            'query' => 'queries the database',
-            default => $finding['what'],
-        };
-
-        return "{$finding['in']} {$does} at {$finding['at']}, and Laravel runs it while it {$while}";
+        return AppBoundaries::describeRead($finding);
     }
 
     /**

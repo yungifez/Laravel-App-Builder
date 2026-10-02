@@ -114,6 +114,10 @@ class OwnerWording
             };
         }
 
+        if ($to === RunStatus::Reviewing && ($data['reason'] ?? null) === 'owner_answered') {
+            return __('Carried on with your answer');
+        }
+
         if ($to === RunStatus::Reviewing && ($data['reason'] ?? null) === 'failed_before') {
             return __('The change broke nothing that worked before. Looking over what changed');
         }
@@ -129,6 +133,7 @@ class OwnerWording
         if ($to === RunStatus::NeedsUserDecision) {
             return match ($data['reason'] ?? null) {
                 'question' => __('Asked you a question'),
+                'finding_proposed' => __('Asked you whether to keep something the checks found'),
                 'verification_interrupted' => __('The checks could not run because of a problem on our side. This is our fault.'),
                 default => __('Stopped to ask what you want to do'),
             };

@@ -2,9 +2,12 @@
 
 namespace Tests\Feature\Runs;
 
+use App\Actions\Features\AnswerFindingProposals;
+use App\Actions\Features\DescribeProof;
 use App\Actions\Features\RequestFollowUp;
 use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Runs\StartRun;
+use App\Actions\Runs\WriteBrief;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
 use App\Enums\AgentOutcomeStatus;
@@ -689,6 +692,73 @@ class AgentDriverTest extends TestCase
         ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'Of 2 places where those requests send, save, run a job or dispatch such an event, 2 were tried and the failure happened in 2. The app left nothing else behind.'
             ."\nLeft out above: 1 left behind that the owner said the change does on purpose, after reading what each costs. Do not hold them against the change.")
             && ! str_contains($prompt->prompt, 'Team.php:13'));
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+    }
+
+    public function test_the_agent_may_ask_to_keep_what_the_gate_found_but_only_the_owners_yes_lets_it_stay()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder(
+            $this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]),
+            $this->writes([], "Left the policy as it is.\n\nKEEP B1: The owner asked for every refused visit to be logged, and this is that log."),
+        );
+        $approve = ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]];
+        ChangeReviewer::fake([$approve, $approve, $approve]);
+        $evidence = ['traces' => ['requests' => 4, 'reached' => 2, 'unseen' => 0, 'existing' => 0, 'findings' => [], 'repeats' => []], 'boundaries' => ['phased' => 30, 'unknown' => 0, 'existing' => 0, 'findings' => [
+            ['kind' => 'changed_while_authorizing', 'route' => 'GET /teams', 'what' => 'insert refusals', 'at' => 'app/Policies/TeamPolicy.php:9', 'in' => 'App\Policies\TeamPolicy::view', 'test' => null],
+        ]]];
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, evidence: $evidence);
+
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, '- B1: GET /teams while Laravel checked whether the person may act') && str_contains($prompt, WriteBrief::KEEP));
+
+        // The agent kept the code and asked; the change waits for the owner.
+        $this->passVerification($run, evidence: $evidence);
+
+        $run->refresh();
+        $this->assertSame([RunStatus::NeedsUserDecision, AnswerFindingProposals::STOP], [$run->status, $run->stop_reason]);
+        $line = collect(app(DescribeProof::class)->handle($run->featureRequest))->first(fn (array $line) => isset($line['decision']));
+        $this->assertSame('The owner asked for every refused visit to be logged, and this is that log.', $line['decision']['proposal']);
+
+        $this->actingAs($run->featureRequest->project->owner)
+            ->put(route('feature-requests.finding-proposals.update', [$run->featureRequest, 'changed_while_authorizing']), ['agreed' => true])
+            ->assertRedirect();
+
+        // The review ran again, and what the owner agreed to no longer holds the change.
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+        $this->assertSame(1, $run->repairs);
+    }
+
+    public function test_after_the_owner_says_no_the_agent_must_fix_what_the_gate_found()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder(
+            $this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]),
+            $this->writes([], 'KEEP B1: It is only a log.'),
+            $this->writes([], 'Moved the save out of the policy.'),
+        );
+        $approve = ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]];
+        ChangeReviewer::fake([$approve, $approve, $approve, $approve]);
+        $evidence = ['boundaries' => ['phased' => 30, 'unknown' => 0, 'existing' => 0, 'findings' => [
+            ['kind' => 'changed_while_authorizing', 'route' => 'GET /teams', 'what' => 'insert refusals', 'at' => 'app/Policies/TeamPolicy.php:9', 'in' => 'App\Policies\TeamPolicy::view', 'test' => null],
+        ]]];
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, evidence: $evidence);
+        $this->passVerification($run, evidence: $evidence);
+        $this->assertSame(AnswerFindingProposals::STOP, $run->refresh()->stop_reason);
+
+        $this->actingAs($run->featureRequest->project->owner)
+            ->put(route('feature-requests.finding-proposals.update', [$run->featureRequest, 'changed_while_authorizing']), ['agreed' => false])
+            ->assertRedirect();
+
+        $run->refresh();
+        $this->assertSame([RunStatus::Verifying, 2], [$run->status, $run->repairs]);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'You asked to keep this before, and the owner said it must be fixed.') && ! str_contains($prompt, WriteBrief::KEEP));
+
+        $this->passVerification($run, evidence: ['boundaries' => ['phased' => 30, 'unknown' => 0, 'existing' => 0, 'findings' => []]]);
+
         $this->assertSame(RunStatus::Completed, $run->refresh()->status);
     }
 

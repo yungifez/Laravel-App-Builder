@@ -26,6 +26,12 @@ class RunStatusTest extends TestCase
         $this->assertTrue(RunStatus::NeedsUserDecision->canTransitionTo(RunStatus::Implementing));
     }
 
+    public function test_a_run_waiting_on_the_owners_answer_goes_back_to_its_review()
+    {
+        $this->assertTrue(RunStatus::NeedsUserDecision->canTransitionTo(RunStatus::Reviewing));
+        $this->assertFalse(RunStatus::NeedsUserDecision->canTransitionTo(RunStatus::Completed));
+    }
+
     public function test_cancelling_only_leads_to_cancelled_and_finished_runs_never_change()
     {
         $this->assertSame([RunStatus::Cancelled], RunStatus::Cancelling->allowedTransitions());

@@ -19,6 +19,11 @@ namespace App\Features;
 class AppContainment
 {
     /**
+     * A call to an outside service from outside the areas that call it.
+     */
+    public const CALLED_ELSEWHERE = 'called_from_elsewhere';
+
+    /**
      * The most findings kept, so one change cannot fill the row.
      */
     protected const KEPT = 20;
@@ -87,6 +92,35 @@ class AppContainment
         }
 
         return ['services' => count($homes), 'findings' => array_slice(array_values($findings), 0, self::KEPT)];
+    }
+
+    /**
+     * Name a finding by what it is, not by its line: the service and the
+     * method that calls it.
+     *
+     * @param  array{what: string, at: string, in: string|null}  $finding
+     */
+    public static function identity(array $finding): string
+    {
+        return implode('|', [self::CALLED_ELSEWHERE, $finding['in'] ?? preg_replace('/:\d+$/', '', $finding['at']), self::host($finding['what'])]);
+    }
+
+    /**
+     * Say what a finding is, and how to fix it, for the coder, in a part
+     * the owner asked to be extra careful with. Elsewhere the plan may ask
+     * for a second place, so it stays with the reviewer.
+     *
+     * @param  array{route: string, what: string, at: string, in: string|null, from: list<string>, home: list<string>, test: string|null}  $finding
+     */
+    public static function finding(array $finding): string
+    {
+        return __(':route: :what at :at:in. The rest of the app calls this service only from :home. The owner asked to be extra careful with this part of the app, so it holds the change back. Call it through the code that already does, so one place knows how to talk to it.', [
+            'route' => $finding['route'],
+            'what' => $finding['what'],
+            'at' => $finding['at'],
+            'in' => $finding['in'] === null ? '' : " in {$finding['in']}",
+            'home' => implode(', ', $finding['home']),
+        ]);
     }
 
     /**

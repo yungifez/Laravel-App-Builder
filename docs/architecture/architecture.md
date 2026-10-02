@@ -1852,6 +1852,25 @@ proven, and stays with the reviewer. When the fixes run out, the change
 stops for the owner with the finding in its proof. The owner can then say
 they want it and let the change keep trying.
 
+The coder may think a finding is wrong, or is what the owner asked for. It
+cannot dismiss the finding, but it can ask the owner. Each finding the gate
+sends back has a key (B1, B2…), and the coder may answer "KEEP B1: reason"
+and leave the code as it is (`ProposeFindings`). The finding still holds
+the change. When nothing else holds it, the change stops for the owner
+(`finding_proposed`), and the proof shows the reason next to "Yes, keep it
+this way" and "No, fix it". Yes stores the choice as "I want it this way"
+does, with who answered and when, and the review runs again. No sends the
+change back, and the coder is told that the owner said it must be fixed. The
+coder can ask about each finding once per change. The final decision is
+always the owner's.
+
+The owner can also ask the builder to be extra careful with a part of the
+app (`projects.careful_areas`, "Be extra careful here" on the page about
+the app). In such a part, two likely findings also send the change back: a
+boundary finding read from the code only, and a call to an outside service
+from outside the code that already calls it (`AppContainment`). Elsewhere
+they stay with the reviewer, because the plan may ask for them.
+
 The recording only shows what the tests run, and it never shows the app
 start. So `BoundaryCode` also reads the PHP files the change touched, as the
 change leaves them, before anything takes the change out of the workspace.

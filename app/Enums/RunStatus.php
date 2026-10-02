@@ -36,7 +36,7 @@ enum RunStatus: string
             self::Implementing => [self::Implementing, self::Verifying, self::NeedsUserDecision, self::Cancelling, self::Failed],
             self::Verifying => [self::Reviewing, self::Implementing, self::NeedsUserDecision, self::Cancelling, self::Failed],
             self::Reviewing => [self::Completed, self::Implementing, self::NeedsUserDecision, self::Cancelling, self::Failed],
-            self::NeedsUserDecision => [self::Planning, self::Implementing, self::Cancelling],
+            self::NeedsUserDecision => [self::Planning, self::Implementing, self::Reviewing, self::Cancelling],
             self::Cancelling => [self::Cancelled],
             self::Completed, self::Cancelled, self::Failed => [],
         };

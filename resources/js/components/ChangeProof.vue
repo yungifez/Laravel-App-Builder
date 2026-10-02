@@ -11,6 +11,7 @@ import {
 import { router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import FeatureRequestAcceptedFindingController from '@/actions/App/Http/Controllers/FeatureRequestAcceptedFindingController';
+import FeatureRequestFindingProposalController from '@/actions/App/Http/Controllers/FeatureRequestFindingProposalController';
 import type { ProofLine } from '@/types';
 
 // How we know a change works, in plain words: what the checks proved, how
@@ -60,6 +61,27 @@ function decide(decision: NonNullable<ProofLine['decision']>): void {
     router.visit(
         action({ featureRequest: decision.change, kind: decision.finding }),
         {
+            preserveScroll: true,
+            preserveState: true,
+            onFinish: () => (deciding.value = null),
+        },
+    );
+}
+
+// The owner's answer to the agent's case for keeping what was found: yes
+// keeps it this way, no has it fixed. The change goes on either way.
+function answer(
+    decision: NonNullable<ProofLine['decision']>,
+    agreed: boolean,
+): void {
+    deciding.value = decision.finding;
+    router.visit(
+        FeatureRequestFindingProposalController.update({
+            featureRequest: decision.change,
+            kind: decision.finding,
+        }),
+        {
+            data: { agreed },
             preserveScroll: true,
             preserveState: true,
             onFinish: () => (deciding.value = null),
@@ -170,8 +192,39 @@ const icons = {
                             {{ item }}
                         </li>
                     </ul>
+                    <!-- The agent thinks it should stay; only the owner decides. -->
+                    <div
+                        v-if="line.decision?.proposal"
+                        class="mt-1 space-y-0.5"
+                        data-test="change-proof-proposal"
+                    >
+                        <p class="text-foreground">
+                            I think this is right as it is:
+                            {{ line.decision.proposal }}
+                        </p>
+                        <div class="flex flex-wrap gap-x-4">
+                            <button
+                                type="button"
+                                class="flex min-h-11 items-center font-medium text-foreground underline-offset-2 select-none hover:underline disabled:opacity-50 sm:min-h-6"
+                                :disabled="deciding === line.decision.finding"
+                                data-test="change-proof-agree"
+                                @click="answer(line.decision, true)"
+                            >
+                                Yes, keep it this way
+                            </button>
+                            <button
+                                type="button"
+                                class="flex min-h-11 items-center font-medium text-foreground underline-offset-2 select-none hover:underline disabled:opacity-50 sm:min-h-6"
+                                :disabled="deciding === line.decision.finding"
+                                data-test="change-proof-refuse"
+                                @click="answer(line.decision, false)"
+                            >
+                                No, fix it
+                            </button>
+                        </div>
+                    </div>
                     <button
-                        v-if="line.decision"
+                        v-else-if="line.decision"
                         type="button"
                         class="mt-0.5 flex min-h-11 items-center font-medium text-foreground underline-offset-2 select-none hover:underline disabled:opacity-50 sm:min-h-6"
                         :disabled="deciding === line.decision.finding"

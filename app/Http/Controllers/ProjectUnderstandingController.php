@@ -87,6 +87,8 @@ class ProjectUnderstandingController extends Controller
                 'checks' => $map === null ? [] : array_values(array_unique(array_map($map->sentence(...), $map->testsForArea($capability)))),
                 // What the owner asked for here, each proved by a test when kept.
                 'asked_for' => $askedFor[$capability->key] ?? [],
+                // Whether the owner asked to be extra careful here.
+                'careful' => $project->isCareful($capability->key),
                 'file' => $capability->file,
             ], $context->capabilities ?? [])),
             'problems' => $context->problems ?? [],

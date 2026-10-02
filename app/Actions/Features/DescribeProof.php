@@ -8,6 +8,7 @@ use App\Actions\Runs\CompleteRunVerification;
 use App\Context\NotesDocument;
 use App\Enums\VerificationStatus;
 use App\Features\AppBoundaries;
+use App\Features\AppContainment;
 use App\Features\AppFaults;
 use App\Features\AppRoutes;
 use App\Features\AppTraces;
@@ -44,7 +45,7 @@ class DescribeProof
      * marked as evidence shows the change's own behaviour was tried (not
      * only that the rest still works); the owner's verdict rests on it.
      *
-     * @return list<array{kind: string, text: string, pictures?: list<array{url: string, label: string}>, evidence?: bool, topic?: string}>
+     * @return list<array{kind: string, text: string, pictures?: list<array{url: string, label: string}>, evidence?: bool, topic?: string, decision?: array{change: string, finding: string, accepted: bool, proposal?: string}}>
      */
     public function handle(FeatureRequest $featureRequest): array
     {
@@ -61,7 +62,44 @@ class DescribeProof
         $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
-        return array_values(collect($lines)->unique('text')->all());
+        return $this->asked($featureRequest, array_values(collect($lines)->unique('text')->all()));
+    }
+
+    /**
+     * Put the agent's open case for keeping a finding on the line about it,
+     * so the owner answers it there. A finding with no line of its own,
+     * such as one in a part the owner asked to be extra careful with, gets
+     * one: a question the owner cannot see would hold the change for good.
+     *
+     * @param  list<array{kind: string, text: string, pictures?: list<array{url: string, label: string}>, evidence?: bool, topic?: string, decision?: array{change: string, finding: string, accepted: bool, proposal?: string}}>  $lines
+     * @return list<array{kind: string, text: string, pictures?: list<array{url: string, label: string}>, evidence?: bool, topic?: string, decision?: array{change: string, finding: string, accepted: bool, proposal?: string}}>
+     */
+    protected function asked(FeatureRequest $featureRequest, array $lines): array
+    {
+        if ($featureRequest->isAccepted()) {
+            return $lines;
+        }
+
+        $careful = [
+            AppContainment::CALLED_ELSEWHERE => 'In a part you asked me to be extra careful with, your app now talks to an outside service from a new place.',
+            AppBoundaries::CHANGED_WHILE_BOOTING => 'In a part you asked me to be extra careful with, your app now does something each time it starts.',
+            AppBoundaries::CHANGED_WHILE_AUTHORIZING => 'In a part you asked me to be extra careful with, your app may save or send something while it checks who may do something.',
+            AppBoundaries::CHANGED_WHILE_VALIDATING => 'In a part you asked me to be extra careful with, your app may save or send something while it checks what was filled in.',
+            AppBoundaries::CHANGED_WHILE_RENDERING => 'In a part you asked me to be extra careful with, your app may save or send something while it puts a page together.',
+        ];
+
+        foreach ($featureRequest->findingProposals()->whereNull('agreed')->oldest('id')->get()->unique('kind') as $proposal) {
+            $at = collect($lines)->search(fn (array $line) => isset($line['decision']) && $line['decision']['finding'] === $proposal->kind && ! $line['decision']['accepted']);
+            $decision = ['change' => $featureRequest->uuid, 'finding' => $proposal->kind, 'accepted' => false, 'proposal' => $proposal->reason];
+
+            if (is_int($at)) {
+                $lines[$at] = [...$lines[$at], 'decision' => $decision];
+            } else {
+                $lines[] = ['kind' => 'gap', 'text' => __($careful[$proposal->kind] ?? 'A check holds one more thing in this change against it.'), 'decision' => $decision];
+            }
+        }
+
+        return $lines;
     }
 
     /**

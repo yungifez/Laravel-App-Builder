@@ -304,6 +304,16 @@ class FeatureRequest extends Model
     }
 
     /**
+     * Get the agent's cases that a finding of the change should stand.
+     *
+     * @return HasMany<FindingProposal, $this>
+     */
+    public function findingProposals(): HasMany
+    {
+        return $this->hasMany(FindingProposal::class);
+    }
+
+    /**
      * Get the verification runs for the request's change.
      *
      * @return HasMany<Verification, $this>

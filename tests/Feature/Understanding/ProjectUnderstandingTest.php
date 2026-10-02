@@ -240,6 +240,28 @@ class ProjectUnderstandingTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_the_owner_asks_to_be_extra_careful_with_a_part()
+    {
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('areas.0.key', 'plans')->where('areas.0.careful', false));
+
+        $this->put(route('projects.careful-areas.update', $this->project), ['area' => 'plans', 'careful' => true])->assertRedirect();
+        $this->put(route('projects.careful-areas.update', $this->project), ['area' => 'plans', 'careful' => true])->assertRedirect();
+
+        $this->assertSame(['plans'], $this->project->refresh()->careful_areas);
+        $this->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('areas.0.careful', true)->where('areas.1.careful', false));
+
+        $this->put(route('projects.careful-areas.update', $this->project), ['area' => 'plans', 'careful' => false])->assertRedirect();
+        $this->assertSame([], $this->project->refresh()->careful_areas);
+
+        $this->put(route('projects.careful-areas.update', $this->project), ['area' => '../plans', 'careful' => true])->assertSessionHasErrors('area');
+        $this->actingAs(User::factory()->create())
+            ->put(route('projects.careful-areas.update', $this->project), ['area' => 'plans', 'careful' => true])
+            ->assertForbidden();
+    }
+
     public function test_the_owner_hears_what_changed_since_they_last_looked()
     {
         $this->travelTo(now()->subDays(3));

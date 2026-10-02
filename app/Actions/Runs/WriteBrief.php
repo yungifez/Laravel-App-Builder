@@ -19,6 +19,13 @@ use Illuminate\Support\Facades\Config;
 class WriteBrief
 {
     /**
+     * What the agent may do about a problem that starts with a key, such as
+     * B1: these were found by running the app, and only the owner can let
+     * one stand.
+     */
+    public const KEEP = 'A problem that starts with a key, such as B1, was seen when the app ran its tests. It holds the change back until it is fixed. If one is wrong, or the owner\'s request asks for exactly that, you may leave its code as it is and ask the owner instead: end your reply with one line for it, such as "KEEP B1: why it should stay, in words the owner understands". The owner reads your reason and decides, and the change waits for their answer. Ask only when you are sure; never to save work.';
+
+    /**
      * Write the whole brief: the change, what to keep, and how to work.
      */
     public function handle(Run $run, Plan $plan): string
@@ -46,8 +53,20 @@ class WriteBrief
             return null;
         }
 
-        return "## Fix these problems with your earlier attempt\n\nThe files already contain your earlier changes.\n\n".$this->list($run->feedback['details'])
+        return $this->problems($run->feedback)
             ."\n\n".trim($this->selfChecks().'When you are done, reply with a short summary of what you changed.');
+    }
+
+    /**
+     * Say what to fix from the earlier attempt, and what the agent may do
+     * about what the gate found.
+     *
+     * @param  array{details: list<string>, gate?: list<array{key: string|null}>}  $feedback
+     */
+    protected function problems(array $feedback): string
+    {
+        return "## Fix these problems with your earlier attempt\n\nThe files already contain your earlier changes.\n\n".$this->list($feedback['details'])
+            .(array_filter(array_column($feedback['gate'] ?? [], 'key')) === [] ? '' : "\n\n".self::KEEP);
     }
 
     /**
@@ -98,7 +117,7 @@ class WriteBrief
         }
 
         if ($run->feedback !== null) {
-            $sections[] = "## Fix these problems with your earlier attempt\n\nThe files already contain your earlier changes.\n\n".$this->list($run->feedback['details']);
+            $sections[] = $this->problems($run->feedback);
         }
 
         return implode("\n\n", $sections);

@@ -391,8 +391,13 @@ export type ProofLine = {
     items?: string[];
     /** What a passed line checked, in a word or two ("safety", "sign-in"). */
     topic?: string;
-    /** A finding the owner may say the change makes on purpose, or take that back. */
-    decision?: { change: string; finding: string; accepted: boolean };
+    /** A finding the owner may say the change makes on purpose, or take that back. With "proposal", the agent's case for keeping it, which the owner answers yes or no. */
+    decision?: {
+        change: string;
+        finding: string;
+        accepted: boolean;
+        proposal?: string;
+    };
 };
 
 // Everything about one change, as its page and the workspace chat show it.
@@ -711,6 +716,8 @@ export type UnderstandingArea = {
     checks: string[];
     // What the owner asked for here, each proved by a test when kept; checked says whether that test is still in the app (null when unknown).
     asked_for: { text: string; checked: boolean | null }[];
+    // Whether the owner asked to be extra careful with this part.
+    careful: boolean;
     file: string | null;
 };
 

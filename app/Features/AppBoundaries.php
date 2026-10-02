@@ -249,6 +249,55 @@ class AppBoundaries
     }
 
     /**
+     * Say what reading the change's code found in a method Laravel runs
+     * where nothing may change (BoundaryCode), for the reviewer.
+     *
+     * @param  array{kind: string, what: string, at: string, in: string}  $finding
+     */
+    public static function describeRead(array $finding): string
+    {
+        $while = match ($finding['kind']) {
+            self::CHANGED_WHILE_AUTHORIZING => 'checks whether the person may act',
+            self::CHANGED_WHILE_VALIDATING => 'checks the input',
+            self::CHANGED_WHILE_RENDERING => 'builds the response',
+            self::CHANGED_WHILE_BOOTING => 'starts the app, for every request, command and queue worker',
+            default => $finding['kind'],
+        };
+
+        $does = match ($finding['what']) {
+            'save' => 'saves',
+            'mail' => 'sends mail',
+            'notification' => 'sends a notification',
+            'http' => 'calls another service',
+            'job' => 'queues a job',
+            'event' => 'fires an event',
+            'query' => 'queries the database',
+            default => $finding['what'],
+        };
+
+        return "{$finding['in']} {$does} at {$finding['at']}, and Laravel runs it while it {$while}";
+    }
+
+    /**
+     * Say what reading the code found, and how to fix it, for the coder,
+     * in a part the owner asked to be extra careful with. Elsewhere it is
+     * only likely, so it stays with the reviewer.
+     *
+     * @param  array{kind: string, what: string, at: string, in: string}  $finding  From BoundaryCode::inPatch()
+     */
+    public static function readFinding(array $finding): string
+    {
+        $fix = $finding['kind'] === self::CHANGED_WHILE_BOOTING
+            ? 'Do it where it is needed instead, when a request or a job asks for it.'
+            : 'Do it in the code that handles the request instead.';
+
+        return __(':read. This was read from the code, in a part the owner asked to be extra careful with, so it holds the change back. :fix', [
+            'read' => self::describeRead($finding),
+            'fix' => $fix,
+        ]);
+    }
+
+    /**
      * Get the findings of one kind.
      *
      * @param  array{findings?: list<array{kind: string, route: string, what: string, at: string|null, in: string|null, test: string|null}>}|null  $measured  From measure()
