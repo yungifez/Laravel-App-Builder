@@ -1835,6 +1835,19 @@ one component is not taken for a finding on another. The recorder reads the
 names from the request and the answer, not from Livewire's classes, so an
 app without Livewire is not changed.
 
+An Artisan command of the app's own code is recorded the way a request is:
+a class in the app, or a closure in `routes/console.php`. Its line has the
+method `ARTISAN` and the command's name as the route. The status is 200
+when the command ended well, and 500 when it ended with a failure or an
+error; the trace keeps which of the two (`exit 1`, `error`). Laravel does
+not send its own command events while tests run, so the recorder listens to
+the events of the console itself. A command that runs inside a request or
+inside another command is part of that one. A command of the framework or
+of a package is not recorded. So the faults below are caused in a command
+too: a scheduled command that saves and then fails to send is found the
+same way a request is. A command that did not end well refused no one, so
+the shape for a write kept after a refusal is not read from it.
+
 `AppTraces` reads the lines for four shapes
 (`builder.verification.traces`):
 
@@ -2169,6 +2182,10 @@ mark stands for all of them when there are more. An Inertia page is read
 the same way, in a view and as JSON: the component it shows, which is a
 name in the code, and the names in its props. So an app that records the
 failure, tells the person, or does something else about it is clean.
+For a command, the kind of answer is how it ended. What a command prints
+does not count: no one reads it when the schedule runs the command. So a
+command that catches a failure is clean only when it writes to the log,
+calls `report()`, or ends with a failure.
 Nothing is said when the log cannot be
 seen: a test put a fake or a mock in place of the events, the log or the
 handling of errors. A test that only turned that handling off

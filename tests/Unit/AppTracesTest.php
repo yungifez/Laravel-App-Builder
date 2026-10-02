@@ -108,12 +108,15 @@ class AppTracesTest extends TestCase
             $this->recorded('POST', '/teams', 500, [['kind' => 'begin', 'open' => 1], $write, ['kind' => 'begin', 'open' => 2], $write, ['kind' => 'commit', 'open' => 1], ['kind' => 'rollback', 'open' => 0]]),
             // A trace cut short does not say what was put back.
             $this->recorded('POST', '/teams', 500, [$write], ['cut' => true]),
+            // An artisan command that did not end well refused no one.
+            $this->recorded(AppTraces::COMMAND, 'invitations:remind', 500, [$this->asked('insert into "invitations" ("email") values (?)', self::NEW.':3')], ['refused' => true]),
         ]);
 
         $this->assertSame([
             ['kind' => 'kept_after_refusal', 'route' => 'POST /invitations', 'what' => 'insert invitations'],
             ['kind' => 'kept_after_refusal', 'route' => 'PUT /invitations/{invitation}', 'what' => 'delete invitations'],
         ], array_map(fn (array $finding) => array_intersect_key($finding, ['kind' => 1, 'route' => 1, 'what' => 1]), $measured['findings']));
+        $this->assertSame(['invitations:remind', null], [AppTraces::command('ARTISAN invitations:remind'), AppTraces::command('POST /invitations')]);
     }
 
     public function test_what_is_sent_while_a_transaction_is_open_is_found()

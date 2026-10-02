@@ -17,6 +17,10 @@ namespace App\Features;
  *
  * A trace cannot say whether any of these was wanted: a page may count its
  * visits. The reviewer holds them against the plan.
+ *
+ * An artisan command of the app's own code is recorded the way a request
+ * is: its method is COMMAND and its route is the command's name. It ended
+ * well (200) or it did not (500).
  */
 class AppTraces
 {
@@ -25,6 +29,11 @@ class AppTraces
     public const KEPT_AFTER_REFUSAL = 'kept_after_refusal';
 
     public const SENT_BEFORE_SAVED = 'sent_before_saved';
+
+    /**
+     * The method a trace has when it is of an artisan command.
+     */
+    public const COMMAND = 'ARTISAN';
 
     /**
      * The shortcut a repeated lookup is: the database asked once for each
@@ -186,7 +195,8 @@ class AppTraces
             $kind = match (true) {
                 $request['cut'] => null,
                 in_array($request['method'], ['GET', 'HEAD'], true) => self::SAVED_ON_READ,
-                $request['refused'] => self::KEPT_AFTER_REFUSAL,
+                // A command that did not end well refused no one.
+                $request['refused'] && $request['method'] !== self::COMMAND => self::KEPT_AFTER_REFUSAL,
                 default => null,
             };
 
@@ -242,6 +252,15 @@ class AppTraces
                 'route' => $repeat['route'],
             ], array_keys($repeated), $repeated), 0, self::KEPT),
         ];
+    }
+
+    /**
+     * Get the name of the artisan command a route is of, as engines name a
+     * route ("POST /orders"). Null for a request.
+     */
+    public static function command(string $route): ?string
+    {
+        return str_starts_with($route, self::COMMAND.' ') ? substr($route, strlen(self::COMMAND) + 1) : null;
     }
 
     /**

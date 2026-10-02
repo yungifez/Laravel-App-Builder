@@ -3,6 +3,8 @@
 namespace TraceRecorder;
 
 use Closure;
+use Illuminate\Console\Events\ArtisanStarting;
+use Illuminate\Contracts\Console\Kernel as Console;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -14,6 +16,7 @@ use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Database\QueryException;
 use Illuminate\Events\Dispatcher as Events;
+use Illuminate\Foundation\Console\ClosureCommand;
 use Illuminate\Foundation\Exceptions\Handler;
 use Illuminate\Foundation\Http\Kernel;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider;
@@ -40,7 +43,15 @@ use Illuminate\Support\Facades\Facade;
 use Mockery\LegacyMockInterface;
 use PDOException;
 use PHPUnit\Framework\TestCase;
+use ReflectionClass;
+use ReflectionFunction;
 use ReflectionObject;
+use Symfony\Component\Console\Application as SymfonyConsole;
+use Symfony\Component\Console\ConsoleEvents;
+use Symfony\Component\Console\Event\ConsoleCommandEvent;
+use Symfony\Component\Console\Event\ConsoleErrorEvent;
+use Symfony\Component\Console\Event\ConsoleTerminateEvent;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Throwable;
 use WeakMap;
@@ -82,6 +93,11 @@ use WeakMap;
  * ended in an error the test let through; in use the person gets the
  * error page.
  *
+ * An artisan command of the app's own code is recorded the way a request
+ * is, with the command's name as its route. In use the schedule runs it
+ * with no one there. It has no status: one that ended well is written as
+ * 200, and one that did not as 500. The console's own events tell of it.
+ *
  * Each trace also says what kind of answer the request gave, by names
  * only. And a trace of a caused failure says when the app caught that
  * failure and wrote nothing to its log after it. A trace says too when
@@ -91,6 +107,11 @@ use WeakMap;
  */
 class Recorder
 {
+    /**
+     * What a trace has as its method when it is of an artisan command.
+     */
+    public const COMMAND = 'ARTISAN';
+
     /**
      * The most things kept for one request, so one request cannot fill the file.
      */
@@ -130,6 +151,8 @@ class Recorder
         'Illuminate\\Foundation\\Exceptions\\Handler::report' => 'error',
         'Illuminate\\Foundation\\Exceptions\\Handler::render' => 'error',
         'Illuminate\\Routing\\Route::run' => 'handling',
+        'Illuminate\\Console\\Command::execute' => 'command',
+        'Illuminate\\Foundation\\Console\\ClosureCommand::execute' => 'command',
     ];
 
     /** @var array<string, mixed>|null */
@@ -194,6 +217,9 @@ class Recorder
     /** The status of the error a test let through in that request. */
     protected ?int $ended = null;
 
+    /** What the artisan command that is recorded now was given, which tells it apart from one it calls. */
+    protected ?object $command = null;
+
     /** The recorder of an app with a request no answer has come for yet. */
     protected static ?self $waiting = null;
 
@@ -228,16 +254,20 @@ class Recorder
         // With all middleware off, the router says when a request starts and what it answers.
         $events->listen(Routing::class, fn (Routing $event) => $this->loosely($event->request));
         $events->listen(RouteMatched::class, function (RouteMatched $event) {
-            if ($this->loose) {
+            if ($this->loose && $this->command === null) {
                 $this->matched = $this->route($event->request, $event->route);
             }
         });
         $events->listen(ResponsePrepared::class, function (ResponsePrepared $event) {
             // The router prepares the answer more than once: the last one is the request's.
-            if ($this->loose) {
+            if ($this->loose && $this->command === null) {
                 $this->respond($event->request, $event->response);
             }
         });
+
+        // The console says when a command starts and how it ended.
+        $events->listen(ArtisanStarting::class, fn (ArtisanStarting $event) => $this->hear($event->artisan));
+        $this->hear($this->console());
 
         // A run about a job that waits needs a sync queue that can hold it back.
         if (($this->fault['kind'] ?? null) === 'later') {
@@ -348,8 +378,17 @@ class Recorder
      */
     public function start($request): void
     {
+        $this->begin($request->method());
+    }
+
+    /**
+     * Start the trace of a request or a command.
+     */
+    protected function begin(string $method): void
+    {
         $this->finish();
         $this->loose = false;
+        $this->command = null;
         $this->matched = null;
         $this->ended = null;
         $this->requests++;
@@ -369,7 +408,7 @@ class Recorder
         $this->operation = [
             'test' => $this->test,
             'n' => $this->requests - 1,
-            'method' => $request->method(),
+            'method' => $method,
             'route' => null,
             'status' => null,
             'refused' => false,
@@ -386,21 +425,166 @@ class Recorder
     protected function loosely($request): void
     {
         try {
-            if (! $this->app->shouldSkipMiddleware() || $this->nested()) {
+            if (! $this->app->shouldSkipMiddleware() || $this->command !== null || $this->nested()) {
                 return;
             }
 
             $this->start($request);
-            $this->loose = true;
-            self::$waiting = $this;
+            $this->wait();
+        } catch (Throwable) {
+            //
+        }
+    }
 
-            if (! self::$atExit) {
-                self::$atExit = true;
-                register_shutdown_function(self::settle(...));
+    /**
+     * Keep the trace until its end is known. When an error ends it, nothing
+     * says so: the next request, the next test or the end of PHP does.
+     */
+    protected function wait(): void
+    {
+        $this->loose = true;
+        self::$waiting = $this;
+
+        if (! self::$atExit) {
+            self::$atExit = true;
+            register_shutdown_function(self::settle(...));
+        }
+    }
+
+    /**
+     * Have the console tell this recorder of its commands. Laravel passes
+     * the console's events on as its own only outside tests, and the app
+     * can hear those. So in a test the recorder is the one that listens,
+     * and the app hears nothing more than it does without the recorder.
+     */
+    protected function hear(?object $artisan): void
+    {
+        try {
+            if (! $artisan instanceof SymfonyConsole || ! $this->app->runningUnitTests()) {
+                return;
+            }
+
+            $console = new EventDispatcher;
+            $console->addListener(ConsoleEvents::COMMAND, fn (ConsoleCommandEvent $event) => $this->command($event));
+            $console->addListener(ConsoleEvents::ERROR, fn (ConsoleErrorEvent $event) => $this->erred($event));
+            $console->addListener(ConsoleEvents::TERMINATE, fn (ConsoleTerminateEvent $event) => $this->done($event));
+
+            $artisan->setDispatcher($console);
+        } catch (Throwable) {
+            //
+        }
+    }
+
+    /**
+     * Get the console the app has made by now, if any.
+     */
+    protected function console(): ?object
+    {
+        try {
+            return $this->app->resolved(Console::class) ? (fn () => $this->artisan ?? null)->call($this->app->make(Console::class)) : null;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Start the trace of an artisan command of the app's own code. A
+     * command that runs inside a request or another command is part of
+     * that one. A command of the framework or a package, such as one a
+     * test migrates the database with, is not the app's work.
+     */
+    protected function command(ConsoleCommandEvent $event): void
+    {
+        try {
+            $command = $event->getCommand();
+
+            if ($this->command !== null || $command === null || $this->inside() || ! $this->ownCommand($command)) {
+                return;
+            }
+
+            $this->begin(self::COMMAND);
+            $this->command = $event->getInput();
+            $this->matched = (string) $command->getName();
+            $this->wait();
+        } catch (Throwable) {
+            //
+        }
+    }
+
+    /**
+     * Note that an error ended the command.
+     */
+    protected function erred(ConsoleErrorEvent $event): void
+    {
+        if ($this->command !== null && $event->getInput() === $this->command) {
+            $this->ended = 500;
+        }
+    }
+
+    /**
+     * Note how the command ended, and write its trace.
+     */
+    protected function done(ConsoleTerminateEvent $event): void
+    {
+        if ($this->operation === null || $this->command === null || $event->getInput() !== $this->command) {
+            return;
+        }
+
+        try {
+            // The queue had the job before an error: it still runs.
+            $this->release();
+
+            $failed = $event->getExitCode() !== 0;
+
+            $this->operation['route'] = $this->matched;
+            $this->operation['status'] = $failed ? 500 : 200;
+            $this->operation['refused'] = $failed;
+            $this->operation['blind'] = $this->fakes->hiding($this->hidden);
+            // The number an error ends a command with is the error's own, so it is not kept.
+            $this->operation['shape'] = [$this->ended === null ? 'exit '.$event->getExitCode() : 'error'];
+
+            if (! $this->seen()) {
+                $this->operation['dark'] = true;
+            }
+
+            if (! $failed && $this->quiet()) {
+                $this->operation['quiet'] = true;
             }
         } catch (Throwable) {
             //
         }
+
+        $this->finish();
+    }
+
+    /**
+     * Determine if a command starts inside a request or another command.
+     */
+    protected function inside(): bool
+    {
+        $commands = 0;
+
+        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 150) as $frame) {
+            $call = ($frame['class'] ?? '').'::'.$frame['function'];
+
+            if ($call === Kernel::class.'::handle' || $call === Router::class.'::dispatch' || ($call === SymfonyConsole::class.'::doRunCommand' && ++$commands > 1)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Determine if a command is the app's own code, by the file its class
+     * or its closure is written in.
+     */
+    protected function ownCommand(object $command): bool
+    {
+        $callback = $command instanceof ClosureCommand ? (fn () => $this->callback ?? null)->call($command) : null;
+        $file = $callback instanceof Closure ? (new ReflectionFunction($callback))->getFileName() : (new ReflectionClass($command))->getFileName();
+
+        return is_string($file) && $this->own($file) && $file !== $this->testFile;
     }
 
     /**
@@ -728,6 +912,7 @@ class Recorder
 
         $operation = $this->operation;
         $this->operation = null;
+        $this->command = null;
 
         if (self::$waiting === $this) {
             self::$waiting = null;
@@ -735,6 +920,7 @@ class Recorder
 
         // No answer left the router: an error did, which the test let
         // through. In use the person gets the error page for that error.
+        // A command that an error ends says nothing either.
         if ($this->loose && $operation['status'] === null) {
             $operation = [...$operation, 'route' => $this->matched, 'status' => $this->ended ?? 500, 'refused' => true];
 
@@ -1401,6 +1587,10 @@ class Recorder
      */
     protected function byTestTools(): bool
     {
+        if ($this->command !== null) {
+            return $this->byTestToolsInCommand();
+        }
+
         foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 80) as $frame) {
             if (in_array($frame['class'] ?? '', [Middleware::class, Kernel::class], true)) {
                 return false;
@@ -1412,6 +1602,28 @@ class Recorder
         }
 
         return false;
+    }
+
+    /**
+     * The same for a command: the search stops where the recorded command
+     * starts, which is the last place the console runs a command from.
+     */
+    protected function byTestToolsInCommand(): bool
+    {
+        $tools = null;
+        $started = null;
+
+        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 150) as $position => $frame) {
+            if (($frame['class'] ?? '').'::'.$frame['function'] === SymfonyConsole::class.'::doRunCommand') {
+                $started = $position;
+            }
+
+            if (str_contains(str_replace('\\', '/', $frame['file'] ?? ''), '/Illuminate/Foundation/Testing/')) {
+                $tools ??= $position;
+            }
+        }
+
+        return $tools !== null && ($started === null || $tools < $started);
     }
 
     /**

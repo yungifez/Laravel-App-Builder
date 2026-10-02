@@ -11,6 +11,7 @@ use Illuminate\Foundation\Exceptions\Handler;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
@@ -26,6 +27,7 @@ use Illuminate\Support\Str;
 use RuntimeException;
 use Tests\Fixtures\RecordedApp;
 use Tests\Fixtures\RecordedCarefulJob;
+use Tests\Fixtures\RecordedCommand;
 use Tests\Fixtures\RecordedEvent;
 use Tests\Fixtures\RecordedJob;
 use Tests\Fixtures\RecordedMail;
@@ -201,9 +203,8 @@ class TraceRecorderTest extends TestCase
      * A patch that adds every line of the app that is recorded, so what
      * its routes do is the change's.
      */
-    protected function wholeFilePatch(): string
+    protected function wholeFilePatch(string $path = RecordedApp::PATH): string
     {
-        $path = RecordedApp::PATH;
         $lines = count(file(base_path($path)) ?: []);
 
         return "diff --git a/{$path} b/{$path}\n--- /dev/null\n+++ b/{$path}\n@@ -0,0 +1,{$lines} @@\n".str_repeat("+//\n", $lines);
@@ -216,15 +217,15 @@ class TraceRecorderTest extends TestCase
      * @param  list<array<string, mixed>>  $requests
      * @return array<string, mixed>
      */
-    protected function measureFailure(array $requests, string $failed): array
+    protected function measureFailure(array $requests, string $failed, string $path = RecordedApp::PATH): array
     {
-        $points = AppFaults::points([$requests[0]], $this->wholeFilePatch());
+        $points = AppFaults::points([$requests[0]], $this->wholeFilePatch($path));
         $position = array_search($failed, array_column($points, 'failed'), true);
         $this->assertNotFalse($position);
         $this->assertSame($requests[1]['fault'], $points[$position]['fault']['effect']);
         $points[$position]['fault']['request'] = 1;
 
-        return (array) AppFaults::measure($points, [$position => $requests], $this->wholeFilePatch());
+        return (array) AppFaults::measure($points, [$position => $requests], $this->wholeFilePatch($path));
     }
 
     public function test_a_request_is_recorded_with_what_it_asked_saved_and_sent_and_where()
@@ -571,6 +572,99 @@ class TraceRecorderTest extends TestCase
             ['/livewire-unit-test-endpoint', 500],
             ['/livewire-unit-test-endpoint#orders.table', 200],
         ], array_map(fn (array $request) => [$request['route'], $request['status']], $recorded()));
+    }
+
+    public function test_an_artisan_command_of_the_app_is_recorded_the_way_a_request_is()
+    {
+        Artisan::registerCommand(new RecordedCommand);
+        Route::post('/_command/inside', fn () => tap(response()->noContent(), fn () => Artisan::call('recorded:remind')));
+        $recorded = $this->record();
+
+        $this->artisan('recorded:remind')->assertSuccessful();
+        // A command of the framework is not the app's work.
+        $this->artisan('env')->assertSuccessful();
+        // A command the app runs inside a request or another command is part of that one.
+        $this->post('/_command/inside')->assertNoContent();
+        $this->artisan('recorded:remind --inner')->assertSuccessful();
+        // An error ends this one.
+        rescue(fn () => $this->artisan('recorded:remind --broken')->run(), report: false);
+        $this->artisan(RecordedCommand::class)->assertSuccessful();
+
+        $requests = $recorded();
+        $once = ['query', 'mail', 'query'];
+        $this->assertSame([
+            [0, 'ARTISAN', 'recorded:remind', 200, false, $once],
+            [1, 'POST', '/_command/inside', 204, false, $once],
+            [2, 'ARTISAN', 'recorded:remind', 200, false, [...$once, ...$once]],
+            [3, 'ARTISAN', 'recorded:remind', 500, true, []],
+            [4, 'ARTISAN', 'recorded:remind', 200, false, $once],
+        ], array_map(fn (array $request) => [$request['n'], $request['method'], $request['route'], $request['status'], $request['refused'], array_column($request['effects'], 'kind')], $requests));
+        $this->assertSame([['exit 0'], ['error']], [$requests[0]['shape'], $requests[3]['shape']]);
+        $this->assertSame(['command', [RecordedCommand::class.'::handle']], [$requests[0]['effects'][0]['phase'], $requests[0]['effects'][0]['frames']]);
+        $this->assertStringStartsWith(RecordedCommand::PATH.':', (string) $requests[0]['effects'][1]['at']);
+    }
+
+    public function test_a_command_that_an_error_ends_after_it_saved_is_found()
+    {
+        Artisan::registerCommand(new RecordedCommand);
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'mail');
+
+        $this->artisan('recorded:remind')->assertSuccessful();
+        rescue(fn () => $this->artisan('recorded:remind')->run(), report: false);
+
+        $requests = $recorded();
+        $this->assertSame([[200, false], [500, true]], array_map(fn (array $request) => [$request['status'], $request['refused']], $requests));
+        $this->assertSame(1, $requests[1]['fault']);
+
+        $measured = $this->measureFailure($requests, 'mail message', RecordedCommand::PATH);
+        $this->assertSame([['saved_then_failed', 'ARTISAN recorded:remind', 'mail message', 'update users']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed'], $finding['what']], $measured['findings']));
+        $this->assertStringContainsString('the command ended in an error but had already saved: update users', AppFaults::describe($measured['findings'][0]));
+    }
+
+    public function test_a_command_that_ends_with_a_failure_after_it_saved_is_found_too()
+    {
+        Artisan::registerCommand(new RecordedCommand);
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'mail');
+
+        $this->artisan('recorded:remind --careful')->assertSuccessful();
+        $this->artisan('recorded:remind --careful')->assertFailed();
+
+        $requests = $recorded();
+        $this->assertSame([[200, ['exit 0']], [500, ['exit 1']]], array_map(fn (array $request) => [$request['status'], $request['shape']], $requests));
+
+        $measured = $this->measureFailure($requests, 'mail message', RecordedCommand::PATH);
+        $this->assertSame([['saved_then_failed', 'update users']], array_map(fn (array $finding) => [$finding['kind'], $finding['what']], $measured['findings']));
+    }
+
+    public function test_a_command_that_catches_a_failure_and_ends_well_hid_it()
+    {
+        Artisan::registerCommand(new RecordedCommand);
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'mail');
+
+        $this->artisan('recorded:remind --hushed')->assertSuccessful();
+        $this->artisan('recorded:remind --hushed')->assertSuccessful();
+
+        $requests = $recorded();
+        $this->assertSame([false, true], array_map(fn (array $request) => $request['quiet'] ?? false, $requests));
+
+        $measured = $this->measureFailure($requests, 'mail message', RecordedCommand::PATH);
+        $this->assertSame([['failure_hidden', 'ARTISAN recorded:remind', 'mail message']], array_map(fn (array $finding) => [$finding['kind'], $finding['route'], $finding['failed']], $measured['findings']));
+        $this->assertStringContainsString('the command did nothing new, ended the same as when all worked, and wrote nothing to the log', AppFaults::describe($measured['findings'][0]));
+    }
+
+    public function test_a_command_that_catches_a_failure_and_records_it_is_clean()
+    {
+        Artisan::registerCommand(new RecordedCommand);
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'mail');
+
+        $this->artisan('recorded:remind --recorded')->assertSuccessful();
+        $this->artisan('recorded:remind --recorded')->assertSuccessful();
+
+        $requests = $recorded();
+        $this->assertSame([1, false], [$requests[1]['fault'], $requests[1]['quiet'] ?? false]);
+
+        $measured = $this->measureFailure($requests, 'mail message', RecordedCommand::PATH);
+        $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
     }
 
     public function test_a_job_made_to_run_twice_shows_what_it_sent_and_added_both_times()

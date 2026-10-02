@@ -26,6 +26,7 @@ use App\Models\Run;
 use App\Models\RunEvent;
 use App\Models\Verification;
 use App\Projects\ProjectRepository;
+use Illuminate\Support\Str;
 
 class DescribeProof
 {
@@ -455,7 +456,8 @@ class DescribeProof
      * sent, an outside service that did not answer, a save that did not
      * work, or work the app does later that ran a second time. Each kind
      * of thing left behind, done twice, or asked for twice, is a gap the owner reads,
-     * with the address where it happened, and the owner may say they want
+     * with the address where it happened (or the name of the work, when the
+     * app does it on its own at set times), and the owner may say they want
      * it: then it is said as their choice, with what it costs. That nothing
      * was left behind is said only when a failure was really caused.
      *
@@ -482,6 +484,20 @@ class DescribeProof
             AppFaults::JOB_NEEDS_REQUEST => 'Your app does some work on its own after someone uses :address. That work runs a moment later, after your app has answered. By then something it counts on is gone, such as who the person is, and it does not do the same things.',
             AppFaults::DEPENDS_ON_ORDER => 'When someone uses :address, your app does a few things one after the other, and nothing says which comes first. When they happen the other way round, your app does not do the same things.',
         ];
+        // Work the app does by itself at set times has no person and no address: it is said by its name.
+        $alone = [
+            AppFaults::SAVED_THEN_FAILED => 'Your app does some work on its own (:address). If :failure during that work, it stops, but it has already saved part of it. The next time, it may skip that part or do it twice.',
+            AppFaults::SENT_THEN_LOST => 'Your app does some work on its own (:address). If saving fails during that work, it has already sent something. People are told about something that was not saved.',
+            AppFaults::SAVED_IN_PART => 'Your app does some work on its own (:address). If saving fails during that work, it keeps one part of what it was saving and loses the rest.',
+            AppFaults::FAILURE_HIDDEN => 'Your app does some work on its own (:address). If :failure during that work, it carries on as if it worked. Nothing is written down, so you would not find out.',
+            AppFaults::DONE_TWICE => 'Your app does some work on its own (:address) and leaves part of it for later. If that part is cut off and starts over, it sends or adds the same thing twice.',
+            AppFaults::SENT_AGAIN => 'Your app does some work on its own (:address) and leaves part of it for later. If saving fails during that part and it starts over, it sends the same thing twice.',
+            AppFaults::CALLED_AGAIN => 'Your app does some work on its own (:address). If an outside service is slow to answer during that work, your app asks it again. The service may then do the same thing twice, such as take a payment twice.',
+            AppFaults::ANSWER_NOT_CHECKED => 'Your app does some work on its own (:address). If an outside service says it could not do what your app asked, your app does not look at that answer. It carries on as if the service did it.',
+            AppFaults::NEEDS_JOB_DONE => 'Your app does some work on its own (:address) and leaves part of it for later, without waiting for it. But what it does next only goes right when that part is already done.',
+            AppFaults::JOB_NEEDS_REQUEST => 'Your app does some work on its own (:address) and leaves part of it for later. By then something that part counts on is gone, and it does not do the same things.',
+            AppFaults::DEPENDS_ON_ORDER => 'Your app does some work on its own (:address). It does a few things one after the other, and nothing says which comes first. When they happen the other way round, your app does not do the same things.',
+        ];
         // The recording already said that this is sent before saving ends.
         $said = AppTraces::findings($verification->evidence['traces'] ?? null, AppTraces::SENT_BEFORE_SAVED) !== [];
         // Work that sends twice each time it starts over is said once.
@@ -497,8 +513,9 @@ class DescribeProof
             if ($found !== [] && ! ($said && $kind === AppFaults::SENT_THEN_LOST) && ! ($twice && $kind === AppFaults::SENT_AGAIN)) {
                 $accepted = AppFaults::findings($left, $kind) === [];
                 $found = $accepted ? $found : AppFaults::findings($left, $kind);
-                $gap = __($text, [
-                    'address' => AppRoutes::address($found[0]['route']),
+                $command = AppTraces::command($found[0]['route']);
+                $gap = __($command === null ? $text : $alone[$kind], [
+                    'address' => $command === null ? AppRoutes::address($found[0]['route']) : '“'.Str::of($command)->replace([':', '-', '_', '.'], ' ')->squish().'”',
                     'failure' => match (true) {
                         str_starts_with($found[0]['failed'], 'mail') => __('an email cannot be sent'),
                         str_starts_with($found[0]['failed'], 'http') => __('an outside service does not answer'),

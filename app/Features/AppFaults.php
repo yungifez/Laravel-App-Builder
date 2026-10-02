@@ -81,6 +81,10 @@ namespace App\Features;
  * route it sends the person to, and what it tells them. A log that
  * cannot be seen, such as one a test put a fake in place of, says
  * nothing.
+ *
+ * An artisan command of the app's own code is a place too (see
+ * AppTraces). The schedule runs it with no one there, so no answer tells
+ * a person of a failure: only its log and how it ended do.
  */
 class AppFaults
 {
@@ -460,19 +464,23 @@ class AppFaults
     public static function describe(array $finding): string
     {
         $at = fn (string $before, string $after = '') => $finding['at'] === null ? '' : "{$before} {$finding['at']}{$after}";
+        // An artisan command has no response and no status: it ends well or it does not.
+        $command = AppTraces::command($finding['route']) !== null;
+        $run = $command ? 'command' : 'request';
+        $end = $command ? 'the command ended' : 'the response';
 
         $said = match ($finding['kind']) {
             self::DONE_TWICE => "when {$finding['failed']}{$at(', queued at', ',')} ran a second time, it sent or added the same thing again: {$finding['what']}",
             self::SENT_AGAIN => "when a save failed in {$finding['failed']}{$at(', queued at', ',')} and the job was tried again, it sent the same thing again: {$finding['what']}",
-            self::CALLED_AGAIN => "when {$finding['failed']}{$at(' at')} got no answer, the request made the same call again with no idempotency key, so the service may do it twice",
-            self::ANSWER_NOT_CHECKED => "when {$finding['failed']}{$at(' at')} was answered with a server error, the app's code did not ask the answer for its status and the request went on as if the call worked: {$finding['what']}",
-            self::NEEDS_JOB_DONE => "when {$finding['failed']}{$at(', queued at', ',')} ran after the response, the way a queue runs it, the request did not do the same: {$finding['what']}",
-            self::JOB_NEEDS_REQUEST => "when {$finding['failed']}{$at(', queued at', ',')} ran after the response, the way a queue worker runs it, with no signed-in user and an empty request and session, the job did not do the same: {$finding['what']}",
-            self::DEPENDS_ON_ORDER => "when the listeners Laravel found for {$finding['failed']}{$at(', dispatched at', ',')} ran in the reverse order, the request did not do the same: {$finding['what']}",
-            self::SAVED_THEN_FAILED => "when {$finding['failed']} failed{$at(' at')}, the request ended in a server error but had already saved: {$finding['what']}",
-            self::SENT_THEN_LOST => "when {$finding['failed']} failed{$at(' at')}, the save was lost but the request had already sent: {$finding['what']}",
-            self::SAVED_IN_PART => "when {$finding['failed']} failed{$at(' at')}, the save was lost but the request kept what it had saved before it, with no transaction around both: {$finding['what']}",
-            self::FAILURE_HIDDEN => "when {$finding['failed']} failed{$at(' at')}, the app caught the failure and hid it: the request did nothing new, gave the same kind of answer as when all worked, and wrote nothing to the log",
+            self::CALLED_AGAIN => "when {$finding['failed']}{$at(' at')} got no answer, the {$run} made the same call again with no idempotency key, so the service may do it twice",
+            self::ANSWER_NOT_CHECKED => "when {$finding['failed']}{$at(' at')} was answered with a server error, the app's code did not ask the answer for its status and the {$run} went on as if the call worked: {$finding['what']}",
+            self::NEEDS_JOB_DONE => "when {$finding['failed']}{$at(', queued at', ',')} ran after {$end}, the way a queue runs it, the {$run} did not do the same: {$finding['what']}",
+            self::JOB_NEEDS_REQUEST => "when {$finding['failed']}{$at(', queued at', ',')} ran after {$end}, the way a queue worker runs it, with no signed-in user and an empty request and session, the job did not do the same: {$finding['what']}",
+            self::DEPENDS_ON_ORDER => "when the listeners Laravel found for {$finding['failed']}{$at(', dispatched at', ',')} ran in the reverse order, the {$run} did not do the same: {$finding['what']}",
+            self::SAVED_THEN_FAILED => "when {$finding['failed']} failed{$at(' at')}, the {$run} ended in ".($command ? 'an error' : 'a server error')." but had already saved: {$finding['what']}",
+            self::SENT_THEN_LOST => "when {$finding['failed']} failed{$at(' at')}, the save was lost but the {$run} had already sent: {$finding['what']}",
+            self::SAVED_IN_PART => "when {$finding['failed']} failed{$at(' at')}, the save was lost but the {$run} kept what it had saved before it, with no transaction around both: {$finding['what']}",
+            self::FAILURE_HIDDEN => "when {$finding['failed']} failed{$at(' at')}, the app caught the failure and hid it: the {$run} did nothing new, ".($command ? 'ended the same' : 'gave the same kind of answer').' as when all worked, and wrote nothing to the log',
             default => "when {$finding['failed']} failed{$at(' at')}, {$finding['kind']}: {$finding['what']}",
         };
 
@@ -488,7 +496,23 @@ class AppFaults
      */
     public static function finding(array $finding): string
     {
-        $fix = match ($finding['kind']) {
+        $command = AppTraces::command($finding['route']) !== null;
+
+        $fix = match (true) {
+            $command && $finding['kind'] === self::SAVED_THEN_FAILED => 'The schedule runs the command again, and what the failed run saved is still there: the command then skips that work or does it twice. Save that the work is done only after the send worked, or make the command safe to run again.',
+            $command && $finding['kind'] === self::FAILURE_HIDDEN => 'No one reads what a command prints when the schedule runs it. Let it fail, or record the failure with report().',
+            default => self::fix($finding['kind']),
+        };
+
+        return trim(__(':said. :fix', ['said' => self::describe($finding), 'fix' => $fix]));
+    }
+
+    /**
+     * Say how to fix a finding of one kind.
+     */
+    protected static function fix(string $kind): string
+    {
+        return match ($kind) {
             self::SAVED_THEN_FAILED => 'A person who sees the error tries again, and the save happens twice. Queue what the request sends, after the save is kept. Or catch the failure, record it with report(), and tell the person what did not happen.',
             self::SENT_THEN_LOST => 'People are told about something that was not saved. Send after the save is kept: after the transaction, or with afterCommit().',
             self::SAVED_IN_PART => 'Put the saves that belong together in one DB::transaction().',
@@ -502,8 +526,6 @@ class AppFaults
             self::DEPENDS_ON_ORDER => 'Laravel takes the listeners it finds in the order the disk lists their files. Put steps that need an order in one listener, or have the second step listen to an event the first one dispatches.',
             default => '',
         };
-
-        return trim(__(':said. :fix', ['said' => self::describe($finding), 'fix' => $fix]));
     }
 
     /**

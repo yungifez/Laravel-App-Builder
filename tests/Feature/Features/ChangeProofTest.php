@@ -596,6 +596,16 @@ class ChangeProofTest extends TestCase
             ['mail App\Mail\Receipt', 'http POST api.stripe.com', 'insert orders'],
         ));
 
+        // Work the app does on its own at set times has no person and no address: it is said by its name.
+        $this->assertSame([
+            ['Your app does some work on its own (“reminders send”). If an email cannot be sent during that work, it stops, but it has already saved part of it. The next time, it may skip that part or do it twice.'],
+            ['Your app does some work on its own (“reminders send”). If an email cannot be sent during that work, it carries on as if it worked. Nothing is written down, so you would not find out.'],
+            ['Your app does some work on its own (“reminders send”) and leaves part of it for later. If that part is cut off and starts over, it sends or adds the same thing twice.'],
+        ], array_map(
+            fn (string $kind) => $proof(['run' => 1, 'findings' => [$finding($kind, 'ARTISAN reminders:send', 'mail App\Mail\Reminder')]])->where('kind', 'gap')->pluck('text')->all(),
+            ['saved_then_failed', 'failure_hidden', 'done_twice'],
+        ));
+
         // The recording already said it sends before saving ends: it is said once.
         $twice = $proof(['run' => 1, 'findings' => [$finding('sent_then_lost', 'POST /invitations', 'insert invitations')]], ['traces' => ['requests' => 40, 'reached' => 12, 'unseen' => 0, 'existing' => 0, 'repeats' => [], 'findings' => [
             ['kind' => 'sent_before_saved', 'route' => 'POST /invitations', 'what' => 'mail App\Mail\Invited', 'at' => 'app/Models/Order.php:3', 'test' => null],
