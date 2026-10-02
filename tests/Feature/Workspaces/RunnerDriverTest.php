@@ -155,6 +155,19 @@ class RunnerDriverTest extends TestCase
         $this->assertTrue($result->successful(), $result->output().$result->errorOutput());
     }
 
+    public function test_the_real_runner_gives_each_workspace_a_user_of_its_own()
+    {
+        // Switching users needs root, which the runner has in its box and
+        // the tests do not: run tests/Fixtures/box-runner-users.mjs there.
+        if (posix_geteuid() !== 0) {
+            $this->markTestSkipped('Needs root, as the runner has in its box.');
+        }
+
+        $result = Process::timeout(60)->run(['node', base_path('tests/Fixtures/box-runner-users.mjs'), base_path('resources/box-runner/runner.mjs')]);
+
+        $this->assertTrue($result->successful(), $result->output().$result->errorOutput());
+    }
+
     public function test_the_project_is_packed_without_secrets_and_the_archive_is_removed_afterwards()
     {
         $source = storage_path('framework/testing/source-'.Str::lower(Str::random(8)));

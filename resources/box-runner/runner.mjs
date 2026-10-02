@@ -7,24 +7,36 @@
 // the Pusher protocol) only rings a doorbell so new work is fetched at once;
 // without it the runner still polls, so a lost socket only slows things down.
 //
-// Every command runs as RUNNER_USER, never as the runner's own user, so code
-// in a workspace cannot read the runner's token or stop the runner.
+// Every command runs as a user of its own workspace, never as the runner's
+// own user, so code in a workspace cannot read the runner's token, stop the
+// runner, or read another workspace (another owner's code). The runner
+// gives each workspace a user id of its own when it opens it and keeps it
+// as the owner of the workspace folder, so nothing else needs to remember
+// it. Each workspace also gets a home and a temp folder of its own. This
+// needs the runner to run as root; when it does not (in tests), commands
+// run as the runner's user.
 //
 // Environment:
 //   RUNNER_URL    the control plane's base URL, for example http://laravel.test
 //   RUNNER_TOKEN  this runner's token
 //   RUNNER_ROOT   where workspaces live (default /workspaces)
-//   RUNNER_USER   the user commands run as (default sail)
 
 import { execFileSync, spawn } from 'node:child_process';
-import { chownSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    chmodSync,
+    chownSync,
+    mkdirSync,
+    readdirSync,
+    rmSync,
+    statSync,
+    writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 
 const url = (process.env.RUNNER_URL ?? '').replace(/\/$/, '');
 const token = process.env.RUNNER_TOKEN ?? '';
 const root = process.env.RUNNER_ROOT ?? '/workspaces';
-const user = process.env.RUNNER_USER ?? 'sail';
 
 // Children never inherit the runner's token or settings.
 delete process.env.RUNNER_TOKEN;
@@ -52,25 +64,15 @@ const PASSTHROUGH = [
 
 const KILL_AFTER_MS = 5000;
 
-/** The user commands run as, when the runner may switch users. */
-const child = (() => {
-    if (process.getuid?.() !== 0) {
-        return { ids: {}, home: process.env.HOME ?? '/tmp' };
-    }
+/** Whether the runner may run commands as other users. */
+const switching = process.getuid?.() === 0;
 
-    const uid = Number(execFileSync('id', ['-u', user]).toString().trim());
-    const gid = Number(execFileSync('id', ['-g', user]).toString().trim());
-    const home = execFileSync('sh', [
-        '-c',
-        'getent passwd "$1" | cut -d: -f6',
-        'sh',
-        user,
-    ])
-        .toString()
-        .trim();
-
-    return { ids: { uid, gid }, home: home || '/tmp' };
-})();
+/**
+ * The user ids workspaces get, far above the image's own users. Each id is
+ * also the workspace user's group id.
+ */
+const FIRST_ID = 20000;
+const LAST_ID = 59999;
 
 let settings = { poll_seconds: 5, output_limit: 65536, socket: null };
 
@@ -136,8 +138,78 @@ function relative(path) {
     return path;
 }
 
-function environment(extra = {}) {
-    const env = { HOME: child.home };
+function homes() {
+    return join(root, '.homes');
+}
+
+function workspaces() {
+    return readdirSync(root).filter((name) => !name.startsWith('.'));
+}
+
+/** A user id no open workspace has. */
+function freeId() {
+    const taken = new Set(
+        workspaces().map((name) => statSync(join(root, name)).uid),
+    );
+
+    for (let id = FIRST_ID; id <= LAST_ID; id++) {
+        if (!taken.has(id)) {
+            return id;
+        }
+    }
+
+    throw new Error('Every workspace user id is taken.');
+}
+
+/** Make a folder the workspace user's alone. */
+function own(path, id) {
+    mkdirSync(path, { recursive: true });
+    chownSync(path, id, id);
+    chmodSync(path, 0o700);
+}
+
+/**
+ * Give a workspace a user of its own, with a home and a temp folder, unless
+ * it has one. A workspace from before workspaces had users is handed over
+ * to a new one.
+ */
+function settle(name) {
+    const directory = box(name);
+    let id = statSync(directory).uid;
+
+    if (id < FIRST_ID || id > LAST_ID) {
+        id = freeId();
+        execFileSync('chown', ['-R', `${id}:${id}`, directory]);
+    }
+
+    chmodSync(directory, 0o700);
+    own(join(homes(), name), id);
+    own(join(homes(), name, 'tmp'), id);
+
+    return id;
+}
+
+/** Who runs a workspace's commands, and with which home. */
+function identity(name) {
+    if (!switching) {
+        return { ids: {}, home: process.env.HOME ?? '/tmp' };
+    }
+
+    const id = statSync(box(name)).uid;
+
+    if (id < FIRST_ID || id > LAST_ID) {
+        throw new Error(`Workspace [${name}] has no user of its own.`);
+    }
+
+    return { ids: { uid: id, gid: id }, home: join(homes(), name) };
+}
+
+function environment(as, extra = {}) {
+    const env = { HOME: as.home };
+
+    if (switching) {
+        env.TMPDIR = join(as.home, 'tmp');
+    }
 
     for (const name of PASSTHROUGH) {
         if (process.env[name] !== undefined) {
@@ -189,7 +261,7 @@ function collector(limit) {
  */
 function run(
     command,
-    { cwd, env = {}, timeoutSeconds, input = null, stdout = null },
+    { as, cwd, env = {}, timeoutSeconds, input = null, stdout = null },
     id = null,
 ) {
     const startedAt = Date.now();
@@ -203,10 +275,10 @@ function run(
         try {
             process_ = spawn(command[0], command.slice(1), {
                 cwd,
-                env: environment(env),
+                env: environment(as, env),
                 detached: true,
                 stdio: [input === null ? 'ignore' : 'pipe', 'pipe', 'pipe'],
-                ...child.ids,
+                ...as.ids,
             });
         } catch (error) {
             resolve({
@@ -327,8 +399,8 @@ const handlers = {
 
         mkdirSync(directory, { recursive: true });
 
-        if (child.ids.uid !== undefined) {
-            chownSync(directory, child.ids.uid, child.ids.gid);
+        if (switching) {
+            settle(command.box);
         }
 
         return ok();
@@ -337,6 +409,7 @@ const handlers = {
     async close(command) {
         stopServices(command.box);
         rmSync(box(command.box), { recursive: true, force: true });
+        rmSync(join(homes(), command.box), { recursive: true, force: true });
         rmSync(servicesDirectory(command.box), {
             recursive: true,
             force: true,
@@ -351,6 +424,7 @@ const handlers = {
         return run(
             argv,
             {
+                as: identity(command.box),
                 cwd: box(command.box),
                 env,
                 timeoutSeconds: command.timeout_seconds,
@@ -371,6 +445,7 @@ const handlers = {
                 path,
             ],
             {
+                as: identity(command.box),
                 cwd: box(command.box),
                 timeoutSeconds: command.timeout_seconds,
                 input: Buffer.from(command.payload.contents, 'base64'),
@@ -398,6 +473,7 @@ const handlers = {
         const result = await run(
             [...read, '--', relative(command.payload.path)],
             {
+                as: identity(command.box),
                 cwd: box(command.box),
                 timeoutSeconds: command.timeout_seconds,
                 stdout: (chunk) => chunks.push(chunk),
@@ -423,6 +499,7 @@ const handlers = {
         }
 
         return run(['tar', '--no-same-owner', '-xzf', '-'], {
+            as: identity(command.box),
             cwd: box(command.box),
             timeoutSeconds: command.timeout_seconds,
             input: Readable.fromWeb(response.body),
@@ -432,6 +509,7 @@ const handlers = {
     async start_service(command) {
         const { command: argv, port } = command.payload;
         const directory = servicesDirectory(command.box);
+        const as = identity(command.box);
 
         mkdirSync(directory, { recursive: true });
 
@@ -439,8 +517,9 @@ const handlers = {
 
         writeFileSync(log, '');
 
-        if (child.ids.uid !== undefined) {
-            chownSync(log, child.ids.uid, child.ids.gid);
+        if (switching) {
+            own(directory, as.ids.uid);
+            chownSync(log, as.ids.uid, as.ids.gid);
         }
 
         const service = spawn(
@@ -454,10 +533,10 @@ const handlers = {
             ],
             {
                 cwd: box(command.box),
-                env: environment(),
+                env: environment(as),
                 detached: true,
                 stdio: 'ignore',
-                ...child.ids,
+                ...as.ids,
             },
         );
 
@@ -564,6 +643,23 @@ function listen(socket, attempt = 0) {
 
 async function main() {
     mkdirSync(root, { recursive: true });
+
+    // Workspaces may pass through the root and the shared folders to their
+    // own, but not list or read the others.
+    if (switching) {
+        for (const shared of [root, homes(), join(root, '.services')]) {
+            mkdirSync(shared, { recursive: true });
+            chmodSync(shared, 0o711);
+        }
+
+        for (const name of workspaces()) {
+            try {
+                settle(name);
+            } catch (error) {
+                console.error(`Could not settle ${name}: ${error.message}`);
+            }
+        }
+    }
 
     for (;;) {
         try {
