@@ -57,9 +57,14 @@ class GetTask extends Tool
 
         // A tool that writes every change may have no copy of the app, so it
         // gets the code to start from, for a short while.
-        $code = $this->task->wholeApp
-            ? __('Get the code to start from at :url (a zip, for the next hour). Unpack it into a new folder, then run `git init && git add -A && git commit -qm start` there and make the change in that folder.', ['url' => URL::temporarySignedRoute('worker-code.show', now()->addHour(), ['run' => $run])])
-            : null;
+        // On a fix pass it keeps the folder with its first try, which the
+        // problems to fix are about; a new copy would lose that work.
+        $link = fn () => URL::temporarySignedRoute('worker-code.show', now()->addHour(), ['run' => $run]);
+        $code = match (true) {
+            ! $this->task->wholeApp => null,
+            $run->feedback !== null => __('Keep working in the folder you made for this change, which holds your earlier attempt. Only if you lost it, get the code again at :url and make the whole change again.', ['url' => $link()]),
+            default => __('Get the code to start from at :url (a zip, for the next hour). It unpacks into one folder: run `git init && git add -A && git commit -qm start` inside that folder and make the change there.', ['url' => $link()]),
+        };
 
         return implode("\n\n", array_filter([
             '## Hand the change back',

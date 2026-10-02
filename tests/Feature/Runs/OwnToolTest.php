@@ -58,6 +58,19 @@ class OwnToolTest extends TestCase
         $this->assertStringContainsString('/worker-code/'.$first->uuid.'?', $brief);
     }
 
+    public function test_a_fix_keeps_working_in_the_folder_with_the_first_try()
+    {
+        $project = Project::factory()->create();
+        $token = app(ConnectOwnTool::class)->handle($project);
+        $this->waitingRun($project)->update(['feedback' => ['details' => ['The booking test failed.']]]);
+
+        $brief = (string) $this->getTask($token)->json('result.content.0.text');
+
+        $this->assertStringContainsString('The booking test failed.', $brief);
+        $this->assertStringContainsString('Keep working in the folder you made for this change', $brief);
+        $this->assertStringNotContainsString('git init', $brief);
+    }
+
     public function test_the_code_link_gives_the_code_the_change_starts_from_and_only_when_signed()
     {
         $owner = User::factory()->create();
