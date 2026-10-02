@@ -343,6 +343,15 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                 :options="{ preserveScroll: true }"
                 v-slot="{ errors, processing }"
             >
+                <!-- What the owner sees listed is what goes online: a newer
+                     version kept meanwhile is refused, and the list shows
+                     it. -->
+                <input
+                    v-if="publishing.head"
+                    type="hidden"
+                    name="seen"
+                    :value="publishing.head"
+                />
                 <Button
                     :disabled="processing"
                     :variant="troubled ? 'outline' : 'default'"

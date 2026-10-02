@@ -25,9 +25,13 @@ class PublishProject
      * Publish the project as it is now: check the current commit, then hand
      * it to the project's host. One publish runs at a time.
      *
+     * "seen" is the version the owner looked at when they chose to publish.
+     * When the app changed since (a change was kept in another tab), they
+     * did not see what would go online, so nothing is published.
+     *
      * @throws ValidationException when the project cannot be published now.
      */
-    public function handle(Project $project, User $owner): Deployment
+    public function handle(Project $project, User $owner, ?string $seen = null): Deployment
     {
         if (! $project->publishable()) {
             throw ValidationException::withMessages(['publish' => __('Choose where to publish first.')]);
@@ -37,7 +41,7 @@ class PublishProject
             throw ValidationException::withMessages(['publish' => __('This app has nothing to publish yet.')]);
         }
 
-        return DB::transaction(function () use ($project, $owner) {
+        return DB::transaction(function () use ($project, $owner, $seen) {
             Project::query()->whereKey($project->id)->lockForUpdate()->first();
 
             $active = $project->deployments()->whereIn('status', [DeploymentStatus::Checking, DeploymentStatus::Pushing])->exists();
@@ -46,10 +50,16 @@ class PublishProject
                 throw ValidationException::withMessages(['publish' => __('Your app is already being published.')]);
             }
 
+            // Only the main app is published, never an idea.
+            $head = $this->repository->head($project, Experiment::mainBranch());
+
+            if ($seen !== null && $seen !== $head) {
+                throw ValidationException::withMessages(['publish' => __('Your app changed since you looked. Check what goes online now, then put it online.')]);
+            }
+
             $deployment = $project->deployments()->create([
                 'user_id' => $owner->id,
-                // Only the main app is published, never an idea.
-                'commit_sha' => $this->repository->head($project, Experiment::mainBranch()),
+                'commit_sha' => $head,
                 'branch' => $this->hosts->driver($project->publishingHost())->branch($project),
                 'host' => $project->publishingHost(),
                 'status' => DeploymentStatus::Checking,

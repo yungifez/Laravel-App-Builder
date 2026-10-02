@@ -17,7 +17,10 @@ class DeploymentController extends Controller
     {
         Gate::authorize('update', $project);
 
-        $publishProject->handle($project, $request->user());
+        // The version the owner saw listed when they chose to publish.
+        $seen = $request->validate(['seen' => ['nullable', 'string', 'regex:/^[0-9a-f]{40,64}$/']])['seen'] ?? null;
+
+        $publishProject->handle($project, $request->user(), $seen);
 
         return back();
     }

@@ -2547,6 +2547,14 @@ email or SMS, paid infrastructure, data deletion, domain and DNS changes,
 integrations with real consequences. The behaviour diff detects most of them
 deterministically (a new mail channel, a destructive migration, a new secret).
 
+### What the owner saw is what goes online
+
+The publish panel lists what goes online next. The publish sends the version
+the owner saw with that list (`seen`). When the app changed since, for example
+a change kept in another tab, `PublishProject` refuses: the owner did not see
+what would go online. The list then shows the newer version. The commit is
+fixed when the publish starts, and the checks and the push use that commit.
+
 ### Going back to the version before
 
 When a newer version goes wrong online, the owner puts the one before it back.
@@ -2567,8 +2575,7 @@ checked does not build on the last one sent. It keeps each under
 Only code goes back. Information people saved stays, and so does how it is
 stored: a down-migration could lose what they saved. When the newer version
 changed `database/migrations/`, the panel says so before the owner goes back.
-Backups, restoring into a clean environment and approval that expires before a
-release are not built yet.
+Backups and restoring into a clean environment are not built yet.
 
 ### Outside services and their keys
 

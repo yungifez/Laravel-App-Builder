@@ -309,6 +309,28 @@ class PublishingTest extends TestCase
         Queue::assertPushed(PublishDeployment::class, 1);
     }
 
+    public function test_only_the_version_the_owner_looked_at_goes_online()
+    {
+        Queue::fake();
+        $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main']);
+        $seen = $this->repository->head($this->project);
+
+        // A change is kept in another tab after the owner looked.
+        $this->repository->commitFiles($this->project, $seen, ['late.txt' => "late\n"], 'Add late', null);
+
+        $this->actingAs($this->owner)
+            ->post(route('deployments.store', $this->project), ['seen' => $seen])
+            ->assertSessionHasErrors(['publish' => 'Your app changed since you looked. Check what goes online now, then put it online.']);
+
+        $this->assertSame(0, Deployment::count());
+
+        $this->actingAs($this->owner)
+            ->post(route('deployments.store', $this->project), ['seen' => $this->repository->head($this->project)])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame($this->repository->head($this->project), Deployment::sole()->commit_sha);
+    }
+
     public function test_other_people_cannot_publish_or_change_where_to()
     {
         $stranger = User::factory()->create();
