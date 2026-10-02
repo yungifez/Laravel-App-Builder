@@ -33,7 +33,7 @@ class AuthenticateWorker
 
         $task = match (true) {
             $owner instanceof Run && $token->can('task') && ! $owner->status->finished() => new WorkerTask($owner),
-            $owner instanceof Project && $token->can('project') => new WorkerTask(self::waiting($owner), wholeApp: true),
+            $owner instanceof Project && $token->can('project') => new WorkerTask(self::waiting($owner), wholeApp: true, project: $owner),
             default => abort(401),
         };
 

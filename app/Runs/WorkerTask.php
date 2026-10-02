@@ -2,6 +2,7 @@
 
 namespace App\Runs;
 
+use App\Models\Project;
 use App\Models\Run;
 
 /**
@@ -13,5 +14,5 @@ use App\Models\Run;
  */
 final readonly class WorkerTask
 {
-    public function __construct(public ?Run $run, public bool $wholeApp = false) {}
+    public function __construct(public ?Run $run, public bool $wholeApp = false, public ?Project $project = null) {}
 }

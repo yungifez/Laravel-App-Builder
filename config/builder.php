@@ -511,6 +511,11 @@ return [
                 ['npm', 'run'],
             ],
             'try_seconds' => (int) env('BUILDER_WORKER_TRY_SECONDS', 300),
+            // check_status holds its answer up to this long while the change
+            // is with us, and answers as soon as anything changes. Fewer polls
+            // spend fewer of the owner's tokens; keep it under the proxy's
+            // request timeout.
+            'status_wait_seconds' => (int) env('BUILDER_WORKER_STATUS_WAIT_SECONDS', 45),
         ],
 
         // Our coding agents reach their model through the control plane:

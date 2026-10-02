@@ -2,8 +2,10 @@
 
 namespace Tests\Feature\Runs;
 
+use App\Actions\Projects\ConnectOwnTool;
 use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Runs\DescribeRunProgress;
+use App\Actions\Runs\FailRun;
 use App\Actions\Runs\GrantWorkerAccess;
 use App\Actions\Runs\NarrateWork;
 use App\Actions\Runs\StartRun;
@@ -19,6 +21,7 @@ use App\Models\Project;
 use App\Models\Run;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Sleep;
 use Illuminate\Testing\TestResponse;
 use Tests\Concerns\PreparesRuns;
 use Tests\TestCase;
@@ -32,6 +35,7 @@ class WorkerDriverTest extends TestCase
         parent::setUp();
 
         Queue::fake([VerifyFeatureRequest::class]);
+        Sleep::fake();
         $this->buildInLocalWorkspaces();
 
         config([
@@ -102,6 +106,43 @@ class WorkerDriverTest extends TestCase
         $this->verify($run, VerificationStatus::Passed);
         $this->assertSame(RunStatus::Implementing, $run->refresh()->status);
         $this->tool('get_task', $token)->assertSee('No test in the change checks: Teams have a nullable description.');
+    }
+
+    public function test_check_status_waits_while_the_change_is_with_us_and_answers_when_it_moves()
+    {
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.']);
+        $this->assertSame(RunStatus::Verifying, $run->refresh()->status);
+
+        // The checks send the change back during the second wait.
+        $waits = 0;
+        Sleep::whenFakingSleep(function () use ($run, &$waits) {
+            if (++$waits === 2) {
+                $this->verify($run, VerificationStatus::Failed);
+            }
+        });
+
+        $this->tool('check_status', $token)->assertSee('The checks found problems.');
+        $this->assertSame(2, $waits);
+
+        // Waiting for the worker, it answers at once.
+        $this->tool('check_status', $token)->assertSee('The checks found problems.');
+        $this->assertSame(2, $waits);
+    }
+
+    public function test_check_status_says_when_a_change_stopped_on_our_side()
+    {
+        $run = $this->startRun();
+        $token = app(ConnectOwnTool::class)->handle($run->featureRequest->project);
+        $this->tool('get_task', $token);
+
+        app(FailRun::class)->handle($run, 'This is our fault: something on our side stopped.', cause: 'worker_stopped');
+
+        $this->tool('check_status', $token)
+            ->assertSee('No change waits for you now. The last one ended')
+            ->assertSee('stopped on our side, not because of your work')
+            ->assertSee('This is our fault: something on our side stopped.');
     }
 
     public function test_the_worker_runs_commands_on_its_change_in_our_workspace_which_stays_as_it_was()
