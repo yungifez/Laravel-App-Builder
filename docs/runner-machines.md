@@ -145,10 +145,11 @@ If the log says `Firewall is off`, the container did not get `--cap-add
 NET_ADMIN`, or the image has no iptables. Do not give workspaces to that
 machine.
 
-In the control plane, the machine's `last_seen_at` in the `runners` table
-updates while the runner asks for work. A machine counts as online while it
-asked in the last 120 seconds (`WORKSPACE_RUNNER_ONLINE_SECONDS`). New
-workspaces go to the online machine that holds the fewest.
+In the control plane, run `php artisan runners:list`. The machine must show
+as `online`. A machine counts as online while it asked for work in the last
+120 seconds (`WORKSPACE_RUNNER_ONLINE_SECONDS`). New workspaces go to the
+online machine that holds the fewest. A `draining` machine gets no new
+workspaces (see [Remove a machine](#remove-a-machine)).
 
 ## 5. Set the cloud firewall
 

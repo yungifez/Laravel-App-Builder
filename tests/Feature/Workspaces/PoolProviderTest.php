@@ -181,4 +181,21 @@ class PoolProviderTest extends TestCase
         $this->assertSame(PreviewStatus::Stopped, $preview->refresh()->status);
         $this->assertStringContainsString('This is our fault', (string) $preview->error);
     }
+
+    public function test_the_pool_lists_each_machine_with_its_state_and_workspaces()
+    {
+        $this->artisan('runners:list')->expectsOutputToContain('There are no runner machines')->assertSuccessful();
+
+        $this->holding(Runner::factory()->create(['name' => 'vm1', 'service_host' => '10.0.0.2']), 2);
+        Runner::factory()->create(['name' => 'vm2', 'draining_at' => now()]);
+        Runner::factory()->offline()->create(['name' => 'vm3', 'draining_at' => now()]);
+
+        $this->artisan('runners:list')
+            ->expectsTable(['Machine', 'State', 'Workspaces', 'Last asked for work', 'Previews at'], [
+                ['vm1', 'online', 2, '0 seconds ago', '10.0.0.2'],
+                ['vm2', 'draining', 0, '0 seconds ago', Runner::query()->where('name', 'vm2')->value('service_host')],
+                ['vm3', 'offline', 0, '1 day ago', Runner::query()->where('name', 'vm3')->value('service_host')],
+            ])
+            ->assertSuccessful();
+    }
 }
