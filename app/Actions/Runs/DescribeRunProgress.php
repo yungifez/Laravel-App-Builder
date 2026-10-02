@@ -55,9 +55,46 @@ class DescribeRunProgress
             return $this->reviewing($run);
         }
 
+        if ($run->driver === 'worker') {
+            return $this->ownTool($run);
+        }
+
         $progress = $this->live($run);
 
         return $progress === null ? null : $this->describe($run, $progress);
+    }
+
+    /**
+     * Say what the owner's own Claude Code or Codex is doing. It works on
+     * their computer, so what it does here is what we know: when it took
+     * the change, which parts of the app its patch touches when it tries
+     * it out on the app's server, and when it hands it back.
+     *
+     * @return array{text: string, changed: int}
+     */
+    protected function ownTool(Run $run): array
+    {
+        $since = (int) $run->events()->where('type', 'status')->where('data->to', RunStatus::Implementing->value)->max('sequence');
+        $events = $run->events()
+            ->whereIn('type', ['worker_query', 'worker_progress', 'worker_tried', 'worker_submitted'])
+            ->where('sequence', '>', $since)
+            ->reorder('sequence')
+            ->get();
+        $tried = $events->where('type', 'worker_tried')->last();
+        $files = is_array($tried?->data['files'] ?? null) ? array_values(array_filter($tried->data['files'], is_string(...))) : [];
+        $areas = $this->areas($run, $files);
+        $last = $events->whereIn('type', ['worker_progress', 'worker_tried', 'worker_submitted'])->last();
+
+        $text = match (true) {
+            $events->isEmpty() => __('Waiting for your Claude Code or Codex to ask for it'),
+            $last?->type === 'worker_submitted' => __('Your Claude Code or Codex handed it back. Getting it ready to check'),
+            $last?->type === 'worker_tried' => __('Your Claude Code or Codex is trying it out'),
+            $areas !== null => __('Your Claude Code or Codex is changing :areas', ['areas' => $areas]),
+            $last !== null => __('Your Claude Code or Codex is changing your app'),
+            default => __('Your Claude Code or Codex is reading how your app works'),
+        };
+
+        return ['text' => (string) $text, 'changed' => count($files)];
     }
 
     /**
@@ -67,7 +104,9 @@ class DescribeRunProgress
      */
     public function live(Run $run): ?array
     {
-        if ($run->status !== RunStatus::Implementing || $run->workspace === null) {
+        // The owner's own tool tells its story through its calls, which
+        // are kept as events, not through the workspace.
+        if ($run->status !== RunStatus::Implementing || $run->workspace === null || $run->driver === 'worker') {
             return null;
         }
 
@@ -137,9 +176,12 @@ class DescribeRunProgress
      */
     protected function waiting(Run $run): ?array
     {
+        // A change the owner's own tool writes waits for that tool, not in
+        // our line.
         $ahead = Run::query()
             ->where('id', '<', $run->id)
             ->whereIn('status', [RunStatus::Queued, RunStatus::Planning, RunStatus::Implementing, RunStatus::Reviewing])
+            ->whereNot(fn ($query) => $query->where('driver', 'worker')->where('status', RunStatus::Implementing))
             ->count();
 
         return $ahead === 0 ? null : ['text' => trans_choice('Waiting its turn, 1 change ahead|Waiting its turn, :count changes ahead', $ahead), 'changed' => 0];

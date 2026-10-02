@@ -659,10 +659,10 @@ const checks = computed(() => {
                             <LoaderCircle class="size-4 animate-spin" />
                             <span data-test="thread-progress"
                                 >{{
-                                    theirs && run?.status === 'implementing'
+                                    run?.progress?.text ??
+                                    (theirs && run?.status === 'implementing'
                                         ? 'Waiting for your change'
-                                        : (run?.progress?.text ??
-                                          steps[run?.status ?? 'queued'])
+                                        : steps[run?.status ?? 'queued'])
                                 }}…</span
                             >
                             <!-- Seconds counting up show the work has not

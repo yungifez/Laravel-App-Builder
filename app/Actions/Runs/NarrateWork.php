@@ -59,11 +59,33 @@ class NarrateWork
         // check as it finishes; the n-th check stage gets the n-th one.
         $verifications = $run->verifications()->oldest('id')->get();
 
-        foreach ($run->events()->whereIn('type', ['status', 'review', 'agent_story'])->get() as $event) {
+        // Files the owner's own tool has been seen changing, so each counts once.
+        $seen = [];
+
+        foreach ($run->events()->whereIn('type', ['status', 'review', 'agent_story', 'worker_progress', 'worker_tried'])->get() as $event) {
             if ($event->type === 'agent_story') {
                 foreach ($event->data['story'] ?? [] as $entry) {
                     $this->add($lines, $run, $entry);
                 }
+
+                continue;
+            }
+
+            // The owner's own tool says what it does in its own words, and
+            // its tries show which parts of the app it changed by then.
+            if ($event->type === 'worker_progress') {
+                $this->add($lines, $run, ['kind' => 'said', 'text' => (string) ($event->data['text'] ?? '')]);
+
+                continue;
+            }
+
+            if ($event->type === 'worker_tried') {
+                foreach (array_diff(array_filter((array) ($event->data['files'] ?? []), is_string(...)), $seen) as $file) {
+                    $this->add($lines, $run, ['kind' => 'changed', 'file' => $file]);
+                    $seen[] = $file;
+                }
+
+                $this->add($lines, $run, ['kind' => 'testing']);
 
                 continue;
             }

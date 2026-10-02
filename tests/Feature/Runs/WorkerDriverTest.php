@@ -3,7 +3,9 @@
 namespace Tests\Feature\Runs;
 
 use App\Actions\Runs\CompleteRunVerification;
+use App\Actions\Runs\DescribeRunProgress;
 use App\Actions\Runs\GrantWorkerAccess;
+use App\Actions\Runs\NarrateWork;
 use App\Actions\Runs\StartRun;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
@@ -163,6 +165,38 @@ class WorkerDriverTest extends TestCase
         $fix = (string) $this->tool('get_task', $token)->json('result.content.0.text');
         $this->assertStringContainsString('Line 3 of tests/Feature/TeamScreenTest.php starts Node from a PHP test.', $fix);
         $this->assertStringContainsString('assertInertia', $fix);
+    }
+
+    public function test_the_owner_watches_their_own_tool_work_in_plain_words()
+    {
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $progress = fn () => app(DescribeRunProgress::class)->handle($run->refresh())['text'];
+
+        $this->assertSame('Waiting for your Claude Code or Codex to ask for it', $progress());
+
+        $this->tool('get_task', $token)->assertSee('share_progress');
+        $this->assertSame('Your Claude Code or Codex is reading how your app works', $progress());
+
+        $this->tool('share_progress', $token, ['doing' => 'Adding a short description to each team.'])->assertSee('Shared.');
+        $this->tool('try_change', $token, ['patch' => $this->workersChange(), 'command' => ['cat', 'app/Models/Team.php']], ['builder.agents.workers.try_commands' => [['cat']]]);
+        $this->assertSame('Your Claude Code or Codex is trying it out', $progress());
+
+        $story = array_column(app(NarrateWork::class)->handle($run->refresh()), 'text');
+        $this->assertContains('Adding a short description to each team.', $story);
+        $this->assertContains('Tried it out', $story);
+        $this->assertSame(1, app(DescribeRunProgress::class)->handle($run)['changed']);
+
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.']);
+        $this->assertContains('Adding a short description to each team.', array_column(app(NarrateWork::class)->handle($run->refresh()), 'text'), 'The story stays once it is handed back.');
+    }
+
+    public function test_a_change_waiting_for_an_owners_tool_is_not_ahead_in_our_line()
+    {
+        $this->startRun();
+        $ours = Run::factory()->create(['status' => RunStatus::Queued]);
+
+        $this->assertNull(app(DescribeRunProgress::class)->handle($ours));
     }
 
     public function test_a_patch_that_does_not_apply_is_refused_with_the_reason_and_can_be_handed_back_again()

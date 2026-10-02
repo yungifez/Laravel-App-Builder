@@ -4,6 +4,7 @@ namespace App\Mcp\Servers;
 
 use App\Mcp\Tools\CheckStatus;
 use App\Mcp\Tools\GetTask;
+use App\Mcp\Tools\ShareProgress;
 use App\Mcp\Tools\SubmitChange;
 use App\Mcp\Tools\TryChange;
 use Laravel\Mcp\Server;
@@ -23,6 +24,7 @@ class TaskServer extends Server
 {
     protected array $tools = [
         GetTask::class,
+        ShareProgress::class,
         TryChange::class,
         SubmitChange::class,
         CheckStatus::class,

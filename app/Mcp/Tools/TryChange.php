@@ -4,6 +4,7 @@ namespace App\Mcp\Tools;
 
 use App\Actions\Runs\TryWorkerChange;
 use App\Enums\RunStatus;
+use App\Features\PatchSummary;
 use App\Runs\Drivers\WorkerDriver;
 use App\Runs\WorkerTask;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -50,7 +51,10 @@ class TryChange extends Tool
 
         /** @var list<string> $command */
         $command = array_values($input['command']);
-        $run->recordEvent('worker_tried', ['command' => implode(' ', $command)]);
+        $run->recordEvent('worker_tried', [
+            'command' => implode(' ', $command),
+            'files' => array_column(PatchSummary::files((string) ($input['patch'] ?? '')), 'path'),
+        ]);
 
         try {
             $result = $this->tryWorkerChange->handle($run, (string) ($input['patch'] ?? ''), $command);
