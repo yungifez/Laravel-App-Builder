@@ -102,4 +102,19 @@ class FindingProposalsTest extends TestCase
         $this->expectException(ValidationException::class);
         app(AnswerFindingProposals::class)->handle($run->featureRequest, AppBoundaries::CHANGED_WHILE_AUTHORIZING, true, $run->featureRequest->project->owner);
     }
+
+    public function test_the_agent_may_ask_about_only_a_few_findings_in_one_change()
+    {
+        config(['builder.verification.proposals.asks' => 2]);
+        $change = FeatureRequest::factory()->generated()->create();
+        $change->findingProposals()->create(['kind' => AppBoundaries::CHANGED_WHILE_AUTHORIZING, 'identity' => self::SAVE, 'reason' => 'It is a log.', 'agreed' => true]);
+
+        $gate = app(ProposeFindings::class)->keyed($change, [
+            ['kind' => AppBoundaries::CHANGED_WHILE_RENDERING, 'identity' => self::SEND, 'text' => 'GET /posts sent while rendering.'],
+            ['kind' => AppBoundaries::CHANGED_WHILE_RENDERING, 'identity' => 'changed_while_rendering|App\Http\Resources\PostResource::toArray|mail', 'text' => 'GET /posts mailed while rendering.'],
+        ]);
+
+        $this->assertSame(['B1', null], array_column($gate, 'key'));
+        $this->assertSame('GET /posts mailed while rendering. You cannot ask the owner about more in this change, so fix this one.', $gate[1]['text']);
+    }
 }

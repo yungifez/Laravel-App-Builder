@@ -812,6 +812,15 @@ return [
             'phases' => ['authorization', 'validation', 'rendering'],
         ],
 
+        // What the coder may ask the owner to keep of what sends a change
+        // back (direction 33). The coder may argue a finding is wrong or is
+        // what the owner asked for, but only the owner's yes lets it stay.
+        // "asks" is the most findings it may ask about in one change, so
+        // asking never replaces fixing. 0 lets it ask about none.
+        'proposals' => [
+            'asks' => (int) env('BUILDER_PROPOSAL_ASKS', 3),
+        ],
+
         // What the app leaves behind when one thing fails (direction 32).
         // Once the checks pass, the recorder makes one thing fail in one
         // request of one test: an email that cannot be sent, an outside

@@ -88,6 +88,15 @@ class DescribeProof
             AppBoundaries::CHANGED_WHILE_RENDERING => 'In a part you asked me to be extra careful with, your app may save or send something while it puts a page together.',
         ];
 
+        // What the owner agreed to keep says why, in the agent's words.
+        foreach ($featureRequest->findingProposals()->where('agreed', true)->oldest('id')->get()->unique('kind') as $proposal) {
+            $at = collect($lines)->search(fn (array $line) => isset($line['decision']) && $line['decision']['finding'] === $proposal->kind && $line['decision']['accepted']);
+
+            if (is_int($at)) {
+                $lines[$at] = [...$lines[$at], 'text' => $lines[$at]['text'].' '.__('You agreed with my reason: :reason', ['reason' => $proposal->reason])];
+            }
+        }
+
         foreach ($featureRequest->findingProposals()->whereNull('agreed')->oldest('id')->get()->unique('kind') as $proposal) {
             $at = collect($lines)->search(fn (array $line) => isset($line['decision']) && $line['decision']['finding'] === $proposal->kind && ! $line['decision']['accepted']);
             $decision = ['change' => $featureRequest->uuid, 'finding' => $proposal->kind, 'accepted' => false, 'proposal' => $proposal->reason];
@@ -428,6 +437,7 @@ class DescribeProof
             AppFaults::SAVED_THEN_FAILED => 'If :failure at :address, the person sees an error, but your app has already saved what they did. They may try again and do it twice.',
             AppFaults::SENT_THEN_LOST => 'If saving fails at :address, your app has already sent something. People are told about something that was not saved.',
             AppFaults::SAVED_IN_PART => 'If saving fails at :address, your app keeps one part of what it was saving and loses the rest.',
+            AppFaults::FAILURE_HIDDEN => 'If :failure at :address, your app carries on as if it worked. The person is not told, and nothing is written down, so you would not find out.',
             AppFaults::DONE_TWICE => 'Your app does some work on its own after someone uses :address. If that work is cut off and starts over, it sends or adds the same thing twice.',
             AppFaults::SENT_AGAIN => 'Your app does some work on its own after someone uses :address. If saving fails during that work and it starts over, it sends the same thing twice.',
             AppFaults::CALLED_AGAIN => 'If an outside service is slow to answer at :address, your app asks it again. The service may then do the same thing twice, such as take a payment twice.',
@@ -453,7 +463,11 @@ class DescribeProof
                 $found = $accepted ? $found : AppFaults::findings($left, $kind);
                 $gap = __($text, [
                     'address' => AppRoutes::address($found[0]['route']),
-                    'failure' => str_starts_with($found[0]['failed'], 'mail') ? __('an email cannot be sent') : __('an outside service does not answer'),
+                    'failure' => match (true) {
+                        str_starts_with($found[0]['failed'], 'mail') => __('an email cannot be sent'),
+                        str_starts_with($found[0]['failed'], 'http') => __('an outside service does not answer'),
+                        default => __('saving fails'),
+                    },
                 ]);
 
                 $lines[] = [

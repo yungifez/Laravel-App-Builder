@@ -26,6 +26,7 @@ class ProposeFindings
     /**
      * Give each finding of the gate the key the agent answers with. A
      * finding the owner already said no to must be fixed, so it gets no key.
+     * Nor does one past the most the agent may ask about in a change.
      *
      * @param  list<array{kind: string, identity: string, text: string}>  $findings
      * @return list<array{key: string|null, kind: string, identity: string, text: string}>
@@ -33,15 +34,19 @@ class ProposeFindings
     public function keyed(FeatureRequest $featureRequest, array $findings): array
     {
         $refused = $featureRequest->findingProposals()->where('agreed', false)->pluck('identity')->all();
+        $left = max(0, config()->integer('builder.verification.proposals.asks', 3) - $featureRequest->findingProposals()->count());
         $keyed = [];
         $n = 0;
 
         foreach ($findings as $finding) {
-            $key = in_array($finding['identity'], $refused, true) ? null : 'B'.++$n;
-
-            $keyed[] = [...$finding, 'key' => $key, 'text' => $key === null
-                ? __(':text You asked to keep this before, and the owner said it must be fixed.', ['text' => $finding['text']])
-                : "{$key}: {$finding['text']}"];
+            if (in_array($finding['identity'], $refused, true)) {
+                $keyed[] = [...$finding, 'key' => null, 'text' => __(':text You asked to keep this before, and the owner said it must be fixed.', ['text' => $finding['text']])];
+            } elseif ($n >= $left) {
+                $keyed[] = [...$finding, 'key' => null, 'text' => __(':text You cannot ask the owner about more in this change, so fix this one.', ['text' => $finding['text']])];
+            } else {
+                $key = 'B'.++$n;
+                $keyed[] = [...$finding, 'key' => $key, 'text' => "{$key}: {$finding['text']}"];
+            }
         }
 
         return $keyed;

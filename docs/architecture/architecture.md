@@ -1861,8 +1861,12 @@ the change. When nothing else holds it, the change stops for the owner
 this way" and "No, fix it". Yes stores the choice as "I want it this way"
 does, with who answered and when, and the review runs again. No sends the
 change back, and the coder is told that the owner said it must be fixed. The
-coder can ask about each finding once per change. The final decision is
-always the owner's.
+coder can ask about each finding once per change, and about at most three
+findings in one change (`builder.verification.proposals.asks`), so asking
+never replaces fixing. A finding past that has no key and must be fixed. The
+proposal keeps the record: the reason, the run that asked, who answered and
+when. A line the owner agreed to keep shows the agent's reason in the
+proof. The final decision is always the owner's.
 
 The owner can also ask the builder to be extra careful with a part of the
 app (`projects.careful_areas`, "Be extra careful here" on the page about

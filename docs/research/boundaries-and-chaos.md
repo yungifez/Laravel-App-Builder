@@ -5,8 +5,11 @@ Status: the owner adopted the MVP (§20) on 2026-10-01. Built so far: phase
 and frames per effect, the phase rules (`AppBoundaries`), the same rules
 read from the code (`BoundaryCode`, including the app's start), the ratchet
 that does not count a finding that only moved (§16.1), exceptions the owner
-gives in the proof for one change (§16.3, without budgets or review dates
-yet), containment read from where the app already calls each outside service
+gives in the proof for one change (§16.3: the agent may propose one with a
+reason, only the owner grants it, and the agent may ask about at most three
+findings per change; the owner-level budget and review dates wait for
+developer roles), strict mode per area ("Be extra careful here"),
+containment read from where the app already calls each outside service
 (reviewer only, not yet confirmed by developers), the job that runs twice,
 the job retried after its save failed, the outside call made again after no
 answer, the server error the app does not ask about, listeners run in

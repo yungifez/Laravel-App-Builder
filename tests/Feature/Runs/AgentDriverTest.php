@@ -728,6 +728,7 @@ class AgentDriverTest extends TestCase
         // The review ran again, and what the owner agreed to no longer holds the change.
         $this->assertSame(RunStatus::Completed, $run->refresh()->status);
         $this->assertSame(1, $run->repairs);
+        $this->assertContains('chosen', array_column(array_filter(app(DescribeProof::class)->handle($run->featureRequest), fn (array $line) => str_ends_with($line['text'], 'You agreed with my reason: The owner asked for every refused visit to be logged, and this is that log.')), 'kind'));
     }
 
     public function test_after_the_owner_says_no_the_agent_must_fix_what_the_gate_found()
