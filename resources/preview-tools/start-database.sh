@@ -72,10 +72,14 @@ mysql | mariadb)
         fi
 
         # Small settings: one app's development data, beside other workspaces.
+        # The data can be built again at any time, so the server never waits
+        # for the disk: building a large app's tables takes a minute, not
+        # several.
         mysqld --no-defaults --daemonize --datadir="$base/data" --socket="$socket" \
             --pid-file="$base/mysqld.pid" --log-error="$base/error.log" --tmpdir="$base" --secure-file-priv="$base" \
             --skip-grant-tables --skip-networking --mysqlx=OFF --performance-schema=OFF \
-            --innodb-buffer-pool-size=32M > /dev/null 2>&1 || ours MySQL "$base/error.log"
+            --innodb-buffer-pool-size=32M --skip-log-bin --innodb-doublewrite=OFF \
+            --innodb-flush-log-at-trx-commit=0 --innodb-flush-method=nosync > /dev/null 2>&1 || ours MySQL "$base/error.log"
 
         tries=0
         until mysqladmin --socket="$socket" --user=root ping > /dev/null 2>&1; do
@@ -117,7 +121,7 @@ pgsql)
         fi
 
         "$bin/pg_ctl" -D "$base/data" -l "$base/error.log" -w -t 30 \
-            -o "-c listen_addresses='' -c unix_socket_directories='$base' -c shared_buffers=16MB" start > /dev/null || ours PostgreSQL "$base/error.log"
+            -o "-c listen_addresses='' -c unix_socket_directories='$base' -c shared_buffers=16MB -c fsync=off -c synchronous_commit=off -c full_page_writes=off" start > /dev/null || ours PostgreSQL "$base/error.log"
     fi
 
     for name in $(names); do

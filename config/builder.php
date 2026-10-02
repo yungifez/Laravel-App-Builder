@@ -1160,7 +1160,8 @@ return [
             // The database server the app asks for in .env, private to the
             // workspace (MySQL, MariaDB or PostgreSQL; SQLite needs none).
             ['name' => 'Start the database', 'command' => ['sh', '-c', (string) file_get_contents(resource_path('preview-tools/start-database.sh'))], 'timeout' => 120],
-            ['name' => 'Create the database', 'command' => ['php', 'artisan', 'migrate', '--force', '--no-interaction'], 'timeout' => 120],
+            // A large app builds hundreds of tables the first time.
+            ['name' => 'Create the database', 'command' => ['php', 'artisan', 'migrate', '--force', '--no-interaction'], 'timeout' => 600],
             ['name' => 'Install Node dependencies', 'command' => ['npm', 'ci', '--no-audit', '--no-fund'], 'timeout' => 600, 'needs' => 'package.json'],
         ],
 

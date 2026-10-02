@@ -2,7 +2,7 @@
 // that each workspace's commands run as a user of its own, who cannot read
 // another workspace. Run it as root: node box-runner-users.mjs runner.mjs
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { chown, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -10,11 +10,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const root = await mkdtemp(join(tmpdir(), 'builder-runner-users-'));
-const exec = (box, script) => ({
+const exec = (box, script, env = {}) => ({
     type: 'exec',
     box,
-    payload: { command: ['sh', '-c', script], env: {} },
+    payload: { command: ['sh', '-c', script], env },
 });
+// A file of the machine, owned by root, that no workspace may read.
+const machineFile = join(root, '.machine-environment');
 
 // Each phase starts once the one before it has answered.
 const phases = [
@@ -41,6 +43,27 @@ const phases = [
         exec('workspace-b', 'cat secret.txt'),
         exec('workspace-old', 'id -u; touch made-later'),
     ],
+    [
+        // A workspace's own variables, and a process it leaves running.
+        exec(
+            'workspace-a',
+            "mkdir -p .git && printf 'FROM_FILE=file\\nOVERRIDE=file\\nLD_PRELOAD=/nowhere.so\\nPATH=/nowhere\\nlower=x\\n' > .git/environment && chmod 600 .git/environment && (setsid sleep 300 > /dev/null 2>&1 &)",
+        ),
+        // A link to a file the workspace may not read.
+        exec(
+            'workspace-b',
+            `mkdir -p .git && ln -s ${machineFile} .git/environment`,
+        ),
+    ],
+    [
+        exec(
+            'workspace-a',
+            'echo "$FROM_FILE|$OVERRIDE|${LD_PRELOAD:-none}|$PATH|${lower:-none}"',
+            { OVERRIDE: 'plane' },
+        ),
+        exec('workspace-b', 'echo "${SECRET:-none}"'),
+    ],
+    [{ type: 'close', box: 'workspace-a' }],
 ];
 let phase = 0;
 let pending = [];
@@ -103,6 +126,8 @@ try {
     await chown(join(root, 'workspace-old'), 1337, 1000);
     await chown(join(root, 'workspace-old', 'code.php'), 1337, 1000);
 
+    await writeFile(machineFile, 'SECRET=leaked\n');
+
     release();
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
@@ -151,6 +176,31 @@ try {
     );
     assert.equal((await stat(join(root, 'workspace-old'))).mode & 0o777, 0o700);
     assert.equal((await stat(root)).mode & 0o777, 0o711);
+
+    // The workspace's own variables reach its commands, the control
+    // plane's win, and names that change how programs load never pass.
+    assert.equal(out(10).exit_code, 0, out(10).error_output);
+    assert.equal(out(11).exit_code, 0, out(11).error_output);
+    assert.equal(
+        out(12).output.trim(),
+        `file|plane|none|${process.env.PATH}|none`,
+    );
+    // A link is never followed.
+    assert.equal(out(13).output.trim(), 'none');
+
+    // Closing a workspace stops what its user left running. A stopped
+    // process this script started is not reaped here, so only processes
+    // still alive count.
+    assert.equal(out(14).exit_code, 0, out(14).error_output);
+    const alive = execFileSync('ps', ['-eo', 'uid=,stat='])
+        .toString()
+        .split('\n')
+        .filter((line) => {
+            const [uid, state] = line.trim().split(/\s+/);
+
+            return uid === aId && !state.startsWith('Z');
+        });
+    assert.deepEqual(alive, [], 'workspace-a still runs a process');
 } finally {
     clearTimeout(timer);
     runner?.kill('SIGTERM');

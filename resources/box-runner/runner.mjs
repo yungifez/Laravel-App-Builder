@@ -30,8 +30,13 @@ import { execFileSync, spawn } from 'node:child_process';
 import {
     chmodSync,
     chownSync,
+    closeSync,
+    constants,
+    fstatSync,
     mkdirSync,
+    openSync,
     readdirSync,
+    readSync,
     rmSync,
     statfsSync,
     statSync,
@@ -70,6 +75,23 @@ const PASSTHROUGH = [
 ];
 
 const KILL_AFTER_MS = 5000;
+
+/**
+ * Variables a workspace's own tools may set for its commands, in
+ * .git/environment: never committed, and gone when the workspace closes.
+ * Names that change how programs load or where they look, and the ones the
+ * runner sets itself, are never taken from it.
+ */
+const OWN_ENVIRONMENT = join('.git', 'environment');
+const OWN_ENVIRONMENT_LIMIT = 16 * 1024;
+const RESERVED = new Set([
+    'NODE_OPTIONS',
+    'BASH_ENV',
+    'ENV',
+    'HOME',
+    'TMPDIR',
+    ...PASSTHROUGH,
+]);
 
 /** Whether the runner may run commands as other users. */
 const switching = process.getuid?.() === 0;
@@ -404,7 +426,64 @@ function unfenceWorkspace(name) {
     );
 }
 
-function environment(as, extra = {}) {
+/**
+ * Read a workspace's own variables. The runner may be root, so the file is
+ * read only when it is a small regular file the workspace's user owns, and
+ * never through a link: a link could point at a file of the machine or of
+ * another workspace.
+ */
+function ownEnvironment(name, as) {
+    let file;
+
+    try {
+        file = openSync(
+            join(box(name), OWN_ENVIRONMENT),
+            constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+        );
+    } catch {
+        return {};
+    }
+
+    try {
+        const stats = fstatSync(file);
+
+        if (
+            !stats.isFile() ||
+            stats.uid !== (as.ids.uid ?? process.getuid?.()) ||
+            stats.size > OWN_ENVIRONMENT_LIMIT
+        ) {
+            return {};
+        }
+
+        const contents = Buffer.alloc(stats.size);
+        const size = readSync(file, contents, 0, stats.size, 0);
+        const env = {};
+
+        for (const line of contents.subarray(0, size).toString().split('\n')) {
+            const match = /^([A-Z_][A-Z0-9_]*)=(.*)$/.exec(line);
+
+            if (
+                match !== null &&
+                !match[1].startsWith('LD_') &&
+                !match[1].startsWith('RUNNER_') &&
+                !RESERVED.has(match[1])
+            ) {
+                env[match[1]] = match[2];
+            }
+        }
+
+        return env;
+    } finally {
+        closeSync(file);
+    }
+}
+
+/**
+ * The environment of a command run as a workspace's user: the runner's
+ * own few variables, the workspace's own ones (when "workspace" names it),
+ * then what the control plane sent, which wins.
+ */
+function environment(as, extra = {}, workspace = null) {
     const env = { HOME: as.home };
 
     if (switching) {
@@ -417,7 +496,11 @@ function environment(as, extra = {}) {
         }
     }
 
-    return { ...env, ...extra };
+    return {
+        ...env,
+        ...(workspace === null ? {} : ownEnvironment(workspace, as)),
+        ...extra,
+    };
 }
 
 /** Signal a process group; one that has already ended is ignored. */
@@ -461,7 +544,15 @@ function collector(limit) {
  */
 function run(
     command,
-    { as, cwd, env = {}, timeoutSeconds, input = null, stdout = null },
+    {
+        as,
+        cwd,
+        env = {},
+        workspace = null,
+        timeoutSeconds,
+        input = null,
+        stdout = null,
+    },
     id = null,
 ) {
     const startedAt = Date.now();
@@ -475,7 +566,7 @@ function run(
         try {
             process_ = spawn(command[0], command.slice(1), {
                 cwd,
-                env: environment(as, env),
+                env: environment(as, env, workspace),
                 detached: true,
                 stdio: [input === null ? 'ignore' : 'pipe', 'pipe', 'pipe'],
                 ...as.ids,
@@ -585,6 +676,40 @@ function servicesDirectory(name) {
     return join(root, '.services', name);
 }
 
+/**
+ * Stop whatever the workspace's user still runs, such as a database server
+ * a command started in the background, before the user id is given to
+ * another workspace.
+ */
+function stopEverything(name) {
+    if (!switching) {
+        return;
+    }
+
+    let id;
+
+    try {
+        id = statSync(box(name)).uid;
+    } catch {
+        return;
+    }
+
+    if (id < FIRST_ID || id > LAST_ID) {
+        return;
+    }
+
+    // A process may start another while the first are stopped.
+    for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+            execFileSync('pkill', ['-KILL', '-u', String(id)], {
+                stdio: 'ignore',
+            });
+        } catch {
+            return; // None left.
+        }
+    }
+}
+
 function stopServices(name) {
     for (const group of services.get(name) ?? []) {
         killGroup(group, 'SIGTERM');
@@ -608,6 +733,7 @@ const handlers = {
 
     async close(command) {
         stopServices(command.box);
+        stopEverything(command.box);
         unfenceWorkspace(command.box);
         rmSync(box(command.box), { recursive: true, force: true });
         rmSync(join(homes(), command.box), { recursive: true, force: true });
@@ -628,6 +754,7 @@ const handlers = {
                 as: identity(command.box),
                 cwd: box(command.box),
                 env,
+                workspace: command.box,
                 timeoutSeconds: command.timeout_seconds,
             },
             command.id,
@@ -735,7 +862,7 @@ const handlers = {
             ],
             {
                 cwd: box(command.box),
-                env: environment(as),
+                env: environment(as, {}, command.box),
                 detached: true,
                 stdio: 'ignore',
                 ...as.ids,

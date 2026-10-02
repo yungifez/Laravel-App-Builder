@@ -2864,9 +2864,14 @@ it listens only on a socket in the workspace's temp folder and lets in any
 user, so the app keeps the names and passwords it was written with. Each
 database the app or its test settings name is created. The socket goes into
 `.env` (`DB_SOCKET`, or `DB_HOST` for PostgreSQL) and into
-`.git/environment`. The box runner is meant to give that file's variables to
-every command, so tests that read a committed `.env.testing` also find the
-server; that runner part is not built yet. The box image holds the server
+`.git/environment`. The box runner gives that file's variables to every
+command and service of the workspace, so tests that read a committed
+`.env.testing` also find the server. It reads the file only when it is a
+small regular file the workspace's user owns, never through a link, and
+never takes names that change how programs load (`LD_*`, `NODE_OPTIONS`) or
+the ones it sets itself; what the control plane sends wins. Closing a
+workspace stops every process its user still runs, a database server
+included, before the user id goes to another workspace. The box image holds the server
 programs; no server starts unless an app asks for one. SQLite is not used in
 place of the app's own database: an app's migrations may use what only its
 own database understands.
