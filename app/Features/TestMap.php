@@ -224,7 +224,15 @@ final readonly class TestMap
     public static function describe(string $name): string
     {
         $name = (string) preg_replace('/ with data set .*$/', '', $name);
+        // A Pest description is written as a sentence, so its capitals,
+        // such as a name like "Terms of Service", are kept.
+        $sentence = str_contains($name, ' ') || str_starts_with($name, '__pest_evaluable_');
         $name = (string) preg_replace('/^(__pest_evaluable_|test_?)/', '', $name);
+
+        if ($sentence) {
+            return Str::ucfirst(Str::squish(str_replace('_', ' ', $name)));
+        }
+
         // camelCase words part at each capital; digits stay with their words.
         $name = Str::squish((string) preg_replace('/(?<=[a-z0-9])(?=[A-Z])/', ' ', str_replace('_', ' ', $name)));
 
