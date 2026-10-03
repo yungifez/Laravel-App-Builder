@@ -2,6 +2,7 @@
 
 namespace App\Actions\Previews;
 
+use App\Features\AppRoutes;
 use App\Models\Project;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Support\Facades\Cache;
@@ -165,6 +166,11 @@ class ReadPreviewHappenings
      */
     protected function page(string $method, string $route): string
     {
+        // A part of a page that updates on its own is named by that part.
+        if (AppRoutes::isPart($route)) {
+            return (string) __('Updated :part', ['part' => AppRoutes::address("{$method} {$route}")]);
+        }
+
         $route = Str::before($route, '#');
         $path = $route === '' ? __('a page') : $route;
 

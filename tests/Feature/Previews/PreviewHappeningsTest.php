@@ -182,6 +182,18 @@ class PreviewHappeningsTest extends TestCase
                 ->where('happenings.requests.0.did', [['text' => 'Saved a new like', 'failed' => false]])));
     }
 
+    public function test_a_part_of_a_page_that_updates_itself_is_named_by_that_part()
+    {
+        $this->recorded([
+            ['n' => 0, 'method' => 'POST', 'route' => '/livewire-7a0bd264/update#about-users-avatars@__lazyLoad', 'status' => 200, 'effects' => []],
+        ]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('happenings', fn (Assert $page) => $page
+                ->where('happenings.requests.0.page', 'Updated the about users avatars part of a page')));
+    }
+
     public function test_an_app_that_did_nothing_yet_or_does_not_run_has_nothing_to_show()
     {
         $this->actingAs($this->owner)

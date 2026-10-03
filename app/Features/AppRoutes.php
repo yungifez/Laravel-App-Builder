@@ -159,7 +159,7 @@ class AppRoutes
 
         $address = Str::after($route, ' ');
 
-        if (! str_starts_with($address, '/livewire-')) {
+        if (! self::isPart($address)) {
             return $address;
         }
 
@@ -167,6 +167,15 @@ class AppRoutes
         $name = Str::of($address)->after('#')->before('+')->before('@')->afterLast('\\')->afterLast('::')->afterLast('.')->snake()->replace(['-', '_'], ' ')->squish()->value();
 
         return ! str_contains($address, '#') || $name === '' ? __('a part of a page') : __('the :name part of a page', ['name' => $name]);
+    }
+
+    /**
+     * Whether an address is one a part of a page uses to update itself,
+     * which the owner never sees in the browser.
+     */
+    public static function isPart(string $address): bool
+    {
+        return str_starts_with($address, '/livewire-');
     }
 
     /**
