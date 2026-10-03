@@ -77,12 +77,28 @@ class RepeatedFailureTest extends TestCase
         $paused = 'This is our fault: we paused new work for today to keep our costs in check. Nothing in your app changed. Try again tomorrow.';
         $first = $this->stopped('spend_limit', $paused);
         $again = $this->stopped('spend_limit', $paused, $first);
+        // Today's spend is still at the limit, so the pause holds.
+        config(['builder.construction.budgets.daily_usd' => 10]);
+        Run::factory()->create()->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 10.5]);
 
         $this->actingAs($this->owner)
             ->get(route('feature-requests.show', $again))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('featureRequest.failed_same_way', false)
+                ->where('featureRequest.can_retry', false)
                 ->where('run.error', $paused));
+    }
+
+    public function test_a_pause_that_is_over_no_longer_tells_the_owner_to_wait()
+    {
+        $paused = 'This is our fault: we paused new work for today to keep our costs in check. Nothing in your app changed. Try again tomorrow.';
+        $stopped = $this->stopped('spend_limit', $paused);
+
+        $this->actingAs($this->owner)
+            ->get(route('feature-requests.show', $stopped))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('featureRequest.can_retry', true)
+                ->where('run.error', 'This is our fault: we paused new work for a day to keep our costs in check. That pause is over, so you can try again now. Nothing in your app changed.'));
     }
 
     public function test_the_notice_of_a_repeated_stop_says_so()

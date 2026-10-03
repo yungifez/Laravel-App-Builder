@@ -68,9 +68,9 @@ class DescribeFeatureRequest
                 'images' => $this->images($featureRequest),
                 'status' => $featureRequest->status->value,
                 'summary' => $featureRequest->summary,
-                'error' => $this->sameWay($sameWay, $featureRequest->status === FeatureRequestStatus::Failed
+                'error' => $this->sameWay($sameWay, $this->limitLifted($featureRequest, $featureRequest->status === FeatureRequestStatus::Failed
                     ? OwnerWording::failure($featureRequest->error)
-                    : OwnerWording::message($featureRequest->error)),
+                    : OwnerWording::message($featureRequest->error))),
                 'target_step' => $parent === null || $featureRequest->target_step === null
                     ? null
                     : $parent->step($featureRequest->target_step),
@@ -248,6 +248,23 @@ class DescribeFeatureRequest
     }
 
     /**
+     * Say a stop for a limit that has since lifted as over, so the owner is
+     * not told to wait while "Try again" already works.
+     */
+    protected function limitLifted(FeatureRequest $featureRequest, ?string $reason): ?string
+    {
+        if ($reason === null || ! RetryFeatureRequest::retryable($featureRequest)) {
+            return $reason;
+        }
+
+        return match ($featureRequest->latestRun?->stop_reason) {
+            'spend_limit' => __('This is our fault: we paused new work for a day to keep our costs in check. That pause is over, so you can try again now. Nothing in your app changed.'),
+            'usage_limit' => __('This stopped because your plan\'s AI use for the month ran out. It has started again, so you can try again now. Nothing in your app changed.'),
+            default => $reason,
+        };
+    }
+
+    /**
      * Get the latest construction run and its log for the page.
      *
      * @return array<string, mixed>|null
@@ -260,9 +277,9 @@ class DescribeFeatureRequest
             'id' => $run->uuid,
             'status' => $run->status->value,
             // A stop the owner did not ask for is ours, and says so.
-            'error' => $this->sameWay($sameWay, in_array($run->status, [RunStatus::Failed, RunStatus::NeedsUserDecision], true)
+            'error' => $this->sameWay($sameWay, $this->limitLifted($featureRequest, in_array($run->status, [RunStatus::Failed, RunStatus::NeedsUserDecision], true)
                 ? OwnerWording::failure($run->error)
-                : OwnerWording::message($run->error)),
+                : OwnerWording::message($run->error))),
             'question' => $run->status === RunStatus::NeedsUserDecision ? $run->question : null,
             // Stopped because it found nothing to change: what it checked
             // and why, in its own words, so a fix for something that is
