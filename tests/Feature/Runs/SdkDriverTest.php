@@ -193,6 +193,18 @@ class SdkDriverTest extends TestCase
         $this->assertSame(0, $run->events()->where('type', 'failover')->count());
     }
 
+    public function test_an_agent_that_breaks_before_its_first_turn_hands_the_change_to_the_other_agent()
+    {
+        $this->agent('claude', 'anthropic', fn () => new AgentOutcome('claude', 'anthropic', null, AgentOutcomeStatus::Failed, null, 'exception', 'Exited with code 1: Reading prompt from stdin...'));
+        $this->agent('codex', 'openai', $this->writes('codex', 'openai', 'app/Codex.php', "<?php\n"));
+
+        $run = app(StartRun::class)->handle($featureRequest = $this->request())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertStringContainsString('app/Codex.php', (string) $featureRequest->refresh()->patch);
+        $this->assertSame(['from' => 'claude', 'to' => 'codex', 'reason' => 'exception'], $run->events()->where('type', 'failover')->sole()->data);
+    }
+
     public function test_agents_do_not_run_beside_the_control_plane_unless_it_is_allowed()
     {
         config(['workspaces.drivers.local.agents' => false]);

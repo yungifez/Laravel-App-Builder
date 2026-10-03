@@ -87,7 +87,7 @@ class RunCodingAgent
                 },
             ]);
 
-            if ($outcome->status !== AgentOutcomeStatus::ProviderUnavailable) {
+            if ($outcome->status !== AgentOutcomeStatus::ProviderUnavailable && ! $this->couldNotStart($outcome)) {
                 Cache::forget($this->circuitKey($adapter));
 
                 // What the agent did and said, kept for the owner to read
@@ -102,7 +102,10 @@ class RunCodingAgent
                 return $outcome;
             }
 
-            $this->recordProviderFailure($adapter);
+            if ($outcome->status === AgentOutcomeStatus::ProviderUnavailable) {
+                $this->recordProviderFailure($adapter);
+            }
+
             $previous = $outcome;
         }
 
@@ -207,6 +210,18 @@ class RunCodingAgent
             ...array_values(array_filter($order, fn (string $adapter) => ! $open($adapter))),
             ...array_values(array_filter($order, $open)),
         ];
+    }
+
+    /**
+     * Whether the agent broke before its first turn, such as a command line
+     * tool that exits at once. It did no work, so the next agent can take
+     * the same task without losing anything.
+     */
+    protected function couldNotStart(AgentOutcome $outcome): bool
+    {
+        return $outcome->status === AgentOutcomeStatus::Failed
+            && $outcome->turns === 0
+            && $outcome->errorKind === 'exception';
     }
 
     /**
