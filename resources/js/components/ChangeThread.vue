@@ -1088,9 +1088,10 @@ const checks = computed(() => {
                                 for you
                             </CollapsibleTrigger>
                             <CollapsibleContent>
-                                <!-- Each one is the owner's to keep, so
-                                     later changes follow it, or to change
-                                     in this chat. -->
+                                <!-- Each one is the owner's to agree with,
+                                     so later changes follow it, or to change
+                                     in this chat. Not "Keep": that is the
+                                     button for the whole change below. -->
                                 <ul
                                     class="mt-1 list-disc space-y-2 pl-9 text-xs text-muted-foreground"
                                 >
@@ -1139,7 +1140,7 @@ const checks = computed(() => {
                                                     class="inline-flex min-h-11 items-center underline-offset-4 select-none hover:text-foreground hover:underline sm:min-h-6"
                                                     data-test="decision-keep"
                                                 >
-                                                    Keep
+                                                    Agree
                                                 </button>
                                             </Form>
                                             <Link
