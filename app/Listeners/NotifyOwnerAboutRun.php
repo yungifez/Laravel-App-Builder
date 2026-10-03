@@ -86,7 +86,7 @@ class NotifyOwnerAboutRun
         $next = [$first->id];
 
         while ($next !== []) {
-            $next = FeatureRequest::query()->whereIn('retry_of_id', $next)->whereNotIn('id', $tries)->pluck('id')->all();
+            $next = array_values(array_map(intval(...), FeatureRequest::query()->whereIn('retry_of_id', $next)->whereNotIn('id', $tries)->pluck('id')->all()));
             $tries = [...$tries, ...$next];
         }
 
