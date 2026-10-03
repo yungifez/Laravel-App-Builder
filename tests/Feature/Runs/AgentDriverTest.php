@@ -1081,7 +1081,8 @@ class AgentDriverTest extends TestCase
             'may_also_affect' => ['billing' => ['config/billing.php']],
             'unexpected' => ['settings' => ['config/teams.php']],
             'unclaimed' => ['app/Other.php'],
-            'context_updates' => [],
+            // The plan's assumption is kept in the one area's notes.
+            'context_updates' => ['capabilities/teams.md'],
             'targets' => ['teams'],
             // No test map was made for this project.
             'observed' => null,

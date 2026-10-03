@@ -4579,11 +4579,19 @@ Context Compiler.
 
 ### 30.3 Later, in order
 
-1. **Assumptions in the notes.** Keeping a change keeps its assumptions: each
-   one the owner confirmed becomes a rule or decision in the area's notes, and
-   the rest go under "## Assumptions" with how each is known (checked in the
-   code, confirmed by you, assumed). The planner reads them first (§7), and one
-   question before building uses the same list. Markdown, no new store.
+1. **Assumptions in the notes** (built for what was assumed). Keeping a change
+   keeps its assumptions: each one the owner confirmed becomes a rule or
+   decision in the area's notes, and the rest go under "## Assumptions" with
+   how each is known (checked in the code, confirmed by you, assumed). The
+   planner reads them first (§7), and one question before building uses the
+   same list. Markdown, no new store. Built: the owner's answers are already
+   decisions (`RecordDecision`). `KeepAssumptions` writes the plan's other
+   assumptions, marked "(assumed)", into the workspace's notes before they
+   are read back: the area's notes when the change is about one area, else
+   the project notes. So keeping the change keeps them, and undoing it takes
+   them out. Choices about how the code is built stay out, as in
+   `ListDecisions`, and an app without notes gets none. Still to come:
+   "checked in the code", and the planner reading them first.
 2. **Change Records in the handover package.** Export a short Markdown record
    of each kept change with the notes, so the handover package (direction 20
    §17) needs no extra work. They stay out of the repository (§19).

@@ -11,7 +11,7 @@ class ListDecisions
      * Words that mark a choice about how the code is built rather than how
      * the app behaves. Such choices are for developers, not the owner.
      */
-    protected const BUILD_WORDS = '/`|\b(migrations?|database|columns?|tables?|props?|schema|index(es)?|quer(y|ies)|cache[ds]?|api|endpoints?|routes?|controllers?|models?|components?|types?|fields?|validation|seeders?|factor(y|ies)|tests?|null|strings?|booleans?|integers?|json|arrays?|enums?|css|html|vue|php)\b/i';
+    public const BUILD_WORDS = '/`|\b(migrations?|database|columns?|tables?|props?|schema|index(es)?|quer(y|ies)|cache[ds]?|api|endpoints?|routes?|controllers?|models?|components?|types?|fields?|validation|seeders?|factor(y|ies)|tests?|null|strings?|booleans?|integers?|json|arrays?|enums?|css|html|vue|php)\b/i';
 
     /**
      * List the product decisions behind the owner's app: what the owner

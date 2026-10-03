@@ -6,6 +6,7 @@ use App\Actions\Context\AssessPreservation;
 use App\Actions\Context\AssessVerifyItems;
 use App\Actions\Context\ClassifyChange;
 use App\Actions\Context\CompileContext;
+use App\Actions\Context\KeepAssumptions;
 use App\Actions\Context\ReadProjectContext;
 use App\Actions\Features\AcceptFindings;
 use App\Actions\Features\AnswerFindingProposals;
@@ -87,6 +88,7 @@ class ConstructRun
         private ProposeFindings $proposeFindings,
         private ReadProjectContext $readProjectContext,
         private ScaffoldDataShape $scaffoldDataShape,
+        private KeepAssumptions $keepAssumptions,
     ) {}
 
     /**
@@ -269,6 +271,15 @@ class ConstructRun
         }
 
         $patch = $this->extractCandidateChange->handle($workspace);
+
+        // What the plan took for granted is kept with the notes, so the
+        // next change builds on it instead of guessing again.
+        $assumed = $this->keepAssumptions->handle($workspace, $plan, $run->context['targets'] ?? []);
+
+        if ($assumed !== []) {
+            $this->recordEvent($run, $lease, 'assumptions_noted', ['count' => count($assumed)]);
+        }
+
         $noteChanges = $this->extractCandidateChange->notes($workspace);
 
         if (trim($patch) === '') {
