@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Runs;
 
+use App\Actions\Features\RetryFeatureRequest;
 use App\Actions\Runs\AcquireRunLease;
 use App\Actions\Runs\CancelRun;
 use App\Actions\Runs\CompleteRunVerification;
@@ -291,6 +292,20 @@ class RunLifecycleTest extends TestCase
         $this->assertSame(RunStatus::Failed, $run->status);
         $this->assertStringStartsWith('This is our fault: we paused new work for today', (string) $run->error);
         $this->assertSame(0, $run->events()->where('type', 'model_call')->count());
+    }
+
+    public function test_the_owner_is_not_offered_to_try_again_until_the_daily_limit_resets()
+    {
+        config(['builder.construction.budgets.daily_usd' => 10]);
+        Run::factory()->create()->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 10.5]);
+        $featureRequest = $this->invitationRequest();
+        app(StartRun::class)->handle($featureRequest);
+
+        $this->assertFalse(RetryFeatureRequest::retryable($featureRequest->refresh()));
+
+        $this->travel(1)->days();
+
+        $this->assertTrue(RetryFeatureRequest::retryable($featureRequest->refresh()));
     }
 
     public function test_spend_from_earlier_days_does_not_count_towards_the_daily_limit()

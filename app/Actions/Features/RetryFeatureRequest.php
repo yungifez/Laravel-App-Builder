@@ -2,6 +2,7 @@
 
 namespace App\Actions\Features;
 
+use App\Actions\Operations\SummarizeSpend;
 use App\Enums\ExperimentStatus;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
@@ -25,6 +26,12 @@ class RetryFeatureRequest
     {
         // A change that waits for the owner's answer has not stopped.
         if ($featureRequest->latestRun?->question !== null) {
+            return false;
+        }
+
+        // The owner was told to try again tomorrow: today it would only
+        // stop the same way.
+        if ($featureRequest->latestRun?->stop_reason === 'spend_limit' && app(SummarizeSpend::class)->dailyLimitReached()) {
             return false;
         }
 

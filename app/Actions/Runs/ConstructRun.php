@@ -614,9 +614,7 @@ class ConstructRun
      */
     protected function ensureWithinDailySpend(): void
     {
-        $limit = (float) config('builder.construction.budgets.daily_usd');
-
-        if ($limit > 0 && $this->summarizeSpend->handle(now()->startOfDay()->toImmutable())['total_usd'] >= $limit) {
+        if ($this->summarizeSpend->dailyLimitReached()) {
             throw new SpendLimitReached(__('This is our fault: we paused new work for today to keep our costs in check. Nothing in your app changed. Try again tomorrow.'));
         }
     }

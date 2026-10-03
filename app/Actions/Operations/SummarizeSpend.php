@@ -13,6 +13,17 @@ use Illuminate\Support\Facades\DB;
 class SummarizeSpend
 {
     /**
+     * Determine if today's AI spend reached the operator's daily limit, so
+     * no new work may start until tomorrow.
+     */
+    public function dailyLimitReached(): bool
+    {
+        $limit = (float) config('builder.construction.budgets.daily_usd');
+
+        return $limit > 0 && $this->handle(now()->startOfDay()->toImmutable())['total_usd'] >= $limit;
+    }
+
+    /**
      * Sum the model spend recorded since a time, keeping apart what the
      * provider reported, what we estimated from our prices, and calls with
      * no known cost. The completeness label says whether the total can be
