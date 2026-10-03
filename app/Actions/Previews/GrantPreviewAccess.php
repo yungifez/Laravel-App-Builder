@@ -50,6 +50,11 @@ class GrantPreviewAccess
             'grant_expires_at' => now()->addSeconds((int) config('builder.preview.grant_seconds')),
         ]);
 
+        // The app can open in two places at once, such as the builder and a
+        // tab of its own. Each opening gets its own grant, so a newer one
+        // never makes an older one, still on its way, fail as expired.
+        Cache::put(self::ownerKey($preview, $grant), true, now()->addSeconds((int) config('builder.preview.grant_seconds')));
+
         if ($cookie !== null) {
             Cache::put(self::cookieKey($preview, $grant), $cookie, now()->addSeconds((int) config('builder.preview.grant_seconds')));
         }
@@ -63,6 +68,14 @@ class GrantPreviewAccess
     public static function cookieKey(Preview $preview, string $grant): string
     {
         return "previews:{$preview->id}:grant-cookie:".hash('sha256', $grant);
+    }
+
+    /**
+     * Where each of the owner's grants waits until it is used.
+     */
+    public static function ownerKey(Preview $preview, string $grant): string
+    {
+        return "previews:{$preview->id}:owner-grant:".hash('sha256', $grant);
     }
 
     /**

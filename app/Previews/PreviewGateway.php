@@ -115,9 +115,10 @@ class PreviewGateway
 
         $valid = $shared || ($preview->status === PreviewStatus::Ready
             && is_string($grant)
-            && $preview->grant_hash !== null
-            && hash_equals($preview->grant_hash, hash('sha256', $grant))
-            && $preview->grant_expires_at?->isFuture());
+            && (Cache::pull(GrantPreviewAccess::ownerKey($preview, $grant)) === true
+                || ($preview->grant_hash !== null
+                    && hash_equals($preview->grant_hash, hash('sha256', $grant))
+                    && $preview->grant_expires_at?->isFuture())));
 
         if (! $valid) {
             return $this->page(403, __('This link to the app has expired. Open the app again from the builder, or from the link you were sent.'));

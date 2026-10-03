@@ -303,6 +303,22 @@ class PreviewTest extends TestCase
         $this->assertNull(Cache::get(PreviewGateway::sessionsKey($preview)));
     }
 
+    public function test_two_openings_at_once_both_get_in_and_each_grant_works_once()
+    {
+        $preview = Preview::factory()->ready()->create();
+        $owner = $preview->featureRequest->project->owner;
+        $first = (string) $this->actingAs($owner)->get(route('previews.show', $preview))->headers->get('Location');
+        $second = (string) $this->actingAs($owner)->get(route('previews.show', $preview))->headers->get('Location');
+
+        // The first is used after the second was made, as when the builder
+        // and another tab open the app in the same moment.
+        $this->get($second)->assertRedirect();
+        $this->get($first)->assertRedirect();
+
+        $this->get($first)->assertForbidden();
+        $this->get($second)->assertForbidden();
+    }
+
     public function test_an_expired_grant_is_refused()
     {
         $preview = Preview::factory()->ready()->create();
