@@ -118,8 +118,8 @@ const chosen = computed(() => faults.find((item) => item.key === form.fault));
             <Footprints class="size-6 text-muted-foreground" />
             <p class="text-lg font-medium">Nothing yet</p>
             <p class="max-w-xs text-sm text-muted-foreground">
-                Use your app, then look here: each page says what your app
-                saved, sent, stored and asked behind it.
+                Use your app, then come back here to see what it did behind each
+                page.
             </p>
         </div>
 
