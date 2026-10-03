@@ -4,6 +4,9 @@ This guide puts the control plane (this Laravel app) on a Hetzner Cloud VM
 managed by Laravel Forge. The workspaces run on separate runner machines.
 [Runner machines](runner-machines.md) tells how to add them.
 
+To put the control plane on Laravel Cloud instead, read
+[Deploying the control plane to Laravel Cloud](deploying-laravel-cloud.md).
+
 ## What runs where
 
 | Where                     | What                                                                                         |
