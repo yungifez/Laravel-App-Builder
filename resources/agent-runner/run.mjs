@@ -369,8 +369,9 @@ async function runCodex(task, session, prompt) {
         input_tokens: usage?.input_tokens ?? 0,
         // Part of input_tokens, read back from OpenAI's cache at a lower price.
         cached_input_tokens: usage?.cached_input_tokens ?? 0,
-        output_tokens:
-            (usage?.output_tokens ?? 0) + (usage?.reasoning_output_tokens ?? 0),
+        // Reasoning is already part of output_tokens: Codex's own session log
+        // gives total_tokens as input plus output.
+        output_tokens: usage?.output_tokens ?? 0,
         cost_usd: null,
         session: thread.id ?? session,
     };
