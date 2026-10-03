@@ -141,9 +141,27 @@ class ThemeColors
 
         $blocks = [];
 
+        // The rules are in order, so one pass forward keeps the rules
+        // still open at each one. Walking back from each rule instead
+        // takes minutes on a large built stylesheet, such as Filament's.
+        $open = [];
+        $at = 0;
+
         foreach ($rules as $rule) {
             $prelude = trim($rule[1][0]);
-            $inDarkMedia = preg_match(self::DARK_MEDIA, self::parentPrelude($css, $rule[1][1])) === 1;
+
+            while (($at += strcspn($css, '{}', $at, $rule[1][1] - $at)) < $rule[1][1]) {
+                if ($css[$at] === '{') {
+                    $open[] = $at;
+                } else {
+                    array_pop($open);
+                }
+
+                $at++;
+            }
+
+            $parent = $open === [] ? '' : self::preludeBefore($css, $open[array_key_last($open)]);
+            $inDarkMedia = preg_match(self::DARK_MEDIA, $parent) === 1;
             $selector = str_starts_with($prelude, '@theme') ? '@theme' : null;
 
             foreach (array_map(trim(...), explode(',', $prelude)) as $part) {
@@ -164,30 +182,18 @@ class ThemeColors
     }
 
     /**
-     * The prelude of the rule a rule at this offset is written inside, as
-     * "@media (prefers-color-scheme: dark)", or "" at the top level.
+     * The prelude written before the brace at this offset, as
+     * "@media (prefers-color-scheme: dark)".
      */
-    protected static function parentPrelude(string $css, int $offset): string
+    protected static function preludeBefore(string $css, int $brace): string
     {
-        $depth = 0;
+        $start = $brace;
 
-        for ($at = $offset - 1; $at >= 0; $at--) {
-            if ($css[$at] === '}') {
-                $depth++;
-            } elseif ($css[$at] === '{' && $depth-- === 0) {
-                $before = substr($css, 0, $at);
-                $start = 0;
-
-                foreach (['}', ';', '{'] as $end) {
-                    $found = strrpos($before, $end);
-                    $start = $found === false ? $start : max($start, $found + 1);
-                }
-
-                return trim(substr($before, $start));
-            }
+        while ($start > 0 && ! in_array($css[$start - 1], ['}', ';', '{'], true)) {
+            $start--;
         }
 
-        return '';
+        return trim(substr($css, $start, $brace - $start));
     }
 
     /**

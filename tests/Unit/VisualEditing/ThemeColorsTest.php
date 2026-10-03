@@ -139,4 +139,17 @@ class ThemeColorsTest extends TestCase
         );
         $this->assertSame([['name' => 'surface', 'variable' => 'surface', 'classes' => false]], ThemeColors::discover([$css]));
     }
+
+    public function test_a_large_built_stylesheet_is_read_in_moments()
+    {
+        // Filament publishes a 630 KB stylesheet on one line. Reading one
+        // this size took over a minute, so the app's page timed out.
+        $css = str_repeat('.badge{color:red}', 40000).'@media (prefers-color-scheme: dark){:root{--surface:#111111}}:root{--surface:#ffffff}';
+        $started = microtime(true);
+
+        $written = ThemeColors::write($css, 'dark', 'surface', '#222222');
+
+        $this->assertLessThan(5, microtime(true) - $started);
+        $this->assertSame(str_replace('#111111', '#222222', $css), $written);
+    }
 }
