@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Operations;
 
 use App\Actions\Operations\FindAttentionItems;
 use App\Http\Controllers\Controller;
+use App\Models\ContactMessage;
 use App\Models\DeveloperReview;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -23,6 +24,7 @@ class AttentionController extends Controller
         return Inertia::render('operations/Attention', [
             'attention' => $findAttentionItems->handle($days),
             'waitingQuestions' => DeveloperReview::query()->whereNull('answered_at')->whereNull('withdrawn_at')->count(),
+            'newMessages' => ContactMessage::query()->whereNull('handled_at')->count(),
         ]);
     }
 }

@@ -37,7 +37,9 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\NotificationReadController;
 use App\Http\Controllers\Operations\AttentionController;
 use App\Http\Controllers\Operations\ChangeController as OperationsChangeController;
+use App\Http\Controllers\Operations\ContactMessageController as OperationsContactMessageController;
 use App\Http\Controllers\Operations\DeveloperReviewController as OperationsDeveloperReviewController;
+use App\Http\Controllers\Operations\PersonController as OperationsPersonController;
 use App\Http\Controllers\PageConsistencyController;
 use App\Http\Controllers\PreviewController;
 use App\Http\Controllers\PreviewDataController;
@@ -186,6 +188,10 @@ Route::middleware(['auth', 'verified', 'can:viewOperations'])->prefix('operation
     Route::get('/', AttentionController::class)->name('attention');
     Route::get('changes', [OperationsChangeController::class, 'index'])->name('changes.index');
     Route::get('changes/{featureRequest}', [OperationsChangeController::class, 'show'])->name('changes.show');
+    Route::get('people', [OperationsPersonController::class, 'index'])->name('people.index');
+    Route::get('people/{user}', [OperationsPersonController::class, 'show'])->name('people.show');
+    Route::get('messages', [OperationsContactMessageController::class, 'index'])->name('messages.index');
+    Route::put('messages/{contactMessage}', [OperationsContactMessageController::class, 'update'])->name('messages.update');
     // Our own developers answer the owners who asked for one.
     Route::get('developer-reviews', [OperationsDeveloperReviewController::class, 'index'])->name('developer-reviews.index');
     Route::get('developer-reviews/{developerReview}', [OperationsDeveloperReviewController::class, 'show'])->name('developer-reviews.show');

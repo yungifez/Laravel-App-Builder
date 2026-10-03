@@ -7,6 +7,8 @@ import { attention as attentionRoute } from '@/routes/operations';
 import { index as projectsIndex } from '@/routes/projects';
 import { index as changesIndex } from '@/routes/operations/changes';
 import { index as developerReviewsIndex } from '@/routes/operations/developer-reviews';
+import { index as messagesIndex } from '@/routes/operations/messages';
+import { index as peopleIndex } from '@/routes/operations/people';
 import type { Attention } from '@/types';
 
 // Hosts bill in cents, in their own currency.
@@ -22,6 +24,7 @@ function money(cents: number | null, currency: string | null): string {
 const props = defineProps<{
     attention: Attention;
     waitingQuestions: number;
+    newMessages: number;
 }>();
 
 setLayoutProps({
@@ -76,7 +79,28 @@ const completeness = computed(
                     {{ days === 1 ? '24 hours' : `${days} days` }}
                 </Link>
             </div>
-            <div class="flex gap-4">
+            <div class="flex flex-wrap gap-x-4">
+                <Link
+                    :href="peopleIndex().url"
+                    class="flex min-h-11 items-center gap-1 text-sm font-medium text-foreground/80 select-none hover:text-foreground sm:min-h-9"
+                    data-test="people"
+                >
+                    People <ChevronRight class="size-4" />
+                </Link>
+                <Link
+                    :href="messagesIndex().url"
+                    class="flex min-h-11 items-center gap-1 text-sm font-medium text-foreground/80 select-none hover:text-foreground sm:min-h-9"
+                    data-test="messages"
+                >
+                    Messages
+                    <span
+                        v-if="newMessages > 0"
+                        class="text-amber-600"
+                        data-test="messages-new"
+                        >· {{ newMessages }} new</span
+                    >
+                    <ChevronRight class="size-4" />
+                </Link>
                 <Link
                     :href="developerReviewsIndex().url"
                     class="flex min-h-11 items-center gap-1 text-sm font-medium text-foreground/80 select-none hover:text-foreground sm:min-h-9"
