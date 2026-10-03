@@ -279,7 +279,7 @@ class WriteBrief
         return <<<RULES
         ## How to work
 
-        You are working in the application's repository. Follow its AGENTS.md and Laravel's conventions. Add or update feature tests for the behaviour you build, run those tests and the existing tests listed for the areas you change (for example `php artisan test tests/Feature/TeamSettingsTest.php`), and fix failures. {$selfChecks}The whole test suite and the other checks run on their own after you finish, and formatting is fixed for you, so do not spend time running them. Never change tests/Acceptance, .env, vendor or .git: those changes are thrown away. Keep the notes in {$notes}/ up to date as described in AGENTS.md or, if it says nothing, by updating the notes of the areas you change.
+        You are working in the application's repository. Follow its AGENTS.md and Laravel's conventions. Add or update feature tests for the behaviour you build, run those tests and the existing tests listed for the areas you change (for example `php artisan test tests/Feature/TeamSettingsTest.php`), and fix failures. {$selfChecks}The whole test suite and the other checks run on their own after you finish, and formatting is fixed for you, so do not spend time running them. Never change tests/Acceptance, .env, vendor or .git: those changes are thrown away. To add a package, run `composer require` or `npm install` with its name, so the lock file changes with it: the checks install packages from the lock files only. Keep the notes in {$notes}/ up to date as described in AGENTS.md or, if it says nothing, by updating the notes of the areas you change.
 
         Before each group of steps, write one or two plain sentences on what you are about to do and why, for a reader who has never seen code: no file names, class names, commands or code. For example: "Only team owners should send invitations, so I am adding that check first."
 
@@ -299,7 +299,7 @@ class WriteBrief
         return <<<RULES
         ## How to work
 
-        Follow the app's AGENTS.md and Laravel's conventions. Add or update feature tests for the behaviour you build, run those tests and the existing tests for the areas you change, and fix failures. {$selfChecks}The whole test suite and the other checks run after you hand the change back, and formatting is fixed for you. Never change tests/Acceptance, .env, vendor or .git: those changes are thrown away. Do not create a {$notes}/ folder: the notes are kept apart from your copy, and the owner reads your summary instead.
+        Follow the app's AGENTS.md and Laravel's conventions. Add or update feature tests for the behaviour you build, run those tests and the existing tests for the areas you change, and fix failures. {$selfChecks}The whole test suite and the other checks run after you hand the change back, and formatting is fixed for you. Never change tests/Acceptance, .env, vendor or .git: those changes are thrown away. To add a package, run `composer require` or `npm install` with its name, so the lock file changes with it: the checks install packages from the lock files only. Do not create a {$notes}/ folder: the notes are kept apart from your copy, and the owner reads your summary instead.
 
         When you are done, hand back a short summary of what you changed. Your summary is not taken as proof: the change is verified and reviewed independently.
         RULES;

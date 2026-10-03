@@ -87,6 +87,7 @@ class SdkDriverTest extends TestCase
         $this->assertStringContainsString('+    public ?string $description = null;', (string) $featureRequest->refresh()->patch);
         $this->assertStringContainsString("## Keep as it is\n\nDo not change these.", $this->agents['claude']->tasks[0]->prompt);
         $this->assertStringContainsString('## How to work', $this->agents['claude']->tasks[0]->prompt);
+        $this->assertStringContainsString('To add a package, run `composer require` or `npm install`', $this->agents['claude']->tasks[0]->prompt);
         $this->assertSame(['claude'], $run->events()->where('type', 'model_call')->where('data->role', 'coder')->get()->pluck('data.adapter')->all());
         $this->assertSame(0, $run->events()->where('type', 'failover')->count());
 

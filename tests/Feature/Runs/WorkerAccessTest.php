@@ -24,7 +24,8 @@ class WorkerAccessTest extends TestCase
             ->assertOk()
             ->assertSee('Members can book a class.')
             ->assertSee('A member can book a class with room left.')
-            ->assertSee('How to work');
+            ->assertSee('How to work')
+            ->assertSee('so the lock file changes with it');
 
         $this->assertSame(['tool' => 'get_task'], $run->events()->where('type', 'worker_query')->sole()->data);
     }
