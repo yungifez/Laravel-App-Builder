@@ -17,7 +17,8 @@ class ReadPreviewProblems
     /**
      * Get the problems the app on show ran into while the owner tried it,
      * the most recent first, each with where it stands: new, being fixed,
-     * fixed, cleared by the owner, or back after either, and the owner's
+     * fixed, cleared by the owner, fine to fail while something is down, or
+     * back after a fix or a clearance, and the owner's
      * last try to fix it when that try stopped.
      *
      * @return list<array{id: string, words: string, class: string|null, message: string, place: string|null, trace: list<string>, during: string|null, count: int, first_at: string|null, last_at: string|null, state: string, change: string|null, stopped: string|null}>
@@ -56,7 +57,9 @@ class ReadPreviewProblems
 
     /**
      * Say where a problem stands. A kept fix or a clearance holds until the
-     * app runs into the problem again.
+     * app runs into the problem again. Failing that the owner said is fine
+     * holds for good, since it will happen again whenever the same thing is
+     * down.
      *
      * @return array{state: string, change: string|null}
      */
@@ -71,6 +74,10 @@ class ReadPreviewProblems
 
         if ($fix !== null && $fix->accepted_at === null) {
             return ['state' => 'fixing', 'change' => $fix->uuid];
+        }
+
+        if ($clearance?->fine === true) {
+            return ['state' => 'fine', 'change' => null];
         }
 
         if ($clearance !== null) {

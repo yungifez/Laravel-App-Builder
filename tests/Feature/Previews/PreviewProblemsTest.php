@@ -226,6 +226,32 @@ class PreviewProblemsTest extends TestCase
         $this->assertSame(0, FeatureRequest::count());
     }
 
+    public function test_the_owner_can_say_failing_is_fine_while_something_is_down_and_it_stays_put_away()
+    {
+        class_exists(Recorder::class) || require_once resource_path('trace-recorder/src/Recorder.php');
+        $this->writeLog(function () {
+            Context::add(Recorder::LIVE_CONTEXT, Recorder::LIVE_WORDS['mail']);
+            Log::error('Could not send the welcome email');
+            Context::forget(Recorder::LIVE_CONTEXT);
+        });
+        $id = $this->problems()[0]['id'];
+
+        // Deciding costs no AI: nothing is asked of the coder.
+        $this->actingAs($this->owner)->post(route('cleared-problems.store', $this->project), ['problem' => $id, 'fine' => true])->assertSessionHasNoErrors();
+        $this->assertSame(['fine', null], $this->stand());
+        $this->assertSame(0, FeatureRequest::count());
+
+        // It will happen whenever email is down, so it does not come back.
+        $this->travel(1)->minute();
+        $this->happensAgain('Could not send the welcome email [] '.json_encode([Recorder::LIVE_CONTEXT => Recorder::LIVE_WORDS['mail']]));
+        $this->assertSame(['fine', null], $this->stand());
+        $this->assertSame(2, $this->problems()[0]['count']);
+
+        // The owner can change their mind.
+        $this->delete(route('cleared-problems.destroy', [$this->project, $id]))->assertSessionHasNoErrors();
+        $this->assertSame(['new', null], $this->stand());
+    }
+
     public function test_a_problem_leaves_the_list_once_fixed_or_cleared_and_comes_back_if_it_happens_again()
     {
         $this->writeLog(fn () => Log::error('Payment gateway timed out'));

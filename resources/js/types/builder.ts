@@ -541,7 +541,7 @@ export type AppProblem = {
     first_at: string | null;
     last_at: string | null;
     /** New, being fixed, fixed, cleared by the owner, or back after either. */
-    state: 'new' | 'fixing' | 'fixed' | 'cleared' | 'back';
+    state: 'new' | 'fixing' | 'fixed' | 'cleared' | 'fine' | 'back';
     /** The change that fixes it, or fixed it. */
     change: string | null;
     /** The owner's last try to fix it, when that try stopped. */

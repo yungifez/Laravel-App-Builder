@@ -2712,6 +2712,12 @@ reads the preview's workspace, so the app itself does not change.
   its fix is kept, or when the owner clears it. It returns, marked "came
   back", if the app runs into it again after that. The log itself is never
   changed; the builder keeps only which problems the owner cleared.
+  A problem met while the owner had something down on purpose (What if)
+  is a question, not a fault: "Should your app keep working when email is
+  down?" "Yes, it should cope" starts the fix and says it uses AI. "No,
+  failing is fine here" costs nothing. It is kept as a clearance marked
+  fine, which does not come back, since the app meets it whenever the same
+  thing is down. The owner can show it again.
 - **Saved data** (built: tables and counts). The preview's tables, with
   how many rows each holds: what a sign-up or an order saved. They are read
   through the app itself (`db:show`), with the settings it runs with, never

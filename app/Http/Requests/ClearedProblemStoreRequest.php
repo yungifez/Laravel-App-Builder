@@ -28,6 +28,8 @@ class ClearedProblemStoreRequest extends FormRequest
     {
         return [
             'problem' => ['required', 'string', 'regex:/^[0-9a-f]{40}$/'],
+            // Failing is fine here: said of a problem met while something was down on purpose.
+            'fine' => ['sometimes', 'boolean'],
         ];
     }
 }

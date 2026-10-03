@@ -18,17 +18,16 @@ const props = defineProps<{
     copy?: string | null;
 }>();
 
-// Problems still to deal with, and those fixed or cleared, which stay out
-// of the way until the app runs into them again.
+// Problems still to deal with, and those fixed, cleared or fine to fail,
+// which stay out of the way.
+const settled = ['fixed', 'cleared', 'fine'];
 const open = computed(() =>
     (props.problems ?? []).filter(
-        (problem) => !['fixed', 'cleared'].includes(problem.state),
+        (problem) => !settled.includes(problem.state),
     ),
 );
 const done = computed(() =>
-    (props.problems ?? []).filter((problem) =>
-        ['fixed', 'cleared'].includes(problem.state),
-    ),
+    (props.problems ?? []).filter((problem) => settled.includes(problem.state)),
 );
 
 function at(iso: string | null): string {
@@ -47,6 +46,23 @@ function at(iso: string | null): string {
 // What the owner had made fail on purpose when this happened.
 function outage(fault: AppFault): string {
     return faults.find((item) => item.key === fault)?.label ?? fault;
+}
+
+// The same, as it reads inside a sentence: "when email is down".
+function outageInSentence(fault: AppFault): string {
+    const label = outage(fault);
+
+    return label.charAt(0).toLowerCase() + label.slice(1);
+}
+
+function settledAs(problem: AppProblem): string {
+    if (problem.state === 'fine') {
+        return problem.during
+            ? `Fine to fail when ${outageInSentence(problem.during)}`
+            : 'Fine to fail';
+    }
+
+    return problem.state === 'fixed' ? 'Fixed' : 'Cleared';
 }
 
 function times(problem: AppProblem): string {
@@ -93,8 +109,12 @@ function times(problem: AppProblem): string {
                         />
                         <div class="min-w-0 flex-1">
                             <p class="text-sm">{{ problem.words }}</p>
+                            <!-- The question below says it when the owner can decide. -->
                             <p
-                                v-if="problem.during"
+                                v-if="
+                                    problem.during &&
+                                    (copy || problem.state === 'fixing')
+                                "
                                 class="text-xs text-muted-foreground"
                                 data-test="app-problem-during"
                             >
@@ -146,7 +166,10 @@ function times(problem: AppProblem): string {
                             <LoaderCircle class="size-3.5 animate-spin" />
                             Being fixed
                         </Link>
-                        <div v-else class="flex shrink-0 items-start gap-1">
+                        <div
+                            v-else-if="!(problem.during && !copy)"
+                            class="flex shrink-0 items-start gap-1"
+                        >
                             <!-- A cleared problem is put away for the app,
                                  so the copy of a change only asks a fix. -->
                             <Form
@@ -196,6 +219,72 @@ function times(problem: AppProblem): string {
                             </Form>
                         </div>
                     </div>
+                    <!-- Failing on purpose is not always a fault: the owner
+                         decides, and only coping costs AI. -->
+                    <div
+                        v-if="
+                            problem.during &&
+                            !copy &&
+                            problem.state !== 'fixing'
+                        "
+                        class="flex flex-col gap-2 pl-6"
+                        :data-test="`app-problem-decide-${problem.id}`"
+                    >
+                        <p class="text-sm font-medium">
+                            Should your app keep working when
+                            {{ outageInSentence(problem.during) }}?
+                        </p>
+                        <div class="flex flex-wrap items-start gap-2">
+                            <Form
+                                v-bind="
+                                    PreviewProblemFixController.store.form(
+                                        projectId,
+                                    )
+                                "
+                                :transform="() => ({ problem: problem.id })"
+                                v-slot="{ processing, errors }"
+                            >
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    class="h-11 sm:h-8"
+                                    :disabled="processing"
+                                    :data-test="`app-problem-cope-${problem.id}`"
+                                    >Yes, it should cope</Button
+                                >
+                                <InputError :message="errors.fix" />
+                            </Form>
+                            <Form
+                                v-bind="
+                                    ClearedProblemController.store.form(
+                                        projectId,
+                                    )
+                                "
+                                :transform="
+                                    () => ({ problem: problem.id, fine: true })
+                                "
+                                :options="{
+                                    preserveScroll: true,
+                                    preserveState: true,
+                                    only: ['problems'],
+                                }"
+                                v-slot="{ processing }"
+                            >
+                                <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    class="h-11 sm:h-8"
+                                    :disabled="processing"
+                                    :data-test="`app-problem-fine-${problem.id}`"
+                                    >No, failing is fine here</Button
+                                >
+                            </Form>
+                        </div>
+                        <p class="text-xs text-muted-foreground">
+                            If it should cope, I change your app, and that uses
+                            AI.
+                        </p>
+                    </div>
                     <details class="text-xs text-muted-foreground">
                         <summary
                             class="min-h-11 cursor-pointer select-none sm:min-h-0"
@@ -226,7 +315,7 @@ function times(problem: AppProblem): string {
                 <summary
                     class="flex min-h-11 cursor-pointer items-center px-3 text-xs text-muted-foreground select-none"
                 >
-                    Fixed or cleared ({{ done.length }})
+                    Dealt with ({{ done.length }})
                 </summary>
                 <ul class="max-h-60 overflow-y-auto">
                     <li
@@ -240,11 +329,7 @@ function times(problem: AppProblem): string {
                         <div class="min-w-0 flex-1">
                             <p class="truncate text-sm">{{ problem.words }}</p>
                             <p class="text-xs text-muted-foreground">
-                                {{
-                                    problem.state === 'fixed'
-                                        ? 'Fixed'
-                                        : 'Cleared'
-                                }}
+                                {{ settledAs(problem) }}
                                 · {{ times(problem) }}
                             </p>
                         </div>
