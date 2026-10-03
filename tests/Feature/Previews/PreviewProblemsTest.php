@@ -2,9 +2,14 @@
 
 namespace Tests\Feature\Previews;
 
+use App\Actions\Context\RecordDecision;
+use App\Actions\Features\ListDecisions;
 use App\Actions\Previews\ReadPreviewProblems;
 use App\Actions\Projects\CreateProject;
 use App\Actions\Runs\StartRun;
+use App\Context\NotesDocument;
+use App\Context\ProjectContext;
+use App\Context\ProjectNotes;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Models\FeatureRequest;
@@ -241,15 +246,41 @@ class PreviewProblemsTest extends TestCase
         $this->assertSame(['fine', null], $this->stand());
         $this->assertSame(0, FeatureRequest::count());
 
+        // It is a product decision: shown once with the others, and followed by later changes.
+        $this->post(route('cleared-problems.store', $this->project), ['problem' => $id, 'fine' => true])->assertSessionHasNoErrors();
+        $this->assertSame([['Should your app keep working when email is down?', 'No, failing is fine here.']], $this->decisions());
+
         // It will happen whenever email is down, so it does not come back.
         $this->travel(1)->minute();
         $this->happensAgain('Could not send the welcome email [] '.json_encode([Recorder::LIVE_CONTEXT => Recorder::LIVE_WORDS['mail']]));
         $this->assertSame(['fine', null], $this->stand());
         $this->assertSame(2, $this->problems()[0]['count']);
 
-        // The owner can change their mind.
+        // The owner can change their mind, and the decision goes with it.
         $this->delete(route('cleared-problems.destroy', [$this->project, $id]))->assertSessionHasNoErrors();
         $this->assertSame(['new', null], $this->stand());
+        $this->assertSame([], $this->decisions());
+
+        // Asking the app to cope is the other answer, and replaces an earlier one.
+        $this->post(route('cleared-problems.store', $this->project), ['problem' => $id, 'fine' => true]);
+        $this->post(route('preview-problem-fixes.store', $this->project), ['problem' => $id])->assertSessionHasNoErrors();
+        $this->assertSame([['Should your app keep working when email is down?', 'Yes, it should cope.']], $this->decisions());
+        $this->assertSame(1, FeatureRequest::count());
+    }
+
+    /**
+     * The owner's decisions as the Understanding page lists them.
+     *
+     * @return list<array{string|null, string}>
+     */
+    protected function decisions(): array
+    {
+        $notes = NotesDocument::parse(app(ProjectNotes::class)->files($this->project)[ProjectContext::PROJECT_FILE] ?? '');
+
+        return array_map(
+            fn (array $decision) => [$decision['question'], $decision['decision']],
+            app(ListDecisions::class)->handle($this->project, $notes->section(RecordDecision::SECTION)),
+        );
     }
 
     public function test_a_problem_leaves_the_list_once_fixed_or_cleared_and_comes_back_if_it_happens_again()

@@ -2717,7 +2717,10 @@ reads the preview's workspace, so the app itself does not change.
   down?" "Yes, it should cope" starts the fix and says it uses AI. "No,
   failing is fine here" costs nothing. It is kept as a clearance marked
   fine, which does not come back, since the app meets it whenever the same
-  thing is down. The owner can show it again.
+  thing is down. Either answer is a product decision: it goes into the
+  notes' Decisions, so it shows on the Understanding page and later plans
+  follow it. A new answer replaces the old one. "Show again" puts the
+  problem back and takes the decision out.
 - **Saved data** (built: tables and counts). The preview's tables, with
   how many rows each holds: what a sign-up or an order saved. They are read
   through the app itself (`db:show`), with the settings it runs with, never

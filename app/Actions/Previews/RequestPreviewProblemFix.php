@@ -2,6 +2,7 @@
 
 namespace App\Actions\Previews;
 
+use App\Actions\Context\RecordDecision;
 use App\Actions\Features\RequestFeature;
 use App\Actions\Features\RequestFollowUp;
 use App\Actions\Features\RetryFeatureRequest;
@@ -24,6 +25,7 @@ class RequestPreviewProblemFix
         private ReadPreviewLog $readLog,
         private RequestFeature $requestFeature,
         private RequestFollowUp $requestFollowUp,
+        private RecordDecision $recordDecision,
     ) {}
 
     /**
@@ -58,6 +60,12 @@ class RequestPreviewProblemFix
 
         if ($problem === null || $preview === null) {
             throw ValidationException::withMessages(['fix' => __('This problem is no longer in your app. Try again if it comes back.')]);
+        }
+
+        // Asking the app to cope while something is down answers the
+        // owner's question about it, which later changes follow too.
+        if ($change === null && $problem['during'] !== null) {
+            $this->recordDecision->handle($project, ClearPreviewProblem::question($problem['during']), ClearPreviewProblem::COPE);
         }
 
         $liveErrors = [

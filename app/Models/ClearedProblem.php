@@ -19,9 +19,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $user_id
  * @property string $problem
  * @property bool $fine
+ * @property string|null $during
  * @property CarbonImmutable $cleared_at
  */
-#[Fillable(['user_id', 'problem', 'fine', 'cleared_at'])]
+#[Fillable(['user_id', 'problem', 'fine', 'during', 'cleared_at'])]
 class ClearedProblem extends Model
 {
     /** @use HasFactory<ClearedProblemFactory> */
