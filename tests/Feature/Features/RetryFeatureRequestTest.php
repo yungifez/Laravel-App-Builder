@@ -62,6 +62,18 @@ class RetryFeatureRequestTest extends TestCase
         $this->assertSame(2, $this->project->featureRequests()->count());
     }
 
+    public function test_a_change_is_tried_again_once_even_when_the_button_is_pressed_twice()
+    {
+        $stopped = $this->stopped(RunStatus::Failed);
+
+        $this->actingAs($this->owner)->post(route('feature-requests.retries.store', $stopped))->assertSessionHasNoErrors();
+        $this->post(route('feature-requests.retries.store', $stopped))->assertSessionHasErrors('retry');
+
+        $this->assertSame(1, FeatureRequest::query()->where('retry_of_id', $stopped->id)->count());
+        $this->get(route('feature-requests.show', $stopped))
+            ->assertInertia(fn (Assert $page) => $page->where('featureRequest.can_retry', false));
+    }
+
     public function test_a_made_change_whose_run_stopped_while_checking_can_be_tried_again()
     {
         $made = FeatureRequest::factory()->for($this->project)->generated()->create();

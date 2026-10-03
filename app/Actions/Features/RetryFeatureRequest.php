@@ -29,6 +29,11 @@ class RetryFeatureRequest
             return false;
         }
 
+        // It was tried again already: that try stands for it now.
+        if (FeatureRequest::query()->where('retry_of_id', $featureRequest->id)->exists()) {
+            return false;
+        }
+
         // The owner was told to try again tomorrow: today it would only
         // stop the same way.
         if ($featureRequest->latestRun?->stop_reason === 'spend_limit' && app(SummarizeSpend::class)->dailyLimitReached()) {
