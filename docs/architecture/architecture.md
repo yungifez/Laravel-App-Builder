@@ -4585,9 +4585,11 @@ In order, each built on the notes rather than beside them:
 4. **A marketplace for judgment, not for feature work** ("lend your judgment to
    my software"), with levels from general developer to specialist.
 
-Developers are operators or people an operator approved (§29.3). Access
-for the owner's own or hired developers, and paying developers, are not
-designed yet.
+Developers are operators or people an operator approved (§29.3). For
+now, approved developers work for the business that runs the builder, so
+the product does not pay them and has no payouts. Access for the owner's
+own or hired developers, and paying developers through the product, are
+not designed yet.
 
 ## 30. Software stewardship (version 19)
 
