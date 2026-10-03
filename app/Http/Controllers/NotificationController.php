@@ -24,6 +24,11 @@ class NotificationController extends Controller
             return to_route('operations.developer-reviews.show', $asked);
         }
 
+        // The owner's month of use is nearly or wholly used.
+        if (isset($notification->data['usage'])) {
+            return to_route('billing.edit');
+        }
+
         // An operator decided on the person's request to be a developer.
         if (isset($notification->data['developer_application'])) {
             return $request->user()->can('answerDeveloperQuestions')
