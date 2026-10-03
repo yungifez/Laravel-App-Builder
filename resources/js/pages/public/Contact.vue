@@ -7,8 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 defineProps<{
-    name: string | null;
-    email: string | null;
+    senderName: string | null;
+    senderEmail: string | null;
     honeypot: {
         enabled: boolean;
         nameFieldName: string;
@@ -61,7 +61,7 @@ defineProps<{
                     <Input
                         id="name"
                         name="name"
-                        :default-value="name ?? ''"
+                        :default-value="senderName ?? ''"
                         required
                         autocomplete="name"
                     />
@@ -74,7 +74,7 @@ defineProps<{
                         id="email"
                         name="email"
                         type="email"
-                        :default-value="email ?? ''"
+                        :default-value="senderEmail ?? ''"
                         required
                         autocomplete="email"
                     />

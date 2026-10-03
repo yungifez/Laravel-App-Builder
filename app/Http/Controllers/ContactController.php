@@ -18,8 +18,10 @@ class ContactController extends Controller
     public function show(Request $request, Honeypot $honeypot): Response
     {
         return Inertia::render('public/Contact', [
-            'name' => $request->user()?->name,
-            'email' => $request->user()?->email,
+            // "name" is the app's own name on every page, so the sender's
+            // details have their own keys.
+            'senderName' => $request->user()?->name,
+            'senderEmail' => $request->user()?->email,
             'honeypot' => $honeypot->toArray(),
         ]);
     }

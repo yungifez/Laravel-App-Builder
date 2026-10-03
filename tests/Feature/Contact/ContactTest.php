@@ -33,8 +33,8 @@ class ContactTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('public/Contact')
-                ->where('name', 'Ada')
-                ->where('email', 'ada@example.com')
+                ->where('senderName', 'Ada')
+                ->where('senderEmail', 'ada@example.com')
                 ->where('honeypot.enabled', true));
     }
 
