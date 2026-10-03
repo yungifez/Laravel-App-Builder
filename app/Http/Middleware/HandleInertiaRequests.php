@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Features\LiftedLimit;
+use App\Models\FeatureRequest;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
@@ -71,6 +73,7 @@ class HandleInertiaRequests extends Middleware
     {
         $notifications = $user->notifications()->latest()->limit(8)->get();
         $apps = $user->projects()->whereIn('id', $notifications->pluck('data.project_id')->filter())->pluck('name', 'id');
+        $stopped = FeatureRequest::query()->with('latestRun')->findMany($notifications->where('data.kind', 'failed')->pluck('data.feature_request_id')->filter())->keyBy('id');
 
         return [
             'unread' => $user->unreadNotifications()->count(),
@@ -78,7 +81,10 @@ class HandleInertiaRequests extends Middleware
                 'id' => $notification->id,
                 // What it says only: the numbers it keeps stay here.
                 ...Arr::only($notification->data, ['kind', 'title', 'body']),
-                'reason' => $notification->data['reason'] ?? null,
+                // A stop for a limit that has lifted no longer says to wait.
+                'reason' => ($change = $stopped->get($notification->data['feature_request_id'] ?? null)) === null
+                    ? $notification->data['reason'] ?? null
+                    : LiftedLimit::reason($change, $notification->data['reason'] ?? null),
                 'app' => $apps->get($notification->data['project_id'] ?? null),
                 'read' => $notification->read_at !== null,
                 'created_at' => $notification->created_at?->toIso8601String(),

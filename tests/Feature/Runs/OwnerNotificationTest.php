@@ -75,6 +75,25 @@ class OwnerNotificationTest extends TestCase
         $this->assertSame('This is our fault: something went wrong on our side while I worked on this. Try again.', $other->featureRequest->user->notifications()->sole()->data['reason']);
     }
 
+    public function test_a_note_about_a_pause_that_is_over_no_longer_says_to_wait()
+    {
+        config(['builder.construction.budgets.daily_usd' => 10]);
+        Run::factory()->create()->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 10.5]);
+        $run = Run::factory()->implementing()->create();
+        $owner = $run->featureRequest->user;
+        $paused = 'This is our fault: we paused new work for today to keep our costs in check. Try again tomorrow.';
+
+        app(TransitionRun::class)->handle($run, RunStatus::Failed, attributes: ['error' => $paused], details: ['reason' => 'spend_limit']);
+
+        $this->actingAs($owner)->get(route('projects.index'))->assertInertia(fn (Assert $page) => $page
+            ->where('notifications.items.0.reason', $paused));
+
+        $this->travel(1)->days();
+
+        $this->actingAs($owner)->get(route('projects.index'))->assertInertia(fn (Assert $page) => $page
+            ->where('notifications.items.0.reason', 'This is our fault: we paused new work for a day to keep our costs in check. That pause is over, so you can try again now. Nothing in your app changed.'));
+    }
+
     public function test_opening_a_notification_marks_it_read_and_goes_to_the_change()
     {
         $run = Run::factory()->implementing()->create();
