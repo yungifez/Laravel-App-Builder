@@ -433,6 +433,47 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([false, true], array_map(fn (array $effect) => $effect['failed'] ?? false, $written[1]['effects']));
     }
 
+    public function test_what_the_app_keeps_for_later_is_recorded_and_the_cache_can_be_down_while_the_app_is_in_use()
+    {
+        Route::post('/_failing/remembered', [RecordedApp::class, 'remembered']);
+        $recorded = $this->record();
+
+        $this->post('/_failing/remembered')->assertNoContent();
+
+        // The cache server is down: the first read, write or forget fails the request.
+        File::put("{$this->directory}/fault.json", json_encode(['kind' => 'cache']));
+        $this->post('/_failing/remembered')->assertStatus(500);
+        File::put("{$this->directory}/fault.json", json_encode(['kind' => null]));
+        $this->post('/_failing/remembered')->assertNoContent();
+
+        $requests = $recorded();
+        $this->assertSame([204, 500, 204], array_column($requests, 'status'));
+        // A read is one of many a request makes; it is noted only when it fails.
+        $this->assertSame([['cache', 'write'], ['cache', 'forget']], array_map(fn (array $effect) => [$effect['kind'], $effect['what']], $requests[0]['effects']));
+        $this->assertSame([['cache', 'write']], array_map(fn (array $effect) => [$effect['kind'], $effect['what']], $requests[1]['effects']));
+        $this->assertSame(0, $requests[1]['fault']);
+    }
+
+    public function test_a_notification_can_fail_while_the_app_is_in_use_and_in_a_run()
+    {
+        $user = User::factory()->create();
+        Route::post('/_failing/noticed/{user}', [RecordedApp::class, 'noticed'])->middleware('web');
+        $recorded = $this->record();
+
+        $this->post("/_failing/noticed/{$user->id}", ['channel' => 'database'])->assertNoContent();
+
+        // The notification service does not answer: the notice is not left, and the request fails.
+        File::put("{$this->directory}/fault.json", json_encode(['kind' => 'notification']));
+        $this->post("/_failing/noticed/{$user->id}", ['channel' => 'database'])->assertStatus(500);
+
+        $requests = $recorded();
+        $this->assertSame([204, 500], array_column($requests, 'status'));
+        $this->assertContains(['notification', RecordedNotice::class], array_map(fn (array $effect) => [$effect['kind'], $effect['what'] ?? null], $requests[0]['effects']));
+        $this->assertSame('notification', $requests[1]['effects'][$requests[1]['fault']]['kind']);
+        // The notice that was not left was not saved either.
+        $this->assertSame(1, $user->notifications()->count());
+    }
+
     public function test_a_full_trace_is_moved_aside_so_an_app_in_use_cannot_fill_the_disk()
     {
         Route::post('/_failing/order', [RecordedApp::class, 'receipt']);

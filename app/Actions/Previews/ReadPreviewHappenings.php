@@ -29,6 +29,8 @@ class ReadPreviewHappenings
         'mail' => 'Email is down',
         'http' => 'Outside services do not answer',
         'file' => 'Storage is full',
+        'cache' => 'The cache is down',
+        'notification' => 'Notices do not go out',
     ];
 
     /**
@@ -178,7 +180,12 @@ class ReadPreviewHappenings
         return match ($effect['kind'] ?? null) {
             'query' => $this->write((string) ($effect['sql'] ?? '')),
             'mail' => (string) __($failed ? 'Could not send the email: :name' : 'Sent an email: :name', ['name' => $this->name($what, ['Mail', 'Mailable', 'Notification'])]),
-            'notification' => (string) __('Left a notice: :name', ['name' => $this->name($what, ['Notification'])]),
+            'notification' => (string) __($failed ? 'Could not leave the notice: :name' : 'Left a notice: :name', ['name' => $this->name($what, ['Notification'])]),
+            'cache' => (string) __(match ($what) {
+                'forget' => $failed ? 'Could not forget what it kept for later' : 'Forgot what it kept for later',
+                'read' => $failed ? 'Could not read what it kept for later' : 'Read what it kept for later',
+                default => $failed ? 'Could not keep something for later' : 'Kept something for later',
+            }),
             'job' => (string) __(($effect['again'] ?? false) ? 'Ran a background task again: :name' : (($effect['later'] ?? false) ? 'Put a task in the background for later: :name' : 'Ran a background task: :name'), ['name' => $this->name($what, ['Job'])]),
             'http' => (string) __($failed ? 'Could not reach :service' : 'Asked :service', ['service' => trim(Str::after($what, ' ')) ?: __('an outside service')]),
             'file' => (string) __(match ($what) {

@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
@@ -71,6 +72,18 @@ class RecordedApp
     {
         DB::table('users')->where('id', 0)->update(['name' => 'Ordered']);
         Mail::raw('Receipt', fn ($message) => $message->to('owner@example.com'));
+
+        return response()->noContent();
+    }
+
+    /**
+     * Keeps a count for later, reads it back and forgets it.
+     */
+    public function remembered(): Response
+    {
+        Cache::put('recorded.count', 1, 60);
+        Cache::get('recorded.count');
+        Cache::forget('recorded.count');
 
         return response()->noContent();
     }

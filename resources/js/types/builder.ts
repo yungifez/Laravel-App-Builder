@@ -492,9 +492,14 @@ export type SentEmail = {
     text: string | null;
 };
 
-/** A notice the app on show left for a person inside the app, such as what its bell shows. */
 /** What the owner can pretend is down in the app on show. */
-export type AppFault = 'none' | 'mail' | 'http' | 'file';
+export type AppFault =
+    | 'none'
+    | 'mail'
+    | 'http'
+    | 'file'
+    | 'cache'
+    | 'notification';
 
 /** What the app on show did behind its last pages, newest first. */
 export type AppHappenings = {
@@ -508,6 +513,7 @@ export type AppHappenings = {
     }[];
 };
 
+/** A notice the app on show left for a person inside the app, such as what its bell shows. */
 export type SentNotice = {
     id: string;
     sent_at: string | null;

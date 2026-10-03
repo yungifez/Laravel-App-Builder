@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Previews;
 
+use App\Actions\Previews\ReadPreviewHappenings;
 use App\Actions\Projects\CreateProject;
 use App\Jobs\StartPreview;
 use App\Models\Preview;
@@ -15,6 +16,7 @@ use Tests\Concerns\FakesWorkspaces;
 use Tests\Concerns\PreparesRuns;
 use Tests\Fakes\FakeWorkspaceDriver;
 use Tests\TestCase;
+use TraceRecorder\Recorder;
 
 /**
  * What the app on show did behind each page, in plain words, and the
@@ -75,10 +77,14 @@ class PreviewHappeningsTest extends TestCase
                 ['kind' => 'job', 'what' => 'App\Jobs\SendReminder', 'later' => true],
                 ['kind' => 'http', 'what' => 'POST api.stripe.com'],
                 ['kind' => 'file', 'what' => 'write'],
+                ['kind' => 'cache', 'what' => 'write'],
             ]],
             ['n' => 2, 'method' => 'POST', 'route' => '/bookings/{booking}/cancel', 'status' => 500, 'fault' => 1, 'effects' => [
                 ['kind' => 'query', 'sql' => 'delete from "bookings" where "id" = ?'],
+                ['kind' => 'cache', 'what' => 'forget'],
                 ['kind' => 'mail', 'what' => 'App\Mail\BookingCancelled', 'failed' => true],
+                ['kind' => 'notification', 'what' => 'App\Notifications\BookingCancelledNotification', 'failed' => true],
+                ['kind' => 'cache', 'what' => 'read', 'failed' => true],
                 ['kind' => 'rollback'],
             ]],
         ]);
@@ -96,7 +102,10 @@ class PreviewHappeningsTest extends TestCase
                         'outcome' => 'Ended in an error. See Problems.',
                         'did' => [
                             ['text' => 'Deleted a booking', 'failed' => false],
+                            ['text' => 'Forgot what it kept for later', 'failed' => false],
                             ['text' => 'Could not send the email: Booking cancelled', 'failed' => true],
+                            ['text' => 'Could not leave the notice: Booking cancelled', 'failed' => true],
+                            ['text' => 'Could not read what it kept for later', 'failed' => true],
                             ['text' => 'Put the save back', 'failed' => false],
                         ],
                     ],
@@ -113,6 +122,7 @@ class PreviewHappeningsTest extends TestCase
                             ['text' => 'Put a task in the background for later: Send reminder', 'failed' => false],
                             ['text' => 'Asked api.stripe.com', 'failed' => false],
                             ['text' => 'Stored a file', 'failed' => false],
+                            ['text' => 'Kept something for later', 'failed' => false],
                             // A save is not a look; only the room read before it is.
                             ['text' => 'Looked at rooms', 'failed' => false],
                         ],
@@ -150,7 +160,12 @@ class PreviewHappeningsTest extends TestCase
         $this->put(route('preview-fault.update', $this->project), ['fault' => 'none'])->assertSessionHasNoErrors();
         $this->assertSame('{"kind":null}', $this->driver->files["{$this->workspace->driver_id}:storage/logs/recorder/fault.json"]);
 
-        // Only what can be made to fail.
+        // Every kind the owner can pick is one the recorder can make fail, and nothing else is.
+        class_exists(Recorder::class) || require_once resource_path('trace-recorder/src/Recorder.php');
+        foreach (array_keys(ReadPreviewHappenings::FAULTS) as $kind) {
+            $this->assertContains($kind, Recorder::LIVE);
+            $this->put(route('preview-fault.update', $this->project), ['fault' => $kind])->assertSessionHasNoErrors();
+        }
         $this->put(route('preview-fault.update', $this->project), ['fault' => 'query'])->assertSessionHasErrors('fault');
 
         // Not for someone else's app, and not while the app does not run.

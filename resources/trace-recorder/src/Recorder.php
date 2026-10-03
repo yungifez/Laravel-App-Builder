@@ -3,6 +3,9 @@
 namespace TraceRecorder;
 
 use Closure;
+use Illuminate\Cache\Events\ForgettingKey;
+use Illuminate\Cache\Events\RetrievingKey;
+use Illuminate\Cache\Events\WritingKey;
 use Illuminate\Console\Events\ArtisanStarting;
 use Illuminate\Contracts\Console\Kernel as Console;
 use Illuminate\Contracts\Debug\ExceptionHandler;
@@ -52,6 +55,7 @@ use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionFunction;
 use ReflectionObject;
+use RuntimeException;
 use Symfony\Component\Console\Application as SymfonyConsole;
 use Symfony\Component\Console\ConsoleEvents;
 use Symfony\Component\Console\Event\ConsoleCommandEvent;
@@ -269,7 +273,7 @@ class Recorder
     /**
      * The kinds of thing that can be made to fail for as long as the app is used.
      */
-    public const LIVE = ['mail', 'http', 'file'];
+    public const LIVE = ['mail', 'http', 'file', 'cache', 'notification'];
 
     /**
      * How big the trace grows before it is moved aside. The folder holds
@@ -432,7 +436,18 @@ class Recorder
         // A report() of the app ends in its log too.
         $events->listen(MessageLogged::class, fn () => $this->reported());
         $events->listen(MessageSending::class, fn (MessageSending $event) => $this->mailed((string) ($event->data['__laravel_mailable'] ?? $event->data['__laravel_notification'] ?? 'message')));
-        $events->listen(NotificationSending::class, fn (NotificationSending $event) => $this->effect(['kind' => 'notification', 'what' => $event->notification::class]));
+        $events->listen(NotificationSending::class, fn (NotificationSending $event) => $this->notifying($event->notification::class, (string) $event->channel));
+
+        // What the app keeps for later and forgets. It reads the cache many
+        // times a request, so a read is noted only when the cache is down
+        // and it fails; what it kept and forgot is noted each time.
+        $events->listen(WritingKey::class, fn () => $this->effect(['kind' => 'cache', 'what' => 'write'], fails: $this->cacheDown(...)));
+        $events->listen(ForgettingKey::class, fn () => $this->effect(['kind' => 'cache', 'what' => 'forget'], fails: $this->cacheDown(...)));
+        $events->listen(RetrievingKey::class, function () {
+            if ($this->live === 'cache') {
+                $this->effect(['kind' => 'cache', 'what' => 'read'], fails: $this->cacheDown(...));
+            }
+        });
         $events->listen(RequestSending::class, function (RequestSending $event) {
             $place = count($this->operation['effects'] ?? []);
 
@@ -1098,6 +1113,23 @@ class Recorder
     }
 
     /**
+     * Note a notification the app sends now, over one channel. When it is
+     * made to fail, the channel's service does not answer.
+     */
+    protected function notifying(string $what, string $channel): void
+    {
+        $this->effect(['kind' => 'notification', 'what' => $what], fails: fn () => new RuntimeException("Connection refused: the {$channel} notification service did not answer."));
+    }
+
+    /**
+     * How the cache fails when it is down: as a cache server that is not there.
+     */
+    protected function cacheDown(): Throwable
+    {
+        return new RuntimeException('Connection refused: the cache server did not answer.');
+    }
+
+    /**
      * Note a file the app writes to one of its disks now. It is the one
      * thing this run makes fail when the run names it: the disk refuses
      * the write. The framework then gives the app's code false, or throws
@@ -1175,7 +1207,7 @@ class Recorder
         }
 
         foreach ($channels as $channel) {
-            $this->effect(['kind' => 'notification', 'what' => $notification::class]);
+            $this->notifying($notification::class, (string) $channel);
 
             if ($channel === 'mail') {
                 $this->mailed($notification::class);

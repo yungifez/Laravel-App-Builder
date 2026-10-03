@@ -2737,13 +2737,16 @@ reads the preview's workspace, so the app itself does not change.
   trace through the driver and follows along while the owner looks. A
   trace past 4 MB is moved aside (one old copy kept), so a busy app
   cannot fill the workspace disk. The trace holds routes, table names,
-  class names and hosts: never field values, headers or cookies.
+  class names and hosts: never field values, headers or cookies. The
+  cache is recorded as what the app kept and forgot; its many reads are
+  noted only when the cache is down and one fails.
   `BUILDER_PREVIEW_RECORDER=false` turns it off. Reads of framework
   tables (sessions, cache, jobs) are not something the app did and are
   left out; saves are said on their own, so only a read is "looked at".
 - **What if it fails** (built). A select in the same tab lets the owner
   pretend one kind of thing is down while they use the app: "Email is
-  down", "Outside services do not answer", "Storage is full". The
+  down", "Outside services do not answer", "Storage is full", "The cache
+  is down", "Notices do not go out". The
   builder writes `storage/logs/recorder/fault.json` in the workspace;
   the recorder reads it as each request starts and makes every thing of
   that kind fail, so the owner sees the page a visitor would see and the

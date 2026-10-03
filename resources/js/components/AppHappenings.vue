@@ -20,6 +20,8 @@ const faults: { key: AppFault; label: string }[] = [
     { key: 'mail', label: 'Email is down' },
     { key: 'http', label: 'Outside services do not answer' },
     { key: 'file', label: 'Storage is full' },
+    { key: 'cache', label: 'The cache is down' },
+    { key: 'notification', label: 'Notices do not go out' },
 ];
 
 const form = useForm<{ fault: AppFault }>({
