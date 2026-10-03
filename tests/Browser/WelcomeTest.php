@@ -3,9 +3,9 @@
 use App\Models\User;
 
 /*
-| What a visitor learns before signing up: fixed checks, not the AI, decide
-| whether a change works, and what they keep. The box they type in first
-| carries their idea into the new-app form.
+| What a visitor learns before signing up: tests, not the AI, decide
+| whether a change works, and what they keep. The box they type in, at the
+| top or at the end, carries their idea into the new-app form.
 */
 
 it('shows a visitor what makes it different and what they keep, and starts them on an app', function () {
@@ -15,10 +15,12 @@ it('shows a visitor what makes it different and what they keep, and starts them 
         ->assertPresent('@welcome-stage')
         ->assertSeeIn('@welcome-stage', 'Let customers cancel a booking up to a day before.')
         ->assertSee('Build apps that don’t stay prototypes.')
-        ->assertSee('Fixed checks decide if it works.')
-        ->assertSee('An AI agent on its own')
+        ->assertSee('Tests decide if it works, not the')
+        ->assertSee('Without checks')
+        ->assertSee('The checks passed. It is ready for you to keep.')
         ->assertSee('Try it before you keep it')
-        ->assertSee('It tells you how it knows.')
+        ->assertSee('Every change shows what was')
+        ->assertSee('Free to start. No card needed.')
         ->assertSee('Checked, with gaps')
         ->assertSee('It stays yours.')
         ->click('@welcome-start')
@@ -42,15 +44,22 @@ it('keeps what a visitor typed for the new app form after they sign in', functio
         ->assertValue('#purpose', 'Customers order cakes for a pickup day.');
 });
 
-it('sends a visitor at the end of the page back to the box', function () {
+it('starts a visitor from the box at the end of the page', function () {
     $this->actingAs(User::factory()->create());
 
     visit('/')
-        ->click('@welcome-end')
-        ->type('@welcome-idea', 'Neighbours lend each other tools.')
-        ->click('@welcome-hero-start')
+        ->type('@welcome-end-idea', 'Neighbours lend each other tools.')
+        ->click('@welcome-end-start')
         ->assertPathIs('/projects')
         ->assertValue('#purpose', 'Neighbours lend each other tools.');
+});
+
+it('puts the example in an empty box instead of doing nothing', function () {
+    visit('/')
+        ->click('@welcome-hero-start')
+        ->assertPathIs('/')
+        ->assertSee('Change it, or press Start again.')
+        ->assertValue('@welcome-idea', 'My cleaners see their jobs for the day, and customers book a clean online.');
 });
 
 it('takes a signed-in owner to their apps', function () {

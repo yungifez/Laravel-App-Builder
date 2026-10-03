@@ -2,7 +2,6 @@
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import {
     ArrowRight,
-    ArrowUp,
     Check,
     CircleDashed,
     Download,
@@ -34,7 +33,15 @@ import type { Directive } from 'vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
 import { keepIdea } from '@/lib/startIdea';
-import { login, pricing, register } from '@/routes';
+import {
+    contact,
+    developers,
+    login,
+    pricing,
+    privacy,
+    register,
+    terms,
+} from '@/routes';
 import { index } from '@/routes/projects';
 import type { DesignOption, Starter } from '@/types';
 
@@ -55,9 +62,9 @@ const props = defineProps<{
 }>();
 
 const page = usePage();
-const still =
-    typeof window !== 'undefined' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+// The server cannot know the visitor's motion setting, so this is read
+// once the page is mounted. Hydration keeps the server's classes.
+const still = ref(false);
 
 // Blocks rise into place the first time they scroll into view.
 const watched = new Map<Element, () => void>();
@@ -100,49 +107,41 @@ const idea = ref('');
 // The ready-made idea the box holds, while its words are unchanged.
 const starter = ref<Starter | null>(null);
 const ideaField = ref<HTMLTextAreaElement | null>(null);
+const endField = ref<HTMLTextAreaElement | null>(null);
 
-// The empty box writes out the example ideas, one after another, so a
-// visitor sees the kind of sentence that works.
-const typed = ref(props.starters[0]?.purpose ?? '');
+// The empty box writes out one example idea, once, so a visitor sees the
+// kind of sentence that works. It never loops: motion that goes on by
+// itself is hard to read past. Focus shows the whole example at once.
+const example = props.starters[0]?.purpose ?? '';
+const typed = ref(example);
 let typing: ReturnType<typeof setTimeout> | undefined;
 
-function typeExamples(): void {
-    const examples = props.starters.map((s) => s.purpose);
-
-    if (examples.length === 0) {
-        return;
-    }
-
-    let example = 0;
+function typeExample(): void {
     let length = 0;
-    let erasing = false;
 
     const step = (): void => {
-        const text = examples[example];
+        length += 1;
+        typed.value = example.slice(0, length);
 
-        if (!erasing) {
-            length += 1;
-            typed.value = text.slice(0, length);
-            erasing = length >= text.length;
-            typing = setTimeout(step, erasing ? 2400 : 32);
-
-            return;
+        if (length < example.length) {
+            typing = setTimeout(step, 32);
         }
-
-        length = Math.max(0, length - 4);
-        typed.value = text.slice(0, length);
-
-        if (length === 0) {
-            erasing = false;
-            example = (example + 1) % examples.length;
-        }
-
-        typing = setTimeout(step, length === 0 ? 500 : 14);
     };
 
     typed.value = '';
     typing = setTimeout(step, 700);
 }
+
+function stopTyping(): void {
+    clearTimeout(typing);
+    typed.value = example;
+}
+
+// Start never does nothing. On an empty box it puts the example in, ready
+// to change, and says how to go on; nobody gets an app they did not pick.
+const hint = ref(false);
+
+watch(idea, () => (hint.value = false));
 
 // A ready-made idea fills the box; from further down the page it also
 // takes the visitor back up to it.
@@ -154,8 +153,15 @@ function useStarter(picked: Starter): void {
 
 // The idea waits in this tab; the new-app form on "Your apps" picks it up,
 // after signing up if needed.
-function start(): void {
+function start(field: HTMLTextAreaElement | null = ideaField.value): void {
     if (idea.value.trim() === '') {
+        stopTyping();
+        idea.value = example;
+        starter.value = props.starters[0] ?? null;
+        field?.focus();
+        // Set after the watch on the idea, which clears it.
+        setTimeout(() => (hint.value = true));
+
         return;
     }
 
@@ -166,17 +172,26 @@ function start(): void {
     router.visit(page.props.auth.user ? index() : register());
 }
 
-// Enter starts the app, as in other builders; Shift and Enter adds a line.
-function startOnEnter(event: KeyboardEvent): void {
-    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+// The header's button is the same action as the box: an idea already
+// typed goes with the visitor, never lost on the way to sign up.
+function startTyped(event: MouseEvent): void {
+    if (idea.value.trim() !== '') {
         event.preventDefault();
         start();
     }
 }
 
+// Enter starts the app, as in other builders; Shift and Enter adds a line.
+function startOnEnter(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+        event.preventDefault();
+        start(event.target as HTMLTextAreaElement);
+    }
+}
+
 // The last tile sends the visitor back up to the box, ready to type.
 function backToStart(): void {
-    window.scrollTo({ top: 0, behavior: still ? 'auto' : 'smooth' });
+    window.scrollTo({ top: 0, behavior: still.value ? 'auto' : 'smooth' });
     ideaField.value?.focus({ preventScroll: true });
 }
 
@@ -204,7 +219,7 @@ const stageSteps = [
 // the last look.
 const beats = [900, 1500, 1500, 700, 500, 500, 500, 500, 1200];
 const ready = beats.length;
-const beat = ref(still ? ready : -1);
+const beat = ref(-1);
 const elapsed = ref(0);
 const stage = ref<HTMLElement | null>(null);
 let beating: ReturnType<typeof setTimeout> | undefined;
@@ -216,7 +231,7 @@ function playStage(): void {
     clearInterval(counting);
     clearInterval(counting);
 
-    if (still) {
+    if (still.value) {
         beat.value = ready;
 
         return;
@@ -258,9 +273,9 @@ const bookings = [
     { name: 'Morning yoga', when: 'Today, 18:00', late: true },
 ];
 
-// One change, checked two ways. "Here" is what the platform does with
-// every change; "alone" is an AI coding agent working on its own, which
-// chooses its own checks. The steps play one by one, so the visitor
+// One change, checked two ways. "With checks" is what the platform does
+// with every change; "Without checks" is an AI coding agent working on its
+// own, which chooses its own checks. The steps play one by one, so the visitor
 // watches the checking happen.
 type Step = { label: string; note: string; passed: boolean };
 
@@ -279,11 +294,11 @@ const ways: Record<'here' | 'alone', { steps: Step[]; verdict: string }> = {
             },
             {
                 label: 'Email is down',
-                note: 'Where the change runs, sending fails. Your app copes.',
+                note: 'We make email fail on purpose while we test. Your app copes.',
                 passed: true,
             },
             {
-                label: 'Background work runs twice',
+                label: 'A step runs twice by mistake',
                 note: 'Your app copes, and nothing happens twice.',
                 passed: true,
             },
@@ -309,30 +324,31 @@ const ways: Record<'here' | 'alone', { steps: Step[]; verdict: string }> = {
             },
             { label: 'Email is down', note: 'Not tried.', passed: false },
             {
-                label: 'Background work runs twice',
+                label: 'A step runs twice by mistake',
                 note: 'Not tried.',
                 passed: false,
             },
             { label: 'What else changed', note: 'Not said.', passed: false },
         ],
-        verdict: 'The AI says it is done.',
+        verdict: 'The AI says it is done. Three checks were not tried.',
     },
 };
 
 const wayOptions = [
-    { key: 'here', label: 'Here' },
-    { key: 'alone', label: 'An AI agent on its own' },
+    { key: 'here', label: 'With checks' },
+    { key: 'alone', label: 'Without checks' },
 ] as const;
 
+// It rests finished, so a visitor who scrolls past still sees the whole
+// run; the switch plays the other way step by step.
 const way = ref<'here' | 'alone'>('here');
-const shownSteps = ref(still ? 99 : 0);
-const demo = ref<HTMLElement | null>(null);
+const shownSteps = ref(99);
 let playing: ReturnType<typeof setInterval> | undefined;
 
 function play(): void {
     clearInterval(playing);
 
-    if (still) {
+    if (still.value) {
         shownSteps.value = 99;
 
         return;
@@ -411,52 +427,74 @@ const receipt: { title: string; lines: { text: string; mark: Mark }[] }[] = [
     },
 ];
 
-// The app's history: one commit per change kept. Undo adds a new commit
-// on top, as the real undo does, and the first one stays in the history.
-type Kept = { id: string; title: string; undoneBy?: string; undo?: boolean };
+// The app's history: one step per change kept. Undo adds a new step on
+// top, as the real undo does, and the first one stays in the history.
+type Kept = {
+    id: number;
+    title: string;
+    when: string;
+    undone?: boolean;
+    undo?: boolean;
+};
 
 const history = ref<Kept[]>([
     {
-        id: 'a41c9e2',
+        id: 4,
         title: 'Let customers cancel a booking up to a day before',
+        when: 'Today',
     },
-    { id: '7d03b5f', title: 'Send a reminder the day before a class' },
-    { id: 'e98a61c', title: 'Add a waiting list when a class is full' },
-    { id: '3b2f7d0', title: 'Start Studio Classes' },
+    {
+        id: 3,
+        title: 'Send a reminder the day before a class',
+        when: 'Yesterday',
+    },
+    {
+        id: 2,
+        title: 'Add a waiting list when a class is full',
+        when: '3 days ago',
+    },
+    { id: 1, title: 'Start Studio Classes', when: 'Last week' },
 ]);
 
 function undo(kept: Kept): void {
-    const id = Math.random().toString(16).slice(2, 9).padEnd(7, '0');
-
-    kept.undoneBy = id;
-    history.value.unshift({ id, title: `Undo “${kept.title}”`, undo: true });
+    kept.undone = true;
+    history.value.unshift({
+        id: history.value.length + 1,
+        title: `Undo “${kept.title}”`,
+        when: 'Just now',
+        undo: true,
+    });
 }
 
-// What every new app has before the owner asks for anything.
+// What every new app has before the owner asks for anything. Payments
+// and email need the owner's own keys, so they are added, not included.
 const included = [
     'Accounts and sign-in',
     'A real database you can look into',
-    'Take payments with Stripe',
-    'Send email with Resend',
     'A link anyone can use to try your app',
 ];
 
-const questions = [
+const questions: { ask: string; answer: string; pricing?: boolean }[] = [
     {
         ask: 'Why do apps from AI builders stay prototypes?',
-        answer: 'Because the AI decides when its own work is done. A change can quietly break something that worked, and nothing makes sure it is checked. Here the same fixed checks run on every change, and only they can pass it.',
+        answer: 'Because the AI decides when its own work is done. A change can quietly break something that worked, and nothing makes sure it is checked. Here the same tests run on every change, and only they can pass it.',
+    },
+    {
+        ask: 'What does it cost?',
+        answer: 'It is free to start, with no card needed. The free plan includes some AI use each month, and bigger plans include more.',
+        pricing: true,
     },
     {
         ask: 'Do I need to know how to code?',
-        answer: 'No. You say what you want in plain words and see it in your app. Developers can still read every change in Git.',
+        answer: 'No. You say what you want in plain words and see it in your app. Developers can read every change too.',
     },
     {
         ask: 'Who owns the code?',
-        answer: 'You do. Each change you keep is a commit in your app, and you can download the code any time.',
+        answer: 'You do. Each change you keep is saved in your app’s history, and you can download the code any time.',
     },
     {
         ask: 'What happens when a change fails its checks?',
-        answer: 'The attempt is rolled back, and your app stays as it was. You see what went wrong in plain words. When it is our fault, we say so.',
+        answer: 'The try is undone, and your app stays as it was. You see what went wrong in plain words. When it is our fault, we say so.',
     },
     {
         ask: 'What if I change my mind?',
@@ -464,14 +502,19 @@ const questions = [
     },
     {
         ask: 'Can my app take payments or send email?',
-        answer: 'Yes. Add your own Stripe keys to take payments, and your own Resend key to send email.',
+        answer: 'Yes. Ask for it, and add your Stripe or Resend key when asked. Then it works like any other change.',
     },
 ];
 
 onMounted(() => {
-    if (!still) {
-        typeExamples();
+    still.value = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (!still.value) {
+        typeExample();
     }
+
+    // The sticky header must never cover what has focus or an anchor.
+    document.documentElement.style.scrollPaddingTop = '4.5rem';
 
     // It waits until a good part of it is on screen, so the visitor sees
     // it play rather than its end.
@@ -489,10 +532,6 @@ onMounted(() => {
     } else {
         playStage();
     }
-
-    if (demo.value !== null) {
-        whenSeen(demo.value, play);
-    }
 });
 
 onBeforeUnmount(() => {
@@ -502,13 +541,18 @@ onBeforeUnmount(() => {
     clearInterval(playing);
     seen?.disconnect();
     stageSeen?.disconnect();
+    document.documentElement.style.scrollPaddingTop = '';
 });
 </script>
 
 <template>
     <Head title="Build real software without losing control" />
 
-    <div class="min-h-svh overflow-x-clip bg-background text-foreground">
+    <!-- Focus rings use the full ring colour here: the app-wide one is too
+         faint to see on the blue Start button (WCAG 1.4.11). -->
+    <div
+        class="min-h-svh overflow-x-clip bg-background text-foreground [&_:is(a,button,summary):focus-visible]:outline-2 [&_:is(a,button,summary):focus-visible]:outline-offset-2 [&_:is(a,button,summary):focus-visible]:outline-ring"
+    >
         <header class="sticky top-0 z-30 border-b bg-background">
             <div
                 class="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-8"
@@ -535,9 +579,14 @@ onBeforeUnmount(() => {
                 </div>
                 <nav class="flex items-center gap-1 text-sm">
                     <Link
+                        :href="pricing()"
+                        class="inline-flex min-h-11 items-center rounded-md px-2 text-muted-foreground select-none hover:text-foreground md:hidden pointer-fine:min-h-9"
+                        >Pricing</Link
+                    >
+                    <Link
                         v-if="$page.props.auth.user"
                         :href="index()"
-                        class="inline-flex min-h-11 press items-center rounded-md bg-primary px-4 font-medium text-primary-foreground select-none hover:bg-primary/90 sm:min-h-9"
+                        class="inline-flex min-h-11 press items-center rounded-md bg-primary px-4 font-medium text-primary-foreground select-none hover:bg-primary/90 pointer-fine:min-h-9"
                         data-test="welcome-apps"
                     >
                         Your apps
@@ -545,14 +594,15 @@ onBeforeUnmount(() => {
                     <template v-else>
                         <Link
                             :href="login()"
-                            class="inline-flex min-h-11 items-center rounded-md px-3 text-muted-foreground select-none hover:text-foreground sm:min-h-9"
+                            class="inline-flex min-h-11 items-center rounded-md px-2 text-muted-foreground select-none hover:text-foreground sm:px-3 pointer-fine:min-h-9"
                         >
                             Log in
                         </Link>
                         <Link
                             :href="register()"
-                            class="inline-flex min-h-11 press items-center rounded-md bg-primary px-4 font-medium text-primary-foreground select-none hover:bg-primary/90 sm:min-h-9"
+                            class="inline-flex min-h-11 press items-center rounded-md bg-primary px-3 font-medium whitespace-nowrap text-primary-foreground select-none hover:bg-primary/90 sm:px-4 pointer-fine:min-h-9"
                             data-test="welcome-start"
+                            @click="startTyped"
                         >
                             Start an app
                         </Link>
@@ -570,24 +620,21 @@ onBeforeUnmount(() => {
                     class="mx-auto flex max-w-3xl flex-col pt-20 text-center sm:pt-32"
                 >
                     <h1
-                        v-reveal
-                        class="reveal font-display text-5xl leading-[1.02] font-medium tracking-[-0.04em] text-balance sm:text-7xl"
+                        class="font-display text-5xl leading-[1.02] font-medium tracking-[-0.04em] text-balance sm:text-7xl"
                     >
                         Build apps that don’t stay prototypes.
                     </h1>
                     <p
-                        v-reveal
-                        class="mx-auto mt-6 max-w-2xl reveal text-lg text-balance text-muted-foreground delay-75 sm:text-xl"
+                        class="mx-auto mt-6 max-w-2xl text-lg text-balance text-muted-foreground sm:text-xl"
                     >
-                        With most AI builders, each change can break what
-                        worked. Here every change passes fixed checks first.
+                        AI builders often break what worked. Here the same tests
+                        check every change before you keep&nbsp;it.
                     </p>
 
                     <form
-                        v-reveal
-                        class="mx-auto mt-10 w-full max-w-2xl reveal text-left delay-150"
+                        class="mx-auto mt-10 w-full max-w-2xl text-left"
                         data-test="welcome-ask"
-                        @submit.prevent="start"
+                        @submit.prevent="start()"
                     >
                         <div
                             class="rounded-xl border border-input bg-background shadow-lg shadow-black/5 transition-shadow focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30"
@@ -600,43 +647,54 @@ onBeforeUnmount(() => {
                                 ref="ideaField"
                                 v-model="idea"
                                 rows="3"
-                                required
                                 :placeholder="typed"
+                                aria-describedby="idea-help"
                                 class="block w-full resize-none bg-transparent px-5 pt-4 pb-2 text-base outline-none placeholder:text-muted-foreground sm:text-lg"
                                 data-test="welcome-idea"
+                                @focus="stopTyping"
                                 @keydown="startOnEnter"
                             />
                             <div
                                 class="flex items-center justify-between gap-3 pr-3 pb-3 pl-5"
                             >
-                                <span class="text-sm text-muted-foreground"
-                                    >Real code that stays yours.</span
+                                <span
+                                    id="idea-help"
+                                    class="text-sm text-muted-foreground"
+                                    aria-live="polite"
+                                    >{{
+                                        hint
+                                            ? 'Change it, or press Start again.'
+                                            : 'Free to start. No card needed.'
+                                    }}</span
                                 >
                                 <button
                                     type="submit"
-                                    class="flex size-11 shrink-0 press items-center justify-center rounded-full bg-primary text-primary-foreground select-none hover:bg-primary/90 disabled:opacity-40 sm:size-10"
-                                    :disabled="idea.trim() === ''"
-                                    aria-label="Start my app"
-                                    title="Start my app"
+                                    class="inline-flex min-h-11 shrink-0 press items-center gap-1.5 rounded-md bg-primary px-4 font-medium text-primary-foreground select-none hover:bg-primary/90 pointer-fine:min-h-10"
                                     data-test="welcome-hero-start"
                                 >
-                                    <ArrowUp class="size-4" />
+                                    Start
+                                    <ArrowRight class="size-4" />
                                 </button>
                             </div>
                         </div>
                     </form>
 
                     <div
-                        v-reveal
-                        class="mt-5 flex reveal flex-wrap items-center justify-center gap-x-1 gap-y-2 text-sm delay-200"
+                        class="mt-4 flex flex-wrap items-center justify-center gap-x-1 text-sm"
                         aria-label="Ideas to start from"
                     >
-                        <span class="mr-2 text-muted-foreground">Try</span>
+                        <span
+                            class="w-full text-muted-foreground sm:mr-1 sm:w-auto"
+                            >Try</span
+                        >
                         <button
-                            v-for="item in starters"
+                            v-for="(item, at) in starters"
                             :key="item.key"
                             type="button"
-                            class="min-h-11 rounded-md px-2.5 underline decoration-border underline-offset-4 select-none hover:decoration-foreground sm:min-h-8"
+                            :class="[
+                                'min-h-11 rounded-md px-2 underline decoration-border underline-offset-4 select-none hover:decoration-foreground pointer-fine:min-h-8',
+                                at >= 3 && 'hidden sm:inline-block',
+                            ]"
                             @click="useStarter(item)"
                         >
                             {{ item.name }}
@@ -649,8 +707,7 @@ onBeforeUnmount(() => {
                 >
                     <figure
                         ref="stage"
-                        v-reveal
-                        class="mx-auto max-w-6xl reveal delay-150"
+                        class="mx-auto max-w-6xl"
                         data-test="welcome-stage"
                     >
                         <figcaption class="sr-only">
@@ -707,9 +764,13 @@ onBeforeUnmount(() => {
                             </div>
 
                             <div
-                                class="grid h-[34rem] md:grid-cols-[21rem_minmax(0,1fr)]"
+                                class="grid h-[26rem] md:h-[34rem] md:grid-cols-[21rem_minmax(0,1fr)]"
                             >
-                                <div class="flex min-h-0 flex-col md:border-r">
+                                <!-- On a phone the app shows, not the chat:
+                                     the made thing is the point. -->
+                                <div
+                                    class="hidden min-h-0 flex-col md:flex md:border-r"
+                                >
                                     <div
                                         class="flex items-center gap-2 border-b p-2"
                                         aria-hidden="true"
@@ -927,7 +988,7 @@ onBeforeUnmount(() => {
                                 <!-- The app beside the chat, with the browser bar
                                  and tabs of the real workspace. -->
                                 <div
-                                    class="hidden min-h-0 flex-col bg-muted/30 p-3 md:flex"
+                                    class="flex min-h-0 flex-col bg-muted/30 p-3"
                                     aria-hidden="true"
                                 >
                                     <div
@@ -1087,21 +1148,21 @@ onBeforeUnmount(() => {
                 </div>
             </section>
 
-            <!-- The difference, shown: one change checked here, then by an
-                 AI agent on its own. -->
+            <!-- The claim, then its proof, then what the owner keeps. Each
+                 section is one idea: a short two-tone heading, then the
+                 thing itself on a soft panel. -->
             <section
                 id="different"
-                class="mx-auto max-w-7xl scroll-mt-20 px-4 pt-28 sm:px-8 sm:pt-40"
+                class="mx-auto max-w-7xl px-4 pt-24 sm:px-8 lg:pt-32"
                 data-test="welcome-different"
             >
                 <h2
                     v-reveal
                     class="max-w-3xl reveal font-display text-3xl leading-[1.1] font-medium tracking-[-0.025em] text-balance sm:text-[2.75rem]"
                 >
-                    Fixed checks decide if it works.
+                    Tests decide if it works, not the&nbsp;AI.
                     <span class="text-muted-foreground"
-                        >The AI writes each change, but it never marks its own
-                        work.</span
+                        >The AI plans and writes the code.</span
                     >
                 </h2>
                 <div
@@ -1110,7 +1171,7 @@ onBeforeUnmount(() => {
                     <div
                         class="mb-8 inline-flex rounded-md border bg-background p-1"
                         role="group"
-                        aria-label="Who checks the change"
+                        aria-label="Compare one change with and without checks"
                     >
                         <button
                             v-for="option in wayOptions"
@@ -1118,7 +1179,7 @@ onBeforeUnmount(() => {
                             type="button"
                             :aria-pressed="way === option.key"
                             :class="[
-                                'min-h-11 rounded-sm px-4 text-sm font-medium transition-colors select-none sm:min-h-9',
+                                'min-h-11 rounded-sm px-4 text-sm font-medium transition-colors select-none pointer-fine:min-h-9',
                                 way === option.key
                                     ? 'bg-foreground text-background'
                                     : 'text-muted-foreground hover:text-foreground',
@@ -1129,7 +1190,6 @@ onBeforeUnmount(() => {
                         </button>
                     </div>
                     <div
-                        ref="demo"
                         v-reveal
                         class="mx-auto w-full max-w-xl reveal delay-100"
                     >
@@ -1162,16 +1222,17 @@ onBeforeUnmount(() => {
                                         <LoaderCircle
                                             v-if="at === shownSteps"
                                             class="size-4 animate-spin text-muted-foreground"
+                                            aria-hidden="true"
                                         />
                                         <Check
                                             v-else-if="step.passed"
                                             class="size-4 text-emerald-600 dark:text-emerald-400"
-                                            aria-label="Passed"
+                                            aria-hidden="true"
                                         />
                                         <Minus
                                             v-else
                                             class="size-4 text-muted-foreground"
-                                            aria-label="Skipped"
+                                            aria-hidden="true"
                                         />
                                     </span>
                                     <span class="min-w-0">
@@ -1181,7 +1242,12 @@ onBeforeUnmount(() => {
                                                 !step.passed &&
                                                     'text-muted-foreground line-through decoration-muted-foreground/50',
                                             ]"
-                                            >{{ step.label }}</span
+                                            >{{ step.label
+                                            }}<span class="sr-only">{{
+                                                step.passed
+                                                    ? ', passed'
+                                                    : ', not tried'
+                                            }}</span></span
                                         >
                                         <span
                                             class="block text-sm text-pretty text-muted-foreground"
@@ -1200,58 +1266,31 @@ onBeforeUnmount(() => {
                                         ? 'text-emerald-700 dark:text-emerald-400'
                                         : 'text-muted-foreground',
                                 ]"
+                                aria-live="polite"
                             >
-                                {{ ways[way].verdict }}
+                                {{
+                                    shownSteps > ways[way].steps.length
+                                        ? ways[way].verdict
+                                        : ''
+                                }}
                             </p>
                         </div>
                     </div>
                 </div>
             </section>
 
-            <!-- Small things the workspace does, each in a line. -->
-            <section class="mx-auto max-w-7xl px-4 pt-28 sm:px-8 sm:pt-40">
-                <ul
-                    v-reveal
-                    class="grid reveal gap-x-16 gap-y-12 md:grid-cols-2"
-                    data-test="welcome-features"
-                >
-                    <li
-                        v-for="feature in features"
-                        :key="feature.title"
-                        class="max-w-md"
-                    >
-                        <h3 class="flex items-center gap-2.5 font-medium">
-                            <component
-                                :is="feature.icon"
-                                class="size-4 shrink-0"
-                                aria-hidden="true"
-                            />
-                            {{ feature.title }}
-                        </h3>
-                        <p
-                            class="mt-1.5 pl-6.5 text-pretty text-muted-foreground"
-                        >
-                            {{ feature.text }}
-                        </p>
-                    </li>
-                </ul>
-            </section>
-
             <!-- How a kept change reports itself: each line says how the
                  app knows it, and what nothing checked is named. -->
             <section
-                class="mx-auto max-w-7xl px-4 pt-28 sm:px-8 sm:pt-40"
+                class="mx-auto max-w-7xl px-4 pt-24 sm:px-8 lg:pt-32"
                 data-test="welcome-receipt"
             >
                 <h2
                     v-reveal
                     class="max-w-3xl reveal font-display text-3xl leading-[1.1] font-medium tracking-[-0.025em] text-balance sm:text-[2.75rem]"
                 >
-                    It tells you how it knows.
-                    <span class="text-muted-foreground"
-                        >Each change you keep says what a test proved, and names
-                        what nothing checked.</span
-                    >
+                    Every change shows what was&nbsp;tested.
+                    <span class="text-muted-foreground">And what was not.</span>
                 </h2>
                 <div
                     class="mt-12 rounded-md bg-panel-green px-3 py-10 sm:px-10 sm:py-16"
@@ -1274,7 +1313,7 @@ onBeforeUnmount(() => {
                                 class="mt-5 flex flex-wrap items-baseline gap-x-2 border-t pt-4 text-sm"
                             >
                                 <span
-                                    class="font-medium text-amber-600 dark:text-amber-400"
+                                    class="font-medium text-amber-700 dark:text-amber-400"
                                     >Checked, with gaps</span
                                 >
                                 <span class="text-muted-foreground"
@@ -1332,7 +1371,7 @@ onBeforeUnmount(() => {
             <!-- The app stays an ordinary app with its own history: undo
                  any kept change, or take the code away. -->
             <section
-                class="mx-auto max-w-7xl px-4 pt-28 sm:px-8 sm:pt-40"
+                class="mx-auto max-w-7xl px-4 pt-24 sm:px-8 lg:pt-32"
                 data-test="welcome-yours"
             >
                 <h2
@@ -1341,9 +1380,7 @@ onBeforeUnmount(() => {
                 >
                     It stays yours.
                     <span class="text-muted-foreground"
-                        >Every change you keep is a step in your app’s history.
-                        Undo any of them, or download the code and run it
-                        without us.</span
+                        >Undo any change, or download the code.</span
                     >
                 </h2>
                 <div
@@ -1361,10 +1398,17 @@ onBeforeUnmount(() => {
                             >
                                 <Check
                                     class="mt-1 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                    aria-hidden="true"
                                 />
                                 <span class="text-pretty">{{ item }}</span>
                             </li>
                         </ul>
+                        <p
+                            class="mt-5 text-sm text-pretty text-muted-foreground"
+                        >
+                            Add when you need them: card payments and sending
+                            email.
+                        </p>
                     </div>
                     <div
                         v-reveal
@@ -1376,6 +1420,7 @@ onBeforeUnmount(() => {
                             <p class="text-sm font-medium">History</p>
                             <span
                                 class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm text-muted-foreground"
+                                aria-hidden="true"
                             >
                                 <Download class="size-3.5" />
                                 Download code
@@ -1393,20 +1438,22 @@ onBeforeUnmount(() => {
                                 :key="kept.id"
                                 class="flex min-h-14 items-center gap-4 px-5 py-1.5"
                             >
-                                <code
-                                    class="shrink-0 font-mono text-xs text-muted-foreground"
-                                    >{{ kept.id }}</code
-                                >
+                                <span class="min-w-0 flex-1">
+                                    <span
+                                        :class="[
+                                            'block truncate text-sm',
+                                            kept.undone &&
+                                                'text-muted-foreground line-through decoration-muted-foreground/50',
+                                        ]"
+                                        >{{ kept.title }}</span
+                                    >
+                                    <span
+                                        class="block text-xs text-muted-foreground"
+                                        >{{ kept.when }}</span
+                                    >
+                                </span>
                                 <span
-                                    :class="[
-                                        'min-w-0 flex-1 truncate text-sm',
-                                        kept.undoneBy &&
-                                            'text-muted-foreground line-through decoration-muted-foreground/50',
-                                    ]"
-                                    >{{ kept.title }}</span
-                                >
-                                <span
-                                    v-if="kept.undoneBy"
+                                    v-if="kept.undone"
                                     class="shrink-0 text-xs text-muted-foreground"
                                     >Undone</span
                                 >
@@ -1415,7 +1462,7 @@ onBeforeUnmount(() => {
                                         !kept.undo && at < history.length - 1
                                     "
                                     type="button"
-                                    class="min-h-11 shrink-0 press rounded-md px-2 text-sm text-muted-foreground select-none hover:bg-muted hover:text-foreground sm:min-h-8"
+                                    class="min-h-11 shrink-0 press rounded-md px-2 text-sm text-muted-foreground select-none hover:bg-muted hover:text-foreground pointer-fine:min-h-8"
                                     :data-test="
                                         at === 0 ? 'welcome-undo' : undefined
                                     "
@@ -1429,20 +1476,59 @@ onBeforeUnmount(() => {
                 </div>
             </section>
 
-            <!-- Ready-made ideas: the same ones a new app can start from.
-                 Picking one fills the box at the top. -->
+            <!-- What else the owner can do while building, each in a line. -->
             <section
-                id="ideas"
-                class="mx-auto max-w-7xl scroll-mt-20 px-4 pt-28 sm:px-8 sm:pt-40"
+                class="mx-auto max-w-7xl px-4 pt-24 sm:px-8 lg:pt-32"
+                data-test="welcome-features"
             >
                 <h2
                     v-reveal
                     class="max-w-3xl reveal font-display text-3xl leading-[1.1] font-medium tracking-[-0.025em] text-balance sm:text-[2.75rem]"
                 >
-                    Start from a ready-made idea.
+                    What you can do while you&nbsp;build.
                     <span class="text-muted-foreground"
-                        >Each fills in the idea, the look and the first version.
-                        Change any of it.</span
+                        >None of it needs code.</span
+                    >
+                </h2>
+                <ul
+                    v-reveal
+                    class="mt-12 grid reveal gap-x-16 gap-y-10 delay-100 md:grid-cols-2"
+                >
+                    <li
+                        v-for="feature in features"
+                        :key="feature.title"
+                        class="grid max-w-md grid-cols-[1.25rem_minmax(0,1fr)] gap-x-3 border-t pt-5"
+                    >
+                        <component
+                            :is="feature.icon"
+                            class="mt-0.5 size-5"
+                            aria-hidden="true"
+                        />
+                        <div>
+                            <h3 class="text-base font-medium">
+                                {{ feature.title }}
+                            </h3>
+                            <p class="mt-1.5 text-pretty text-muted-foreground">
+                                {{ feature.text }}
+                            </p>
+                        </div>
+                    </li>
+                </ul>
+            </section>
+
+            <!-- Ready-made ideas: the same ones a new app can start from.
+                 Picking one fills the box at the top. -->
+            <section
+                id="ideas"
+                class="mx-auto max-w-7xl px-4 pt-24 sm:px-8 lg:pt-32"
+            >
+                <h2
+                    v-reveal
+                    class="max-w-3xl reveal font-display text-3xl leading-[1.1] font-medium tracking-[-0.025em] text-balance sm:text-[2.75rem]"
+                >
+                    Start from a ready-made&nbsp;idea.
+                    <span class="text-muted-foreground"
+                        >Each comes with a first version to try.</span
                     >
                 </h2>
                 <ul
@@ -1463,11 +1549,11 @@ onBeforeUnmount(() => {
                         </p>
                         <button
                             type="button"
-                            class="mt-4 inline-flex min-h-11 items-center gap-1.5 self-start text-sm font-medium underline decoration-border underline-offset-4 select-none hover:decoration-foreground sm:min-h-8"
+                            class="mt-4 inline-flex min-h-11 items-center gap-1.5 self-start text-sm font-medium underline decoration-border underline-offset-4 select-none hover:decoration-foreground pointer-fine:min-h-8"
                             @click="useStarter(item)"
                         >
                             Start with this
-                            <ArrowRight class="size-3.5" />
+                            <ArrowRight class="size-3.5" aria-hidden="true" />
                         </button>
                     </li>
                 </ul>
@@ -1475,7 +1561,7 @@ onBeforeUnmount(() => {
                     v-if="designs.length > 0"
                     class="mt-12 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground"
                 >
-                    Each starts in one of four looks:
+                    Each starts in one of four looks, and you can change it:
                     <span
                         v-for="design in designs"
                         :key="design.key"
@@ -1496,13 +1582,13 @@ onBeforeUnmount(() => {
             <!-- Plain answers to what people ask before they start. -->
             <section
                 id="questions"
-                class="mx-auto grid max-w-7xl scroll-mt-20 gap-10 px-4 pt-28 sm:px-8 sm:pt-40 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-16"
+                class="mx-auto grid max-w-7xl gap-10 px-4 pt-24 sm:px-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-16 lg:pt-32"
             >
                 <h2
                     v-reveal
                     class="max-w-3xl reveal font-display text-3xl leading-[1.1] font-medium tracking-[-0.025em] text-balance sm:text-[2.75rem] lg:sticky lg:top-24 lg:self-start"
                 >
-                    Questions people ask.
+                    Questions people&nbsp;ask.
                     <span class="text-muted-foreground"
                         >Plain answers before you start.</span
                     >
@@ -1530,40 +1616,85 @@ onBeforeUnmount(() => {
                             class="max-w-2xl pb-5 text-pretty text-muted-foreground"
                         >
                             {{ question.answer }}
+                            <Link
+                                v-if="question.pricing"
+                                :href="pricing()"
+                                class="font-medium text-primary underline-offset-4 hover:underline"
+                                >See the plans</Link
+                            >
                         </p>
                     </details>
                 </div>
             </section>
 
-            <!-- The page ends with one wide button back to the box. -->
+            <!-- The page ends where it began: the box, at the moment a
+                 visitor has decided. It shares the idea with the box at
+                 the top. -->
             <section
-                class="mx-auto max-w-7xl px-4 pt-28 pb-24 sm:px-8 sm:pt-40"
+                class="mx-auto max-w-7xl px-4 pt-24 pb-24 sm:px-8 lg:pt-32 lg:pb-32"
+                data-test="welcome-end"
             >
-                <p
+                <h2
                     v-reveal
-                    class="reveal text-center font-display text-3xl font-medium tracking-[-0.025em] text-balance sm:text-[2.75rem]"
+                    class="mx-auto max-w-3xl reveal text-center font-display text-3xl leading-[1.1] font-medium tracking-[-0.025em] text-balance sm:text-[2.75rem]"
                 >
                     Start with a sentence.
                     <span class="text-muted-foreground"
                         >Keep only what passes.</span
                     >
-                </p>
-                <a
+                </h2>
+                <form
                     v-reveal
-                    href="#start"
-                    class="mt-10 flex min-h-20 reveal press items-center justify-center gap-3 rounded-md bg-foreground font-display text-2xl font-medium tracking-[-0.02em] text-background select-none hover:bg-foreground/90 sm:min-h-28 sm:text-4xl"
-                    data-test="welcome-end"
-                    @click.prevent="backToStart"
+                    class="mx-auto mt-10 max-w-2xl reveal delay-100"
+                    @submit.prevent="start(endField)"
                 >
-                    Start an app
-                    <ArrowUp class="size-6 sm:size-8" />
-                </a>
+                    <div
+                        class="rounded-xl border border-input bg-background shadow-lg shadow-black/5 transition-shadow focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30"
+                    >
+                        <label for="idea-end" class="sr-only"
+                            >What do you want to make?</label
+                        >
+                        <textarea
+                            id="idea-end"
+                            ref="endField"
+                            v-model="idea"
+                            rows="2"
+                            :placeholder="example"
+                            aria-describedby="idea-end-help"
+                            class="block w-full resize-none bg-transparent px-5 pt-4 pb-2 text-base outline-none placeholder:text-muted-foreground sm:text-lg"
+                            data-test="welcome-end-idea"
+                            @keydown="startOnEnter"
+                        />
+                        <div
+                            class="flex items-center justify-between gap-3 pr-3 pb-3 pl-5"
+                        >
+                            <span
+                                id="idea-end-help"
+                                class="text-sm text-muted-foreground"
+                                aria-live="polite"
+                                >{{
+                                    hint
+                                        ? 'Change it, or press Start again.'
+                                        : 'Free to start. No card needed.'
+                                }}</span
+                            >
+                            <button
+                                type="submit"
+                                class="inline-flex min-h-11 shrink-0 press items-center gap-1.5 rounded-md bg-primary px-4 font-medium text-primary-foreground select-none hover:bg-primary/90 pointer-fine:min-h-10"
+                                data-test="welcome-end-start"
+                            >
+                                Start
+                                <ArrowRight class="size-4" aria-hidden="true" />
+                            </button>
+                        </div>
+                    </div>
+                </form>
             </section>
         </main>
 
         <footer class="border-t">
             <div
-                class="mx-auto grid max-w-7xl gap-10 px-4 py-14 text-sm sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] sm:px-8"
+                class="mx-auto grid max-w-7xl gap-10 px-4 py-14 text-sm sm:grid-cols-2 sm:px-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]"
             >
                 <div>
                     <div class="flex items-center gap-2"><AppLogo /></div>
@@ -1594,6 +1725,37 @@ onBeforeUnmount(() => {
                                 :href="pricing()"
                                 class="hover:text-foreground"
                                 >Pricing</Link
+                            >
+                        </li>
+                    </ul>
+                </nav>
+                <nav aria-label="Company">
+                    <p class="font-medium">Company</p>
+                    <ul class="mt-3 space-y-2 text-muted-foreground">
+                        <li>
+                            <Link
+                                :href="developers()"
+                                class="hover:text-foreground"
+                                >For developers</Link
+                            >
+                        </li>
+                        <li>
+                            <Link
+                                :href="contact()"
+                                class="hover:text-foreground"
+                                >Contact</Link
+                            >
+                        </li>
+                        <li>
+                            <Link :href="terms()" class="hover:text-foreground"
+                                >Terms</Link
+                            >
+                        </li>
+                        <li>
+                            <Link
+                                :href="privacy()"
+                                class="hover:text-foreground"
+                                >Privacy</Link
                             >
                         </li>
                     </ul>

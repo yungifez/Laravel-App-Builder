@@ -76,15 +76,24 @@ one idea.
   not stack panels without space and a heading between them.
 - The page starts with the box where a visitor says what they want to make.
   The headline, one line and the box are centred, as visitors expect from
-  any app builder. This is the only centred block. Other headings sit on the
+  any app builder. The box comes back, centred the same way, to end the
+  page. These two are the only centred blocks. Other headings sit on the
   left edge, like everywhere else.
+- The first screen is never hidden for an entrance effect. It shows before
+  any script runs.
+- The box's Start button is a labelled primary button and is never
+  disabled. On an empty box, it puts the example in and says how to go on.
+  The line under the box says what starting costs.
 - Under the box, the real workspace plays one change in a blue panel. Build
   it in markup, not as a picture, so it stays sharp and follows the theme.
   The same change carries through the sections below it.
-- Small features go in a two-column list: a bold title with a small icon
-  beside it, and one grey line under it. No cards.
-- The page ends with one wide dark button back to the box, then a footer
-  with columns of links.
+- A two-tone heading stays within two lines at desktop width. The grey
+  part is one short clause; anything longer goes in a body line.
+- Every section uses the same step above it (`pt-24 lg:pt-32`).
+- Small features go in a two-column list under their own heading: a bold
+  title with an icon beside it, and one grey line under it. No cards.
+- The page ends with the box again, sharing what the visitor typed, then a
+  footer with columns of links that include Contact, Terms and Privacy.
 - Buttons keep the app's small radius (`rounded-md`). Do not use pills.
 
 ### Patterns that are overused now
