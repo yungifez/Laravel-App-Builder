@@ -113,6 +113,23 @@ class VerificationTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('proof', fn ($proof) => collect($proof)->contains('text', 'No known security problems in the packages I could check.')
                     && ! collect($proof)->contains('text', 'No known security problems in the packages your app uses.')));
+
+        // An app with no JavaScript packages has nothing there to look up,
+        // so the clean PHP lookup speaks for every package it uses.
+        config(['builder.verification.security.steps.1.needs' => 'package.json']);
+        $reports['npm'] = [1, 'npm error code ENOLOCK'];
+        $exec = $this->driver->onExec;
+        $this->driver->onExec = fn (string $workspace, array $command) => $command === ['test', '-e', 'package.json']
+            ? new CommandResult(exitCode: 1, output: '', errorOutput: '', durationMs: 1)
+            : $exec($workspace, $command);
+        $phpOnly = FeatureRequest::factory()->generated()->create(['acceptance' => ['Invitations/ContractTest.php']]);
+        app(RequestVerification::class)->handle($phpOnly);
+
+        $this->assertSame(['passed', 'not_applicable'], array_column(array_values(array_filter($phpOnly->verifications()->sole()->results, fn (array $result) => $result['stage'] === 'security')), 'outcome'));
+        $this->actingAs($phpOnly->project->owner)
+            ->get(route('feature-requests.show', $phpOnly))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('proof', fn ($proof) => collect($proof)->contains('text', 'No known security problems in the packages your app uses.')));
     }
 
     public function test_a_follow_up_is_verified_with_its_lineage_applied_and_the_protected_suite_run_last()

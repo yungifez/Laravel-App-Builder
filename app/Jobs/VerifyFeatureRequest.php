@@ -530,14 +530,24 @@ class VerifyFeatureRequest implements ShouldQueue
      */
     protected function auditPackages(RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace): void
     {
-        /** @var array{enabled: bool, steps: list<array{name: string, report: string, command: list<string>, timeout: int}>} $config */
+        /** @var array{enabled: bool, steps: list<array{name: string, report: string, command: list<string>, timeout: int, needs?: string}>} $config */
         $config = config('builder.verification.security');
 
         if (! $config['enabled']) {
             return;
         }
 
+        $needs = app(CheckStepNeeds::class);
+
         foreach ($config['steps'] as $step) {
+            // An app with no JavaScript (or PHP) packages has none to look
+            // up, so a clean result elsewhere speaks for all it uses.
+            if (! $needs->met($workspace, $step)) {
+                $this->addResult($step['name'], 'security', self::OUTCOME_NOT_APPLICABLE, output: __('The app has no :file, so this does not apply to it.', ['file' => $step['needs'] ?? '']));
+
+                continue;
+            }
+
             $command = $runWorkspaceCommand->handle($workspace, $step['command'], $step['timeout']);
             $problems = $command->timed_out ? null : self::knownProblems($step['report'], (string) $command->output);
 
