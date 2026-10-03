@@ -1019,8 +1019,18 @@ function lineClass(line: string): string {
                     >
                         <div class="flex items-baseline justify-between gap-3">
                             <h2 class="font-medium">Checks</h2>
+                            <!-- Once the checks pass, the proof below gives the one
+                                 verdict; a second label here could disagree. -->
                             <span
-                                v-if="verification"
+                                v-if="
+                                    verification &&
+                                    !(
+                                        proof.length > 0 &&
+                                        (verification.status === 'passed' ||
+                                            verification.status ===
+                                                'unverified')
+                                    )
+                                "
                                 :class="[
                                     'text-sm',
                                     verification.status === 'failed' ||
