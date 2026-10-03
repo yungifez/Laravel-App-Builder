@@ -142,6 +142,8 @@ class OwnerWording
                 'question' => __('Asked you a question'),
                 'finding_proposed' => __('Asked you whether to keep something the checks found'),
                 'verification_interrupted' => __('The checks could not run because of a problem on our side. This is our fault.'),
+                // Nothing to decide: the owner only tries again.
+                'providers_unavailable' => __('Stopped because the AI service we use could not take the work. This is our fault.'),
                 default => __('Stopped to ask what you want to do'),
             };
         }

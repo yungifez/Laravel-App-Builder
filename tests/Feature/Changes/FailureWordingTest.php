@@ -62,6 +62,22 @@ class FailureWordingTest extends TestCase
                 ->where('run.error', 'This is our fault: our account with the AI service we use cannot take more work right now. Nothing in your app changed. Try again later.'));
     }
 
+    public function test_a_stop_because_the_ai_service_was_busy_does_not_say_it_waits_for_the_owner()
+    {
+        $request = FeatureRequest::factory()->create();
+        $run = Run::factory()->for($request)->create([
+            'status' => RunStatus::NeedsUserDecision,
+            'error' => "No AI provider could take the task right now (Codex Exec exited with code 1).\n Try again later.",
+        ]);
+        $run->recordEvent('status', ['from' => 'implementing', 'to' => 'needs_user_decision', 'reason' => 'providers_unavailable']);
+
+        $this->actingAs($request->user)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('run.work', fn ($work) => collect($work)->contains('text', 'Stopped because the AI service we use could not take the work. This is our fault.')
+                    && ! collect($work)->contains('text', 'Stopped to ask what you want to do')));
+    }
+
     public function test_a_stop_that_found_nothing_to_change_says_what_was_checked()
     {
         $request = FeatureRequest::factory()->create();
