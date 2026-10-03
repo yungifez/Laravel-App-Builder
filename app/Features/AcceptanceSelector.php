@@ -22,15 +22,18 @@ class AcceptanceSelector
 
     /**
      * Classify the request and get the protected acceptance test files for it.
+     * Given the app's files, suites written for an app with files this one
+     * lacks do not apply.
      *
+     * @param  list<string>|null  $files  The app's files, when known
      * @return array{solution_key: string|null, acceptance: list<string>}
      */
-    public function for(FeatureRequest $featureRequest): array
+    public function for(FeatureRequest $featureRequest, ?array $files = null): array
     {
         $generator = $this->generators->driver('reference');
 
         try {
-            $solution = $generator instanceof ReferenceGenerator ? $generator->classify($featureRequest, matchStep: false) : null;
+            $solution = $generator instanceof ReferenceGenerator ? $generator->classify($featureRequest, matchStep: false, files: $files) : null;
         } catch (CannotGenerateFeature) {
             $solution = null;
         }

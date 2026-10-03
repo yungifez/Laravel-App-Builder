@@ -36,6 +36,7 @@ trait UsesReferenceSolutions
                 'summary' => 'Owners and admins can invite people.',
                 'steps' => [$step('Owners and admins.')],
                 'acceptance' => ['Invitations/ContractTest.php'],
+                'needs' => ['config/teams.php'],
             ],
             [
                 'key' => 'owner-only-invitations',

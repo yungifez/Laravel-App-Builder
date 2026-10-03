@@ -10,7 +10,10 @@ throws the copy away. That config forces the test environment, so editing the
 app's own `phpunit.xml` or `artisan test` cannot change what the suite checks.
 
 The manifest in `fixtures/reference-solutions/customer-app/manifest.json`
-lists which suites apply to each solution.
+lists which suites apply to each solution. A solution's `needs` lists the
+files the app must already have. The suites use the starter's own models, so
+an app without them does not get the suites, and its change is "unverified"
+rather than failed on names it could not know.
 `fixtures/reference-solutions/verify.sh` checks that:
 
 - the untouched starter **fails** the first solution's suite (so a prebuilt

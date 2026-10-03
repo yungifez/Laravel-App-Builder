@@ -50,14 +50,19 @@ class ReferenceGenerator implements FeatureGenerator
      * solution that follows the parent's and matches the prompt (and, when
      * $matchStep is true, the selected step).
      *
-     * @return array{key: string, patch: string, match: list<string>, summary: string, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance?: list<string>, follows?: string, step?: string}|null
+     * A solution is written for one app. Given the app's files, a solution
+     * that needs files the app does not have is not its answer: its patch
+     * would not apply, and its suites test code the app never had.
+     *
+     * @param  list<string>|null  $files  The app's files, when known
+     * @return array{key: string, patch: string, match: list<string>, summary: string, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance?: list<string>, follows?: string, step?: string, needs?: list<string>}|null
      */
-    public function classify(FeatureRequest $request, bool $matchStep = true): ?array
+    public function classify(FeatureRequest $request, bool $matchStep = true, ?array $files = null): ?array
     {
         $parent = $request->parent;
 
         return $this->solutions()->first(fn (array $solution) => $parent === null
-            ? ! isset($solution['follows']) && $this->matches($solution, $request->prompt)
+            ? ! isset($solution['follows']) && $this->matches($solution, $request->prompt) && ($files === null || array_diff($solution['needs'] ?? [], $files) === [])
             : ($solution['follows'] ?? null) === $parent->solution_key
                 && (! $matchStep || ($solution['step'] ?? null) === $request->target_step)
                 && $this->matches($solution, $request->prompt));
@@ -66,7 +71,7 @@ class ReferenceGenerator implements FeatureGenerator
     /**
      * Load the solutions listed in the manifest.
      *
-     * @return Collection<int, array{key: string, patch: string, match: list<string>, summary: string, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance?: list<string>, follows?: string, step?: string}>
+     * @return Collection<int, array{key: string, patch: string, match: list<string>, summary: string, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance?: list<string>, follows?: string, step?: string, needs?: list<string>}>
      */
     protected function solutions(): Collection
     {
@@ -76,7 +81,7 @@ class ReferenceGenerator implements FeatureGenerator
             throw new CannotGenerateFeature(__('The reference solutions manifest was not found.'));
         }
 
-        /** @var array{solutions: list<array{key: string, patch: string, match: list<string>, summary: string, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance?: list<string>, follows?: string, step?: string}>} $data */
+        /** @var array{solutions: list<array{key: string, patch: string, match: list<string>, summary: string, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance?: list<string>, follows?: string, step?: string, needs?: list<string>}>} $data */
         $data = File::json($manifest, JSON_THROW_ON_ERROR);
 
         return collect($data['solutions']);

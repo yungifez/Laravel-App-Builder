@@ -322,6 +322,21 @@ class AgentDriverTest extends TestCase
         $this->assertSame('owner-only-invitations', $followUpRun->plan['solution_key']);
     }
 
+    public function test_an_app_without_the_files_a_suite_needs_does_not_get_the_suite()
+    {
+        $solutions = $this->useReferenceSolutions();
+        File::delete("{$solutions}/source/config/teams.php");
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder($this->writes(['app/Invitation.php' => "<?php\n"]));
+        $project = Project::factory()->create(['source_path' => "{$solutions}/source"]);
+        $request = FeatureRequest::factory()->for($project)->create(['prompt' => 'Let owners invite people.']);
+
+        $run = app(StartRun::class)->handle($request)->refresh();
+
+        $this->assertSame([], $run->plan['acceptance']);
+        $this->assertNull($request->refresh()->solution_key);
+    }
+
     public function test_a_plan_that_is_invalid_twice_fails_the_run_with_a_reason()
     {
         $invalid = ['summary' => 'Something.', 'acceptance_criteria' => [], 'assumptions' => [], 'tasks' => [], 'steps' => []];

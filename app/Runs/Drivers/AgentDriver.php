@@ -59,7 +59,7 @@ abstract class AgentDriver implements ConstructionDriver
      */
     public function plan(Run $run, PlanningContext $context): Plan
     {
-        $selection = $this->acceptanceSelector->for($run->featureRequest);
+        $selection = $this->acceptanceSelector->for($run->featureRequest, $context->files);
         $prompt = $this->planningPrompt($context);
 
         for ($attempt = 1; ; $attempt++) {
