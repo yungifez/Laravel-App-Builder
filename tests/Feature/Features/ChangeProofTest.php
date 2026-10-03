@@ -729,6 +729,40 @@ class ChangeProofTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('proof.1', ['kind' => 'gap', 'text' => 'Only the tests it wrote for itself tried what it does.']));
     }
 
+    public function test_a_change_whose_own_tests_prove_every_part_of_the_ask_has_no_gap()
+    {
+        $item = fn (string $criterion, string $test, string $evidence = 'tested') => ['criterion' => $criterion, 'test_file' => 'tests/Feature/ArchiveTest.php', 'test_name' => $test, 'evidence' => $evidence, 'named_in_diff' => true];
+        $newTests = [
+            ['file' => 'tests/Feature/ArchiveTest.php', 'name' => 'test_owners_can_archive_teams', 'without_change' => 'failed'],
+            ['file' => 'tests/Feature/ArchiveTest.php', 'name' => 'test_members_still_see_their_teams', 'without_change' => 'passed'],
+        ];
+        $proof = function (array $verified, array $newTests) {
+            $request = FeatureRequest::factory()->generated()->create();
+            $this->checked($request, VerificationStatus::Unverified, ['new_tests' => $newTests]);
+            Run::factory()->for($request)->create(['review' => ['approved' => true, 'summary' => '', 'findings' => [], 'verified' => $verified]]);
+
+            return collect(app(DescribeProof::class)->handle($request->refresh()));
+        };
+        $gap = 'Only the tests it wrote for itself tried what it does.';
+        $proven = 'Every part of what you asked for has its own test that passes. One of them fails without this change, so it tests what is new.';
+
+        // Each part has a passing test the reviewer matched to it, and the
+        // test for the new part fails without the change. Keeping members'
+        // view as it is passes either way, as it should.
+        $lines = $proof([$item('Owners can archive teams.', 'owners can archive teams'), $item('Members still see their teams.', 'members still see their teams')], $newTests);
+        $this->assertTrue($lines->contains(fn (array $line) => $line['text'] === $proven && $line['kind'] === 'passed' && ($line['evidence'] ?? false)));
+        $this->assertFalse($lines->contains('text', $gap));
+
+        // One part with no passing test leaves the gap.
+        $lines = $proof([$item('Owners can archive teams.', 'owners can archive teams'), $item('Members still see their teams.', 'members still see their teams', 'no_test')], $newTests);
+        $this->assertTrue($lines->contains('text', $gap));
+        $this->assertFalse($lines->contains('text', $proven));
+
+        // Tests that all pass without the change do not show it does anything new.
+        $lines = $proof([$item('Members still see their teams.', 'members still see their teams')], $newTests);
+        $this->assertTrue($lines->contains('text', $gap));
+    }
+
     public function test_a_change_that_only_failed_where_the_app_failed_before_still_says_what_it_proved()
     {
         $request = FeatureRequest::factory()->generated()->create();

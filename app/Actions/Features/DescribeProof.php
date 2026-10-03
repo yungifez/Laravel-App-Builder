@@ -19,6 +19,7 @@ use App\Features\NewCode;
 use App\Features\NewTests;
 use App\Features\PatchSummary;
 use App\Features\ScreenCheck;
+use App\Features\TestReport;
 use App\Features\UndescribedImages;
 use App\Features\UnsafeCode;
 use App\Models\FeatureRequest;
@@ -60,7 +61,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return $this->asked($featureRequest, array_values(collect($lines)->unique('text')->all()));
@@ -131,7 +132,7 @@ class DescribeProof
      *
      * @return list<array{kind: string, text: string, evidence?: bool}>
      */
-    protected function checks(Verification $verification): array
+    protected function checks(Verification $verification, FeatureRequest $featureRequest): array
     {
         $tests = 0;
         $old = 0;
@@ -174,6 +175,8 @@ class DescribeProof
             }
         }
 
+        $proven = $verification->status === VerificationStatus::Unverified ? $this->goalsProven($featureRequest, $verification) : 0;
+
         return array_values(array_filter([
             $tests > 0 && $old === 0 ? ['kind' => 'passed', 'text' => trans_choice('The app\'s own test still passes.|All :count of the app\'s own tests still pass.', $tests)] : null,
             $tests > 0 && $old > 0 ? ['kind' => 'passed', 'text' => trans_choice(':count of the app\'s own tests still passes.|:count of the app\'s own tests still pass.', $tests)] : null,
@@ -182,12 +185,39 @@ class DescribeProof
             $separate ? ['kind' => 'passed', 'text' => __('Separate checks, written before the work began, pass too.'), 'evidence' => true] : null,
             // No separate checks were written for this change, so only its own
             // tests, if any, try it. That is a gap, said here as the verdict
-            // above the lines would otherwise call the change well checked.
-            $verification->status === VerificationStatus::Unverified ? ['kind' => 'gap', 'text' => __('Only the tests it wrote for itself tried what it does.')] : null,
+            // above the lines would otherwise call the change well checked,
+            // unless those tests cover every part of the ask (see goalsProven).
+            $verification->status === VerificationStatus::Unverified && $proven === 0 ? ['kind' => 'gap', 'text' => __('Only the tests it wrote for itself tried what it does.')] : null,
+            $verification->status === VerificationStatus::Unverified && $proven > 0 ? ['kind' => 'passed', 'text' => trans_choice('Every part of what you asked for has its own test that passes. One of them fails without this change, so it tests what is new.|Every part of what you asked for has its own test that passes. :count of them fail without this change, so they test what is new.', $proven), 'evidence' => true] : null,
             $audited && ! $warned && ! $unaudited ? ['kind' => 'passed', 'text' => __('No known security problems in the packages your app uses.')] : null,
             $audited && ! $warned && $unaudited ? ['kind' => 'passed', 'text' => __('No known security problems in the packages I could check.')] : null,
             $warned ? ['kind' => 'gap', 'text' => __('Some packages your app uses have known security problems. Ask me to update them.')] : null,
         ]));
+    }
+
+    /**
+     * Count the matched tests that fail without the change, when the
+     * change's own tests cover every part of the ask; 0 when they do not.
+     * The reviewer, a different model from the coder, matched each
+     * acceptance criterion to a test; the facts decide the rest. Every
+     * matched test is in the change and passed in the checks, and at least
+     * one failed when run without the change, so they try what is new. A
+     * criterion that keeps something as it is passes either way.
+     */
+    protected function goalsProven(FeatureRequest $featureRequest, Verification $verification): int
+    {
+        $verified = $featureRequest->latestRun?->review['verified'] ?? [];
+
+        if ($verified === [] || collect($verified)->contains(fn (array $item) => $item['evidence'] !== 'tested' || $item['test_file'] === null || $item['test_name'] === null)) {
+            return 0;
+        }
+
+        $withoutChange = array_map(fn (array $test) => [...$test, 'outcome' => $test['without_change']], $verification->evidence['new_tests'] ?? []);
+
+        return collect($verified)
+            ->filter(fn (array $item) => TestReport::outcome($withoutChange, $item['test_file'], $item['test_name']) === TestReport::FAILED)
+            ->unique(fn (array $item) => $item['test_file'].'::'.$item['test_name'])
+            ->count();
     }
 
     /**
