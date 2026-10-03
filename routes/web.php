@@ -45,6 +45,7 @@ use App\Http\Controllers\Operations\DeveloperReviewController as OperationsDevel
 use App\Http\Controllers\Operations\ImpersonationController;
 use App\Http\Controllers\Operations\PersonController as OperationsPersonController;
 use App\Http\Controllers\Operations\PersonPlanController;
+use App\Http\Controllers\Operations\PersonSuspensionController;
 use App\Http\Controllers\PageConsistencyController;
 use App\Http\Controllers\PreviewController;
 use App\Http\Controllers\PreviewDataController;
@@ -200,6 +201,7 @@ Route::middleware(['auth', 'verified', 'can:viewOperations'])->prefix('operation
     Route::get('people', [OperationsPersonController::class, 'index'])->name('people.index');
     Route::get('people/{user}', [OperationsPersonController::class, 'show'])->name('people.show');
     Route::put('people/{user}/plan', [PersonPlanController::class, 'update'])->name('people.plan.update');
+    Route::put('people/{user}/suspension', [PersonSuspensionController::class, 'update'])->name('people.suspension.update');
     Route::post('people/{user}/sign-in', [ImpersonationController::class, 'store'])->name('people.sign-in');
     Route::get('messages', [OperationsContactMessageController::class, 'index'])->name('messages.index');
     Route::put('messages/{contactMessage}', [OperationsContactMessageController::class, 'update'])->name('messages.update');

@@ -36,6 +36,7 @@ class UserFactory extends Factory
             'stripe_id' => null,
             'granted_plan' => null,
             'granted_plan_until' => null,
+            'suspended_at' => null,
         ];
     }
 

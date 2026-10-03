@@ -30,6 +30,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string|null $remember_token
  * @property string|null $granted_plan A plan an operator gave without payment
  * @property Carbon|null $granted_plan_until
+ * @property Carbon|null $suspended_at When an operator stopped the person signing in
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -53,6 +54,7 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
             'two_factor_confirmed_at' => 'datetime',
             'detail_level' => 'integer',
             'granted_plan_until' => 'datetime',
+            'suspended_at' => 'datetime',
         ];
     }
 
@@ -84,6 +86,14 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     public function developerApplication(): HasOne
     {
         return $this->hasOne(DeveloperApplication::class);
+    }
+
+    /**
+     * Determine if an operator stopped the user from signing in.
+     */
+    public function suspended(): bool
+    {
+        return $this->suspended_at !== null;
     }
 
     /**

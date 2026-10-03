@@ -18,6 +18,7 @@ type Row = {
     apps: number;
     plan: string;
     percent: number | null;
+    suspended: boolean;
 };
 
 const props = defineProps<{
@@ -86,9 +87,15 @@ function find(): void {
                     data-test="person-row"
                 >
                     <span class="min-w-0 flex-1">
-                        <span class="block truncate font-medium">{{
-                            person.name
-                        }}</span>
+                        <span class="block truncate font-medium"
+                            >{{ person.name
+                            }}<span
+                                v-if="person.suspended"
+                                class="font-normal text-destructive"
+                            >
+                                · stopped</span
+                            ></span
+                        >
                         <span
                             class="block truncate text-xs text-muted-foreground"
                         >

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Form, Head, Link, setLayoutProps } from '@inertiajs/vue3';
 import PersonPlanController from '@/actions/App/Http/Controllers/Operations/PersonPlanController';
+import PersonSuspensionController from '@/actions/App/Http/Controllers/Operations/PersonSuspensionController';
 import InputError from '@/components/InputError.vue';
 import { stamp, usd } from '@/lib/operations';
 import { attention } from '@/routes/operations';
@@ -21,6 +22,7 @@ const props = defineProps<{
         granted_until: string | null;
         stripe: boolean;
         can_sign_in_as: boolean;
+        suspended_at: string | null;
         usage: {
             percent: number;
             used_usd: number;
@@ -75,6 +77,13 @@ setLayoutProps({
                 {{ person.verified ? '' : '· not verified' }} · joined
                 {{ stamp(person.joined_at) }}
                 {{ person.two_factor ? '· two-step sign-in on' : '' }}
+            </p>
+            <p
+                v-if="person.suspended_at"
+                class="mt-2 text-sm font-medium text-destructive"
+                data-test="person-suspended"
+            >
+                Stopped on {{ stamp(person.suspended_at) }}. They cannot log in.
             </p>
         </section>
 
@@ -207,6 +216,42 @@ setLayoutProps({
                     <p class="whitespace-pre-line">{{ message.message }}</p>
                 </li>
             </ul>
+        </section>
+
+        <!-- Operators cannot stop each other, so the same rule hides it. -->
+        <section v-if="person.can_sign_in_as" class="space-y-2 border-t pt-6">
+            <h2 class="text-lg font-semibold">Account</h2>
+            <p class="text-muted-foreground">
+                {{
+                    person.suspended_at
+                        ? 'Let them log in again. Their apps and plan stay as they were.'
+                        : 'Stop them logging in, for example after abuse. Their apps and plan stay, and you can let them back.'
+                }}
+            </p>
+            <Form
+                v-bind="PersonSuspensionController.update.form(person.id)"
+                :options="{ preserveScroll: true }"
+                v-slot="{ processing }"
+            >
+                <input
+                    type="hidden"
+                    name="suspended"
+                    :value="person.suspended_at ? 0 : 1"
+                />
+                <button
+                    type="submit"
+                    :disabled="processing"
+                    class="inline-flex min-h-11 items-center rounded-md border bg-background px-3 text-sm font-medium select-none hover:bg-muted sm:min-h-9"
+                    :class="person.suspended_at ? '' : 'text-destructive'"
+                    data-test="suspend-person"
+                >
+                    {{
+                        person.suspended_at
+                            ? 'Let them back'
+                            : 'Stop this account'
+                    }}
+                </button>
+            </Form>
         </section>
     </div>
 </template>

@@ -53,6 +53,7 @@ class PersonController extends Controller
                     'apps' => (int) $user->getAttribute('projects_count'),
                     'plan' => (string) config("billing.plans.{$usage['plan']}.name"),
                     'percent' => $usage['unlimited'] ? null : $usage['percent'],
+                    'suspended' => $user->suspended(),
                 ];
             }),
         ]);
@@ -78,6 +79,7 @@ class PersonController extends Controller
                 'granted_until' => $measureUsage->granted($user) === null ? null : $user->granted_plan_until?->toDateString(),
                 'stripe' => $user->hasStripeId(),
                 'can_sign_in_as' => $user->canBeImpersonated(),
+                'suspended_at' => $user->suspended_at?->toIso8601String(),
                 'usage' => [
                     'percent' => $usage['percent'],
                     'used_usd' => $usage['used_usd'],
