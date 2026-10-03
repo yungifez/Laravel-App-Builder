@@ -57,7 +57,7 @@ watch(
     <div class="h-full overflow-y-auto">
         <div class="mx-auto max-w-2xl space-y-14 px-4 py-10 sm:px-6">
             <section>
-                <h1 class="text-2xl font-semibold tracking-[-0.02em]">
+                <h1 class="font-display text-3xl tracking-tight">
                     Ask a developer
                 </h1>
                 <p class="mt-2 max-w-prose text-muted-foreground">

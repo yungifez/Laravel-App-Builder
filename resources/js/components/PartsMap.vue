@@ -86,7 +86,7 @@ function near(key: string): boolean {
 
 <template>
     <div
-        class="relative h-72 rounded-2xl bg-muted/30 sm:h-80"
+        class="relative h-72 rounded-md border bg-muted/30 sm:h-80"
         data-test="parts-map"
     >
         <svg
@@ -128,7 +128,7 @@ function near(key: string): boolean {
             type="button"
             :style="{ left: `${node.x}%`, top: `${node.y}%` }"
             :class="[
-                'absolute flex min-h-11 max-w-[42%] -translate-x-1/2 -translate-y-1/2 flex-col items-center rounded-xl border bg-background px-4 py-2 transition duration-quick ease-snap select-none hover:-translate-y-[calc(50%+1px)] hover:border-foreground/40 active:scale-[0.97] sm:max-w-56',
+                'absolute flex min-h-11 max-w-[42%] -translate-x-1/2 -translate-y-1/2 flex-col items-center rounded-md border bg-background px-4 py-2 transition duration-quick ease-snap select-none hover:-translate-y-[calc(50%+1px)] hover:border-foreground/40 active:scale-[0.97] sm:max-w-56',
                 near(node.area.key) ? 'opacity-100' : 'opacity-40',
             ]"
             :data-test="`map-${node.area.key}`"

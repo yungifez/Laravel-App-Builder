@@ -532,7 +532,7 @@ const checks = computed(() => {
                     <div class="flex flex-col items-end gap-1.5">
                         <p
                             :class="[
-                                'rounded-2xl rounded-br-md bg-muted px-3.5 py-2.5 text-sm break-words whitespace-pre-line',
+                                'rounded-lg rounded-br-sm bg-muted px-3.5 py-2.5 text-sm break-words whitespace-pre-line',
                                 roomy ? 'max-w-[65%]' : 'max-w-[85%]',
                             ]"
                         >
@@ -578,7 +578,7 @@ const checks = computed(() => {
                 <div v-else class="flex flex-col items-end gap-1.5">
                     <p
                         :class="[
-                            'rounded-2xl rounded-br-md bg-muted px-3.5 py-2.5 text-sm break-words whitespace-pre-line',
+                            'rounded-lg rounded-br-sm bg-muted px-3.5 py-2.5 text-sm break-words whitespace-pre-line',
                             roomy ? 'max-w-[65%]' : 'max-w-[85%]',
                         ]"
                     >
@@ -734,7 +734,7 @@ const checks = computed(() => {
                         <!-- A question to answer before going on -->
                         <div
                             v-if="run?.question"
-                            class="space-y-3 rounded-xl border p-3"
+                            class="space-y-3 border-t pt-3"
                             data-test="question"
                         >
                             <div>
@@ -851,7 +851,7 @@ const checks = computed(() => {
                         <div
                             v-if="failed"
                             :class="[
-                                'space-y-2 rounded-xl border p-3',
+                                'space-y-2 rounded-md border p-3',
                                 foundNothing
                                     ? 'bg-muted/40'
                                     : 'border-red-500/30 bg-red-500/5',
@@ -1051,7 +1051,7 @@ const checks = computed(() => {
 
                         <div
                             v-if="unexpected.length > 0"
-                            class="space-y-2 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3"
+                            class="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3"
                             data-test="review-unexpected"
                         >
                             <p class="flex items-center gap-2 font-medium">
@@ -1279,7 +1279,7 @@ const checks = computed(() => {
                                     class="space-y-2"
                                 >
                                     <h3
-                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                        class="text-sm font-medium text-muted-foreground"
                                     >
                                         How it works now
                                     </h3>
@@ -1290,7 +1290,7 @@ const checks = computed(() => {
                                     class="space-y-2"
                                 >
                                     <h3
-                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                        class="text-sm font-medium text-muted-foreground"
                                     >
                                         What I'm changing
                                     </h3>
@@ -1315,7 +1315,7 @@ const checks = computed(() => {
                                     class="space-y-2"
                                 >
                                     <h3
-                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                        class="text-sm font-medium text-muted-foreground"
                                     >
                                         What I decided for you
                                     </h3>
@@ -1332,7 +1332,7 @@ const checks = computed(() => {
                                     class="space-y-2"
                                 >
                                     <h3
-                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                        class="text-sm font-medium text-muted-foreground"
                                     >
                                         I'll keep these the same
                                     </h3>
@@ -1360,7 +1360,7 @@ const checks = computed(() => {
                                     class="space-y-2"
                                 >
                                     <h3
-                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                        class="text-sm font-medium text-muted-foreground"
                                     >
                                         Done when
                                     </h3>
@@ -1388,7 +1388,7 @@ const checks = computed(() => {
                                     class="space-y-2"
                                 >
                                     <h3
-                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                        class="text-sm font-medium text-muted-foreground"
                                     >
                                         This may also touch
                                     </h3>
@@ -1420,7 +1420,7 @@ const checks = computed(() => {
                                     class="space-y-2"
                                 >
                                     <h3
-                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                        class="text-sm font-medium text-muted-foreground"
                                     >
                                         {{ group.name }}
                                     </h3>
@@ -1455,7 +1455,7 @@ const checks = computed(() => {
                                     class="space-y-2"
                                 >
                                     <h3
-                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                        class="text-sm font-medium text-muted-foreground"
                                     >
                                         Tests I wrote
                                     </h3>
@@ -1473,7 +1473,7 @@ const checks = computed(() => {
                                     class="space-y-2"
                                 >
                                     <h3
-                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                        class="text-sm font-medium text-muted-foreground"
                                     >
                                         Packages it adds
                                     </h3>
@@ -1490,7 +1490,7 @@ const checks = computed(() => {
                                     class="space-y-2"
                                 >
                                     <h3
-                                        class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                        class="text-sm font-medium text-muted-foreground"
                                     >
                                         Checks I ran
                                     </h3>
@@ -1558,7 +1558,7 @@ const checks = computed(() => {
                             data-test="detail-code"
                         >
                             <h3
-                                class="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase"
+                                class="text-sm font-medium text-muted-foreground"
                             >
                                 Files
                             </h3>

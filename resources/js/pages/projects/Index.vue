@@ -112,27 +112,27 @@ function submitOnShortcut(event: KeyboardEvent): void {
         <!-- Making a new app comes first: say what it is for, and go. -->
         <section
             v-if="canStartNew"
-            class="mx-auto w-full max-w-2xl px-4 pt-12 pb-10 sm:pt-20 sm:pb-14"
+            class="mx-auto w-full max-w-5xl px-4 pt-12 pb-10 sm:pt-20 sm:pb-16"
         >
             <h1
-                class="text-center text-3xl font-semibold tracking-tight text-balance sm:text-4xl"
+                class="max-w-2xl font-display text-4xl leading-[1.05] tracking-tight text-balance sm:text-6xl"
             >
                 What do you want to make?
             </h1>
-            <p class="mt-3 text-center text-balance text-muted-foreground">
+            <p class="mt-4 max-w-xl text-pretty text-muted-foreground">
                 Say it in a sentence or two. I set up a working app, then you
                 shape it.
             </p>
 
             <Form
                 v-bind="NewProjectController.store.form()"
-                class="mt-8"
+                class="mt-8 max-w-2xl"
                 data-test="start-new"
                 v-slot="{ errors, processing }"
             >
                 <div
                     :class="[
-                        'rounded-2xl border bg-card shadow-sm transition-shadow focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30',
+                        'rounded-md border border-input bg-background transition-shadow focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30',
                         pictures.dragging.value &&
                             'border-ring ring-[3px] ring-ring/30',
                     ]"
@@ -171,7 +171,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
                             />
                             <button
                                 type="button"
-                                class="absolute -top-1.5 -right-1.5 flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-xs after:absolute after:-inset-2.5 hover:text-foreground"
+                                class="absolute -top-1.5 -right-1.5 flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground after:absolute after:-inset-2.5 hover:text-foreground"
                                 :aria-label="`Remove ${image.file.name}`"
                                 @click="pictures.remove(index)"
                             >
@@ -220,7 +220,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
                             required
                             autocomplete="off"
                             placeholder="Name it"
-                            class="h-11 min-w-0 flex-1 rounded-lg bg-muted px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-9 sm:w-36 sm:flex-none"
+                            class="h-11 min-w-0 flex-1 rounded-sm bg-muted px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-9 sm:w-36 sm:flex-none"
                         />
 
                         <fieldset
@@ -234,7 +234,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
                                 v-for="(design, i) in designs"
                                 :key="design.key"
                                 :title="design.description"
-                                class="flex h-14 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg px-1 text-xs text-muted-foreground select-none hover:text-foreground has-checked:bg-muted has-checked:text-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/50 sm:h-9 sm:flex-row sm:justify-start sm:gap-2 sm:px-2.5 sm:text-sm"
+                                class="flex h-14 cursor-pointer flex-col items-center justify-center gap-1 rounded-sm px-1 text-xs text-muted-foreground select-none hover:text-foreground has-checked:bg-muted has-checked:text-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/50 sm:h-9 sm:flex-row sm:justify-start sm:gap-2 sm:px-2.5 sm:text-sm"
                                 :data-test="`look-${design.key}`"
                             >
                                 <input
@@ -314,14 +314,14 @@ function submitOnShortcut(event: KeyboardEvent): void {
 
                 <div
                     v-else-if="starters.length > 0"
-                    class="mt-3 flex flex-wrap justify-center gap-2"
+                    class="mt-3 flex flex-wrap gap-2"
                     data-test="starters"
                 >
                     <button
                         v-for="item in starters"
                         :key="item.key"
                         type="button"
-                        class="min-h-11 rounded-full border px-3 text-sm text-muted-foreground transition-colors duration-quick select-none hover:bg-muted hover:text-foreground sm:min-h-8"
+                        class="min-h-11 rounded-sm border px-3 text-sm text-muted-foreground transition-colors duration-quick select-none hover:bg-muted hover:text-foreground sm:min-h-8"
                         :data-test="`starter-${item.key}`"
                         @click="useStarter(item)"
                     >
@@ -330,7 +330,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
                 </div>
             </Form>
 
-            <p class="mt-5 text-center text-sm text-muted-foreground">
+            <p class="mt-5 text-sm text-muted-foreground">
                 Or
                 <BringInApp>
                     <button
@@ -346,9 +346,9 @@ function submitOnShortcut(event: KeyboardEvent): void {
 
         <header
             v-else
-            class="flex flex-wrap items-center justify-between gap-3 p-4"
+            class="mx-auto flex w-full max-w-5xl flex-wrap items-end justify-between gap-3 px-4 pt-10 pb-6"
         >
-            <h1 class="text-xl font-semibold tracking-tight">Your apps</h1>
+            <h1 class="font-display text-4xl tracking-tight">Your apps</h1>
             <BringInApp>
                 <Button
                     variant="outline"
@@ -363,7 +363,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
         <section class="mx-auto w-full max-w-5xl px-4 pb-16">
             <p
                 v-if="projects.length === 0"
-                class="text-center text-sm text-muted-foreground"
+                class="border-t pt-4 text-sm text-muted-foreground"
                 data-test="no-apps"
             >
                 Your apps will show here.
@@ -371,11 +371,11 @@ function submitOnShortcut(event: KeyboardEvent): void {
 
             <template v-else>
                 <div
-                    class="flex min-h-11 items-center justify-between gap-3 pb-3"
+                    class="flex min-h-11 items-center justify-between gap-3 border-t pt-4 pb-5"
                 >
                     <h2
                         v-if="canStartNew"
-                        class="text-sm font-medium text-muted-foreground"
+                        class="font-display text-2xl tracking-tight"
                     >
                         Your apps
                     </h2>
@@ -388,7 +388,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
                             type="search"
                             aria-label="Find an app"
                             placeholder="Find an app"
-                            class="h-11 w-52 rounded-lg bg-muted pr-3 pl-8 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-9"
+                            class="h-11 w-52 rounded-sm bg-muted pr-3 pl-8 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-9"
                             data-test="apps-filter"
                         />
                     </label>
@@ -404,18 +404,18 @@ function submitOnShortcut(event: KeyboardEvent): void {
 
                 <ul
                     v-else
-                    class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+                    class="grid gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-3"
                     data-test="apps-grid"
                 >
                     <li v-for="project in shown" :key="project.id">
                         <Link
                             :href="show(project.id)"
-                            class="group flex h-full flex-col gap-4 rounded-xl border bg-card p-4 transition-colors select-none hover:border-foreground/20 hover:bg-muted/40"
+                            class="group flex h-full flex-col gap-3 rounded-md select-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
                             :data-test="`app-${project.id}`"
                         >
                             <span
                                 aria-hidden="true"
-                                class="-mx-4 -mt-4 grid aspect-[16/9] place-items-center overflow-hidden rounded-t-xl border-b bg-muted"
+                                class="grid aspect-[16/10] place-items-center overflow-hidden rounded-md border bg-muted transition-colors duration-quick group-hover:border-foreground/40"
                             >
                                 <img
                                     v-if="project.picture"
@@ -427,15 +427,18 @@ function submitOnShortcut(event: KeyboardEvent): void {
                                 />
                                 <span
                                     v-else
-                                    class="text-3xl font-semibold text-muted-foreground/60 uppercase"
-                                    >{{ project.name.charAt(0) }}</span
+                                    class="font-display text-5xl text-muted-foreground/60"
+                                    >{{
+                                        project.name.charAt(0).toUpperCase()
+                                    }}</span
                                 >
                             </span>
                             <span class="flex items-center gap-3">
                                 <span class="min-w-0">
-                                    <span class="block truncate font-medium">{{
-                                        project.name
-                                    }}</span>
+                                    <span
+                                        class="block truncate font-medium underline-offset-4 group-hover:underline"
+                                        >{{ project.name }}</span
+                                    >
                                     <span
                                         class="flex items-center gap-1.5 text-xs text-muted-foreground"
                                     >
@@ -472,7 +475,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
                             </span>
 
                             <span
-                                class="mt-auto flex min-h-5 flex-wrap items-center justify-between gap-x-3 gap-y-2 text-xs whitespace-nowrap text-muted-foreground tabular-nums"
+                                class="mt-auto flex min-h-5 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-2 font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums"
                             >
                                 <span class="flex items-center gap-3">
                                     <span
@@ -499,7 +502,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
                                 </span>
                                 <span
                                     v-if="project.waiting > 0"
-                                    class="rounded-full bg-primary/15 px-2 py-0.5 font-medium text-foreground"
+                                    class="font-medium text-foreground"
                                     >{{ project.waiting }} to look at</span
                                 >
                                 <span
@@ -508,12 +511,12 @@ function submitOnShortcut(event: KeyboardEvent): void {
                                     data-test="app-working"
                                     ><span
                                         aria-hidden="true"
-                                        class="size-1.5 animate-pulse rounded-full bg-primary"
+                                        class="size-1.5 animate-pulse rounded-full bg-foreground/60"
                                     />Making a change</span
                                 >
                                 <span
                                     v-else-if="project.now === 'stopped'"
-                                    class="rounded-full bg-destructive/10 px-2 py-0.5 font-medium text-destructive"
+                                    class="font-medium text-destructive"
                                     data-test="app-stopped"
                                     >A change stopped</span
                                 >

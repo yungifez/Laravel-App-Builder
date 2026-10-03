@@ -424,7 +424,7 @@ function lineClass(line: string): string {
     >
         <header class="max-w-3xl space-y-4">
             <h1
-                class="text-2xl leading-snug font-semibold tracking-[-0.025em] break-words"
+                class="font-display text-3xl leading-tight tracking-tight break-words sm:text-4xl"
             >
                 {{ featureRequest.background ?? featureRequest.prompt }}
             </h1>
@@ -562,12 +562,12 @@ function lineClass(line: string): string {
              filled panel on the page. -->
         <section
             v-if="run?.question"
-            class="max-w-3xl space-y-5 rounded-2xl bg-muted/50 p-5 sm:p-6"
+            class="max-w-3xl space-y-5 rounded-md bg-muted/60 p-5 sm:p-6"
             data-test="question"
         >
             <div class="space-y-2">
                 <h2
-                    class="text-xl font-semibold tracking-[-0.02em] break-words"
+                    class="font-display text-2xl leading-snug tracking-tight break-words"
                 >
                     {{ run.question.text }}
                 </h2>
@@ -750,7 +750,7 @@ function lineClass(line: string): string {
                             </Alert>
                             <template v-else>
                                 <h2
-                                    class="text-xl font-semibold tracking-[-0.02em]"
+                                    class="font-display text-2xl tracking-tight"
                                 >
                                     {{
                                         section.key === 'requested'
@@ -1022,7 +1022,7 @@ function lineClass(line: string): string {
                             <span
                                 v-if="verification"
                                 :class="[
-                                    'text-sm',
+                                    'font-mono text-xs',
                                     verification.status === 'failed' ||
                                     verification.status === 'errored'
                                         ? 'text-destructive'
@@ -1091,7 +1091,7 @@ function lineClass(line: string): string {
                     class="space-y-3"
                     data-test="answers"
                 >
-                    <h2 class="text-xl font-semibold tracking-[-0.02em]">
+                    <h2 class="font-display text-2xl tracking-tight">
                         What you told me
                     </h2>
                     <ul class="divide-y border-y">
@@ -1120,7 +1120,7 @@ function lineClass(line: string): string {
                     class="space-y-3"
                     data-test="decisions"
                 >
-                    <h2 class="text-xl font-semibold tracking-[-0.02em]">
+                    <h2 class="font-display text-2xl tracking-tight">
                         Decisions I made for you
                     </h2>
                     <p class="text-muted-foreground">
@@ -1142,7 +1142,7 @@ function lineClass(line: string): string {
                     class="space-y-3"
                     data-test="review-preserved"
                 >
-                    <h2 class="text-xl font-semibold tracking-[-0.02em]">
+                    <h2 class="font-display text-2xl tracking-tight">
                         Stays the same
                     </h2>
                     <p v-if="!keptSameChecked" class="text-muted-foreground">
@@ -1240,7 +1240,7 @@ function lineClass(line: string): string {
                     class="space-y-3"
                     data-test="steps"
                 >
-                    <h2 class="text-xl font-semibold tracking-[-0.02em]">
+                    <h2 class="font-display text-2xl tracking-tight">
                         Adjust part of it
                     </h2>
                     <p class="text-muted-foreground">
@@ -1330,7 +1330,7 @@ function lineClass(line: string): string {
                 </section>
 
                 <section v-if="followUps.length > 0" class="space-y-3">
-                    <h2 class="text-xl font-semibold tracking-[-0.02em]">
+                    <h2 class="font-display text-2xl tracking-tight">
                         Follow-up changes
                     </h2>
 

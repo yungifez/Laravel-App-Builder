@@ -3,16 +3,18 @@
 use App\Models\User;
 
 /*
-| What a visitor learns before signing up: what they get that is different,
-| shown as an example change and three plain promises.
+| What a visitor learns before signing up: what makes this different from
+| other AI app builders, shown on real screens, and what they keep.
 */
 
-it('shows a visitor the example change and the promises, and starts them on an app', function () {
+it('shows a visitor what makes it different and what they keep, and starts them on an app', function () {
     visit('/')
         ->assertPresent('@welcome-example')
-        ->assertSee('Checked before you see it')
-        ->assertSee('Undo what you kept')
-        ->assertSee('Yours to take')
+        ->assertPresent('@welcome-different')
+        ->assertSee('I understand your app.')
+        ->assertSee('Keeps a written understanding of your app')
+        ->assertSee('Undo any change you kept.')
+        ->assertSee('Your code. Any time.')
         ->click('@welcome-start')
         ->assertPathIs('/register');
 });

@@ -361,11 +361,14 @@ function setCompatibility(keep: boolean | null): void {
                 >
                     <h1
                         v-if="about.introduction"
-                        class="max-w-3xl pr-10 text-3xl leading-tight font-semibold tracking-[-0.025em] text-balance"
+                        class="max-w-3xl pr-10 font-display text-4xl leading-tight tracking-tight text-balance"
                     >
                         {{ plain(about.introduction) }}
                     </h1>
-                    <h1 v-else class="text-3xl text-muted-foreground">
+                    <h1
+                        v-else
+                        class="font-display text-4xl text-muted-foreground"
+                    >
                         What is your app for?
                     </h1>
                 </NotesPart>

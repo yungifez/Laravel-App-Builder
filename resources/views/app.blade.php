@@ -26,11 +26,11 @@
         {{-- The page's own background from app.css, so the first paint is not a different shade. --}}
         <style>
             html {
-                background-color: hsl(105 20% 93%);
+                background-color: hsl(220 20% 98.5%);
             }
 
             html.dark {
-                background-color: hsl(145 20% 6%);
+                background-color: hsl(224 16% 7%);
             }
         </style>
 

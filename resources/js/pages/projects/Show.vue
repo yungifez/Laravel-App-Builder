@@ -2022,7 +2022,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                 >
                     <div
                         :class="[
-                            'rounded-xl border bg-background shadow-xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50',
+                            'rounded-md border border-input bg-background focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50',
                             dragging && 'border-ring ring-[3px] ring-ring/50',
                         ]"
                         data-test="composer-box"
@@ -2074,7 +2074,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                                 />
                                 <button
                                     type="button"
-                                    class="absolute -top-1.5 -right-1.5 flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-xs after:absolute after:-inset-2.5 hover:text-foreground"
+                                    class="absolute -top-1.5 -right-1.5 flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground after:absolute after:-inset-2.5 hover:text-foreground"
                                     :aria-label="`Remove ${image.file.name}`"
                                     @click="removeImage(index)"
                                 >
