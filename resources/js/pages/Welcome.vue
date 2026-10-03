@@ -505,11 +505,10 @@ onBeforeUnmount(() => {
                     </h1>
                     <p
                         v-reveal
-                        class="mx-auto mt-5 max-w-xl reveal text-lg text-balance text-muted-foreground delay-100"
+                        class="mx-auto mt-5 max-w-2xl reveal text-lg text-balance text-muted-foreground delay-100"
                     >
-                        With most AI builders, each new change can break what
-                        already worked. Here every change must pass the same
-                        checks before you keep it.
+                        With most AI builders, each change can break what
+                        worked. Here every change passes fixed checks first.
                     </p>
 
                     <form
