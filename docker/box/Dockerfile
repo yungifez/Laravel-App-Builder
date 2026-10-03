@@ -5,6 +5,12 @@
 # context is resources/).
 FROM sail-8.4/app
 
+# Sail lets PHP bind low ports. With that capability, glibc runs PHP in
+# secure mode for the box's other users and drops TMPDIR, so every workspace
+# shares /tmp and one app's PHPStan cache breaks the next. Previews use high
+# ports, so the capability goes.
+RUN setcap -r /usr/bin/php8.4
+
 COPY agent-runner/package.json agent-runner/package-lock.json /opt/agent-runner/
 RUN cd /opt/agent-runner && npm ci --omit=dev --no-audit --no-fund
 
