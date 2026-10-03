@@ -40,7 +40,7 @@ class RequestPreview
     {
         if ($featureRequest->status !== FeatureRequestStatus::Generated) {
             throw ValidationException::withMessages([
-                'preview' => __('Only a generated change can be previewed.'),
+                'preview' => __('There is no change to try yet.'),
             ]);
         }
 

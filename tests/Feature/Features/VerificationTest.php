@@ -386,11 +386,11 @@ class VerificationTest extends TestCase
 
         $this->actingAs($generating->project->owner)
             ->post(route('feature-requests.verifications.store', $generating))
-            ->assertSessionHasErrors('verification');
+            ->assertSessionHasErrors(['verification' => 'There is no change to check yet.']);
 
         $this->actingAs($busy->project->owner)
             ->post(route('feature-requests.verifications.store', $busy))
-            ->assertSessionHasErrors('verification');
+            ->assertSessionHasErrors(['verification' => 'The checks are already running.']);
 
         $this->assertSame(0, $generating->verifications()->count());
         $this->assertSame(1, $busy->verifications()->count());

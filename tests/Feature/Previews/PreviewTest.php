@@ -47,6 +47,17 @@ class PreviewTest extends TestCase
         ]);
     }
 
+    public function test_a_change_still_being_made_cannot_be_tried_yet()
+    {
+        $request = FeatureRequest::factory()->create();
+
+        $this->actingAs($request->project->owner)
+            ->post(route('feature-requests.previews.store', $request))
+            ->assertSessionHasErrors(['preview' => 'There is no change to try yet.']);
+
+        $this->assertSame(0, $request->previews()->count());
+    }
+
     public function test_the_owner_starts_a_preview_of_the_change_and_its_lineage()
     {
         Http::fake(['*/up' => Http::response('ok')]);
