@@ -123,6 +123,7 @@ function evidence(area: NotesDraft['areas'][number]): string {
                             >{{ area.name }}</label
                         >
                         <p
+                            v-if="area.explored"
                             class="text-xs text-muted-foreground"
                             data-test="draft-evidence"
                         >

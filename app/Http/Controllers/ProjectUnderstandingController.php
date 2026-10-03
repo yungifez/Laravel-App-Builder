@@ -133,6 +133,8 @@ class ProjectUnderstandingController extends Controller
                     // What backs the area without a model, for the owner's check.
                     'tests' => $area['tests'] ?? null,
                     'pages' => $area['pages'] ?? [],
+                    // A draft from before exploring has no evidence to show.
+                    'explored' => array_key_exists('tests', $area),
                 ], $project->notes_draft['areas'] ?? []),
                 'error' => $project->notes_draft_error,
             ],

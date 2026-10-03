@@ -867,6 +867,8 @@ export type NotesDraft = {
         tests: number | null;
         /** The pages the tests opened that ran this part's code. */
         pages: string[];
+        /** Whether the app was explored for this part; older drafts were not. */
+        explored: boolean;
     }[];
     error: string | null;
 };

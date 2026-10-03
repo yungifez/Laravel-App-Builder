@@ -13,6 +13,7 @@ use App\Projects\ProjectRepository;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use Inertia\Testing\AssertableInertia as Assert;
 use RuntimeException;
 use Tests\Concerns\FakesWorkspaces;
 use Tests\Concerns\PreparesRuns;
@@ -144,6 +145,14 @@ class NotesDraftTest extends TestCase
         $this->assertSame(['app/Models/Team.php'], $teams->paths);
         $this->assertSame([['key' => 'invite', 'name' => 'Invite someone']], $teams->behaviors);
         $this->assertSame(['Only owners can delete a team.'], $teams->rules());
+    }
+
+    public function test_a_draft_from_before_exploring_claims_no_evidence()
+    {
+        $project = $this->importedProject(ready: true);
+
+        $this->actingAs($this->owner)->get(route('projects.understanding.show', $project))
+            ->assertInertia(fn (Assert $page) => $page->where('draft.areas.0.explored', false)->where('draft.areas.0.tests', null));
     }
 
     public function test_keeping_never_replaces_notes_the_app_already_has()

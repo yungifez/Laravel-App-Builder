@@ -177,7 +177,7 @@ class ExploreAppTest extends TestCase
         NotesDrafter::assertPrompted(fn ($prompt) => $prompt->contains("The app's tests did not all pass, so what they touch is not known."));
 
         $this->actingAs($this->owner)->get(route('projects.understanding.show', $project))
-            ->assertInertia(fn (Assert $page) => $page->where('draft.areas.0.tests', null)->where('draft.areas.0.pages', []));
+            ->assertInertia(fn (Assert $page) => $page->where('draft.areas.0.tests', null)->where('draft.areas.0.pages', [])->where('draft.areas.0.explored', true));
     }
 
     public function test_only_the_parts_the_owner_ticked_are_kept()
