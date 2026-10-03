@@ -104,6 +104,7 @@ function knock(path, key) {
                 }
 
                 const chunks = [];
+                answer.on('error', () => resolve(null));
                 answer.on('data', (chunk) => chunks.push(chunk));
                 answer.on('end', () =>
                     resolve({
@@ -114,6 +115,9 @@ function knock(path, key) {
                 );
             },
         );
+        // A knock that stalls, as one can on a busy machine, is tried
+        // again rather than waited on for ever.
+        asking.setTimeout(2000, () => asking.destroy());
         asking.on('error', () => resolve(null));
         asking.end();
     });
@@ -138,8 +142,9 @@ try {
     });
 
     let answer = null;
+    const deadline = Date.now() + 30_000;
 
-    for (let attempt = 0; attempt < 100 && answer?.status !== 200; attempt++) {
+    while (Date.now() < deadline && answer?.status !== 200) {
         await new Promise((resolve) => setTimeout(resolve, 100));
         answer =
             hello?.preview_door == null
