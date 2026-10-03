@@ -737,14 +737,14 @@ class ChangeProofTest extends TestCase
             ['file' => 'tests/Feature/ArchiveTest.php', 'name' => 'test_members_still_see_their_teams', 'without_change' => 'passed'],
         ];
         $proof = function (array $verified, array $newTests) {
-            $request = FeatureRequest::factory()->generated()->create();
+            $request = FeatureRequest::factory()->generated()->create(['patch' => "diff --git a/tests/Feature/ArchiveTest.php b/tests/Feature/ArchiveTest.php\nnew file mode 100644\n--- /dev/null\n+++ b/tests/Feature/ArchiveTest.php\n@@ -0,0 +1 @@\n+<?php\n"]);
             $this->checked($request, VerificationStatus::Unverified, ['new_tests' => $newTests]);
             Run::factory()->for($request)->create(['review' => ['approved' => true, 'summary' => '', 'findings' => [], 'verified' => $verified]]);
 
             return collect(app(DescribeProof::class)->handle($request->refresh()));
         };
         $gap = 'Only the tests it wrote for itself tried what it does.';
-        $proven = 'Every part of what you asked for has its own test that passes. One of them fails without this change, so it tests what is new.';
+        $proven = 'Every part of what you asked for has its own test that passes.';
 
         // Each part has a passing test the reviewer matched to it, and the
         // test for the new part fails without the change. Keeping members'
@@ -752,6 +752,8 @@ class ChangeProofTest extends TestCase
         $lines = $proof([$item('Owners can archive teams.', 'owners can archive teams'), $item('Members still see their teams.', 'members still see their teams')], $newTests);
         $this->assertTrue($lines->contains(fn (array $line) => $line['text'] === $proven && $line['kind'] === 'passed' && ($line['evidence'] ?? false)));
         $this->assertFalse($lines->contains('text', $gap));
+        // How many fail without the change is said once, on the line that names one.
+        $this->assertSame(['It added a test that fails without this change and passes with it: "Owners can archive teams".'], $lines->pluck('text')->filter(fn (string $text) => str_contains($text, 'without this change'))->values()->all());
 
         // One part with no passing test leaves the gap.
         $lines = $proof([$item('Owners can archive teams.', 'owners can archive teams'), $item('Members still see their teams.', 'members still see their teams', 'no_test')], $newTests);

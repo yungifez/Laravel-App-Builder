@@ -188,7 +188,9 @@ class DescribeProof
             // above the lines would otherwise call the change well checked,
             // unless those tests cover every part of the ask (see goalsProven).
             $verification->status === VerificationStatus::Unverified && $proven === 0 ? ['kind' => 'gap', 'text' => __('Only the tests it wrote for itself tried what it does.')] : null,
-            $verification->status === VerificationStatus::Unverified && $proven > 0 ? ['kind' => 'passed', 'text' => trans_choice('Every part of what you asked for has its own test that passes. One of them fails without this change, so it tests what is new.|Every part of what you asked for has its own test that passes. :count of them fail without this change, so they test what is new.', $proven), 'evidence' => true] : null,
+            // How many of them fail without the change is the next line's
+            // (see added()), with one named.
+            $verification->status === VerificationStatus::Unverified && $proven > 0 ? ['kind' => 'passed', 'text' => __('Every part of what you asked for has its own test that passes.'), 'evidence' => true] : null,
             $audited && ! $warned && ! $unaudited ? ['kind' => 'passed', 'text' => __('No known security problems in the packages your app uses.')] : null,
             $audited && ! $warned && $unaudited ? ['kind' => 'passed', 'text' => __('No known security problems in the packages I could check.')] : null,
             $warned ? ['kind' => 'gap', 'text' => __('Some packages your app uses have known security problems. Ask me to update them.')] : null,
