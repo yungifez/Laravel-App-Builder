@@ -474,6 +474,69 @@ class TraceRecorderTest extends TestCase
         $this->assertSame(1, $user->notifications()->count());
     }
 
+    public function test_a_cache_write_of_the_apps_own_code_is_a_place_a_run_makes_fail_and_a_save_before_it_is_found()
+    {
+        $user = User::factory()->create();
+        Route::post('/_failing/kept/{user}', [RecordedApp::class, 'kept']);
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'cache');
+
+        $this->post("/_failing/kept/{$user->id}")->assertNoContent();
+        $this->post("/_failing/kept/{$user->id}")->assertStatus(500);
+
+        $requests = $recorded();
+        $this->assertSame([['query', 'cache'], ['query', 'cache']], array_map(fn (array $request) => array_column($request['effects'], 'kind'), $requests));
+        $this->assertSame(1, $requests[1]['fault']);
+
+        $sends = fn (array $request): array => array_values(array_map(fn (array $point) => [$point['fault']['effect'], $point['fault']['kind']], array_filter(AppFaults::points([$request], $this->wholeFilePatch()), fn (array $point) => $point['fails'] === 'send')));
+        $this->assertSame([[1, 'cache']], $sends($requests[0]));
+
+        // The save stayed and the person saw an error, over a copy the cache keeps.
+        $measured = $this->measureFailure($requests, 'cache write');
+        $this->assertSame([['saved_then_failed', 'cache write', 'update users']], array_map(fn (array $finding) => [$finding['kind'], $finding['failed'], $finding['what']], $measured['findings']));
+        $this->assertStringContainsString('rescue(fn () => Cache::put(...))', AppFaults::finding($measured['findings'][0]));
+    }
+
+    public function test_an_app_that_goes_on_without_a_cache_that_is_down_did_right()
+    {
+        $user = User::factory()->create();
+        Route::post('/_failing/kept/{user}', [RecordedApp::class, 'keptSafely']);
+        $recorded = $this->recordWithFailure(effect: 1, kind: 'cache');
+
+        $this->post("/_failing/kept/{$user->id}")->assertNoContent();
+        $this->post("/_failing/kept/{$user->id}")->assertNoContent();
+
+        $requests = $recorded();
+        $this->assertSame(1, $requests[1]['fault']);
+
+        // Nothing was hidden: the cache is a copy, and the page still answered.
+        $measured = $this->measureFailure($requests, 'cache write');
+        $this->assertSame([1, []], [$measured['run'], $measured['findings']]);
+    }
+
+    public function test_a_notification_is_a_place_a_run_makes_fail_unless_it_is_the_email_that_follows_it()
+    {
+        $user = User::factory()->create();
+        Route::post('/_failing/noticed/{user}', [RecordedApp::class, 'noticed'])->middleware('web');
+        $recorded = $this->recordWithFailure(effect: 2, kind: 'notification');
+
+        $this->post("/_failing/noticed/{$user->id}", ['channel' => 'database'])->assertNoContent();
+        $this->post("/_failing/noticed/{$user->id}", ['channel' => 'database'])->assertStatus(500);
+        $this->post("/_failing/noticed/{$user->id}", ['channel' => 'mail'])->assertNoContent();
+
+        $requests = $recorded();
+        $this->assertSame(2, $requests[1]['fault']);
+
+        // A notice kept in the database is a place of its own. One that goes
+        // out by email is the email: that is the one place.
+        $sends = fn (array $request): array => array_values(array_map(fn (array $point) => [$point['fault']['effect'], $point['fault']['kind']], array_filter(AppFaults::points([$request], $this->wholeFilePatch()), fn (array $point) => $point['fails'] === 'send')));
+        $this->assertSame([[2, 'notification']], $sends($requests[0]));
+        $this->assertSame(['query', 'query', 'notification', 'mail'], array_column($requests[2]['effects'], 'kind'));
+        $this->assertSame([[3, 'mail']], $sends($requests[2]));
+
+        $measured = $this->measureFailure($requests, 'notification '.RecordedNotice::class);
+        $this->assertSame([['saved_then_failed', 'notification '.RecordedNotice::class, 'update users']], array_map(fn (array $finding) => [$finding['kind'], $finding['failed'], $finding['what']], $measured['findings']));
+    }
+
     public function test_a_full_trace_is_moved_aside_so_an_app_in_use_cannot_fill_the_disk()
     {
         Route::post('/_failing/order', [RecordedApp::class, 'receipt']);

@@ -2311,7 +2311,13 @@ Places on the change's own lines come first. Next come places on a line or a
 route that `AppTraces` or `AppBoundaries` has a finding about. Then sends
 come before jobs, and jobs before saves: what cannot be taken back is tried
 first. An answer is tried with the sends. It is the change's when the
-change makes the call or wrote what the request does after it. The order comes only from the trace, the patch and those findings. At
+change makes the call or wrote what the request does after it. A
+notification is a send of its own, over the channel it goes out on; one
+whose email is the next effect defers to that email, so one failure is
+not found twice. A cache write or forget on the app's own line is a
+place too, tried with the saves: the cache keeps a copy, so an app that
+goes on without it did right and nothing is "hidden", and one write of
+many is not a send that stops the rest. The order comes only from the trace, the patch and those findings. At
 most `points` places are tried, and no place starts after `seconds`, so the
 owner's wait has a limit. A place whose failure did not happen is counted as
 `missed`, never as clean. What a job on the sync queue does is not a place

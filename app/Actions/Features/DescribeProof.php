@@ -555,6 +555,8 @@ class DescribeProof
                         str_starts_with($found[0]['failed'], 'http') => __('an outside service does not answer'),
                         $found[0]['failed'] === 'file move' => __('a file cannot be moved'),
                         str_starts_with($found[0]['failed'], 'file') => __('a file cannot be stored'),
+                        str_starts_with($found[0]['failed'], 'notification') => __('a notice cannot be left for someone'),
+                        str_starts_with($found[0]['failed'], 'cache') => __('the cache is down'),
                         default => __('saving fails'),
                     },
                 ]);

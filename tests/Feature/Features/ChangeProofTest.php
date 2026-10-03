@@ -557,6 +557,16 @@ class ChangeProofTest extends TestCase
             $proof(['run' => 1, 'findings' => [$finding('file_gone', 'POST /profile/photo', 'file write')]])->where('kind', 'gap')->pluck('text')->all(),
         );
 
+        // A notice that cannot be left, and a cache that is down, are said so.
+        $this->assertSame(
+            ['If a notice cannot be left for someone at /bookings, the person sees an error, but your app has already saved what they did. They may try again and do it twice.'],
+            $proof(['run' => 1, 'findings' => [$finding('saved_then_failed', 'POST /bookings', 'notification App\Notifications\BookingMade')]])->where('kind', 'gap')->pluck('text')->all(),
+        );
+        $this->assertSame(
+            ['If the cache is down at /rooms, the person sees an error, but your app has already saved what they did. They may try again and do it twice.'],
+            $proof(['run' => 1, 'findings' => [$finding('saved_then_failed', 'POST /rooms', 'cache write')]])->where('kind', 'gap')->pluck('text')->all(),
+        );
+
         // A file the app moved is said as moved, and a move that fails as a move.
         $this->assertSame(
             ['If saving fails at /documents/{document}/publish, your app has already moved a file. What it kept still points to where the file was, and the file is not there.'],

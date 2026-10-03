@@ -205,8 +205,10 @@ class AppFaults
 
     /**
      * What the recorder can make fail when the app sends or stores it.
+     * A notification fails over the channel it goes out on; the cache
+     * fails as a cache server that is not there.
      */
-    protected const FAILS = ['mail', 'http', 'file'];
+    protected const FAILS = ['mail', 'http', 'file', 'notification', 'cache'];
 
     /**
      * What has left the app once it happened. A notification is not
@@ -219,7 +221,7 @@ class AppFaults
      * What is tried first when the places are otherwise alike: what cannot
      * be taken back comes before what the database can put back.
      */
-    protected const ORDER = ['http' => 0, 'mail' => 0, 'file' => 0, 'answer' => 0, 'job' => 1, 'later' => 1, 'event' => 1, 'query' => 2];
+    protected const ORDER = ['http' => 0, 'mail' => 0, 'notification' => 0, 'file' => 0, 'answer' => 0, 'job' => 1, 'later' => 1, 'event' => 1, 'query' => 2, 'cache' => 2];
 
     /**
      * How Pest starts the method it makes for a test named by a sentence.
@@ -301,7 +303,7 @@ class AppFaults
                     // What the app's code sends in a job can fail there. The last
                     // send from one line is the place: what the job sent before
                     // it is then seen when the job is tried again.
-                    if (self::fails($effect) && is_string($effect['at'] ?? null) && ! self::inside($request['effects'], $place)) {
+                    if (self::fails($effect) && is_string($effect['at'] ?? null) && ! self::inside($request['effects'], $place) && ! self::asMail($request['effects'], $place)) {
                         $found[self::name($effect).'|'.$effect['at']] = [self::SEND, $place, $effect];
                     }
 
@@ -333,7 +335,7 @@ class AppFaults
                     $jobs[] = [self::LATER, $place, $effect, array_any([...$its, ...$after], $new), 'later'];
                 }
 
-                if (self::fails($effect)) {
+                if (self::fails($effect) && ! self::asMail($request['effects'], $place)) {
                     $found[] = [self::SEND, $place, $effect];
                 } elseif ($effect['open'] > 0 && AppTraces::writes($effect)) {
                     $last = [self::SAVE, $place, $effect];
@@ -604,6 +606,9 @@ class AppFaults
         $moved = 'Move the file after the save, in the same DB::transaction(), and throw when move() gives false: the transaction then puts the save back.';
 
         $fix = match (true) {
+            $finding['kind'] === self::SAVED_THEN_FAILED && str_starts_with($finding['failed'], 'cache ') => 'The cache keeps a copy; the save is the truth. A person who sees the error tries again, and the save happens twice. Go on without the cache when it is down: rescue(fn () => Cache::put(...)) or a try/catch that records the failure with report(), so the page still answers.',
+            $finding['kind'] === self::SENT_THEN_LOST && str_starts_with($finding['failed'], 'cache ') => 'People are told about something that was not saved, because a cache that was down undid the save. Write to the cache after the transaction, or go on without it: rescue(fn () => Cache::put(...)).',
+            $finding['kind'] === self::SAVED_IN_PART && str_starts_with($finding['failed'], 'cache ') => 'A cache that was down stopped the saves half way. Put the saves that belong together in one DB::transaction(), and write to the cache after it.',
             $finding['kind'] === self::FAILURE_HIDDEN && $finding['failed'] === 'file move' => "A move on a disk that fails gives false, and throws only when the disk's config has 'throw' => true. Ask what move() gave back. Then do not go on as if the file is at its new place. {$moved}",
             ! $command && $finding['kind'] === self::SAVED_THEN_FAILED && $finding['failed'] === 'file move' => "A person who sees the error tries again, and the save happens twice. {$moved}",
             $finding['kind'] === self::FILE_GONE && str_contains($finding['what'], 'file move') => "What the app kept still points to where the file was. {$moved}",
@@ -708,6 +713,10 @@ class AppFaults
         $kept = array_values(array_filter($stayed, fn (array $effect, int $at) => $before($effect, $at) && is_string($effect['at'] ?? null), ARRAY_FILTER_USE_BOTH));
 
         if ($fails === self::SEND) {
+            // The cache keeps a copy: an app that goes on without it when
+            // it is down did right, and one write of many is not a send.
+            $cache = ($hit['effects'][$place]['kind'] ?? null) === 'cache';
+
             return array_filter([
                 // The person got an error page, but what the request saved
                 // before the failure is still there. A send that failed in
@@ -715,10 +724,10 @@ class AppFaults
                 self::SAVED_THEN_FAILED => $hit['status'] >= 500 && ! ($hit['effects'][$place]['job'] ?? false) ? $kept : [],
                 self::CALLED_AGAIN => self::calledAgain($hit['effects'], $place, $times),
                 self::NEVER_SENT => self::neverSent($hit, $place),
-                self::REST_NOT_SENT => self::stopped($hit, $place, $times),
+                self::REST_NOT_SENT => $cache ? [] : self::stopped($hit, $place, $times),
                 self::FILE_GONE => self::unsaved($hit, $place, $was),
                 self::SENT_AGAIN => self::sentTwice($hit, $place, $was),
-                self::FAILURE_HIDDEN => self::hidden($hit, $was),
+                self::FAILURE_HIDDEN => $cache ? [] : self::hidden($hit, $was),
             ]);
         }
 
@@ -1228,13 +1237,31 @@ class AppFaults
 
     /**
      * Determine if a thing is one that can be made to fail: an email, an
-     * outside call, or a file the app writes or moves. A delete is not.
+     * outside call, a notification, a file the app writes or moves, or a
+     * cache the app's own code writes or forgets. A delete is not, and
+     * what the framework keeps in the cache by itself is not.
      *
-     * @param  array{kind: string, sql?: string, what?: string}  $effect
+     * @param  array{kind: string, sql?: string, what?: string, at?: string|null}  $effect
      */
     protected static function fails(array $effect): bool
     {
-        return in_array($effect['kind'], self::FAILS, true) && ! ($effect['kind'] === 'file' && ($effect['what'] ?? null) === 'delete');
+        return in_array($effect['kind'], self::FAILS, true)
+            && ! ($effect['kind'] === 'file' && ($effect['what'] ?? null) === 'delete')
+            && ! ($effect['kind'] === 'cache' && ! is_string($effect['at'] ?? null));
+    }
+
+    /**
+     * Determine if a notification is the email that follows it in the
+     * trace: that email is the thing made to fail, not the notification.
+     *
+     * @param  list<array{kind: string, what?: string}>  $effects
+     */
+    protected static function asMail(array $effects, int $place): bool
+    {
+        $effect = $effects[$place];
+        $next = $effects[$place + 1] ?? null;
+
+        return $effect['kind'] === 'notification' && $next !== null && $next['kind'] === 'mail' && ($next['what'] ?? null) === ($effect['what'] ?? null);
     }
 
     /**

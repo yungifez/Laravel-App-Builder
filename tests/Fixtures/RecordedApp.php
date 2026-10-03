@@ -77,6 +77,28 @@ class RecordedApp
     }
 
     /**
+     * Saves, then keeps a copy for later outside any transaction.
+     */
+    public function kept(User $user): Response
+    {
+        DB::table('users')->where('id', $user->id)->update(['name' => 'Kept']);
+        Cache::put("recorded.user.{$user->id}", 'Kept', 60);
+
+        return response()->noContent();
+    }
+
+    /**
+     * Saves, then keeps a copy for later, and goes on when the cache is down.
+     */
+    public function keptSafely(User $user): Response
+    {
+        DB::table('users')->where('id', $user->id)->update(['name' => 'Kept']);
+        rescue(fn () => Cache::put("recorded.user.{$user->id}", 'Kept', 60), report: false);
+
+        return response()->noContent();
+    }
+
+    /**
      * Keeps a count for later, reads it back and forgets it.
      */
     public function remembered(): Response
