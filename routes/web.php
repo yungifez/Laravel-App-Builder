@@ -74,9 +74,10 @@ use App\Http\Controllers\VisualMoveController;
 use App\Http\Controllers\VisualPartController;
 use App\Http\Controllers\VisualPictureController;
 use App\Http\Controllers\VisualTextController;
+use App\Http\Controllers\WelcomeController;
 use Illuminate\Support\Facades\Route;
 
-Route::inertia('/', 'Welcome')->name('home');
+Route::get('/', WelcomeController::class)->name('home');
 
 // A link the owner shared: anyone holding it can try the app, with no account.
 Route::get('s/{token}', [SharedAppController::class, 'show'])->where('token', '[A-Za-z0-9]{40}')->middleware('throttle:30,1')->name('shared-apps.show');

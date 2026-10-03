@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { Form, Head, Link } from '@inertiajs/vue3';
 import { ArrowUp, ImagePlus, Search, ShieldCheck, X } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import NewProjectController from '@/actions/App/Http/Controllers/NewProjectController';
 import BringInApp from '@/components/BringInApp.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { useAttachedImages } from '@/composables/useAttachedImages';
+import { takeIdea } from '@/lib/startIdea';
 import { when } from '@/lib/when';
 import { index, show } from '@/routes/projects';
 import type { DesignOption, ProjectListItem, Starter } from '@/types';
@@ -84,6 +85,25 @@ function clearStarter(): void {
     starter.value = null;
     purposeField.value?.focus();
 }
+
+// An idea typed on the home page before signing in arrives here, so the
+// owner only has to name the app. A ready-made idea picked there, and not
+// reworded, starts as that idea with its name and look.
+onMounted(() => {
+    const { idea, starter: key } = takeIdea();
+    const picked = props.starters.find((s) => s.key === key);
+
+    if (picked !== undefined && picked.purpose === idea) {
+        useStarter(picked);
+
+        return;
+    }
+
+    if (idea !== '' && purposeField.value !== null) {
+        purposeField.value.value = idea;
+        nameField.value?.focus();
+    }
+});
 
 const query = ref('');
 const shown = computed(() => {
@@ -475,7 +495,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
                             </span>
 
                             <span
-                                class="mt-auto flex min-h-5 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-2 font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums"
+                                class="mt-auto flex min-h-5 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-2 text-xs whitespace-nowrap text-muted-foreground tabular-nums"
                             >
                                 <span class="flex items-center gap-3">
                                     <span

@@ -15,9 +15,8 @@ export default defineConfig({
                 bunny('IBM Plex Sans', {
                     weights: [400, 500, 600],
                 }),
-                bunny('Newsreader', {
-                    weights: [400, 500],
-                    styles: ['normal', 'italic'],
+                bunny('Schibsted Grotesk', {
+                    weights: [500, 600, 700],
                 }),
                 bunny('IBM Plex Mono', {
                     weights: [400, 500],

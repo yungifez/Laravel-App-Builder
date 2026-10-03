@@ -1,104 +1,415 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
-import { ArrowRight } from '@lucide/vue';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
+import {
+    ArrowRight,
+    ArrowUp,
+    Check,
+    LoaderCircle,
+    Minus,
+    Plus,
+} from '@lucide/vue';
+import type { Directive } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
+import { faults } from '@/lib/appFaults';
+import { keepIdea } from '@/lib/startIdea';
 import { login, register } from '@/routes';
 import { index } from '@/routes/projects';
+import type { DesignOption, Starter } from '@/types';
 
 // The page answers one question: why build here and not with any other
-// AI app builder? It reads like a record (DESIGN.md): a claim, then the
-// proof under it. Every line must stay true of the product as it is; the
-// left column describes the usual approach, never a named product.
-// Pictures are placeholders: swap the files in public/images/product and
-// their sizes here.
-const differences = [
-    {
-        topic: 'Memory',
-        usual: 'Starts from a blank slate each time you ask.',
-        ours: 'Keeps a written understanding of your app, and you can correct it.',
-    },
-    {
-        topic: 'Checking',
-        usual: 'Says it is done. You find out what broke.',
-        ours: 'Tries each change in your app on every screen size first, and tells you what it could not check.',
-    },
-    {
-        topic: 'Changes',
-        usual: 'Shows you a wall of code changes.',
-        ours: 'Says what was there before and what is there now, in plain words.',
-    },
-    {
-        topic: 'Undo',
-        usual: 'Going back means restoring an old version.',
-        ours: 'Undo one change you kept, later on. The others stay.',
-    },
-    {
-        topic: 'Code',
-        usual: 'Code in whatever shape the AI chose.',
-        ours: 'A standard Laravel app, built the way Laravel developers expect.',
-    },
-    {
-        topic: 'Your app',
-        usual: 'Best at starting new apps.',
-        ours: 'Brings in the Laravel app you already have, and reads it first.',
-    },
-];
+// AI app builder? Apps made with them tend to stay prototypes, because
+// the AI decides when its own work is done. Here the AI still plans and
+// writes the code, and fixed checks decide whether it works. The page
+// shows that working rather than saying it. Every line must stay true of
+// the product as it is. Do not name the framework underneath; the owner
+// chose to lead with the outcome. Do not claim "no AI", live hosting, or
+// speed and cost against named tools. The usual way is never
+// a named product. Pictures are placeholders: swap the files in
+// public/images/product.
 
-const scenes = [
+const props = defineProps<{
+    designs: DesignOption[];
+    starters: Starter[];
+}>();
+
+const page = usePage();
+const still =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// Blocks rise into place the first time they scroll into view.
+const watched = new Map<Element, () => void>();
+const seen =
+    typeof IntersectionObserver === 'undefined'
+        ? null
+        : new IntersectionObserver(
+              (entries) => {
+                  for (const entry of entries) {
+                      if (!entry.isIntersecting) {
+                          continue;
+                      }
+
+                      (entry.target as HTMLElement).dataset.shown = '';
+                      watched.get(entry.target)?.();
+                      watched.delete(entry.target);
+                      seen?.unobserve(entry.target);
+                  }
+              },
+              { rootMargin: '0px 0px -12% 0px' },
+          );
+
+function whenSeen(element: Element, then: () => void = () => {}): void {
+    if (seen === null) {
+        (element as HTMLElement).dataset.shown = '';
+        then();
+
+        return;
+    }
+
+    watched.set(element, then);
+    seen.observe(element);
+}
+
+const vReveal: Directive<HTMLElement> = {
+    mounted: (element) => whenSeen(element),
+};
+
+const idea = ref('');
+// The ready-made idea the box holds, while its words are unchanged.
+const starter = ref<Starter | null>(null);
+const ideaField = ref<HTMLTextAreaElement | null>(null);
+
+// The empty box writes out the example ideas, one after another, so a
+// visitor sees the kind of sentence that works.
+const typed = ref(props.starters[0]?.purpose ?? '');
+let typing: ReturnType<typeof setTimeout> | undefined;
+
+function typeExamples(): void {
+    const examples = props.starters.map((s) => s.purpose);
+
+    if (examples.length === 0) {
+        return;
+    }
+
+    let example = 0;
+    let length = 0;
+    let erasing = false;
+
+    const step = (): void => {
+        const text = examples[example];
+
+        if (!erasing) {
+            length += 1;
+            typed.value = text.slice(0, length);
+            erasing = length >= text.length;
+            typing = setTimeout(step, erasing ? 2400 : 32);
+
+            return;
+        }
+
+        length = Math.max(0, length - 4);
+        typed.value = text.slice(0, length);
+
+        if (length === 0) {
+            erasing = false;
+            example = (example + 1) % examples.length;
+        }
+
+        typing = setTimeout(step, length === 0 ? 500 : 14);
+    };
+
+    typed.value = '';
+    typing = setTimeout(step, 700);
+}
+
+// A ready-made idea fills the box; from further down the page it also
+// takes the visitor back up to it.
+function useStarter(picked: Starter): void {
+    idea.value = picked.purpose;
+    starter.value = picked;
+    backToStart();
+}
+
+// The idea waits in this tab; the new-app form on "Your apps" picks it up,
+// after signing up if needed.
+function start(): void {
+    if (idea.value.trim() === '') {
+        return;
+    }
+
+    keepIdea(
+        idea.value.trim(),
+        starter.value?.purpose === idea.value.trim() ? starter.value.key : null,
+    );
+    router.visit(page.props.auth.user ? index() : register());
+}
+
+// Enter starts the app, as in other builders; Shift and Enter adds a line.
+function startOnEnter(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+        event.preventDefault();
+        start();
+    }
+}
+
+// The last tile sends the visitor back up to the box, ready to type.
+function backToStart(): void {
+    window.scrollTo({ top: 0, behavior: still ? 'auto' : 'smooth' });
+    ideaField.value?.focus({ preventScroll: true });
+}
+
+// Under the box, the checks every change passes tick off one by one, so
+// the first screen shows the promise as well as saying it.
+const heroChecks = [
+    'Your app’s own tests',
+    'Code fits together',
+    'Tidy code',
+    'Known security problems flagged',
+];
+const ticked = ref(still ? heroChecks.length : 0);
+let ticking: ReturnType<typeof setInterval> | undefined;
+
+function tickChecks(): void {
+    ticking = setInterval(() => {
+        ticked.value += 1;
+
+        if (ticked.value >= heroChecks.length) {
+            clearInterval(ticking);
+        }
+    }, 600);
+}
+
+// One change, checked two ways. "Here" is what the platform does with
+// every change; "alone" is an AI coding agent working on its own, which
+// chooses its own checks. The steps play one by one, so the visitor
+// watches the checking happen.
+type Step = { label: string; note: string; passed: boolean };
+
+const ways: Record<'here' | 'alone', { steps: Step[]; verdict: string }> = {
+    here: {
+        steps: [
+            {
+                label: 'The AI writes the change',
+                note: 'It plans the change and writes the code.',
+                passed: true,
+            },
+            {
+                label: 'Your app’s own tests',
+                note: 'The same tests run on every change.',
+                passed: true,
+            },
+            {
+                label: 'Email is down',
+                note: 'Where the change runs, sending fails. Your app copes.',
+                passed: true,
+            },
+            {
+                label: 'Background work runs twice',
+                note: 'Your app copes, and nothing happens twice.',
+                passed: true,
+            },
+            {
+                label: 'What else changed',
+                note: 'Anything outside what you asked for is named.',
+                passed: true,
+            },
+        ],
+        verdict: 'The checks passed. It is ready for you to keep.',
+    },
+    alone: {
+        steps: [
+            {
+                label: 'The AI writes the change',
+                note: 'It plans the change and writes the code.',
+                passed: true,
+            },
+            {
+                label: 'Tests it chose to run',
+                note: 'It picked which ones, and when to stop.',
+                passed: true,
+            },
+            { label: 'Email is down', note: 'Not tried.', passed: false },
+            {
+                label: 'Background work runs twice',
+                note: 'Not tried.',
+                passed: false,
+            },
+            { label: 'What else changed', note: 'Not said.', passed: false },
+        ],
+        verdict: 'The AI says it is done.',
+    },
+};
+
+const wayOptions = [
+    { key: 'here', label: 'Here' },
+    { key: 'alone', label: 'An AI agent on its own' },
+] as const;
+
+const way = ref<'here' | 'alone'>('here');
+const shownSteps = ref(still ? 99 : 0);
+const demo = ref<HTMLElement | null>(null);
+let playing: ReturnType<typeof setInterval> | undefined;
+
+function play(): void {
+    clearInterval(playing);
+
+    if (still) {
+        shownSteps.value = 99;
+
+        return;
+    }
+
+    shownSteps.value = 0;
+    playing = setInterval(() => {
+        shownSteps.value += 1;
+
+        if (shownSteps.value > ways[way.value].steps.length) {
+            clearInterval(playing);
+        }
+    }, 650);
+}
+
+watch(way, play);
+
+// The screens, one at a time. The list moves on by itself while it is
+// on screen, and stops for good once the visitor picks one.
+const screens = [
     {
-        id: 'say',
-        topic: 'Start',
-        title: 'Start with a sentence.',
-        text: 'Describe your app the way you would tell a friend. I set up a working Laravel app, then you shape it.',
-        image: '/images/product/ask.webp',
-        width: 1600,
-        height: 558,
-        alt: 'The box where you describe the app you want',
+        key: 'talk',
+        title: 'Ask in plain words',
+        text: 'Say what to change, and watch your app beside the conversation.',
+        image: '/images/product/workspace.webp',
+        alt: 'The workspace: a conversation about the app beside the app itself',
     },
     {
-        id: 'check',
-        topic: 'Before you keep it',
-        title: 'Every change comes with its proof.',
-        text: 'Each change shows what it changed and how I know it works. When something is not checked, I say so.',
+        key: 'proof',
+        title: 'Proven before you see it',
+        text: 'Each change shows what it changed and which checks proved it. When something could not be checked, it says so.',
         image: '/images/product/change.webp',
-        width: 2000,
-        height: 1474,
         alt: 'A kept change with what it changed and the checks it passed',
     },
     {
-        id: 'shape',
-        topic: 'Design',
-        title: 'Point at anything and change it exactly.',
-        text: 'Click any part of your app and set how it looks. The change is exact, not a guess.',
+        key: 'design',
+        title: 'Point at anything, change it exactly',
+        text: 'Design edits use no AI. Click any part of your app and set how it looks, then undo it if you change your mind.',
         image: '/images/product/design.webp',
-        width: 2400,
-        height: 1500,
         alt: 'The Book room button picked, with its words and text controls',
+    },
+    {
+        key: 'fail',
+        title: 'See what happens when things fail',
+        text: 'Pick what goes wrong and use your app as a visitor would. Nothing is really sent or stored while you try it.',
+        image: null,
+        alt: '',
     },
 ];
 
-const promises = [
+const active = ref(0);
+const picked = ref(false);
+const hovering = ref(false);
+const screensSeen = ref(false);
+const screensBox = ref<HTMLElement | null>(null);
+const cycling = computed(
+    () => !still && !picked.value && screensSeen.value && !hovering.value,
+);
+
+function pick(at: number): void {
+    picked.value = true;
+    active.value = at;
+}
+
+function next(): void {
+    active.value = (active.value + 1) % screens.length;
+}
+
+const fault = ref(faults[1]);
+
+// What every new app comes with, each with what it means for the owner.
+const parts = [
     {
-        title: 'I read it first.',
-        text: 'Bring in your app and I write down what it does before I change anything.',
+        title: 'A real app, not a demo',
+        text: 'Every app starts with what real apps need, before you ask for anything.',
+        items: [
+            'Accounts, sign-in and settings',
+            'A real database, with your data in tables you can see',
+            'Your code in Git, one commit per change you keep',
+        ],
     },
     {
-        title: 'Undo any change you kept.',
-        text: 'Just that one change, even after others.',
+        title: 'The same checks on every change',
+        text: 'Fixed rules, not a model, decide if a change works.',
+        items: [
+            'Your app’s own tests',
+            'A check that the code fits together',
+            'Tidy code, set out the standard way',
+            'Packages with known security problems are flagged',
+        ],
     },
     {
-        title: 'Tried on every screen.',
-        text: 'Phones and computers both, before you see the change.',
+        title: 'Real services, your own keys',
+        text: 'Connect what a real business runs on.',
+        items: ['Take payments with Stripe', 'Send email with Resend'],
     },
     {
-        title: 'Your code. Any time.',
-        text: 'It is a standard Laravel app. Take it with you whenever you like.',
-    },
-    {
-        title: 'Online in one click.',
-        text: 'If a release goes wrong, go back to the last good one.',
+        title: 'Share it, keep it, take it with you',
+        text: 'Nothing you keep is locked in.',
+        items: [
+            'A link anyone can use to try your app, without an account',
+            'Undo any change you kept, even after others',
+            'Download your code any time',
+        ],
     },
 ];
+
+const questions = [
+    {
+        ask: 'Why do apps from AI builders stay prototypes?',
+        answer: 'Because the AI decides when its own work is done. A change can quietly break something that worked, and nothing makes sure it is checked. Here the same fixed checks run on every change, and only they can pass it.',
+    },
+    {
+        ask: 'Do I need to know how to code?',
+        answer: 'No. You say what you want in plain words and see it in your app. Developers can still read every change in Git.',
+    },
+    {
+        ask: 'Who owns the code?',
+        answer: 'You do. Each change you keep is a commit in your app, and you can download the code any time.',
+    },
+    {
+        ask: 'What happens when a change fails its checks?',
+        answer: 'The attempt is rolled back, and your app stays as it was. You see what went wrong in plain words. When it is our fault, we say so.',
+    },
+    {
+        ask: 'What if I change my mind?',
+        answer: 'Undo any change you kept, on its own, even after others.',
+    },
+    {
+        ask: 'Can my app take payments or send email?',
+        answer: 'Yes. Add your own Stripe keys to take payments, and your own Resend key to send email.',
+    },
+];
+
+onMounted(() => {
+    if (!still) {
+        typeExamples();
+        tickChecks();
+    }
+
+    if (demo.value !== null) {
+        whenSeen(demo.value, play);
+    }
+
+    if (screensBox.value !== null) {
+        whenSeen(screensBox.value, () => (screensSeen.value = true));
+    }
+});
+
+onBeforeUnmount(() => {
+    clearTimeout(typing);
+    clearInterval(ticking);
+    clearInterval(playing);
+    seen?.disconnect();
+});
 </script>
 
 <template>
@@ -107,7 +418,7 @@ const promises = [
     <div class="min-h-svh overflow-x-clip bg-background text-foreground">
         <header class="sticky top-0 z-30 border-b bg-background">
             <div
-                class="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-4"
+                class="mx-auto flex h-12 max-w-6xl items-center justify-between gap-3 px-4"
             >
                 <div class="flex min-w-0 items-center">
                     <AppLogo />
@@ -115,13 +426,13 @@ const promises = [
                 <nav class="flex items-center gap-1 text-sm">
                     <a
                         href="#different"
-                        class="hidden min-h-11 items-center px-3 text-muted-foreground underline-offset-4 select-none hover:text-foreground hover:underline sm:inline-flex sm:min-h-9"
+                        class="hidden min-h-11 items-center rounded-md px-3 text-muted-foreground select-none hover:text-foreground sm:inline-flex sm:min-h-8"
                         >What is different</a
                     >
                     <Link
                         v-if="$page.props.auth.user"
                         :href="index()"
-                        class="inline-flex min-h-11 press items-center rounded-md bg-primary px-4 font-medium text-primary-foreground select-none hover:bg-primary/90 sm:min-h-9"
+                        class="inline-flex min-h-11 press items-center rounded-md bg-primary px-4 font-medium text-primary-foreground select-none hover:bg-primary/90 sm:min-h-8"
                         data-test="welcome-apps"
                     >
                         Your apps
@@ -129,13 +440,13 @@ const promises = [
                     <template v-else>
                         <Link
                             :href="login()"
-                            class="inline-flex min-h-11 items-center px-3 text-muted-foreground underline-offset-4 select-none hover:text-foreground hover:underline sm:min-h-9"
+                            class="inline-flex min-h-11 items-center rounded-md px-3 text-muted-foreground select-none hover:text-foreground sm:min-h-8"
                         >
                             Log in
                         </Link>
                         <Link
                             :href="register()"
-                            class="inline-flex min-h-11 press items-center rounded-md bg-primary px-4 font-medium text-primary-foreground select-none hover:bg-primary/90 sm:min-h-9"
+                            class="inline-flex min-h-11 press items-center rounded-md bg-primary px-4 font-medium text-primary-foreground select-none hover:bg-primary/90 sm:min-h-8"
                             data-test="welcome-start"
                         >
                             Start an app
@@ -145,206 +456,602 @@ const promises = [
             </div>
         </header>
 
-        <main>
-            <!-- The thesis, set large on the left edge, then the product. -->
-            <section class="mx-auto max-w-6xl px-4 pt-16 sm:pt-28">
-                <h1
-                    class="max-w-4xl font-display text-5xl leading-[1.02] tracking-tight text-balance sm:text-7xl lg:text-8xl"
-                >
-                    Build real apps with AI, and stay in control of how they
-                    work.
-                </h1>
+        <!-- Tiles run edge to edge with thin gutters, soft and inverted in
+             turn. Space goes inside each tile, never around it. -->
+        <main class="space-y-3 p-3">
+            <!-- The first screen is the box: say what the app is for, and
+                 go. What they type waits for them after signing up. -->
+            <section id="start" class="bg-muted/50">
                 <div
-                    class="mt-8 grid gap-6 border-t pt-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"
+                    class="mx-auto flex min-h-[calc(100svh-4.5rem)] max-w-3xl flex-col justify-center px-4 py-20 text-center"
                 >
                     <p
-                        class="max-w-xl text-lg text-pretty text-muted-foreground"
+                        v-reveal
+                        class="mx-auto reveal rounded-full border bg-background px-3 py-1 text-sm text-muted-foreground"
                     >
-                        Describe your app in a sentence. I build it on Laravel
-                        and check each change before you see it.
+                        Tired of apps that never get past the demo?
                     </p>
-                    <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
-                        <Link
-                            :href="$page.props.auth.user ? index() : register()"
-                            class="inline-flex min-h-11 press items-center gap-2 rounded-md bg-primary px-5 font-medium text-primary-foreground select-none hover:bg-primary/90"
-                            data-test="welcome-hero-start"
-                        >
-                            Start an app
-                            <ArrowRight class="size-4" />
-                        </Link>
-                        <a
-                            href="#different"
-                            class="inline-flex min-h-11 items-center font-medium text-primary underline-offset-4 select-none hover:underline"
-                            >See what is different</a
-                        >
-                    </div>
-                </div>
-
-                <figure class="mt-14 sm:mt-20" data-test="welcome-example">
-                    <img
-                        src="/images/product/workspace.webp"
-                        width="2400"
-                        height="1500"
-                        alt="The workspace: a conversation about the app beside the app itself"
-                        class="w-full rounded-md border"
-                        fetchpriority="high"
-                    />
-                    <figcaption
-                        class="mt-3 font-mono text-xs text-muted-foreground"
+                    <h1
+                        v-reveal
+                        class="mt-6 reveal font-display text-4xl leading-[1.05] tracking-[-0.035em] text-balance delay-75 sm:text-6xl"
                     >
-                        The workspace, where you ask for a change and see it in
-                        your app.
-                    </figcaption>
-                </figure>
+                        Build apps that don’t stay
+                        <span class="text-muted-foreground">prototypes.</span>
+                    </h1>
+                    <p
+                        v-reveal
+                        class="mx-auto mt-5 max-w-xl reveal text-lg text-balance text-muted-foreground delay-100"
+                    >
+                        With most AI builders, each new change can break what
+                        already worked. Here every change must pass the same
+                        checks before you keep it.
+                    </p>
+
+                    <form
+                        v-reveal
+                        class="mx-auto mt-10 w-full max-w-2xl reveal text-left delay-150"
+                        data-test="welcome-ask"
+                        @submit.prevent="start"
+                    >
+                        <div
+                            class="rounded-lg border border-input bg-background shadow-sm transition-shadow focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30"
+                        >
+                            <label for="idea" class="sr-only"
+                                >What do you want to make?</label
+                            >
+                            <textarea
+                                id="idea"
+                                ref="ideaField"
+                                v-model="idea"
+                                rows="3"
+                                required
+                                :placeholder="typed"
+                                class="block w-full resize-none bg-transparent px-5 pt-4 pb-2 text-base outline-none placeholder:text-muted-foreground sm:text-lg"
+                                data-test="welcome-idea"
+                                @keydown="startOnEnter"
+                            />
+                            <div
+                                class="flex items-center justify-between gap-3 pr-3 pb-3 pl-5"
+                            >
+                                <span class="text-sm text-muted-foreground"
+                                    >Real code that stays yours.</span
+                                >
+                                <button
+                                    type="submit"
+                                    class="flex size-11 shrink-0 press items-center justify-center rounded-full bg-primary text-primary-foreground select-none hover:bg-primary/90 disabled:opacity-40 sm:size-10"
+                                    :disabled="idea.trim() === ''"
+                                    aria-label="Start my app"
+                                    title="Start my app"
+                                    data-test="welcome-hero-start"
+                                >
+                                    <ArrowUp class="size-4" />
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+
+                    <div
+                        v-reveal
+                        class="mt-4 flex reveal flex-wrap justify-center gap-2 delay-200"
+                        aria-label="Ideas to start from"
+                    >
+                        <button
+                            v-for="item in starters"
+                            :key="item.key"
+                            type="button"
+                            class="min-h-11 press rounded-md border bg-background px-3 text-sm text-muted-foreground select-none hover:text-foreground sm:min-h-9"
+                            @click="useStarter(item)"
+                        >
+                            {{ item.name }}
+                        </button>
+                    </div>
+
+                    <ul
+                        class="mx-auto mt-14 flex flex-wrap justify-center gap-x-5 gap-y-2 text-sm"
+                        aria-label="Checked before you keep a change"
+                        data-test="welcome-hero-checks"
+                    >
+                        <li
+                            v-for="(check, at) in heroChecks"
+                            :key="check"
+                            class="flex items-center gap-1.5 transition-colors duration-base"
+                            :class="
+                                at < ticked
+                                    ? 'text-foreground'
+                                    : 'text-muted-foreground'
+                            "
+                        >
+                            <Check
+                                v-if="at < ticked"
+                                class="size-4 text-emerald-600 dark:text-emerald-400"
+                            />
+                            <LoaderCircle
+                                v-else
+                                class="size-4 animate-spin motion-reduce:animate-none"
+                            />
+                            {{ check }}
+                        </li>
+                    </ul>
+                </div>
             </section>
 
-            <!-- The difference, as a ledger: the usual way in the middle,
-                 ours on the right, one topic per row. -->
+            <!-- The difference, shown: one change checked here, then by an
+                 AI agent on its own. -->
             <section
                 id="different"
-                class="mx-auto mt-24 max-w-6xl scroll-mt-14 px-4 sm:mt-36"
+                class="scroll-mt-12 bg-foreground text-background"
                 data-test="welcome-different"
             >
-                <div class="border-t pt-6">
-                    <h2
-                        class="max-w-4xl font-display text-4xl leading-[1.05] tracking-tight text-balance sm:text-6xl"
-                    >
-                        Other AI builders write code. I understand your app.
-                    </h2>
-                    <p
-                        class="mt-5 max-w-2xl text-lg text-pretty text-muted-foreground"
-                    >
-                        Most tools treat each request as a fresh guess. I keep
-                        track of what your app does, so each change fits.
-                    </p>
-                </div>
-
-                <div class="mt-12">
-                    <div
-                        class="hidden grid-cols-[9rem_minmax(0,1fr)_minmax(0,1fr)] gap-8 border-b pb-3 text-sm text-muted-foreground md:grid"
-                        aria-hidden="true"
-                    >
-                        <span />
-                        <span>The usual AI app builder</span>
-                        <span class="text-foreground">Here</span>
-                    </div>
-                    <dl class="divide-y border-b">
-                        <div
-                            v-for="row in differences"
-                            :key="row.topic"
-                            class="grid gap-x-8 gap-y-2 py-5 md:grid-cols-[9rem_minmax(0,1fr)_minmax(0,1fr)]"
-                        >
-                            <dt
-                                class="font-mono text-xs leading-6 text-muted-foreground"
-                            >
-                                {{ row.topic }}
-                            </dt>
-                            <dd class="text-pretty text-muted-foreground">
-                                <span class="md:sr-only">Usually: </span
-                                >{{ row.usual }}
-                            </dd>
-                            <dd class="font-medium text-pretty">
-                                <span class="md:sr-only">Here: </span
-                                >{{ row.ours }}
-                            </dd>
-                        </div>
-                    </dl>
-                </div>
-            </section>
-
-            <!-- Each part on a real screen. Text and picture share the
-                 rule above them; the topic sits on that rule. -->
-            <section
-                v-for="scene in scenes"
-                :id="scene.id"
-                :key="scene.id"
-                class="mx-auto mt-24 max-w-6xl px-4 sm:mt-36"
-            >
                 <div
-                    class="grid gap-6 border-t pt-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-12"
+                    class="mx-auto grid max-w-6xl gap-12 px-4 py-20 sm:px-10 sm:py-28 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:items-center lg:gap-16"
                 >
-                    <div>
-                        <p class="font-mono text-xs text-muted-foreground">
-                            {{ scene.topic }}
-                        </p>
+                    <div v-reveal class="reveal">
                         <h2
-                            class="mt-3 font-display text-4xl leading-[1.05] tracking-tight text-balance sm:text-5xl"
+                            class="font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
                         >
-                            {{ scene.title }}
+                            The AI writes the code. Fixed checks decide if it
+                            works.
                         </h2>
-                        <p
-                            class="mt-4 max-w-md text-pretty text-muted-foreground"
+                        <p class="mt-5 text-lg text-pretty text-background/65">
+                            An AI agent on its own picks its checks and decides
+                            when it is done. Here the same checks run on every
+                            change, and only they can pass it.
+                        </p>
+                        <div
+                            class="mt-8 inline-flex flex-wrap rounded-md border border-background/20 p-1"
+                            role="group"
+                            aria-label="Who checks the change"
                         >
-                            {{ scene.text }}
+                            <button
+                                v-for="option in wayOptions"
+                                :key="option.key"
+                                type="button"
+                                :aria-pressed="way === option.key"
+                                :class="[
+                                    'min-h-11 rounded-sm px-4 text-sm font-medium transition-colors select-none sm:min-h-9',
+                                    way === option.key
+                                        ? 'bg-background text-foreground'
+                                        : 'text-background/65 hover:text-background',
+                                ]"
+                                @click="way = option.key"
+                            >
+                                {{ option.label }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div
+                        ref="demo"
+                        v-reveal
+                        class="reveal rounded-xl border border-background/15 bg-background/5 p-2 delay-100"
+                    >
+                        <div
+                            class="rounded-lg bg-background p-5 text-foreground sm:p-7"
+                        >
+                            <p class="text-sm text-muted-foreground">
+                                You asked
+                            </p>
+                            <p class="mt-1 font-medium text-pretty">
+                                Let customers cancel a booking up to a day
+                                before.
+                            </p>
+                            <ol class="mt-6 divide-y border-y">
+                                <li
+                                    v-for="(step, at) in ways[way].steps"
+                                    :key="`${way}-${step.label}`"
+                                    :class="[
+                                        'flex gap-3 py-3.5 transition-[opacity,translate] duration-panel',
+                                        at < shownSteps
+                                            ? 'opacity-100'
+                                            : at === shownSteps
+                                              ? 'opacity-60'
+                                              : 'translate-y-1 opacity-0',
+                                    ]"
+                                >
+                                    <span
+                                        class="mt-0.5 flex size-5 shrink-0 items-center justify-center"
+                                    >
+                                        <LoaderCircle
+                                            v-if="at === shownSteps"
+                                            class="size-4 animate-spin text-muted-foreground"
+                                        />
+                                        <Check
+                                            v-else-if="step.passed"
+                                            class="size-4 text-emerald-600 dark:text-emerald-400"
+                                            aria-label="Passed"
+                                        />
+                                        <Minus
+                                            v-else
+                                            class="size-4 text-muted-foreground"
+                                            aria-label="Skipped"
+                                        />
+                                    </span>
+                                    <span class="min-w-0">
+                                        <span
+                                            :class="[
+                                                'block font-medium',
+                                                !step.passed &&
+                                                    'text-muted-foreground line-through decoration-muted-foreground/50',
+                                            ]"
+                                            >{{ step.label }}</span
+                                        >
+                                        <span
+                                            class="block text-sm text-pretty text-muted-foreground"
+                                            >{{ step.note }}</span
+                                        >
+                                    </span>
+                                </li>
+                            </ol>
+                            <p
+                                :class="[
+                                    'mt-5 flex min-h-6 items-center gap-2 text-sm font-medium transition-opacity duration-panel',
+                                    shownSteps > ways[way].steps.length
+                                        ? 'opacity-100'
+                                        : 'opacity-0',
+                                    way === 'here'
+                                        ? 'text-emerald-700 dark:text-emerald-400'
+                                        : 'text-muted-foreground',
+                                ]"
+                            >
+                                {{ ways[way].verdict }}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- The product, one screen at a time. -->
+            <section class="bg-muted/50">
+                <div class="mx-auto max-w-6xl px-4 py-20 sm:px-10 sm:py-28">
+                    <h2
+                        v-reveal
+                        class="max-w-2xl reveal font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
+                    >
+                        See it work before you keep it.
+                    </h2>
+
+                    <div
+                        ref="screensBox"
+                        v-reveal
+                        class="mt-12 grid reveal gap-10 delay-100 lg:grid-cols-[minmax(0,4fr)_minmax(0,7fr)] lg:items-center lg:gap-14"
+                        @pointerenter="hovering = true"
+                        @pointerleave="hovering = false"
+                        @focusin="hovering = true"
+                        @focusout="hovering = false"
+                    >
+                        <ul class="divide-y border-y">
+                            <li
+                                v-for="(screen, at) in screens"
+                                :key="screen.key"
+                            >
+                                <button
+                                    type="button"
+                                    :aria-expanded="active === at"
+                                    class="relative block min-h-11 w-full py-4 text-left select-none"
+                                    @click="pick(at)"
+                                >
+                                    <span
+                                        :class="[
+                                            'block font-display text-lg tracking-[-0.015em] transition-colors sm:text-xl',
+                                            active === at
+                                                ? 'text-foreground'
+                                                : 'text-muted-foreground hover:text-foreground',
+                                        ]"
+                                        >{{ screen.title }}</span
+                                    >
+                                    <span
+                                        :class="[
+                                            'grid transition-[grid-template-rows,opacity] duration-panel',
+                                            active === at
+                                                ? 'grid-rows-[1fr] opacity-100'
+                                                : 'grid-rows-[0fr] opacity-0',
+                                        ]"
+                                    >
+                                        <span
+                                            class="overflow-hidden text-pretty text-muted-foreground"
+                                        >
+                                            <span class="block pt-2">{{
+                                                screen.text
+                                            }}</span>
+                                        </span>
+                                    </span>
+                                    <span
+                                        v-if="active === at && cycling"
+                                        :key="`bar-${at}`"
+                                        class="absolute inset-x-0 -bottom-px h-px origin-left animate-[fill-across_7s_linear_forwards] bg-foreground"
+                                        aria-hidden="true"
+                                        @animationend="next"
+                                    />
+                                </button>
+                            </li>
+                        </ul>
+
+                        <div
+                            class="relative aspect-[4/5] overflow-hidden rounded-lg border bg-background sm:aspect-[16/11]"
+                            data-test="welcome-example"
+                        >
+                            <template
+                                v-for="(screen, at) in screens"
+                                :key="screen.key"
+                            >
+                                <img
+                                    v-if="screen.image"
+                                    :src="screen.image"
+                                    :alt="active === at ? screen.alt : ''"
+                                    :aria-hidden="active !== at"
+                                    loading="lazy"
+                                    :class="[
+                                        'absolute inset-0 size-full object-cover object-top-left transition-[opacity,scale] duration-linger',
+                                        active === at
+                                            ? 'scale-100 opacity-100'
+                                            : 'scale-[1.02] opacity-0',
+                                    ]"
+                                />
+                                <div
+                                    v-else
+                                    :class="[
+                                        'absolute inset-0 flex flex-col justify-center p-6 transition-opacity duration-linger sm:p-10',
+                                        active === at
+                                            ? 'opacity-100'
+                                            : 'pointer-events-none opacity-0',
+                                    ]"
+                                    :aria-hidden="active !== at"
+                                >
+                                    <p class="text-sm text-muted-foreground">
+                                        Pretend this is down
+                                    </p>
+                                    <div
+                                        class="mt-3 flex flex-wrap gap-2"
+                                        role="group"
+                                        aria-label="What you can pretend is down"
+                                    >
+                                        <button
+                                            v-for="option in faults"
+                                            :key="option.key"
+                                            type="button"
+                                            :tabindex="active === at ? 0 : -1"
+                                            :aria-pressed="
+                                                fault.key === option.key
+                                            "
+                                            :class="[
+                                                'min-h-11 press rounded-md border px-3 text-sm select-none sm:min-h-9',
+                                                fault.key === option.key
+                                                    ? 'border-foreground bg-foreground font-medium text-background'
+                                                    : 'text-muted-foreground hover:text-foreground',
+                                            ]"
+                                            @click="fault = option"
+                                        >
+                                            {{ option.label }}
+                                        </button>
+                                    </div>
+                                    <p
+                                        class="mt-5 min-h-12 max-w-md text-pretty"
+                                    >
+                                        {{
+                                            fault.hint ||
+                                            'Your app runs as it always does.'
+                                        }}
+                                    </p>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Ready-made ideas and looks: the same ones a new app can
+                 start from. Picking one fills the box at the top. -->
+            <section
+                id="ideas"
+                class="scroll-mt-12 bg-foreground text-background"
+            >
+                <div class="mx-auto max-w-6xl px-4 py-20 sm:px-10 sm:py-28">
+                    <div
+                        v-reveal
+                        class="grid reveal gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:items-end lg:gap-12"
+                    >
+                        <h2
+                            class="font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
+                        >
+                            Start from a ready-made idea.
+                        </h2>
+                        <p class="text-lg text-pretty text-background/65">
+                            Each one fills in the idea, the look and what the
+                            first version includes. Change any of it, or write
+                            your own.
                         </p>
                     </div>
-                    <img
-                        :src="scene.image"
-                        :width="scene.width"
-                        :height="scene.height"
-                        :alt="scene.alt"
-                        loading="lazy"
-                        class="w-full self-start rounded-md border"
-                    />
-                </div>
-            </section>
 
-            <section class="mx-auto mt-24 max-w-6xl px-4 sm:mt-36">
-                <div class="border-t pt-6">
-                    <h2
-                        class="max-w-3xl font-display text-4xl leading-[1.05] tracking-tight text-balance sm:text-6xl"
+                    <ul
+                        v-reveal
+                        class="mt-12 grid reveal gap-x-10 gap-y-10 delay-100 sm:grid-cols-2 lg:grid-cols-3"
+                        data-test="welcome-starters"
                     >
-                        Nothing you keep is locked in.
-                    </h2>
-                </div>
-                <ul
-                    class="mt-10 divide-y border-y"
-                    data-test="welcome-promises"
-                >
-                    <li
-                        v-for="promise in promises"
-                        :key="promise.title"
-                        class="grid gap-x-8 gap-y-1 py-5 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]"
+                        <li
+                            v-for="starter in starters"
+                            :key="starter.key"
+                            class="flex flex-col border-t border-background/15 pt-5"
+                        >
+                            <h3 class="font-medium">{{ starter.name }}</h3>
+                            <p class="mt-1 text-pretty text-background/65">
+                                {{ starter.purpose }}
+                            </p>
+                            <ul
+                                class="mt-4 space-y-1.5 text-sm text-background/80"
+                            >
+                                <li
+                                    v-for="item in starter.includes.slice(0, 3)"
+                                    :key="item"
+                                    class="flex gap-2"
+                                >
+                                    <Check
+                                        class="mt-0.5 size-4 shrink-0 text-background/50"
+                                    />
+                                    <span class="text-pretty">{{ item }}</span>
+                                </li>
+                            </ul>
+                            <button
+                                type="button"
+                                class="mt-5 inline-flex min-h-11 items-center gap-1.5 self-start text-sm font-medium select-none hover:underline sm:min-h-8"
+                                @click="useStarter(starter)"
+                            >
+                                Start with this
+                                <ArrowRight class="size-4" />
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div
+                        v-if="designs.length > 0"
+                        v-reveal
+                        class="mt-16 reveal border-t border-background/15 pt-8"
                     >
-                        <h3 class="font-display text-2xl tracking-tight">
-                            {{ promise.title }}
-                        </h3>
-                        <p class="text-pretty text-muted-foreground md:pt-1.5">
-                            {{ promise.text }}
+                        <h3 class="font-medium">Four looks to begin with</h3>
+                        <p class="mt-1 text-background/65">
+                            Every look is yours to change, part by part.
                         </p>
-                    </li>
-                </ul>
+                        <ul
+                            class="mt-6 grid gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-4"
+                        >
+                            <li
+                                v-for="design in designs"
+                                :key="design.key"
+                                class="flex gap-3"
+                            >
+                                <span
+                                    aria-hidden="true"
+                                    class="mt-0.5 size-8 shrink-0 rounded-full border border-background/20"
+                                    :style="{
+                                        background: `linear-gradient(135deg, ${design.colors.background} 50%, ${design.colors.primary} 50%)`,
+                                    }"
+                                />
+                                <span>
+                                    <span class="block font-medium">{{
+                                        design.name
+                                    }}</span>
+                                    <span
+                                        class="block text-sm text-pretty text-background/65"
+                                        >{{ design.description }}</span
+                                    >
+                                </span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
             </section>
 
-            <section
-                class="mx-auto mt-24 max-w-6xl px-4 pb-24 sm:mt-36 sm:pb-36"
-            >
+            <!-- What every app comes with, each with what it means. -->
+            <section class="bg-muted/50">
+                <div class="mx-auto max-w-6xl px-4 py-20 sm:px-10 sm:py-28">
+                    <h2
+                        v-reveal
+                        class="max-w-2xl reveal font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
+                    >
+                        In every app, from the first version.
+                    </h2>
+                    <ul
+                        v-reveal
+                        class="mt-12 grid reveal gap-px overflow-hidden rounded-lg border bg-border delay-100 md:grid-cols-2"
+                        data-test="welcome-promises"
+                    >
+                        <li
+                            v-for="part in parts"
+                            :key="part.title"
+                            class="bg-background p-6 sm:p-8"
+                        >
+                            <h3
+                                class="font-display text-xl tracking-[-0.015em]"
+                            >
+                                {{ part.title }}
+                            </h3>
+                            <p class="mt-2 text-pretty text-muted-foreground">
+                                {{ part.text }}
+                            </p>
+                            <ul class="mt-5 space-y-2 text-sm">
+                                <li
+                                    v-for="item in part.items"
+                                    :key="item"
+                                    class="flex gap-2"
+                                >
+                                    <Check
+                                        class="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                    />
+                                    <span class="text-pretty">{{ item }}</span>
+                                </li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Plain answers to what people ask before they start. -->
+            <section class="bg-foreground text-background">
                 <div
-                    class="flex flex-wrap items-end justify-between gap-6 border-t pt-6"
+                    class="mx-auto grid max-w-6xl gap-10 px-4 py-20 sm:px-10 sm:py-28 lg:grid-cols-[minmax(0,4fr)_minmax(0,7fr)] lg:gap-16"
                 >
                     <h2
-                        class="font-display text-5xl leading-[1.02] tracking-tight sm:text-7xl"
+                        v-reveal
+                        class="reveal font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
                     >
-                        What do you want to make?
+                        Questions people ask.
                     </h2>
-                    <Link
-                        :href="$page.props.auth.user ? index() : register()"
-                        class="inline-flex min-h-11 press items-center gap-2 rounded-md bg-primary px-5 font-medium text-primary-foreground select-none hover:bg-primary/90"
+                    <div
+                        v-reveal
+                        class="reveal divide-y divide-background/15 border-y border-background/15 delay-100"
+                        data-test="welcome-questions"
+                    >
+                        <details
+                            v-for="question in questions"
+                            :key="question.ask"
+                            class="group"
+                        >
+                            <summary
+                                class="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-4 font-medium select-none [&::-webkit-details-marker]:hidden"
+                            >
+                                {{ question.ask }}
+                                <Plus
+                                    class="size-4 shrink-0 text-background/60 transition-transform duration-base group-open:rotate-45"
+                                    aria-hidden="true"
+                                />
+                            </summary>
+                            <p
+                                class="max-w-2xl pb-5 text-pretty text-background/70"
+                            >
+                                {{ question.answer }}
+                            </p>
+                        </details>
+                    </div>
+                </div>
+            </section>
+
+            <section class="bg-muted/50">
+                <div
+                    v-reveal
+                    class="mx-auto flex max-w-6xl reveal flex-wrap items-end justify-between gap-8 px-4 py-20 sm:px-10 sm:py-28"
+                >
+                    <h2
+                        class="font-display text-3xl leading-[1.05] tracking-[-0.03em] sm:text-5xl"
+                    >
+                        Start with a sentence.
+                    </h2>
+                    <a
+                        href="#start"
+                        class="inline-flex min-h-11 press items-center gap-2 rounded-md bg-primary px-6 font-medium text-primary-foreground select-none hover:bg-primary/90"
+                        @click.prevent="backToStart"
                     >
                         Start an app
-                        <ArrowRight class="size-4" />
-                    </Link>
+                    </a>
                 </div>
             </section>
         </main>
 
-        <footer class="border-t">
+        <footer>
             <div
-                class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-6"
+                class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 pt-3 pb-8"
             >
                 <AppLogo />
-                <p class="font-mono text-xs text-muted-foreground">
-                    Real apps on Laravel that stay yours.
+                <p class="text-sm text-muted-foreground">
+                    Real apps that stay yours.
                 </p>
             </div>
         </footer>

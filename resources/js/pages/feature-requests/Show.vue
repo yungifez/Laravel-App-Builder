@@ -1022,7 +1022,7 @@ function lineClass(line: string): string {
                             <span
                                 v-if="verification"
                                 :class="[
-                                    'font-mono text-xs',
+                                    'text-sm',
                                     verification.status === 'failed' ||
                                     verification.status === 'errored'
                                         ? 'text-destructive'

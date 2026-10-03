@@ -13,7 +13,7 @@
         'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif,
         'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
         'Noto Color Emoji';
-    --font-display: Newsreader, ui-serif, Georgia, serif;
+    --font-display: 'Schibsted Grotesk', ui-sans-serif, system-ui, sans-serif;
     --font-mono:
         'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
@@ -143,8 +143,8 @@
     --card-foreground: hsl(220 16% 92%);
     --popover: hsl(224 14% 10%);
     --popover-foreground: hsl(220 16% 92%);
-    --primary: hsl(222 88% 68%);
-    --primary-foreground: hsl(224 40% 8%);
+    --primary: hsl(221 88% 60%);
+    --primary-foreground: hsl(0 0% 100%);
     --secondary: hsl(224 12% 13%);
     --secondary-foreground: hsl(220 16% 92%);
     --muted: hsl(224 12% 13%);
@@ -155,7 +155,7 @@
     --destructive-foreground: hsl(0 0% 5%);
     --border: hsl(224 10% 18%);
     --input: hsl(224 10% 26%);
-    --ring: hsl(222 88% 68%);
+    --ring: hsl(221 88% 64%);
     --chart-1: #cdd8f0;
     --chart-2: #9bb1e4;
     --chart-3: #5f82d6;
@@ -163,12 +163,12 @@
     --chart-5: #102a6b;
     --sidebar-background: hsl(224 16% 6%);
     --sidebar-foreground: hsl(220 16% 92%);
-    --sidebar-primary: hsl(222 88% 68%);
-    --sidebar-primary-foreground: hsl(224 40% 8%);
+    --sidebar-primary: hsl(221 88% 60%);
+    --sidebar-primary-foreground: hsl(0 0% 100%);
     --sidebar-accent: hsl(224 12% 13%);
     --sidebar-accent-foreground: hsl(220 16% 92%);
     --sidebar-border: hsl(224 10% 18%);
-    --sidebar-ring: hsl(222 88% 68%);
+    --sidebar-ring: hsl(221 88% 64%);
     --sidebar: hsl(224 16% 6%);
 }
 
@@ -178,6 +178,11 @@
     }
     body {
         @apply bg-background text-foreground;
+    }
+    /* Headlines are set heavy and tight; size classes pick the scale. */
+    .font-display {
+        font-weight: 600;
+        letter-spacing: -0.03em;
     }
     ::selection {
         @apply bg-primary text-primary-foreground;
@@ -308,6 +313,41 @@
     &:active:not(:disabled) {
         scale: 0.98;
         transition-duration: 60ms;
+    }
+}
+
+/* On public pages a block rises into place the first time it scrolls
+   into view (the page sets data-shown). Still for people who ask for
+   less motion. */
+@utility reveal {
+    transition-property: opacity, translate, filter;
+    transition-duration: var(--transition-duration-linger);
+    transition-timing-function: var(--ease-settle);
+
+    &:not([data-shown]) {
+        opacity: 0;
+        translate: 0 1.25rem;
+        filter: blur(6px);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        transition: none;
+
+        &:not([data-shown]) {
+            opacity: 1;
+            translate: none;
+            filter: none;
+        }
+    }
+}
+
+/* A bar that fills once, for a list that moves on by itself. */
+@keyframes fill-across {
+    from {
+        scale: 0 1;
+    }
+    to {
+        scale: 1 1;
     }
 }
 
