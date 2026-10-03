@@ -101,6 +101,18 @@ class VerificationTest extends TestCase
             ->get(route('feature-requests.show', $clean))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('proof', fn ($proof) => collect($proof)->contains('text', 'No known security problems in the packages your app uses.')));
+
+        // One lookup was clean and the other could not run: the clean line
+        // does not speak for the packages nobody looked at.
+        $reports['npm'] = [1, 'npm error code ENOLOCK'];
+        $partly = FeatureRequest::factory()->generated()->create(['acceptance' => ['Invitations/ContractTest.php']]);
+        app(RequestVerification::class)->handle($partly);
+
+        $this->actingAs($partly->project->owner)
+            ->get(route('feature-requests.show', $partly))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('proof', fn ($proof) => collect($proof)->contains('text', 'No known security problems in the packages I could check.')
+                    && ! collect($proof)->contains('text', 'No known security problems in the packages your app uses.')));
     }
 
     public function test_a_follow_up_is_verified_with_its_lineage_applied_and_the_protected_suite_run_last()
