@@ -222,6 +222,8 @@ export type Verification = {
     status: VerificationStatus;
     results: VerificationResult[];
     error: string | null;
+    /** Which checks the change made fail, in the owner's words. */
+    failed: string | null;
     started_at: string | null;
     finished_at: string | null;
 };

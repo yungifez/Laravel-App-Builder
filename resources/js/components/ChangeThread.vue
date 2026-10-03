@@ -455,7 +455,8 @@ const checks = computed(() => {
                 : {
                       icon: CircleAlert,
                       tone: 'text-red-600',
-                      label: 'A check failed',
+                      label:
+                          props.change.verification.failed ?? 'A check failed',
                   };
         case 'errored':
             return {

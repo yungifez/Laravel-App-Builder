@@ -376,6 +376,30 @@ class VerificationTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_the_page_names_the_checks_the_change_made_fail()
+    {
+        $request = FeatureRequest::factory()->generated()->create();
+        $result = fn (string $name, string $outcome, array $extra = []) => ['name' => $name, 'stage' => 'checks', 'outcome' => $outcome, 'exit_code' => $outcome === 'passed' ? 0 : 1, 'timed_out' => false, 'duration_ms' => 5, 'output' => '', ...$extra];
+        $verification = Verification::factory()->for($request)->create([
+            'status' => VerificationStatus::Failed,
+            'results' => [
+                $result('Tests', 'passed'),
+                $result('Static analysis', 'failed', ['at_start' => 'passed']),
+                // It failed the same way before the change: not the change's.
+                $result('TypeScript', 'failed', ['at_start' => 'failed', 'new_problems' => []]),
+            ],
+        ]);
+
+        $this->actingAs($request->project->owner)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page->where('verification.failed', 'Reading the code for mistakes failed'));
+
+        $verification->update(['results' => [$result('Tests', 'failed'), $result('Static analysis', 'failed'), $result('Build the screens', 'failed', ['stage' => 'setup'])]]);
+
+        $this->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page->where('verification.failed', 'Your app\'s tests and 2 more failed'));
+    }
+
     public function test_the_page_shows_the_latest_verification()
     {
         $request = FeatureRequest::factory()->generated()->create();

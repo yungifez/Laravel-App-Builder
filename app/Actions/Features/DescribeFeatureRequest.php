@@ -25,6 +25,17 @@ use Illuminate\Support\Str;
 
 class DescribeFeatureRequest
 {
+    /**
+     * Each check, in the owner's words, as the subject of a sentence.
+     */
+    protected const CHECKS = [
+        'Tests' => 'Your app\'s tests',
+        'Static analysis' => 'Reading the code for mistakes',
+        'PHP formatting' => 'Checking the code is tidy',
+        'Frontend format and lint' => 'Checking the screens\' code is tidy',
+        'TypeScript' => 'Reading the screens\' code for mistakes',
+    ];
+
     public function __construct(
         private DescribeRunProgress $describeRunProgress,
         private NarrateWork $narrateWork,
@@ -169,9 +180,35 @@ class DescribeFeatureRequest
             // Package advice is said in the proof, never listed as a check.
             'results' => array_values(array_map($this->checkResult(...), array_filter($verification->results ?? [], fn (array $result) => $result['stage'] !== 'security'))),
             'error' => OwnerWording::message($verification->error),
+            'failed' => $this->failedChecks($verification->results ?? []),
             'started_at' => $verification->started_at?->toIso8601String(),
             'finished_at' => $verification->finished_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * Name, in the owner's words, the checks the change made fail. A check
+     * that failed the same way before the change is not the change's.
+     *
+     * @param  list<array<string, mixed>>  $results
+     */
+    protected function failedChecks(array $results): ?string
+    {
+        $names = collect($results)
+            ->filter(fn (array $result) => $result['outcome'] === 'failed' && ! (($result['at_start'] ?? null) === 'failed' && ($result['new_problems'] ?? []) === []))
+            ->map(fn (array $result): string => match ($result['stage'] ?? null) {
+                'apply' => 'Putting the change in place',
+                'setup' => 'Getting your app ready to check',
+                default => self::CHECKS[$result['name']] ?? 'A check',
+            })
+            ->unique()
+            ->values();
+
+        return match ($names->count()) {
+            0 => null,
+            1 => "{$names[0]} failed",
+            default => "{$names[0]} and ".($names->count() - 1).' more failed',
+        };
     }
 
     /**
