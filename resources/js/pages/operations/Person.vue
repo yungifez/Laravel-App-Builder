@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { Form, Head, setLayoutProps } from '@inertiajs/vue3';
+import { Form, Head, Link, setLayoutProps } from '@inertiajs/vue3';
 import PersonPlanController from '@/actions/App/Http/Controllers/Operations/PersonPlanController';
 import InputError from '@/components/InputError.vue';
 import { stamp, usd } from '@/lib/operations';
 import { attention } from '@/routes/operations';
-import { index, show } from '@/routes/operations/people';
+import { index, show, signIn as signInAs } from '@/routes/operations/people';
 
 // One person: who they are, their plan and use, their apps and what they
 // wrote to us.
@@ -20,6 +20,7 @@ const props = defineProps<{
         granted: string | null;
         granted_until: string | null;
         stripe: boolean;
+        can_sign_in_as: boolean;
         usage: {
             percent: number;
             used_usd: number;
@@ -55,7 +56,20 @@ setLayoutProps({
 
     <div class="mx-auto w-full max-w-4xl space-y-10 px-4 py-6 sm:px-6">
         <section>
-            <h1 class="font-display text-3xl">{{ person.name }}</h1>
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <h1 class="font-display text-3xl">{{ person.name }}</h1>
+                <Link
+                    v-if="person.can_sign_in_as"
+                    :href="signInAs(person.id).url"
+                    method="post"
+                    as="button"
+                    :preserve-state="false"
+                    class="inline-flex min-h-11 items-center rounded-md border bg-background px-3 text-sm font-medium select-none hover:bg-muted sm:min-h-9"
+                    data-test="sign-in-as"
+                >
+                    Sign in as {{ person.name }}
+                </Link>
+            </div>
             <p class="mt-1 text-muted-foreground">
                 {{ person.email }}
                 {{ person.verified ? '' : '· not verified' }} · joined

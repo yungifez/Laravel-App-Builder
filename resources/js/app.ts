@@ -4,6 +4,7 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import AppPageLayout from '@/layouts/AppPageLayout.vue';
 import AuthLayout from '@/layouts/AuthLayout.vue';
 import PublicLayout from '@/layouts/PublicLayout.vue';
+import SignedInAsLayout from '@/layouts/SignedInAsLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import WorkspaceLayout from '@/layouts/WorkspaceLayout.vue';
 import { initializeFlashToast } from '@/lib/flashToast';
@@ -20,20 +21,20 @@ void createInertiaApp({
             case name.startsWith('shared-apps/'):
                 return null;
             case name === 'projects/Show':
-                return WorkspaceLayout;
+                return [SignedInAsLayout, WorkspaceLayout];
             case name === 'projects/Understanding':
             case name === 'projects/Developers':
             case name === 'feature-requests/Show':
             case name.startsWith('operations/'):
-                return AppPageLayout;
+                return [SignedInAsLayout, AppPageLayout];
             case name.startsWith('public/'):
                 return PublicLayout;
             case name.startsWith('auth/'):
                 return AuthLayout;
             case name.startsWith('settings/'):
-                return [AppLayout, SettingsLayout];
+                return [SignedInAsLayout, AppLayout, SettingsLayout];
             default:
-                return AppLayout;
+                return [SignedInAsLayout, AppLayout];
         }
     },
     withApp: (app) => {

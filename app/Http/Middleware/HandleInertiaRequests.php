@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Arr;
 use Inertia\Middleware;
+use Lab404\Impersonate\Services\ImpersonateManager;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -46,6 +47,8 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
                 'operator' => (bool) $request->user()?->can('viewOperations'),
+                // An operator signed in as this person; read from the session only.
+                'impersonating' => $request->hasSession() && app(ImpersonateManager::class)->isImpersonating(),
             ],
             // What needs the owner, newest first. Pages poll this on its own.
             'notifications' => fn () => $request->user() === null ? null : $this->notifications($request->user()),

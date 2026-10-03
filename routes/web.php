@@ -42,6 +42,7 @@ use App\Http\Controllers\Operations\ContactMessageController as OperationsContac
 use App\Http\Controllers\Operations\DeveloperApplicationController as OperationsDeveloperApplicationController;
 use App\Http\Controllers\Operations\DeveloperReviewClaimController;
 use App\Http\Controllers\Operations\DeveloperReviewController as OperationsDeveloperReviewController;
+use App\Http\Controllers\Operations\ImpersonationController;
 use App\Http\Controllers\Operations\PersonController as OperationsPersonController;
 use App\Http\Controllers\Operations\PersonPlanController;
 use App\Http\Controllers\PageConsistencyController;
@@ -199,6 +200,7 @@ Route::middleware(['auth', 'verified', 'can:viewOperations'])->prefix('operation
     Route::get('people', [OperationsPersonController::class, 'index'])->name('people.index');
     Route::get('people/{user}', [OperationsPersonController::class, 'show'])->name('people.show');
     Route::put('people/{user}/plan', [PersonPlanController::class, 'update'])->name('people.plan.update');
+    Route::post('people/{user}/sign-in', [ImpersonationController::class, 'store'])->name('people.sign-in');
     Route::get('messages', [OperationsContactMessageController::class, 'index'])->name('messages.index');
     Route::put('messages/{contactMessage}', [OperationsContactMessageController::class, 'update'])->name('messages.update');
     Route::get('developers', [OperationsDeveloperApplicationController::class, 'index'])->name('developers.index');
@@ -219,5 +221,9 @@ Route::middleware(['auth', 'verified', 'can:answerDeveloperQuestions'])->prefix(
     Route::post('developer-reviews/{developerReview}/claim', [DeveloperReviewClaimController::class, 'store'])->middleware('can:claim,developerReview')->name('developer-reviews.claim.store');
     Route::delete('developer-reviews/{developerReview}/claim', [DeveloperReviewClaimController::class, 'destroy'])->middleware('can:release,developerReview')->name('developer-reviews.claim.destroy');
 });
+
+// Back from a person's account to the operator's own. The person is not
+// an operator, so this sits outside operations.
+Route::delete('operations/sign-in', [ImpersonationController::class, 'destroy'])->middleware('auth')->name('operations.sign-in.destroy');
 
 require __DIR__.'/settings.php';

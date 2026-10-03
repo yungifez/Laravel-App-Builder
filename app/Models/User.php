@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
+use Lab404\Impersonate\Models\Impersonate;
 use Laravel\Cashier\Billable;
 use Laravel\Fortify\Contracts\PasskeyUser;
 use Laravel\Fortify\PasskeyAuthenticatable;
@@ -37,7 +38,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use Billable, HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+    use Billable, HasFactory, Impersonate, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
 
     /**
      * Get the attributes that should be cast.
@@ -83,5 +84,22 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     public function developerApplication(): HasOne
     {
         return $this->hasOne(DeveloperApplication::class);
+    }
+
+    /**
+     * Determine if the user may sign in as someone else: operators only.
+     */
+    public function canImpersonate(): bool
+    {
+        return $this->can('viewOperations');
+    }
+
+    /**
+     * Determine if an operator may sign in as the user: never as another
+     * operator.
+     */
+    public function canBeImpersonated(): bool
+    {
+        return ! $this->can('viewOperations');
     }
 }

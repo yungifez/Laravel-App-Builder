@@ -14,6 +14,7 @@ export type User = {
 export type Auth = {
     user: User;
     operator: boolean;
+    impersonating: boolean;
 };
 
 export type Passkey = {

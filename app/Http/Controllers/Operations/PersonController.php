@@ -77,6 +77,7 @@ class PersonController extends Controller
                 'granted' => $measureUsage->granted($user),
                 'granted_until' => $measureUsage->granted($user) === null ? null : $user->granted_plan_until?->toDateString(),
                 'stripe' => $user->hasStripeId(),
+                'can_sign_in_as' => $user->canBeImpersonated(),
                 'usage' => [
                     'percent' => $usage['percent'],
                     'used_usd' => $usage['used_usd'],
