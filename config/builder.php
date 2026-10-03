@@ -1173,6 +1173,10 @@ return [
         // a server, so starting one more stops the owner's least used one.
         // 0 means no limit.
         'max_running_per_owner' => (int) env('BUILDER_PREVIEW_MAX_RUNNING_PER_OWNER', 3),
+        // A preview seen this recently is being looked at (an open page
+        // says so once a minute), so a preview started in the background
+        // never stops it to make room.
+        'watched_seconds' => (int) env('BUILDER_PREVIEW_WATCHED_SECONDS', 180),
         'boot_seconds' => 30,
         // Address the app's web server binds to inside the workspace. Unset,
         // it listens only where the control plane reaches it, so a runner

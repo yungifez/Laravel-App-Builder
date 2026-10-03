@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Previews;
 
+use App\Actions\Previews\RequestPreview;
 use App\Enums\PreviewStatus;
 use App\Jobs\StartPreview;
 use App\Models\FeatureRequest;
@@ -557,6 +558,38 @@ class PreviewTest extends TestCase
         $this->assertStringContainsString('make room', (string) $old->error);
         $this->assertSame(PreviewStatus::Ready, $recent->refresh()->status);
         $this->assertSame(PreviewStatus::Ready, $someoneElses->refresh()->status);
+    }
+
+    public function test_a_preview_started_in_the_background_never_closes_one_the_owner_is_looking_at()
+    {
+        config(['builder.preview.max_running_per_owner' => 2]);
+        Http::fake(['*/up' => Http::response('ok')]);
+        $owner = User::factory()->create();
+        $otherProject = Project::factory()->for($owner, 'owner')->create();
+        $watched = Preview::factory()->ready()->for($otherProject)->create(['last_seen_at' => now()->subMinute()]);
+        // Started by an earlier change in the background and never opened,
+        // so it counts as less used than the one on screen.
+        $unopened = Preview::factory()->ready()->for($otherProject)->create(['created_at' => now()->subSeconds(10), 'last_seen_at' => null]);
+
+        $first = FeatureRequest::factory()->generated()->for(Project::factory()->for($owner, 'owner'))->create();
+        $this->assertNotNull(app(RequestPreview::class)->automatically($first));
+
+        $this->assertSame(PreviewStatus::Stopped, $unopened->refresh()->status);
+        $this->assertSame(PreviewStatus::Ready, $watched->refresh()->status);
+
+        // Now only the watched one could make room: nothing starts instead.
+        $first->previews()->sole()->update(['last_seen_at' => now()]);
+        $second = FeatureRequest::factory()->generated()->for(Project::factory()->for($owner, 'owner'))->create();
+
+        $this->assertNull(app(RequestPreview::class)->automatically($second));
+        $this->assertSame(0, $second->previews()->count());
+        $this->assertSame(PreviewStatus::Ready, $watched->refresh()->status);
+
+        // Once it has not been seen for a while, it is not being looked at.
+        $watched->update(['last_seen_at' => now()->subMinutes(10)]);
+
+        $this->assertNotNull(app(RequestPreview::class)->automatically($second));
+        $this->assertSame(PreviewStatus::Stopped, $watched->refresh()->status);
     }
 
     public function test_the_keep_alive_needs_the_preview_session()

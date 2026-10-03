@@ -343,7 +343,7 @@ class ConstructRun
         // The owner can try the change while it is checked and reviewed;
         // keeping it still waits for both.
         if (config('builder.preview.automatic')) {
-            $this->requestPreview->handle($run->featureRequest->refresh());
+            $this->requestPreview->automatically($run->featureRequest->refresh());
         }
     }
 
