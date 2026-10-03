@@ -4525,11 +4525,18 @@ Only what the notes already support:
   "Human-in-the-loop: tiny V1 version"). The test is whether one hour of
   engineering judgment changes later AI work. The owner asks in their own
   words, about the whole app or about one change (app menu, or a link that
-  names the change). The developers are in-house: they answer as operators
-  (`viewOperations`) under "Questions for developers", so no account,
-  invitation or role is added for them. Every operator but the asker is
-  told of a new question (`DeveloperAsked`), and operations counts the
-  questions still waiting.
+  names the change). Operators answer under "Questions for developers", and
+  so do the developers they approved. A developer asks to join on the public
+  "For developers" page (`DeveloperApplication`, one per person); an operator
+  approves or declines it under Operations → Developers, and can take a yes
+  back. Approved developers (`answerDeveloperQuestions`) see only the
+  questions, never the rest of operations. A developer takes a question
+  before answering it (`claimed_by`), so two never spend their hour on the
+  same one. After that only they and operators see it and its code, and
+  nobody sees questions about their own app (`DeveloperReviewPolicy`).
+  Every operator and approved developer but the asker is told of a new
+  question (`DeveloperAsked`), and operations counts the questions still
+  waiting and the requests to join.
     - **What they read is written once, without a model**
       (`WriteReviewRequest`, kept in `developer_reviews.bundle`): the
       question, what the app is for, its rules, decisions and guidance so far.
@@ -4578,10 +4585,9 @@ In order, each built on the notes rather than beside them:
 4. **A marketplace for judgment, not for feature work** ("lend your judgment to
    my software"), with levels from general developer to specialist.
 
-The developers are our own staff, so V1 uses operator accounts. Access for
-the owner's own or hired developers (accounts, permissions, payment) is not
-designed yet, and V1 has no invitations or roles (see AGENTS.md: later
-gates).
+Developers are operators or people an operator approved (§29.3). Access
+for the owner's own or hired developers, and paying developers, are not
+designed yet.
 
 ## 30. Software stewardship (version 19)
 

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { Form, Head, Link, setLayoutProps } from '@inertiajs/vue3';
+import { Form, Head, Link, setLayoutProps, usePage } from '@inertiajs/vue3';
 import { Download } from '@lucide/vue';
 import { watch } from 'vue';
+import DeveloperReviewClaimController from '@/actions/App/Http/Controllers/Operations/DeveloperReviewClaimController';
 import DeveloperReviewController from '@/actions/App/Http/Controllers/Operations/DeveloperReviewController';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
@@ -32,19 +33,26 @@ const props = defineProps<{
             guidance: string[];
         } | null;
         developer: string | null;
+        taken_by: string | null;
         answered_at: string | null;
         withdrawn: boolean;
         guidance_kept: boolean;
         kept_guidance: string[] | null;
     };
+    can: { claim: boolean; release: boolean; answer: boolean };
 }>();
+
+const page = usePage();
 
 watch(
     () => props.review.id,
     (id) =>
         setLayoutProps({
+            // Approved developers who are not operators see only the questions.
             breadcrumbs: [
-                { title: 'Operations', href: attention().url },
+                ...(page.props.auth.operator
+                    ? [{ title: 'Operations', href: attention().url }]
+                    : []),
                 { title: 'Questions for developers', href: index().url },
                 { title: props.review.app, href: show(id).url },
             ],
@@ -123,8 +131,41 @@ const download =
                     {{ stamp(review.answered_at) }}. You can still change it.
                 </p>
 
+                <template v-if="!review.withdrawn && !review.guidance_kept">
+                    <p
+                        v-if="!can.answer && review.taken_by"
+                        class="mt-2 text-sm text-muted-foreground"
+                        data-test="taken-by"
+                    >
+                        {{ review.taken_by }} took this question.
+                    </p>
+                    <Form
+                        v-else-if="!can.answer && can.claim"
+                        v-bind="
+                            DeveloperReviewClaimController.store.form(review.id)
+                        "
+                        class="mt-2 space-y-3"
+                        v-slot="{ errors, processing }"
+                    >
+                        <p class="text-sm text-muted-foreground">
+                            Read the question and the code first. Taking it
+                            tells the other developers you are answering it.
+                        </p>
+                        <Button
+                            :disabled="processing"
+                            class="h-11 sm:h-9"
+                            data-test="take-question"
+                        >
+                            Take this question
+                        </Button>
+                        <InputError :message="errors.claim" />
+                    </Form>
+                </template>
+
                 <Form
-                    v-if="!review.withdrawn && !review.guidance_kept"
+                    v-if="
+                        !review.withdrawn && !review.guidance_kept && can.answer
+                    "
                     v-bind="DeveloperReviewController.update.form(review.id)"
                     class="mt-4 space-y-4"
                     v-slot="{ errors, processing }"
@@ -190,6 +231,18 @@ const download =
                         }}
                     </Button>
                 </Form>
+                <Link
+                    v-if="can.release"
+                    :href="
+                        DeveloperReviewClaimController.destroy.url(review.id)
+                    "
+                    method="delete"
+                    as="button"
+                    class="mt-3 min-h-11 text-sm text-muted-foreground select-none hover:text-foreground sm:min-h-9"
+                    data-test="give-back"
+                >
+                    Give it back for someone else to answer
+                </Link>
 
                 <template v-else-if="review.answer">
                     <p class="mt-4 text-sm whitespace-pre-line">

@@ -46,6 +46,11 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('viewOperations', fn (User $user) => $user->hasVerifiedEmail()
             && in_array(strtolower($user->email), (array) config('operations.operators'), true));
 
+        // Owners' questions go to operators and to the developers an
+        // operator approved. Approved developers see nothing else.
+        Gate::define('answerDeveloperQuestions', fn (User $user) => $user->can('viewOperations')
+            || ($user->hasVerifiedEmail() && $user->developerApplication?->approved() === true));
+
         // A worker's calls count against its token, not an address it
         // shares with others.
         RateLimiter::for('worker', fn (Request $request) => Limit::perMinute((int) config('builder.agents.workers.per_minute'))

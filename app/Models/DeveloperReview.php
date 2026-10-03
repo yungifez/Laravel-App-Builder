@@ -24,6 +24,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $question
  * @property string|null $revision The commit the developer's copy of the code is taken from
  * @property string $bundle What the developer reads, in Markdown
+ * @property int|null $claimed_by The developer who took the question
+ * @property CarbonImmutable|null $claimed_at
  * @property int|null $answered_by The developer of ours who answered
  * @property array{summary: string, findings: list<string>, guidance: list<string>}|null $answer
  * @property CarbonImmutable|null $answered_at
@@ -33,7 +35,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['user_id', 'feature_request_id', 'question', 'revision', 'bundle', 'answered_by', 'answer', 'answered_at', 'guidance_kept_at', 'kept_guidance', 'withdrawn_at'])]
+#[Fillable(['user_id', 'feature_request_id', 'question', 'revision', 'bundle', 'claimed_by', 'claimed_at', 'answered_by', 'answer', 'answered_at', 'guidance_kept_at', 'kept_guidance', 'withdrawn_at'])]
 class DeveloperReview extends Model
 {
     /** @use HasFactory<DeveloperReviewFactory> */
@@ -50,6 +52,7 @@ class DeveloperReview extends Model
     {
         return [
             'answer' => 'array',
+            'claimed_at' => 'datetime',
             'answered_at' => 'datetime',
             'guidance_kept_at' => 'datetime',
             'kept_guidance' => 'array',
@@ -75,6 +78,16 @@ class DeveloperReview extends Model
     public function featureRequest(): BelongsTo
     {
         return $this->belongsTo(FeatureRequest::class);
+    }
+
+    /**
+     * Get the developer who took the question.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function claimer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'claimed_by');
     }
 
     /**

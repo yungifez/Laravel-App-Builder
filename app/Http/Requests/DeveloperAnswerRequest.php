@@ -8,12 +8,12 @@ use Illuminate\Foundation\Http\FormRequest;
 class DeveloperAnswerRequest extends FormRequest
 {
     /**
-     * Determine if the user is authorized to make this request: only our
-     * own developers answer.
+     * Determine if the user is authorized to make this request: an
+     * operator, or the developer who took the question.
      */
     public function authorize(): bool
     {
-        return $this->user()->can('viewOperations');
+        return $this->user()->can('answer', $this->route('developerReview'));
     }
 
     /**

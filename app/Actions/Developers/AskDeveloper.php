@@ -49,18 +49,20 @@ class AskDeveloper
     }
 
     /**
-     * Get our developers who can answer: every operator but the owner who
-     * asked.
+     * Get our developers who can answer: every operator and approved
+     * developer but the owner who asked.
      *
      * @return Collection<int, User>
      */
     protected function developers(User $owner): Collection
     {
         return User::query()
-            ->whereIn(DB::raw('lower(email)'), (array) config('operations.operators'))
+            ->where(fn ($query) => $query
+                ->whereIn(DB::raw('lower(email)'), (array) config('operations.operators'))
+                ->orWhereHas('developerApplication', fn ($query) => $query->whereNotNull('approved_at')->whereNull('declined_at')))
             ->whereKeyNot($owner->getKey())
             ->get()
-            ->filter(fn (User $user) => Gate::forUser($user)->allows('viewOperations'))
+            ->filter(fn (User $user) => Gate::forUser($user)->allows('answerDeveloperQuestions'))
             ->values();
     }
 }

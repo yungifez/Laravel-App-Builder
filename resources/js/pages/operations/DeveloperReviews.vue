@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, setLayoutProps } from '@inertiajs/vue3';
+import { Head, Link, setLayoutProps, usePage } from '@inertiajs/vue3';
 import { ChevronRight } from '@lucide/vue';
 import { stamp } from '@/lib/operations';
 import { attention } from '@/routes/operations';
@@ -16,21 +16,32 @@ type Row = {
     waiting: boolean;
     withdrawn: boolean;
     developer: string | null;
+    taken_by: string | null;
+    mine: boolean;
     guidance_kept: boolean;
 };
 
 defineProps<{ reviews: Paginated<Row> }>();
 
+const page = usePage();
+
+// Approved developers who are not operators see only the questions.
 setLayoutProps({
     breadcrumbs: [
-        { title: 'Operations', href: attention().url },
+        ...(page.props.auth.operator
+            ? [{ title: 'Operations', href: attention().url }]
+            : []),
         { title: 'Questions for developers', href: index().url },
     ],
 });
 
 function state(review: Row): string {
+    if (review.waiting && review.mine) {
+        return 'Yours to answer';
+    }
+
     if (review.waiting) {
-        return 'Waiting';
+        return review.taken_by ? `Taken by ${review.taken_by}` : 'Waiting';
     }
 
     if (review.withdrawn) {
@@ -52,7 +63,7 @@ function state(review: Row): string {
             class="text-muted-foreground"
             data-test="no-questions"
         >
-            No owner has asked a developer yet.
+            No questions are waiting. You hear when an owner asks one.
         </p>
 
         <ul v-else class="divide-y border-y">

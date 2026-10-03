@@ -9,6 +9,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\DeploymentRestorationController;
 use App\Http\Controllers\DesignEditsController;
+use App\Http\Controllers\DeveloperApplicationController;
 use App\Http\Controllers\DeveloperReviewController;
 use App\Http\Controllers\DeveloperReviewGuidanceController;
 use App\Http\Controllers\ExperimentController;
@@ -38,6 +39,8 @@ use App\Http\Controllers\NotificationReadController;
 use App\Http\Controllers\Operations\AttentionController;
 use App\Http\Controllers\Operations\ChangeController as OperationsChangeController;
 use App\Http\Controllers\Operations\ContactMessageController as OperationsContactMessageController;
+use App\Http\Controllers\Operations\DeveloperApplicationController as OperationsDeveloperApplicationController;
+use App\Http\Controllers\Operations\DeveloperReviewClaimController;
 use App\Http\Controllers\Operations\DeveloperReviewController as OperationsDeveloperReviewController;
 use App\Http\Controllers\Operations\PersonController as OperationsPersonController;
 use App\Http\Controllers\PageConsistencyController;
@@ -89,6 +92,10 @@ Route::get('contact', [ContactController::class, 'show'])->name('contact');
 Route::get('privacy', LegalPageController::class)->defaults('page', 'privacy')->name('privacy');
 Route::get('terms', LegalPageController::class)->defaults('page', 'terms')->name('terms');
 Route::post('contact', [ContactController::class, 'store'])->middleware([ProtectAgainstSpam::class, 'throttle:5,10'])->name('contact.store');
+Route::get('developers', [DeveloperApplicationController::class, 'show'])->name('developers');
+// Signing in on the way back here brings the person to the form.
+Route::get('developers/apply', [DeveloperApplicationController::class, 'create'])->middleware(['auth', 'verified'])->name('developers.apply');
+Route::post('developers', [DeveloperApplicationController::class, 'store'])->middleware(['auth', 'verified', 'throttle:5,10'])->name('developers.store');
 
 // A link the owner shared: anyone holding it can try the app, with no account.
 Route::get('s/{token}', [SharedAppController::class, 'show'])->where('token', '[A-Za-z0-9]{40}')->middleware('throttle:30,1')->name('shared-apps.show');
@@ -192,13 +199,23 @@ Route::middleware(['auth', 'verified', 'can:viewOperations'])->prefix('operation
     Route::get('people/{user}', [OperationsPersonController::class, 'show'])->name('people.show');
     Route::get('messages', [OperationsContactMessageController::class, 'index'])->name('messages.index');
     Route::put('messages/{contactMessage}', [OperationsContactMessageController::class, 'update'])->name('messages.update');
-    // Our own developers answer the owners who asked for one.
+    Route::get('developers', [OperationsDeveloperApplicationController::class, 'index'])->name('developers.index');
+    Route::put('developers/{developerApplication}', [OperationsDeveloperApplicationController::class, 'update'])->name('developers.update');
+});
+
+// Operators and the developers they approved answer the owners who asked
+// for one. Approved developers see only these pages.
+Route::middleware(['auth', 'verified', 'can:answerDeveloperQuestions'])->prefix('operations')->name('operations.')->group(function () {
     Route::get('developer-reviews', [OperationsDeveloperReviewController::class, 'index'])->name('developer-reviews.index');
-    Route::get('developer-reviews/{developerReview}', [OperationsDeveloperReviewController::class, 'show'])->name('developer-reviews.show');
-    Route::put('developer-reviews/{developerReview}', [OperationsDeveloperReviewController::class, 'update'])->name('developer-reviews.update');
-    Route::get('developer-reviews/{developerReview}/request.md', [OperationsDeveloperReviewController::class, 'request'])->name('developer-reviews.request');
-    Route::get('developer-reviews/{developerReview}/code', [OperationsDeveloperReviewController::class, 'code'])->name('developer-reviews.code');
-    Route::get('developer-reviews/{developerReview}/change.patch', [OperationsDeveloperReviewController::class, 'change'])->name('developer-reviews.change');
+    Route::middleware('can:view,developerReview')->group(function () {
+        Route::get('developer-reviews/{developerReview}', [OperationsDeveloperReviewController::class, 'show'])->name('developer-reviews.show');
+        Route::put('developer-reviews/{developerReview}', [OperationsDeveloperReviewController::class, 'update'])->name('developer-reviews.update');
+        Route::get('developer-reviews/{developerReview}/request.md', [OperationsDeveloperReviewController::class, 'request'])->name('developer-reviews.request');
+        Route::get('developer-reviews/{developerReview}/code', [OperationsDeveloperReviewController::class, 'code'])->name('developer-reviews.code');
+        Route::get('developer-reviews/{developerReview}/change.patch', [OperationsDeveloperReviewController::class, 'change'])->name('developer-reviews.change');
+    });
+    Route::post('developer-reviews/{developerReview}/claim', [DeveloperReviewClaimController::class, 'store'])->middleware('can:claim,developerReview')->name('developer-reviews.claim.store');
+    Route::delete('developer-reviews/{developerReview}/claim', [DeveloperReviewClaimController::class, 'destroy'])->middleware('can:release,developerReview')->name('developer-reviews.claim.destroy');
 });
 
 require __DIR__.'/settings.php';

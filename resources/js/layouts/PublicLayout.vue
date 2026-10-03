@@ -3,6 +3,7 @@ import { Link } from '@inertiajs/vue3';
 import AppLogo from '@/components/AppLogo.vue';
 import {
     contact,
+    developers,
     home,
     login,
     pricing,
@@ -69,6 +70,12 @@ import { index } from '@/routes/projects';
                         class="text-muted-foreground hover:text-foreground"
                     >
                         Pricing
+                    </Link>
+                    <Link
+                        :href="developers()"
+                        class="text-muted-foreground hover:text-foreground"
+                    >
+                        For developers
                     </Link>
                     <Link
                         :href="contact()"

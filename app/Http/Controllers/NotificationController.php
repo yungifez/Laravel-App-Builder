@@ -20,8 +20,15 @@ class NotificationController extends Controller
         // Built now, not kept: the address names the app or change by its UUID.
         $asked = DeveloperReview::query()->whereKey($notification->data['asked_review_id'] ?? null)->first();
 
-        if ($asked !== null && $request->user()->can('viewOperations')) {
+        if ($asked !== null && $request->user()->can('view', $asked)) {
             return to_route('operations.developer-reviews.show', $asked);
+        }
+
+        // An operator decided on the person's request to be a developer.
+        if (isset($notification->data['developer_application'])) {
+            return $request->user()->can('answerDeveloperQuestions')
+                ? to_route('operations.developer-reviews.index')
+                : to_route('developers');
         }
 
         $review = DeveloperReview::query()->whereKey($notification->data['developer_review_id'] ?? null)->first();

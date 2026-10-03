@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\DeveloperAnswerRequest;
 use App\Models\DeveloperReview;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -16,17 +17,26 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
  * Where our own developers answer the owners who asked for one
- * (architecture §29.3).
+ * (architecture §29.3): operators, and the developers they approved.
  */
 class DeveloperReviewController extends Controller
 {
     /**
-     * List the questions, the ones still waiting first.
+     * List the questions, the ones still waiting first. A developer who
+     * is not an operator sees the ones anyone may take and their own.
      */
-    public function index(): Response
+    public function index(Request $request): Response
     {
+        $user = $request->user();
+
         $reviews = DeveloperReview::query()
-            ->with(['project', 'developer'])
+            ->with(['project', 'developer', 'claimer'])
+            ->unless($user->can('viewOperations'), fn ($query) => $query
+                ->whereRelation('project', 'user_id', '!=', $user->id)
+                ->where(fn ($query) => $query
+                    ->where(fn ($query) => $query->whereNull('claimed_by')->whereNull('answered_at')->whereNull('withdrawn_at'))
+                    ->orWhere('claimed_by', $user->id)
+                    ->orWhere('answered_by', $user->id)))
             ->orderByRaw('answered_at is not null, withdrawn_at is not null')
             ->latest('id')
             ->paginate(30);
@@ -41,6 +51,8 @@ class DeveloperReviewController extends Controller
                 'waiting' => $review->waiting(),
                 'withdrawn' => $review->withdrawn_at !== null,
                 'developer' => $review->developer?->name,
+                'taken_by' => $review->claimer?->name,
+                'mine' => $review->claimed_by === $user->id,
                 'guidance_kept' => $review->guidance_kept_at !== null,
             ]),
         ]);
@@ -49,25 +61,34 @@ class DeveloperReviewController extends Controller
     /**
      * Show what was written for the developer, the code, and the answer.
      */
-    public function show(DeveloperReview $developerReview): Response
+    public function show(Request $request, DeveloperReview $developerReview): Response
     {
+        $user = $request->user();
         $change = $developerReview->featureRequest;
 
         return Inertia::render('operations/DeveloperReview', [
             'review' => [
                 'id' => $developerReview->uuid,
                 'app' => $developerReview->project->name,
-                'change' => $change?->uuid,
+                // The operations page for the change shows every owner's
+                // work, so only operators get a link to it.
+                'change' => $user->can('viewOperations') ? $change?->uuid : null,
                 // Escaped: the notes and the change are text, never markup.
                 'request' => Str::markdown($developerReview->bundle, ['html_input' => 'escape', 'allow_unsafe_links' => false]),
                 'has_code' => $developerReview->revision !== null,
                 'has_change' => $this->changeApart($developerReview),
                 'answer' => $developerReview->answer,
                 'developer' => $developerReview->developer?->name,
+                'taken_by' => $developerReview->claimer?->name,
                 'answered_at' => $developerReview->answered_at?->toIso8601String(),
                 'withdrawn' => $developerReview->withdrawn_at !== null,
                 'guidance_kept' => $developerReview->guidance_kept_at !== null,
                 'kept_guidance' => $developerReview->kept_guidance,
+            ],
+            'can' => [
+                'claim' => $user->can('claim', $developerReview),
+                'release' => $user->can('release', $developerReview),
+                'answer' => $user->can('answer', $developerReview),
             ],
         ]);
     }

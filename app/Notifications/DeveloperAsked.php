@@ -8,7 +8,8 @@ use Illuminate\Notifications\Notification;
 
 /**
  * An owner asked one of our developers to look at their app. Every
- * operator hears, so the question never waits unseen.
+ * operator and approved developer hears, so the question never waits
+ * unseen.
  */
 class DeveloperAsked extends Notification
 {

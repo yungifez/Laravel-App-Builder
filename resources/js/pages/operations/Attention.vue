@@ -7,6 +7,7 @@ import { attention as attentionRoute } from '@/routes/operations';
 import { index as projectsIndex } from '@/routes/projects';
 import { index as changesIndex } from '@/routes/operations/changes';
 import { index as developerReviewsIndex } from '@/routes/operations/developer-reviews';
+import { index as developersIndex } from '@/routes/operations/developers';
 import { index as messagesIndex } from '@/routes/operations/messages';
 import { index as peopleIndex } from '@/routes/operations/people';
 import type { Attention } from '@/types';
@@ -25,6 +26,7 @@ const props = defineProps<{
     attention: Attention;
     waitingQuestions: number;
     newMessages: number;
+    waitingDevelopers: number;
 }>();
 
 setLayoutProps({
@@ -112,6 +114,20 @@ const completeness = computed(
                         class="text-amber-600"
                         data-test="questions-waiting"
                         >· {{ waitingQuestions }} waiting</span
+                    >
+                    <ChevronRight class="size-4" />
+                </Link>
+                <Link
+                    :href="developersIndex().url"
+                    class="flex min-h-11 items-center gap-1 text-sm font-medium text-foreground/80 select-none hover:text-foreground sm:min-h-9"
+                    data-test="developers"
+                >
+                    Developers
+                    <span
+                        v-if="waitingDevelopers > 0"
+                        class="text-amber-600"
+                        data-test="developers-waiting"
+                        >· {{ waitingDevelopers }} waiting</span
                     >
                     <ChevronRight class="size-4" />
                 </Link>
