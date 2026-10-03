@@ -16,19 +16,28 @@ class KeepNotesDraft
     public function __construct(private ProjectNotes $notes) {}
 
     /**
-     * Save the drafted notes as the owner confirmed them: what the app is
-     * for, and one file per area. Nothing the model drafted is used until
-     * this point.
+     * Save the parts of the drafted notes the owner checked and ticked:
+     * what the app is for, and one file per area. Nothing the model drafted
+     * is used until this point, and what was not ticked is never used.
      *
-     * @throws ValidationException when there is no draft, the app already
-     *                             has notes, or a drafted area is not valid.
+     * @param  array<mixed>  $areas  The keys of the areas the owner ticked
+     *
+     * @throws ValidationException when there is no draft, nothing was
+     *                             ticked, the app already has notes, or a
+     *                             drafted area is not valid.
      */
-    public function handle(Project $project): void
+    public function handle(Project $project, bool $purpose, array $areas): void
     {
         $draft = $project->notes_draft;
 
         if ($project->notes_draft_status !== NotesDraftStatus::Ready || $draft === null) {
             throw ValidationException::withMessages(['draft' => __('There is no draft to keep. Reload the page.')]);
+        }
+
+        $draft['areas'] = array_values(array_filter($draft['areas'], fn (array $area) => in_array($area['key'], $areas, true)));
+
+        if (! $purpose && $draft['areas'] === []) {
+            throw ValidationException::withMessages(['draft' => __('Tick the parts that are right first.')]);
         }
 
         $branch = $project->branch();
@@ -37,7 +46,7 @@ class KeepNotesDraft
             throw ValidationException::withMessages(['draft' => __('Your app already has notes, so I did not replace them.')]);
         }
 
-        $files = [ProjectContext::PROJECT_FILE => "# Project\n\n".wordwrap($draft['purpose'], 78)."\n"];
+        $files = [ProjectContext::PROJECT_FILE => "# Project\n".($purpose && $draft['purpose'] !== '' ? "\n".wordwrap($draft['purpose'], 78)."\n" : '')];
 
         foreach ($draft['areas'] as $area) {
             $file = ProjectContext::CAPABILITIES_DIRECTORY."/{$area['key']}.md";

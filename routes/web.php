@@ -53,6 +53,7 @@ use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectDownloadController;
 use App\Http\Controllers\ProjectEditorController;
 use App\Http\Controllers\ProjectExperimentController;
+use App\Http\Controllers\ProjectExplorationController;
 use App\Http\Controllers\ProjectNameController;
 use App\Http\Controllers\ProjectNotesDraftController;
 use App\Http\Controllers\ProjectOwnToolController;
@@ -94,6 +95,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/developers', [DeveloperReviewController::class, 'store'])->name('projects.developers.store');
     Route::delete('developer-reviews/{developerReview}', [DeveloperReviewController::class, 'destroy'])->name('developer-reviews.destroy');
     Route::post('developer-reviews/{developerReview}/guidance', [DeveloperReviewGuidanceController::class, 'store'])->name('developer-reviews.guidance.store');
+    Route::post('projects/{project}/exploration', [ProjectExplorationController::class, 'store'])->name('projects.exploration.store');
     Route::post('projects/{project}/notes-draft', [ProjectNotesDraftController::class, 'store'])->name('projects.notes-draft.store');
     Route::delete('projects/{project}/notes-draft', [ProjectNotesDraftController::class, 'destroy'])->name('projects.notes-draft.destroy');
     Route::patch('projects/{project}/name', [ProjectNameController::class, 'update'])->name('projects.name.update');

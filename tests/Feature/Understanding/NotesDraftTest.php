@@ -10,15 +10,17 @@ use App\Jobs\DraftProjectNotes;
 use App\Models\Project;
 use App\Models\User;
 use App\Projects\ProjectRepository;
+use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
-use Inertia\Testing\AssertableInertia as Assert;
 use RuntimeException;
+use Tests\Concerns\FakesWorkspaces;
 use Tests\Concerns\PreparesRuns;
 use Tests\TestCase;
 
 class NotesDraftTest extends TestCase
 {
+    use FakesWorkspaces;
     use PreparesRuns;
     use RefreshDatabase;
 
@@ -30,26 +32,12 @@ class NotesDraftTest extends TestCase
     {
         parent::setUp();
 
+        // The app's tests cannot run here, so drafts are made from its code.
+        $this->fakeWorkspaces()->onExec = fn () => new CommandResult(exitCode: 1, output: '', errorOutput: 'failed', durationMs: 5);
+        config(['builder.verification.workspace_driver' => 'fake', 'builder.verification.setup' => []]);
+
         $this->repository = app(ProjectRepository::class);
         $this->owner = User::factory()->create();
-    }
-
-    public function test_importing_an_app_without_notes_starts_a_draft_and_shows_it()
-    {
-        Queue::fake();
-
-        $response = $this->actingAs($this->owner)->post(route('projects.store'), [
-            'name' => 'Acme',
-            'source_path' => $this->makeProjectSource($this->laravelApp()),
-        ]);
-
-        $project = $this->owner->projects()->sole();
-        $response->assertRedirect(route('projects.understanding.show', $project));
-        $this->assertSame(NotesDraftStatus::Drafting, $project->notes_draft_status);
-        Queue::assertPushed(DraftProjectNotes::class, fn (DraftProjectNotes $job) => $job->project->is($project));
-
-        $this->get(route('projects.understanding.show', $project))
-            ->assertInertia(fn (Assert $page) => $page->where('draft.status', 'drafting'));
     }
 
     public function test_importing_an_app_that_has_notes_does_not_draft()
@@ -94,12 +82,12 @@ class NotesDraftTest extends TestCase
         NotesDrafter::fake([[
             'purpose' => 'A place where teams plan their work.',
             'areas' => [
-                ['key' => 'Teams', 'name' => 'Teams', 'summary' => 'Make teams and invite people.', 'paths' => ['app/Models/Team.php', 'app/Nowhere/*'], 'behaviors' => [['key' => 'invite', 'name' => 'Invite someone'], ['key' => 'invite', 'name' => 'Invite again']], 'rules' => ['Only owners can delete a team.', ' ']],
+                ['key' => 'Teams', 'name' => 'Teams', 'summary' => 'Make teams and invite people.', 'paths' => ['app/Models/Team.php', 'app/Nowhere/*'], 'behaviors' => [['key' => 'invite', 'name' => 'Invite someone'], ['key' => 'invite', 'name' => 'Invite again']], 'rules' => [['rule' => 'Only owners can delete a team.', 'source' => 'app/Models/Team.php'], ['rule' => ' ', 'source' => 'app/Models/Team.php']]],
                 ['key' => 'teams', 'name' => 'Duplicate', 'summary' => '', 'paths' => [], 'behaviors' => [], 'rules' => []],
             ],
         ]]);
 
-        (new DraftProjectNotes($project))->handle($this->repository);
+        app()->call([new DraftProjectNotes($project), 'handle']);
 
         $project->refresh();
         $this->assertSame(NotesDraftStatus::Ready, $project->notes_draft_status);
@@ -112,6 +100,8 @@ class NotesDraftTest extends TestCase
                 'paths' => ['app/Models/Team.php'],
                 'behaviors' => [['key' => 'invite', 'name' => 'Invite someone']],
                 'rules' => ['Only owners can delete a team.'],
+                'tests' => null,
+                'pages' => [],
             ]],
         ], $project->notes_draft);
         $this->assertCount(1, $project->setup_model_calls ?? []);
@@ -124,7 +114,7 @@ class NotesDraftTest extends TestCase
         $project = $this->importedProject();
         NotesDrafter::fake(fn () => throw new RuntimeException('The provider is down.'));
 
-        (new DraftProjectNotes($project))->handle($this->repository);
+        app()->call([new DraftProjectNotes($project), 'handle']);
 
         $project->refresh();
         $this->assertSame(NotesDraftStatus::Failed, $project->notes_draft_status);
@@ -136,7 +126,7 @@ class NotesDraftTest extends TestCase
         $project = $this->importedProject(ready: true);
 
         $this->actingAs($this->owner)
-            ->post(route('projects.notes-draft.store', $project))
+            ->post(route('projects.notes-draft.store', $project), ['purpose' => true, 'areas' => ['teams']])
             ->assertSessionHasNoErrors();
 
         $project->refresh();
@@ -162,7 +152,7 @@ class NotesDraftTest extends TestCase
         app(ProjectNotes::class)->put($project, 'main', ['project.md' => "# Project\n\nWritten by hand.\n"]);
 
         $this->actingAs($this->owner)
-            ->post(route('projects.notes-draft.store', $project))
+            ->post(route('projects.notes-draft.store', $project), ['purpose' => true, 'areas' => ['teams']])
             ->assertSessionHasErrors(['draft' => 'Your app already has notes, so I did not replace them.']);
 
         $this->assertSame("# Project\n\nWritten by hand.\n", app(ProjectNotes::class)->files($project)['project.md']);
@@ -185,7 +175,7 @@ class NotesDraftTest extends TestCase
     {
         $project = $this->importedProject(ready: true);
 
-        $this->actingAs(User::factory()->create())->post(route('projects.notes-draft.store', $project))->assertForbidden();
+        $this->actingAs(User::factory()->create())->post(route('projects.notes-draft.store', $project), ['purpose' => true, 'areas' => ['teams']])->assertForbidden();
         $this->delete(route('projects.notes-draft.destroy', $project))->assertForbidden();
 
         $this->assertSame(NotesDraftStatus::Ready, $project->refresh()->notes_draft_status);

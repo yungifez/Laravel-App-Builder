@@ -863,8 +863,18 @@ export type NotesDraft = {
         summary: string;
         behaviors: string[];
         rules: string[];
+        /** How many of the app's tests ran this part's code; null when they could not run. */
+        tests: number | null;
+        /** The pages the tests opened that ran this part's code. */
+        pages: string[];
     }[];
     error: string | null;
+};
+
+/** What exploring an app without notes costs, told before the owner starts it. */
+export type Exploration = {
+    tokens: number;
+    cost_usd: number | null;
 };
 
 /** Something that needs the owner, such as a change that is ready to try. */

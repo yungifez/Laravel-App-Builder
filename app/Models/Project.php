@@ -38,7 +38,7 @@ use Laravel\Sanctum\HasApiTokens;
  * @property array<string, string>|null $host_state What the host created for the app, such as its application and environment IDs
  * @property NotesDraftStatus|null $notes_draft_status
  * @property int|null $experiment_id The idea the owner is working in; null is the main app
- * @property array{purpose: string, areas: list<array{key: string, name: string, summary: string, paths: list<string>, behaviors: list<array{key: string, name: string}>, rules: list<string>}>}|null $notes_draft Notes a model drafted from an imported app, waiting for the owner
+ * @property array{purpose: string, areas: list<array{key: string, name: string, summary: string, paths: list<string>, behaviors: list<array{key: string, name: string}>, rules: list<string>, tests?: int|null, pages?: list<string>}>}|null $notes_draft Notes a model drafted from an imported app, waiting for the owner
  * @property string|null $notes_draft_error
  * @property list<array{role: string, provider: string|null, model: string|null, input_tokens: int, output_tokens: int, cost_usd: float|null, cost_source?: string|null, at?: string}>|null $setup_model_calls Model calls made to set the project up, outside any change
  * @property Carbon|null $understanding_seen_at When the owner last read what their app is

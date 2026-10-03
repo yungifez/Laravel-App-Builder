@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Context\CheckProjectNotes;
+use App\Actions\Context\EstimateExploration;
 use App\Actions\Context\ReadProjectContext;
 use App\Actions\Context\RecordDecision;
 use App\Actions\Context\UpdateProjectNotes;
@@ -11,6 +12,7 @@ use App\Actions\Features\ListDecisions;
 use App\Actions\Features\TallyKeptProof;
 use App\Context\Capability;
 use App\Context\NotesDocument;
+use App\Context\ProjectContext;
 use App\Context\ProjectNotes;
 use App\Enums\EffectStrength;
 use App\Http\Requests\ProjectNotesUpdateRequest;
@@ -33,7 +35,7 @@ class ProjectUnderstandingController extends Controller
      * for, how things work, what must always be true, what is connected, and
      * what changed. The quick check runs on request.
      */
-    public function show(Project $project, ProjectRepository $repository, ProjectNotes $projectNotes, ReadProjectContext $readProjectContext, CheckProjectNotes $checkProjectNotes, DescribeAskedFor $describeAskedFor, TallyKeptProof $tallyKeptProof, ListDecisions $listDecisions): Response
+    public function show(Project $project, ProjectRepository $repository, ProjectNotes $projectNotes, ReadProjectContext $readProjectContext, CheckProjectNotes $checkProjectNotes, DescribeAskedFor $describeAskedFor, TallyKeptProof $tallyKeptProof, ListDecisions $listDecisions, EstimateExploration $estimateExploration): Response
     {
         Gate::authorize('view', $project);
 
@@ -128,9 +130,16 @@ class ProjectUnderstandingController extends Controller
                     'summary' => $area['summary'],
                     'behaviors' => array_column($area['behaviors'], 'name'),
                     'rules' => $area['rules'],
+                    // What backs the area without a model, for the owner's check.
+                    'tests' => $area['tests'] ?? null,
+                    'pages' => $area['pages'] ?? [],
                 ], $project->notes_draft['areas'] ?? []),
                 'error' => $project->notes_draft_error,
             ],
+            // An app without notes can be explored, at a cost the owner reads first.
+            'exploration' => $revision === null || $project->notes_draft_status !== null || isset($projectNotes->files($project)[ProjectContext::PROJECT_FILE])
+                ? null
+                : fn () => $estimateExploration->handle($project),
             'check' => Inertia::optional(fn () => $revision === null ? [] : $checkProjectNotes->handle($project)),
         ]);
     }

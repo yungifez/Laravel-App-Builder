@@ -13,6 +13,7 @@ import {
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
+import ExploreAppPanel from '@/components/ExploreAppPanel.vue';
 import NotesDraftPanel from '@/components/NotesDraftPanel.vue';
 import NotesPart from '@/components/NotesPart.vue';
 import PartsMap from '@/components/PartsMap.vue';
@@ -31,6 +32,7 @@ import { index as developers } from '@/routes/projects/developers';
 import { show as showUnderstanding } from '@/routes/projects/understanding';
 import type {
     CheckFinding,
+    Exploration,
     NotesDraft,
     NotesSection,
     ProjectSummary,
@@ -81,6 +83,7 @@ const props = defineProps<{
     // How many decisions there are in all.
     decided: number;
     draft: NotesDraft | null;
+    exploration: Exploration | null;
     check?: CheckFinding[];
 }>();
 
@@ -342,6 +345,11 @@ function setCompatibility(keep: boolean | null): void {
             v-if="draft !== null"
             :project-id="project.id"
             :draft="draft"
+        />
+        <ExploreAppPanel
+            v-else-if="exploration !== null"
+            :project-id="project.id"
+            :exploration="exploration"
         />
 
         <p v-if="revision === null" class="text-sm text-muted-foreground">

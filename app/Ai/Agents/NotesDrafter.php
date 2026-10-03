@@ -10,9 +10,10 @@ use Laravel\Ai\Promptable;
 use Stringable;
 
 /**
- * Reads an imported application's outline and drafts its notes: what the
- * app is for and its areas. The owner confirms the draft before it is kept,
- * so nothing it says is treated as decided until then.
+ * Reads an application's outline and the facts its exploration gathered,
+ * and drafts its notes: what the app is for and its areas. The owner
+ * confirms the draft part by part before it is kept, so nothing it says is
+ * treated as decided until then.
  */
 #[Timeout(300)]
 class NotesDrafter implements Agent, HasStructuredOutput
@@ -25,7 +26,8 @@ class NotesDrafter implements Agent, HasStructuredOutput
     public function instructions(): Stringable|string
     {
         return <<<'INSTRUCTIONS'
-        You describe an existing Laravel application for its non-technical owner, from its file list and a few key files.
+        You describe an existing Laravel application for its non-technical owner, from its file list, a few key files, and facts gathered by running it: what its code holds, its routes with their middleware, what each of its test files checks and which code it ran, and the pages its tests opened.
+        Prefer the facts to guessing: code that tests run together belongs together, and a part the tests never touch is less certain.
 
         Return a draft of the application's notes:
         - purpose: two or three plain sentences on what the application is for and who uses it. Say only what the files show.
@@ -35,7 +37,7 @@ class NotesDrafter implements Agent, HasStructuredOutput
           - summary: one plain sentence on what people can do in it.
           - paths: glob patterns for the files that belong to it, for example "app/Http/Controllers/Settings/*" or the folder of its screens, such as "resources/js/pages/teams/*" or "resources/views/livewire/teams/*". Use only paths from the file list. Include its tests.
           - behaviors: what people can do in it, each with a kebab-case key and a plain name such as "Invite a member".
-          - rules: what must always be true there, only when the code clearly enforces it (for example a policy or validation rule). Leave it empty rather than guess.
+          - rules: what must always be true there, only when the code clearly enforces it (for example a policy, middleware or validation rule). Each rule has its words and its source: the file from the file list that enforces it. A rule without a source is dropped, so leave it out rather than guess.
 
         Write for the owner: no class names, no framework words in the purpose, summaries, behaviours or rules.
         INSTRUCTIONS;
@@ -57,7 +59,10 @@ class NotesDrafter implements Agent, HasStructuredOutput
                     'key' => $schema->string()->required(),
                     'name' => $schema->string()->required(),
                 ])->withoutAdditionalProperties())->required(),
-                'rules' => $schema->array()->items($schema->string())->required(),
+                'rules' => $schema->array()->items($schema->object([
+                    'rule' => $schema->string()->required(),
+                    'source' => $schema->string()->required(),
+                ])->withoutAdditionalProperties())->required(),
             ])->withoutAdditionalProperties())->min(1)->required(),
         ];
     }

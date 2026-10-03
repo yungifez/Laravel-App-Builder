@@ -936,6 +936,19 @@ Memory is written rarely and cheaply; it is never a rewrite of a summary.
    evidence; an inference is stored as proposed.
 4. **Consolidation** (merging duplicates, marking superseded entries) runs as an
    occasional batch job with a small model.
+5. **Exploring an imported app** is optional. The owner chooses it on the
+   Understanding page after reading its cost in tokens and dollars. Importing
+   never starts it. The facts come without a model:
+    - the code by framework convention (tables, models, emails, jobs,
+      policies, form requests, packages);
+    - the routes with their middleware;
+    - the app's own tests run with coverage, with the code each test file ran.
+
+    The facts are capped, so the cost shown stays true. One planner-tier call
+    words them. A rule is kept only when it names the app file that enforces
+    it. Each part shows how many tests run its code. The owner ticks the parts
+    that are right, and only ticked parts become notes. The coverage is kept,
+    so the page shows what checks each part from then on.
 
 Budget: at most one small-model call per change request for memory. Strong
 models are never used for memory upkeep.
