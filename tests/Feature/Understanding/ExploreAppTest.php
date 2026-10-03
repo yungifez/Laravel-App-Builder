@@ -6,6 +6,7 @@ use App\Actions\Context\ReadProjectContext;
 use App\Ai\Agents\NotesDrafter;
 use App\Enums\NotesDraftStatus;
 use App\Jobs\DraftProjectNotes;
+use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
 use App\Models\TestObservation;
@@ -108,6 +109,22 @@ class ExploreAppTest extends TestCase
         $this->actingAs($this->owner)
             ->post(route('projects.exploration.store', $project))
             ->assertSessionHas('errors', fn ($errors) => str_starts_with((string) $errors->first('explore'), 'This is our fault: we paused new work for today'));
+
+        $this->assertNull($project->refresh()->notes_draft_status);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_exploring_waits_once_the_owner_used_this_months_plan()
+    {
+        Queue::fake();
+        config(['billing.plans.free.monthly_usd' => 5]);
+        $project = $this->project();
+        Run::factory()->for(FeatureRequest::factory()->for($project))->create()
+            ->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 5.5]);
+
+        $this->actingAs($this->owner)
+            ->post(route('projects.exploration.store', $project))
+            ->assertSessionHas('errors', fn ($errors) => str_starts_with((string) $errors->first('explore'), 'You have used all the AI use your plan includes this month.'));
 
         $this->assertNull($project->refresh()->notes_draft_status);
         Queue::assertNothingPushed();
