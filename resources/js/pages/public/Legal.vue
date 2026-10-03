@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head } from '@inertiajs/vue3';
+import PageMeta from '@/components/PageMeta.vue';
 
 // The text is written in Markdown on the server, with any HTML in it
 // stripped, so it is safe to show as it is.
@@ -7,10 +7,21 @@ defineProps<{
     title: string;
     html: string;
 }>();
+
+// The line search results show under each page's title.
+const summaries: Record<string, string> = {
+    Privacy: 'What we keep about you, why, and who else sees it.',
+    Terms: 'The terms for making and changing apps here, and what we promise.',
+};
 </script>
 
 <template>
-    <Head :title="title" />
+    <PageMeta
+        :title="title"
+        :description="
+            summaries[title] ?? 'How we look after you and your apps.'
+        "
+    />
 
     <section class="mx-auto max-w-7xl px-4 pt-20 pb-24 sm:px-8 sm:pt-32">
         <article class="legal max-w-2xl" v-html="html" />

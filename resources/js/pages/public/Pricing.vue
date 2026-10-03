@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Link, router } from '@inertiajs/vue3';
 import { Check } from '@lucide/vue';
 import { ref } from 'vue';
+import PageMeta from '@/components/PageMeta.vue';
 import { register } from '@/routes';
 import { edit } from '@/routes/billing';
 import { store } from '@/routes/billing/plan';
@@ -42,7 +43,10 @@ const included = [
 </script>
 
 <template>
-    <Head title="Pricing" />
+    <PageMeta
+        title="Pricing"
+        description="Every plan builds the same way and checks each change before you see it. Bigger plans only include more use each month."
+    />
 
     <section class="mx-auto max-w-7xl px-4 pt-20 pb-24 sm:px-8 sm:pt-32">
         <h1

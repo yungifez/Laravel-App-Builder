@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Link, usePage } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
 import { home, login, register } from '@/routes';
@@ -22,6 +22,15 @@ const onLogin = computed(() => page.component === 'auth/Login');
 </script>
 
 <template>
+    <!-- The site's own description, for pages that do not set one. Their
+         PageMeta replaces it, as both use the same head-key. -->
+    <Head>
+        <meta
+            head-key="description"
+            name="description"
+            content="Build apps that don't stay prototypes. Every change passes fixed checks before you keep it."
+        />
+    </Head>
     <div class="flex min-h-svh flex-col bg-background text-foreground">
         <header class="border-b">
             <div

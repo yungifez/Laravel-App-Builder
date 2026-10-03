@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Form, Head, Link } from '@inertiajs/vue3';
+import { Form, Link } from '@inertiajs/vue3';
 import { FileSearch, MessageSquare, PenLine } from '@lucide/vue';
 import DeveloperApplicationController from '@/actions/App/Http/Controllers/DeveloperApplicationController';
 import InputError from '@/components/InputError.vue';
+import PageMeta from '@/components/PageMeta.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -47,7 +48,10 @@ const field =
 </script>
 
 <template>
-    <Head title="For developers" />
+    <PageMeta
+        title="For developers"
+        description="Answer app owners' questions when a decision needs an engineer, and set the rules later changes are held to."
+    />
 
     <section class="mx-auto max-w-7xl px-4 pt-20 sm:px-8 sm:pt-32">
         <h1

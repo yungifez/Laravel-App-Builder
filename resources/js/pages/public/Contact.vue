@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { Form, Head } from '@inertiajs/vue3';
+import { Form } from '@inertiajs/vue3';
 import ContactController from '@/actions/App/Http/Controllers/ContactController';
 import InputError from '@/components/InputError.vue';
+import PageMeta from '@/components/PageMeta.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,7 +20,10 @@ defineProps<{
 </script>
 
 <template>
-    <Head title="Contact" />
+    <PageMeta
+        title="Contact"
+        description="Write to us. A person reads every message and replies by email."
+    />
 
     <section
         class="mx-auto grid max-w-7xl items-start gap-12 px-4 pt-20 pb-24 sm:px-8 sm:pt-32 lg:grid-cols-2 lg:gap-16"
