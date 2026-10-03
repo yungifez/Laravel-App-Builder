@@ -15,6 +15,17 @@ export function keepIdea(idea: string, starter: string | null = null): void {
     }
 }
 
+// Reads the idea without using it up, so a page on the way can show it.
+export function peekIdea(): string {
+    try {
+        const kept = JSON.parse(sessionStorage.getItem(key) ?? 'null');
+
+        return typeof kept?.idea === 'string' ? kept.idea : '';
+    } catch {
+        return '';
+    }
+}
+
 export function takeIdea(): StartIdea {
     try {
         const kept = JSON.parse(sessionStorage.getItem(key) ?? 'null');

@@ -11,8 +11,8 @@ import { email } from '@/routes/password';
 
 defineOptions({
     layout: {
-        title: 'Forgot password',
-        description: 'Enter your email to receive a password reset link',
+        title: 'Forgot your password?',
+        description: 'We email you a link to set a new one.',
     },
 });
 
@@ -26,7 +26,7 @@ defineProps<{
 
     <div
         v-if="status"
-        class="mb-4 text-center text-sm font-medium text-green-600"
+        class="mb-6 text-sm font-medium text-emerald-600 dark:text-emerald-400"
     >
         {{ status }}
     </div>
@@ -58,7 +58,7 @@ defineProps<{
             </div>
         </Form>
 
-        <div class="space-x-1 text-center text-sm text-muted-foreground">
+        <div class="space-x-1 text-sm text-muted-foreground">
             <span>Or, return to</span>
             <TextLink :href="login()">log in</TextLink>
         </div>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Form, Head, Link } from '@inertiajs/vue3';
+import { FileSearch, MessageSquare, PenLine } from '@lucide/vue';
 import DeveloperApplicationController from '@/actions/App/Http/Controllers/DeveloperApplicationController';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
@@ -25,16 +26,19 @@ defineProps<{
 
 const steps = [
     {
+        icon: MessageSquare,
         title: 'An owner asks',
         body: 'About their whole app or about one change, in their own words.',
     },
     {
+        icon: FileSearch,
         title: 'You take the question',
         body: 'You get what the app is for, its rules and decisions, the parts the question touches, and the code at that commit.',
     },
     {
+        icon: PenLine,
         title: 'You answer',
-        body: 'A short answer, what you noticed, and guidance. The owner keeps the guidance they agree with, and every later change follows it.',
+        body: 'Write your answer and the rules you would hold every later change to. The owner keeps the rules they agree with.',
     },
 ];
 
@@ -45,41 +49,48 @@ const field =
 <template>
     <Head title="For developers" />
 
-    <section class="bg-muted/50">
-        <div class="mx-auto max-w-6xl px-4 pt-16 pb-16 sm:px-6 sm:pt-24">
-            <h1
-                class="max-w-2xl font-display text-4xl leading-[1.05] sm:text-5xl"
+    <section class="mx-auto max-w-7xl px-4 pt-20 sm:px-8 sm:pt-32">
+        <h1
+            class="max-w-3xl font-display text-4xl leading-[1.05] font-medium tracking-[-0.035em] text-balance sm:text-6xl"
+        >
+            Lend your judgment to apps people build here.
+            <span class="text-muted-foreground"
+                >Owners ask when a decision needs an engineer.</span
             >
-                Lend your judgment to apps people build here
-            </h1>
-            <p class="mt-4 max-w-xl text-lg text-muted-foreground">
-                Owners build Laravel apps with us in plain words. When a
-                decision needs an engineer, they ask one of our developers. You
-                write no code: you answer, and your answer shapes every change
-                after it.
-            </p>
+        </h1>
 
-            <ol class="mt-12 grid max-w-4xl gap-8 sm:grid-cols-3">
-                <li
-                    v-for="(step, at) in steps"
-                    :key="step.title"
-                    class="border-t border-foreground/15 pt-4"
+        <ul
+            class="mt-12 grid gap-8 rounded-md bg-panel-green px-6 py-8 sm:mt-16 sm:grid-cols-3 sm:px-10 sm:py-12"
+        >
+            <li v-for="step in steps" :key="step.title" class="max-w-sm">
+                <h2 class="flex items-center gap-2.5 font-medium">
+                    <component
+                        :is="step.icon"
+                        class="size-4 shrink-0"
+                        aria-hidden="true"
+                    />
+                    {{ step.title }}
+                </h2>
+                <p
+                    class="mt-1.5 pl-6.5 text-sm text-pretty text-muted-foreground"
                 >
-                    <span class="text-sm text-muted-foreground">{{
-                        at + 1
-                    }}</span>
-                    <h2 class="mt-1 font-medium">{{ step.title }}</h2>
-                    <p class="mt-1 text-sm text-muted-foreground">
-                        {{ step.body }}
-                    </p>
-                </li>
-            </ol>
-        </div>
+                    {{ step.body }}
+                </p>
+            </li>
+        </ul>
     </section>
 
-    <section id="apply" class="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-        <h2 class="text-2xl font-semibold tracking-[-0.02em]">
-            Answer questions with us
+    <section
+        id="apply"
+        class="mx-auto max-w-7xl scroll-mt-20 px-4 pt-28 pb-24 sm:px-8 sm:pt-40"
+    >
+        <h2
+            class="max-w-3xl font-display text-3xl leading-[1.1] font-medium tracking-[-0.025em] text-balance sm:text-[2.75rem]"
+        >
+            Answer questions with us.
+            <span class="text-muted-foreground"
+                >Tell us what you have built, and a person decides.</span
+            >
         </h2>
 
         <template v-if="operator">
@@ -111,8 +122,7 @@ const field =
 
         <template v-else-if="!signedIn">
             <p class="mt-3 max-w-xl text-muted-foreground">
-                Log in, or make an account, and then tell us what you have
-                built.
+                Log in first, or make an account.
             </p>
             <Link
                 :href="apply().url"

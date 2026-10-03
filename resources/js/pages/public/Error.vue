@@ -38,31 +38,27 @@ const said = computed(
 <template>
     <Head :title="said.title" />
 
-    <section class="bg-muted/50">
-        <div class="mx-auto max-w-6xl px-4 pt-16 pb-24 sm:px-6 sm:pt-24">
-            <p class="text-sm text-muted-foreground">Error {{ status }}</p>
-            <h1
-                class="mt-2 max-w-2xl font-display text-4xl leading-[1.05] sm:text-5xl"
+    <section class="mx-auto max-w-7xl px-4 pt-20 pb-24 sm:px-8 sm:pt-32">
+        <p class="text-sm text-muted-foreground">Error {{ status }}</p>
+        <h1
+            class="mt-3 max-w-3xl font-display text-4xl leading-[1.05] font-medium tracking-[-0.035em] text-balance sm:text-6xl"
+        >
+            {{ said.title }}.
+            <span class="text-muted-foreground">{{ said.line }}</span>
+        </h1>
+        <div class="mt-10 flex flex-wrap gap-3">
+            <Link
+                :href="home()"
+                class="inline-flex min-h-11 press items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground select-none hover:bg-primary/90 sm:min-h-9"
             >
-                {{ said.title }}
-            </h1>
-            <p class="mt-4 max-w-xl text-lg text-muted-foreground">
-                {{ said.line }}
-            </p>
-            <div class="mt-8 flex flex-wrap gap-3">
-                <Link
-                    :href="home()"
-                    class="inline-flex min-h-11 press items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground select-none hover:bg-primary/90 sm:min-h-9"
-                >
-                    Go to the home page
-                </Link>
-                <Link
-                    :href="contact()"
-                    class="inline-flex min-h-11 items-center rounded-md border bg-background px-4 text-sm font-medium select-none hover:bg-muted sm:min-h-9"
-                >
-                    Write to us
-                </Link>
-            </div>
+                Go to the home page
+            </Link>
+            <Link
+                :href="contact()"
+                class="inline-flex min-h-11 items-center rounded-md border bg-background px-4 text-sm font-medium select-none hover:bg-muted sm:min-h-9"
+            >
+                Write to us
+            </Link>
         </div>
     </section>
 </template>

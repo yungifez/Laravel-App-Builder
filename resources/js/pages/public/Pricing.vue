@@ -44,31 +44,36 @@ const included = [
 <template>
     <Head title="Pricing" />
 
-    <section class="bg-muted/50">
-        <div class="mx-auto max-w-6xl px-4 pt-16 pb-12 sm:px-6 sm:pt-24">
-            <h1
-                class="max-w-2xl font-display text-4xl leading-[1.05] sm:text-5xl"
+    <section class="mx-auto max-w-7xl px-4 pt-20 pb-24 sm:px-8 sm:pt-32">
+        <h1
+            class="max-w-3xl font-display text-4xl leading-[1.05] font-medium tracking-[-0.035em] text-balance sm:text-6xl"
+        >
+            Pay for how much you build.
+            <span class="text-muted-foreground"
+                >Use starts again each month.</span
             >
-                Pay for how much you build
-            </h1>
-            <p class="mt-4 max-w-xl text-lg text-muted-foreground">
-                Every plan builds and checks changes the same way. Bigger plans
-                include more use each month, and use starts again every month.
-            </p>
+        </h1>
 
+        <div
+            class="mt-12 rounded-md bg-panel-blue px-3 py-3 sm:mt-16 sm:px-10 sm:py-10"
+        >
             <div
-                class="mt-12 grid divide-y border-y sm:grid-cols-3 sm:divide-x sm:divide-y-0"
+                class="grid divide-y rounded-md border bg-background sm:grid-cols-3 sm:divide-x sm:divide-y-0"
             >
                 <div
                     v-for="plan in plans"
                     :key="plan.key"
-                    class="flex flex-col gap-6 py-6 sm:px-6 sm:first:pl-0 sm:last:pr-0"
+                    class="flex flex-col gap-6 p-6"
                     :data-test="`plan-${plan.key}`"
                 >
                     <div>
-                        <h2 class="font-display text-2xl">{{ plan.name }}</h2>
+                        <h2 class="font-display text-xl font-medium">
+                            {{ plan.name }}
+                        </h2>
                         <p class="mt-2">
-                            <span class="font-display text-3xl">
+                            <span
+                                class="font-display text-4xl font-medium tracking-[-0.03em]"
+                            >
                                 ${{ plan.price }}
                             </span>
                             <span class="text-muted-foreground">
@@ -136,20 +141,25 @@ const included = [
                     </div>
                 </div>
             </div>
-
-            <div class="mt-12 max-w-xl">
-                <h2 class="font-display text-xl">Every plan</h2>
-                <ul class="mt-4 divide-y border-y">
-                    <li
-                        v-for="line in included"
-                        :key="line"
-                        class="flex items-center gap-2 py-3"
-                    >
-                        <Check class="size-4 shrink-0 text-muted-foreground" />
-                        {{ line }}
-                    </li>
-                </ul>
-            </div>
         </div>
+
+        <h2
+            class="mt-28 max-w-3xl font-display text-3xl leading-[1.1] font-medium tracking-[-0.025em] text-balance sm:mt-40 sm:text-[2.75rem]"
+        >
+            Every plan has it all.
+            <span class="text-muted-foreground"
+                >Bigger plans only include more use.</span
+            >
+        </h2>
+        <ul class="mt-10 grid max-w-4xl gap-x-12 gap-y-4 sm:grid-cols-2">
+            <li
+                v-for="line in included"
+                :key="line"
+                class="flex items-center gap-2 font-medium"
+            >
+                <Check class="size-4 shrink-0 text-muted-foreground" />
+                {{ line }}
+            </li>
+        </ul>
     </section>
 </template>

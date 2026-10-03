@@ -12,10 +12,8 @@ defineProps<{
 <template>
     <Head :title="title" />
 
-    <section class="bg-muted/50">
-        <div class="mx-auto max-w-6xl px-4 pt-16 pb-24 sm:px-6 sm:pt-24">
-            <article class="legal max-w-2xl" v-html="html" />
-        </div>
+    <section class="mx-auto max-w-7xl px-4 pt-20 pb-24 sm:px-8 sm:pt-32">
+        <article class="legal max-w-2xl" v-html="html" />
     </section>
 </template>
 
@@ -23,7 +21,7 @@ defineProps<{
 @reference '../../../css/app.css';
 
 .legal :deep(h1) {
-    @apply font-display text-4xl leading-[1.05] sm:text-5xl;
+    @apply font-display text-4xl leading-[1.05] font-medium tracking-[-0.035em] sm:text-6xl;
 }
 
 .legal :deep(h1 + p) {
@@ -31,7 +29,7 @@ defineProps<{
 }
 
 .legal :deep(h2) {
-    @apply mt-12 border-t pt-6 font-display text-xl;
+    @apply mt-14 font-display text-2xl font-medium tracking-[-0.02em];
 }
 
 .legal :deep(p) {
