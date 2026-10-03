@@ -82,4 +82,19 @@ class KeepAssumptions
 
         return $new;
     }
+
+    /**
+     * Take one assumption out of a notes file, once the owner agreed with
+     * it and it is kept as their decision instead. Null when the file does
+     * not hold it.
+     */
+    public static function without(string $contents, string $assumption): ?string
+    {
+        $notes = NotesDocument::parse($contents);
+        $section = (string) $notes->section(self::SECTION);
+        $lines = preg_split('/\R/', $section) ?: [];
+        $left = array_filter($lines, fn (string $line) => trim($line) !== "- {$assumption} ".self::ASSUMED);
+
+        return count($left) === count($lines) ? null : $notes->withSection(self::SECTION, implode("\n", $left))->toMarkdown();
+    }
 }

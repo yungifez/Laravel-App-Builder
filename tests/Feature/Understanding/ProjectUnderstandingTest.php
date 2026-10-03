@@ -222,6 +222,47 @@ class ProjectUnderstandingTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('run.kept_assumptions', ['Counts include people of every role.']));
     }
 
+    public function test_something_the_owner_agrees_with_is_no_longer_noted_as_assumed()
+    {
+        $plan = ['summary' => '', 'acceptance_criteria' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null, 'assumptions' => ['Counts include people of every role.']];
+        $notes = app(ProjectNotes::class);
+        $branch = $this->project->branch();
+        $files = $notes->files($this->project, $branch);
+        $assumed = "## Assumptions\n\n- Counts include people of every role. (assumed)\n- Invited people count once they join. (assumed)";
+        $notes->put($this->project, $branch, [
+            'project.md' => $files['project.md']."\n{$assumed}\n",
+            'capabilities/plans.md' => $files['capabilities/plans.md']."\n{$assumed}\n",
+        ]);
+
+        $kept = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now()]);
+        Run::factory()->for($kept)->create(['plan' => $plan]);
+
+        $this->actingAs($this->owner)
+            ->post(route('feature-requests.assumptions.store', $kept), ['assumption' => 'Counts include people of every role.'])
+            ->assertRedirect();
+
+        // Kept: the app's notes hold it once, as decided, in every file.
+        $files = $notes->files($this->project, $branch);
+        $this->assertStringContainsString("## Decisions\n\n- Counts include people of every role.", $files['project.md']);
+        foreach (['project.md', 'capabilities/plans.md'] as $path) {
+            $this->assertStringNotContainsString('Counts include people of every role. (assumed)', $files[$path]);
+            $this->assertStringContainsString('- Invited people count once they join. (assumed)', $files[$path]);
+        }
+
+        // Not kept yet: the notes it would bring along change instead.
+        $waiting = FeatureRequest::factory()->generated()->for($this->project)->create(['note_changes' => [
+            'project.md' => ['before' => "# Acme\n", 'after' => "# Acme\n\n{$assumed}\n"],
+        ]]);
+        Run::factory()->for($waiting)->create(['plan' => [...$plan, 'assumptions' => ['Invited people count once they join.']]]);
+
+        $this->post(route('feature-requests.assumptions.store', $waiting), ['assumption' => 'Invited people count once they join.'])
+            ->assertRedirect();
+
+        $after = $waiting->refresh()->note_changes['project.md']['after'];
+        $this->assertStringNotContainsString('Invited people count once they join. (assumed)', $after);
+        $this->assertStringContainsString('- Counts include people of every role. (assumed)', $after);
+    }
+
     public function test_only_what_the_change_decided_can_be_kept()
     {
         $kept = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now()]);
