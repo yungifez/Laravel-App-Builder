@@ -391,7 +391,7 @@ class TestImpactTest extends TestCase
         config([
             'builder.verification.workspace_driver' => 'fake',
             'builder.verification.setup' => [],
-            'builder.verification.checks' => [['name' => 'Tests', 'command' => ['php', 'artisan', 'test'], 'timeout' => 300]],
+            'builder.verification.checks' => [['name' => 'Tests', 'command' => ['php', 'artisan', 'test'], 'timeout' => 300, 'report' => 'storage/logs/junit.xml']],
             'builder.verification.test_map' => [
                 'enabled' => true,
                 'command' => ['sh', '-c', 'make the test map'],
@@ -404,12 +404,15 @@ class TestImpactTest extends TestCase
         $driver->onExec = function (string $id, array $command) use ($driver, $suitePasses, $mapWorks) {
             $map = $command === ['sh', '-c', 'make the test map'];
 
-            if ($map && $mapWorks) {
+            // The map's run is the suite check's own: it writes the check's
+            // report, and fails when the suite does.
+            if ($map && $mapWorks && $suitePasses) {
+                $driver->files["{$id}:storage/logs/junit.xml"] = '<testsuites><testcase name="test_owners_archive_teams" file="/workspace/tests/Feature/ArchiveTest.php"/></testsuites>';
                 $driver->files["{$id}:covered.txt"] = self::COVERAGE;
                 $driver->files["{$id}:tests.xml"] = self::LISTING;
             }
 
-            $passed = $map ? $mapWorks : ($command !== ['php', 'artisan', 'test'] || $suitePasses);
+            $passed = $map ? $mapWorks && $suitePasses : ($command !== ['php', 'artisan', 'test'] || $suitePasses);
 
             return new CommandResult(exitCode: $passed ? 0 : 1, output: 'ok', errorOutput: '', durationMs: 5);
         };

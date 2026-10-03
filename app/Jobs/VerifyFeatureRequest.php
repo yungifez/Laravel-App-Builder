@@ -131,6 +131,12 @@ class VerifyFeatureRequest implements ShouldQueue
     protected array $boundaryCode = ['read' => [], 'before' => []];
 
     /**
+     * Whether the suite check ran with code coverage and passed, so the
+     * test map can be read from what it wrote.
+     */
+    protected bool $mapped = false;
+
+    /**
      * Files whose change alters what setup installs. A check cannot be run
      * on the starting commit with the change's packages, so a change to one
      * of these is judged on its own result.
@@ -296,7 +302,9 @@ class VerifyFeatureRequest implements ShouldQueue
                 continue;
             }
 
-            [$command, $tests] = $this->runStep($driver, $runWorkspaceCommand, $workspace, $step, $files ?? []);
+            [$command, $tests] = $step['name'] === config('builder.verification.suite_check')
+                ? $this->runSuite($driver, $runWorkspaceCommand, $workspace, $step)
+                : $this->runStep($driver, $runWorkspaceCommand, $workspace, $step, $files ?? []);
 
             if (! $this->record($step['name'], $stage, $command, $tests)) {
                 $allSucceeded = false;
@@ -312,6 +320,36 @@ class VerifyFeatureRequest implements ShouldQueue
         }
 
         return $allSucceeded;
+    }
+
+    /**
+     * Run the app's test suite. When the test map is on, the suite runs
+     * once with code coverage and the trace recorder, and that run is the
+     * check, so the suite does not run a second time for the map. Should
+     * that run fail for any reason, the plain command runs and decides the
+     * check, so the extra recording can never fail a change.
+     *
+     * @param  array{name: string, command: list<string>, timeout: int, report?: string}  $step
+     * @return array{WorkspaceCommand, list<array{file: string, name: string, outcome: string}>|null}
+     */
+    protected function runSuite(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, array $step): array
+    {
+        /** @var array{enabled: bool, command: list<string>, timeout: int} $map */
+        $map = config('builder.verification.test_map');
+
+        if ($map['enabled'] && isset($step['report'])) {
+            [$command, $tests] = $this->runStep($driver, $runWorkspaceCommand, $workspace, [...$step, 'command' => $map['command'], 'timeout' => $map['timeout']]);
+
+            // Only a passing run whose report lists what ran stands for the
+            // check; anything else is decided by the plain command.
+            if ($command->lost || ($this->outcome($command) === self::OUTCOME_PASSED && $tests !== null && $tests !== [])) {
+                $this->mapped = ! $command->lost;
+
+                return [$command, $tests];
+            }
+        }
+
+        return $this->runStep($driver, $runWorkspaceCommand, $workspace, $step);
     }
 
     /**
@@ -603,10 +641,10 @@ class VerifyFeatureRequest implements ShouldQueue
             return;
         }
 
-        rescue(function () use ($driver, $runWorkspaceCommand, $workspace, $featureRequest, $config) {
-            $command = $runWorkspaceCommand->handle($workspace, $config['command'], $config['timeout']);
+        rescue(function () use ($driver, $workspace, $featureRequest, $config) {
+            // The suite check already ran with coverage when it could.
             $read = fn (string $path) => rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), null, report: false);
-            $map = $this->outcome($command) === self::OUTCOME_PASSED ? TestMap::parse((string) $read($config['report']), $read($config['listing'])) : null;
+            $map = $this->mapped ? TestMap::parse((string) $read($config['report']), $read($config['listing'])) : null;
             $lines = $map !== null && isset($config['lines']) ? $read($config['lines']) : null;
 
             // Read now and measured last, once the routes the change

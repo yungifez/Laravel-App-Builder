@@ -979,9 +979,15 @@ class VerificationTest extends TestCase
     public function test_the_new_lines_of_code_are_measured_from_the_suites_line_report()
     {
         $map = ['sh', '-c', 'make the test map'];
-        config(['builder.verification.test_map' => [...config('builder.verification.test_map'), 'command' => $map, 'report' => 'covered.txt', 'listing' => 'tests.xml', 'lines' => 'lines.txt']]);
+        config([
+            'builder.verification.test_map' => [...config('builder.verification.test_map'), 'command' => $map, 'report' => 'covered.txt', 'listing' => 'tests.xml', 'lines' => 'lines.txt'],
+            // The suite check's report, which the map's run writes.
+            'builder.verification.checks.0.report' => 'storage/logs/junit.xml',
+        ]);
         $this->driver->onExec = function (string $workspace, array $command) use ($map) {
             if ($command === $map) {
+                // The suite check's own run, so it writes the check's report too.
+                $this->driver->files["{$workspace}:storage/logs/junit.xml"] = '<testsuites><testcase name="test_owners_archive_teams" file="/workspace/tests/Feature/ArchiveTest.php"/></testsuites>';
                 $this->driver->files["{$workspace}:covered.txt"] = implode("\n", [
                     '/workspace',
                     '<project source="/workspace/app"',
@@ -1016,6 +1022,7 @@ class VerificationTest extends TestCase
         $scan = ['sh', '-c', 'scan for shortcuts'];
         config([
             'builder.verification.test_map' => [...config('builder.verification.test_map'), 'command' => $map, 'report' => 'covered.txt', 'listing' => 'tests.xml'],
+            'builder.verification.checks.0.report' => 'storage/logs/junit.xml',
             'builder.verification.traces' => ['enabled' => true, 'report' => 'trace.jsonl', 'repeats' => 3],
             'builder.verification.shortcuts' => [...config('builder.verification.shortcuts'), 'enabled' => true, 'command' => $scan, 'report' => 'shortcuts.json'],
             'builder.verification.change_evidence.routes' => ['command' => ['sh', '-c', 'list the routes'], 'timeout' => 60, 'report' => 'routes.json'],
@@ -1027,6 +1034,8 @@ class VerificationTest extends TestCase
             $without = $without || in_array('--reverse', $command, true);
 
             if ($command === $map) {
+                // The suite check's own run, so it writes the check's report too.
+                $this->driver->files["{$workspace}:storage/logs/junit.xml"] = '<testsuites><testcase name="test_owners_archive_teams" file="/workspace/tests/Feature/ArchiveTest.php"/></testsuites>';
                 $this->driver->files["{$workspace}:covered.txt"] = "/workspace\n<project source=\"/workspace/app\"\n<file name=\"Team.php\" path=\"/Models\"\ncovered by=\"Tests\\Feature\\ArchiveTest::test_owners_archive_teams\"";
                 $this->driver->files["{$workspace}:trace.jsonl"] = implode("\n", [
                     // A page that saves from a line the change added.
@@ -1081,6 +1090,7 @@ class VerificationTest extends TestCase
         $map = ['sh', '-c', 'make the test map'];
         config([
             'builder.verification.test_map' => [...config('builder.verification.test_map'), 'command' => $map, 'report' => 'covered.txt', 'listing' => 'tests.xml'],
+            'builder.verification.checks.0.report' => 'storage/logs/junit.xml',
             'builder.verification.traces' => ['enabled' => true, 'report' => 'trace.jsonl', 'repeats' => 3],
             'builder.verification.boundaries' => ['enabled' => true, 'phases' => ['authorization', 'validation', 'rendering']],
         ]);
@@ -1099,6 +1109,8 @@ class VerificationTest extends TestCase
             $this->driver->files["{$workspace}:app/Providers/AppServiceProvider.php"] = $provider;
 
             if ($command === $map) {
+                // The suite check's own run, so it writes the check's report too.
+                $this->driver->files["{$workspace}:storage/logs/junit.xml"] = '<testsuites><testcase name="test_owners_archive_teams" file="/workspace/tests/Feature/ArchiveTest.php"/></testsuites>';
                 $this->driver->files["{$workspace}:trace.jsonl"] = json_encode(['test' => 'Tests\Feature\PostTest::test_people_read_posts', 'method' => 'GET', 'route' => '/posts', 'status' => 200, 'refused' => false, 'blind' => [], 'effects' => [
                     ['kind' => 'query', 'sql' => 'update "posts" set "views" = "views" + 1', 'open' => 0, 'at' => 'app/Policies/PostPolicy.php:7', 'phase' => 'authorization', 'frames' => ['App\Policies\PostPolicy::view']],
                 ]]);
@@ -1133,6 +1145,7 @@ class VerificationTest extends TestCase
         $map = ['sh', '-c', 'make the test map'];
         config([
             'builder.verification.test_map' => [...config('builder.verification.test_map'), 'command' => $map, 'report' => 'covered.txt', 'listing' => 'tests.xml'],
+            'builder.verification.checks.0.report' => 'storage/logs/junit.xml',
             'builder.verification.traces' => ['enabled' => true, 'report' => 'trace.jsonl', 'repeats' => 3],
             'builder.verification.boundaries' => ['enabled' => true, 'phases' => ['authorization', 'validation', 'rendering']],
         ]);
@@ -1142,6 +1155,8 @@ class VerificationTest extends TestCase
         $controller = "<?php\nnamespace App\\Http\\Controllers;\nclass CheckoutController\n{\n    public function store()\n    {\n        \\Illuminate\\Support\\Facades\\Http::post('https://api.stripe.com/v1/charges');\n    }\n}\n";
         $this->driver->onExec = function (string $workspace, array $command) use ($map) {
             if ($command === $map) {
+                // The suite check's own run, so it writes the check's report too.
+                $this->driver->files["{$workspace}:storage/logs/junit.xml"] = '<testsuites><testcase name="test_owners_archive_teams" file="/workspace/tests/Feature/ArchiveTest.php"/></testsuites>';
                 $this->driver->files["{$workspace}:trace.jsonl"] = json_encode(['test' => 'Tests\Feature\CheckoutTest::test_people_pay', 'method' => 'POST', 'route' => '/checkout', 'status' => 200, 'refused' => false, 'blind' => [], 'effects' => [
                     ['kind' => 'http', 'what' => 'POST api.stripe.com', 'open' => 0, 'at' => 'app/Billing/StripeGateway.php:31', 'phase' => 'handling', 'frames' => ['App\Billing\StripeGateway::charge']],
                     ['kind' => 'http', 'what' => 'POST api.stripe.com', 'open' => 0, 'at' => 'app/Http/Controllers/CheckoutController.php:7', 'phase' => 'handling', 'frames' => ['App\Http\Controllers\CheckoutController::store']],
@@ -1172,6 +1187,7 @@ class VerificationTest extends TestCase
         $map = ['sh', '-c', 'make the test map'];
         config([
             'builder.verification.test_map' => [...config('builder.verification.test_map'), 'command' => $map, 'report' => 'covered.txt', 'listing' => 'tests.xml'],
+            'builder.verification.checks.0.report' => 'storage/logs/junit.xml',
             'builder.verification.traces' => ['enabled' => true, 'report' => 'trace.jsonl', 'repeats' => 3],
             'builder.verification.drift' => ['enabled' => true, 'least' => 2, 'slack' => 0.1, 'tolerance' => 0.25, 'strict' => 1.0],
         ]);
@@ -1180,6 +1196,8 @@ class VerificationTest extends TestCase
         ])));
         $this->driver->onExec = function (string $workspace, array $command) use ($map) {
             if ($command === $map) {
+                // The suite check's own run, so it writes the check's report too.
+                $this->driver->files["{$workspace}:storage/logs/junit.xml"] = '<testsuites><testcase name="test_owners_archive_teams" file="/workspace/tests/Feature/ArchiveTest.php"/></testsuites>';
                 $request = fn (int $queries) => json_encode(['test' => 'Tests\Feature\InvoiceTest::test_people_read_invoices', 'method' => 'GET', 'route' => '/invoices', 'status' => 200, 'refused' => false, 'blind' => [], 'effects' => array_fill(0, $queries, ['kind' => 'query', 'sql' => 'select * from invoices', 'open' => 0, 'at' => 'app/Billing/Invoices.php:12'])]);
                 $this->driver->files["{$workspace}:trace.jsonl"] = $request(4)."\n".$request(6);
             }
@@ -1203,6 +1221,7 @@ class VerificationTest extends TestCase
         $fail = ['sh', '-c', 'run one test with one failure', 'sh'];
         config([
             'builder.verification.test_map' => [...config('builder.verification.test_map'), 'command' => $map, 'report' => 'covered.txt', 'listing' => 'tests.xml'],
+            'builder.verification.checks.0.report' => 'storage/logs/junit.xml',
             'builder.verification.traces' => ['enabled' => true, 'report' => 'trace.jsonl', 'repeats' => 3],
             'builder.verification.faults' => ['enabled' => true, 'points' => 2, 'seconds' => 60, 'command' => $fail, 'timeout' => 30, 'report' => 'failed.jsonl'],
         ]);
@@ -1214,6 +1233,8 @@ class VerificationTest extends TestCase
         $old = ['kind' => 'http', 'what' => 'POST chat.example.com', 'open' => 0, 'at' => 'app/Support/Old.php:9'];
         $this->driver->onExec = function (string $workspace, array $command) use ($map, $fail, $request, $saved, $mail, $hook, $old) {
             if ($command === $map) {
+                // The suite check's own run, so it writes the check's report too.
+                $this->driver->files["{$workspace}:storage/logs/junit.xml"] = '<testsuites><testcase name="test_owners_archive_teams" file="/workspace/tests/Feature/ArchiveTest.php"/></testsuites>';
                 $this->driver->files["{$workspace}:covered.txt"] = "/workspace\n<project source=\"/workspace/app\"\n<file name=\"Team.php\" path=\"/Models\"\ncovered by=\"Tests\\Feature\\ArchiveTest::test_owners_archive_teams\"";
                 $this->driver->files["{$workspace}:trace.jsonl"] = $request(302, [$saved, $mail, $hook, $old]);
             }

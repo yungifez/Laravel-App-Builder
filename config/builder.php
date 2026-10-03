@@ -855,9 +855,10 @@ return [
             'shots_max' => (int) env('BUILDER_SCREEN_SHOTS_MAX', 3),
         ],
 
-        // Test impact evidence (direction 22). When the suite check passes,
-        // the suite runs once more with code coverage, and the test list is
-        // read with its groups, to record which tests ran which code files.
+        // Test impact evidence (direction 22). The suite check runs with
+        // code coverage (if that run fails, the plain "Tests" command runs
+        // and decides the check), and the test list is read with its
+        // groups, to record which tests ran which code files.
         // A test in a "behavior:<key>" group proves that behaviour. The run
         // never changes the checks' result; without a coverage driver it
         // records nothing. The command writes the condensed coverage
@@ -880,7 +881,9 @@ return [
                     '&& export PHP_INI_SCAN_DIR=":$PWD/storage/logs/test-map/trace" TRACE_RECORDER_DIR="$PWD/storage/logs/test-map/trace";',
                     'fi',
                 ])] : []),
-                'php -d pcov.enabled=1 artisan test --coverage-xml=storage/logs/test-map/coverage --coverage-clover=storage/logs/test-map/clover.xml > /dev/null',
+                // The suite check's own run: its report and output are the
+                // check's, as for the plain "Tests" command.
+                'php -d pcov.enabled=1 artisan test --log-junit=storage/logs/junit.xml --coverage-xml=storage/logs/test-map/coverage --coverage-clover=storage/logs/test-map/clover.xml',
                 'test -f storage/logs/test-map/coverage/index.xml',
                 '(php artisan test --list-tests-xml=storage/logs/test-map/tests.xml > /dev/null || true)',
                 '{ pwd; grep -o \'<project source="[^"]*"\' storage/logs/test-map/coverage/index.xml; grep -rhoE \'<file name="[^"]*" path="[^"]*"|<line nr="[0-9]+"|covered by="[^"]*"\' --include=\'*.php.xml\' storage/logs/test-map/coverage || true; } > storage/logs/test-map/covered.txt',
