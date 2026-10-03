@@ -81,8 +81,13 @@ class RequestPreviewProblemFix
             ]],
         ];
 
+        // The owner's words say what they chose, not only what went wrong.
+        $words = $problem['during'] !== null
+            ? __('Make my app keep working when :what.', ['what' => ClearPreviewProblem::outage($problem['during'])])
+            : __('Fix this problem I ran into while trying my app: :words', ['words' => $problem['words']]);
+
         return $change === null
-            ? $this->requestFeature->handle($project, $requester, __('Fix this problem I ran into while trying my app: :words', ['words' => $problem['words']]), liveErrors: $liveErrors)
+            ? $this->requestFeature->handle($project, $requester, $words, liveErrors: $liveErrors)
             : $this->requestFollowUp->handle($change, $requester, __('Fix this problem I ran into while trying this change: :words', ['words' => $problem['words']]), liveErrors: $liveErrors);
     }
 }

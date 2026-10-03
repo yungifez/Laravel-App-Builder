@@ -33,7 +33,15 @@ class ClearPreviewProblem
      */
     public static function question(string $during): string
     {
-        return __('Should your app keep working when :what?', ['what' => Str::lcfirst(ReadPreviewHappenings::FAULTS[$during] ?? $during)]);
+        return __('Should your app keep working when :what?', ['what' => self::outage($during)]);
+    }
+
+    /**
+     * Name what was down as it reads inside a sentence: "email is down".
+     */
+    public static function outage(string $during): string
+    {
+        return Str::lcfirst(ReadPreviewHappenings::FAULTS[$during] ?? $during);
     }
 
     /**

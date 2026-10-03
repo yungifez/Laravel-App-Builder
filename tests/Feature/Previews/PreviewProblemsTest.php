@@ -265,7 +265,7 @@ class PreviewProblemsTest extends TestCase
         $this->post(route('cleared-problems.store', $this->project), ['problem' => $id, 'fine' => true]);
         $this->post(route('preview-problem-fixes.store', $this->project), ['problem' => $id])->assertSessionHasNoErrors();
         $this->assertSame([['Should your app keep working when email is down?', 'Yes, it should cope.']], $this->decisions());
-        $this->assertSame(1, FeatureRequest::count());
+        $this->assertSame('Make my app keep working when email is down.', FeatureRequest::sole()->prompt);
     }
 
     /**
