@@ -13,6 +13,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
@@ -443,8 +444,11 @@ class TraceRecorderTest extends TestCase
         // The cache server is down: the first read, write or forget fails the request.
         File::put("{$this->directory}/fault.json", json_encode(['kind' => 'cache']));
         $this->post('/_failing/remembered')->assertStatus(500);
+        // The app's log says the cache was down on purpose, for whoever reads the error.
+        $this->assertSame(Recorder::LIVE_WORDS['cache'], Context::get(Recorder::LIVE_CONTEXT));
         File::put("{$this->directory}/fault.json", json_encode(['kind' => null]));
         $this->post('/_failing/remembered')->assertNoContent();
+        $this->assertFalse(Context::has(Recorder::LIVE_CONTEXT));
 
         $requests = $recorded();
         $this->assertSame([204, 500, 204], array_column($requests, 'status'));

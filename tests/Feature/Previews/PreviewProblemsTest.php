@@ -17,14 +17,17 @@ use App\Projects\ProjectRepository;
 use ErrorException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Inertia\Testing\AssertableInertia as Assert;
 use Mockery\MockInterface;
+use RuntimeException;
 use Tests\Concerns\FakesWorkspaces;
 use Tests\Concerns\PreparesRuns;
 use Tests\Fakes\FakeWorkspaceDriver;
 use Tests\TestCase;
+use TraceRecorder\Recorder;
 
 class PreviewProblemsTest extends TestCase
 {
@@ -124,6 +127,38 @@ class PreviewProblemsTest extends TestCase
                 ->where('problems.0.words', 'An email could not be sent.')
                 ->where('problems.0.place', 'app/Actions/Users/CreateUser.php:28')
                 ->where('problems.0.trace', ['public/index.php:15'])));
+    }
+
+    public function test_a_problem_met_while_the_owner_made_something_fail_on_purpose_says_so_to_the_owner_and_the_coder()
+    {
+        class_exists(Recorder::class) || require_once resource_path('trace-recorder/src/Recorder.php');
+        $fail = fn () => report(new RuntimeException('Connection refused: the cache server did not answer.'));
+
+        $this->writeLog(function () use ($fail) {
+            $fail();
+            // The recorder in the app on show marks each request while the cache is down.
+            Context::add(Recorder::LIVE_CONTEXT, Recorder::LIVE_WORDS['cache']);
+            $fail();
+            Log::error('Could not keep the cart');
+            Context::forget(Recorder::LIVE_CONTEXT);
+        });
+        $problems = $this->problems();
+
+        // The same error met with the cache down on purpose is its own problem.
+        $this->assertSame([
+            ['Could not keep the cart', 'cache'],
+            ['Connection refused: the cache server did not answer.', 'cache'],
+            ['Connection refused: the cache server did not answer.', null],
+        ], array_map(fn (array $problem) => [$problem['message'], $problem['during']], $problems));
+        $this->assertSame('Your app stopped with an error while the cache was down.', $problems[1]['words']);
+        $this->assertSame('Something went wrong in your app.', $problems[2]['words']);
+
+        $this->actingAs($this->owner)->post(route('preview-problem-fixes.store', $this->project), ['problem' => $problems[1]['id']]);
+
+        $instructions = FeatureRequest::sole()->instructions();
+        $this->assertStringContainsString('This happened while the owner had made the cache fail on purpose, to see how the app copes without it.', $instructions);
+        $this->assertStringContainsString('falling back', $instructions);
+        $this->assertStringContainsString('Say in your summary which you chose and why', $instructions);
     }
 
     public function test_one_click_asks_for_a_fix_with_the_details_and_a_second_click_opens_it()

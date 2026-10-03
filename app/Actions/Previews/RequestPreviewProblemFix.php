@@ -69,6 +69,7 @@ class RequestPreviewProblemFix
                 'count' => $problem['count'],
                 'place' => $problem['place'],
                 'trace' => $problem['trace'],
+                'during' => $problem['during'],
             ]],
         ];
 

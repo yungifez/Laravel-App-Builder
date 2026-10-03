@@ -533,6 +533,8 @@ export type AppProblem = {
     message: string;
     place: string | null;
     trace: string[];
+    /** What the owner had made fail on purpose when it happened, if anything. */
+    during: Exclude<AppFault, 'none'> | null;
     count: number;
     first_at: string | null;
     last_at: string | null;

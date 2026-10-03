@@ -6,9 +6,10 @@ import ClearedProblemController from '@/actions/App/Http/Controllers/ClearedProb
 import PreviewProblemFixController from '@/actions/App/Http/Controllers/PreviewProblemFixController';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
+import { faults } from '@/lib/appFaults';
 import { when } from '@/lib/when';
 import { show as showProject } from '@/routes/projects';
-import type { AppProblem } from '@/types';
+import type { AppFault, AppProblem } from '@/types';
 
 const props = defineProps<{
     projectId: string;
@@ -41,6 +42,11 @@ function at(iso: string | null): string {
               minute: '2-digit',
           })
         : when(iso);
+}
+
+// What the owner had made fail on purpose when this happened.
+function outage(fault: AppFault): string {
+    return faults.find((item) => item.key === fault)?.label ?? fault;
 }
 
 function times(problem: AppProblem): string {
@@ -87,6 +93,15 @@ function times(problem: AppProblem): string {
                         />
                         <div class="min-w-0 flex-1">
                             <p class="text-sm">{{ problem.words }}</p>
+                            <p
+                                v-if="problem.during"
+                                class="text-xs text-muted-foreground"
+                                data-test="app-problem-during"
+                            >
+                                Happened while you had “{{
+                                    outage(problem.during)
+                                }}” on
+                            </p>
                             <p class="text-xs text-muted-foreground">
                                 <span
                                     v-if="problem.state === 'back'"

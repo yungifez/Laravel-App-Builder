@@ -20,7 +20,7 @@ class ReadPreviewProblems
      * fixed, cleared by the owner, or back after either, and the owner's
      * last try to fix it when that try stopped.
      *
-     * @return list<array{id: string, words: string, class: string|null, message: string, place: string|null, trace: list<string>, count: int, first_at: string|null, last_at: string|null, state: string, change: string|null, stopped: string|null}>
+     * @return list<array{id: string, words: string, class: string|null, message: string, place: string|null, trace: list<string>, during: string|null, count: int, first_at: string|null, last_at: string|null, state: string, change: string|null, stopped: string|null}>
      */
     public function handle(Project $project): array
     {

@@ -30,6 +30,7 @@ use Illuminate\Http\Client\Factory as HttpClient;
 use Illuminate\Http\Client\Response as ClientResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Log\Context\Repository as ContextRepository;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Log\LogManager;
 use Illuminate\Mail\Events\MessageSending;
@@ -282,6 +283,23 @@ class Recorder
     public const MAX_BYTES = 4_000_000;
 
     /**
+     * The name the app's log gives a request made while something is down
+     * on purpose, and what it says for each kind.
+     */
+    public const LIVE_CONTEXT = 'simulated_outage';
+
+    /**
+     * @var array<string, string>
+     */
+    public const LIVE_WORDS = [
+        'mail' => 'mail: the mail server was made unreachable on purpose to see how the app copes',
+        'http' => 'http: outside services were made unreachable on purpose to see how the app copes',
+        'file' => 'file: storage was made full on purpose to see how the app copes',
+        'cache' => 'cache: the cache was made unreachable on purpose to see how the app copes',
+        'notification' => 'notification: notification channels were made unreachable on purpose to see how the app copes',
+    ];
+
+    /**
      * The kind of thing that fails in every request now, outside a test.
      */
     protected ?string $live = null;
@@ -300,6 +318,30 @@ class Recorder
         }
 
         return is_array($fault) && in_array($fault['kind'] ?? null, self::LIVE, true) ? $fault['kind'] : null;
+    }
+
+    /**
+     * Say in the app's log that what fails now fails on purpose. Each line
+     * the app logs in this request then carries it, so whoever reads the
+     * error knows the app was tried without that thing, not that it broke.
+     * Context came with Laravel 11; an older app's log goes without.
+     */
+    protected function markLive(): void
+    {
+        try {
+            if (! class_exists(ContextRepository::class)) {
+                return;
+            }
+
+            $context = $this->app->make(ContextRepository::class);
+
+            // A job queued in an earlier request brings its context along.
+            $this->live === null
+                ? $context->forget(self::LIVE_CONTEXT)
+                : $context->add(self::LIVE_CONTEXT, self::LIVE_WORDS[$this->live]);
+        } catch (Throwable) {
+            //
+        }
     }
 
     /**
@@ -487,6 +529,7 @@ class Recorder
         $this->ended = null;
         $this->requests++;
         $this->live = $this->liveFault();
+        $this->markLive();
         $this->jobs = 0;
         $this->running = [];
         $this->held = [];

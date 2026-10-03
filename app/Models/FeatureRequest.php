@@ -128,6 +128,20 @@ class FeatureRequest extends Model
     }
 
     /**
+     * What an app should do while one kind of thing is down, for the coder
+     * deciding whether an error the owner met then is right.
+     *
+     * @var array<string, string>
+     */
+    protected const OUTAGES = [
+        'mail' => 'Usually the visitor\'s own action should still succeed (the record is saved), with the email queued, retried or reported, and the page should not fail; only a page whose whole purpose is the email may say it could not be sent.',
+        'http' => 'If the page can work without that answer, it should, with a clear note; if it truly depends on it (such as a payment), it should stop before saving anything half done and tell the visitor to try again later, not show an error page.',
+        'file' => 'The visitor should be told the file could not be saved and nothing else should be saved half done; the page should not fail with an error.',
+        'cache' => 'The cache only makes things faster, so a page should normally still work by reading from the source, for example by catching the cache failure and falling back; only something that truly needs it, such as a lock, may refuse with a clear message.',
+        'notification' => 'The visitor\'s own action should still succeed; the notice should be queued, retried or reported, not fail the page.',
+    ];
+
+    /**
      * Get the owner's words with where they started from: the element they
      * pointed at, or the errors online or while they tried the app.
      */
@@ -159,7 +173,7 @@ class FeatureRequest extends Model
      * while trying it. The owner only saw that something went wrong; the
      * details are for the builder.
      *
-     * @param  list<array{class: string|null, message: string, count: int, place?: string|null, trace?: list<string>}>  $errors
+     * @param  list<array{class: string|null, message: string, count: int, place?: string|null, trace?: list<string>, during?: string|null}>  $errors
      */
     protected function liveErrorInstructions(array $errors, bool $tried = false): string
     {
@@ -167,7 +181,8 @@ class FeatureRequest extends Model
             fn (array $error) => '- '.trim(($error['class'] ?? '').': '.str($this->redact($error['message']))->squish()->limit(300), ': ')
                 .(filled($error['place'] ?? null) ? " (at {$error['place']})" : '')
                 .' ('.($error['count'] === 1 ? 'once' : "{$error['count']} times").')'
-                .(($error['trace'] ?? []) === [] ? '' : "\n  Through the app's code: ".implode(', ', $error['trace'])),
+                .(($error['trace'] ?? []) === [] ? '' : "\n  Through the app's code: ".implode(', ', $error['trace']))
+                .(isset(self::OUTAGES[$error['during'] ?? '']) ? "\n  ".$this->outageInstructions($error['during']) : ''),
             $errors,
         );
 
@@ -176,6 +191,32 @@ class FeatureRequest extends Model
             : 'People using the published app ran into these errors since its current version went online, most frequent first.';
 
         return "{$intro} Find why each happens and fix the cause, with a test that fails without the fix:\n".implode("\n", $lines);
+    }
+
+    /**
+     * Explain an error the owner met while they had made one thing fail on
+     * purpose, to see how the app copes without it. The error is then not
+     * a bug in that thing, and the answer is not to bring it back: it is
+     * how the app should behave while it is gone.
+     */
+    protected function outageInstructions(string $kind): string
+    {
+        return "This happened while the owner had made {$this->outageName($kind)} fail on purpose, to see how the app copes without it. Nothing is wrong with {$this->outageName($kind)} itself: do not change its configuration or remove its use. Decide what the app should do while it is down. ".self::OUTAGES[$kind]
+            .' Say in your summary which you chose and why, and test it with that service failing.';
+    }
+
+    /**
+     * Name what was down on purpose.
+     */
+    protected function outageName(string $kind): string
+    {
+        return match ($kind) {
+            'mail' => 'the mail server',
+            'http' => 'outside services',
+            'file' => 'file storage',
+            'cache' => 'the cache',
+            default => 'notification channels',
+        };
     }
 
     /**

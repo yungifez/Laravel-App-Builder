@@ -2,6 +2,7 @@
 
 namespace App\Previews;
 
+use App\Actions\Previews\ReadPreviewHappenings;
 use Carbon\CarbonImmutable;
 
 /**
@@ -18,13 +19,19 @@ class LoggedProblems
     protected const LEVELS = ['ERROR', 'CRITICAL', 'ALERT', 'EMERGENCY'];
 
     /**
+     * The name the app's log gives a request made while the owner had
+     * something down on purpose. The recorder in the app on show writes it.
+     */
+    protected const DURING = 'simulated_outage';
+
+    /**
      * Find the kinds of problem in a log, the most recent first.
      *
-     * @return list<array{id: string, words: string, class: string|null, message: string, place: string|null, trace: list<string>, count: int, first_at: string|null, last_at: string|null}>
+     * @return list<array{id: string, words: string, class: string|null, message: string, place: string|null, trace: list<string>, during: string|null, count: int, first_at: string|null, last_at: string|null}>
      */
     public static function in(string $log, int $limit = 30): array
     {
-        /** @var array<string, array{problem: array{class: string|null, message: string, place: string|null, trace: list<string>}, count: int, first_at: string|null, last_at: string|null}> $kinds */
+        /** @var array<string, array{problem: array{class: string|null, message: string, place: string|null, trace: list<string>, during: string|null}, count: int, first_at: string|null, last_at: string|null}> $kinds */
         $kinds = [];
 
         // The log is in order, so the kind met last is the newest, and the
@@ -36,7 +43,9 @@ class LoggedProblems
 
             $problem = self::read($entry['message']);
             $at = rescue(fn () => CarbonImmutable::parse($entry['time'])->toIso8601String(), null, report: false);
-            $id = sha1(($problem['class'] ?? '').'|'.preg_replace('/\d+/', '#', $problem['message']).'|'.$problem['place']);
+            // The same error with something down on purpose is a different
+            // problem: the question there is how the app copes without it.
+            $id = sha1(($problem['class'] ?? '').'|'.preg_replace('/\d+/', '#', $problem['message']).'|'.$problem['place'].'|'.$problem['during']);
             $kind = $kinds[$id] ?? ['problem' => $problem, 'count' => 0, 'first_at' => $at, 'last_at' => $at];
 
             unset($kinds[$id]);
@@ -48,7 +57,7 @@ class LoggedProblems
         foreach (array_slice(array_reverse($kinds, true), 0, $limit, true) as $id => $kind) {
             $found[] = [
                 'id' => (string) $id,
-                'words' => self::words($kind['problem']['class'], $kind['problem']['message']),
+                'words' => self::words($kind['problem']['class'], $kind['problem']['message'], $kind['problem']['during']),
                 ...$kind['problem'],
                 'count' => $kind['count'],
                 'first_at' => $kind['first_at'],
@@ -64,10 +73,13 @@ class LoggedProblems
      * there. An exception is written with its class, place and trace; a
      * problem the app wrote itself has only a message.
      *
-     * @return array{class: string|null, message: string, place: string|null, trace: list<string>}
+     * @return array{class: string|null, message: string, place: string|null, trace: list<string>, during: string|null}
      */
     protected static function read(string $entry): array
     {
+        // What the owner made fail on purpose while this happened, if anything.
+        $during = preg_match('/"'.self::DURING.'":"('.implode('|', array_keys(ReadPreviewHappenings::FAULTS)).'):/', $entry, $outage) === 1 ? $outage[1] : null;
+
         // Paths are shown from the app's folder, the one that holds vendor/.
         $root = preg_match('#(/[^\s:(]*?)/vendor/#', $entry, $match) === 1 ? $match[1].'/' : null;
         $relative = fn (string $path) => $root !== null && str_starts_with($path, $root) ? substr($path, strlen($root)) : $path;
@@ -100,24 +112,34 @@ class LoggedProblems
                 'message' => stripcslashes(trim($match[2])),
                 'place' => $place,
                 'trace' => $trace,
+                'during' => $during,
             ];
         }
 
-        // A message the app wrote, without the details it added after it.
-        $message = preg_replace('/ (?:\{.*\}|\[\])$/s', '', $entry) ?? $entry;
+        // A message the app wrote, without the details after it: its own,
+        // then what the log adds to each line.
+        $message = preg_replace('/ (?:\{.*\}|\[\])(?: (?:\{.*\}|\[\]))?$/s', '', $entry) ?? $entry;
 
-        return ['class' => null, 'message' => trim($message), 'place' => null, 'trace' => []];
+        return ['class' => null, 'message' => trim($message), 'place' => null, 'trace' => [], 'during' => $during];
     }
 
     /**
      * Say what went wrong in the owner's words. The details are kept for
      * a developer and for the fix.
      */
-    protected static function words(?string $class, string $message): string
+    protected static function words(?string $class, string $message, ?string $during = null): string
     {
         $class = (string) $class;
 
         return match (true) {
+            // The owner made this fail; what they learn is that the app did not cope.
+            $during !== null => __('Your app stopped with an error while :what.', ['what' => match ($during) {
+                'mail' => __('email was down'),
+                'http' => __('outside services did not answer'),
+                'file' => __('storage was full'),
+                'cache' => __('the cache was down'),
+                default => __('notices could not go out'),
+            }]),
             str_contains($class, 'QueryException'), str_contains($class, 'PDOException') => 'Saving or reading data failed.',
             str_contains($class, 'ModelNotFoundException') => 'Something the app looked for was not there.',
             str_contains($class, 'ViewException'), str_contains($message, 'View [') => 'A page could not be drawn.',
