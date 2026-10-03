@@ -116,6 +116,31 @@ class OwnerNotificationTest extends TestCase
         $this->assertSame($again->id, $owner->notifications()->sole()->data['feature_request_id']);
     }
 
+    public function test_a_change_tried_many_times_keeps_one_note_even_once_read()
+    {
+        $first = Run::factory()->implementing()->create();
+        $owner = $first->featureRequest->user;
+        $project = $first->featureRequest->project;
+        app(TransitionRun::class)->handle($first, RunStatus::Failed);
+        $owner->unreadNotifications->markAsRead();
+
+        // Two tries of the first one, then a try of the second.
+        $second = FeatureRequest::factory()->for($project)->for($owner)->create(['retry_of_id' => $first->feature_request_id]);
+        app(TransitionRun::class)->handle(Run::factory()->implementing()->for($second)->create(), RunStatus::Failed);
+        $owner->unreadNotifications->markAsRead();
+        $beside = FeatureRequest::factory()->for($project)->for($owner)->create(['retry_of_id' => $first->feature_request_id]);
+        app(TransitionRun::class)->handle(Run::factory()->implementing()->for($beside)->create(), RunStatus::Failed);
+        $last = FeatureRequest::factory()->for($project)->for($owner)->create(['retry_of_id' => $second->id]);
+        app(TransitionRun::class)->handle(Run::factory()->implementing()->for($last)->create(), RunStatus::Failed);
+
+        $this->assertSame($last->id, $owner->notifications()->sole()->data['feature_request_id']);
+
+        // Another change keeps its own note.
+        $other = Run::factory()->implementing()->for(FeatureRequest::factory()->for($project)->for($owner))->create();
+        app(TransitionRun::class)->handle($other, RunStatus::Failed);
+        $this->assertSame(2, $owner->notifications()->count());
+    }
+
     public function test_each_notification_names_the_app_it_is_about_and_when()
     {
         $owner = User::factory()->create();

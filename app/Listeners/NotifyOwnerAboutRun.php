@@ -29,10 +29,11 @@ class NotifyOwnerAboutRun
             return;
         }
 
-        // One note per change: a newer one replaces any the owner has not
-        // read. Trying a stopped change again is the same change.
+        // One note per change: a newer one replaces any earlier one, read
+        // or not, so the bell does not fill with the same change. Every try
+        // of a stopped change is the same change.
         $tries = $this->tries($featureRequest);
-        $owner->unreadNotifications()
+        $owner->notifications()
             ->where('type', ChangeNeedsYou::class)
             ->get()
             ->filter(fn ($notification) => in_array($notification->data['feature_request_id'] ?? null, $tries, true))
@@ -60,21 +61,33 @@ class NotifyOwnerAboutRun
     }
 
     /**
-     * Get the change and every earlier try of it that it tries again.
+     * Get every try of the change: the first one, and each try that tries
+     * it or a later try again.
      *
      * @return list<int>
      */
     protected function tries(FeatureRequest $featureRequest): array
     {
-        $tries = [$featureRequest->id];
+        $first = $featureRequest;
+        $seen = [$first->id];
 
-        while ($featureRequest->retry_of_id !== null && ! in_array($featureRequest->retry_of_id, $tries, true)) {
-            $tries[] = $featureRequest->retry_of_id;
-            $featureRequest = FeatureRequest::query()->find($featureRequest->retry_of_id);
+        while ($first->retry_of_id !== null && ! in_array($first->retry_of_id, $seen, true)) {
+            $earlier = FeatureRequest::query()->find($first->retry_of_id);
 
-            if ($featureRequest === null) {
+            if ($earlier === null) {
                 break;
             }
+
+            $seen[] = $earlier->id;
+            $first = $earlier;
+        }
+
+        $tries = [$first->id];
+        $next = [$first->id];
+
+        while ($next !== []) {
+            $next = FeatureRequest::query()->whereIn('retry_of_id', $next)->whereNotIn('id', $tries)->pluck('id')->all();
+            $tries = [...$tries, ...$next];
         }
 
         return $tries;
