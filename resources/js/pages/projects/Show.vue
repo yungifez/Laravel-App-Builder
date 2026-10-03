@@ -857,7 +857,31 @@ const shown = useRemember(
     reactive<{ filter: Filter }>({ filter: 'all' }),
     'change-filter',
 ) as { filter: Filter };
+// A stopped change asked again later is the same ask: only the latest
+// counts, so no filter says a change stopped while its ask goes on.
+const askedAgain = computed(() => {
+    const newestFirst = props.changes;
+
+    return new Set(
+        newestFirst
+            .filter(
+                (item, index) =>
+                    item.state === 'stopped' &&
+                    newestFirst
+                        .slice(0, index)
+                        .some(
+                            (later) =>
+                                later.prompt.trim() === item.prompt.trim(),
+                        ),
+            )
+            .map((item) => item.id),
+    );
+});
 const inFilter = (item: ChangeItem, filter: Filter): boolean => {
+    if (askedAgain.value.has(item.id)) {
+        return false;
+    }
+
     switch (filter) {
         case 'all':
             return item.state !== 'dismissed';
@@ -943,24 +967,13 @@ const thread = computed(() => {
     const open = (item: ChangeItem) =>
         item.state === 'waiting' || item.state === 'working';
 
-    // A stopped change asked again later is the same ask: show the latest.
     // Finished changes go in the order they finished, the time their day
     // is named by, so a day is never said twice. The sort keeps the order
     // of the asks for changes finished at the same time.
     const finished = (item: ChangeItem) =>
         item.updated_at === null ? 0 : Date.parse(item.updated_at);
     const history = oldestFirst
-        .filter(
-            (item, index) =>
-                !open(item) &&
-                (item.state !== 'stopped' ||
-                    !oldestFirst
-                        .slice(index + 1)
-                        .some(
-                            (later) =>
-                                later.prompt.trim() === item.prompt.trim(),
-                        )),
-        )
+        .filter((item) => !open(item))
         .sort((a, b) => finished(a) - finished(b));
 
     const groups: { label: string; items: ChangeItem[] }[] = [];
