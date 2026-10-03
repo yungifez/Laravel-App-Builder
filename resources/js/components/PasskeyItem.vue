@@ -74,8 +74,8 @@ const handleDelete = () => {
             <DialogContent>
                 <DialogTitle>Remove passkey</DialogTitle>
                 <DialogDescription>
-                    Are you sure you want to remove the "{{ passkey.name }}"
-                    passkey? You will no longer be able to use it to sign in.
+                    After this, you cannot sign in with "{{ passkey.name }}".
+                    Your password still works.
                 </DialogDescription>
                 <DialogFooter class="gap-2">
                     <DialogClose as-child>
