@@ -152,6 +152,33 @@ class PublishingTest extends TestCase
         $this->assertTrue($elsewhere->deployments()->doesntExist());
     }
 
+    public function test_an_app_without_a_health_route_is_online_once_its_home_page_answers()
+    {
+        $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main', 'live_url' => 'https://shop.example.com']);
+        Http::fake([
+            'shop.example.com/up' => Http::response('Not Found', 404),
+            'shop.example.com/' => Http::response('', 200),
+            'shop.example.com/login' => Http::response('Not Found', 404),
+        ]);
+
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project))->assertSessionHasNoErrors();
+
+        $this->assertSame(DeploymentStatus::Published, Deployment::sole()->status);
+    }
+
+    public function test_an_app_whose_home_page_is_missing_is_not_online()
+    {
+        config(['builder.publishing.confirm.confirm_seconds' => 0]);
+        $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main', 'live_url' => 'https://shop.example.com']);
+        Http::fake(['shop.example.com/*' => Http::response('Not Found', 404)]);
+
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project))->assertSessionHasNoErrors();
+
+        $deployment = Deployment::sole();
+        $this->assertNotSame(DeploymentStatus::Published, $deployment->status);
+        $this->assertContains(['path' => '/', 'status' => 404, 'passed' => false], $deployment->health);
+    }
+
     public function test_a_publish_counts_as_online_only_once_the_app_answers_at_its_address()
     {
         $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main', 'live_url' => 'https://shop.example.com']);

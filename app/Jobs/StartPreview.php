@@ -300,7 +300,10 @@ class StartPreview implements ShouldQueue
     }
 
     /**
-     * Wait for the app's health endpoint to answer.
+     * Wait for the app's health endpoint to answer. An app that removed
+     * Laravel's health route answers it with "not found", which already
+     * shows the app is running; it is ready once its home page answers
+     * without an error, even with a redirect to sign in.
      *
      * @throws PreviewCouldNotStart when it does not answer in time.
      */
@@ -308,12 +311,24 @@ class StartPreview implements ShouldQueue
     {
         $seconds = (int) config('builder.preview.boot_seconds');
         $status = null;
+        // A request that cannot connect keeps the last answer, to report.
+        $ask = function (string $path) use ($upstream, &$status): ?int {
+            return rescue(fn () => app(RunnerDoor::class)->prepare(Http::timeout(2)->withoutRedirecting(), $upstream)->get("{$upstream}{$path}")->status(), $status, report: false);
+        };
 
         for ($attempt = 0; $attempt < max(1, $seconds * 2); $attempt++) {
-            $status = rescue(fn () => app(RunnerDoor::class)->prepare(Http::timeout(2), $upstream)->get("{$upstream}/up")->status(), $status, report: false);
+            $status = $ask('/up');
 
             if ($status !== null && $status >= 200 && $status < 300) {
                 return;
+            }
+
+            if ($status === 404) {
+                $status = $ask('/');
+
+                if ($status !== null && $status < 500) {
+                    return;
+                }
             }
 
             Sleep::for(500)->milliseconds();

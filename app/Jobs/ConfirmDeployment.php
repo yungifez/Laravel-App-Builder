@@ -149,7 +149,9 @@ class ConfirmDeployment implements ShouldQueue
 
     /**
      * Request one path. Anything below 400 passes: a redirect to a sign-in
-     * page is a working app.
+     * page is a working app. So does "not found" on any path but the home
+     * page: an app that removed Laravel's health route answers that way,
+     * and the home page is still checked.
      *
      * @return array{path: string, status: int|null, passed: bool}
      */
@@ -164,6 +166,6 @@ class ConfirmDeployment implements ShouldQueue
             $status = null;
         }
 
-        return ['path' => $path, 'status' => $status, 'passed' => $status !== null && $status < 400];
+        return ['path' => $path, 'status' => $status, 'passed' => $status !== null && ($status < 400 || ($status === 404 && trim($path, '/') !== ''))];
     }
 }

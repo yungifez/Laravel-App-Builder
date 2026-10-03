@@ -9,6 +9,11 @@ use App\Runs\Tools\RunCommand;
 use App\Runs\Tools\SearchFiles;
 use App\Runs\Tools\WriteFile;
 
+// Install from the app's lock file. An app that keeps none installs
+// without one, and writes none: a new lock file would show up in the
+// owner's change.
+$installNodeDependencies = ['sh', '-c', 'if [ -f package-lock.json ]; then exec npm ci --no-audit --no-fund; fi; exec npm install --no-audit --no-fund --no-package-lock'];
+
 return [
 
     /*
@@ -725,7 +730,7 @@ return [
             // The database server the app asks for in .env, private to the
             // workspace (MySQL, MariaDB or PostgreSQL; SQLite needs none).
             ['name' => 'Start the database', 'command' => ['sh', '-c', (string) file_get_contents(resource_path('preview-tools/start-database.sh'))], 'timeout' => 120],
-            ['name' => 'Install Node dependencies', 'command' => ['npm', 'ci', '--no-audit', '--no-fund'], 'timeout' => 600, 'needs' => 'package.json'],
+            ['name' => 'Install Node dependencies', 'command' => $installNodeDependencies, 'timeout' => 600, 'needs' => 'package.json'],
             ['name' => 'Generate route helpers', 'command' => ['php', 'artisan', 'wayfinder:generate', '--with-form'], 'timeout' => 120, 'needs' => 'vendor/laravel/wayfinder'],
             // Tests that open a page need the built screens, as in the
             // starter kits' own CI; without them every such test fails on
@@ -1189,7 +1194,7 @@ return [
             ['name' => 'Start the database', 'command' => ['sh', '-c', (string) file_get_contents(resource_path('preview-tools/start-database.sh'))], 'timeout' => 120],
             // A large app builds hundreds of tables the first time.
             ['name' => 'Create the database', 'command' => ['php', 'artisan', 'migrate', '--force', '--no-interaction'], 'timeout' => 600],
-            ['name' => 'Install Node dependencies', 'command' => ['npm', 'ci', '--no-audit', '--no-fund'], 'timeout' => 600, 'needs' => 'package.json'],
+            ['name' => 'Install Node dependencies', 'command' => $installNodeDependencies, 'timeout' => 600, 'needs' => 'package.json'],
         ],
 
         // Point-and-edit. An editable preview runs the locator after setup,

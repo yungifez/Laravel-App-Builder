@@ -180,6 +180,28 @@ class PreviewTest extends TestCase
         $this->assertStringContainsString('last answer: 500', $error);
     }
 
+    public function test_an_app_without_a_health_route_is_ready_once_its_home_page_answers()
+    {
+        Http::fake(['*/up' => Http::response('Not Found', 404), '*' => Http::response('', 302, ['Location' => '/login'])]);
+        $request = FeatureRequest::factory()->generated()->create();
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $this->assertSame(PreviewStatus::Ready, $request->previews()->sole()->status);
+    }
+
+    public function test_an_app_without_a_health_route_whose_home_page_fails_is_not_ready()
+    {
+        Sleep::fake();
+        Http::fake(['*/up' => Http::response('Not Found', 404), '*' => Http::response('Whoops', 500)]);
+        config(['builder.preview.boot_seconds' => 1]);
+        $request = FeatureRequest::factory()->generated()->create();
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $this->assertStringContainsString('last answer: 500', (string) $request->previews()->sole()->error);
+    }
+
     public function test_a_change_that_no_longer_fits_the_app_says_so()
     {
         $this->driver->onExec = fn (string $id, array $command) => new CommandResult(
