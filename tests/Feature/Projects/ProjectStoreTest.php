@@ -128,6 +128,45 @@ class ProjectStoreTest extends TestCase
         $this->assertSame(1, $project->refresh()->repository_version);
     }
 
+    public function test_a_server_removes_copies_it_did_not_use_for_a_while_and_gets_them_back_when_needed(): void
+    {
+        config(['builder.projects.store.idle_minutes' => 60]);
+        $repository = app(ProjectRepository::class);
+        $idle = Project::factory()->create(['source_path' => $this->makeProjectSource()]);
+        $busy = Project::factory()->create(['source_path' => $this->makeProjectSource()]);
+        $import = $repository->import($idle);
+        $repository->import($busy);
+        $repository->head($idle->refresh());
+        $repository->head($busy->refresh());
+
+        $this->travel(2)->hours();
+        $repository->head($busy);
+
+        $this->assertDirectoryDoesNotExist($repository->path($idle));
+        $this->assertDirectoryExists($repository->path($busy));
+        $this->assertSame($import, $repository->head($idle), 'The copy comes back from the store.');
+
+        // At most one sweep every ten minutes.
+        config(['builder.projects.store.idle_minutes' => 1]);
+        $this->travel(5)->minutes();
+        $repository->head($busy);
+        $this->assertDirectoryExists($repository->path($idle));
+    }
+
+    public function test_without_the_store_copies_stay_on_the_disk(): void
+    {
+        config(['builder.projects.store.driver' => null]);
+        $repository = app(ProjectRepository::class);
+        $project = Project::factory()->create(['source_path' => $this->makeProjectSource()]);
+        $repository->import($project);
+
+        $this->travel(30)->days();
+        $repository->head($project);
+
+        $this->assertDirectoryExists($repository->path($project));
+        $this->assertFileDoesNotExist($this->web.'/.swept');
+    }
+
     public function test_on_github_a_change_made_on_one_server_is_seen_on_another(): void
     {
         $remotes = $this->storeOnGitHub();

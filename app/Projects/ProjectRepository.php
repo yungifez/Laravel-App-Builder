@@ -15,6 +15,7 @@ use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -757,7 +758,7 @@ class ProjectRepository
     {
         $checked = self::$checkedAt[$this->path($project)] ?? 0.0;
 
-        if (microtime(true) - $checked < 1.0) {
+        if (now()->getTimestampMs() / 1000 - $checked < 1.0) {
             return;
         }
 
@@ -765,7 +766,48 @@ class ProjectRepository
             $this->locked($project, fn () => null);
         }
 
-        self::$checkedAt[$this->path($project)] = microtime(true);
+        self::$checkedAt[$this->path($project)] = now()->getTimestampMs() / 1000;
+
+        if (File::isDirectory($this->path($project).DIRECTORY_SEPARATOR.'.git')) {
+            touch($this->path($project).DIRECTORY_SEPARATOR.'.git'.DIRECTORY_SEPARATOR.'builder-used', now()->getTimestamp());
+        }
+
+        $this->sweep();
+    }
+
+    /**
+     * Remove the copies on this server's disk that were not used for a
+     * while, at most once every ten minutes. The store keeps every saved
+     * commit, so a copy comes back when it is next used. Each server has a
+     * disk of its own, so each server sweeps its own as it works.
+     */
+    protected function sweep(): void
+    {
+        $root = rtrim((string) config('builder.projects.root'), DIRECTORY_SEPARATOR);
+        $marker = $root.DIRECTORY_SEPARATOR.'.swept';
+
+        if (! File::isDirectory($root) || (File::exists($marker) && File::lastModified($marker) > now()->subMinutes(10)->getTimestamp())) {
+            return;
+        }
+
+        touch($marker, now()->getTimestamp());
+        $idleSince = now()->subMinutes((int) config('builder.projects.store.idle_minutes'))->getTimestamp();
+
+        foreach (File::directories($root) as $directory) {
+            $id = basename($directory);
+            $used = $directory.DIRECTORY_SEPARATOR.'.git'.DIRECTORY_SEPARATOR.'builder-used';
+
+            if (! ctype_digit($id) || isset(self::$holding[(int) $id]) || (File::exists($used) ? File::lastModified($used) : File::lastModified($directory)) > $idleSince) {
+                continue;
+            }
+
+            // A copy in use right now is left for the next sweep.
+            Cache::lock("project-repository:{$id}", 120)->get(function () use ($directory, $id) {
+                File::deleteDirectory($directory);
+                unset(self::$checkedAt[$directory]);
+                Log::info("Removed the idle copy of project {$id}'s repository from this server.");
+            });
+        }
     }
 
     /**

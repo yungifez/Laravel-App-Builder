@@ -58,6 +58,9 @@ return [
             'organization' => env('BUILDER_PROJECT_STORE_ORGANIZATION'),
             'disk' => env('BUILDER_PROJECT_STORE_DISK'),
             'prefix' => env('BUILDER_PROJECT_STORE_PREFIX', 'code'),
+            // A server removes its copy of a project not used this long, so
+            // copies cannot fill its small disk; the store keeps the code.
+            'idle_minutes' => (int) env('BUILDER_PROJECT_STORE_IDLE_MINUTES', 360),
         ],
         // The app a new project starts from. `php artisan projects:template`
         // puts the package below there. Until the folder exists, owners can
