@@ -260,6 +260,7 @@ class ProjectRepository
 
         try {
             $archive = $directory.'.tar';
+            $this->exportEveryFile($project);
             $export = $this->git($project, ['archive', '--format=tar', '--output='.$archive, $revision], throw: false);
 
             if ($export->successful()) {
@@ -275,6 +276,25 @@ class ProjectRepository
             return $callback($directory);
         } finally {
             File::deleteDirectory($directory);
+        }
+    }
+
+    /**
+     * Make git archive give every file of the app, as a clone would. An app
+     * may mark files "export-ignore" to leave them out of its releases,
+     * such as a CHANGELOG.md its own tests read; without them the app's
+     * tests fail in the workspace, and the change gets the blame. The
+     * repository's own attributes file comes before the app's.
+     */
+    protected function exportEveryFile(Project $project): void
+    {
+        $file = trim($this->git($project, ['rev-parse', '--git-path', 'info/attributes'])->output());
+        $file = str_starts_with($file, DIRECTORY_SEPARATOR) ? $file : $this->path($project).DIRECTORY_SEPARATOR.$file;
+        $rule = "* -export-ignore -export-subst\n";
+
+        if (! File::exists($file) || File::get($file) !== $rule) {
+            File::ensureDirectoryExists(dirname($file));
+            File::put($file, $rule);
         }
     }
 
