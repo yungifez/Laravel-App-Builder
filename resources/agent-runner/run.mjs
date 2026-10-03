@@ -236,9 +236,17 @@ async function runClaude(task, session, prompt) {
         throw error;
     }
 
+    // Claude counts input read from and written to its cache apart from the
+    // rest. As with Codex, input_tokens is all of it, and the part read back
+    // from the cache is also given on its own.
+    const cached = final?.usage?.cache_read_input_tokens ?? 0;
     const usage = {
         turns: final?.num_turns ?? 0,
-        input_tokens: final?.usage?.input_tokens ?? 0,
+        input_tokens:
+            (final?.usage?.input_tokens ?? 0) +
+            cached +
+            (final?.usage?.cache_creation_input_tokens ?? 0),
+        cached_input_tokens: cached,
         output_tokens: final?.usage?.output_tokens ?? 0,
         cost_usd: final?.total_cost_usd ?? null,
         session: sessionId,

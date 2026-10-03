@@ -8,6 +8,7 @@ use App\Context\ContextPack;
 use App\Enums\AgentOutcomeStatus;
 use App\Enums\RunStatus;
 use App\Models\Run;
+use App\Models\RunEvent;
 use App\Models\Workspace;
 use App\Runs\Agents\AgentOutcome;
 use App\Runs\Agents\AgentTask;
@@ -73,13 +74,15 @@ class RunCodingAgent
             $estimate = $outcome->costUsd === null && $outcome->model !== null
                 ? RecordModelUsage::cost($outcome->model, $outcome->inputTokens, $outcome->outputTokens, $outcome->cachedInputTokens)
                 : null;
+            $reported = $this->callCost($outcome);
 
             $this->recordEvent($run, $lease, 'model_call', [
                 'role' => 'coder',
                 ...$outcome->toArray(),
                 // So a light repair that did not pass is not tried light again.
                 'light' => $task->light,
-                'cost_usd' => $outcome->costUsd ?? $estimate,
+                'cost_usd' => $reported ?? $estimate,
+                'session_cost_usd' => $outcome->costUsd,
                 'cost_source' => match (true) {
                     $outcome->costUsd !== null => 'reported',
                     $estimate !== null => 'estimated',
@@ -114,6 +117,24 @@ class RunCodingAgent
         throw new ProvidersUnavailable(__('No AI provider could take the task right now (:reason). Try again later.', [
             'reason' => $previous->error ?? $previous->errorKind ?? 'unknown',
         ]));
+    }
+
+    /**
+     * Get what this call cost, as the agent reported it. Claude reports what
+     * the whole session has cost so far, so for a resumed session what its
+     * earlier calls reported is taken off.
+     */
+    protected function callCost(AgentOutcome $outcome): ?float
+    {
+        if ($outcome->costUsd === null || ! $outcome->resumed || $outcome->session === null) {
+            return $outcome->costUsd;
+        }
+
+        $earlier = RunEvent::query()->where('type', 'model_call')->where('data->session', $outcome->session)
+            ->where('data->cost_source', 'reported')->get()
+            ->sum(fn (RunEvent $call) => (float) ($call->data['cost_usd'] ?? 0));
+
+        return max(0.0, round($outcome->costUsd - $earlier, 6));
     }
 
     /**

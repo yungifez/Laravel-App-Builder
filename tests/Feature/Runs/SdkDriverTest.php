@@ -538,6 +538,25 @@ class SdkDriverTest extends TestCase
         $this->assertStringStartsWith('model=claude-opus-5 ', $account(null));
     }
 
+    public function test_a_resumed_claude_session_costs_only_what_it_added()
+    {
+        // Claude reports what the whole session has cost so far.
+        $totals = [2.27, 2.49, 2.58];
+        $this->agent('claude', 'anthropic', function (Workspace $workspace, AgentTask $task) use (&$totals) {
+            File::put($this->path($workspace, 'app/Team.php'), "<?php\n// ".count($this->agents['claude']->tasks)."\n");
+
+            return new AgentOutcome('claude', 'anthropic', null, AgentOutcomeStatus::Completed, 'Done.', costUsd: array_shift($totals), session: 'session-1', resumed: $task->resume !== null);
+        });
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->failVerification($run, 'Expected description to be fillable.');
+        $this->failVerification($run->refresh(), 'Expected description to be required.');
+
+        $calls = $run->events()->where('type', 'model_call')->where('data->role', 'coder')->orderBy('sequence')->get();
+        $this->assertSame([2.27, 0.22, 0.09], $calls->map(fn (RunEvent $event) => $event->data['cost_usd'])->all());
+        $this->assertSame([2.27, 2.49, 2.58], $calls->map(fn (RunEvent $event) => $event->data['session_cost_usd'])->all());
+    }
+
     public function test_a_repair_pass_continues_the_agents_session_with_only_the_problems()
     {
         $this->agent('claude', 'anthropic', function (Workspace $workspace, AgentTask $task) {
