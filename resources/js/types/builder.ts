@@ -259,6 +259,8 @@ export type Run = {
         answer: string;
         decided_by: 'owner' | 'builder';
     }[];
+    /** What I decided for the owner that they said to keep. */
+    kept_assumptions: string[];
     /** Set when the owner's own Claude Code or Codex writes the change:
      * whether it still waits for their change, and where it connects. */
     yours: {

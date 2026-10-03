@@ -22,6 +22,7 @@ import { useScreen } from '@/composables/useScreen';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import FeatureRequestAcceptanceController from '@/actions/App/Http/Controllers/FeatureRequestAcceptanceController';
 import FeatureRequestAnswerController from '@/actions/App/Http/Controllers/FeatureRequestAnswerController';
+import FeatureRequestAssumptionController from '@/actions/App/Http/Controllers/FeatureRequestAssumptionController';
 import FeatureRequestFollowUpController from '@/actions/App/Http/Controllers/FeatureRequestFollowUpController';
 import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
 import FeatureRequestKeepTryingController from '@/actions/App/Http/Controllers/FeatureRequestKeepTryingController';
@@ -1087,15 +1088,78 @@ const checks = computed(() => {
                                 for you
                             </CollapsibleTrigger>
                             <CollapsibleContent>
+                                <!-- Each one is the owner's to keep, so
+                                     later changes follow it, or to change
+                                     in this chat. -->
                                 <ul
-                                    class="mt-1 list-disc space-y-1 pl-9 text-xs text-muted-foreground"
+                                    class="mt-1 list-disc space-y-2 pl-9 text-xs text-muted-foreground"
                                 >
                                     <li
                                         v-for="(assumption, index) in run.plan
                                             .assumptions"
                                         :key="index"
+                                        data-test="decision"
                                     >
                                         {{ assumption }}
+                                        <span
+                                            class="flex min-h-6 items-center gap-3"
+                                        >
+                                            <span
+                                                v-if="
+                                                    run.kept_assumptions.includes(
+                                                        assumption,
+                                                    )
+                                                "
+                                                class="inline-flex items-center gap-1 text-foreground"
+                                                data-test="decision-kept"
+                                            >
+                                                <Check class="size-3" /> You
+                                                chose this
+                                            </span>
+                                            <Form
+                                                v-else
+                                                v-bind="
+                                                    FeatureRequestAssumptionController.store.form(
+                                                        request.id,
+                                                    )
+                                                "
+                                                :options="{
+                                                    preserveScroll: true,
+                                                    preserveState: true,
+                                                }"
+                                                v-slot="{ processing }"
+                                            >
+                                                <input
+                                                    type="hidden"
+                                                    name="assumption"
+                                                    :value="assumption"
+                                                />
+                                                <button
+                                                    :disabled="processing"
+                                                    class="inline-flex min-h-11 items-center underline-offset-4 select-none hover:text-foreground hover:underline sm:min-h-6"
+                                                    data-test="decision-keep"
+                                                >
+                                                    Keep
+                                                </button>
+                                            </Form>
+                                            <Link
+                                                :href="
+                                                    showProject(
+                                                        change.project.id,
+                                                        {
+                                                            query: {
+                                                                change: request.id,
+                                                                ask: `Change this: “${assumption}”\n\nInstead, `,
+                                                            },
+                                                        },
+                                                    )
+                                                "
+                                                class="inline-flex min-h-11 items-center underline-offset-4 select-none hover:text-foreground hover:underline sm:min-h-6"
+                                                data-test="decision-change"
+                                            >
+                                                Change
+                                            </Link>
+                                        </span>
                                     </li>
                                 </ul>
                             </CollapsibleContent>

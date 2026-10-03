@@ -188,6 +188,56 @@ class ProjectUnderstandingTest extends TestCase
                 ->where('decisions.1.change', $kept->uuid));
     }
 
+    public function test_something_i_decided_that_the_owner_keeps_becomes_their_decision_once()
+    {
+        $kept = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now()]);
+        $run = Run::factory()->for($kept)->create(['plan' => ['summary' => '', 'acceptance_criteria' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null, 'assumptions' => [
+            'Counts include people of every role.',
+            'Invited people count once they join.',
+        ]]]);
+
+        $this->actingAs($this->owner);
+
+        // Pressed twice, it is kept once.
+        $this->post(route('feature-requests.assumptions.store', $kept), ['assumption' => 'Counts include people of every role.'])->assertRedirect();
+        $this->post(route('feature-requests.assumptions.store', $kept), ['assumption' => 'Counts include people of every role.'])->assertRedirect();
+
+        $this->assertSame(['Counts include people of every role.'], $run->refresh()->kept_assumptions);
+
+        // Every later change reads it as decided.
+        $notes = app(ProjectNotes::class)->files($this->project)['project.md'];
+        $this->assertSame(1, substr_count($notes, '- Counts include people of every role.'));
+        $this->assertStringContainsString("## Decisions\n\n- Counts include people of every role.", $notes);
+
+        // Shown once, as the owner's, with the change it came from.
+        $this->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('decisions', 2)
+                ->where('decisions.0.decision', 'Counts include people of every role.')
+                ->where('decisions.0.by', 'owner')
+                ->where('decisions.0.change', $kept->uuid)
+                ->where('decisions.1.by', 'builder'));
+
+        $this->get(route('feature-requests.show', $kept))
+            ->assertInertia(fn (Assert $page) => $page->where('run.kept_assumptions', ['Counts include people of every role.']));
+    }
+
+    public function test_only_what_the_change_decided_can_be_kept()
+    {
+        $kept = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now()]);
+        $run = Run::factory()->for($kept)->create(['plan' => ['summary' => '', 'acceptance_criteria' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null, 'assumptions' => ['Counts include people of every role.']]]);
+
+        $this->actingAs($this->owner)
+            ->post(route('feature-requests.assumptions.store', $kept), ['assumption' => 'Everyone is an admin.'])
+            ->assertSessionHasErrors('assumption');
+
+        $this->assertNull($run->refresh()->kept_assumptions);
+
+        $this->actingAs(User::factory()->create())
+            ->post(route('feature-requests.assumptions.store', $kept), ['assumption' => 'Counts include people of every role.'])
+            ->assertForbidden();
+    }
+
     public function test_all_decisions_are_counted_while_the_newest_are_listed()
     {
         $kept = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now()]);

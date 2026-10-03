@@ -257,6 +257,7 @@ class DescribeFeatureRequest
                 ? ($run->events()->where('type', 'build_finished')->latest('sequence')->first()?->data['account'] ?? null)
                 : null,
             'answers' => $run->answers ?? [],
+            'kept_assumptions' => $run->kept_assumptions ?? [],
             // The owner's own Claude Code or Codex writes the change. Until it
             // hands the change back, the thread says how to connect it.
             'yours' => $run->driver !== 'worker' ? null : [

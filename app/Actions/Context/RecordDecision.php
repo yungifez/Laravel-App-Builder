@@ -20,10 +20,11 @@ class RecordDecision
      * Write an owner's answer into the project notes as a decision, so it
      * is never asked again and every later change follows it. It is saved
      * at once: the owner decided it, whether or not they keep the change.
+     * Something I decided that the owner said to keep has no question.
      *
      * @return string The notes' new version
      */
-    public function handle(Project $project, string $question, string $answer, ?string $branch = null): string
+    public function handle(Project $project, ?string $question, string $answer, ?string $branch = null): string
     {
         $branch ??= $project->branch();
         $notes = NotesDocument::parse($this->notes->files($project, $branch)[ProjectContext::PROJECT_FILE] ?? '# '.$project->name."\n");
@@ -32,7 +33,7 @@ class RecordDecision
         return $this->updateProjectNotes->handle(
             $project,
             'section:'.self::SECTION,
-            trim($decisions."\n- {$question} {$answer}"),
+            trim($decisions."\n- ".ltrim("{$question} {$answer}")),
             $this->notes->version($project, $branch),
             $branch,
         );

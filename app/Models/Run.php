@@ -40,13 +40,14 @@ use Laravel\Sanctum\HasApiTokens;
  * @property string|null $stop_reason Why the run failed or waits on its owner, such as "budget_exhausted"
  * @property array{text: string, why: string, options: list<string>, recommended: string|null}|null $question What the run waits for the owner to answer before it plans again
  * @property list<array{question: string, answer: string, decided_by: string}>|null $answers What the owner answered before building, oldest first
+ * @property list<string>|null $kept_assumptions What I decided for the owner that they said to keep
  * @property int $question_limit How many questions the run may ask before building
  * @property CarbonImmutable|null $started_at
  * @property CarbonImmutable|null $finished_at
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['workspace_id', 'driver', 'config_version', 'stop_reason', 'status', 'fencing_token', 'lease_owner', 'lease_expires_at', 'workspace_revision', 'plan', 'context', 'repairs', 'feedback', 'review', 'error', 'question', 'answers', 'question_limit', 'started_at', 'finished_at'])]
+#[Fillable(['workspace_id', 'driver', 'config_version', 'stop_reason', 'status', 'fencing_token', 'lease_owner', 'lease_expires_at', 'workspace_revision', 'plan', 'context', 'repairs', 'feedback', 'review', 'error', 'question', 'answers', 'kept_assumptions', 'question_limit', 'started_at', 'finished_at'])]
 class Run extends Model
 {
     // A worker's token opens this one change (GrantWorkerAccess).
@@ -73,6 +74,7 @@ class Run extends Model
             'feedback' => 'array',
             'question' => 'array',
             'answers' => 'array',
+            'kept_assumptions' => 'array',
             'question_limit' => 'integer',
             'context' => 'array',
             'review' => 'array',

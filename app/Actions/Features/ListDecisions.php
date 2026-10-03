@@ -43,7 +43,7 @@ class ListDecisions
         foreach ($kept as $featureRequest) {
             foreach ($this->decisionsOf($featureRequest) as $decision) {
                 if ($decision['by'] === 'owner') {
-                    $noted = array_values(array_diff($noted, ["{$decision['question']} {$decision['decision']}"]));
+                    $noted = array_values(array_diff($noted, [ltrim("{$decision['question']} {$decision['decision']}")]));
                 }
 
                 $decisions[] = $decision;
@@ -89,7 +89,8 @@ class ListDecisions
 
     /**
      * Get one kept change's decisions: the owner's answers first, then the
-     * ones I made about how the app behaves.
+     * ones I made about how the app behaves. One of mine the owner said to
+     * keep is theirs.
      *
      * @return list<array{change: string|null, summary: string|null, at: string|null, question: string|null, decision: string, by: 'owner'|'builder'}>
      */
@@ -109,7 +110,7 @@ class ListDecisions
 
         foreach ($run->plan['assumptions'] ?? [] as $assumption) {
             if (preg_match(self::BUILD_WORDS, $assumption) !== 1) {
-                $decisions[] = [...$change, 'question' => null, 'decision' => $assumption, 'by' => 'builder'];
+                $decisions[] = [...$change, 'question' => null, 'decision' => $assumption, 'by' => in_array($assumption, $run->kept_assumptions ?? [], true) ? 'owner' : 'builder'];
             }
         }
 
