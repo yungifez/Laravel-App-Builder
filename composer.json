@@ -23,6 +23,7 @@
         "laravel/tinker": "^3.0",
         "laravel/wayfinder": "^0.1.14",
         "nunomaduro/essentials": "^1.2",
+        "spatie/laravel-honeypot": "^4.7",
         "symfony/yaml": "^8.1",
         "tales-from-a-dev/tailwind-merge-php": "^0.4"
     },

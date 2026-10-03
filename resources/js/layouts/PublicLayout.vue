@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import AppLogo from '@/components/AppLogo.vue';
-import { home, login, pricing, register } from '@/routes';
+import {
+    contact,
+    home,
+    login,
+    pricing,
+    privacy,
+    register,
+    terms,
+} from '@/routes';
 import { index } from '@/routes/projects';
 </script>
 
@@ -22,7 +30,7 @@ import { index } from '@/routes/projects';
                         Pricing
                     </Link>
                     <Link
-                        v-if="$page.props.auth.user"
+                        v-if="$page.props.auth?.user"
                         :href="index()"
                         class="inline-flex min-h-11 press items-center rounded-md bg-primary px-4 font-medium text-primary-foreground select-none hover:bg-primary/90 sm:min-h-8"
                     >
@@ -61,6 +69,24 @@ import { index } from '@/routes/projects';
                         class="text-muted-foreground hover:text-foreground"
                     >
                         Pricing
+                    </Link>
+                    <Link
+                        :href="contact()"
+                        class="text-muted-foreground hover:text-foreground"
+                    >
+                        Contact
+                    </Link>
+                    <Link
+                        :href="privacy()"
+                        class="text-muted-foreground hover:text-foreground"
+                    >
+                        Privacy
+                    </Link>
+                    <Link
+                        :href="terms()"
+                        class="text-muted-foreground hover:text-foreground"
+                    >
+                        Terms
                     </Link>
                 </nav>
             </div>

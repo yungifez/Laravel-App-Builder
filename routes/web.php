@@ -4,6 +4,7 @@ use App\Features\AppBoundaries;
 use App\Features\AppDrift;
 use App\Features\AppFaults;
 use App\Http\Controllers\ClearedProblemController;
+use App\Http\Controllers\ContactController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\DeploymentRestorationController;
@@ -28,6 +29,7 @@ use App\Http\Controllers\FeatureRequestReversionController;
 use App\Http\Controllers\FeatureRequestStepChangeController;
 use App\Http\Controllers\FeatureRequestVerificationController;
 use App\Http\Controllers\FeatureRequestWorkerController;
+use App\Http\Controllers\LegalPageController;
 use App\Http\Controllers\LiveErrorFixController;
 use App\Http\Controllers\NewPartController;
 use App\Http\Controllers\NewProjectController;
@@ -77,9 +79,14 @@ use App\Http\Controllers\VisualPictureController;
 use App\Http\Controllers\VisualTextController;
 use App\Http\Controllers\WelcomeController;
 use Illuminate\Support\Facades\Route;
+use Spatie\Honeypot\ProtectAgainstSpam;
 
 Route::get('/', WelcomeController::class)->name('home');
 Route::get('pricing', PricingController::class)->name('pricing');
+Route::get('contact', [ContactController::class, 'show'])->name('contact');
+Route::get('privacy', LegalPageController::class)->defaults('page', 'privacy')->name('privacy');
+Route::get('terms', LegalPageController::class)->defaults('page', 'terms')->name('terms');
+Route::post('contact', [ContactController::class, 'store'])->middleware([ProtectAgainstSpam::class, 'throttle:5,10'])->name('contact.store');
 
 // A link the owner shared: anyone holding it can try the app, with no account.
 Route::get('s/{token}', [SharedAppController::class, 'show'])->where('token', '[A-Za-z0-9]{40}')->middleware('throttle:30,1')->name('shared-apps.show');
