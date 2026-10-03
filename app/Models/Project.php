@@ -25,6 +25,7 @@ use Laravel\Sanctum\HasApiTokens;
  * @property string $name
  * @property string $source_path
  * @property Carbon|null $repository_created_at When the project's repository was first made; a missing repository after that is lost work, never a fresh import
+ * @property int $repository_version How many times the repository was saved to the project store; 0 when the store is off
  * @property bool $started_here Whether the app was started here from the template, not brought in
  * @property bool|null $keep_old_working The owner's choice to keep old data and links working; null leaves it to mayBeInUse()
  * @property list<string>|null $careful_areas The keys of the areas the owner asked to be extra careful with

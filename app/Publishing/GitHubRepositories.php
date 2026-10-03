@@ -30,9 +30,17 @@ class GitHubRepositories
      */
     public function ensure(Project $project): string
     {
-        $organization = (string) config('builder.publishing.github.organization');
-        $name = Str::slug($project->name).'-'.$project->id;
+        return $this->ensureNamed((string) config('builder.publishing.github.organization'), Str::slug($project->name).'-'.$project->id);
+    }
 
+    /**
+     * Create a private repository in the organization, or find the one made
+     * by an earlier attempt, and get its full name ("organization/name").
+     *
+     * @throws RequestException
+     */
+    public function ensureNamed(string $organization, string $name): string
+    {
         $response = $this->request()->post("/orgs/{$organization}/repos", [
             'name' => $name,
             'private' => true,

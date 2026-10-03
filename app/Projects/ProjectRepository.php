@@ -8,6 +8,7 @@ use App\Events\ProjectCommitted;
 use App\Models\Project;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\Exceptions\RepositoryMissing;
+use App\Publishing\GitHubRepositories;
 use App\Workspaces\Drivers\CopyExclusions;
 use Closure;
 use Illuminate\Contracts\Cache\Lock;
@@ -15,8 +16,10 @@ use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Throwable;
 
 /**
  * The Git repository the builder keeps for a project. Its main branch
@@ -35,6 +38,20 @@ use RuntimeException;
  */
 class ProjectRepository
 {
+    /**
+     * Projects whose repository lock this process holds.
+     *
+     * @var array<int, true>
+     */
+    protected static array $holding = [];
+
+    /**
+     * When this process last made sure each copy was current, by its path.
+     *
+     * @var array<string, float>
+     */
+    protected static array $checkedAt = [];
+
     public function __construct(private ProjectNotes $notes) {}
 
     /**
@@ -50,6 +67,11 @@ class ProjectRepository
      */
     public function exists(Project $project): bool
     {
+        // A server that has not seen the project yet gets it from the store.
+        if ($this->stored($project) && ! isset(self::$holding[$project->id])) {
+            $this->refresh($project);
+        }
+
         return File::isDirectory($this->path($project).DIRECTORY_SEPARATOR.'.git');
     }
 
@@ -465,16 +487,19 @@ class ProjectRepository
             array_push($arguments, '-p', $parent);
         }
 
-        $commit = trim($this->git($project, $arguments, env: [
-            'GIT_AUTHOR_NAME' => $author['name'],
-            'GIT_AUTHOR_EMAIL' => $author['email'],
-            'GIT_COMMITTER_NAME' => $author['name'],
-            'GIT_COMMITTER_EMAIL' => $author['email'],
-        ])->output());
+        // Locked so the new ref is saved to the store with the rest.
+        return $this->locked($project, function () use ($project, $arguments, $author, $ref) {
+            $commit = trim($this->git($project, $arguments, env: [
+                'GIT_AUTHOR_NAME' => $author['name'],
+                'GIT_AUTHOR_EMAIL' => $author['email'],
+                'GIT_COMMITTER_NAME' => $author['name'],
+                'GIT_COMMITTER_EMAIL' => $author['email'],
+            ])->output());
 
-        $this->git($project, ['update-ref', $ref, $commit]);
+            $this->git($project, ['update-ref', $ref, $commit]);
 
-        return $commit;
+            return $commit;
+        });
     }
 
     /**
@@ -564,6 +589,10 @@ class ProjectRepository
      */
     public function git(Project $project, array $arguments, bool $throw = true, int $timeout = 60, array $env = []): ProcessResult
     {
+        if ($this->stored($project) && ! isset(self::$holding[$project->id])) {
+            $this->refresh($project);
+        }
+
         if ($project->repository_created_at !== null && ! File::isDirectory($this->path($project))) {
             throw RepositoryMissing::forProject($project->id);
         }
@@ -681,6 +710,268 @@ class ProjectRepository
         /** @var Lock $lock */
         $lock = Cache::lock("project-repository:{$project->id}", 120);
 
-        return $lock->block(60, $callback);
+        return $lock->block(60, function () use ($project, $callback) {
+            self::$holding[$project->id] = true;
+
+            try {
+                if (! $this->stored($project)) {
+                    return $callback();
+                }
+
+                // Another server may have saved newer commits. Writing on an
+                // older copy would drop them when this one is saved.
+                $this->fetch($project);
+                $before = $this->refs($project);
+                $result = $callback();
+
+                if ($this->refs($project) !== $before) {
+                    $this->save($project);
+                }
+
+                return $result;
+            } finally {
+                unset(self::$holding[$project->id]);
+            }
+        });
+    }
+
+    /**
+     * Determine whether the project's repository is kept in the project
+     * store, off this server's disk.
+     */
+    protected function stored(Project $project): bool
+    {
+        return in_array(config('builder.projects.store.driver'), ['github', 'disk'], true);
+    }
+
+    protected function storedOnGitHub(): bool
+    {
+        return config('builder.projects.store.driver') === 'github';
+    }
+
+    /**
+     * Make sure this server's copy has every commit saved to the store, at
+     * most once a second, so reads on any server see the newest change.
+     */
+    protected function refresh(Project $project): void
+    {
+        $checked = self::$checkedAt[$this->path($project)] ?? 0.0;
+
+        if (microtime(true) - $checked < 1.0) {
+            return;
+        }
+
+        if ($this->localVersion($project) !== $this->storedVersion($project)) {
+            $this->locked($project, fn () => null);
+        }
+
+        self::$checkedAt[$this->path($project)] = microtime(true);
+    }
+
+    /**
+     * Bring this server's copy up to the store's, or make it from the store
+     * when this server has none. Only called inside the lock.
+     */
+    protected function fetch(Project $project): void
+    {
+        $version = $this->storedVersion($project);
+
+        if ($version === 0 || $this->localVersion($project) === $version) {
+            return;
+        }
+
+        if ($this->storedOnGitHub()) {
+            $this->fetchFromGitHub($project, $version);
+
+            return;
+        }
+
+        $disk = Storage::disk((string) config('builder.projects.store.disk'));
+        $object = $this->storeObject($project);
+
+        if (! $disk->exists($object)) {
+            throw RepositoryMissing::forProject($project->id);
+        }
+
+        $bundle = (string) tempnam(sys_get_temp_dir(), 'project-bundle-');
+
+        try {
+            File::put($bundle, '');
+            $stream = $disk->readStream($object);
+            $target = fopen($bundle, 'w');
+
+            if ($stream === null || $target === false) {
+                throw new RuntimeException("The project store could not read {$object}.");
+            }
+
+            stream_copy_to_stream($stream, $target);
+            fclose($target);
+            fclose($stream);
+
+            $this->initialize($project);
+            $this->git($project, ['fetch', '--quiet', '--prune', '--update-head-ok', $bundle, '+refs/*:refs/*'], timeout: 300);
+            $this->discardChanges($project);
+            $this->writeLocalVersion($project, $version);
+        } finally {
+            File::delete($bundle);
+        }
+    }
+
+    /**
+     * Fetch every ref from the project's store repository on GitHub.
+     */
+    protected function fetchFromGitHub(Project $project, int $version): void
+    {
+        $this->initialize($project);
+        $remote = $this->storeRemote($project);
+        $result = $this->git($project, ['fetch', '--quiet', '--prune', '--update-head-ok', $remote, '+refs/*:refs/*'], throw: false, timeout: 300);
+
+        if ($result->failed()) {
+            $output = self::withoutCredentials($result->errorOutput(), $remote);
+
+            // The saved copy is gone, not just out of reach.
+            if (preg_match('/not found|does not appear to be a git repository/i', $output) === 1) {
+                throw RepositoryMissing::forProject($project->id);
+            }
+
+            throw new RuntimeException(trim($output));
+        }
+
+        $this->discardChanges($project);
+        $this->writeLocalVersion($project, $version);
+    }
+
+    /**
+     * Make an empty repository for a copy this server does not have yet.
+     */
+    protected function initialize(Project $project): void
+    {
+        if (! File::isDirectory($this->path($project).DIRECTORY_SEPARATOR.'.git')) {
+            File::ensureDirectoryExists($this->path($project));
+            $this->git($project, ['init', '--quiet', '--initial-branch='.config('builder.projects.branch')]);
+        }
+    }
+
+    /**
+     * Save the whole repository to the store and count the save. When the
+     * save fails, this copy is marked as out of date, so the next use takes
+     * the store's copy and the unsaved commits are not kept anywhere.
+     */
+    protected function save(Project $project): void
+    {
+        $bundle = (string) tempnam(sys_get_temp_dir(), 'project-bundle-');
+
+        try {
+            File::delete($bundle);
+
+            if ($this->storedOnGitHub()) {
+                $this->pushToGitHub($project);
+            } else {
+                $this->git($project, ['bundle', 'create', '--quiet', $bundle, '--all'], timeout: 300);
+                $this->writeBundle($project, $bundle);
+            }
+
+            Project::query()->whereKey($project->id)->increment('repository_version');
+            $this->writeLocalVersion($project, $this->storedVersion($project));
+        } catch (Throwable $exception) {
+            $this->writeLocalVersion($project, -1);
+
+            throw new RuntimeException(__('This is our fault: we could not save your app\'s code, so the change was not kept. Please try again.'), previous: $exception);
+        } finally {
+            File::delete($bundle);
+        }
+    }
+
+    protected function writeBundle(Project $project, string $bundle): void
+    {
+        $stream = fopen($bundle, 'r');
+
+        try {
+            if ($stream === false || ! Storage::disk((string) config('builder.projects.store.disk'))->writeStream($this->storeObject($project), $stream)) {
+                throw new RuntimeException('The project store did not take the repository.');
+            }
+        } finally {
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
+        }
+    }
+
+    /**
+     * Push every ref to the project's store repository on GitHub, making the
+     * repository on the first save. A mirror push also removes refs that
+     * were removed here; the lock and the fetch before each change make
+     * this copy the newest one.
+     */
+    protected function pushToGitHub(Project $project): void
+    {
+        if ($this->storedVersion($project) === 0) {
+            app(GitHubRepositories::class)->ensureNamed($this->storeOrganization(), $this->storeName($project));
+        }
+
+        $remote = $this->storeRemote($project);
+        $result = $this->git($project, ['push', '--quiet', '--mirror', $remote], throw: false, timeout: (int) config('builder.publishing.push_timeout'));
+
+        if ($result->failed()) {
+            throw new RuntimeException(trim(self::withoutCredentials($result->errorOutput(), $remote)));
+        }
+    }
+
+    /**
+     * Get every ref and the commit it points at, to tell whether a command
+     * changed the repository.
+     */
+    protected function refs(Project $project): string
+    {
+        if (! File::isDirectory($this->path($project).DIRECTORY_SEPARATOR.'.git')) {
+            return '';
+        }
+
+        return $this->git($project, ['for-each-ref', '--format=%(refname) %(objectname)'])->output();
+    }
+
+    /**
+     * Name the project's store repository by its ID alone, so a renamed app
+     * keeps it. The prefix keeps builders that share an organization apart.
+     */
+    protected function storeName(Project $project): string
+    {
+        return config('builder.projects.store.prefix')."-{$project->id}";
+    }
+
+    protected function storeOrganization(): string
+    {
+        return (string) (config('builder.projects.store.organization') ?: config('builder.publishing.github.organization'));
+    }
+
+    protected function storeRemote(Project $project): string
+    {
+        return app(GitHubRepositories::class)->remote($this->storeOrganization().'/'.$this->storeName($project));
+    }
+
+    protected function storeObject(Project $project): string
+    {
+        return trim((string) config('builder.projects.store.prefix'), '/')."/{$project->id}.bundle";
+    }
+
+    protected function storedVersion(Project $project): int
+    {
+        return (int) Project::query()->whereKey($project->id)->value('repository_version');
+    }
+
+    /**
+     * Get the store version this server's copy matches: 0 without a copy,
+     * -1 when its last save failed.
+     */
+    protected function localVersion(Project $project): int
+    {
+        $file = $this->path($project).DIRECTORY_SEPARATOR.'.git'.DIRECTORY_SEPARATOR.'builder-store-version';
+
+        return File::exists($file) ? (int) File::get($file) : 0;
+    }
+
+    protected function writeLocalVersion(Project $project, int $version): void
+    {
+        File::put($this->path($project).DIRECTORY_SEPARATOR.'.git'.DIRECTORY_SEPARATOR.'builder-store-version', (string) $version);
     }
 }

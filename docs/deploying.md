@@ -155,6 +155,27 @@ Two things hold data that cannot be made again:
   deploy does not remove it. Back it up off the server, for example with
   Hetzner's server backups or with a nightly copy to object storage.
 
+On a host whose disk does not last, such as Laravel Cloud, keep the
+repositories off the server. Set `BUILDER_PROJECT_STORE` to one of these:
+
+- `github`: each app gets a private repository named
+  `<prefix>-<app number>` (`BUILDER_PROJECT_STORE_PREFIX`, default `code`).
+  It is made in `BUILDER_PROJECT_STORE_ORGANIZATION`, or in
+  `BUILDER_GITHUB_ORGANIZATION` when that is empty, with
+  `BUILDER_GITHUB_TOKEN`. The token must be able to make repositories in
+  that organization. This repository holds the builder's full history of the
+  app, so never give owners access to it. It is not the repository that
+  an app is published from.
+- `disk`: each app is saved as one Git bundle on a filesystem disk from
+  `config/filesystems.php`, for example Cloudflare R2 or Hetzner Object
+  Storage. Set `BUILDER_PROJECT_STORE_DISK` to the disk's name.
+
+Each server keeps a working copy, saves every change to the store, and
+gets a newer copy when another server saved one. A change that the store
+did not take is not kept, and the owner sees "This is our fault". Back up
+the store instead of `storage/app/private`. Do not switch the store while
+apps exist: the new store starts empty.
+
 Restore both from the same time. A repository that is older than the
 database can be missing changes that the database says were kept.
 

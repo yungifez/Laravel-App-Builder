@@ -43,6 +43,22 @@ return [
     'projects' => [
         'root' => env('BUILDER_PROJECT_REPOSITORIES', storage_path('app/private/projects')),
         'branch' => env('BUILDER_PROJECT_BRANCH', 'main'),
+        // Where every project's repository is kept off this server's disk,
+        // for hosts whose disks do not last (Laravel Cloud). Each server
+        // keeps a working copy under "root", saves after every change and
+        // fetches when another server saved a newer one.
+        //  - "github": a private repository per project, named
+        //    "<prefix>-<project id>", in the organization below (or the
+        //    publishing organization), with the publishing GitHub token.
+        //  - "disk": one Git bundle per project, "<prefix>/<id>.bundle", on
+        //    a filesystem disk from config/filesystems.php.
+        //  - empty: repositories stay only under "root".
+        'store' => [
+            'driver' => env('BUILDER_PROJECT_STORE'),
+            'organization' => env('BUILDER_PROJECT_STORE_ORGANIZATION'),
+            'disk' => env('BUILDER_PROJECT_STORE_DISK'),
+            'prefix' => env('BUILDER_PROJECT_STORE_PREFIX', 'code'),
+        ],
         // The app a new project starts from. `php artisan projects:template`
         // puts the package below there. Until the folder exists, owners can
         // only bring in an app that already exists.
