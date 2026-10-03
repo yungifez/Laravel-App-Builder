@@ -6,6 +6,7 @@ use App\Enums\WorkspaceStatus;
 use App\Models\Runner;
 use App\Models\Workspace;
 use App\Workspaces\Boxes\Contracts\BoxProvider;
+use App\Workspaces\RunnerDoor;
 use App\Workspaces\WorkspaceSpec;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
@@ -158,13 +159,17 @@ class PoolProvider implements BoxProvider
 
     public function serviceUrl(string $box, int $port): string
     {
-        $host = Runner::query()->where('name', $this->runnerFor($box))->value('service_host');
+        $runner = Runner::query()->where('name', $this->runnerFor($box))->first();
 
-        if (! is_string($host) || $host === '') {
+        if ($runner === null || blank($runner->service_host)) {
             throw new RuntimeException("Runner [{$this->runnerFor($box)}] has not said where its services are reached.");
         }
 
-        return "http://{$host}:{$port}";
+        if ($runner->preview_door_port !== null) {
+            return RunnerDoor::url($runner->service_host, $runner->preview_door_port, $port);
+        }
+
+        return "http://{$runner->service_host}:{$port}";
     }
 
     public function destroy(string $box): void {}

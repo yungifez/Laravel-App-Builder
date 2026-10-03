@@ -241,6 +241,31 @@ class PoolProviderTest extends TestCase
         $this->withToken('vm1-token')->postJson('/api/runner/hello', ['service_host' => 'http://evil/'])->assertUnprocessable();
     }
 
+    public function test_a_runner_without_a_private_network_says_where_its_preview_door_is()
+    {
+        config(['workspaces.drivers.runner.provider' => 'pool']);
+        $runner = Runner::factory()->create(['name' => 'vm1', 'token_hash' => Runner::hashToken('vm1-token')]);
+        $door = ['port' => 8443, 'pin' => base64_encode(str_repeat('p', 32)), 'key' => str_repeat('k', 43)];
+
+        $this->withToken('vm1-token')->postJson('/api/runner/hello', ['service_host' => '203.0.113.5', 'preview_door' => $door])->assertOk();
+
+        $runner->refresh();
+        $this->assertSame([8443, $door['pin'], $door['key']], [$runner->preview_door_port, $runner->preview_door_pin, $runner->preview_door_key]);
+        // The key opens the door, so it is kept encrypted and never shown.
+        $this->assertNotSame($door['key'], $runner->getRawOriginal('preview_door_key'));
+        $this->assertArrayNotHasKey('preview_door_key', $runner->toArray());
+        $this->assertSame('https://203.0.113.5:8443/~20001', (new PoolProvider)->serviceUrl('vm1--workspace-a', 20001));
+
+        // A start without the door forgets it.
+        $this->withToken('vm1-token')->postJson('/api/runner/hello', ['service_host' => '10.0.0.5'])->assertOk();
+        $this->assertNull($runner->refresh()->preview_door_key);
+        $this->assertSame('http://10.0.0.5:20001', (new PoolProvider)->serviceUrl('vm1--workspace-a', 20001));
+
+        foreach ([['port' => 0] + $door, ['pin' => 'short'] + $door, ['key' => 'not a key!'] + $door, $door + ['extra' => 1]] as $wrong) {
+            $this->withToken('vm1-token')->postJson('/api/runner/hello', ['service_host' => '203.0.113.5', 'preview_door' => $wrong])->assertUnprocessable();
+        }
+    }
+
     public function test_asking_for_work_keeps_a_pool_runner_online()
     {
         $runner = Runner::factory()->offline()->create(['token_hash' => Runner::hashToken('vm-token')]);

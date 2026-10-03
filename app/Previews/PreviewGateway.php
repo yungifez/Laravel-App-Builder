@@ -5,6 +5,7 @@ namespace App\Previews;
 use App\Actions\Previews\GrantPreviewAccess;
 use App\Enums\PreviewStatus;
 use App\Models\Preview;
+use App\Workspaces\RunnerDoor;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -54,6 +55,8 @@ class PreviewGateway
         'host', 'cookie', 'content-length', 'connection', 'keep-alive', 'proxy-authenticate',
         'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade',
         'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-forwarded-port', 'x-forwarded-prefix',
+        // Only the gateway may open a runner's door.
+        'x-builder-door-key',
     ];
 
     /**
@@ -287,9 +290,9 @@ class PreviewGateway
             $options['multipart'] = $this->multipart($request);
         }
 
-        $pending = Http::withOptions(['allow_redirects' => false, 'decode_content' => false])
+        $pending = app(RunnerDoor::class)->prepare(Http::withOptions(['allow_redirects' => false, 'decode_content' => false])
             ->timeout((int) config('builder.preview.request_timeout'))
-            ->withHeaders($headers);
+            ->withHeaders($headers), (string) $preview->upstream_url);
 
         if ($isMultipart) {
             $pending = $pending->asMultipart();

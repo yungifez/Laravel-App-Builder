@@ -24,7 +24,13 @@ class RunnerController extends Controller
         // A runner in the pool says where its previews are reached; the
         // static runner has no row and is reached at its configured host.
         if ($request->filled('service_host')) {
-            Runner::query()->where('name', $runner)->update(['service_host' => $request->validated('service_host'), 'last_seen_at' => now()]);
+            Runner::query()->where('name', $runner)->first()?->update([
+                'service_host' => $request->validated('service_host'),
+                'preview_door_port' => $request->validated('preview_door.port'),
+                'preview_door_pin' => $request->validated('preview_door.pin'),
+                'preview_door_key' => $request->validated('preview_door.key'),
+                'last_seen_at' => now(),
+            ]);
         }
 
         return response()->json([

@@ -354,6 +354,11 @@ class RunnerScalingTest extends TestCase
         $this->assertStringContainsString('install -m 600 /dev/null /etc/builder-runner.env', $script);
         $this->assertStringContainsString('--cap-add NET_ADMIN', $script);
         $this->assertStringContainsString('systemctl enable --now builder-runner', $script);
+        $this->assertStringNotContainsString('RUNNER_PREVIEW_DOOR_PORT', $script);
+
+        // Without a private network, the runner opens its preview door.
+        $door = (new RunnerBootScript)->make('https://builder.example.test', 'token', 'image', 'hostname -I', 8443);
+        $this->assertStringContainsString("RUNNER_TOKEN=token\nRUNNER_PREVIEW_DOOR_PORT=8443\nENV\n", $door);
 
         $this->expectException(InvalidArgumentException::class);
         (new RunnerBootScript)->make("https://x.test\nrm -rf /", 'token', 'image', 'hostname -I');

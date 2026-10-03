@@ -25,8 +25,21 @@
 //                 address; previews listen only there
 //   RUNNER_FIREWALL  "off" to leave the machine's firewall alone; by
 //                 default the runner fences workspaces in when it can
+//   RUNNER_PREVIEW_DOOR_PORT  a port for the preview door, for a control
+//                 plane that shares no private network with this machine
+//                 (such as one on Laravel Cloud). The door answers HTTPS
+//                 there and leads only the control plane, which holds its
+//                 key, to the previews; previews then listen only on this
+//                 machine. RUNNER_SERVICE_HOST is then this machine's
+//                 public address.
 
 import { execFileSync, spawn } from 'node:child_process';
+import {
+    createHash,
+    createPublicKey,
+    randomBytes,
+    timingSafeEqual,
+} from 'node:crypto';
 import {
     chmodSync,
     chownSync,
@@ -34,7 +47,9 @@ import {
     constants,
     fstatSync,
     mkdirSync,
+    mkdtempSync,
     openSync,
+    readFileSync,
     readdirSync,
     readSync,
     rmSync,
@@ -42,6 +57,9 @@ import {
     statSync,
     writeFileSync,
 } from 'node:fs';
+import { request as forward } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 
@@ -49,6 +67,7 @@ const url = (process.env.RUNNER_URL ?? '').replace(/\/$/, '');
 const token = process.env.RUNNER_TOKEN ?? '';
 const root = process.env.RUNNER_ROOT ?? '/workspaces';
 const serviceHost = process.env.RUNNER_SERVICE_HOST || null;
+const doorPort = Number(process.env.RUNNER_PREVIEW_DOOR_PORT) || null;
 
 // Children never inherit the runner's token or settings.
 delete process.env.RUNNER_TOKEN;
@@ -110,6 +129,9 @@ const running = new Map();
 
 /** Services started in each box: box -> list of process group ids. */
 const services = new Map();
+
+/** The ports of the services started: port -> box. */
+const servicePorts = new Map();
 
 let wake = null;
 
@@ -716,6 +738,127 @@ function stopServices(name) {
     }
 
     services.delete(name);
+
+    for (const [port, owner] of servicePorts) {
+        if (owner === name) {
+            servicePorts.delete(port);
+        }
+    }
+}
+
+/**
+ * Open the preview door: an HTTPS server on RUNNER_PREVIEW_DOOR_PORT whose
+ * certificate is made now, so it needs no domain. The control plane trusts
+ * it by the public key's pin, and the door lets in only requests with the
+ * key, both sent in the hello. "/~<port>/path" leads to "/path" of the
+ * service on that port, and only to ports of services the runner started.
+ * Anything it cannot reach closes the connection, so the control plane
+ * sees a stopped preview, as without the door.
+ */
+function openDoor() {
+    if (doorPort === null) {
+        return null;
+    }
+
+    const directory = mkdtempSync(join(tmpdir(), 'builder-door-'));
+    let certificate;
+    let privateKey;
+
+    try {
+        execFileSync(
+            'openssl',
+            [
+                'req',
+                '-x509',
+                '-newkey',
+                'ec',
+                '-pkeyopt',
+                'ec_paramgen_curve:prime256v1',
+                '-nodes',
+                '-days',
+                '3650',
+                '-subj',
+                '/CN=builder-runner',
+                '-keyout',
+                join(directory, 'key.pem'),
+                '-out',
+                join(directory, 'cert.pem'),
+            ],
+            { stdio: 'ignore' },
+        );
+        certificate = readFileSync(join(directory, 'cert.pem'));
+        privateKey = readFileSync(join(directory, 'key.pem'));
+    } finally {
+        rmSync(directory, { recursive: true, force: true });
+    }
+
+    const key = randomBytes(32).toString('base64url');
+    const expected = Buffer.from(key);
+    const pin = createHash('sha256')
+        .update(
+            createPublicKey(certificate).export({
+                type: 'spki',
+                format: 'der',
+            }),
+        )
+        .digest('base64');
+
+    const server = createHttpsServer(
+        { cert: certificate, key: privateKey },
+        (request, response) => {
+            const given = Buffer.from(
+                String(request.headers['x-builder-door-key'] ?? ''),
+            );
+
+            if (
+                given.length !== expected.length ||
+                !timingSafeEqual(given, expected)
+            ) {
+                response.writeHead(401).end();
+
+                return;
+            }
+
+            const match = /^\/~(\d+)(.*)$/s.exec(request.url ?? '');
+            const port = Number(match?.[1]);
+
+            if (match === null || !servicePorts.has(port)) {
+                request.socket.destroy();
+
+                return;
+            }
+
+            const headers = { ...request.headers };
+            delete headers['x-builder-door-key'];
+
+            const path = match[2] === '' ? '/' : match[2];
+            const upstream = forward(
+                {
+                    host: '127.0.0.1',
+                    port,
+                    method: request.method,
+                    path: path.startsWith('/') ? path : `/${path}`,
+                    headers,
+                },
+                (answer) => {
+                    response.writeHead(
+                        answer.statusCode ?? 502,
+                        answer.rawHeaders,
+                    );
+                    answer.pipe(response);
+                },
+            );
+
+            upstream.on('error', () => request.socket.destroy());
+            request.pipe(upstream);
+        },
+    );
+
+    server.on('clientError', (error, socket) => socket.destroy());
+    server.listen(doorPort);
+    console.log(`Preview door is open on port ${doorPort}.`);
+
+    return { port: doorPort, pin, key };
 }
 
 const handlers = {
@@ -874,6 +1017,7 @@ const handlers = {
             ...(services.get(command.box) ?? []),
             service.pid,
         ]);
+        servicePorts.set(Number(port), command.box);
 
         return ok();
     },
@@ -1004,9 +1148,14 @@ async function main() {
         fenceUp();
     }
 
+    const door = openDoor();
+
     for (;;) {
         try {
-            settings = await api('hello', { service_host: serviceHost });
+            settings = await api('hello', {
+                service_host: serviceHost,
+                preview_door: door,
+            });
             break;
         } catch (error) {
             console.error(`Waiting for the control plane: ${error.message}`);

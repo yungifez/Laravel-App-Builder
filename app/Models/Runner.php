@@ -23,14 +23,17 @@ use Illuminate\Support\Carbon;
  * @property string|null $box_image
  * @property string $token_hash
  * @property string|null $service_host
+ * @property int|null $preview_door_port
+ * @property string|null $preview_door_pin
+ * @property string|null $preview_door_key
  * @property int|null $disk_free_mb
  * @property Carbon|null $last_seen_at
  * @property Carbon|null $draining_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'cloud', 'cloud_id', 'box_image', 'token_hash', 'service_host', 'disk_free_mb', 'last_seen_at', 'draining_at'])]
-#[Hidden(['token_hash'])]
+#[Fillable(['name', 'cloud', 'cloud_id', 'box_image', 'token_hash', 'service_host', 'preview_door_port', 'preview_door_pin', 'preview_door_key', 'disk_free_mb', 'last_seen_at', 'draining_at'])]
+#[Hidden(['token_hash', 'preview_door_key'])]
 class Runner extends Model
 {
     /** @use HasFactory<RunnerFactory> */
@@ -46,6 +49,8 @@ class Runner extends Model
         return [
             'last_seen_at' => 'datetime',
             'draining_at' => 'datetime',
+            'preview_door_port' => 'integer',
+            'preview_door_key' => 'encrypted',
         ];
     }
 

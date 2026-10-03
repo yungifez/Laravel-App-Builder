@@ -17,6 +17,7 @@ use App\Previews\PreviewFailure;
 use App\Projects\ProjectRepository;
 use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\Drivers\CopyExclusions;
+use App\Workspaces\RunnerDoor;
 use App\Workspaces\WorkspaceFiles;
 use App\Workspaces\WorkspaceManager;
 use Closure;
@@ -118,7 +119,7 @@ class StartPreview implements ShouldQueue
             $this->preview->update(['port' => $port]);
 
             $upstream = $driver->serviceUrl((string) $workspace->driver_id, $port);
-            $driver->startService((string) $workspace->driver_id, $this->serverCommand($port, (string) parse_url($upstream, PHP_URL_HOST)), $port);
+            $driver->startService((string) $workspace->driver_id, $this->serverCommand($port, RunnerDoor::listenHost($upstream)), $port);
 
             $this->waitUntilReady($upstream);
 
@@ -309,7 +310,7 @@ class StartPreview implements ShouldQueue
         $status = null;
 
         for ($attempt = 0; $attempt < max(1, $seconds * 2); $attempt++) {
-            $status = rescue(fn () => Http::timeout(2)->get("{$upstream}/up")->status(), $status, report: false);
+            $status = rescue(fn () => app(RunnerDoor::class)->prepare(Http::timeout(2), $upstream)->get("{$upstream}/up")->status(), $status, report: false);
 
             if ($status !== null && $status >= 200 && $status < 300) {
                 return;

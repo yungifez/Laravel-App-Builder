@@ -10,7 +10,8 @@ pool.
 - A Linux VM with Docker. Two CPUs and 4 GB of memory hold a few workspaces
   at a time. Give it enough disk for the box image (about 4 GB) and the
   workspaces.
-- A private network between the VM and the control plane.
+- A private network between the VM and the control plane, or the preview
+  door (see [No private network](#no-private-network-the-preview-door)).
 - The box image, `builder-box`. Build it with `vendor/bin/sail build box`.
   Copy it to the VM, for example through your private registry. The image
   holds the runner and every tool a workspace needs (PHP, Composer, Node,
@@ -84,6 +85,37 @@ code in a workspace.
 If the control plane is also on the private network, `RUNNER_URL` can use
 its private address. The tunnel encrypts the traffic.
 
+### No private network: the preview door
+
+Some hosts cannot join a private network, for example Laravel Cloud. Then
+the runner opens a preview door: one HTTPS port that leads the control
+plane to the previews on this machine.
+
+1. Add these lines to the runner's settings (step 3):
+
+    ```
+    RUNNER_SERVICE_HOST=<the VM's public address>
+    RUNNER_PREVIEW_DOOR_PORT=8443
+    ```
+
+2. In the cloud firewall, allow port 8443 from everyone. Laravel Cloud has
+   no fixed outbound addresses, so you cannot allow only the control plane.
+   Keep ports 20000–20999 closed.
+
+How the door keeps previews private:
+
+- At each start, the runner makes a new certificate and a new key. It sends
+  both to the control plane when it signs in with its token.
+- The control plane trusts only that certificate, by its public key. The
+  certificate needs no domain.
+- The door lets in only requests that carry the key. It leads only to the
+  ports of previews that the runner started.
+- Behind the door, previews listen only on the machine itself
+  (`127.0.0.1`), so nothing reaches them from outside.
+
+The runner's log shows `Preview door is open on port 8443.` The door needs
+`openssl` on the machine. The box image has it.
+
 ## 3. Run the runner as a service
 
 1. Put the runner's settings in a file that only root can read:
@@ -137,6 +169,9 @@ The settings:
 - `RUNNER_SERVICE_HOST` is where the control plane reaches previews on this
   machine. Previews listen only on this address. Use the private address, not
   the public one.
+- `RUNNER_PREVIEW_DOOR_PORT` opens the preview door on this port, for a
+  control plane without a private network. Leave it out when a private
+  network joins them.
 - `RUNNER_FIREWALL=off` tells the runner not to change the firewall. Use it
   only when you fence workspaces in another way.
 
@@ -171,6 +206,7 @@ Set these rules in your hosting provider's firewall for the VM:
 | Direction | Allow                                                           |
 | --------- | --------------------------------------------------------------- |
 | Inbound   | Ports 20000–20999 from the control plane's private address only |
+| Inbound   | Port 8443 from everyone, only with the preview door             |
 | Inbound   | SSH from your own address only, if you need it                  |
 | Inbound   | UDP 51820 from the control plane, if you use WireGuard          |
 | Inbound   | UDP 41641, if you use Tailscale (it also works without it)      |
@@ -256,6 +292,10 @@ second.
     WORKSPACE_MACHINES_MIN=1
     WORKSPACE_MACHINES_MAX=3
     ```
+
+    Without a private network, leave out `WORKSPACE_MACHINES_HETZNER_NETWORK`
+    and set `WORKSPACE_MACHINES_PREVIEW_DOOR_PORT=8443`. Each new machine then
+    opens its preview door on its public address.
 
 4. Make sure that the scheduler runs (`php artisan schedule:work`, or a cron
    entry for `schedule:run`).

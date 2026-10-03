@@ -25,7 +25,9 @@ with a disk that lasts, not a platform with a temporary disk.
     - `*.preview.example.com` for previews. Each preview gets a subdomain.
 - A Hetzner private network. The control plane and the runner machines
   join it. Runners reach Reverb on it, and the control plane reaches
-  previews on it.
+  previews on it. A control plane that cannot join one, such as one on Laravel
+  Cloud, reaches previews through each runner's preview door instead (see
+  [Runner machines](runner-machines.md#no-private-network-the-preview-door)).
 - An API key for each model provider you use (see `config/ai.php`).
 
 ## 1. Create the server

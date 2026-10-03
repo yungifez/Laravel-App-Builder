@@ -14,10 +14,14 @@ use InvalidArgumentException;
 class RunnerBootScript
 {
     /**
-     * Build the boot script for one runner.
+     * Build the boot script for one runner. With a preview door port, the
+     * runner opens its preview door there, for a control plane that shares
+     * no private network with it.
      */
-    public function make(string $controlPlaneUrl, string $token, string $boxImage, string $serviceHostCommand): string
+    public function make(string $controlPlaneUrl, string $token, string $boxImage, string $serviceHostCommand, ?int $previewDoorPort = null): string
     {
+        $door = $previewDoorPort === null ? '' : "RUNNER_PREVIEW_DOOR_PORT={$previewDoorPort}\n";
+
         foreach (['control plane address' => $controlPlaneUrl, 'token' => $token, 'box image' => $boxImage] as $what => $value) {
             // Each goes into the script as written, so it must stay one
             // plain word: no spaces, quotes or other shell characters.
@@ -44,7 +48,7 @@ class RunnerBootScript
             cat > /etc/builder-runner.env <<'ENV'
             RUNNER_URL={$controlPlaneUrl}
             RUNNER_TOKEN={$token}
-            ENV
+            {$door}ENV
             echo "RUNNER_SERVICE_HOST=\$service_host" >> /etc/builder-runner.env
 
             install -d -m 711 /srv/workspaces

@@ -205,6 +205,12 @@ return [
         // Where a machine's runner reaches the control plane; the app's
         // address when left out.
         'control_plane_url' => env('WORKSPACE_MACHINES_CONTROL_PLANE_URL'),
+        // The port of each machine's preview door, for a control plane
+        // that shares no private network with its machines, such as one on
+        // Laravel Cloud. The control plane then reaches previews over HTTPS
+        // there, and the cloud firewall must let everyone reach that port.
+        // Leave it empty when a private network joins them.
+        'preview_door_port' => env('WORKSPACE_MACHINES_PREVIEW_DOOR_PORT'),
         // Names this control plane's machines on the cloud. Give each
         // control plane that shares a cloud project its own.
         'pool_label' => env('WORKSPACE_MACHINES_POOL_LABEL', 'builder'),

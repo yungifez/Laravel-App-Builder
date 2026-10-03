@@ -266,6 +266,7 @@ class ScaleRunnerPool
                 $token,
                 $image,
                 $cloud->serviceHostCommand(),
+                config('workspaces.machines.preview_door_port') === null ? null : (int) config('workspaces.machines.preview_door_port'),
             ))]);
         } catch (Throwable $exception) {
             $runner->delete();
