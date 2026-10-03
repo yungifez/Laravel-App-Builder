@@ -132,21 +132,21 @@ function submitOnShortcut(event: KeyboardEvent): void {
         <!-- Making a new app comes first: say what it is for, and go. -->
         <section
             v-if="canStartNew"
-            class="mx-auto w-full max-w-5xl px-4 pt-12 pb-10 sm:pt-20 sm:pb-16"
+            class="mx-auto w-full max-w-5xl px-4 pt-12 pb-10 text-center sm:pt-20 sm:pb-16"
         >
             <h1
-                class="max-w-2xl font-display text-4xl leading-[1.05] tracking-tight text-balance sm:text-6xl"
+                class="mx-auto max-w-2xl font-display text-4xl leading-[1.05] tracking-tight text-balance sm:text-6xl"
             >
                 What do you want to make?
             </h1>
-            <p class="mt-4 max-w-xl text-pretty text-muted-foreground">
+            <p class="mx-auto mt-4 max-w-xl text-pretty text-muted-foreground">
                 Say it in a sentence or two. I set up a working app, then you
                 shape it.
             </p>
 
             <Form
                 v-bind="NewProjectController.store.form()"
-                class="mt-8 max-w-2xl"
+                class="mx-auto mt-8 max-w-2xl text-left"
                 data-test="start-new"
                 v-slot="{ errors, processing }"
             >
@@ -334,7 +334,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
 
                 <div
                     v-else-if="starters.length > 0"
-                    class="mt-3 flex flex-wrap gap-2"
+                    class="mt-3 flex flex-wrap justify-center gap-2"
                     data-test="starters"
                 >
                     <button
