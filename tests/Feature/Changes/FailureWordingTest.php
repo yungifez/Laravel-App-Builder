@@ -48,6 +48,20 @@ class FailureWordingTest extends TestCase
                 ->where('run.error', "This is our fault: your app's checks still failed after I tried to fix them, so I stopped. Nothing in your app changed. Try again, or ask in other words."));
     }
 
+    public function test_a_stop_from_an_empty_ai_account_does_not_say_try_in_a_few_minutes()
+    {
+        $request = FeatureRequest::factory()->create();
+        Run::factory()->for($request)->create([
+            'status' => RunStatus::NeedsUserDecision,
+            'error' => "No AI provider could take the task right now (Quota exceeded. Check your plan and billing details.\n). Try again later.",
+        ]);
+
+        $this->actingAs($request->user)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('run.error', 'This is our fault: our account with the AI service we use cannot take more work right now. Nothing in your app changed. Try again later.'));
+    }
+
     public function test_a_stop_that_found_nothing_to_change_says_what_was_checked()
     {
         $request = FeatureRequest::factory()->create();

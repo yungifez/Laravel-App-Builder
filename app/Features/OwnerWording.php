@@ -28,6 +28,7 @@ class OwnerWording
         '/^The run finished without changing/' => 'This is our fault: I finished without changing anything in your app. Try again, or ask in other words.',
         '/^The checks could not run/' => 'This is our fault: your app\'s checks could not run because of a problem on our side. Nothing in your app changed. Try again.',
         '/^(The run used all|The agent used up)/' => 'This is our fault: this change needed more work than I can do in one go, so I stopped. Nothing in your app changed. Try again, or ask for a smaller part first.',
+        '/^No AI provider could take.*(credit balance|quota|billing)/is' => 'This is our fault: our account with the AI service we use cannot take more work right now. Nothing in your app changed. Try again later.',
         '/^No AI provider could take/' => 'This is our fault: the AI service we use is busy right now. Nothing in your app changed. Try again in a few minutes.',
     ];
 

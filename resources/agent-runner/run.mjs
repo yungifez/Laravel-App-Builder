@@ -365,7 +365,12 @@ async function runCodex(task, session, prompt) {
             return { lost: true };
         }
 
-        throw error;
+        // Codex reports why a turn failed, such as "Quota exceeded", and
+        // then exits with code 1. The SDK's error only says the exit code,
+        // so the reported reason is the one kept.
+        if (failure === null) {
+            throw error;
+        }
     }
 
     if (failure !== null && lostSession(session, started, failure)) {
