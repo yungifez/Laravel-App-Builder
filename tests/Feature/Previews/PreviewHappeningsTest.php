@@ -108,6 +108,7 @@ class PreviewHappeningsTest extends TestCase
                             ['text' => 'Could not read what it kept for later', 'failed' => true],
                             ['text' => 'Put the save back', 'failed' => false],
                         ],
+                        'times' => 1,
                     ],
                     [
                         'id' => '2',
@@ -126,6 +127,7 @@ class PreviewHappeningsTest extends TestCase
                             // A save is not a look; only the room read before it is.
                             ['text' => 'Looked at rooms', 'failed' => false],
                         ],
+                        'times' => 1,
                     ],
                     [
                         'id' => '1',
@@ -134,8 +136,50 @@ class PreviewHappeningsTest extends TestCase
                         'outcome' => null,
                         // What the framework keeps for itself is not something the app did.
                         'did' => [['text' => 'Looked at bookings, rooms', 'failed' => false]],
+                        'times' => 1,
                     ],
                 ])));
+    }
+
+    public function test_the_same_page_doing_the_same_again_is_counted_not_listed_again()
+    {
+        $opened = ['method' => 'GET', 'route' => '/about', 'status' => 200, 'effects' => [['kind' => 'query', 'sql' => 'select * from "users"']]];
+
+        $this->recorded([
+            ['n' => 0, ...$opened],
+            ['n' => 1, ...$opened],
+            ['n' => 2, ...$opened, 'status' => 500],
+            ['n' => 3, ...$opened],
+            ['n' => 4, ...$opened],
+            ['n' => 5, ...$opened],
+        ]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('happenings', fn (Assert $page) => $page
+                // An error between them keeps its own row, in its place.
+                ->count('happenings.requests', 3)
+                ->where('happenings.requests.0.id', '6')
+                ->where('happenings.requests.0.times', 3)
+                ->where('happenings.requests.1.status', 500)
+                ->where('happenings.requests.1.times', 1)
+                ->where('happenings.requests.2.id', '2')
+                ->where('happenings.requests.2.times', 2)));
+    }
+
+    public function test_a_save_is_named_by_the_table_it_writes_not_the_columns_an_upsert_names()
+    {
+        $this->recorded([
+            ['n' => 0, 'method' => 'GET', 'route' => '/register', 'status' => 200, 'effects' => [
+                ['kind' => 'query', 'sql' => 'insert into `cache` (`expiration`, `key`, `value`) values (?, ?, ?) on duplicate key update `expiration` = values(`expiration`), `key` = values(`key`), `value` = values(`value`)'],
+                ['kind' => 'query', 'sql' => 'insert into "likes" ("user_id", "count") values (?, ?) on conflict ("user_id") do update set "count" = "excluded"."count"'],
+            ]],
+        ]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('happenings', fn (Assert $page) => $page
+                ->where('happenings.requests.0.did', [['text' => 'Saved a new like', 'failed' => false]])));
     }
 
     public function test_an_app_that_did_nothing_yet_or_does_not_run_has_nothing_to_show()

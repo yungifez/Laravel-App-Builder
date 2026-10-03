@@ -77,12 +77,23 @@ class LoggedProblems
             preg_match_all('/^#\d+ (\S+?)\((\d+)\):/m', $match[5], $frames, PREG_SET_ORDER);
 
             $place = $relative($match[3]).':'.$match[4];
+            // What is not under the app's folder, such as a tool the builder
+            // loads into the app on show, is not the app's own code.
+            $outside = fn (string $at) => $root !== null && str_starts_with($at, '/');
             $trace = array_values(collect($frames)
                 ->map(fn (array $frame) => $relative($frame[1]).':'.$frame[2])
-                ->reject(fn (string $at) => $at === $place || str_starts_with($at, 'vendor/') || str_contains($at, '/vendor/'))
+                ->reject(fn (string $at) => $at === $place || str_starts_with($at, 'vendor/') || str_contains($at, '/vendor/') || $outside($at))
                 ->unique()
-                ->take(5)
+                ->take(6)
                 ->all());
+
+            // A problem raised outside the app's folder is placed at the
+            // app's own code that led there.
+            if ($outside($place)) {
+                $place = array_shift($trace);
+            }
+
+            $trace = array_slice($trace, 0, 5);
 
             return [
                 'class' => str_replace('\\\\', '\\', $match[1]),

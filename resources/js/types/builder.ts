@@ -510,6 +510,8 @@ export type AppHappenings = {
         status: number;
         outcome: string | null;
         did: { text: string; failed: boolean }[];
+        /** How many times in a row the app did just this. */
+        times: number;
     }[];
 };
 

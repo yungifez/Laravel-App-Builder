@@ -165,7 +165,16 @@ const chosen = computed(() => faults.find((item) => item.key === form.fault));
                 class="border-b px-3 py-3"
                 :data-test="`app-happening-${request.id}`"
             >
-                <p class="text-sm font-medium">{{ request.page }}</p>
+                <p class="text-sm font-medium">
+                    {{ request.page }}
+                    <span
+                        v-if="request.times > 1"
+                        class="font-normal text-muted-foreground"
+                        :data-test="`app-happening-times-${request.id}`"
+                    >
+                        · {{ request.times }} times
+                    </span>
+                </p>
                 <p
                     v-if="request.outcome"
                     :class="[

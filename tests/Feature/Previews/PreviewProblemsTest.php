@@ -82,6 +82,50 @@ class PreviewProblemsTest extends TestCase
                 ->where('problems.1.last_at', fn (?string $time) => $time !== null)));
     }
 
+    public function test_code_the_builder_loads_into_the_app_on_show_is_not_shown_as_the_apps_own()
+    {
+        $this->driver->files["{$this->workspace->driver_id}:storage/logs/laravel.log"] = implode("\n", [
+            '[2026-10-02 21:26:00] local.ERROR: Vite manifest not found at: /workspaces/w1/public/build/manifest.json {"exception":"[object] (Illuminate\\View\\ViewException(code: 0): Vite manifest not found at: /workspaces/w1/public/build/manifest.json at /workspaces/w1/vendor/laravel/framework/src/Illuminate/Foundation/Vite.php:974)',
+            '[stacktrace]',
+            '#0 /workspaces/w1/app/Http/Middleware/BlockBots.php(41): Illuminate\\Foundation\\Vite->manifest()',
+            '#1 /opt/trace-recorder/src/Middleware.php(25): App\\Http\\Middleware\\BlockBots->handle()',
+            '#2 /workspaces/w1/public/index.php(15): Illuminate\\Foundation\\Http\\Kernel->handle()',
+            '#3 {main}',
+            '"} ',
+            '',
+        ]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('problems', fn (Assert $page) => $page
+                ->count('problems', 1)
+                ->where('problems.0.place', 'vendor/laravel/framework/src/Illuminate/Foundation/Vite.php:974')
+                ->where('problems.0.trace', ['app/Http/Middleware/BlockBots.php:41', 'public/index.php:15'])));
+    }
+
+    public function test_a_problem_raised_in_code_the_builder_loads_is_placed_at_the_apps_own_code()
+    {
+        $this->driver->files["{$this->workspace->driver_id}:storage/logs/laravel.log"] = implode("\n", [
+            '[2026-10-02 21:26:00] local.ERROR: Connection could not be established with the mail server. {"exception":"[object] (Symfony\\Component\\Mailer\\Exception\\TransportException(code: 0): Connection could not be established with the mail server. at /opt/trace-recorder/src/Recorder.php:1112)',
+            '[stacktrace]',
+            '#0 /workspaces/w1/vendor/laravel/framework/src/Illuminate/Events/Dispatcher.php(488): TraceRecorder\\Recorder->sending()',
+            '#1 /workspaces/w1/app/Actions/Users/CreateUser.php(28): Illuminate\\Notifications\\Notifiable->notify()',
+            '#2 /opt/trace-recorder/src/Middleware.php(25): App\\Actions\\Users\\CreateUser->handle()',
+            '#3 /workspaces/w1/public/index.php(15): Illuminate\\Foundation\\Http\\Kernel->handle()',
+            '#4 {main}',
+            '"} ',
+            '',
+        ]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('problems', fn (Assert $page) => $page
+                ->count('problems', 1)
+                ->where('problems.0.words', 'An email could not be sent.')
+                ->where('problems.0.place', 'app/Actions/Users/CreateUser.php:28')
+                ->where('problems.0.trace', ['public/index.php:15'])));
+    }
+
     public function test_one_click_asks_for_a_fix_with_the_details_and_a_second_click_opens_it()
     {
         $this->writeLog(fn () => report(new ErrorException('Undefined array key "plan" for jane@example.com')));

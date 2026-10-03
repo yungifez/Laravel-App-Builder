@@ -46,7 +46,7 @@ class ReadPreviewHappenings
      * plain words: what it saved, sent, stored and asked. And which kind of
      * thing the owner has made fail, if any.
      *
-     * @return array{fault: string, requests: list<array{id: string, page: string, status: int, outcome: string|null, did: list<array{text: string, failed: bool}>}>}
+     * @return array{fault: string, requests: list<array{id: string, page: string, status: int, outcome: string|null, did: list<array{text: string, failed: bool}>, times: int}>}
      */
     public function handle(Project $project): array
     {
@@ -71,12 +71,29 @@ class ReadPreviewHappenings
         $lines = array_values(array_filter(explode("\n", $trace), fn (string $line) => str_starts_with($line, '{')));
         $requests = [];
 
-        foreach (array_reverse(array_slice($lines, -self::LIMIT)) as $at => $line) {
+        foreach (array_reverse(array_slice($lines, -self::LIMIT * 4)) as $at => $line) {
             $operation = json_decode($line, true);
 
-            if (is_array($operation) && is_int($operation['status'] ?? null)) {
-                $requests[] = $this->request($operation, count($lines) - $at);
+            if (! is_array($operation) || ! is_int($operation['status'] ?? null)) {
+                continue;
             }
+
+            $request = $this->request($operation, count($lines) - $at);
+            $last = array_key_last($requests);
+
+            // The same page doing the same again is counted, not listed
+            // again, so one reload loop does not hide what came before it.
+            if ($last !== null && $this->same($requests[$last], $request)) {
+                $requests[$last]['times']++;
+
+                continue;
+            }
+
+            if (count($requests) === self::LIMIT) {
+                break;
+            }
+
+            $requests[] = $request;
         }
 
         return [
@@ -86,10 +103,21 @@ class ReadPreviewHappenings
     }
 
     /**
+     * Whether two requests read the same to the owner.
+     *
+     * @param  array{page: string, status: int, outcome: string|null, did: list<array{text: string, failed: bool}>}  $one
+     * @param  array{page: string, status: int, outcome: string|null, did: list<array{text: string, failed: bool}>}  $other
+     */
+    protected function same(array $one, array $other): bool
+    {
+        return [$one['page'], $one['status'], $one['did']] === [$other['page'], $other['status'], $other['did']];
+    }
+
+    /**
      * Say one request as the owner reads it.
      *
      * @param  array<string, mixed>  $operation
-     * @return array{id: string, page: string, status: int, outcome: string|null, did: list<array{text: string, failed: bool}>}
+     * @return array{id: string, page: string, status: int, outcome: string|null, did: list<array{text: string, failed: bool}>, times: int}
      */
     protected function request(array $operation, int $number): array
     {
@@ -128,6 +156,7 @@ class ReadPreviewHappenings
             'status' => $status,
             'outcome' => $this->outcome($status, $operation),
             'did' => $did,
+            'times' => 1,
         ];
     }
 
@@ -207,9 +236,12 @@ class ReadPreviewHappenings
             return null;
         }
 
-        $table = $this->table($sql);
+        // A write is about the table it names first. An upsert names its
+        // columns after "update" too, which are not tables.
+        preg_match('/\b(?:into|update|from)\s+[`"\[]?([A-Za-z0-9_]+)/i', $sql, $target);
+        $table = strtolower($target[1] ?? '');
 
-        if ($table === null) {
+        if ($table === '' || in_array($table, self::FRAMEWORK_TABLES, true)) {
             return null;
         }
 
@@ -220,14 +252,6 @@ class ReadPreviewHappenings
             'update' => 'Changed a :thing',
             default => 'Deleted a :thing',
         }, ['thing' => $thing]);
-    }
-
-    /**
-     * Find the table a query is about.
-     */
-    protected function table(string $sql): ?string
-    {
-        return $this->tables($sql)[0] ?? null;
     }
 
     /**
