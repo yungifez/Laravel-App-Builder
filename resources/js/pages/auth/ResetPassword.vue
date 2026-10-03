@@ -26,7 +26,7 @@ const inputEmail = ref(props.email);
 </script>
 
 <template>
-    <Head title="Reset password" />
+    <Head title="Set a new password" />
 
     <Form
         v-bind="update.form()"
@@ -83,7 +83,7 @@ const inputEmail = ref(props.email);
                 data-test="reset-password-button"
             >
                 <Spinner v-if="processing" />
-                Reset password
+                Save the new password
             </Button>
         </div>
     </Form>

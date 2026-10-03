@@ -53,7 +53,7 @@ defineProps<{
                     data-test="email-password-reset-link-button"
                 >
                     <Spinner v-if="processing" />
-                    Email password reset link
+                    Send the link
                 </Button>
             </div>
         </Form>

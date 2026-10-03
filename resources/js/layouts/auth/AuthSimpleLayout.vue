@@ -13,7 +13,11 @@ defineProps<{
 // column. The header offers the other way in, so a visitor on the wrong
 // form is one click from the right one.
 const page = usePage();
-const onRegister = computed(() => page.component === 'auth/Register');
+const offerLogin = computed(() =>
+    ['auth/Register', 'auth/ForgotPassword', 'auth/ResetPassword'].includes(
+        page.component,
+    ),
+);
 const onLogin = computed(() => page.component === 'auth/Login');
 </script>
 
@@ -28,7 +32,7 @@ const onLogin = computed(() => page.component === 'auth/Login');
                 </Link>
                 <nav class="flex items-center gap-1 text-sm">
                     <Link
-                        v-if="onRegister"
+                        v-if="offerLogin"
                         :href="login()"
                         class="inline-flex min-h-11 items-center rounded-md px-3 text-muted-foreground select-none hover:text-foreground sm:min-h-9"
                     >
@@ -37,7 +41,7 @@ const onLogin = computed(() => page.component === 'auth/Login');
                     <Link
                         v-else-if="onLogin"
                         :href="register()"
-                        class="inline-flex min-h-11 items-center rounded-md px-3 text-muted-foreground select-none hover:text-foreground sm:min-h-9"
+                        class="inline-flex min-h-11 press items-center rounded-md bg-primary px-4 font-medium text-primary-foreground select-none hover:bg-primary/90 sm:min-h-8"
                     >
                         Start an app
                     </Link>

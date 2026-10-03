@@ -36,7 +36,11 @@ defineProps<{
         {{ status }}
     </div>
 
-    <PasskeyVerify />
+    <PasskeyVerify
+        label="Log in with a passkey"
+        loading-label="Checking your passkey…"
+        separator="Or use your email"
+    />
 
     <Form
         v-bind="store.form()"
@@ -103,8 +107,8 @@ defineProps<{
         </div>
 
         <div class="text-sm text-muted-foreground">
-            Don't have an account?
-            <TextLink :href="register()" :tabindex="5">Sign up</TextLink>
+            New here?
+            <TextLink :href="register()" :tabindex="5">Start an app</TextLink>
         </div>
     </Form>
 </template>

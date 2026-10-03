@@ -29,7 +29,8 @@ defineProps<{
         >
             Write to us.
             <span class="text-muted-foreground"
-                >A person reads every message and replies to your email.</span
+                >A&nbsp;person reads every message and replies to your
+                email.</span
             >
         </h1>
 
@@ -92,7 +93,7 @@ defineProps<{
                     required
                     minlength="10"
                     maxlength="5000"
-                    class="w-full rounded-md border border-input bg-background px-3 py-2 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm"
+                    class="w-full rounded-md border border-input bg-background px-3 py-2 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
                 />
                 <InputError :message="errors.message" />
             </div>

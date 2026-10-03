@@ -43,7 +43,7 @@ const steps = [
 ];
 
 const field =
-    'w-full rounded-md border border-input bg-background px-3 py-2 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm';
+    'w-full rounded-md border border-input bg-background px-3 py-2 text-base shadow-xs dark:bg-input/30 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm';
 </script>
 
 <template>
