@@ -910,7 +910,9 @@ const checks = computed(() => {
                                 Nothing in your app changed.
                             </p>
                             <!-- It ran out of tries: going on from its work
-                                 so far comes first, starting over second. -->
+                                 so far comes first, starting over second.
+                                 When it stopped just as last time, a
+                                 developer comes before trying again. -->
                             <div class="flex flex-wrap items-start gap-2">
                                 <Form
                                     v-if="request.can_keep_trying"
@@ -944,7 +946,8 @@ const checks = computed(() => {
                                     <Button
                                         size="sm"
                                         :variant="
-                                            request.can_keep_trying
+                                            request.can_keep_trying ||
+                                            request.failed_same_way
                                                 ? 'outline'
                                                 : 'default'
                                         "
@@ -955,13 +958,43 @@ const checks = computed(() => {
                                         {{
                                             request.can_keep_trying
                                                 ? 'Start over'
-                                                : 'Try again'
+                                                : request.failed_same_way
+                                                  ? 'Try again anyway'
+                                                  : 'Try again'
                                         }}
                                     </Button>
                                     <InputError
                                         :message="errors.retry ?? errors.step"
                                     />
                                 </Form>
+                                <Button
+                                    v-if="request.failed_same_way"
+                                    as-child
+                                    size="sm"
+                                    :variant="
+                                        request.can_keep_trying
+                                            ? 'outline'
+                                            : 'default'
+                                    "
+                                    :class="[
+                                        'h-11 select-none sm:h-8',
+                                        {
+                                            'order-first':
+                                                !request.can_keep_trying,
+                                        },
+                                    ]"
+                                >
+                                    <Link
+                                        :href="
+                                            developers(change.project.id, {
+                                                query: { change: request.id },
+                                            })
+                                        "
+                                        data-test="ask-developer-after-repeat"
+                                    >
+                                        Ask one of our developers
+                                    </Link>
+                                </Button>
                             </div>
                             <!-- What passed before this stays the owner's to keep -->
                             <Link
@@ -998,6 +1031,7 @@ const checks = computed(() => {
                                 <InputError :message="errors.worker" />
                             </Form>
                             <Link
+                                v-if="!request.failed_same_way"
                                 :href="
                                     developers(change.project.id, {
                                         query: { change: request.id },

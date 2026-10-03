@@ -179,6 +179,8 @@ export type FeatureRequestDetail = {
     reverted_at: string | null;
     can_accept: boolean;
     can_retry: boolean;
+    // It stopped just as the try before it did.
+    failed_same_way: boolean;
     /** It stopped only for want of tries, and can go on from its work so far. */
     can_keep_trying: boolean;
     can_continue: boolean;

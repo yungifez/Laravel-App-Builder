@@ -14,6 +14,7 @@ use App\Enums\RunStatus;
 use App\Features\NewCode;
 use App\Features\OwnerWording;
 use App\Features\PatchSummary;
+use App\Features\RepeatedFailure;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\RunEvent;
@@ -54,6 +55,7 @@ class DescribeFeatureRequest
     public function handle(FeatureRequest $featureRequest): array
     {
         $parent = $featureRequest->parent;
+        $sameWay = RepeatedFailure::of($featureRequest);
 
         return [
             'project' => ['id' => $featureRequest->project->uuid, 'name' => $featureRequest->project->name],
@@ -66,9 +68,9 @@ class DescribeFeatureRequest
                 'images' => $this->images($featureRequest),
                 'status' => $featureRequest->status->value,
                 'summary' => $featureRequest->summary,
-                'error' => $featureRequest->status === FeatureRequestStatus::Failed
+                'error' => $this->sameWay($sameWay, $featureRequest->status === FeatureRequestStatus::Failed
                     ? OwnerWording::failure($featureRequest->error)
-                    : OwnerWording::message($featureRequest->error),
+                    : OwnerWording::message($featureRequest->error)),
                 'target_step' => $parent === null || $featureRequest->target_step === null
                     ? null
                     : $parent->step($featureRequest->target_step),
@@ -85,6 +87,9 @@ class DescribeFeatureRequest
                     && $featureRequest->commit_sha === null
                     && $featureRequest->latestRun?->status === RunStatus::Completed,
                 'can_retry' => RetryFeatureRequest::retryable($featureRequest),
+                // It stopped just as the try before it did, so trying again
+                // is no longer the first thing offered.
+                'failed_same_way' => $sameWay,
                 'can_keep_trying' => KeepTryingRun::possible($featureRequest),
                 'can_continue' => RequestFollowUp::continuable($featureRequest),
                 // An earlier change in this chat that passed and can still
@@ -98,7 +103,7 @@ class DescribeFeatureRequest
             'earlier' => $this->earlier($featureRequest),
             'verification' => $this->latestVerification($featureRequest),
             'proof' => $this->describeProof->handle($featureRequest),
-            'run' => $this->latestRun($featureRequest),
+            'run' => $this->latestRun($featureRequest, $sameWay),
             'preview' => $this->latestPreview($featureRequest),
             'followUps' => $featureRequest->followUps()->latest()->get()
                 ->map(fn (FeatureRequest $followUp) => [
@@ -234,11 +239,20 @@ class DescribeFeatureRequest
     }
 
     /**
+     * Say a stop that repeats the try before it as such, in place of the
+     * advice to try again.
+     */
+    protected function sameWay(bool $sameWay, ?string $reason): ?string
+    {
+        return $sameWay && $reason !== null ? RepeatedFailure::reason($reason) : $reason;
+    }
+
+    /**
      * Get the latest construction run and its log for the page.
      *
      * @return array<string, mixed>|null
      */
-    protected function latestRun(FeatureRequest $featureRequest): ?array
+    protected function latestRun(FeatureRequest $featureRequest, bool $sameWay = false): ?array
     {
         $run = $featureRequest->latestRun;
 
@@ -246,9 +260,9 @@ class DescribeFeatureRequest
             'id' => $run->uuid,
             'status' => $run->status->value,
             // A stop the owner did not ask for is ours, and says so.
-            'error' => in_array($run->status, [RunStatus::Failed, RunStatus::NeedsUserDecision], true)
+            'error' => $this->sameWay($sameWay, in_array($run->status, [RunStatus::Failed, RunStatus::NeedsUserDecision], true)
                 ? OwnerWording::failure($run->error)
-                : OwnerWording::message($run->error),
+                : OwnerWording::message($run->error)),
             'question' => $run->status === RunStatus::NeedsUserDecision ? $run->question : null,
             // Stopped because it found nothing to change: what it checked
             // and why, in its own words, so a fix for something that is
