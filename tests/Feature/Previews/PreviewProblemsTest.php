@@ -231,6 +231,30 @@ class PreviewProblemsTest extends TestCase
         $this->assertSame(0, FeatureRequest::count());
     }
 
+    public function test_a_fix_is_not_asked_while_ai_use_is_paused_so_clicks_leave_no_stopped_changes()
+    {
+        $this->writeLog(fn () => Log::error('Could not send the welcome email [] '.json_encode([Recorder::LIVE_CONTEXT => Recorder::LIVE_WORDS['mail']])));
+        $id = $this->problems()[0]['id'];
+        config(['builder.construction.budgets.daily_usd' => 10]);
+        Run::factory()->create()->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 10.5]);
+
+        $this->actingAs($this->owner)
+            ->post(route('preview-problem-fixes.store', $this->project), ['problem' => $id])
+            ->assertSessionHasErrors(['fix' => 'This is our fault: we paused new work for today to keep our costs in check. Nothing in your app changed. Try again tomorrow.']);
+
+        // The owner's plan for this month counts too.
+        config(['builder.construction.budgets.daily_usd' => 100, 'billing.plans.free.monthly_usd' => 5]);
+        Run::factory()->for(FeatureRequest::factory()->for($this->project))->create()
+            ->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 5.5]);
+
+        $this->post(route('preview-problem-fixes.store', $this->project), ['problem' => $id])
+            ->assertSessionHas('errors', fn ($errors) => str_starts_with((string) $errors->first('fix'), 'You have used all the AI use your plan includes this month.'));
+
+        // Nothing was asked, so the question is still the owner's to answer.
+        $this->assertFalse(FeatureRequest::query()->where('live_errors->problem', $id)->exists());
+        $this->assertSame([], $this->decisions());
+    }
+
     public function test_the_owner_can_say_failing_is_fine_while_something_is_down_and_it_stays_put_away()
     {
         class_exists(Recorder::class) || require_once resource_path('trace-recorder/src/Recorder.php');

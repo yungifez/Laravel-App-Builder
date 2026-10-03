@@ -2,10 +2,12 @@
 
 namespace App\Actions\Previews;
 
+use App\Actions\Billing\MeasureUsage;
 use App\Actions\Context\RecordDecision;
 use App\Actions\Features\RequestFeature;
 use App\Actions\Features\RequestFollowUp;
 use App\Actions\Features\RetryFeatureRequest;
+use App\Actions\Operations\SummarizeSpend;
 use App\Enums\FeatureRequestStatus;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -26,13 +28,17 @@ class RequestPreviewProblemFix
         private RequestFeature $requestFeature,
         private RequestFollowUp $requestFollowUp,
         private RecordDecision $recordDecision,
+        private SummarizeSpend $summarizeSpend,
+        private MeasureUsage $measureUsage,
     ) {}
 
     /**
      * Ask for the problem to be fixed, or get the fix already asked for, so
      * a second click does not pay for the same work twice.
      *
-     * @throws ValidationException when the app on show no longer lists it.
+     * @throws ValidationException when the app on show no longer lists it,
+     *                             or today's AI spend or the owner's plan is
+     *                             used up.
      */
     public function handle(Project $project, User $requester, string $problemId): FeatureRequest
     {
@@ -60,6 +66,20 @@ class RequestPreviewProblemFix
 
         if ($problem === null || $preview === null) {
             throw ValidationException::withMessages(['fix' => __('This problem is no longer in your app. Try again if it comes back.')]);
+        }
+
+        // A fix asked now would only stop the same way, and leave a change
+        // behind for each click: say so before asking.
+        if ($this->summarizeSpend->dailyLimitReached()) {
+            throw ValidationException::withMessages(['fix' => __('This is our fault: we paused new work for today to keep our costs in check. Nothing in your app changed. Try again tomorrow.')]);
+        }
+
+        $usage = $this->measureUsage->handle($project->owner);
+
+        if ($usage['reached']) {
+            throw ValidationException::withMessages(['fix' => __('You have used all the AI use your plan includes this month. It starts again on :date, or you can move to a bigger plan in Settings. Nothing in your app changed.', [
+                'date' => $usage['resets_at']->isoFormat('D MMMM'),
+            ])]);
         }
 
         // Asking the app to cope while something is down answers the

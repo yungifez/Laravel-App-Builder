@@ -230,7 +230,13 @@ function times(problem: AppProblem): string {
                         class="flex flex-col gap-2 pl-6"
                         :data-test="`app-problem-decide-${problem.id}`"
                     >
-                        <p class="text-sm font-medium">
+                        <!-- A fix that stopped was the owner's yes: say
+                             it back instead of asking again. -->
+                        <p v-if="problem.stopped" class="text-sm font-medium">
+                            You said your app should keep working when
+                            {{ outageInSentence(problem.during) }}.
+                        </p>
+                        <p v-else class="text-sm font-medium">
                             Should your app keep working when
                             {{ outageInSentence(problem.during) }}?
                         </p>
@@ -250,7 +256,11 @@ function times(problem: AppProblem): string {
                                     class="h-11 sm:h-8"
                                     :disabled="processing"
                                     :data-test="`app-problem-cope-${problem.id}`"
-                                    >Yes, it should cope</Button
+                                    >{{
+                                        problem.stopped
+                                            ? 'Try again'
+                                            : 'Yes, it should cope'
+                                    }}</Button
                                 >
                                 <InputError :message="errors.fix" />
                             </Form>
@@ -281,8 +291,11 @@ function times(problem: AppProblem): string {
                             </Form>
                         </div>
                         <p class="text-xs text-muted-foreground">
-                            If it should cope, I change your app, and that uses
-                            AI.
+                            {{
+                                problem.stopped
+                                    ? 'Trying again uses AI.'
+                                    : 'If it should cope, I change your app, and that uses AI.'
+                            }}
                         </p>
                     </div>
                     <details class="text-xs text-muted-foreground">
