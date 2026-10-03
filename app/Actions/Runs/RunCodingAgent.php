@@ -2,7 +2,9 @@
 
 namespace App\Actions\Runs;
 
+use App\Actions\Context\SelectAreas;
 use App\Actions\Workspaces\RunWorkspaceCommand;
+use App\Context\ContextPack;
 use App\Enums\AgentOutcomeStatus;
 use App\Enums\RunStatus;
 use App\Models\Run;
@@ -25,6 +27,7 @@ class RunCodingAgent
     public function __construct(
         private CodingAgentManager $agents,
         private RunWorkspaceCommand $runWorkspaceCommand,
+        private SelectAreas $selectAreas,
     ) {}
 
     /**
@@ -94,6 +97,8 @@ class RunCodingAgent
                     $this->recordEvent($run, $lease, 'agent_story', ['story' => $outcome->story]);
                 }
 
+                $this->recordAreasRead($run, $lease, $outcome);
+
                 return $outcome;
             }
 
@@ -106,6 +111,25 @@ class RunCodingAgent
         throw new ProvidersUnavailable(__('No AI provider could take the task right now (:reason). Try again later.', [
             'reason' => $previous->error ?? $previous->errorKind ?? 'unknown',
         ]));
+    }
+
+    /**
+     * Note the areas of the app the agent read beyond those it was given,
+     * from the files it says it read.
+     */
+    protected function recordAreasRead(Run $run, RunLease $lease, AgentOutcome $outcome): void
+    {
+        if ($run->context === null) {
+            return;
+        }
+
+        $pack = ContextPack::fromArray($run->context);
+        $files = array_values(array_filter(array_map(fn (array $entry) => $entry['kind'] === 'read' ? ($entry['file'] ?? null) : null, $outcome->story)));
+        $areas = $this->selectAreas->read($pack->projectContext(), $pack->targets, $files);
+
+        if ($areas !== []) {
+            $this->recordEvent($run, $lease, 'areas_read', ['areas' => $areas]);
+        }
     }
 
     /**

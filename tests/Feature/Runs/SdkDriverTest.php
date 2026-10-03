@@ -10,6 +10,7 @@ use App\Actions\Runs\StartRun;
 use App\Actions\Runs\WriteBrief;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
+use App\Context\ProjectNotes;
 use App\Enums\AgentOutcomeStatus;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
@@ -371,6 +372,35 @@ class SdkDriverTest extends TestCase
         $run = app(StartRun::class)->handle($this->request())->refresh();
 
         $this->assertSame(RunStatus::Cancelled, $run->status);
+    }
+
+    public function test_the_areas_come_from_the_request_and_the_agent_asks_for_another_by_reading_it()
+    {
+        // The planner sees one file only: the code of the area named comes first.
+        config(['builder.construction.planning.max_files' => 1]);
+        FeaturePlanner::fake([$this->plan()]);
+        $featureRequest = $this->request();
+        app(ProjectNotes::class)->put($featureRequest->project, 'main', [
+            'project.md' => "# Project\n",
+            'capabilities/teams.md' => "---\ncapability: teams\npaths: [app/Models/Team.php]\n---\n# Teams\n",
+            'capabilities/billing.md' => "---\ncapability: billing\npaths: [config/billing.php]\n---\n# Billing\n",
+        ]);
+        $this->agent('claude', 'anthropic', function (Workspace $workspace) {
+            File::put($this->path($workspace, 'app/Models/Team.php'), "<?php\n\nclass Team {}\n");
+
+            return new AgentOutcome('claude', 'anthropic', null, AgentOutcomeStatus::Completed, 'Done.', story: [
+                ['kind' => 'read', 'file' => '.product-notes/capabilities/teams.md'],
+                ['kind' => 'read', 'file' => 'config/billing.php'],
+            ]);
+        });
+
+        $run = app(StartRun::class)->handle($featureRequest)->refresh();
+
+        $compiled = $run->events()->where('type', 'context_compiled')->sole()->data;
+        $this->assertSame(['teams' => 'named'], $compiled['chosen'], 'the request says "teams"; the planner chose nothing');
+        $this->assertStringContainsString("Code in this area:\n- app/Models/Team.php", $run->context['text']);
+        $this->assertSame(['billing' => 'config/billing.php'], $run->events()->where('type', 'areas_read')->sole()->data['areas']);
+        FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, "## Project files\n\nEach line is a folder, then the files in it.\n\napp/Models/: Team.php"));
     }
 
     public function test_the_runner_agent_passes_the_task_and_credentials_and_reads_the_result_line()

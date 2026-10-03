@@ -8,6 +8,7 @@ use App\Actions\Context\ClassifyChange;
 use App\Actions\Context\CompileContext;
 use App\Actions\Context\KeepAssumptions;
 use App\Actions\Context\ReadProjectContext;
+use App\Actions\Context\SelectAreas;
 use App\Actions\Features\AcceptFindings;
 use App\Actions\Features\AnswerFindingProposals;
 use App\Actions\Features\ProposeFindings;
@@ -206,11 +207,14 @@ class ConstructRun
             return;
         }
 
-        $pack = $this->compileContext->handle($planningContext->projectContext, [...$planningContext->preselectedCapabilities(), ...$plan->capabilities]);
+        // The areas come from evidence first; the planner's guess only adds.
+        $chosen = $planningContext->areas + array_fill_keys($planningContext->projectContext->known($plan->capabilities), SelectAreas::PLANNER);
+        $pack = $this->compileContext->handle($planningContext->projectContext, array_map(strval(...), array_keys($chosen)), files: $planningContext->files);
 
         $this->recordEvent($run, $lease, 'context_compiled', [
             'mode' => $pack->mode->value,
             'targets' => $pack->targets,
+            'chosen' => $chosen,
             'included' => $pack->included,
             'tokens' => $pack->tokens(),
             'problems' => $pack->problems,

@@ -3471,12 +3471,24 @@ effects:
 **Selection is the V0 Context Compiler** (§8), deterministic:
 
 1. `project.md`, always.
-2. The target capabilities' files. Targets come from the planner choosing among
-   the capability names and summaries, or from a visual selection's capability.
+2. The target capabilities' files. Targets come from evidence first
+   (`SelectAreas`), each with its reason, so the same request in the same app
+   always loads the same notes. In order: the areas that claim the file of the
+   step the owner pointed at (`step`), or of the element they picked in the
+   app (`picked`); a follow-up's parent's areas, both those it was given and
+   those its agent read (`follow_up`); then at most three areas whose name or
+   one of whose behaviours the request names, compared by word stems, most
+   words first (`named`). The planner's choice among the capability names and
+   summaries is added after these (`planner`). `context_compiled` records the
+   reason for each.
 3. For each target, its Effects as one-line hints (name and reason), not the
-   affected capabilities' files.
-4. The agent may open any other notes file itself; the pack guides, it
-   never imprisons.
+   affected capabilities' files, and its code: up to 30 of the app's files its
+   `paths` claim, then how many more. The planner's file list puts these
+   files first, so cutting a large app's list (`max_files`) never drops them.
+4. An index of the other areas, one line each with its notes file. The agent
+   asks for another area by reading its notes or its code; the pack guides,
+   it never imprisons. The run records each other area the agent read, with
+   the first file (`areas_read`), and a follow-up starts with those areas.
 5. Log the files and tokens included.
 
 **Writing knowledge.** An answer to a question is appended to the relevant file

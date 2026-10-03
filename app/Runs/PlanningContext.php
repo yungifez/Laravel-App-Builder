@@ -21,6 +21,7 @@ final readonly class PlanningContext
      * @param  list<string>  $services  The outside services the app is connected to
      * @param  list<string>  $routes  The app's addresses and the code that handles each
      * @param  Frontend|null  $frontend  What the app's screens are made with
+     * @param  array<string, string>  $areas  The areas the change is about by evidence, with why (SelectAreas)
      */
     public function __construct(
         public string $request,
@@ -37,16 +38,6 @@ final readonly class PlanningContext
         public array $services = [],
         public array $routes = [],
         public ?Frontend $frontend = null,
+        public array $areas = [],
     ) {}
-
-    /**
-     * Get the areas the request is known to be about before planning: the
-     * areas that claim the file of the step the owner selected.
-     *
-     * @return list<string>
-     */
-    public function preselectedCapabilities(): array
-    {
-        return $this->targetStep === null ? [] : $this->projectContext->claiming($this->targetStep['file']);
-    }
 }

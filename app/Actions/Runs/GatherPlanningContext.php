@@ -3,6 +3,7 @@
 namespace App\Actions\Runs;
 
 use App\Actions\Context\ReadProjectContext;
+use App\Actions\Context\SelectAreas;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\FeatureRequestStatus;
 use App\Models\Run;
@@ -18,6 +19,7 @@ class GatherPlanningContext
         private WorkspaceManager $workspaces,
         private RunWorkspaceCommand $runWorkspaceCommand,
         private ReadProjectContext $readProjectContext,
+        private SelectAreas $selectAreas,
     ) {}
 
     /**
@@ -42,6 +44,14 @@ class GatherPlanningContext
             $contextFiles[] = $targetStep['file'];
         }
 
+        $projectContext = $this->readProjectContext->handle($workspace, $files, $featureRequest->project);
+        $areas = $this->selectAreas->handle($projectContext, $featureRequest);
+
+        // In a large app the list is cut short, so the code of the areas the
+        // change is about comes first and is never cut.
+        $ours = array_filter($files, fn (string $path) => array_intersect($projectContext->claiming($path), array_keys($areas)) !== []);
+        $files = [...array_values($ours), ...array_values(array_diff($files, $ours))];
+
         // Recorded, so the change can say later which way it was built.
         $keepOldWorking = $featureRequest->project->keepsOldWorking();
         $run->recordEvent('compatibility', ['keep_old_working' => $keepOldWorking, 'chosen_by_owner' => $featureRequest->project->keep_old_working !== null]);
@@ -53,7 +63,7 @@ class GatherPlanningContext
             parentRequest: $parent?->prompt,
             parentSummary: $parent?->summary,
             targetStep: $targetStep,
-            projectContext: $this->readProjectContext->handle($workspace, $files, $featureRequest->project),
+            projectContext: $projectContext,
             answers: $run->answers ?? [],
             mayAsk: count($run->answers ?? []) < $run->question_limit,
             parentAnswered: $parent?->status === FeatureRequestStatus::Answered,
@@ -61,6 +71,7 @@ class GatherPlanningContext
             services: $featureRequest->project->connectedServices(),
             routes: in_array('artisan', $files, true) ? $this->routes($workspace) : [],
             frontend: $this->frontend($workspace, $files),
+            areas: $areas,
         );
     }
 
