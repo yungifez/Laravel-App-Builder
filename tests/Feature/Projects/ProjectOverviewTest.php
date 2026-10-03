@@ -126,6 +126,21 @@ class ProjectOverviewTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('changes.0.proved', 0)->where('changes.0.passing', 2));
     }
 
+    public function test_a_change_tried_again_is_listed_once_as_its_newest_try()
+    {
+        $project = Project::factory()->create();
+        $first = FeatureRequest::factory()->for($project)->create(['status' => FeatureRequestStatus::Failed]);
+        $second = FeatureRequest::factory()->for($project)->create(['status' => FeatureRequestStatus::Failed, 'retry_of_id' => $first->id]);
+        $third = FeatureRequest::factory()->for($project)->create(['status' => FeatureRequestStatus::Generated, 'retry_of_id' => $second->id]);
+
+        $this->actingAs($project->owner)
+            ->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('changes', 1)
+                ->where('changes.0.id', $third->uuid)
+                ->where('changes.0.state', 'waiting'));
+    }
+
     public function test_a_change_that_could_not_finish_is_not_still_being_worked_on()
     {
         $project = Project::factory()->create();

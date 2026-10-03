@@ -29,14 +29,21 @@ class SummarizeChanges
     public function handle(Project $project): array
     {
         $requests = $project->featureRequests()->inLine($project)->latest('id')->get();
+        $triedAgain = $project->featureRequests()->whereNotNull('retry_of_id')->pluck('retry_of_id')->flip();
 
         return array_values($requests->whereNull('parent_id')
             // A tidy-up set aside in the background never reached the app,
             // so there is nothing to tell the owner.
             ->reject(fn (FeatureRequest $root) => $root->tidy !== null && $root->dismissed_at !== null)
-            ->map(function (FeatureRequest $root) use ($requests) {
+            ->map(function (FeatureRequest $root) use ($requests, $triedAgain) {
                 $thread = $this->thread($root, $requests)->sortByDesc('id')->values();
                 [$state, $shown] = $this->state($thread);
+
+                // The owner tried it again: the newer try stands for it,
+                // so one ask is not listed once for every try.
+                if ($triedAgain->has($shown->id)) {
+                    return null;
+                }
                 $toTry = $state === ChangeState::Waiting && $shown->status !== FeatureRequestStatus::Generating;
                 [$proved, $passing] = $toTry ? $this->proof($shown) : [0, 0];
 
@@ -76,6 +83,7 @@ class SummarizeChanges
                     'updated_at' => ($shown->reverted_at ?? $shown->accepted_at ?? $shown->updated_at)?->toIso8601String(),
                 ];
             })
+            ->filter()
             ->all());
     }
 
