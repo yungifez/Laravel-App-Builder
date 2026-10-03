@@ -926,6 +926,49 @@ class VerificationTest extends TestCase
         $this->assertSame(["Apply change #{$request->id}", 'Install', 'Key', 'Tests', 'Lint', 'Protected acceptance tests'], array_column($verification->results, 'name'));
     }
 
+    public function test_a_follow_up_is_run_without_only_its_own_code_so_earlier_tests_are_not_counted_as_its_own()
+    {
+        $tests = ['php', 'artisan', 'test', '--log-junit=new-tests.xml'];
+        config(['builder.verification.change_evidence' => [
+            'enabled' => true,
+            'routes' => ['command' => ['sh', '-c', 'list the routes'], 'timeout' => 60, 'report' => 'routes.json'],
+            'tests' => ['command' => $tests, 'timeout' => 300, 'report' => 'new-tests.xml'],
+        ]]);
+        $parent = FeatureRequest::factory()->generated()->create(['patch' => implode("\n", [
+            'diff --git a/app/Http/Controllers/RegisterController.php b/app/Http/Controllers/RegisterController.php',
+            '--- a/app/Http/Controllers/RegisterController.php',
+            '+++ b/app/Http/Controllers/RegisterController.php',
+            '@@ -1 +1,2 @@',
+            ' <?php',
+            '+// Register button',
+            'diff --git a/tests/Feature/RegisterTest.php b/tests/Feature/RegisterTest.php',
+            'new file mode 100644',
+            '--- /dev/null',
+            '+++ b/tests/Feature/RegisterTest.php',
+            '@@ -0,0 +1 @@',
+            '+// Register tests',
+        ])]);
+        $followUp = FeatureRequest::factory()->generated()->for($parent->project)->create([
+            'parent_id' => $parent->id,
+            'patch' => $this->changeWithTests(),
+        ]);
+
+        app(RequestVerification::class)->handle($followUp);
+
+        // The earlier change stays in; only the follow-up is taken out and its tests put back.
+        $commands = array_column($this->driver->executed, 'command');
+        $applies = array_values(array_filter($commands, fn (array $command) => array_slice($command, 0, 2) === ['git', 'apply']));
+        $this->assertCount(4, $applies);
+        $this->assertSame(FeatureRequest::LINEAGE_DIRECTORY.'/02.patch', last($applies[2]));
+        $this->assertContains('--reverse', $applies[2]);
+        $this->assertSame(FeatureRequest::LINEAGE_DIRECTORY.'/02.patch', last($applies[3]));
+        $this->assertContains('--include=tests/*', $applies[3]);
+
+        // The earlier change's tests are not run as the follow-up's.
+        $runs = array_values(array_filter($commands, fn (array $command) => array_slice($command, 0, 4) === $tests));
+        $this->assertSame([[...$tests, 'tests/Feature/TeamTest.php'], [...$tests, 'tests/Feature/ArchiveTest.php', 'tests/Feature/TeamTest.php']], $runs);
+    }
+
     public function test_the_change_is_not_run_without_its_code_when_that_would_say_nothing()
     {
         $withoutCode = fn () => array_filter(array_column($this->driver->executed, 'command'), fn (array $command) => in_array('--reverse', $command, true));

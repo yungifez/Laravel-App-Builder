@@ -773,6 +773,9 @@ class VerifyFeatureRequest implements ShouldQueue
      * its code taken out and only its tests left in: one that still passes
      * says nothing about the change.
      *
+     * Only this change is taken out. One that builds on changes not kept
+     * yet is measured on top of them, or their tests would count as its own.
+     *
      * Like the screen check this never changes the checks' result, and
      * what cannot be measured is not kept. A change to the packages is not
      * measured: the starting commit would need other packages installed.
@@ -782,18 +785,19 @@ class VerifyFeatureRequest implements ShouldQueue
         /** @var array{enabled: bool, routes: array{command: list<string>, timeout: int, report: string}, tests: array{command: list<string>, timeout: int, report: string}} $config */
         $config = config('builder.verification.change_evidence');
         $lineage = $featureRequest->lineage();
+        $own = array_key_last($lineage);
         $suite = (array) config('builder.verification.suite_paths');
-        $app = array_filter(array_keys($this->touched), fn (string $path) => ! Str::startsWith($path, $suite) && ! str_starts_with($path, ProjectNotes::directory().'/'));
+        $app = array_filter(array_column(PatchSummary::files($featureRequest->patch), 'path'), fn (string $path) => ! Str::startsWith($path, $suite) && ! str_starts_with($path, ProjectNotes::directory().'/'));
         $code = array_any($app, fn (string $path) => str_ends_with($path, '.php'));
         // A change that only adds tests has no code to take out: its tests
         // pass without it by design.
-        $tests = $app === [] ? [] : NewTests::files(array_map(fn (FeatureRequest $request) => $request->patch, $lineage));
+        $tests = $app === [] ? [] : NewTests::files([$featureRequest->patch]);
 
         if (! $config['enabled'] || ($tests === [] && ! $code) || array_intersect(array_keys($this->touched), self::PACKAGE_FILES) !== []) {
             return;
         }
 
-        rescue(function () use ($driver, $runWorkspaceCommand, $workspace, $config, $lineage, $suite, $tests, $code) {
+        rescue(function () use ($driver, $runWorkspaceCommand, $workspace, $featureRequest, $config, $lineage, $own, $suite, $tests, $code) {
             $read = fn (string $path) => (string) rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), '', report: false);
             $routes = function () use ($runWorkspaceCommand, $workspace, $config, $read) {
                 $command = $runWorkspaceCommand->handle($workspace, $config['routes']['command'], $config['routes']['timeout']);
@@ -811,10 +815,8 @@ class VerifyFeatureRequest implements ShouldQueue
 
             $after = $code ? $routes() : null;
 
-            foreach (array_reverse(array_keys($lineage)) as $position) {
-                if (! $this->applyPatch($driver, $runWorkspaceCommand, $workspace, $lineage, $position, reverse: true, flags: $kept)) {
-                    return;
-                }
+            if (! $this->applyPatch($driver, $runWorkspaceCommand, $workspace, $lineage, $own, reverse: true, flags: $kept)) {
+                return;
             }
 
             $before = $after !== null ? $routes() : null;
@@ -833,12 +835,10 @@ class VerifyFeatureRequest implements ShouldQueue
 
             // Put back only what the change did under the tests' folders:
             // its tests and the helpers they use.
-            foreach ($lineage as $position => $request) {
-                $touchesTests = array_any(PatchSummary::files($request->patch), fn (array $file) => Str::startsWith($file['path'], $suite));
+            $touchesTests = array_any(PatchSummary::files($featureRequest->patch), fn (array $file) => Str::startsWith($file['path'], $suite));
 
-                if ($touchesTests && ! $this->applyPatch($driver, $runWorkspaceCommand, $workspace, $lineage, $position, flags: [...$kept, ...$only])) {
-                    return;
-                }
+            if ($touchesTests && ! $this->applyPatch($driver, $runWorkspaceCommand, $workspace, $lineage, $own, flags: [...$kept, ...$only])) {
+                return;
             }
 
             $ranWithout = $run(array_keys($tests));
