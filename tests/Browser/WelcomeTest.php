@@ -10,13 +10,14 @@ use App\Models\User;
 
 it('shows a visitor what makes it different and what they keep, and starts them on an app', function () {
     visit('/')
-        ->assertPresent('@welcome-example')
         ->assertPresent('@welcome-different')
+        ->assertPresent('@welcome-features')
         ->assertPresent('@welcome-stage')
         ->assertSeeIn('@welcome-stage', 'Let customers cancel a booking up to a day before.')
-        ->assertSee('Tired of apps that never get past the demo?')
+        ->assertSee('Build apps that don’t stay prototypes.')
         ->assertSee('Fixed checks decide if it works.')
         ->assertSee('An AI agent on its own')
+        ->assertSee('Try it before you keep it')
         ->assertSee('It tells you how it knows.')
         ->assertSee('Checked, with gaps')
         ->assertSee('It stays yours.')
@@ -41,12 +42,13 @@ it('keeps what a visitor typed for the new app form after they sign in', functio
         ->assertValue('#purpose', 'Customers order cakes for a pickup day.');
 });
 
-it('starts an app from the box at the end of the page too', function () {
+it('sends a visitor at the end of the page back to the box', function () {
     $this->actingAs(User::factory()->create());
 
     visit('/')
-        ->type('@welcome-end-idea', 'Neighbours lend each other tools.')
-        ->click('@welcome-end-start')
+        ->click('@welcome-end')
+        ->type('@welcome-idea', 'Neighbours lend each other tools.')
+        ->click('@welcome-hero-start')
         ->assertPathIs('/projects')
         ->assertValue('#purpose', 'Neighbours lend each other tools.');
 });

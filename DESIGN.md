@@ -62,25 +62,29 @@ that float above the page, such as menus and dialogs, and stay faint.
 Show product screenshots in a bezel: a thin border around a `bg-muted` frame
 with a little padding, and the picture inside with its own border.
 
-### Public pages are tiles
+### Public pages are panels on a plain page
 
-Public pages are built like a product page: full-bleed tiles with thin 12px
-gutters (`space-y-3 p-3`). Each tile holds one idea. It has a short headline,
-one line beside or under it, and the real screen filling the rest, often
-running off the bottom edge. Space goes inside a tile, never around it.
+Public pages read like a product page: a plain page with wide space between
+ideas, and soft tinted panels that hold the real screens. Each section holds
+one idea.
 
-- Tiles alternate between a soft tile (`bg-muted/50`) and an inverted one
-  (`bg-foreground text-background`), so each idea starts on a clear edge.
-- The first tile is the box where a visitor says what they want to make.
+- Section headings are two-tone. A dark statement runs into a grey line that
+  explains it, in one medium-weight heading (`text-muted-foreground` for the
+  grey part).
+- Screens sit in wide tinted panels (`bg-panel-blue`, `bg-panel-green` or
+  `bg-muted`) with a small radius. The panel is the only colour block. Do
+  not stack panels without space and a heading between them.
+- The page starts with the box where a visitor says what they want to make.
   The headline, one line and the box are centred, as visitors expect from
-  any app builder. This is the only centred block. Other tile text sits on
-  the left edge, like everywhere else.
-- Under the box, the real workspace plays one change and runs off the
-  bottom edge of the first tile. Build it in markup, not as a picture, so
-  it stays sharp and follows the theme. The same change carries through
-  the tiles below it.
-- Number the tiles after the first with a short label above the headline,
-  such as "01 The checks", so the page reads as one sequence.
+  any app builder. This is the only centred block. Other headings sit on the
+  left edge, like everywhere else.
+- Under the box, the real workspace plays one change in a blue panel. Build
+  it in markup, not as a picture, so it stays sharp and follows the theme.
+  The same change carries through the sections below it.
+- Small features go in a two-column list: a bold title with a small icon
+  beside it, and one grey line under it. No cards.
+- The page ends with one wide dark button back to the box, then a footer
+  with columns of links.
 - Buttons keep the app's small radius (`rounded-md`). Do not use pills.
 
 ### Patterns that are overused now

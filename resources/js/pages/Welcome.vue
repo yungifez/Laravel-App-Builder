@@ -24,16 +24,17 @@ import {
     MousePointerClick,
     PanelLeft,
     RotateCw,
+    Paintbrush,
     Share2,
+    TriangleAlert,
     Sparkles,
     Ticket,
 } from '@lucide/vue';
 import type { Directive } from 'vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
-import { faults } from '@/lib/appFaults';
 import { keepIdea } from '@/lib/startIdea';
-import { login, register } from '@/routes';
+import { login, pricing, register } from '@/routes';
 import { index } from '@/routes/projects';
 import type { DesignOption, Starter } from '@/types';
 
@@ -349,51 +350,29 @@ function play(): void {
 
 watch(way, play);
 
-// The screens, one at a time. The list moves on by itself while it is
-// on screen, and stops for good once the visitor picks one.
-const screens = [
+// Small things the workspace does, each true today.
+const features = [
     {
-        key: 'talk',
-        title: 'Ask in plain words',
-        text: 'Say what to change, and watch your app beside the conversation.',
-        image: '/images/product/workspace.webp',
-        alt: 'The workspace: a conversation about the app beside the app itself',
+        icon: MousePointerClick,
+        title: 'Try it before you keep it',
+        text: 'Each change opens in your app first. Keep it, or ask for something else.',
     },
     {
-        key: 'design',
-        title: 'Point at anything, change it exactly',
-        text: 'Design edits use no AI. Click any part of your app and set how it looks, then undo it if you change your mind.',
-        image: '/images/product/design.webp',
-        alt: 'The Book room button picked, with its words and text controls',
+        icon: Paintbrush,
+        title: 'Change the look exactly',
+        text: 'Click any part of your app and set how it looks. Design edits use no AI.',
     },
     {
-        key: 'fail',
+        icon: TriangleAlert,
         title: 'See what happens when things fail',
-        text: 'Pick what goes wrong and use your app as a visitor would. Nothing is really sent or stored while you try it.',
-        image: null,
-        alt: '',
+        text: 'Pick what goes wrong and use your app as a visitor would. Nothing is really sent.',
+    },
+    {
+        icon: Share2,
+        title: 'Share it with a link',
+        text: 'Send a link so others can try your app while you build it.',
     },
 ];
-
-const active = ref(0);
-const picked = ref(false);
-const hovering = ref(false);
-const screensSeen = ref(false);
-const screensBox = ref<HTMLElement | null>(null);
-const cycling = computed(
-    () => !still && !picked.value && screensSeen.value && !hovering.value,
-);
-
-function pick(at: number): void {
-    picked.value = true;
-    active.value = at;
-}
-
-function next(): void {
-    active.value = (active.value + 1) % screens.length;
-}
-
-const fault = ref(faults[1]);
 
 // A kept change reports how it knows each thing, in the words the change
 // page uses. What nothing checked is named, never passed off as done.
@@ -514,10 +493,6 @@ onMounted(() => {
     if (demo.value !== null) {
         whenSeen(demo.value, play);
     }
-
-    if (screensBox.value !== null) {
-        whenSeen(screensBox.value, () => (screensSeen.value = true));
-    }
 });
 
 onBeforeUnmount(() => {
@@ -536,21 +511,33 @@ onBeforeUnmount(() => {
     <div class="min-h-svh overflow-x-clip bg-background text-foreground">
         <header class="sticky top-0 z-30 border-b bg-background">
             <div
-                class="mx-auto flex h-12 max-w-6xl items-center justify-between gap-3 px-4"
+                class="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-8"
             >
-                <div class="flex min-w-0 items-center">
+                <div class="flex min-w-0 items-center gap-8">
                     <AppLogo />
+                    <nav class="hidden items-center gap-6 text-sm md:flex">
+                        <a
+                            href="#different"
+                            class="text-muted-foreground hover:text-foreground"
+                            >What is different</a
+                        >
+                        <a
+                            href="#ideas"
+                            class="text-muted-foreground hover:text-foreground"
+                            >Ideas</a
+                        >
+                        <Link
+                            :href="pricing()"
+                            class="text-muted-foreground hover:text-foreground"
+                            >Pricing</Link
+                        >
+                    </nav>
                 </div>
                 <nav class="flex items-center gap-1 text-sm">
-                    <a
-                        href="#different"
-                        class="hidden min-h-11 items-center rounded-md px-3 text-muted-foreground select-none hover:text-foreground sm:inline-flex sm:min-h-8"
-                        >What is different</a
-                    >
                     <Link
                         v-if="$page.props.auth.user"
                         :href="index()"
-                        class="inline-flex min-h-11 press items-center rounded-md bg-primary px-4 font-medium text-primary-foreground select-none hover:bg-primary/90 sm:min-h-8"
+                        class="inline-flex min-h-11 press items-center rounded-md bg-primary px-4 font-medium text-primary-foreground select-none hover:bg-primary/90 sm:min-h-9"
                         data-test="welcome-apps"
                     >
                         Your apps
@@ -558,13 +545,13 @@ onBeforeUnmount(() => {
                     <template v-else>
                         <Link
                             :href="login()"
-                            class="inline-flex min-h-11 items-center rounded-md px-3 text-muted-foreground select-none hover:text-foreground sm:min-h-8"
+                            class="inline-flex min-h-11 items-center rounded-md px-3 text-muted-foreground select-none hover:text-foreground sm:min-h-9"
                         >
                             Log in
                         </Link>
                         <Link
                             :href="register()"
-                            class="inline-flex min-h-11 press items-center rounded-md bg-primary px-4 font-medium text-primary-foreground select-none hover:bg-primary/90 sm:min-h-8"
+                            class="inline-flex min-h-11 press items-center rounded-md bg-primary px-4 font-medium text-primary-foreground select-none hover:bg-primary/90 sm:min-h-9"
                             data-test="welcome-start"
                         >
                             Start an app
@@ -574,33 +561,23 @@ onBeforeUnmount(() => {
             </div>
         </header>
 
-        <!-- Tiles run edge to edge with thin gutters, soft and inverted in
-             turn. Space goes inside each tile, never around it. -->
-        <main class="space-y-3 p-3">
+        <main>
             <!-- The first screen is the box: say what the app is for, and
-                 go. What they type waits for them after signing up. Under
-                 it, the workspace plays one change and runs off the bottom
-                 edge of the tile. -->
-            <section id="start" class="overflow-hidden bg-muted/50">
+                 go. What they type waits for them after signing up. Then
+                 the real workspace makes one change, on a soft panel. -->
+            <section id="start" class="mx-auto max-w-7xl px-4 sm:px-8">
                 <div
-                    class="mx-auto flex max-w-3xl flex-col px-4 pt-20 text-center sm:pt-28"
+                    class="mx-auto flex max-w-3xl flex-col pt-20 text-center sm:pt-32"
                 >
-                    <p
-                        v-reveal
-                        class="mx-auto reveal rounded-md border bg-background px-3 py-1 text-sm text-muted-foreground"
-                    >
-                        Tired of apps that never get past the demo?
-                    </p>
                     <h1
                         v-reveal
-                        class="mt-6 reveal font-display text-4xl leading-[1.05] tracking-[-0.035em] text-balance delay-75 sm:text-6xl"
+                        class="reveal font-display text-5xl leading-[1.02] font-medium tracking-[-0.04em] text-balance sm:text-7xl"
                     >
-                        Build apps that don’t stay
-                        <span class="text-muted-foreground">prototypes.</span>
+                        Build apps that don’t stay prototypes.
                     </h1>
                     <p
                         v-reveal
-                        class="mx-auto mt-5 max-w-2xl reveal text-lg text-balance text-muted-foreground delay-100"
+                        class="mx-auto mt-6 max-w-2xl reveal text-lg text-balance text-muted-foreground delay-75 sm:text-xl"
                     >
                         With most AI builders, each change can break what
                         worked. Here every change passes fixed checks first.
@@ -613,7 +590,7 @@ onBeforeUnmount(() => {
                         @submit.prevent="start"
                     >
                         <div
-                            class="rounded-lg border border-input bg-background shadow-sm transition-shadow focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30"
+                            class="rounded-xl border border-input bg-background shadow-lg shadow-black/5 transition-shadow focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30"
                         >
                             <label for="idea" class="sr-only"
                                 >What do you want to make?</label
@@ -651,14 +628,15 @@ onBeforeUnmount(() => {
 
                     <div
                         v-reveal
-                        class="mt-4 flex reveal flex-wrap justify-center gap-2 delay-200"
+                        class="mt-5 flex reveal flex-wrap items-center justify-center gap-x-1 gap-y-2 text-sm delay-200"
                         aria-label="Ideas to start from"
                     >
+                        <span class="mr-2 text-muted-foreground">Try</span>
                         <button
                             v-for="item in starters"
                             :key="item.key"
                             type="button"
-                            class="min-h-11 press rounded-md border bg-background px-3 text-sm text-muted-foreground select-none hover:text-foreground sm:min-h-9"
+                            class="min-h-11 rounded-md px-2.5 underline decoration-border underline-offset-4 select-none hover:decoration-foreground sm:min-h-8"
                             @click="useStarter(item)"
                         >
                             {{ item.name }}
@@ -666,484 +644,497 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
 
-                <figure
-                    ref="stage"
-                    v-reveal
-                    class="mx-auto mt-16 max-w-6xl reveal px-4 delay-300 sm:mt-20 sm:px-10"
-                    data-test="welcome-stage"
+                <div
+                    class="mt-20 rounded-md bg-panel-blue px-3 pt-10 pb-3 sm:mt-24 sm:px-10 sm:pt-16 sm:pb-16"
                 >
-                    <figcaption class="sr-only">
-                        An example in the workspace: one change, from the ask to
-                        ready for you to keep.
-                    </figcaption>
-                    <!-- The workspace, drawn with its own layout and words.
+                    <figure
+                        ref="stage"
+                        v-reveal
+                        class="mx-auto max-w-6xl reveal delay-150"
+                        data-test="welcome-stage"
+                    >
+                        <figcaption class="sr-only">
+                            An example in the workspace: one change, from the
+                            ask to ready for you to keep.
+                        </figcaption>
+                        <!-- The workspace, drawn with its own layout and words.
                          It is a picture: nothing in it can be pressed except
                          Play again. -->
-                    <div
-                        class="overflow-hidden rounded-t-xl border border-b-0 bg-background text-left shadow-[0_-8px_60px_-24px_rgb(0_0_0/0.25)] select-none"
-                    >
                         <div
-                            class="flex h-12 items-center justify-between gap-3 border-b px-3 text-sm"
-                            aria-hidden="true"
+                            class="overflow-hidden rounded-xl border bg-background text-left shadow-2xl shadow-black/10 select-none"
                         >
-                            <span class="flex min-w-0 items-center gap-3">
-                                <ArrowLeft
-                                    class="size-4 shrink-0 text-muted-foreground"
-                                />
-                                <span
-                                    class="flex min-w-0 items-center gap-1.5 font-semibold"
-                                >
+                            <div
+                                class="flex h-12 items-center justify-between gap-3 border-b px-3 text-sm"
+                                aria-hidden="true"
+                            >
+                                <span class="flex min-w-0 items-center gap-3">
+                                    <ArrowLeft
+                                        class="size-4 shrink-0 text-muted-foreground"
+                                    />
                                     <span
-                                        class="size-1.5 shrink-0 rounded-full bg-muted-foreground/60"
-                                    />
-                                    <span class="truncate">Studio Classes</span>
-                                    <ChevronDown
-                                        class="size-3.5 shrink-0 text-muted-foreground"
-                                    />
-                                </span>
-                                <span
-                                    class="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground tabular-nums"
-                                >
-                                    <ShieldCheck
-                                        class="size-3.5 text-emerald-600 dark:text-emerald-400"
-                                    />
-                                    {{ beat >= ready ? 44 : 42 }} tests
-                                </span>
-                            </span>
-                            <span class="flex items-center gap-2">
-                                <Bell
-                                    class="hidden size-4 text-muted-foreground sm:block"
-                                />
-                                <span
-                                    class="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 font-medium"
-                                >
-                                    <Share2 class="size-3.5" />
-                                    Share
-                                </span>
-                            </span>
-                        </div>
-
-                        <div
-                            class="grid h-[34rem] md:grid-cols-[21rem_minmax(0,1fr)]"
-                        >
-                            <div class="flex min-h-0 flex-col md:border-r">
-                                <div
-                                    class="flex items-center gap-2 border-b p-2"
-                                    aria-hidden="true"
-                                >
-                                    <span
-                                        class="grid flex-1 grid-cols-2 rounded-md bg-muted p-0.5 text-sm"
+                                        class="flex min-w-0 items-center gap-1.5 font-semibold"
                                     >
                                         <span
-                                            class="flex h-8 items-center justify-center gap-1.5 rounded-sm bg-background font-semibold shadow-xs"
+                                            class="size-1.5 shrink-0 rounded-full bg-muted-foreground/60"
+                                        />
+                                        <span class="truncate"
+                                            >Studio Classes</span
                                         >
-                                            <MessageSquare class="size-3.5" />
-                                            Chat
-                                        </span>
-                                        <span
-                                            class="flex h-8 items-center justify-center gap-1.5 text-muted-foreground"
-                                        >
-                                            <MousePointerClick
-                                                class="size-3.5"
-                                            />
-                                            Design
-                                        </span>
+                                        <ChevronDown
+                                            class="size-3.5 shrink-0 text-muted-foreground"
+                                        />
                                     </span>
-                                    <Maximize2
-                                        class="mx-1.5 size-3.5 text-muted-foreground"
+                                    <span
+                                        class="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground tabular-nums"
+                                    >
+                                        <ShieldCheck
+                                            class="size-3.5 text-emerald-600 dark:text-emerald-400"
+                                        />
+                                        {{ beat >= ready ? 44 : 42 }} tests
+                                    </span>
+                                </span>
+                                <span class="flex items-center gap-2">
+                                    <Bell
+                                        class="hidden size-4 text-muted-foreground sm:block"
                                     />
-                                </div>
-                                <div
-                                    class="flex items-center justify-between border-b px-4 py-2.5 text-sm text-muted-foreground"
-                                    aria-hidden="true"
-                                >
-                                    <span class="flex items-center gap-1.5">
-                                        <ArrowLeft class="size-3.5" />
-                                        All changes
+                                    <span
+                                        class="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 font-medium"
+                                    >
+                                        <Share2 class="size-3.5" />
+                                        Share
                                     </span>
-                                    <span class="flex items-center gap-1.5">
-                                        <FileDiff class="size-3.5" />
-                                        Details
-                                    </span>
-                                </div>
+                                </span>
+                            </div>
 
-                                <div
-                                    class="min-h-0 flex-1 space-y-4 overflow-hidden p-4"
-                                >
-                                    <div class="flex justify-end">
-                                        <p
-                                            class="max-w-[85%] rounded-lg rounded-br-sm bg-muted px-3.5 py-2.5 text-sm"
+                            <div
+                                class="grid h-[34rem] md:grid-cols-[21rem_minmax(0,1fr)]"
+                            >
+                                <div class="flex min-h-0 flex-col md:border-r">
+                                    <div
+                                        class="flex items-center gap-2 border-b p-2"
+                                        aria-hidden="true"
+                                    >
+                                        <span
+                                            class="grid flex-1 grid-cols-2 rounded-md bg-muted p-0.5 text-sm"
                                         >
-                                            Let customers cancel a booking up to
-                                            a day before.
-                                        </p>
+                                            <span
+                                                class="flex h-8 items-center justify-center gap-1.5 rounded-sm bg-background font-semibold shadow-xs"
+                                            >
+                                                <MessageSquare
+                                                    class="size-3.5"
+                                                />
+                                                Chat
+                                            </span>
+                                            <span
+                                                class="flex h-8 items-center justify-center gap-1.5 text-muted-foreground"
+                                            >
+                                                <MousePointerClick
+                                                    class="size-3.5"
+                                                />
+                                                Design
+                                            </span>
+                                        </span>
+                                        <Maximize2
+                                            class="mx-1.5 size-3.5 text-muted-foreground"
+                                        />
+                                    </div>
+                                    <div
+                                        class="flex items-center justify-between border-b px-4 py-2.5 text-sm text-muted-foreground"
+                                        aria-hidden="true"
+                                    >
+                                        <span class="flex items-center gap-1.5">
+                                            <ArrowLeft class="size-3.5" />
+                                            All changes
+                                        </span>
+                                        <span class="flex items-center gap-1.5">
+                                            <FileDiff class="size-3.5" />
+                                            Details
+                                        </span>
+                                    </div>
+
+                                    <div
+                                        class="min-h-0 flex-1 space-y-4 overflow-hidden p-4"
+                                    >
+                                        <div class="flex justify-end">
+                                            <p
+                                                class="max-w-[85%] rounded-lg rounded-br-sm bg-muted px-3.5 py-2.5 text-sm"
+                                            >
+                                                Let customers cancel a booking
+                                                up to a day before.
+                                            </p>
+                                        </div>
+
+                                        <div
+                                            :class="[
+                                                'flex gap-2.5 transition-opacity duration-base',
+                                                beat >= 1
+                                                    ? 'opacity-100'
+                                                    : 'opacity-0',
+                                            ]"
+                                        >
+                                            <span
+                                                class="grid size-7 shrink-0 place-items-center rounded-full bg-muted"
+                                                aria-hidden="true"
+                                            >
+                                                <Sparkles class="size-3.5" />
+                                            </span>
+                                            <div
+                                                class="min-w-0 flex-1 space-y-3 pt-0.5 text-sm"
+                                            >
+                                                <p class="leading-relaxed">
+                                                    Adds a way to cancel a
+                                                    booking until a day before
+                                                    the class, and turns away
+                                                    later cancels.
+                                                </p>
+
+                                                <ol
+                                                    v-if="beat < ready"
+                                                    class="space-y-1.5"
+                                                >
+                                                    <template
+                                                        v-for="(
+                                                            step, at
+                                                        ) in stageSteps"
+                                                        :key="step.label"
+                                                    >
+                                                        <li
+                                                            v-if="
+                                                                beat >=
+                                                                step.from
+                                                            "
+                                                            class="flex items-center gap-2 pt-1 text-xs font-medium"
+                                                        >
+                                                            <CircleDot
+                                                                class="size-3.5 shrink-0 text-muted-foreground"
+                                                            />
+                                                            {{ step.label }}
+                                                        </li>
+                                                        <template
+                                                            v-if="at === 2"
+                                                        >
+                                                            <li
+                                                                v-for="check in heroChecks.slice(
+                                                                    0,
+                                                                    checksDone,
+                                                                )"
+                                                                :key="check"
+                                                                class="flex items-center gap-2 text-xs text-muted-foreground"
+                                                            >
+                                                                <CircleCheck
+                                                                    class="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                                                />
+                                                                {{ check }}
+                                                            </li>
+                                                        </template>
+                                                    </template>
+                                                </ol>
+
+                                                <p
+                                                    v-if="working"
+                                                    class="flex items-center gap-2 text-muted-foreground"
+                                                >
+                                                    <LoaderCircle
+                                                        class="size-4 animate-spin"
+                                                    />
+                                                    {{ stageNow }}…
+                                                    <span
+                                                        class="text-xs tabular-nums"
+                                                        >{{ elapsed }}s</span
+                                                    >
+                                                </p>
+
+                                                <template v-if="beat >= ready">
+                                                    <div class="flex gap-2">
+                                                        <Check
+                                                            class="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                                        />
+                                                        <span>
+                                                            <span
+                                                                class="block font-medium"
+                                                                >Cancelling a
+                                                                booking</span
+                                                            >
+                                                            <span
+                                                                class="block text-xs text-muted-foreground"
+                                                                >Customers
+                                                                cancel up to a
+                                                                day before.
+                                                                After that, it
+                                                                says it is too
+                                                                late.</span
+                                                            >
+                                                        </span>
+                                                    </div>
+                                                    <p
+                                                        class="flex gap-2 text-xs text-muted-foreground"
+                                                    >
+                                                        <ShieldCheck
+                                                            class="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                                        />
+                                                        2 new tests passed, with
+                                                        the app’s other 42.
+                                                    </p>
+                                                </template>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <div
                                         :class="[
-                                            'flex gap-2.5 transition-opacity duration-base',
-                                            beat >= 1
-                                                ? 'opacity-100'
-                                                : 'opacity-0',
-                                        ]"
-                                    >
-                                        <span
-                                            class="grid size-7 shrink-0 place-items-center rounded-full bg-muted"
-                                            aria-hidden="true"
-                                        >
-                                            <Sparkles class="size-3.5" />
-                                        </span>
-                                        <div
-                                            class="min-w-0 flex-1 space-y-3 pt-0.5 text-sm"
-                                        >
-                                            <p class="leading-relaxed">
-                                                Adds a way to cancel a booking
-                                                until a day before the class,
-                                                and turns away later cancels.
-                                            </p>
-
-                                            <ol
-                                                v-if="beat < ready"
-                                                class="space-y-1.5"
-                                            >
-                                                <template
-                                                    v-for="(
-                                                        step, at
-                                                    ) in stageSteps"
-                                                    :key="step.label"
-                                                >
-                                                    <li
-                                                        v-if="beat >= step.from"
-                                                        class="flex items-center gap-2 pt-1 text-xs font-medium"
-                                                    >
-                                                        <CircleDot
-                                                            class="size-3.5 shrink-0 text-muted-foreground"
-                                                        />
-                                                        {{ step.label }}
-                                                    </li>
-                                                    <template v-if="at === 2">
-                                                        <li
-                                                            v-for="check in heroChecks.slice(
-                                                                0,
-                                                                checksDone,
-                                                            )"
-                                                            :key="check"
-                                                            class="flex items-center gap-2 text-xs text-muted-foreground"
-                                                        >
-                                                            <CircleCheck
-                                                                class="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
-                                                            />
-                                                            {{ check }}
-                                                        </li>
-                                                    </template>
-                                                </template>
-                                            </ol>
-
-                                            <p
-                                                v-if="working"
-                                                class="flex items-center gap-2 text-muted-foreground"
-                                            >
-                                                <LoaderCircle
-                                                    class="size-4 animate-spin"
-                                                />
-                                                {{ stageNow }}…
-                                                <span
-                                                    class="text-xs tabular-nums"
-                                                    >{{ elapsed }}s</span
-                                                >
-                                            </p>
-
-                                            <template v-if="beat >= ready">
-                                                <div class="flex gap-2">
-                                                    <Check
-                                                        class="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
-                                                    />
-                                                    <span>
-                                                        <span
-                                                            class="block font-medium"
-                                                            >Cancelling a
-                                                            booking</span
-                                                        >
-                                                        <span
-                                                            class="block text-xs text-muted-foreground"
-                                                            >Customers cancel up
-                                                            to a day before.
-                                                            After that, it says
-                                                            it is too
-                                                            late.</span
-                                                        >
-                                                    </span>
-                                                </div>
-                                                <p
-                                                    class="flex gap-2 text-xs text-muted-foreground"
-                                                >
-                                                    <ShieldCheck
-                                                        class="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
-                                                    />
-                                                    2 new tests passed, with the
-                                                    app’s other 42.
-                                                </p>
-                                            </template>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div
-                                    :class="[
-                                        'flex gap-2 border-t px-4 pt-3 transition-opacity duration-panel',
-                                        beat >= ready
-                                            ? 'opacity-100'
-                                            : 'pointer-events-none opacity-0',
-                                    ]"
-                                >
-                                    <span
-                                        class="flex h-9 flex-1 items-center justify-center rounded-md border text-sm font-medium"
-                                        aria-hidden="true"
-                                        >Try it first</span
-                                    >
-                                    <span
-                                        class="flex h-9 flex-1 items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground"
-                                        aria-hidden="true"
-                                        >Keep it</span
-                                    >
-                                </div>
-                                <div class="flex items-center gap-2 p-3">
-                                    <span
-                                        class="flex h-10 flex-1 items-center rounded-md border px-3 text-sm text-muted-foreground"
-                                        aria-hidden="true"
-                                        >Reply or ask for more…</span
-                                    >
-                                    <button
-                                        v-if="!still"
-                                        type="button"
-                                        :class="[
-                                            'grid size-10 shrink-0 press place-items-center rounded-md text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground',
+                                            'flex gap-2 border-t px-4 pt-3 transition-opacity duration-panel',
                                             beat >= ready
                                                 ? 'opacity-100'
                                                 : 'pointer-events-none opacity-0',
                                         ]"
-                                        :tabindex="beat >= ready ? 0 : -1"
-                                        aria-label="Play the example again"
-                                        title="Play again"
-                                        @click="playStage"
-                                    >
-                                        <RotateCcw class="size-4" />
-                                    </button>
-                                </div>
-                            </div>
-
-                            <!-- The app beside the chat, with the browser bar
-                                 and tabs of the real workspace. -->
-                            <div
-                                class="hidden min-h-0 flex-col bg-muted/30 p-3 md:flex"
-                                aria-hidden="true"
-                            >
-                                <div
-                                    class="flex items-center gap-3 px-1 pb-3 text-sm text-muted-foreground"
-                                >
-                                    <ArrowLeft class="size-4" />
-                                    <ArrowRight class="size-4" />
-                                    <RotateCw class="size-4" />
-                                    <span
-                                        class="flex items-center gap-1 text-foreground"
-                                        >/bookings
-                                        <ChevronDown class="size-3.5" />
-                                    </span>
-                                    <span
-                                        class="ml-auto hidden items-center gap-5 lg:flex"
                                     >
                                         <span
-                                            class="border-b-2 border-foreground pb-1 text-foreground"
-                                            >App</span
+                                            class="flex h-9 flex-1 items-center justify-center rounded-md border text-sm font-medium"
+                                            aria-hidden="true"
+                                            >Try it first</span
                                         >
-                                        <span class="pb-1.5">Messages</span>
-                                        <span class="pb-1.5">Problems</span>
-                                        <span class="pb-1.5">Saved data</span>
-                                        <span class="pb-1.5"
-                                            >What happened</span
+                                        <span
+                                            class="flex h-9 flex-1 items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground"
+                                            aria-hidden="true"
+                                            >Keep it</span
                                         >
-                                    </span>
+                                    </div>
+                                    <div class="flex items-center gap-2 p-3">
+                                        <span
+                                            class="flex h-10 flex-1 items-center rounded-md border px-3 text-sm text-muted-foreground"
+                                            aria-hidden="true"
+                                            >Reply or ask for more…</span
+                                        >
+                                        <button
+                                            v-if="!still"
+                                            type="button"
+                                            :class="[
+                                                'grid size-10 shrink-0 press place-items-center rounded-md text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground',
+                                                beat >= ready
+                                                    ? 'opacity-100'
+                                                    : 'pointer-events-none opacity-0',
+                                            ]"
+                                            :tabindex="beat >= ready ? 0 : -1"
+                                            aria-label="Play the example again"
+                                            title="Play again"
+                                            @click="playStage"
+                                        >
+                                            <RotateCcw class="size-4" />
+                                        </button>
+                                    </div>
                                 </div>
+
+                                <!-- The app beside the chat, with the browser bar
+                                 and tabs of the real workspace. -->
                                 <div
-                                    class="flex min-h-0 flex-1 overflow-hidden rounded-lg border bg-background"
+                                    class="hidden min-h-0 flex-col bg-muted/30 p-3 md:flex"
+                                    aria-hidden="true"
                                 >
                                     <div
-                                        class="hidden w-48 shrink-0 flex-col border-r bg-muted/30 p-3 text-sm lg:flex"
+                                        class="flex items-center gap-3 px-1 pb-3 text-sm text-muted-foreground"
                                     >
+                                        <ArrowLeft class="size-4" />
+                                        <ArrowRight class="size-4" />
+                                        <RotateCw class="size-4" />
                                         <span
-                                            class="flex items-center gap-2 font-semibold"
+                                            class="flex items-center gap-1 text-foreground"
+                                            >/bookings
+                                            <ChevronDown class="size-3.5" />
+                                        </span>
+                                        <span
+                                            class="ml-auto hidden items-center gap-5 lg:flex"
                                         >
                                             <span
-                                                class="grid size-7 place-items-center rounded-md bg-foreground text-background"
+                                                class="border-b-2 border-foreground pb-1 text-foreground"
+                                                >App</span
                                             >
-                                                <CalendarDays class="size-4" />
-                                            </span>
-                                            Studio Classes
-                                        </span>
-                                        <span
-                                            class="mt-5 text-xs text-muted-foreground"
-                                            >Platform</span
-                                        >
-                                        <span
-                                            class="mt-2 flex items-center gap-2 rounded-md px-2 py-1.5"
-                                        >
-                                            <LayoutGrid class="size-4" />
-                                            Dashboard
-                                        </span>
-                                        <span
-                                            class="flex items-center gap-2 rounded-md px-2 py-1.5"
-                                        >
-                                            <CalendarDays class="size-4" />
-                                            Classes
-                                        </span>
-                                        <span
-                                            class="flex items-center gap-2 rounded-md bg-muted px-2 py-1.5 font-medium"
-                                        >
-                                            <Ticket class="size-4" />
-                                            Your bookings
+                                            <span class="pb-1.5">Messages</span>
+                                            <span class="pb-1.5">Problems</span>
+                                            <span class="pb-1.5"
+                                                >Saved data</span
+                                            >
+                                            <span class="pb-1.5"
+                                                >What happened</span
+                                            >
                                         </span>
                                     </div>
-                                    <div class="min-w-0 flex-1">
+                                    <div
+                                        class="flex min-h-0 flex-1 overflow-hidden rounded-lg border bg-background"
+                                    >
                                         <div
-                                            class="flex items-center gap-2 border-b px-4 py-3 text-sm"
+                                            class="hidden w-48 shrink-0 flex-col border-r bg-muted/30 p-3 text-sm lg:flex"
                                         >
-                                            <PanelLeft
-                                                class="size-4 text-muted-foreground"
-                                            />
-                                            Your bookings
-                                        </div>
-                                        <div class="p-4">
-                                            <div
-                                                class="rounded-xl border p-5 shadow-xs"
+                                            <span
+                                                class="flex items-center gap-2 font-semibold"
                                             >
-                                                <p class="font-semibold">
-                                                    Your bookings
-                                                </p>
-                                                <p
-                                                    class="mt-1 text-sm text-muted-foreground"
+                                                <span
+                                                    class="grid size-7 place-items-center rounded-md bg-foreground text-background"
                                                 >
-                                                    Classes you have a place in.
-                                                </p>
-                                                <ul
-                                                    class="mt-4 divide-y border-y"
+                                                    <CalendarDays
+                                                        class="size-4"
+                                                    />
+                                                </span>
+                                                Studio Classes
+                                            </span>
+                                            <span
+                                                class="mt-5 text-xs text-muted-foreground"
+                                                >Platform</span
+                                            >
+                                            <span
+                                                class="mt-2 flex items-center gap-2 rounded-md px-2 py-1.5"
+                                            >
+                                                <LayoutGrid class="size-4" />
+                                                Dashboard
+                                            </span>
+                                            <span
+                                                class="flex items-center gap-2 rounded-md px-2 py-1.5"
+                                            >
+                                                <CalendarDays class="size-4" />
+                                                Classes
+                                            </span>
+                                            <span
+                                                class="flex items-center gap-2 rounded-md bg-muted px-2 py-1.5 font-medium"
+                                            >
+                                                <Ticket class="size-4" />
+                                                Your bookings
+                                            </span>
+                                        </div>
+                                        <div class="min-w-0 flex-1">
+                                            <div
+                                                class="flex items-center gap-2 border-b px-4 py-3 text-sm"
+                                            >
+                                                <PanelLeft
+                                                    class="size-4 text-muted-foreground"
+                                                />
+                                                Your bookings
+                                            </div>
+                                            <div class="p-4">
+                                                <div
+                                                    class="rounded-xl border p-5 shadow-xs"
                                                 >
-                                                    <li
-                                                        v-for="booking in bookings"
-                                                        :key="booking.name"
-                                                        class="flex min-h-14 items-center justify-between gap-3 py-2 text-sm"
+                                                    <p class="font-semibold">
+                                                        Your bookings
+                                                    </p>
+                                                    <p
+                                                        class="mt-1 text-sm text-muted-foreground"
                                                     >
-                                                        <span class="min-w-0">
-                                                            <span
-                                                                class="block font-medium"
-                                                                >{{
-                                                                    booking.name
-                                                                }}</span
-                                                            >
-                                                            <span
-                                                                class="block text-muted-foreground"
-                                                                >{{
-                                                                    booking.when
-                                                                }}</span
-                                                            >
-                                                        </span>
-                                                        <span
-                                                            :class="[
-                                                                'shrink-0 transition-opacity duration-panel',
-                                                                beat >= ready
-                                                                    ? 'opacity-100'
-                                                                    : 'opacity-0',
-                                                            ]"
+                                                        Classes you have a place
+                                                        in.
+                                                    </p>
+                                                    <ul
+                                                        class="mt-4 divide-y border-y"
+                                                    >
+                                                        <li
+                                                            v-for="booking in bookings"
+                                                            :key="booking.name"
+                                                            class="flex min-h-14 items-center justify-between gap-3 py-2 text-sm"
                                                         >
                                                             <span
-                                                                v-if="
-                                                                    booking.late
-                                                                "
-                                                                class="text-muted-foreground"
-                                                                >Too late to
-                                                                cancel</span
+                                                                class="min-w-0"
                                                             >
+                                                                <span
+                                                                    class="block font-medium"
+                                                                    >{{
+                                                                        booking.name
+                                                                    }}</span
+                                                                >
+                                                                <span
+                                                                    class="block text-muted-foreground"
+                                                                    >{{
+                                                                        booking.when
+                                                                    }}</span
+                                                                >
+                                                            </span>
                                                             <span
-                                                                v-else
                                                                 :class="[
-                                                                    'inline-flex h-8 items-center rounded-md border px-3 font-medium',
+                                                                    'shrink-0 transition-opacity duration-panel',
                                                                     beat >=
-                                                                        ready &&
-                                                                        !still &&
-                                                                        'animate-[ring-out_1.6s_ease-out_both]',
+                                                                    ready
+                                                                        ? 'opacity-100'
+                                                                        : 'opacity-0',
                                                                 ]"
-                                                                >Cancel</span
                                                             >
-                                                        </span>
-                                                    </li>
-                                                </ul>
+                                                                <span
+                                                                    v-if="
+                                                                        booking.late
+                                                                    "
+                                                                    class="text-muted-foreground"
+                                                                    >Too late to
+                                                                    cancel</span
+                                                                >
+                                                                <span
+                                                                    v-else
+                                                                    :class="[
+                                                                        'inline-flex h-8 items-center rounded-md border px-3 font-medium',
+                                                                        beat >=
+                                                                            ready &&
+                                                                            !still &&
+                                                                            'animate-[ring-out_1.6s_ease-out_both]',
+                                                                    ]"
+                                                                    >Cancel</span
+                                                                >
+                                                            </span>
+                                                        </li>
+                                                    </ul>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </figure>
+                    </figure>
+                </div>
             </section>
 
             <!-- The difference, shown: one change checked here, then by an
                  AI agent on its own. -->
             <section
                 id="different"
-                class="scroll-mt-12 bg-foreground text-background"
+                class="mx-auto max-w-7xl scroll-mt-20 px-4 pt-28 sm:px-8 sm:pt-40"
                 data-test="welcome-different"
             >
-                <div
-                    class="mx-auto grid max-w-6xl gap-12 px-4 py-20 sm:px-10 sm:py-28 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:items-center lg:gap-16"
+                <h2
+                    v-reveal
+                    class="max-w-3xl reveal font-display text-3xl leading-[1.1] font-medium tracking-[-0.025em] text-balance sm:text-[2.75rem]"
                 >
-                    <div v-reveal class="reveal">
-                        <p
-                            v-reveal
-                            class="mb-5 reveal text-sm text-background/55 tabular-nums"
+                    Fixed checks decide if it works.
+                    <span class="text-muted-foreground"
+                        >The AI writes each change, but it never marks its own
+                        work.</span
+                    >
+                </h2>
+                <div
+                    class="mt-12 flex flex-col items-center rounded-md bg-muted px-3 py-10 sm:px-10 sm:py-16"
+                >
+                    <div
+                        class="mb-8 inline-flex rounded-md border bg-background p-1"
+                        role="group"
+                        aria-label="Who checks the change"
+                    >
+                        <button
+                            v-for="option in wayOptions"
+                            :key="option.key"
+                            type="button"
+                            :aria-pressed="way === option.key"
+                            :class="[
+                                'min-h-11 rounded-sm px-4 text-sm font-medium transition-colors select-none sm:min-h-9',
+                                way === option.key
+                                    ? 'bg-foreground text-background'
+                                    : 'text-muted-foreground hover:text-foreground',
+                            ]"
+                            @click="way = option.key"
                         >
-                            01&ensp;The checks
-                        </p>
-                        <h2
-                            class="font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
-                        >
-                            The AI writes the code. Fixed checks decide if it
-                            works.
-                        </h2>
-                        <p class="mt-5 text-lg text-pretty text-background/65">
-                            An AI agent on its own picks its checks and decides
-                            when it is done. Here the same checks run on every
-                            change, and only they can pass it.
-                        </p>
-                        <div
-                            class="mt-8 inline-flex flex-wrap rounded-md border border-background/20 p-1"
-                            role="group"
-                            aria-label="Who checks the change"
-                        >
-                            <button
-                                v-for="option in wayOptions"
-                                :key="option.key"
-                                type="button"
-                                :aria-pressed="way === option.key"
-                                :class="[
-                                    'min-h-11 rounded-sm px-4 text-sm font-medium transition-colors select-none sm:min-h-9',
-                                    way === option.key
-                                        ? 'bg-background text-foreground'
-                                        : 'text-background/65 hover:text-background',
-                                ]"
-                                @click="way = option.key"
-                            >
-                                {{ option.label }}
-                            </button>
-                        </div>
+                            {{ option.label }}
+                        </button>
                     </div>
-
                     <div
                         ref="demo"
                         v-reveal
-                        class="reveal rounded-xl border border-background/15 bg-background/5 p-2 delay-100"
+                        class="mx-auto w-full max-w-xl reveal delay-100"
                     >
                         <div
-                            class="rounded-lg bg-background p-5 text-foreground sm:p-7"
+                            class="rounded-xl border bg-background p-5 shadow-2xl shadow-black/10 sm:p-7"
                         >
                             <p class="text-sm text-muted-foreground">
                                 You asked
@@ -1217,208 +1208,60 @@ onBeforeUnmount(() => {
                 </div>
             </section>
 
-            <!-- The product, one screen at a time. -->
-            <section class="bg-muted/50">
-                <div class="mx-auto max-w-6xl px-4 py-20 sm:px-10 sm:py-28">
-                    <p
-                        v-reveal
-                        class="mb-5 reveal text-sm text-muted-foreground tabular-nums"
+            <!-- Small things the workspace does, each in a line. -->
+            <section class="mx-auto max-w-7xl px-4 pt-28 sm:px-8 sm:pt-40">
+                <ul
+                    v-reveal
+                    class="grid reveal gap-x-16 gap-y-12 md:grid-cols-2"
+                    data-test="welcome-features"
+                >
+                    <li
+                        v-for="feature in features"
+                        :key="feature.title"
+                        class="max-w-md"
                     >
-                        02&ensp;The workspace
-                    </p>
-                    <h2
-                        v-reveal
-                        class="max-w-2xl reveal font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
-                    >
-                        See it work before you keep it.
-                    </h2>
-
-                    <div
-                        ref="screensBox"
-                        v-reveal
-                        class="mt-12 grid reveal gap-10 delay-100 lg:grid-cols-[minmax(0,4fr)_minmax(0,7fr)] lg:items-center lg:gap-14"
-                        @pointerenter="hovering = true"
-                        @pointerleave="hovering = false"
-                        @focusin="hovering = true"
-                        @focusout="hovering = false"
-                    >
-                        <ul class="divide-y border-y">
-                            <li
-                                v-for="(screen, at) in screens"
-                                :key="screen.key"
-                            >
-                                <button
-                                    type="button"
-                                    :aria-expanded="active === at"
-                                    class="relative block min-h-11 w-full py-4 text-left select-none"
-                                    @click="pick(at)"
-                                >
-                                    <span
-                                        :class="[
-                                            'block font-display text-lg tracking-[-0.015em] transition-colors sm:text-xl',
-                                            active === at
-                                                ? 'text-foreground'
-                                                : 'text-muted-foreground hover:text-foreground',
-                                        ]"
-                                        >{{ screen.title }}</span
-                                    >
-                                    <span
-                                        :class="[
-                                            'grid transition-[grid-template-rows,opacity] duration-panel',
-                                            active === at
-                                                ? 'grid-rows-[1fr] opacity-100'
-                                                : 'grid-rows-[0fr] opacity-0',
-                                        ]"
-                                    >
-                                        <span
-                                            class="overflow-hidden text-pretty text-muted-foreground"
-                                        >
-                                            <span class="block pt-2">{{
-                                                screen.text
-                                            }}</span>
-                                        </span>
-                                    </span>
-                                    <span
-                                        v-if="active === at && cycling"
-                                        :key="`bar-${at}`"
-                                        class="absolute inset-x-0 -bottom-px h-px origin-left animate-[fill-across_7s_linear_forwards] bg-foreground"
-                                        aria-hidden="true"
-                                        @animationend="next"
-                                    />
-                                </button>
-                            </li>
-                        </ul>
-
-                        <div
-                            class="relative aspect-[4/5] overflow-hidden rounded-lg border bg-background sm:aspect-[16/11]"
-                            data-test="welcome-example"
+                        <h3 class="flex items-center gap-2.5 font-medium">
+                            <component
+                                :is="feature.icon"
+                                class="size-4 shrink-0"
+                                aria-hidden="true"
+                            />
+                            {{ feature.title }}
+                        </h3>
+                        <p
+                            class="mt-1.5 pl-6.5 text-pretty text-muted-foreground"
                         >
-                            <template
-                                v-for="(screen, at) in screens"
-                                :key="screen.key"
-                            >
-                                <img
-                                    v-if="screen.image"
-                                    :src="screen.image"
-                                    :alt="active === at ? screen.alt : ''"
-                                    :aria-hidden="active !== at"
-                                    loading="lazy"
-                                    :class="[
-                                        'absolute inset-0 size-full object-cover object-top-left transition-[opacity,scale] duration-linger',
-                                        active === at
-                                            ? 'scale-100 opacity-100'
-                                            : 'scale-[1.02] opacity-0',
-                                    ]"
-                                />
-                                <div
-                                    v-else
-                                    :class="[
-                                        'absolute inset-0 flex flex-col justify-center p-6 transition-opacity duration-linger sm:p-10',
-                                        active === at
-                                            ? 'opacity-100'
-                                            : 'pointer-events-none opacity-0',
-                                    ]"
-                                    :aria-hidden="active !== at"
-                                >
-                                    <p class="text-sm text-muted-foreground">
-                                        Pretend this is down
-                                    </p>
-                                    <div
-                                        class="mt-3 flex flex-wrap gap-2"
-                                        role="group"
-                                        aria-label="What you can pretend is down"
-                                    >
-                                        <button
-                                            v-for="option in faults"
-                                            :key="option.key"
-                                            type="button"
-                                            :tabindex="active === at ? 0 : -1"
-                                            :aria-pressed="
-                                                fault.key === option.key
-                                            "
-                                            :class="[
-                                                'min-h-11 press rounded-md border px-3 text-sm select-none sm:min-h-9',
-                                                fault.key === option.key
-                                                    ? 'border-foreground bg-foreground font-medium text-background'
-                                                    : 'text-muted-foreground hover:text-foreground',
-                                            ]"
-                                            @click="fault = option"
-                                        >
-                                            {{ option.label }}
-                                        </button>
-                                    </div>
-                                    <p
-                                        class="mt-5 min-h-12 max-w-md text-pretty"
-                                    >
-                                        {{
-                                            fault.hint ||
-                                            'Your app runs as it always does.'
-                                        }}
-                                    </p>
-                                </div>
-                            </template>
-                        </div>
-                    </div>
-                </div>
+                            {{ feature.text }}
+                        </p>
+                    </li>
+                </ul>
             </section>
 
             <!-- How a kept change reports itself: each line says how the
                  app knows it, and what nothing checked is named. -->
             <section
-                class="bg-foreground text-background"
+                class="mx-auto max-w-7xl px-4 pt-28 sm:px-8 sm:pt-40"
                 data-test="welcome-receipt"
             >
-                <div
-                    class="mx-auto grid max-w-6xl gap-12 px-4 py-20 sm:px-10 sm:py-28 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:items-center lg:gap-16"
+                <h2
+                    v-reveal
+                    class="max-w-3xl reveal font-display text-3xl leading-[1.1] font-medium tracking-[-0.025em] text-balance sm:text-[2.75rem]"
                 >
-                    <div v-reveal class="reveal">
-                        <p
-                            v-reveal
-                            class="mb-5 reveal text-sm text-background/55 tabular-nums"
-                        >
-                            03&ensp;The proof
-                        </p>
-                        <h2
-                            class="font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
-                        >
-                            It tells you how it knows.
-                        </h2>
-                        <p class="mt-5 text-lg text-pretty text-background/65">
-                            Every change you keep says what a test proved. What
-                            nothing checked is named too, never passed off as
-                            done.
-                        </p>
-                        <ul class="mt-8 space-y-2.5 text-sm">
-                            <li
-                                v-for="mark in marks"
-                                :key="mark.key"
-                                class="flex items-center gap-2.5"
-                            >
-                                <Check
-                                    v-if="mark.key === 'tested'"
-                                    class="size-4 text-emerald-400 dark:text-emerald-600"
-                                />
-                                <Minus
-                                    v-else-if="mark.key === 'untouched'"
-                                    class="size-4 text-background/50"
-                                />
-                                <CircleDashed
-                                    v-else
-                                    class="size-4 text-background/50"
-                                />
-                                <span class="first-letter:uppercase">{{
-                                    mark.label
-                                }}</span>
-                            </li>
-                        </ul>
-                    </div>
-
+                    It tells you how it knows.
+                    <span class="text-muted-foreground"
+                        >Each change you keep says what a test proved, and names
+                        what nothing checked.</span
+                    >
+                </h2>
+                <div
+                    class="mt-12 rounded-md bg-panel-green px-3 py-10 sm:px-10 sm:py-16"
+                >
                     <div
                         v-reveal
-                        class="reveal rounded-xl border border-background/15 bg-background/5 p-2 delay-100"
+                        class="mx-auto w-full max-w-xl reveal delay-100"
                     >
                         <div
-                            class="rounded-lg bg-background p-5 text-foreground sm:p-7"
+                            class="rounded-xl border bg-background p-5 shadow-2xl shadow-black/10 sm:p-7"
                         >
                             <p class="text-sm text-muted-foreground">
                                 You kept
@@ -1488,49 +1331,44 @@ onBeforeUnmount(() => {
 
             <!-- The app stays an ordinary app with its own history: undo
                  any kept change, or take the code away. -->
-            <section class="bg-muted/50" data-test="welcome-yours">
-                <div
-                    class="mx-auto grid max-w-6xl gap-12 px-4 py-20 sm:px-10 sm:py-28 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:items-center lg:gap-16"
+            <section
+                class="mx-auto max-w-7xl px-4 pt-28 sm:px-8 sm:pt-40"
+                data-test="welcome-yours"
+            >
+                <h2
+                    v-reveal
+                    class="max-w-3xl reveal font-display text-3xl leading-[1.1] font-medium tracking-[-0.025em] text-balance sm:text-[2.75rem]"
                 >
-                    <div v-reveal class="reveal">
-                        <p
-                            v-reveal
-                            class="mb-5 reveal text-sm text-muted-foreground tabular-nums"
-                        >
-                            04&ensp;Your code
-                        </p>
-                        <h2
-                            class="font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
-                        >
-                            It stays yours.
-                        </h2>
-                        <p
-                            class="mt-5 text-lg text-pretty text-muted-foreground"
-                        >
-                            Each change you keep is one step in your app’s
-                            history. Undo any of them, even after others, or
-                            download the code and run it without us.
-                        </p>
-                        <h3 class="mt-10 text-sm font-medium">
+                    It stays yours.
+                    <span class="text-muted-foreground"
+                        >Every change you keep is a step in your app’s history.
+                        Undo any of them, or download the code and run it
+                        without us.</span
+                    >
+                </h2>
+                <div
+                    class="mt-12 grid items-center gap-10 rounded-md bg-muted px-3 py-10 sm:px-10 sm:py-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]"
+                >
+                    <div class="px-2 sm:px-0">
+                        <h3 class="font-medium">
                             In every app from the first version
                         </h3>
-                        <ul class="mt-3 space-y-2 text-sm">
+                        <ul class="mt-4 space-y-2.5">
                             <li
                                 v-for="item in included"
                                 :key="item"
-                                class="flex gap-2"
+                                class="flex gap-2.5"
                             >
                                 <Check
-                                    class="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                    class="mt-1 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
                                 />
                                 <span class="text-pretty">{{ item }}</span>
                             </li>
                         </ul>
                     </div>
-
                     <div
                         v-reveal
-                        class="reveal overflow-hidden rounded-lg border bg-background delay-100"
+                        class="mx-auto w-full max-w-xl reveal overflow-hidden rounded-xl border bg-background shadow-2xl shadow-black/10 delay-100"
                     >
                         <div
                             class="flex items-center justify-between gap-3 border-b px-5 py-3"
@@ -1591,236 +1429,200 @@ onBeforeUnmount(() => {
                 </div>
             </section>
 
-            <!-- Ready-made ideas and looks: the same ones a new app can
-                 start from. Picking one fills the box at the top. -->
+            <!-- Ready-made ideas: the same ones a new app can start from.
+                 Picking one fills the box at the top. -->
             <section
                 id="ideas"
-                class="scroll-mt-12 bg-foreground text-background"
+                class="mx-auto max-w-7xl scroll-mt-20 px-4 pt-28 sm:px-8 sm:pt-40"
             >
-                <div class="mx-auto max-w-6xl px-4 py-20 sm:px-10 sm:py-28">
-                    <div
-                        v-reveal
-                        class="grid reveal gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:items-end lg:gap-12"
+                <h2
+                    v-reveal
+                    class="max-w-3xl reveal font-display text-3xl leading-[1.1] font-medium tracking-[-0.025em] text-balance sm:text-[2.75rem]"
+                >
+                    Start from a ready-made idea.
+                    <span class="text-muted-foreground"
+                        >Each fills in the idea, the look and the first version.
+                        Change any of it.</span
                     >
-                        <div>
-                            <p
-                                v-reveal
-                                class="mb-5 reveal text-sm text-background/55 tabular-nums"
-                            >
-                                05&ensp;Ideas
-                            </p>
-                            <h2
-                                class="font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
-                            >
-                                Start from a ready-made idea.
-                            </h2>
-                        </div>
-                        <p class="text-lg text-pretty text-background/65">
-                            Each one fills in the idea, the look and what the
-                            first version includes. Change any of it, or write
-                            your own.
-                        </p>
-                    </div>
-
-                    <ul
-                        v-reveal
-                        class="mt-12 grid reveal gap-x-10 gap-y-10 delay-100 sm:grid-cols-2 lg:grid-cols-3"
-                        data-test="welcome-starters"
+                </h2>
+                <ul
+                    v-reveal
+                    class="mt-12 grid reveal gap-x-8 gap-y-10 delay-100 sm:grid-cols-2 lg:grid-cols-5"
+                    data-test="welcome-starters"
+                >
+                    <li
+                        v-for="item in starters"
+                        :key="item.key"
+                        class="flex flex-col border-t pt-5"
                     >
-                        <li
-                            v-for="starter in starters"
-                            :key="starter.key"
-                            class="flex flex-col border-t border-background/15 pt-5"
+                        <h3 class="font-medium">{{ item.name }}</h3>
+                        <p
+                            class="mt-2 flex-1 text-sm text-pretty text-muted-foreground"
                         >
-                            <h3 class="font-medium">{{ starter.name }}</h3>
-                            <p class="mt-1 text-pretty text-background/65">
-                                {{ starter.purpose }}
-                            </p>
-                            <ul
-                                class="mt-4 space-y-1.5 text-sm text-background/80"
-                            >
-                                <li
-                                    v-for="item in starter.includes.slice(0, 3)"
-                                    :key="item"
-                                    class="flex gap-2"
-                                >
-                                    <Check
-                                        class="mt-0.5 size-4 shrink-0 text-background/50"
-                                    />
-                                    <span class="text-pretty">{{ item }}</span>
-                                </li>
-                            </ul>
-                            <button
-                                type="button"
-                                class="mt-5 inline-flex min-h-11 items-center gap-1.5 self-start text-sm font-medium select-none hover:underline sm:min-h-8"
-                                @click="useStarter(starter)"
-                            >
-                                Start with this
-                                <ArrowRight class="size-4" />
-                            </button>
-                        </li>
-                    </ul>
-
-                    <div
-                        v-if="designs.length > 0"
-                        v-reveal
-                        class="mt-16 reveal border-t border-background/15 pt-8"
-                    >
-                        <h3 class="font-medium">Four looks to begin with</h3>
-                        <p class="mt-1 text-background/65">
-                            Every look is yours to change, part by part.
+                            {{ item.purpose }}
                         </p>
-                        <ul
-                            class="mt-6 grid gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-4"
+                        <button
+                            type="button"
+                            class="mt-4 inline-flex min-h-11 items-center gap-1.5 self-start text-sm font-medium underline decoration-border underline-offset-4 select-none hover:decoration-foreground sm:min-h-8"
+                            @click="useStarter(item)"
                         >
-                            <li
-                                v-for="design in designs"
-                                :key="design.key"
-                                class="flex gap-3"
-                            >
-                                <span
-                                    aria-hidden="true"
-                                    class="mt-0.5 size-8 shrink-0 rounded-full border border-background/20"
-                                    :style="{
-                                        background: `linear-gradient(135deg, ${design.colors.background} 50%, ${design.colors.primary} 50%)`,
-                                    }"
-                                />
-                                <span>
-                                    <span class="block font-medium">{{
-                                        design.name
-                                    }}</span>
-                                    <span
-                                        class="block text-sm text-pretty text-background/65"
-                                        >{{ design.description }}</span
-                                    >
-                                </span>
-                            </li>
-                        </ul>
-                    </div>
-                </div>
+                            Start with this
+                            <ArrowRight class="size-3.5" />
+                        </button>
+                    </li>
+                </ul>
+                <p
+                    v-if="designs.length > 0"
+                    class="mt-12 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground"
+                >
+                    Each starts in one of four looks:
+                    <span
+                        v-for="design in designs"
+                        :key="design.key"
+                        class="inline-flex items-center gap-2 text-foreground"
+                    >
+                        <span
+                            aria-hidden="true"
+                            class="size-4 rounded-full border"
+                            :style="{
+                                background: `linear-gradient(135deg, ${design.colors.background} 50%, ${design.colors.primary} 50%)`,
+                            }"
+                        />
+                        {{ design.name }}
+                    </span>
+                </p>
             </section>
 
             <!-- Plain answers to what people ask before they start. -->
-            <section class="bg-muted/50">
-                <div
-                    class="mx-auto grid max-w-6xl gap-10 px-4 py-20 sm:px-10 sm:py-28 lg:grid-cols-[minmax(0,4fr)_minmax(0,7fr)] lg:gap-16"
+            <section
+                id="questions"
+                class="mx-auto grid max-w-7xl scroll-mt-20 gap-10 px-4 pt-28 sm:px-8 sm:pt-40 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-16"
+            >
+                <h2
+                    v-reveal
+                    class="max-w-3xl reveal font-display text-3xl leading-[1.1] font-medium tracking-[-0.025em] text-balance sm:text-[2.75rem] lg:sticky lg:top-24 lg:self-start"
                 >
-                    <div>
-                        <p
-                            v-reveal
-                            class="mb-5 reveal text-sm text-muted-foreground tabular-nums"
-                        >
-                            06&ensp;Questions
-                        </p>
-                        <h2
-                            v-reveal
-                            class="reveal font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
-                        >
-                            Questions people ask.
-                        </h2>
-                    </div>
-                    <div
-                        v-reveal
-                        class="reveal divide-y border-y delay-100"
-                        data-test="welcome-questions"
+                    Questions people ask.
+                    <span class="text-muted-foreground"
+                        >Plain answers before you start.</span
                     >
-                        <details
-                            v-for="question in questions"
-                            :key="question.ask"
-                            class="group"
+                </h2>
+                <div
+                    v-reveal
+                    class="reveal divide-y border-y delay-100"
+                    data-test="welcome-questions"
+                >
+                    <details
+                        v-for="question in questions"
+                        :key="question.ask"
+                        class="group"
+                    >
+                        <summary
+                            class="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-5 font-medium select-none [&::-webkit-details-marker]:hidden"
                         >
-                            <summary
-                                class="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-4 font-medium select-none [&::-webkit-details-marker]:hidden"
-                            >
-                                {{ question.ask }}
-                                <Plus
-                                    class="size-4 shrink-0 text-muted-foreground transition-transform duration-base group-open:rotate-45"
-                                    aria-hidden="true"
-                                />
-                            </summary>
-                            <p
-                                class="max-w-2xl pb-5 text-pretty text-muted-foreground"
-                            >
-                                {{ question.answer }}
-                            </p>
-                        </details>
-                    </div>
+                            {{ question.ask }}
+                            <Plus
+                                class="size-4 shrink-0 text-muted-foreground transition-transform duration-base group-open:rotate-45"
+                                aria-hidden="true"
+                            />
+                        </summary>
+                        <p
+                            class="max-w-2xl pb-5 text-pretty text-muted-foreground"
+                        >
+                            {{ question.answer }}
+                        </p>
+                    </details>
                 </div>
             </section>
 
-            <!-- The page ends where it began: a box to start from, so no
-                 one has to scroll back up. It shares the idea with the
-                 box at the top. -->
-            <section class="bg-foreground text-background">
-                <div class="mx-auto max-w-6xl px-4 py-24 sm:px-10 sm:py-36">
-                    <h2
-                        v-reveal
-                        class="max-w-3xl reveal font-display text-4xl leading-[1.02] tracking-[-0.035em] text-balance sm:text-7xl"
+            <!-- The page ends with one wide button back to the box. -->
+            <section
+                class="mx-auto max-w-7xl px-4 pt-28 pb-24 sm:px-8 sm:pt-40"
+            >
+                <p
+                    v-reveal
+                    class="reveal text-center font-display text-3xl font-medium tracking-[-0.025em] text-balance sm:text-[2.75rem]"
+                >
+                    Start with a sentence.
+                    <span class="text-muted-foreground"
+                        >Keep only what passes.</span
                     >
-                        Start with a sentence.
-                        <span class="text-background/50"
-                            >Keep only what passes.</span
-                        >
-                    </h2>
-                    <form
-                        v-reveal
-                        class="mt-12 flex max-w-2xl reveal gap-2 rounded-lg bg-background p-2 text-foreground delay-100 focus-within:ring-[3px] focus-within:ring-ring/50"
-                        data-test="welcome-end"
-                        @submit.prevent="start"
-                    >
-                        <label for="end-idea" class="sr-only"
-                            >What do you want to make?</label
-                        >
-                        <input
-                            id="end-idea"
-                            v-model="idea"
-                            type="text"
-                            required
-                            placeholder="Describe your app in a sentence"
-                            class="min-w-0 flex-1 bg-transparent px-3 text-base outline-none placeholder:text-muted-foreground"
-                            data-test="welcome-end-idea"
-                        />
-                        <button
-                            type="submit"
-                            class="inline-flex min-h-11 shrink-0 press items-center gap-2 rounded-md bg-primary px-5 font-medium text-primary-foreground select-none hover:bg-primary/90 disabled:opacity-40"
-                            :disabled="idea.trim() === ''"
-                            data-test="welcome-end-start"
-                        >
-                            Start my app
-                            <ArrowRight class="size-4" />
-                        </button>
-                    </form>
-                </div>
+                </p>
+                <a
+                    v-reveal
+                    href="#start"
+                    class="mt-10 flex min-h-20 reveal press items-center justify-center gap-3 rounded-md bg-foreground font-display text-2xl font-medium tracking-[-0.02em] text-background select-none hover:bg-foreground/90 sm:min-h-28 sm:text-4xl"
+                    data-test="welcome-end"
+                    @click.prevent="backToStart"
+                >
+                    Start an app
+                    <ArrowUp class="size-6 sm:size-8" />
+                </a>
             </section>
         </main>
 
-        <footer>
+        <footer class="border-t">
             <div
-                class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-8 gap-y-4 px-4 pt-6 pb-10 sm:px-10"
+                class="mx-auto grid max-w-7xl gap-10 px-4 py-14 text-sm sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] sm:px-8"
             >
-                <div class="flex items-center gap-4">
-                    <AppLogo />
-                    <p class="text-sm text-muted-foreground">
+                <div>
+                    <div class="flex items-center gap-2"><AppLogo /></div>
+                    <p class="mt-3 text-muted-foreground">
                         Real apps that stay yours.
                     </p>
                 </div>
-                <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-                    <a
-                        href="#different"
-                        class="text-muted-foreground hover:text-foreground"
-                        >What is different</a
-                    >
-                    <a
-                        href="#ideas"
-                        class="text-muted-foreground hover:text-foreground"
-                        >Ideas</a
-                    >
-                    <Link
-                        v-if="!$page.props.auth.user"
-                        :href="login()"
-                        class="text-muted-foreground hover:text-foreground"
-                        >Log in</Link
-                    >
+                <nav aria-label="Product">
+                    <p class="font-medium">Product</p>
+                    <ul class="mt-3 space-y-2 text-muted-foreground">
+                        <li>
+                            <a href="#different" class="hover:text-foreground"
+                                >What is different</a
+                            >
+                        </li>
+                        <li>
+                            <a href="#ideas" class="hover:text-foreground"
+                                >Ideas</a
+                            >
+                        </li>
+                        <li>
+                            <a href="#questions" class="hover:text-foreground"
+                                >Questions</a
+                            >
+                        </li>
+                        <li>
+                            <Link
+                                :href="pricing()"
+                                class="hover:text-foreground"
+                                >Pricing</Link
+                            >
+                        </li>
+                    </ul>
+                </nav>
+                <nav aria-label="Account">
+                    <p class="font-medium">Account</p>
+                    <ul class="mt-3 space-y-2 text-muted-foreground">
+                        <li v-if="$page.props.auth.user">
+                            <Link :href="index()" class="hover:text-foreground"
+                                >Your apps</Link
+                            >
+                        </li>
+                        <template v-else>
+                            <li>
+                                <Link
+                                    :href="register()"
+                                    class="hover:text-foreground"
+                                    >Start an app</Link
+                                >
+                            </li>
+                            <li>
+                                <Link
+                                    :href="login()"
+                                    class="hover:text-foreground"
+                                    >Log in</Link
+                                >
+                            </li>
+                        </template>
+                    </ul>
                 </nav>
             </div>
         </footer>

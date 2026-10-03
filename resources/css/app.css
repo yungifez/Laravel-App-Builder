@@ -45,6 +45,9 @@
     --color-destructive: var(--destructive);
     --color-destructive-foreground: var(--destructive-foreground);
 
+    --color-panel-blue: var(--panel-blue);
+    --color-panel-green: var(--panel-green);
+
     --color-border: var(--border);
     --color-input: var(--input);
     --color-ring: var(--ring);
@@ -132,6 +135,9 @@
     --sidebar-border: hsl(220 14% 86%);
     --sidebar-ring: hsl(224 82% 44%);
     --sidebar: hsl(220 18% 96%);
+    /* Soft panels that hold the product on public pages. */
+    --panel-blue: hsl(218 80% 94%);
+    --panel-green: hsl(150 40% 91%);
 }
 
 .dark {
@@ -170,6 +176,8 @@
     --sidebar-border: hsl(224 10% 18%);
     --sidebar-ring: hsl(221 88% 64%);
     --sidebar: hsl(224 16% 6%);
+    --panel-blue: hsl(222 32% 13%);
+    --panel-green: hsl(160 18% 11%);
 }
 
 @layer base {
