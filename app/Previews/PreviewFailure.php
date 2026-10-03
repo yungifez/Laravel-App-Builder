@@ -43,6 +43,41 @@ class PreviewFailure
 
         return $app
             ? __('Something in your app\'s code went wrong while :stage. Ask me in the chat to fix it.', ['stage' => $stage])
-            : __('Something went wrong on our side while :stage. This is our fault. Try once more.', ['stage' => $stage]);
+            : self::ours($stage);
+    }
+
+    /**
+     * Something of ours failed at the given stage.
+     */
+    public static function ours(string $stage = 'getting your app ready'): string
+    {
+        return __('Something went wrong on our side while :stage. This is our fault. Try once more.', ['stage' => $stage]);
+    }
+
+    /**
+     * The app's server started, but the app did not say it was up.
+     * An answer with a server error comes from the app's own code.
+     */
+    public static function notUp(?int $status, int $seconds): string
+    {
+        return $status !== null && $status >= 500
+            ? __('Your app started, but it shows an error instead of its pages. Ask me in the chat to fix it.')
+            : __('Your app did not answer within :seconds seconds of starting. This is our fault. Try once more.', ['seconds' => $seconds]);
+    }
+
+    /**
+     * A change it follows on from no longer applies to the app.
+     */
+    public static function changeNoLongerFits(): string
+    {
+        return __('Your app changed after this change was made, so it no longer fits. This is our fault. Ask for the change again.');
+    }
+
+    /**
+     * The job that starts the app stopped before it could say why.
+     */
+    public static function stopped(): string
+    {
+        return __('Your app stopped while it was getting ready. This is our fault. Try once more.');
     }
 }

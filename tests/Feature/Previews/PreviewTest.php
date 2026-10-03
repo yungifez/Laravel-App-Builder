@@ -16,6 +16,7 @@ use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\FakesWorkspaces;
@@ -163,6 +164,36 @@ class PreviewTest extends TestCase
         $this->assertStringContainsString('Your lock file is out of date.', (string) $preview->error);
         $this->assertCount(1, $this->driver->destroyed);
         $this->assertSame([], $this->driver->services);
+    }
+
+    public function test_an_app_that_starts_with_an_error_asks_the_owner_to_have_it_fixed()
+    {
+        Sleep::fake();
+        Http::fake(['*/up' => Http::response('Whoops', 500)]);
+        config(['builder.preview.boot_seconds' => 1]);
+        $request = FeatureRequest::factory()->generated()->create();
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $error = (string) $request->previews()->sole()->error;
+        $this->assertStringStartsWith("Your app started, but it shows an error instead of its pages. Ask me in the chat to fix it.\n", $error);
+        $this->assertStringContainsString('last answer: 500', $error);
+    }
+
+    public function test_a_change_that_no_longer_fits_the_app_says_so()
+    {
+        $this->driver->onExec = fn (string $id, array $command) => new CommandResult(
+            exitCode: $command[0] === 'git' && $command[1] === 'apply' ? 1 : 0,
+            output: '',
+            errorOutput: $command[0] === 'git' ? 'error: patch failed: app/Models/Team.php:12' : '',
+            durationMs: 5,
+        );
+        $request = FeatureRequest::factory()->generated()->create(['patch' => 'PATCH']);
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $error = (string) $request->previews()->sole()->error;
+        $this->assertStringStartsWith("Your app changed after this change was made, so it no longer fits. This is our fault. Ask for the change again.\nChange #{$request->id} does not apply to the project.\n", $error);
     }
 
     public function test_a_setup_step_that_runs_out_of_time_says_how_long_it_had()

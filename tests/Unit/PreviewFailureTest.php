@@ -32,4 +32,11 @@ class PreviewFailureTest extends TestCase
         );
         $this->assertStringContainsString('while getting your app ready. This is our fault.', PreviewFailure::step('Something new', timedOut: false, timeoutSeconds: 60));
     }
+
+    public function test_an_app_that_never_answered_is_our_fault()
+    {
+        $this->assertSame('Your app did not answer within 30 seconds of starting. This is our fault. Try once more.', PreviewFailure::notUp(null, 30));
+        $this->assertStringContainsString('did not answer', PreviewFailure::notUp(404, 30));
+        $this->assertStringContainsString('shows an error', PreviewFailure::notUp(503, 30));
+    }
 }

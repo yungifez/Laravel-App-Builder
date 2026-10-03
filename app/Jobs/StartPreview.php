@@ -12,6 +12,7 @@ use App\Enums\PreviewStatus;
 use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\Workspace;
+use App\Previews\PreviewCouldNotStart;
 use App\Previews\PreviewFailure;
 use App\Projects\ProjectRepository;
 use App\Workspaces\Contracts\WorkspaceDriver;
@@ -24,7 +25,6 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
-use RuntimeException;
 use Throwable;
 
 class StartPreview implements ShouldQueue
@@ -93,10 +93,10 @@ class StartPreview implements ShouldQueue
                 $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);
                 $driver->writeFile((string) $workspace->driver_id, $patch, (string) $request->patch);
 
-                $this->run($runWorkspaceCommand, $workspace, ['git', 'apply', '--whitespace=nowarn', ...CopyExclusions::applyFlags(), $patch], 120, __('Change #:id does not apply to the project.', ['id' => $request->id]));
+                $this->run($runWorkspaceCommand, $workspace, ['git', 'apply', '--whitespace=nowarn', ...CopyExclusions::applyFlags(), $patch], 120, PreviewFailure::changeNoLongerFits()."\n".__('Change #:id does not apply to the project.', ['id' => $request->id]));
             }
 
-            $this->run($runWorkspaceCommand, $workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], 30, __('The workspace could not be prepared.'));
+            $this->run($runWorkspaceCommand, $workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], 30, PreviewFailure::ours()."\n".__('The workspace could not be prepared.'));
 
             foreach (self::steps('setup', $workspace) as $step) {
                 $this->runStep($runWorkspaceCommand, $workspace, $step);
@@ -105,7 +105,7 @@ class StartPreview implements ShouldQueue
             $workspaceFiles->sync($project, $workspace);
 
             if ($this->preview->editable) {
-                $this->run($runWorkspaceCommand, $workspace, self::locatorCommand($workspace), 300, __('The preview could not be prepared for editing.'));
+                $this->run($runWorkspaceCommand, $workspace, self::locatorCommand($workspace), 300, PreviewFailure::ours('getting your app ready for editing')."\n".__('The preview could not be prepared for editing.'));
             }
 
             if (! ($this->preview->editable && $this->startWatching($driver, $runWorkspaceCommand, $workspace))) {
@@ -131,7 +131,10 @@ class StartPreview implements ShouldQueue
         } catch (Throwable $exception) {
             report($exception);
 
-            $this->preview->update(['status' => PreviewStatus::Failed, 'error' => $exception->getMessage()]);
+            // Anything we did not word for the owner is ours.
+            $this->preview->update(['status' => PreviewStatus::Failed, 'error' => $exception instanceof PreviewCouldNotStart
+                ? $exception->getMessage()
+                : PreviewFailure::ours()."\n".$exception->getMessage()]);
             $stopPreview->handle($this->preview);
         }
     }
@@ -141,7 +144,7 @@ class StartPreview implements ShouldQueue
      */
     public function failed(?Throwable $exception): void
     {
-        $this->preview->update(['status' => PreviewStatus::Failed, 'error' => __('The preview stopped unexpectedly.')]);
+        $this->preview->update(['status' => PreviewStatus::Failed, 'error' => PreviewFailure::stopped()."\n".__('The preview stopped unexpectedly.')]);
 
         app(StopPreview::class)->handle($this->preview);
     }
@@ -298,23 +301,24 @@ class StartPreview implements ShouldQueue
     /**
      * Wait for the app's health endpoint to answer.
      *
-     * @throws RuntimeException when it does not answer in time.
+     * @throws PreviewCouldNotStart when it does not answer in time.
      */
     protected function waitUntilReady(string $upstream): void
     {
-        $attempts = max(1, (int) config('builder.preview.boot_seconds') * 2);
+        $seconds = (int) config('builder.preview.boot_seconds');
+        $status = null;
 
-        for ($attempt = 0; $attempt < $attempts; $attempt++) {
-            $healthy = rescue(fn () => Http::timeout(2)->get("{$upstream}/up")->successful(), false, report: false);
+        for ($attempt = 0; $attempt < max(1, $seconds * 2); $attempt++) {
+            $status = rescue(fn () => Http::timeout(2)->get("{$upstream}/up")->status(), $status, report: false);
 
-            if ($healthy) {
+            if ($status !== null && $status >= 200 && $status < 300) {
                 return;
             }
 
             Sleep::for(500)->milliseconds();
         }
 
-        throw new RuntimeException(__('The app did not start in time.'));
+        throw new PreviewCouldNotStart(PreviewFailure::notUp($status, $seconds)."\n".__('The app did not start in time (last answer: :status).', ['status' => $status ?? 'none']));
     }
 
     /**
@@ -323,7 +327,7 @@ class StartPreview implements ShouldQueue
      *
      * @param  array{name: string, command: list<string>, timeout: int, needs?: string}  $step
      *
-     * @throws RuntimeException
+     * @throws PreviewCouldNotStart
      */
     protected function runStep(RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, array $step): void
     {
@@ -339,7 +343,7 @@ class StartPreview implements ShouldQueue
      * @param  list<string>  $command
      * @param  string|Closure(bool): string  $reason  given whether the command ran out of time
      *
-     * @throws RuntimeException
+     * @throws PreviewCouldNotStart
      */
     protected function run(RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, array $command, int $timeoutSeconds, string|Closure $reason): void
     {
@@ -349,7 +353,7 @@ class StartPreview implements ShouldQueue
             $output = (string) preg_replace('/\e\[[0-9;?]*[ -\/]*[@-~]/', '', $result->error_output ?: $result->output);
             $reason = is_string($reason) ? $reason : $reason($result->timed_out);
 
-            throw new RuntimeException(trim($reason."\n".trim(mb_substr($output, -2000))));
+            throw new PreviewCouldNotStart(trim($reason."\n".trim(mb_substr($output, -2000))));
         }
     }
 }
