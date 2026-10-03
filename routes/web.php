@@ -43,6 +43,7 @@ use App\Http\Controllers\Operations\DeveloperApplicationController as Operations
 use App\Http\Controllers\Operations\DeveloperReviewClaimController;
 use App\Http\Controllers\Operations\DeveloperReviewController as OperationsDeveloperReviewController;
 use App\Http\Controllers\Operations\ImpersonationController;
+use App\Http\Controllers\Operations\NumbersController;
 use App\Http\Controllers\Operations\PersonController as OperationsPersonController;
 use App\Http\Controllers\Operations\PersonPlanController;
 use App\Http\Controllers\Operations\PersonSuspensionController;
@@ -197,6 +198,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 Route::middleware(['auth', 'verified', 'can:viewOperations'])->prefix('operations')->name('operations.')->group(function () {
     Route::get('/', AttentionController::class)->name('attention');
     Route::get('changes', [OperationsChangeController::class, 'index'])->name('changes.index');
+    Route::get('numbers', NumbersController::class)->name('numbers');
     Route::get('changes/{featureRequest}', [OperationsChangeController::class, 'show'])->name('changes.show');
     Route::get('people', [OperationsPersonController::class, 'index'])->name('people.index');
     Route::get('people/{user}', [OperationsPersonController::class, 'show'])->name('people.show');

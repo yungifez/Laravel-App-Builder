@@ -3,7 +3,10 @@ import { Head, Link, setLayoutProps } from '@inertiajs/vue3';
 import { ChevronRight } from '@lucide/vue';
 import { computed } from 'vue';
 import { duration, stamp, usd, words } from '@/lib/operations';
-import { attention as attentionRoute } from '@/routes/operations';
+import {
+    attention as attentionRoute,
+    numbers as numbersRoute,
+} from '@/routes/operations';
 import { index as projectsIndex } from '@/routes/projects';
 import { index as changesIndex } from '@/routes/operations/changes';
 import { index as developerReviewsIndex } from '@/routes/operations/developer-reviews';
@@ -82,6 +85,13 @@ const completeness = computed(
                 </Link>
             </div>
             <div class="flex flex-wrap gap-x-4">
+                <Link
+                    :href="numbersRoute().url"
+                    class="flex min-h-11 items-center gap-1 text-sm font-medium text-foreground/80 select-none hover:text-foreground sm:min-h-9"
+                    data-test="numbers"
+                >
+                    Numbers <ChevronRight class="size-4" />
+                </Link>
                 <Link
                     :href="peopleIndex().url"
                     class="flex min-h-11 items-center gap-1 text-sm font-medium text-foreground/80 select-none hover:text-foreground sm:min-h-9"
