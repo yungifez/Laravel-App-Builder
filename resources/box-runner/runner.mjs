@@ -57,8 +57,8 @@ import {
     statSync,
     writeFileSync,
 } from 'node:fs';
-import { request as forward } from 'node:http';
-import { createServer as createHttpsServer } from 'node:https';
+import { request as forward, get as httpGet } from 'node:http';
+import { createServer as createHttpsServer, get as httpsGet } from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -147,6 +147,24 @@ function sleep(ms) {
             clearTimeout(timer);
             resolve();
         };
+    });
+}
+
+/**
+ * Get a large download from the control plane as a stream. Node's own HTTP
+ * client, not fetch: a fetch body read slowly, as tar reads a big project,
+ * can fail inside fetch's parser at the end of the stream and stop the
+ * whole runner, with every command in every workspace.
+ */
+function download(address) {
+    return new Promise((resolve, reject) => {
+        const get = address.startsWith('https:') ? httpsGet : httpGet;
+
+        get(
+            address,
+            { headers: { Authorization: `Bearer ${token}` } },
+            resolve,
+        ).on('error', reject);
     });
 }
 
@@ -637,7 +655,12 @@ function run(
         process_.stderr.on('data', (chunk) => err.add(chunk));
 
         if (input !== null) {
+            // A command that exits before reading all its input must not
+            // take the runner down with a broken pipe.
+            process_.stdin.on('error', () => {});
+
             if (input instanceof Readable) {
+                input.on('error', () => process_.stdin.destroy());
                 input.pipe(process_.stdin);
             } else {
                 process_.stdin.end(input);
@@ -958,23 +981,36 @@ const handlers = {
     },
 
     async unpack(command) {
-        const response = await fetch(
-            `${url}/api/runner/commands/${command.id}/archive`,
-            {
-                headers: { Authorization: `Bearer ${token}` },
-            },
-        );
+        let response;
 
-        if (!response.ok || response.body === null) {
-            return failed(`Could not fetch the project (${response.status}).`);
+        try {
+            response = await download(
+                `${url}/api/runner/commands/${command.id}/archive`,
+            );
+        } catch (error) {
+            return failed(`Could not fetch the project: ${error.message}`);
         }
 
-        return run(['tar', '--no-same-owner', '-xzf', '-'], {
+        if (response.statusCode !== 200) {
+            response.resume();
+
+            return failed(
+                `Could not fetch the project (${response.statusCode}).`,
+            );
+        }
+
+        const result = await run(['tar', '--no-same-owner', '-xzf', '-'], {
             as: identity(command.box),
             cwd: box(command.box),
             timeoutSeconds: command.timeout_seconds,
-            input: Readable.fromWeb(response.body),
+            input: response,
         });
+
+        if (result.exit_code === 0 && !response.complete) {
+            return failed('The project stopped coming before its end.');
+        }
+
+        return result;
     },
 
     async start_service(command) {
@@ -1179,6 +1215,16 @@ async function main() {
         await sleep(settings.poll_seconds * 1000);
     }
 }
+
+// One failure that nothing caught must not stop every command in every
+// workspace; it is logged, and the command it belonged to fails or times
+// out on its own.
+process.on('uncaughtException', (error) => {
+    console.error(`Unexpected error, kept running: ${error.stack ?? error}`);
+});
+process.on('unhandledRejection', (error) => {
+    console.error(`Unexpected error, kept running: ${error?.stack ?? error}`);
+});
 
 process.on('SIGTERM', () => {
     for (const stop of running.values()) {
