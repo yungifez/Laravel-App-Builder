@@ -4,6 +4,8 @@ import {
     ArrowRight,
     ArrowUp,
     Check,
+    CircleDashed,
+    Download,
     LoaderCircle,
     Minus,
     Plus,
@@ -283,13 +285,6 @@ const screens = [
         alt: 'The workspace: a conversation about the app beside the app itself',
     },
     {
-        key: 'proof',
-        title: 'Proven before you see it',
-        text: 'Each change shows what it changed and which checks proved it. When something could not be checked, it says so.',
-        image: '/images/product/change.webp',
-        alt: 'A kept change with what it changed and the checks it passed',
-    },
-    {
         key: 'design',
         title: 'Point at anything, change it exactly',
         text: 'Design edits use no AI. Click any part of your app and set how it looks, then undo it if you change your mind.',
@@ -325,41 +320,71 @@ function next(): void {
 
 const fault = ref(faults[1]);
 
-// What every new app comes with, each with what it means for the owner.
-const parts = [
+// A kept change reports how it knows each thing, in the words the change
+// page uses. What nothing checked is named, never passed off as done.
+type Mark = 'tested' | 'untouched' | 'unchecked';
+
+const marks: { key: Mark; label: string }[] = [
+    { key: 'tested', label: 'checked by a test' },
+    { key: 'untouched', label: 'not touched by this change' },
+    { key: 'unchecked', label: 'not checked yet' },
+];
+
+const markLabel = (key: Mark): string =>
+    marks.find((mark) => mark.key === key)?.label ?? '';
+
+const receipt: { title: string; lines: { text: string; mark: Mark }[] }[] = [
     {
-        title: 'A real app, not a demo',
-        text: 'Every app starts with what real apps need, before you ask for anything.',
-        items: [
-            'Accounts, sign-in and settings',
-            'A real database, with your data in tables you can see',
-            'Your code in Git, one commit per change you keep',
+        title: 'Done when',
+        lines: [
+            {
+                text: 'A customer cancels a booking two days before',
+                mark: 'tested',
+            },
+            {
+                text: 'A cancel on the day itself is turned away',
+                mark: 'tested',
+            },
         ],
     },
     {
-        title: 'The same checks on every change',
-        text: 'Fixed rules, not a model, decide if a change works.',
-        items: [
-            'Your app’s own tests',
-            'A check that the code fits together',
-            'Tidy code, set out the standard way',
-            'Packages with known security problems are flagged',
+        title: 'Stays the same',
+        lines: [
+            { text: 'Customers book a class', mark: 'tested' },
+            { text: 'Staff see the day’s bookings', mark: 'untouched' },
+            { text: 'The booking email', mark: 'unchecked' },
         ],
     },
+];
+
+// The app's history: one commit per change kept. Undo adds a new commit
+// on top, as the real undo does, and the first one stays in the history.
+type Kept = { id: string; title: string; undoneBy?: string; undo?: boolean };
+
+const history = ref<Kept[]>([
     {
-        title: 'Real services, your own keys',
-        text: 'Connect what a real business runs on.',
-        items: ['Take payments with Stripe', 'Send email with Resend'],
+        id: 'a41c9e2',
+        title: 'Let customers cancel a booking up to a day before',
     },
-    {
-        title: 'Share it, keep it, take it with you',
-        text: 'Nothing you keep is locked in.',
-        items: [
-            'A link anyone can use to try your app, without an account',
-            'Undo any change you kept, even after others',
-            'Download your code any time',
-        ],
-    },
+    { id: '7d03b5f', title: 'Send a reminder the day before a class' },
+    { id: 'e98a61c', title: 'Add a waiting list when a class is full' },
+    { id: '3b2f7d0', title: 'Start Studio Classes' },
+]);
+
+function undo(kept: Kept): void {
+    const id = Math.random().toString(16).slice(2, 9).padEnd(7, '0');
+
+    kept.undoneBy = id;
+    history.value.unshift({ id, title: `Undo “${kept.title}”`, undo: true });
+}
+
+// What every new app has before the owner asks for anything.
+const included = [
+    'Accounts and sign-in',
+    'A real database you can look into',
+    'Take payments with Stripe',
+    'Send email with Resend',
+    'A link anyone can use to try your app',
 ];
 
 const questions = [
@@ -839,6 +864,223 @@ onBeforeUnmount(() => {
                 </div>
             </section>
 
+            <!-- How a kept change reports itself: each line says how the
+                 app knows it, and what nothing checked is named. -->
+            <section
+                class="bg-foreground text-background"
+                data-test="welcome-receipt"
+            >
+                <div
+                    class="mx-auto grid max-w-6xl gap-12 px-4 py-20 sm:px-10 sm:py-28 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:items-center lg:gap-16"
+                >
+                    <div v-reveal class="reveal">
+                        <h2
+                            class="font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
+                        >
+                            It tells you how it knows.
+                        </h2>
+                        <p class="mt-5 text-lg text-pretty text-background/65">
+                            Every change you keep says what a test proved. What
+                            nothing checked is named too, never passed off as
+                            done.
+                        </p>
+                        <ul class="mt-8 space-y-2.5 text-sm">
+                            <li
+                                v-for="mark in marks"
+                                :key="mark.key"
+                                class="flex items-center gap-2.5"
+                            >
+                                <Check
+                                    v-if="mark.key === 'tested'"
+                                    class="size-4 text-emerald-400 dark:text-emerald-600"
+                                />
+                                <Minus
+                                    v-else-if="mark.key === 'untouched'"
+                                    class="size-4 text-background/50"
+                                />
+                                <CircleDashed
+                                    v-else
+                                    class="size-4 text-background/50"
+                                />
+                                <span class="first-letter:uppercase">{{
+                                    mark.label
+                                }}</span>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div
+                        v-reveal
+                        class="reveal rounded-xl border border-background/15 bg-background/5 p-2 delay-100"
+                    >
+                        <div
+                            class="rounded-lg bg-background p-5 text-foreground sm:p-7"
+                        >
+                            <p class="text-sm text-muted-foreground">
+                                You kept
+                            </p>
+                            <p class="mt-1 font-medium text-pretty">
+                                Let customers cancel a booking up to a day
+                                before.
+                            </p>
+                            <p
+                                class="mt-5 flex flex-wrap items-baseline gap-x-2 border-t pt-4 text-sm"
+                            >
+                                <span
+                                    class="font-medium text-amber-600 dark:text-amber-400"
+                                    >Checked, with gaps</span
+                                >
+                                <span class="text-muted-foreground"
+                                    >One thing below is not checked yet.</span
+                                >
+                            </p>
+                            <div
+                                v-for="group in receipt"
+                                :key="group.title"
+                                class="mt-6"
+                            >
+                                <h3 class="text-sm font-medium">
+                                    {{ group.title }}
+                                </h3>
+                                <ul class="mt-2 divide-y border-y">
+                                    <li
+                                        v-for="line in group.lines"
+                                        :key="line.text"
+                                        class="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 py-2.5"
+                                    >
+                                        <Check
+                                            v-if="line.mark === 'tested'"
+                                            class="mt-0.5 size-4 text-emerald-600 dark:text-emerald-400"
+                                            aria-hidden="true"
+                                        />
+                                        <Minus
+                                            v-else-if="
+                                                line.mark === 'untouched'
+                                            "
+                                            class="mt-0.5 size-4 text-muted-foreground"
+                                            aria-hidden="true"
+                                        />
+                                        <CircleDashed
+                                            v-else
+                                            class="mt-0.5 size-4 text-muted-foreground"
+                                            aria-hidden="true"
+                                        />
+                                        <span class="text-pretty">
+                                            {{ line.text }}
+                                            <span
+                                                class="block text-sm text-muted-foreground"
+                                                >{{
+                                                    markLabel(line.mark)
+                                                }}</span
+                                            >
+                                        </span>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- The app stays an ordinary app with its own history: undo
+                 any kept change, or take the code away. -->
+            <section class="bg-muted/50" data-test="welcome-yours">
+                <div
+                    class="mx-auto grid max-w-6xl gap-12 px-4 py-20 sm:px-10 sm:py-28 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:items-center lg:gap-16"
+                >
+                    <div v-reveal class="reveal">
+                        <h2
+                            class="font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
+                        >
+                            It stays yours.
+                        </h2>
+                        <p
+                            class="mt-5 text-lg text-pretty text-muted-foreground"
+                        >
+                            Each change you keep is one step in your app’s
+                            history. Undo any of them, even after others, or
+                            download the code and run it without us.
+                        </p>
+                        <h3 class="mt-10 text-sm font-medium">
+                            In every app from the first version
+                        </h3>
+                        <ul class="mt-3 space-y-2 text-sm">
+                            <li
+                                v-for="item in included"
+                                :key="item"
+                                class="flex gap-2"
+                            >
+                                <Check
+                                    class="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                />
+                                <span class="text-pretty">{{ item }}</span>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div
+                        v-reveal
+                        class="reveal overflow-hidden rounded-lg border bg-background delay-100"
+                    >
+                        <div
+                            class="flex items-center justify-between gap-3 border-b px-5 py-3"
+                        >
+                            <p class="text-sm font-medium">History</p>
+                            <span
+                                class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm text-muted-foreground"
+                            >
+                                <Download class="size-3.5" />
+                                Download code
+                            </span>
+                        </div>
+                        <TransitionGroup
+                            tag="ol"
+                            class="divide-y"
+                            enter-from-class="-translate-y-2 opacity-0"
+                            enter-active-class="transition-[opacity,translate] duration-panel ease-settle"
+                            move-class="transition-transform duration-panel ease-settle"
+                        >
+                            <li
+                                v-for="(kept, at) in history"
+                                :key="kept.id"
+                                class="flex min-h-14 items-center gap-4 px-5 py-1.5"
+                            >
+                                <code
+                                    class="shrink-0 font-mono text-xs text-muted-foreground"
+                                    >{{ kept.id }}</code
+                                >
+                                <span
+                                    :class="[
+                                        'min-w-0 flex-1 truncate text-sm',
+                                        kept.undoneBy &&
+                                            'text-muted-foreground line-through decoration-muted-foreground/50',
+                                    ]"
+                                    >{{ kept.title }}</span
+                                >
+                                <span
+                                    v-if="kept.undoneBy"
+                                    class="shrink-0 text-xs text-muted-foreground"
+                                    >Undone</span
+                                >
+                                <button
+                                    v-else-if="
+                                        !kept.undo && at < history.length - 1
+                                    "
+                                    type="button"
+                                    class="min-h-11 shrink-0 press rounded-md px-2 text-sm text-muted-foreground select-none hover:bg-muted hover:text-foreground sm:min-h-8"
+                                    :data-test="
+                                        at === 0 ? 'welcome-undo' : undefined
+                                    "
+                                    @click="undo(kept)"
+                                >
+                                    Undo
+                                </button>
+                            </li>
+                        </TransitionGroup>
+                    </div>
+                </div>
+            </section>
+
             <!-- Ready-made ideas and looks: the same ones a new app can
                  start from. Picking one fills the box at the top. -->
             <section
@@ -940,52 +1182,8 @@ onBeforeUnmount(() => {
                 </div>
             </section>
 
-            <!-- What every app comes with, each with what it means. -->
-            <section class="bg-muted/50">
-                <div class="mx-auto max-w-6xl px-4 py-20 sm:px-10 sm:py-28">
-                    <h2
-                        v-reveal
-                        class="max-w-2xl reveal font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
-                    >
-                        In every app, from the first version.
-                    </h2>
-                    <ul
-                        v-reveal
-                        class="mt-12 grid reveal gap-px overflow-hidden rounded-lg border bg-border delay-100 md:grid-cols-2"
-                        data-test="welcome-promises"
-                    >
-                        <li
-                            v-for="part in parts"
-                            :key="part.title"
-                            class="bg-background p-6 sm:p-8"
-                        >
-                            <h3
-                                class="font-display text-xl tracking-[-0.015em]"
-                            >
-                                {{ part.title }}
-                            </h3>
-                            <p class="mt-2 text-pretty text-muted-foreground">
-                                {{ part.text }}
-                            </p>
-                            <ul class="mt-5 space-y-2 text-sm">
-                                <li
-                                    v-for="item in part.items"
-                                    :key="item"
-                                    class="flex gap-2"
-                                >
-                                    <Check
-                                        class="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
-                                    />
-                                    <span class="text-pretty">{{ item }}</span>
-                                </li>
-                            </ul>
-                        </li>
-                    </ul>
-                </div>
-            </section>
-
             <!-- Plain answers to what people ask before they start. -->
-            <section class="bg-foreground text-background">
+            <section class="bg-muted/50">
                 <div
                     class="mx-auto grid max-w-6xl gap-10 px-4 py-20 sm:px-10 sm:py-28 lg:grid-cols-[minmax(0,4fr)_minmax(0,7fr)] lg:gap-16"
                 >
@@ -997,7 +1195,7 @@ onBeforeUnmount(() => {
                     </h2>
                     <div
                         v-reveal
-                        class="reveal divide-y divide-background/15 border-y border-background/15 delay-100"
+                        class="reveal divide-y border-y delay-100"
                         data-test="welcome-questions"
                     >
                         <details
@@ -1010,12 +1208,12 @@ onBeforeUnmount(() => {
                             >
                                 {{ question.ask }}
                                 <Plus
-                                    class="size-4 shrink-0 text-background/60 transition-transform duration-base group-open:rotate-45"
+                                    class="size-4 shrink-0 text-muted-foreground transition-transform duration-base group-open:rotate-45"
                                     aria-hidden="true"
                                 />
                             </summary>
                             <p
-                                class="max-w-2xl pb-5 text-pretty text-background/70"
+                                class="max-w-2xl pb-5 text-pretty text-muted-foreground"
                             >
                                 {{ question.answer }}
                             </p>
@@ -1024,7 +1222,7 @@ onBeforeUnmount(() => {
                 </div>
             </section>
 
-            <section class="bg-muted/50">
+            <section class="bg-foreground text-background">
                 <div
                     v-reveal
                     class="mx-auto flex max-w-6xl reveal flex-wrap items-end justify-between gap-8 px-4 py-20 sm:px-10 sm:py-28"

@@ -16,10 +16,18 @@ it('shows a visitor what makes it different and what they keep, and starts them 
         ->assertSee('Tired of apps that never get past the demo?')
         ->assertSee('Fixed checks decide if it works.')
         ->assertSee('An AI agent on its own')
-        ->assertSee('Undo any change you kept, even after others')
-        ->assertSee('Download your code any time')
+        ->assertSee('It tells you how it knows.')
+        ->assertSee('Checked, with gaps')
+        ->assertSee('It stays yours.')
         ->click('@welcome-start')
         ->assertPathIs('/register');
+});
+
+it('shows undo as a new step on top of the history', function () {
+    visit('/')
+        ->click('@welcome-undo')
+        ->assertSeeIn('@welcome-yours', 'Undone')
+        ->assertSeeIn('@welcome-yours', 'Undo “Let customers cancel a booking up to a day before”');
 });
 
 it('keeps what a visitor typed for the new app form after they sign in', function () {
