@@ -10,6 +10,7 @@ use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
 use App\Models\WorkspaceFile;
+use App\Runs\Exceptions\ConstructionFailed;
 use App\Workspaces\WorkspaceFiles;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -106,6 +107,34 @@ class WorkspaceFilesTest extends TestCase
 
         $this->assertFileExists($this->workspaceFile($run, 'helpers-made'));
         $this->assertFileDoesNotExist($this->workspaceFile($run, 'screens-built'));
+    }
+
+    public function test_a_setup_step_that_fails_says_why_even_when_it_explains_on_its_normal_output()
+    {
+        $this->buildInLocalWorkspaces();
+        config(['builder.construction.setup' => [
+            // Artisan prints its errors this way, in colour.
+            ['name' => 'Generate route helpers', 'command' => ['sh', '-c', 'printf "\\033[31mClass \\"Wayfinder\\" not found\\033[0m\\n"; exit 1'], 'timeout' => 30],
+        ]]);
+        $project = Project::factory()->create(['source_path' => $this->makeProjectSource()]);
+
+        try {
+            $this->prepare(FeatureRequest::factory()->for($project)->create());
+            $this->fail('The step did not stop the run.');
+        } catch (ConstructionFailed $exception) {
+            $this->assertSame('The setup step "Generate route helpers" failed. Class "Wayfinder" not found', $exception->getMessage());
+        }
+
+        config(['builder.construction.setup' => [
+            ['name' => 'Install PHP dependencies', 'command' => ['sleep', '5'], 'timeout' => 1],
+        ]]);
+
+        try {
+            $this->prepare(FeatureRequest::factory()->for($project)->create());
+            $this->fail('The step did not stop the run.');
+        } catch (ConstructionFailed $exception) {
+            $this->assertStringStartsWith('The setup step "Install PHP dependencies" ran out of time.', $exception->getMessage());
+        }
     }
 
     public function test_notes_a_run_changed_are_kept_apart_from_its_code_change()

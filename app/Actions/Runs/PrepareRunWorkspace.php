@@ -89,7 +89,7 @@ class PrepareRunWorkspace
                     continue;
                 }
 
-                $this->run($workspace, $step['command'], __('The setup step ":name" failed.', ['name' => $step['name']]), $step['timeout']);
+                $this->run($workspace, $step['command'], fn (bool $timedOut) => __('The setup step ":name" :outcome.', ['name' => $step['name'], 'outcome' => $timedOut ? __('ran out of time') : __('failed')]), $step['timeout']);
             }
 
             $this->workspaceFiles->sync($project, $workspace);
@@ -117,18 +117,24 @@ class PrepareRunWorkspace
 
     /**
      * Run a preparation command and return its output, or stop with the
-     * given reason if it fails.
+     * given reason if it fails, followed by the end of what it printed.
      *
      * @param  list<string>  $command
+     * @param  string|Closure(bool): string  $reason  given whether the command ran out of time
      *
      * @throws ConstructionFailed
      */
-    protected function run(Workspace $workspace, array $command, string $reason, int $timeoutSeconds = 120): string
+    protected function run(Workspace $workspace, array $command, string|Closure $reason, int $timeoutSeconds = 120): string
     {
         $result = $this->runWorkspaceCommand->handle($workspace, $command, $timeoutSeconds);
 
         if ($result->exit_code !== 0 || $result->timed_out) {
-            throw new ConstructionFailed(trim($reason.' '.trim($result->error_output)));
+            // Artisan commands write their errors to the normal output, so
+            // the reason is there when the error output is empty.
+            $output = (string) preg_replace('/\e\[[0-9;?]*[ -\/]*[@-~]/', '', $result->error_output ?: $result->output);
+            $reason = is_string($reason) ? $reason : $reason($result->timed_out);
+
+            throw new ConstructionFailed(trim($reason.' '.trim(mb_substr($output, -2000))));
         }
 
         return $result->output;
