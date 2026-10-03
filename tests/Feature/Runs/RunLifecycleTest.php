@@ -333,6 +333,17 @@ class RunLifecycleTest extends TestCase
         $this->assertTrue($run->events()->where('type', 'review')->sole()->data['approved']);
     }
 
+    public function test_a_built_and_checked_change_is_still_reviewed_once_the_daily_limit_is_reached()
+    {
+        config(['builder.construction.budgets.daily_usd' => 10]);
+        Run::factory()->create()->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 10.5]);
+        [$run, $verification] = $this->verifyingRun(VerificationStatus::Passed);
+
+        app(CompleteRunVerification::class)->handle($verification);
+
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+    }
+
     public function test_a_failing_verification_stops_the_run_for_the_owners_decision()
     {
         [$run, $verification] = $this->verifyingRun(VerificationStatus::Failed);

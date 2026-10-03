@@ -138,7 +138,10 @@ class ConstructRun
         while (true) {
             $run->refresh();
 
-            if (in_array($run->status, [RunStatus::Planning, RunStatus::Implementing, RunStatus::Reviewing], true)) {
+            // A change already built and checked is still reviewed: that
+            // is one small call, and throwing the work away costs more. A
+            // repair after the review goes back through implementing.
+            if (in_array($run->status, [RunStatus::Planning, RunStatus::Implementing], true)) {
                 $this->ensureWithinDailySpend();
             }
 
@@ -607,8 +610,8 @@ class ConstructRun
     }
 
     /**
-     * Stop before the next model call once today's AI spend reached the
-     * limit, so a busy day cannot drain the AI accounts unseen.
+     * Stop before new planning or building once today's AI spend reached
+     * the limit, so a busy day cannot drain the AI accounts unseen.
      *
      * @throws SpendLimitReached
      */
