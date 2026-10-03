@@ -192,6 +192,13 @@ class RunnerDriverTest extends TestCase
         $this->assertTrue($result->successful(), $result->output().$result->errorOutput());
     }
 
+    public function test_the_real_runner_says_at_once_when_a_result_is_too_large_to_send_back()
+    {
+        $result = Process::timeout(30)->run(['node', base_path('tests/Fixtures/box-runner-too-large.mjs'), base_path('resources/box-runner/runner.mjs')]);
+
+        $this->assertTrue($result->successful(), $result->output().$result->errorOutput());
+    }
+
     public function test_the_real_runner_gives_each_workspace_a_user_of_its_own()
     {
         // Switching users needs root, which the runner has in its box and

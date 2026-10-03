@@ -181,7 +181,9 @@ async function api(path, body = {}) {
     });
 
     if (!response.ok) {
-        throw new Error(`${path} answered ${response.status}`);
+        throw Object.assign(new Error(`${path} answered ${response.status}`), {
+            status: response.status,
+        });
     }
 
     return response.status === 204 ? null : response.json();
@@ -1059,6 +1061,8 @@ const handlers = {
     },
 };
 
+const tooLarge = 'The result was too large to send back.';
+
 async function report(id, result) {
     for (let attempt = 0; attempt < 10; attempt++) {
         try {
@@ -1067,6 +1071,18 @@ async function report(id, result) {
             return;
         } catch (error) {
             console.error(`Could not report ${id}: ${error.message}`);
+
+            // Sending it again cannot make it smaller: say so at once,
+            // or the control plane waits until it gives the command up.
+            if (error.status === 413 && result.error_output !== tooLarge) {
+                result = {
+                    ...failed(tooLarge),
+                    duration_ms: result.duration_ms,
+                };
+
+                continue;
+            }
+
             await new Promise((resolve) =>
                 setTimeout(resolve, Math.min(1000 * 2 ** attempt, 30000)),
             );
