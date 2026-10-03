@@ -9,6 +9,24 @@ import {
     LoaderCircle,
     Minus,
     Plus,
+    RotateCcw,
+    ShieldCheck,
+    ArrowLeft,
+    Bell,
+    CalendarDays,
+    ChevronDown,
+    CircleCheck,
+    CircleDot,
+    FileDiff,
+    LayoutGrid,
+    Maximize2,
+    MessageSquare,
+    MousePointerClick,
+    PanelLeft,
+    RotateCw,
+    Share2,
+    Sparkles,
+    Ticket,
 } from '@lucide/vue';
 import type { Directive } from 'vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
@@ -161,26 +179,83 @@ function backToStart(): void {
     ideaField.value?.focus({ preventScroll: true });
 }
 
-// Under the box, the checks every change passes tick off one by one, so
-// the first screen shows the promise as well as saying it.
+// Under the box, the real workspace plays one change from the ask to
+// "Keep it", with the stages, words and layout the workspace uses. The
+// same change runs through the rest of the page. Lines only ever appear
+// below what is already there, as in the real thread, so nothing jumps.
+// It plays once, and the visitor can play it again.
 const heroChecks = [
-    'Your app’s own tests',
-    'Code fits together',
-    'Tidy code',
-    'Known security problems flagged',
+    'Your app’s own tests passed',
+    'The code fits together',
+    'The code is set out tidily',
+    'No packages with known security problems',
 ];
-const ticked = ref(still ? heroChecks.length : 0);
-let ticking: ReturnType<typeof setInterval> | undefined;
 
-function tickChecks(): void {
-    ticking = setInterval(() => {
-        ticked.value += 1;
+// The stages the workspace names, and the beat each one starts on.
+const stageSteps = [
+    { label: 'Working out what you need', from: 1 },
+    { label: 'Making the change', from: 2 },
+    { label: 'Checking it works', from: 3 },
+    { label: 'Looking over what changed', from: 8 },
+];
 
-        if (ticked.value >= heroChecks.length) {
-            clearInterval(ticking);
+// How long each beat lasts: the ask, the stages, one beat per check, and
+// the last look.
+const beats = [900, 1500, 1500, 700, 500, 500, 500, 500, 1200];
+const ready = beats.length;
+const beat = ref(still ? ready : -1);
+const elapsed = ref(0);
+const stage = ref<HTMLElement | null>(null);
+let beating: ReturnType<typeof setTimeout> | undefined;
+let counting: ReturnType<typeof setInterval> | undefined;
+let stageSeen: IntersectionObserver | undefined;
+
+function playStage(): void {
+    clearTimeout(beating);
+    clearInterval(counting);
+    clearInterval(counting);
+
+    if (still) {
+        beat.value = ready;
+
+        return;
+    }
+
+    beat.value = 0;
+    elapsed.value = 0;
+    counting = setInterval(() => (elapsed.value += 1), 1000);
+
+    const step = (): void => {
+        if (beat.value >= ready) {
+            clearInterval(counting);
+
+            return;
         }
-    }, 600);
+
+        beating = setTimeout(() => {
+            beat.value += 1;
+            step();
+        }, beats[beat.value]);
+    };
+
+    step();
 }
+
+const working = computed(() => beat.value >= 1 && beat.value < ready);
+const stageNow = computed(
+    () =>
+        [...stageSteps].reverse().find((step) => beat.value >= step.from)
+            ?.label ?? '',
+);
+const checksDone = computed(() =>
+    Math.min(heroChecks.length, Math.max(0, beat.value - 3)),
+);
+
+// The example app's own page, where the change shows up once it is ready.
+const bookings = [
+    { name: 'Pilates', when: 'Thursday, 18:30', late: false },
+    { name: 'Morning yoga', when: 'Today, 18:00', late: true },
+];
 
 // One change, checked two ways. "Here" is what the platform does with
 // every change; "alone" is an AI coding agent working on its own, which
@@ -417,7 +492,23 @@ const questions = [
 onMounted(() => {
     if (!still) {
         typeExamples();
-        tickChecks();
+    }
+
+    // It waits until a good part of it is on screen, so the visitor sees
+    // it play rather than its end.
+    if (stage.value !== null && typeof IntersectionObserver !== 'undefined') {
+        stageSeen = new IntersectionObserver(
+            ([entry]) => {
+                if (entry.isIntersecting) {
+                    stageSeen?.disconnect();
+                    playStage();
+                }
+            },
+            { threshold: 0.45 },
+        );
+        stageSeen.observe(stage.value);
+    } else {
+        playStage();
     }
 
     if (demo.value !== null) {
@@ -431,9 +522,11 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
     clearTimeout(typing);
-    clearInterval(ticking);
+    clearTimeout(beating);
+    clearInterval(counting);
     clearInterval(playing);
     seen?.disconnect();
+    stageSeen?.disconnect();
 });
 </script>
 
@@ -485,14 +578,16 @@ onBeforeUnmount(() => {
              turn. Space goes inside each tile, never around it. -->
         <main class="space-y-3 p-3">
             <!-- The first screen is the box: say what the app is for, and
-                 go. What they type waits for them after signing up. -->
-            <section id="start" class="bg-muted/50">
+                 go. What they type waits for them after signing up. Under
+                 it, the workspace plays one change and runs off the bottom
+                 edge of the tile. -->
+            <section id="start" class="overflow-hidden bg-muted/50">
                 <div
-                    class="mx-auto flex min-h-[calc(100svh-4.5rem)] max-w-3xl flex-col justify-center px-4 py-20 text-center"
+                    class="mx-auto flex max-w-3xl flex-col px-4 pt-20 text-center sm:pt-28"
                 >
                     <p
                         v-reveal
-                        class="mx-auto reveal rounded-full border bg-background px-3 py-1 text-sm text-muted-foreground"
+                        class="mx-auto reveal rounded-md border bg-background px-3 py-1 text-sm text-muted-foreground"
                     >
                         Tired of apps that never get past the demo?
                     </p>
@@ -569,34 +664,426 @@ onBeforeUnmount(() => {
                             {{ item.name }}
                         </button>
                     </div>
-
-                    <ul
-                        class="mx-auto mt-14 flex flex-wrap justify-center gap-x-5 gap-y-2 text-sm"
-                        aria-label="Checked before you keep a change"
-                        data-test="welcome-hero-checks"
-                    >
-                        <li
-                            v-for="(check, at) in heroChecks"
-                            :key="check"
-                            class="flex items-center gap-1.5 transition-colors duration-base"
-                            :class="
-                                at < ticked
-                                    ? 'text-foreground'
-                                    : 'text-muted-foreground'
-                            "
-                        >
-                            <Check
-                                v-if="at < ticked"
-                                class="size-4 text-emerald-600 dark:text-emerald-400"
-                            />
-                            <LoaderCircle
-                                v-else
-                                class="size-4 animate-spin motion-reduce:animate-none"
-                            />
-                            {{ check }}
-                        </li>
-                    </ul>
                 </div>
+
+                <figure
+                    ref="stage"
+                    v-reveal
+                    class="mx-auto mt-16 max-w-6xl reveal px-4 delay-300 sm:mt-20 sm:px-10"
+                    data-test="welcome-stage"
+                >
+                    <figcaption class="sr-only">
+                        An example in the workspace: one change, from the ask to
+                        ready for you to keep.
+                    </figcaption>
+                    <!-- The workspace, drawn with its own layout and words.
+                         It is a picture: nothing in it can be pressed except
+                         Play again. -->
+                    <div
+                        class="overflow-hidden rounded-t-xl border border-b-0 bg-background text-left shadow-[0_-8px_60px_-24px_rgb(0_0_0/0.25)] select-none"
+                    >
+                        <div
+                            class="flex h-12 items-center justify-between gap-3 border-b px-3 text-sm"
+                            aria-hidden="true"
+                        >
+                            <span class="flex min-w-0 items-center gap-3">
+                                <ArrowLeft
+                                    class="size-4 shrink-0 text-muted-foreground"
+                                />
+                                <span
+                                    class="flex min-w-0 items-center gap-1.5 font-semibold"
+                                >
+                                    <span
+                                        class="size-1.5 shrink-0 rounded-full bg-muted-foreground/60"
+                                    />
+                                    <span class="truncate">Studio Classes</span>
+                                    <ChevronDown
+                                        class="size-3.5 shrink-0 text-muted-foreground"
+                                    />
+                                </span>
+                                <span
+                                    class="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground tabular-nums"
+                                >
+                                    <ShieldCheck
+                                        class="size-3.5 text-emerald-600 dark:text-emerald-400"
+                                    />
+                                    {{ beat >= ready ? 44 : 42 }} tests
+                                </span>
+                            </span>
+                            <span class="flex items-center gap-2">
+                                <Bell
+                                    class="hidden size-4 text-muted-foreground sm:block"
+                                />
+                                <span
+                                    class="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 font-medium"
+                                >
+                                    <Share2 class="size-3.5" />
+                                    Share
+                                </span>
+                            </span>
+                        </div>
+
+                        <div
+                            class="grid h-[34rem] md:grid-cols-[21rem_minmax(0,1fr)]"
+                        >
+                            <div class="flex min-h-0 flex-col md:border-r">
+                                <div
+                                    class="flex items-center gap-2 border-b p-2"
+                                    aria-hidden="true"
+                                >
+                                    <span
+                                        class="grid flex-1 grid-cols-2 rounded-md bg-muted p-0.5 text-sm"
+                                    >
+                                        <span
+                                            class="flex h-8 items-center justify-center gap-1.5 rounded-sm bg-background font-semibold shadow-xs"
+                                        >
+                                            <MessageSquare class="size-3.5" />
+                                            Chat
+                                        </span>
+                                        <span
+                                            class="flex h-8 items-center justify-center gap-1.5 text-muted-foreground"
+                                        >
+                                            <MousePointerClick
+                                                class="size-3.5"
+                                            />
+                                            Design
+                                        </span>
+                                    </span>
+                                    <Maximize2
+                                        class="mx-1.5 size-3.5 text-muted-foreground"
+                                    />
+                                </div>
+                                <div
+                                    class="flex items-center justify-between border-b px-4 py-2.5 text-sm text-muted-foreground"
+                                    aria-hidden="true"
+                                >
+                                    <span class="flex items-center gap-1.5">
+                                        <ArrowLeft class="size-3.5" />
+                                        All changes
+                                    </span>
+                                    <span class="flex items-center gap-1.5">
+                                        <FileDiff class="size-3.5" />
+                                        Details
+                                    </span>
+                                </div>
+
+                                <div
+                                    class="min-h-0 flex-1 space-y-4 overflow-hidden p-4"
+                                >
+                                    <div class="flex justify-end">
+                                        <p
+                                            class="max-w-[85%] rounded-lg rounded-br-sm bg-muted px-3.5 py-2.5 text-sm"
+                                        >
+                                            Let customers cancel a booking up to
+                                            a day before.
+                                        </p>
+                                    </div>
+
+                                    <div
+                                        :class="[
+                                            'flex gap-2.5 transition-opacity duration-base',
+                                            beat >= 1
+                                                ? 'opacity-100'
+                                                : 'opacity-0',
+                                        ]"
+                                    >
+                                        <span
+                                            class="grid size-7 shrink-0 place-items-center rounded-full bg-muted"
+                                            aria-hidden="true"
+                                        >
+                                            <Sparkles class="size-3.5" />
+                                        </span>
+                                        <div
+                                            class="min-w-0 flex-1 space-y-3 pt-0.5 text-sm"
+                                        >
+                                            <p class="leading-relaxed">
+                                                Adds a way to cancel a booking
+                                                until a day before the class,
+                                                and turns away later cancels.
+                                            </p>
+
+                                            <ol
+                                                v-if="beat < ready"
+                                                class="space-y-1.5"
+                                            >
+                                                <template
+                                                    v-for="(
+                                                        step, at
+                                                    ) in stageSteps"
+                                                    :key="step.label"
+                                                >
+                                                    <li
+                                                        v-if="beat >= step.from"
+                                                        class="flex items-center gap-2 pt-1 text-xs font-medium"
+                                                    >
+                                                        <CircleDot
+                                                            class="size-3.5 shrink-0 text-muted-foreground"
+                                                        />
+                                                        {{ step.label }}
+                                                    </li>
+                                                    <template v-if="at === 2">
+                                                        <li
+                                                            v-for="check in heroChecks.slice(
+                                                                0,
+                                                                checksDone,
+                                                            )"
+                                                            :key="check"
+                                                            class="flex items-center gap-2 text-xs text-muted-foreground"
+                                                        >
+                                                            <CircleCheck
+                                                                class="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                                            />
+                                                            {{ check }}
+                                                        </li>
+                                                    </template>
+                                                </template>
+                                            </ol>
+
+                                            <p
+                                                v-if="working"
+                                                class="flex items-center gap-2 text-muted-foreground"
+                                            >
+                                                <LoaderCircle
+                                                    class="size-4 animate-spin"
+                                                />
+                                                {{ stageNow }}…
+                                                <span
+                                                    class="text-xs tabular-nums"
+                                                    >{{ elapsed }}s</span
+                                                >
+                                            </p>
+
+                                            <template v-if="beat >= ready">
+                                                <div class="flex gap-2">
+                                                    <Check
+                                                        class="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                                    />
+                                                    <span>
+                                                        <span
+                                                            class="block font-medium"
+                                                            >Cancelling a
+                                                            booking</span
+                                                        >
+                                                        <span
+                                                            class="block text-xs text-muted-foreground"
+                                                            >Customers cancel up
+                                                            to a day before.
+                                                            After that, it says
+                                                            it is too
+                                                            late.</span
+                                                        >
+                                                    </span>
+                                                </div>
+                                                <p
+                                                    class="flex gap-2 text-xs text-muted-foreground"
+                                                >
+                                                    <ShieldCheck
+                                                        class="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                                    />
+                                                    2 new tests passed, with the
+                                                    app’s other 42.
+                                                </p>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div
+                                    :class="[
+                                        'flex gap-2 border-t px-4 pt-3 transition-opacity duration-panel',
+                                        beat >= ready
+                                            ? 'opacity-100'
+                                            : 'pointer-events-none opacity-0',
+                                    ]"
+                                >
+                                    <span
+                                        class="flex h-9 flex-1 items-center justify-center rounded-md border text-sm font-medium"
+                                        aria-hidden="true"
+                                        >Try it first</span
+                                    >
+                                    <span
+                                        class="flex h-9 flex-1 items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground"
+                                        aria-hidden="true"
+                                        >Keep it</span
+                                    >
+                                </div>
+                                <div class="flex items-center gap-2 p-3">
+                                    <span
+                                        class="flex h-10 flex-1 items-center rounded-md border px-3 text-sm text-muted-foreground"
+                                        aria-hidden="true"
+                                        >Reply or ask for more…</span
+                                    >
+                                    <button
+                                        v-if="!still"
+                                        type="button"
+                                        :class="[
+                                            'grid size-10 shrink-0 press place-items-center rounded-md text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground',
+                                            beat >= ready
+                                                ? 'opacity-100'
+                                                : 'pointer-events-none opacity-0',
+                                        ]"
+                                        :tabindex="beat >= ready ? 0 : -1"
+                                        aria-label="Play the example again"
+                                        title="Play again"
+                                        @click="playStage"
+                                    >
+                                        <RotateCcw class="size-4" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- The app beside the chat, with the browser bar
+                                 and tabs of the real workspace. -->
+                            <div
+                                class="hidden min-h-0 flex-col bg-muted/30 p-3 md:flex"
+                                aria-hidden="true"
+                            >
+                                <div
+                                    class="flex items-center gap-3 px-1 pb-3 text-sm text-muted-foreground"
+                                >
+                                    <ArrowLeft class="size-4" />
+                                    <ArrowRight class="size-4" />
+                                    <RotateCw class="size-4" />
+                                    <span
+                                        class="flex items-center gap-1 text-foreground"
+                                        >/bookings
+                                        <ChevronDown class="size-3.5" />
+                                    </span>
+                                    <span
+                                        class="ml-auto hidden items-center gap-5 lg:flex"
+                                    >
+                                        <span
+                                            class="border-b-2 border-foreground pb-1 text-foreground"
+                                            >App</span
+                                        >
+                                        <span class="pb-1.5">Messages</span>
+                                        <span class="pb-1.5">Problems</span>
+                                        <span class="pb-1.5">Saved data</span>
+                                        <span class="pb-1.5"
+                                            >What happened</span
+                                        >
+                                    </span>
+                                </div>
+                                <div
+                                    class="flex min-h-0 flex-1 overflow-hidden rounded-lg border bg-background"
+                                >
+                                    <div
+                                        class="hidden w-48 shrink-0 flex-col border-r bg-muted/30 p-3 text-sm lg:flex"
+                                    >
+                                        <span
+                                            class="flex items-center gap-2 font-semibold"
+                                        >
+                                            <span
+                                                class="grid size-7 place-items-center rounded-md bg-foreground text-background"
+                                            >
+                                                <CalendarDays class="size-4" />
+                                            </span>
+                                            Studio Classes
+                                        </span>
+                                        <span
+                                            class="mt-5 text-xs text-muted-foreground"
+                                            >Platform</span
+                                        >
+                                        <span
+                                            class="mt-2 flex items-center gap-2 rounded-md px-2 py-1.5"
+                                        >
+                                            <LayoutGrid class="size-4" />
+                                            Dashboard
+                                        </span>
+                                        <span
+                                            class="flex items-center gap-2 rounded-md px-2 py-1.5"
+                                        >
+                                            <CalendarDays class="size-4" />
+                                            Classes
+                                        </span>
+                                        <span
+                                            class="flex items-center gap-2 rounded-md bg-muted px-2 py-1.5 font-medium"
+                                        >
+                                            <Ticket class="size-4" />
+                                            Your bookings
+                                        </span>
+                                    </div>
+                                    <div class="min-w-0 flex-1">
+                                        <div
+                                            class="flex items-center gap-2 border-b px-4 py-3 text-sm"
+                                        >
+                                            <PanelLeft
+                                                class="size-4 text-muted-foreground"
+                                            />
+                                            Your bookings
+                                        </div>
+                                        <div class="p-4">
+                                            <div
+                                                class="rounded-xl border p-5 shadow-xs"
+                                            >
+                                                <p class="font-semibold">
+                                                    Your bookings
+                                                </p>
+                                                <p
+                                                    class="mt-1 text-sm text-muted-foreground"
+                                                >
+                                                    Classes you have a place in.
+                                                </p>
+                                                <ul
+                                                    class="mt-4 divide-y border-y"
+                                                >
+                                                    <li
+                                                        v-for="booking in bookings"
+                                                        :key="booking.name"
+                                                        class="flex min-h-14 items-center justify-between gap-3 py-2 text-sm"
+                                                    >
+                                                        <span class="min-w-0">
+                                                            <span
+                                                                class="block font-medium"
+                                                                >{{
+                                                                    booking.name
+                                                                }}</span
+                                                            >
+                                                            <span
+                                                                class="block text-muted-foreground"
+                                                                >{{
+                                                                    booking.when
+                                                                }}</span
+                                                            >
+                                                        </span>
+                                                        <span
+                                                            :class="[
+                                                                'shrink-0 transition-opacity duration-panel',
+                                                                beat >= ready
+                                                                    ? 'opacity-100'
+                                                                    : 'opacity-0',
+                                                            ]"
+                                                        >
+                                                            <span
+                                                                v-if="
+                                                                    booking.late
+                                                                "
+                                                                class="text-muted-foreground"
+                                                                >Too late to
+                                                                cancel</span
+                                                            >
+                                                            <span
+                                                                v-else
+                                                                :class="[
+                                                                    'inline-flex h-8 items-center rounded-md border px-3 font-medium',
+                                                                    beat >=
+                                                                        ready &&
+                                                                        !still &&
+                                                                        'animate-[ring-out_1.6s_ease-out_both]',
+                                                                ]"
+                                                                >Cancel</span
+                                                            >
+                                                        </span>
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </figure>
             </section>
 
             <!-- The difference, shown: one change checked here, then by an
@@ -610,6 +1097,12 @@ onBeforeUnmount(() => {
                     class="mx-auto grid max-w-6xl gap-12 px-4 py-20 sm:px-10 sm:py-28 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:items-center lg:gap-16"
                 >
                     <div v-reveal class="reveal">
+                        <p
+                            v-reveal
+                            class="mb-5 reveal text-sm text-background/55 tabular-nums"
+                        >
+                            01&ensp;The checks
+                        </p>
                         <h2
                             class="font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
                         >
@@ -727,6 +1220,12 @@ onBeforeUnmount(() => {
             <!-- The product, one screen at a time. -->
             <section class="bg-muted/50">
                 <div class="mx-auto max-w-6xl px-4 py-20 sm:px-10 sm:py-28">
+                    <p
+                        v-reveal
+                        class="mb-5 reveal text-sm text-muted-foreground tabular-nums"
+                    >
+                        02&ensp;The workspace
+                    </p>
                     <h2
                         v-reveal
                         class="max-w-2xl reveal font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
@@ -873,6 +1372,12 @@ onBeforeUnmount(() => {
                     class="mx-auto grid max-w-6xl gap-12 px-4 py-20 sm:px-10 sm:py-28 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:items-center lg:gap-16"
                 >
                     <div v-reveal class="reveal">
+                        <p
+                            v-reveal
+                            class="mb-5 reveal text-sm text-background/55 tabular-nums"
+                        >
+                            03&ensp;The proof
+                        </p>
                         <h2
                             class="font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
                         >
@@ -988,6 +1493,12 @@ onBeforeUnmount(() => {
                     class="mx-auto grid max-w-6xl gap-12 px-4 py-20 sm:px-10 sm:py-28 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:items-center lg:gap-16"
                 >
                     <div v-reveal class="reveal">
+                        <p
+                            v-reveal
+                            class="mb-5 reveal text-sm text-muted-foreground tabular-nums"
+                        >
+                            04&ensp;Your code
+                        </p>
                         <h2
                             class="font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
                         >
@@ -1091,11 +1602,19 @@ onBeforeUnmount(() => {
                         v-reveal
                         class="grid reveal gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:items-end lg:gap-12"
                     >
-                        <h2
-                            class="font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
-                        >
-                            Start from a ready-made idea.
-                        </h2>
+                        <div>
+                            <p
+                                v-reveal
+                                class="mb-5 reveal text-sm text-background/55 tabular-nums"
+                            >
+                                05&ensp;Ideas
+                            </p>
+                            <h2
+                                class="font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
+                            >
+                                Start from a ready-made idea.
+                            </h2>
+                        </div>
                         <p class="text-lg text-pretty text-background/65">
                             Each one fills in the idea, the look and what the
                             first version includes. Change any of it, or write
@@ -1186,12 +1705,20 @@ onBeforeUnmount(() => {
                 <div
                     class="mx-auto grid max-w-6xl gap-10 px-4 py-20 sm:px-10 sm:py-28 lg:grid-cols-[minmax(0,4fr)_minmax(0,7fr)] lg:gap-16"
                 >
-                    <h2
-                        v-reveal
-                        class="reveal font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
-                    >
-                        Questions people ask.
-                    </h2>
+                    <div>
+                        <p
+                            v-reveal
+                            class="mb-5 reveal text-sm text-muted-foreground tabular-nums"
+                        >
+                            06&ensp;Questions
+                        </p>
+                        <h2
+                            v-reveal
+                            class="reveal font-display text-3xl leading-[1.05] tracking-[-0.03em] text-balance sm:text-5xl"
+                        >
+                            Questions people ask.
+                        </h2>
+                    </div>
                     <div
                         v-reveal
                         class="reveal divide-y border-y delay-100"
@@ -1221,35 +1748,80 @@ onBeforeUnmount(() => {
                 </div>
             </section>
 
+            <!-- The page ends where it began: a box to start from, so no
+                 one has to scroll back up. It shares the idea with the
+                 box at the top. -->
             <section class="bg-foreground text-background">
-                <div
-                    v-reveal
-                    class="mx-auto flex max-w-6xl reveal flex-wrap items-end justify-between gap-8 px-4 py-20 sm:px-10 sm:py-28"
-                >
+                <div class="mx-auto max-w-6xl px-4 py-24 sm:px-10 sm:py-36">
                     <h2
-                        class="font-display text-3xl leading-[1.05] tracking-[-0.03em] sm:text-5xl"
+                        v-reveal
+                        class="max-w-3xl reveal font-display text-4xl leading-[1.02] tracking-[-0.035em] text-balance sm:text-7xl"
                     >
                         Start with a sentence.
+                        <span class="text-background/50"
+                            >Keep only what passes.</span
+                        >
                     </h2>
-                    <a
-                        href="#start"
-                        class="inline-flex min-h-11 press items-center gap-2 rounded-md bg-primary px-6 font-medium text-primary-foreground select-none hover:bg-primary/90"
-                        @click.prevent="backToStart"
+                    <form
+                        v-reveal
+                        class="mt-12 flex max-w-2xl reveal gap-2 rounded-lg bg-background p-2 text-foreground delay-100 focus-within:ring-[3px] focus-within:ring-ring/50"
+                        data-test="welcome-end"
+                        @submit.prevent="start"
                     >
-                        Start an app
-                    </a>
+                        <label for="end-idea" class="sr-only"
+                            >What do you want to make?</label
+                        >
+                        <input
+                            id="end-idea"
+                            v-model="idea"
+                            type="text"
+                            required
+                            placeholder="Describe your app in a sentence"
+                            class="min-w-0 flex-1 bg-transparent px-3 text-base outline-none placeholder:text-muted-foreground"
+                            data-test="welcome-end-idea"
+                        />
+                        <button
+                            type="submit"
+                            class="inline-flex min-h-11 shrink-0 press items-center gap-2 rounded-md bg-primary px-5 font-medium text-primary-foreground select-none hover:bg-primary/90 disabled:opacity-40"
+                            :disabled="idea.trim() === ''"
+                            data-test="welcome-end-start"
+                        >
+                            Start my app
+                            <ArrowRight class="size-4" />
+                        </button>
+                    </form>
                 </div>
             </section>
         </main>
 
         <footer>
             <div
-                class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 pt-3 pb-8"
+                class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-8 gap-y-4 px-4 pt-6 pb-10 sm:px-10"
             >
-                <AppLogo />
-                <p class="text-sm text-muted-foreground">
-                    Real apps that stay yours.
-                </p>
+                <div class="flex items-center gap-4">
+                    <AppLogo />
+                    <p class="text-sm text-muted-foreground">
+                        Real apps that stay yours.
+                    </p>
+                </div>
+                <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                    <a
+                        href="#different"
+                        class="text-muted-foreground hover:text-foreground"
+                        >What is different</a
+                    >
+                    <a
+                        href="#ideas"
+                        class="text-muted-foreground hover:text-foreground"
+                        >Ideas</a
+                    >
+                    <Link
+                        v-if="!$page.props.auth.user"
+                        :href="login()"
+                        class="text-muted-foreground hover:text-foreground"
+                        >Log in</Link
+                    >
+                </nav>
             </div>
         </footer>
     </div>

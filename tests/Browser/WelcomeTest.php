@@ -12,7 +12,8 @@ it('shows a visitor what makes it different and what they keep, and starts them 
     visit('/')
         ->assertPresent('@welcome-example')
         ->assertPresent('@welcome-different')
-        ->assertPresent('@welcome-hero-checks')
+        ->assertPresent('@welcome-stage')
+        ->assertSeeIn('@welcome-stage', 'Let customers cancel a booking up to a day before.')
         ->assertSee('Tired of apps that never get past the demo?')
         ->assertSee('Fixed checks decide if it works.')
         ->assertSee('An AI agent on its own')
@@ -38,6 +39,16 @@ it('keeps what a visitor typed for the new app form after they sign in', functio
         ->click('@welcome-hero-start')
         ->assertPathIs('/projects')
         ->assertValue('#purpose', 'Customers order cakes for a pickup day.');
+});
+
+it('starts an app from the box at the end of the page too', function () {
+    $this->actingAs(User::factory()->create());
+
+    visit('/')
+        ->type('@welcome-end-idea', 'Neighbours lend each other tools.')
+        ->click('@welcome-end-start')
+        ->assertPathIs('/projects')
+        ->assertValue('#purpose', 'Neighbours lend each other tools.');
 });
 
 it('takes a signed-in owner to their apps', function () {

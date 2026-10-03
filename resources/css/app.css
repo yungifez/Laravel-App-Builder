@@ -320,14 +320,13 @@
    into view (the page sets data-shown). Still for people who ask for
    less motion. */
 @utility reveal {
-    transition-property: opacity, translate, filter;
+    transition-property: opacity, translate;
     transition-duration: var(--transition-duration-linger);
     transition-timing-function: var(--ease-settle);
 
     &:not([data-shown]) {
         opacity: 0;
-        translate: 0 1.25rem;
-        filter: blur(6px);
+        translate: 0 0.75rem;
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -336,8 +335,20 @@
         &:not([data-shown]) {
             opacity: 1;
             translate: none;
-            filter: none;
         }
+    }
+}
+
+/* A ring that fades once, to point at something that just appeared. */
+@keyframes ring-out {
+    from {
+        box-shadow: 0 0 0 0 var(--ring);
+    }
+    30% {
+        box-shadow: 0 0 0 4px color-mix(in oklab, var(--ring) 45%, transparent);
+    }
+    to {
+        box-shadow: 0 0 0 10px transparent;
     }
 }
 

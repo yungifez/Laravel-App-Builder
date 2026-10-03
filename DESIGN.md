@@ -72,10 +72,15 @@ running off the bottom edge. Space goes inside a tile, never around it.
 - Tiles alternate between a soft tile (`bg-muted/50`) and an inverted one
   (`bg-foreground text-background`), so each idea starts on a clear edge.
 - The first tile is the box where a visitor says what they want to make.
-  It fills the first screen, with the question, one line and the box
-  centred, as visitors expect from any app builder. This is the only
-  centred block. Other tile text sits on the left edge, like everywhere
-  else.
+  The headline, one line and the box are centred, as visitors expect from
+  any app builder. This is the only centred block. Other tile text sits on
+  the left edge, like everywhere else.
+- Under the box, the real workspace plays one change and runs off the
+  bottom edge of the first tile. Build it in markup, not as a picture, so
+  it stays sharp and follows the theme. The same change carries through
+  the tiles below it.
+- Number the tiles after the first with a short label above the headline,
+  such as "01 The checks", so the page reads as one sequence.
 - Buttons keep the app's small radius (`rounded-md`). Do not use pills.
 
 ### Patterns that are overused now
