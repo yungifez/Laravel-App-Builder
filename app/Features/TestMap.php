@@ -49,6 +49,11 @@ final readonly class TestMap
      * the coverage report's `<project source="…">`, then, for each covered
      * file, its `<file name="…" path="…">` followed, per line, by its
      * `<line nr="…">` and one `covered by="…"` per test that ran it.
+     *
+     * A large suite names each test once instead, as `@<n> <name>`, and a
+     * line then lists the numbers of the tests that ran it after its
+     * `<line nr="…">`. Repeating every name on every line can make the
+     * report too big to read back from the app's workspace.
      */
     public static function parse(string $coverage, ?string $listing = null): self
     {
@@ -61,8 +66,26 @@ final readonly class TestMap
         $ranLines = [];
         $current = null;
         $number = null;
+        $named = [];
+
+        // Find a test by its name in the report, adding one the list lacks.
+        $test = function (string $name) use (&$tests, &$index): int {
+            $id = self::testId(self::decode($name));
+
+            if (! isset($index[$id])) {
+                $index[$id] = count($tests);
+                $tests[] = ['id' => $id, 'file' => self::guessFile($id), 'groups' => []];
+            }
+
+            return $index[$id];
+        };
 
         foreach ($lines as $line) {
+            if (preg_match('/^@(\d+) (.*)$/', $line, $name) === 1) {
+                $named[$name[1]] = $test($name[2]);
+
+                continue;
+            }
             if (preg_match('/<file name="([^"]*)" path="([^"]*)"/', $line, $file) === 1) {
                 $absolute = $source.'/'.trim(self::decode($file[2]), '/').'/'.self::decode($file[1]);
                 $current = self::relative(str_replace('//', '/', $absolute), $root);
@@ -71,8 +94,17 @@ final readonly class TestMap
                 continue;
             }
 
-            if (preg_match('/<line nr="(\d+)"/', $line, $nr) === 1) {
+            if (preg_match('/<line nr="(\d+)"(.*)$/', $line, $nr) === 1) {
                 $number = (int) $nr[1];
+
+                if ($current !== null) {
+                    foreach (preg_split('/\s+/', $nr[2], -1, PREG_SPLIT_NO_EMPTY) ?: [] as $n) {
+                        if (isset($named[$n])) {
+                            $files[$current][$named[$n]] = true;
+                            $ranLines[$current][$named[$n]][$number] = true;
+                        }
+                    }
+                }
 
                 continue;
             }
@@ -81,17 +113,11 @@ final readonly class TestMap
                 continue;
             }
 
-            $id = self::testId(self::decode($covered[1]));
-
-            if (! isset($index[$id])) {
-                $index[$id] = count($tests);
-                $tests[] = ['id' => $id, 'file' => self::guessFile($id), 'groups' => []];
-            }
-
-            $files[$current][$index[$id]] = true;
+            $id = $test($covered[1]);
+            $files[$current][$id] = true;
 
             if ($number !== null) {
-                $ranLines[$current][$index[$id]][$number] = true;
+                $ranLines[$current][$id][$number] = true;
             }
         }
 

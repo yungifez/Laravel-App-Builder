@@ -270,6 +270,30 @@ class TestImpactTest extends TestCase
         $this->assertNull(TestMap::parse(self::COVERAGE, self::LISTING)->testsRunningLines('app/Policies/TeamPolicy.php', [30]));
     }
 
+    public function test_a_report_that_numbers_its_tests_reads_the_same_as_one_that_names_them_on_every_line()
+    {
+        // A large suite's report names each test once, so it stays small
+        // enough to read back from the app's workspace.
+        $numbered = <<<'TXT'
+            /work/app-1
+            <project source="/work/app-1/app"
+            <file name="TeamPolicy.php" path="/Policies"
+            @1 Tests\Feature\TeamTest::test_owners_rename_teams
+            @2 Tests\Feature\BillingTest::test_seats_follow_members
+            @3 Tests\Feature\BillingTest::test_invoices_list_seats
+            <line nr="10" 1 2 3
+            <line nr="12" 1 2 3
+            <line nr="30" 1
+            <line nr="31" 1
+            <file name="Invoice.php" path="/Models"
+            @4 P\Tests\Feature\ReportsTest::__pest_evaluable_it_totals_invoices
+            <line nr="5" 3 4
+            TXT;
+
+        $this->assertEquals(TestMap::parse(self::LINE_COVERAGE, self::LISTING), TestMap::parse($numbered, self::LISTING));
+        $this->assertSame([0, 1, 2], TestMap::parse($numbered, self::LISTING)->testsRunningLines('app/Policies/TeamPolicy.php', [11]));
+    }
+
     public function test_a_diff_names_the_lines_it_changed_on_either_side()
     {
         $added = implode("\n", ['@@ -29,2 +29,3 @@', ' a', '+b', ' c']);

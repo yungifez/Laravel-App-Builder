@@ -886,7 +886,16 @@ return [
                 'php -d pcov.enabled=1 artisan test --log-junit=storage/logs/junit.xml --coverage-xml=storage/logs/test-map/coverage --coverage-clover=storage/logs/test-map/clover.xml',
                 'test -f storage/logs/test-map/coverage/index.xml',
                 '(php artisan test --list-tests-xml=storage/logs/test-map/tests.xml > /dev/null || true)',
-                '{ pwd; grep -o \'<project source="[^"]*"\' storage/logs/test-map/coverage/index.xml; grep -rhoE \'<file name="[^"]*" path="[^"]*"|<line nr="[0-9]+"|covered by="[^"]*"\' --include=\'*.php.xml\' storage/logs/test-map/coverage || true; } > storage/logs/test-map/covered.txt',
+                // Each test is named once and numbered, and each line lists
+                // the numbers of the tests that ran it: naming every test on
+                // every line makes a large suite's report too big to read.
+                '{ pwd; grep -o \'<project source="[^"]*"\' storage/logs/test-map/coverage/index.xml; grep -rhoE \'<file name="[^"]*" path="[^"]*"|<line nr="[0-9]+"|covered by="[^"]*"\' --include=\'*.php.xml\' storage/logs/test-map/coverage || true; } | awk \''.implode(' ', [
+                    'function flush() { if (nr != "" && tests != "") print nr tests; nr = ""; tests = "" }',
+                    '/^<line nr=/ { flush(); nr = $0; next }',
+                    '/^covered by=/ { name = substr($0, 13, length($0) - 13); if (!(name in seen)) { seen[name] = ++count; print "@" count " " name } tests = tests " " seen[name]; next }',
+                    '{ flush(); print }',
+                    'END { flush() }',
+                ]).'\' > storage/logs/test-map/covered.txt',
                 '{ pwd; grep -oE \'<file name="[^"]*"|<line num="[0-9]+" type="stmt" count="[0-9]+"\' storage/logs/test-map/clover.xml || true; } > storage/logs/test-map/lines.txt',
             ])],
             'timeout' => 900,
