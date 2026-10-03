@@ -28,6 +28,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Symfony\Component\Mailer\Exception\TransportException;
 use Tests\Fixtures\RecordedApp;
 use Tests\Fixtures\RecordedCarefulJob;
 use Tests\Fixtures\RecordedCommand;
@@ -432,6 +433,26 @@ class TraceRecorderTest extends TestCase
         // The email that failed is marked in the trace as written, so the owner reads which one it was.
         $written = array_map(fn (string $line) => json_decode($line, true), array_filter(explode("\n", File::get("{$this->directory}/trace.jsonl"))));
         $this->assertSame([false, true], array_map(fn (array $effect) => $effect['failed'] ?? false, $written[1]['effects']));
+    }
+
+    public function test_a_failure_made_up_for_the_owner_points_at_their_app_and_never_at_our_recorder()
+    {
+        Route::post('/_failing/order', [RecordedApp::class, 'order']);
+        $this->record();
+        File::put("{$this->directory}/fault.json", json_encode(['kind' => 'mail']));
+
+        try {
+            $this->withoutExceptionHandling()->post('/_failing/order');
+            $this->fail('The email did not fail.');
+        } catch (TransportException $error) {
+            // The error page the owner reads lists these places; none may name a tool of ours.
+            $recorder = base_path('resources/trace-recorder');
+            $places = [$error->getFile(), ...array_map(fn (array $frame) => ($frame['file'] ?? '').' '.($frame['class'] ?? ''), $error->getTrace())];
+
+            $this->assertSame([], array_values(array_filter($places, fn (string $place) => str_contains($place, $recorder) || str_contains($place, 'TraceRecorder\\'))));
+            $this->assertNotSame(0, $error->getLine());
+            $this->assertStringContainsString('could not be established', $error->getMessage());
+        }
     }
 
     public function test_what_the_app_keeps_for_later_is_recorded_and_the_cache_can_be_down_while_the_app_is_in_use()

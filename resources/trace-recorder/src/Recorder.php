@@ -3,6 +3,8 @@
 namespace TraceRecorder;
 
 use Closure;
+use Error;
+use Exception;
 use Illuminate\Cache\Events\ForgettingKey;
 use Illuminate\Cache\Events\RetrievingKey;
 use Illuminate\Cache\Events\WritingKey;
@@ -56,6 +58,7 @@ use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionFunction;
 use ReflectionObject;
+use ReflectionProperty;
 use RuntimeException;
 use Symfony\Component\Console\Application as SymfonyConsole;
 use Symfony\Component\Console\ConsoleEvents;
@@ -1333,8 +1336,35 @@ class Recorder
 
         // The one failure this run is about: the thing just noted fails.
         if ($failing) {
-            throw $fails();
+            throw $this->unmarked($fails());
         }
+    }
+
+    /**
+     * Take this recorder out of a failure it made up. The error page the
+     * owner reads then points at their app and the framework, never at a
+     * tool of ours.
+     */
+    protected function unmarked(Throwable $error): Throwable
+    {
+        $ours = fn (array $frame): bool => str_starts_with($frame['file'] ?? '', dirname(__DIR__).'/')
+            || str_starts_with($frame['class'] ?? '', __NAMESPACE__.'\\');
+
+        try {
+            for ($each = $error; $each !== null; $each = $each->getPrevious()) {
+                $frames = array_values(array_filter($each->getTrace(), fn (array $frame) => ! $ours($frame)));
+                $base = $each instanceof Exception ? Exception::class : Error::class;
+                $from = array_values(array_filter($frames, fn (array $frame) => isset($frame['file'], $frame['line'])))[0] ?? ['file' => '', 'line' => 0];
+
+                (new ReflectionProperty($base, 'trace'))->setValue($each, $frames);
+                (new ReflectionProperty($base, 'file'))->setValue($each, $from['file']);
+                (new ReflectionProperty($base, 'line'))->setValue($each, $from['line']);
+            }
+        } catch (Throwable) {
+            //
+        }
+
+        return $error;
     }
 
     /**
