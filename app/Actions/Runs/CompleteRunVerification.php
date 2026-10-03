@@ -125,7 +125,7 @@ class CompleteRunVerification
         $failedBefore = 0;
 
         foreach ($verification->results ?? [] as $result) {
-            if (! in_array($result['outcome'], ['failed', 'errored'], true)) {
+            if (! in_array($result['outcome'], ['failed', 'errored'], true) || self::lookupCouldNotRun($result)) {
                 continue;
             }
 
@@ -144,5 +144,17 @@ class CompleteRunVerification
         }
 
         return $failures;
+    }
+
+    /**
+     * Determine if a result is a security lookup that could not run (no
+     * network, no lock file). It says nothing about the change, so it is
+     * never handed back as a problem to fix.
+     *
+     * @param  array{stage?: string, outcome: string}  $result
+     */
+    public static function lookupCouldNotRun(array $result): bool
+    {
+        return ($result['stage'] ?? null) === 'security' && $result['outcome'] === 'errored';
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Runs;
 
+use App\Actions\Runs\CompleteRunVerification;
 use App\Features\TestReport;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\Run;
@@ -45,6 +46,7 @@ class RepairTier
         $failing = array_values(array_filter(
             $verification->results ?? [],
             fn (array $result) => in_array($result['outcome'], [VerifyFeatureRequest::OUTCOME_FAILED, VerifyFeatureRequest::OUTCOME_ERRORED], true)
+                && ! CompleteRunVerification::lookupCouldNotRun($result)
                 && ! (($result['at_start'] ?? null) === VerifyFeatureRequest::OUTCOME_FAILED && ($result['new_problems'] ?? []) === []),
         ));
 
