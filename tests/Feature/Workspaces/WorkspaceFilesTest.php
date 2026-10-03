@@ -63,6 +63,34 @@ class WorkspaceFilesTest extends TestCase
         $this->assertStringNotContainsString('secret', (string) DB::table('workspace_files')->value('contents'));
     }
 
+    public function test_a_saved_env_file_keeps_the_database_server_of_the_workspace_it_goes_into()
+    {
+        $this->buildInLocalWorkspaces();
+        [$run] = $this->implementingRun();
+        $project = $run->featureRequest->project;
+        WorkspaceFile::factory()->for($project)->create([
+            'path' => '.env',
+            'contents' => "APP_KEY=secret\nDB_CONNECTION=mysql\nDB_SOCKET=/homes/first/tmp/mysqld.sock\nDB_DATABASE=school\n",
+        ]);
+        File::put($this->workspaceFile($run, '.env'), "APP_KEY=new\nDB_SOCKET=/homes/second/tmp/mysqld.sock\n");
+
+        app(WorkspaceFiles::class)->sync($project, $run->workspace);
+
+        $this->assertSame(
+            "APP_KEY=secret\nDB_CONNECTION=mysql\nDB_DATABASE=school\nDB_SOCKET=/homes/second/tmp/mysqld.sock\n",
+            File::get($this->workspaceFile($run, '.env')),
+        );
+    }
+
+    public function test_only_a_database_host_that_is_a_socket_folder_belongs_to_the_workspace()
+    {
+        $saved = "DB_HOST=db.example.com\nDB_PORT=5432\n";
+
+        $this->assertSame("DB_PORT=5432\nDB_HOST=/tmp/database-1\n", WorkspaceFiles::keepOwnServer($saved, "DB_HOST=/tmp/database-1\n"));
+        $this->assertSame($saved, WorkspaceFiles::keepOwnServer($saved, "DB_HOST=127.0.0.1\n"));
+        $this->assertSame("DB_PORT=5432\n", WorkspaceFiles::keepOwnServer("DB_HOST=/tmp/old\nDB_PORT=5432\n", ''));
+    }
+
     public function test_notes_a_run_changed_are_kept_apart_from_its_code_change()
     {
         $this->buildInLocalWorkspaces();

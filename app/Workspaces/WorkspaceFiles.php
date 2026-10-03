@@ -40,7 +40,14 @@ class WorkspaceFiles
             }
 
             if (isset($saved[$path])) {
-                $driver->writeFile((string) $workspace->driver_id, $path, $saved[$path]);
+                $contents = $saved[$path];
+
+                if ($path === '.env') {
+                    $current = rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), null, report: false);
+                    $contents = self::keepOwnServer($contents, is_string($current) ? $current : '');
+                }
+
+                $driver->writeFile((string) $workspace->driver_id, $path, $contents);
 
                 continue;
             }
@@ -51,6 +58,34 @@ class WorkspaceFiles
                 $project->workspaceFiles()->firstOrCreate(['path' => $path], ['contents' => $contents]);
             }
         }
+    }
+
+    /**
+     * Keep this workspace's own database server in a saved .env. Setup
+     * starts a database server for each workspace and writes where it
+     * listens (a socket in the workspace's temp folder) into .env; the
+     * saved .env still names the server of the workspace it was saved
+     * from, which is gone. So a value that is a path comes from this
+     * workspace's .env, and is left out when this workspace has none.
+     */
+    public static function keepOwnServer(string $saved, string $current): string
+    {
+        foreach (['DB_SOCKET', 'DB_HOST'] as $name) {
+            $pattern = '/^'.$name.'=.*$/m';
+            $withEnd = '/^'.$name.'=.*\n?/m';
+            $own = preg_match($pattern, $current, $match) === 1 ? $match[0] : null;
+            $old = preg_match($pattern, $saved, $match) === 1 ? $match[0] : null;
+            $isPath = fn (?string $line) => $line !== null && str_starts_with(trim(substr($line, strlen($name) + 1), "\"' "), '/');
+
+            if (! $isPath($own) && ! $isPath($old)) {
+                continue;
+            }
+
+            $saved = (string) preg_replace($withEnd, '', $saved);
+            $saved = $own === null ? $saved : rtrim($saved, "\n")."\n{$own}\n";
+        }
+
+        return $saved;
     }
 
     /**
