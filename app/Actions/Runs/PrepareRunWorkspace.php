@@ -2,6 +2,7 @@
 
 namespace App\Actions\Runs;
 
+use App\Actions\Workspaces\CheckStepNeeds;
 use App\Actions\Workspaces\DestroyWorkspace;
 use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
@@ -30,6 +31,7 @@ class PrepareRunWorkspace
         private DestroyWorkspace $destroyWorkspace,
         private ProjectRepository $repository,
         private WorkspaceFiles $workspaceFiles,
+        private CheckStepNeeds $checkStepNeeds,
     ) {}
 
     /**
@@ -76,10 +78,17 @@ class PrepareRunWorkspace
             // Inside .git, so the pictures are there to look at but never part of the change.
             $this->workspaceFiles->placeImages($featureRequest, $workspace);
 
-            /** @var list<array{name: string, command: list<string>, timeout: int}> $setup */
+            /** @var list<array{name: string, command: list<string>, timeout: int, needs?: string}> $setup */
             $setup = config('builder.construction.setup', []);
 
             foreach ($setup as $step) {
+                // As for previews and checks, a step for something the app
+                // does not use (route helpers without Wayfinder) is skipped.
+                // Asked just before the step, after the installs it may need.
+                if (! $this->checkStepNeeds->met($workspace, $step)) {
+                    continue;
+                }
+
                 $this->run($workspace, $step['command'], __('The setup step ":name" failed.', ['name' => $step['name']]), $step['timeout']);
             }
 

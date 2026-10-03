@@ -109,6 +109,30 @@ class PublishingTest extends TestCase
             ->assertSessionHasNoErrors();
     }
 
+    public function test_a_check_that_needs_what_the_installs_add_still_runs()
+    {
+        config(['builder.verification.checks' => [
+            ['name' => 'Static analysis', 'command' => ['vendor/bin/phpstan'], 'timeout' => 60, 'needs' => 'vendor/bin/phpstan'],
+            ['name' => 'Type checks', 'command' => ['npm', 'run', 'types'], 'timeout' => 60, 'needs' => 'package.json'],
+        ]]);
+        // vendor/bin/phpstan is there only once the PHP packages are in.
+        $installed = false;
+        $this->driver->onExec = function (string $id, array $command) use (&$installed) {
+            $installed = $installed || $command === ['composer', 'install'];
+            $exists = $command[0] === 'test' ? ($command[2] === 'vendor/bin/phpstan' && $installed) : true;
+
+            return new CommandResult(exitCode: $exists ? 0 : 1, output: '', errorOutput: '', durationMs: 5);
+        };
+        $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main']);
+
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project))->assertSessionHasNoErrors();
+
+        $this->assertSame([
+            ['name' => 'Install PHP dependencies', 'passed' => true],
+            ['name' => 'Static analysis', 'passed' => true],
+        ], Deployment::sole()->checks);
+    }
+
     public function test_publishing_checks_the_exact_commit_then_pushes_it_to_the_branch()
     {
         $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main']);

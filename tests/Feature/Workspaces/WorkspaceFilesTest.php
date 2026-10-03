@@ -91,6 +91,23 @@ class WorkspaceFilesTest extends TestCase
         $this->assertSame("DB_PORT=5432\n", WorkspaceFiles::keepOwnServer("DB_HOST=/tmp/old\nDB_PORT=5432\n", ''));
     }
 
+    public function test_a_setup_step_for_something_the_app_does_not_use_is_skipped()
+    {
+        $this->buildInLocalWorkspaces();
+        config(['builder.construction.setup' => [
+            ['name' => 'Install PHP dependencies', 'command' => ['mkdir', '-p', 'vendor/laravel/wayfinder'], 'timeout' => 30],
+            // Its need is there only after the step before it.
+            ['name' => 'Generate route helpers', 'command' => ['touch', 'helpers-made'], 'timeout' => 30, 'needs' => 'vendor/laravel/wayfinder'],
+            ['name' => 'Build the screens', 'command' => ['touch', 'screens-built'], 'timeout' => 30, 'needs' => 'no-such-file.json'],
+        ]]);
+        $project = Project::factory()->create(['source_path' => $this->makeProjectSource()]);
+
+        $run = $this->prepare(FeatureRequest::factory()->for($project)->create());
+
+        $this->assertFileExists($this->workspaceFile($run, 'helpers-made'));
+        $this->assertFileDoesNotExist($this->workspaceFile($run, 'screens-built'));
+    }
+
     public function test_notes_a_run_changed_are_kept_apart_from_its_code_change()
     {
         $this->buildInLocalWorkspaces();

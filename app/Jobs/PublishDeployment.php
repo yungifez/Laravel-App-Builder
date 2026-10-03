@@ -201,14 +201,18 @@ class PublishDeployment implements ShouldQueue
         $checks = config('builder.verification.checks', []);
 
         // A step the app has no use for (no package.json, say) is left out.
+        // Each is asked just before it runs: what a step needs, such as
+        // vendor/bin/phpstan, is there only after the installs.
         $needs = app(CheckStepNeeds::class);
-        $setup = $needs->filter($workspace, $setup);
-        $checks = $needs->filter($workspace, $checks);
 
         $results = [];
         $passed = true;
 
         foreach ($setup as $step) {
+            if (! $needs->met($workspace, $step)) {
+                continue;
+            }
+
             $command = $runWorkspaceCommand->handle($workspace, $step['command'], $step['timeout']);
             $results[] = ['name' => $step['name'], 'passed' => $command->exit_code === 0 && ! $command->timed_out];
             $this->deployment->update(['checks' => $results]);
@@ -219,6 +223,10 @@ class PublishDeployment implements ShouldQueue
         }
 
         foreach ($checks as $step) {
+            if (! $needs->met($workspace, $step)) {
+                continue;
+            }
+
             $command = $runWorkspaceCommand->handle($workspace, $step['command'], $step['timeout']);
             $results[] = ['name' => $step['name'], 'passed' => $command->exit_code === 0 && ! $command->timed_out];
             $passed = $passed && end($results)['passed'];
