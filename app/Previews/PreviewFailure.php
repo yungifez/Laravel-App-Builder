@@ -25,14 +25,26 @@ class PreviewFailure
         'Create the database' => ['stage' => 'setting up your app\'s data', 'app' => true],
         'Generate route helpers' => ['stage' => 'building your app\'s pages', 'app' => true],
         'Build the frontend' => ['stage' => 'building your app\'s pages', 'app' => true],
+        'Build the screens' => ['stage' => 'building your app\'s pages', 'app' => true],
     ];
+
+    /**
+     * The stage a setup step belongs to, and whether a failure there comes
+     * from the app's own code.
+     *
+     * @return array{stage: string, app: bool}
+     */
+    public static function stage(string $name): array
+    {
+        return self::STAGES[$name] ?? ['stage' => 'getting your app ready', 'app' => false];
+    }
 
     /**
      * Why a setup step stopped the app from starting.
      */
     public static function step(string $name, bool $timedOut, int $timeoutSeconds): string
     {
-        ['stage' => $stage, 'app' => $app] = self::STAGES[$name] ?? ['stage' => 'getting your app ready', 'app' => false];
+        ['stage' => $stage, 'app' => $app] = self::stage($name);
 
         if ($timedOut) {
             return __(':Stage took more than :minutes, so I stopped. This is our fault. Try once more.', [

@@ -15,6 +15,7 @@ use App\Projects\ProjectRepository;
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\RunCancelled;
 use App\Runs\RunLease;
+use App\Runs\SetupFailure;
 use App\Workspaces\Drivers\CopyExclusions;
 use App\Workspaces\WorkspaceFiles;
 use App\Workspaces\WorkspaceManager;
@@ -63,18 +64,18 @@ class PrepareRunWorkspace
                 $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);
                 $driver->writeFile((string) $workspace->driver_id, $patch, (string) $ancestor->patch);
 
-                $this->run($workspace, ['git', 'apply', '--whitespace=nowarn', ...CopyExclusions::applyFlags(), $patch], __('Change #:id no longer applies to the project.', ['id' => $ancestor->id]));
+                $this->run($workspace, ['git', 'apply', '--whitespace=nowarn', ...CopyExclusions::applyFlags(), $patch], SetupFailure::changeNoLongerFits(), __('Change #:id no longer applies to the project.', ['id' => $ancestor->id]));
             }
 
-            $this->run($workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], __('The workspace could not be prepared.'));
+            $this->run($workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], SetupFailure::ours(), __('The workspace could not be prepared.'));
             $this->workspaceFiles->placeNotes($featureRequest, $workspace);
 
             // The agent can read this history, so it names only the owner.
             $identity = ['-c', "user.name={$project->owner->name}", '-c', "user.email={$project->owner->email}", '-c', 'commit.gpgsign=false'];
-            $this->run($workspace, ['git', 'init', '--quiet'], __('The workspace could not be prepared.'));
-            $this->run($workspace, ['git', 'add', '--all'], __('The workspace could not be prepared.'));
-            $this->run($workspace, ['git', ...$identity, 'commit', '--quiet', '--allow-empty', '--no-verify', '-m', 'Baseline'], __('The workspace could not be prepared.'));
-            $workspace->update(['baseline_commit' => trim($this->run($workspace, ['git', 'rev-parse', 'HEAD'], __('The workspace could not be prepared.')))]);
+            $this->run($workspace, ['git', 'init', '--quiet'], SetupFailure::ours(), __('The workspace could not be prepared.'));
+            $this->run($workspace, ['git', 'add', '--all'], SetupFailure::ours(), __('The workspace could not be prepared.'));
+            $this->run($workspace, ['git', ...$identity, 'commit', '--quiet', '--allow-empty', '--no-verify', '-m', 'Baseline'], SetupFailure::ours(), __('The workspace could not be prepared.'));
+            $workspace->update(['baseline_commit' => trim($this->run($workspace, ['git', 'rev-parse', 'HEAD'], SetupFailure::ours(), __('The workspace could not be prepared.')))]);
             // Inside .git, so the pictures are there to look at but never part of the change.
             $this->workspaceFiles->placeImages($featureRequest, $workspace);
 
@@ -89,7 +90,13 @@ class PrepareRunWorkspace
                     continue;
                 }
 
-                $this->run($workspace, $step['command'], fn (bool $timedOut) => __('The setup step ":name" :outcome.', ['name' => $step['name'], 'outcome' => $timedOut ? __('ran out of time') : __('failed')]), $step['timeout']);
+                $this->run(
+                    $workspace,
+                    $step['command'],
+                    fn (bool $timedOut) => SetupFailure::step($step['name'], $timedOut),
+                    fn (bool $timedOut) => __('The setup step ":name" :outcome.', ['name' => $step['name'], 'outcome' => $timedOut ? __('ran out of time') : __('failed')]),
+                    $step['timeout'],
+                );
             }
 
             $this->workspaceFiles->sync($project, $workspace);
@@ -116,15 +123,17 @@ class PrepareRunWorkspace
     }
 
     /**
-     * Run a preparation command and return its output, or stop with the
-     * given reason if it fails, followed by the end of what it printed.
+     * Run a preparation command and return its output, or stop if it fails.
+     * The error's first line is the owner's; the reason and the end of what
+     * the command printed follow it for operators.
      *
      * @param  list<string>  $command
+     * @param  string|Closure(bool): string  $owner  given whether the command ran out of time
      * @param  string|Closure(bool): string  $reason  given whether the command ran out of time
      *
      * @throws ConstructionFailed
      */
-    protected function run(Workspace $workspace, array $command, string|Closure $reason, int $timeoutSeconds = 120): string
+    protected function run(Workspace $workspace, array $command, string|Closure $owner, string|Closure $reason, int $timeoutSeconds = 120): string
     {
         $result = $this->runWorkspaceCommand->handle($workspace, $command, $timeoutSeconds);
 
@@ -132,9 +141,10 @@ class PrepareRunWorkspace
             // Artisan commands write their errors to the normal output, so
             // the reason is there when the error output is empty.
             $output = (string) preg_replace('/\e\[[0-9;?]*[ -\/]*[@-~]/', '', $result->error_output ?: $result->output);
+            $owner = is_string($owner) ? $owner : $owner($result->timed_out);
             $reason = is_string($reason) ? $reason : $reason($result->timed_out);
 
-            throw new ConstructionFailed(trim($reason.' '.trim(mb_substr($output, -2000))));
+            throw new ConstructionFailed($owner."\n".trim($reason.' '.trim(mb_substr($output, -2000))));
         }
 
         return $result->output;

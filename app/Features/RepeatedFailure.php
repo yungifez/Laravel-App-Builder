@@ -39,11 +39,16 @@ class RepeatedFailure
 
     /**
      * Say why it stopped without the advice to try again, and what to do
-     * instead.
+     * instead. A reason that gives other advice is kept as it is.
      */
     public static function reason(string $reason): string
     {
         $why = trim((string) preg_replace('/\s*Try again[^.]*\.$/', '', trim($reason)));
+
+        // A stop that does not advise trying again already says what to do.
+        if ($why === trim($reason)) {
+            return $why;
+        }
 
         return trim($why.' '.__('It stopped the same way last time, so trying again will likely stop the same way. Ask for a smaller part of it in the chat, or ask one of our developers.'));
     }

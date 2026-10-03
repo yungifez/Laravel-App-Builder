@@ -58,9 +58,14 @@ class OwnerWording
             return null;
         }
 
-        // A plan's limit is the owner's to act on, and says when it lifts.
-        if (str_starts_with($message, __('This is our fault')) || str_starts_with($message, __('You have used all the AI use'))) {
-            return $message;
+        // Already said for the owner: a fault of ours, a plan's limit (the
+        // owner's to act on, saying when it lifts), or the app's own code
+        // stopping its setup. Only the first line is the owner's; what
+        // follows is for operators.
+        foreach ([__('This is our fault'), __('You have used all the AI use'), __('Something in your app\'s code')] as $start) {
+            if (str_starts_with($message, $start)) {
+                return trim((string) strtok($message, "\n"));
+            }
         }
 
         // A known stop says what happened, so the owner knows whether to

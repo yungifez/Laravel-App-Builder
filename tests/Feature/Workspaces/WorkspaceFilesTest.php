@@ -122,7 +122,8 @@ class WorkspaceFilesTest extends TestCase
             $this->prepare(FeatureRequest::factory()->for($project)->create());
             $this->fail('The step did not stop the run.');
         } catch (ConstructionFailed $exception) {
-            $this->assertSame('The setup step "Generate route helpers" failed. Class "Wayfinder" not found', $exception->getMessage());
+            // The owner reads the first line; operators read what the step printed.
+            $this->assertSame("Something in your app's code went wrong while building your app's pages, before I changed anything. Nothing in your app changed. Ask one of our developers to look at it.\nThe setup step \"Generate route helpers\" failed. Class \"Wayfinder\" not found", $exception->getMessage());
         }
 
         config(['builder.construction.setup' => [
@@ -133,7 +134,7 @@ class WorkspaceFilesTest extends TestCase
             $this->prepare(FeatureRequest::factory()->for($project)->create());
             $this->fail('The step did not stop the run.');
         } catch (ConstructionFailed $exception) {
-            $this->assertStringStartsWith('The setup step "Install PHP dependencies" ran out of time.', $exception->getMessage());
+            $this->assertStringStartsWith("This is our fault: getting the parts your app is built from took too long, so I stopped before changing anything. Nothing in your app changed. Try again.\nThe setup step \"Install PHP dependencies\" ran out of time.", $exception->getMessage());
         }
     }
 
