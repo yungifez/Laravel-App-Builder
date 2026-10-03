@@ -3,6 +3,7 @@
 namespace App\Runs\Drivers;
 
 use App\Actions\Features\AcceptFindings;
+use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Runs\RecordModelUsage;
 use App\Actions\Runs\WriteBrief;
 use App\Ai\Agents\ChangeReviewer;
@@ -254,6 +255,8 @@ abstract class AgentDriver implements ConstructionDriver
         $results = array_map(
             fn (array $result) => match (true) {
                 $result['outcome'] === 'passed' => "- [passed] {$result['name']} ({$result['stage']})",
+                // The lookup itself broke, so it says nothing about the change.
+                CompleteRunVerification::lookupCouldNotRun($result) => "- [could not run, says nothing about the change] {$result['name']} ({$result['stage']})",
                 // It failed on the starting commit too: only what is new
                 // there is the change's doing.
                 ($result['at_start'] ?? null) === 'failed' => "- [failed before this change too] {$result['name']} ({$result['stage']})".(($result['new_problems'] ?? []) === [] ? '' : "\n  New with the change:\n  - ".implode("\n  - ", $result['new_problems'])),

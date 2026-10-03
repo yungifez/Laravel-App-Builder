@@ -195,6 +195,31 @@ class AgentDriverTest extends TestCase
         $this->assertSame('I added a description to teams and every test passes.', $run->events()->where('type', 'build_finished')->sole()->data['account']);
     }
 
+    public function test_the_reviewer_is_told_a_security_lookup_that_could_not_run_says_nothing_about_the_change()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder($this->writes([
+            'app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION,
+            'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST,
+        ]));
+        ChangeReviewer::fake([['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [
+            ['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description'],
+        ]]]);
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $verification = $run->verifications()->latest('id')->firstOrFail();
+        $verification->update(['status' => VerificationStatus::Passed, 'results' => [
+            ['name' => 'Tests', 'stage' => 'checks', 'outcome' => 'passed', 'exit_code' => 0, 'timed_out' => false, 'duration_ms' => 10, 'output' => 'OK', 'tests' => [
+                ['file' => '/workspace/tests/Feature/TeamDescriptionTest.php', 'name' => 'teams have a nullable description', 'outcome' => 'passed'],
+            ]],
+            ['name' => 'JavaScript packages', 'stage' => 'security', 'outcome' => 'errored', 'exit_code' => 1, 'timed_out' => false, 'duration_ms' => 10, 'output' => 'npm error code ENOLOCK'],
+        ], 'finished_at' => now()]);
+        app(CompleteRunVerification::class)->handle($verification);
+
+        ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, '- [could not run, says nothing about the change] JavaScript packages (security)')
+            && ! str_contains($prompt->prompt, 'ENOLOCK'));
+    }
+
     public function test_a_question_about_the_app_is_answered_without_building_anything()
     {
         FeaturePlanner::fake([[
