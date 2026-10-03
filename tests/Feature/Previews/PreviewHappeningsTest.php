@@ -167,6 +167,20 @@ class PreviewHappeningsTest extends TestCase
                 ->where('happenings.requests.2.times', 2)));
     }
 
+    public function test_our_own_check_that_the_app_started_is_not_shown_as_something_it_did()
+    {
+        $this->recorded([
+            ['n' => 0, 'method' => 'GET', 'route' => '/up', 'status' => 200, 'effects' => []],
+            ['n' => 1, 'method' => 'GET', 'route' => '/about', 'status' => 200, 'effects' => []],
+        ]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('happenings', fn (Assert $page) => $page
+                ->count('happenings.requests', 1)
+                ->where('happenings.requests.0.page', 'Opened /about')));
+    }
+
     public function test_a_save_is_named_by_the_table_it_writes_not_the_columns_an_upsert_names()
     {
         $this->recorded([

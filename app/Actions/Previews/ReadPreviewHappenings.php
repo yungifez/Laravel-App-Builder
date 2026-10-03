@@ -40,6 +40,11 @@ class ReadPreviewHappenings
      */
     protected const FRAMEWORK_TABLES = ['sessions', 'cache', 'cache_locks', 'jobs', 'job_batches', 'failed_jobs', 'migrations', 'password_reset_tokens', 'telescope_entries', 'pulse_entries'];
 
+    /**
+     * Laravel's health page.
+     */
+    protected const HEALTH = '/up';
+
     public function __construct(private ReadPreviewLog $readPreviewLog, private WorkspaceManager $workspaces) {}
 
     /**
@@ -76,6 +81,12 @@ class ReadPreviewHappenings
             $operation = json_decode($line, true);
 
             if (! is_array($operation) || ! is_int($operation['status'] ?? null)) {
+                continue;
+            }
+
+            // Laravel's health page is opened by our own check that the app
+            // has started (see StartPreview), never by the owner.
+            if (in_array(strtoupper((string) ($operation['method'] ?? 'GET')), ['GET', 'HEAD'], true) && Str::before((string) ($operation['route'] ?? ''), '#') === self::HEALTH) {
                 continue;
             }
 
