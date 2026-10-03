@@ -50,7 +50,7 @@ onMounted(() => {
 
 function tell(item: OwnerNotification): void {
     const note = new Notification(item.title, {
-        body: item.body,
+        body: item.reason ?? item.body,
         tag: item.id,
     });
 
@@ -145,6 +145,12 @@ async function allow(): Promise<void> {
                         <span
                             class="block truncate text-xs text-muted-foreground"
                             >{{ item.body }}</span
+                        >
+                        <span
+                            v-if="item.reason"
+                            class="mt-0.5 line-clamp-3 block text-xs text-destructive"
+                            data-test="notification-reason"
+                            >{{ item.reason }}</span
                         >
                         <span
                             v-if="item.app || item.created_at"

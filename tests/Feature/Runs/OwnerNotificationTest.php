@@ -51,6 +51,28 @@ class OwnerNotificationTest extends TestCase
         $notification = $run->featureRequest->user->notifications()->sole();
         $this->assertSame('failed', $notification->data['kind']);
         $this->assertSame('Your change did not work', $notification->data['title']);
+        $this->assertSame('This is our fault: I finished without changing anything in your app. Try again, or ask in other words.', $notification->data['reason']);
+    }
+
+    public function test_a_change_that_did_not_work_says_why_and_what_to_do()
+    {
+        $run = Run::factory()->implementing()->create();
+        $owner = $run->featureRequest->user;
+
+        app(TransitionRun::class)->handle($run, RunStatus::Failed, attributes: [
+            'error' => "No AI provider could take the request.\nopenai: 429",
+        ]);
+
+        $this->assertSame('This is our fault: the AI service we use is busy right now. Try again in a few minutes.', $owner->notifications()->sole()->data['reason']);
+
+        $this->actingAs($owner)->get(route('projects.index'))->assertInertia(fn (Assert $page) => $page
+            ->where('notifications.items.0.reason', 'This is our fault: the AI service we use is busy right now. Try again in a few minutes.'));
+
+        // A failure with nothing kept still says whose fault it is.
+        $other = Run::factory()->implementing()->create();
+        app(TransitionRun::class)->handle($other, RunStatus::Failed);
+
+        $this->assertSame('This is our fault: something went wrong on our side while I worked on this. Try again.', $other->featureRequest->user->notifications()->sole()->data['reason']);
     }
 
     public function test_opening_a_notification_marks_it_read_and_goes_to_the_change()

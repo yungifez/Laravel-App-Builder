@@ -4,6 +4,7 @@ namespace App\Listeners;
 
 use App\Enums\RunStatus;
 use App\Events\RunStatusChanged;
+use App\Features\OwnerWording;
 use App\Models\FeatureRequest;
 use App\Notifications\ChangeNeedsYou;
 
@@ -43,7 +44,19 @@ class NotifyOwnerAboutRun
             ? RunStatus::Failed
             : $event->to;
 
-        $owner->notify(new ChangeNeedsYou($featureRequest, $status));
+        $owner->notify(new ChangeNeedsYou($featureRequest, $status, $status === RunStatus::Failed ? $this->reason($event->run->error) : null));
+    }
+
+    /**
+     * Say briefly why the change did not work: whose fault it is, what
+     * happened and what to do. A note has little room, and a change that
+     * did not work never changed the app, so that goes unsaid.
+     */
+    protected function reason(?string $error): string
+    {
+        $reason = OwnerWording::failure($error) ?? OwnerWording::failure('unknown');
+
+        return str((string) $reason)->replace(' '.__('Nothing in your app changed.'), '')->toString();
     }
 
     /**

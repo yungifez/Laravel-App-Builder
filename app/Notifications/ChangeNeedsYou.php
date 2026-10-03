@@ -15,9 +15,10 @@ use Illuminate\Notifications\Notification;
 class ChangeNeedsYou extends Notification
 {
     /**
-     * Create a new notification instance.
+     * Create a new notification instance. A change that did not work says
+     * why in the owner's words, so the note is not a bare failure.
      */
-    public function __construct(public FeatureRequest $featureRequest, public RunStatus $status) {}
+    public function __construct(public FeatureRequest $featureRequest, public RunStatus $status, public ?string $reason = null) {}
 
     /**
      * Get the notification's delivery channels. Email is off unless the
@@ -38,6 +39,7 @@ class ChangeNeedsYou extends Notification
         return (new MailMessage)
             ->subject($this->title())
             ->line($this->featureRequest->prompt)
+            ->lineIf($this->reason !== null, (string) $this->reason)
             ->action(__('Open it'), $this->url());
     }
 
@@ -56,6 +58,7 @@ class ChangeNeedsYou extends Notification
             },
             'title' => $this->title(),
             'body' => str($this->featureRequest->prompt)->squish()->limit(120)->toString(),
+            'reason' => $this->reason,
             'project_id' => $this->featureRequest->project_id,
             'feature_request_id' => $this->featureRequest->id,
         ];

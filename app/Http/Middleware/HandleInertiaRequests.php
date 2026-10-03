@@ -78,6 +78,7 @@ class HandleInertiaRequests extends Middleware
                 'id' => $notification->id,
                 // What it says only: the numbers it keeps stay here.
                 ...Arr::only($notification->data, ['kind', 'title', 'body']),
+                'reason' => $notification->data['reason'] ?? null,
                 'app' => $apps->get($notification->data['project_id'] ?? null),
                 'read' => $notification->read_at !== null,
                 'created_at' => $notification->created_at?->toIso8601String(),

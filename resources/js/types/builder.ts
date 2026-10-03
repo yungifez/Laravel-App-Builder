@@ -869,6 +869,8 @@ export type OwnerNotification = {
     kind: 'ready' | 'answered' | 'question' | 'failed';
     title: string;
     body: string;
+    // Why a change did not work and what to do; null otherwise.
+    reason: string | null;
     // The app it is about; null once that app is gone.
     app: string | null;
     read: boolean;
