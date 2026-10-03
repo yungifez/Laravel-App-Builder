@@ -2,6 +2,7 @@
 
 namespace App\Actions\Runs;
 
+use App\Actions\Billing\MeasureUsage;
 use App\Actions\Context\AssessPreservation;
 use App\Actions\Context\AssessVerifyItems;
 use App\Actions\Context\ClassifyChange;
@@ -48,6 +49,7 @@ use App\Runs\Exceptions\LeaseLost;
 use App\Runs\Exceptions\ProvidersUnavailable;
 use App\Runs\Exceptions\RunCancelled;
 use App\Runs\Exceptions\SpendLimitReached;
+use App\Runs\Exceptions\UsageLimitReached;
 use App\Runs\Exceptions\WaitingForWorker;
 use App\Runs\Plan;
 use App\Runs\Review;
@@ -85,6 +87,7 @@ class ConstructRun
         private FormatChange $formatChange,
         private RequestPreview $requestPreview,
         private SummarizeSpend $summarizeSpend,
+        private MeasureUsage $measureUsage,
         private AcceptFindings $acceptFindings,
         private ProposeFindings $proposeFindings,
         private ReadProjectContext $readProjectContext,
@@ -124,6 +127,8 @@ class ConstructRun
             $this->failRun->handle($run, $exception->getMessage(), $lease, 'cannot_generate');
         } catch (SpendLimitReached $exception) {
             $this->failRun->handle($run, $exception->getMessage(), $lease, 'spend_limit');
+        } catch (UsageLimitReached $exception) {
+            $this->failRun->handle($run, $exception->getMessage(), $lease, 'usage_limit');
         }
     }
 
@@ -143,6 +148,7 @@ class ConstructRun
             // repair after the review goes back through implementing.
             if (in_array($run->status, [RunStatus::Planning, RunStatus::Implementing], true)) {
                 $this->ensureWithinDailySpend();
+                $this->ensureWithinPlan($run);
             }
 
             switch ($run->status) {
@@ -619,6 +625,23 @@ class ConstructRun
     {
         if ($this->summarizeSpend->dailyLimitReached()) {
             throw new SpendLimitReached(__('This is our fault: we paused new work for today to keep our costs in check. Nothing in your app changed. Try again tomorrow.'));
+        }
+    }
+
+    /**
+     * Stop before new planning or building once the owner used all the AI
+     * use their plan includes this month.
+     *
+     * @throws UsageLimitReached
+     */
+    protected function ensureWithinPlan(Run $run): void
+    {
+        $usage = $this->measureUsage->handle($run->featureRequest->project->owner);
+
+        if ($usage['reached']) {
+            throw new UsageLimitReached(__('You have used all the AI use your plan includes this month. It starts again on :date, or you can move to a bigger plan in Settings. Nothing in your app changed.', [
+                'date' => $usage['resets_at']->isoFormat('D MMMM'),
+            ]));
         }
     }
 

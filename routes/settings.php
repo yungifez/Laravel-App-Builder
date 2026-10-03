@@ -1,5 +1,8 @@
 <?php
 
+use App\Http\Controllers\BillingPlanController;
+use App\Http\Controllers\BillingPortalController;
+use App\Http\Controllers\Settings\BillingController;
 use App\Http\Controllers\Settings\DetailLevelController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
@@ -26,6 +29,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('user-password.update');
 
     Route::inertia('settings/appearance', 'settings/Appearance')->name('appearance.edit');
+
+    Route::get('settings/billing', [BillingController::class, 'edit'])->name('billing.edit');
+    Route::post('settings/billing/plan', [BillingPlanController::class, 'store'])->middleware('throttle:6,1')->name('billing.plan.store');
+    Route::get('settings/billing/portal', BillingPortalController::class)->name('billing.portal');
 });
 
 Route::get('.well-known/passkey-endpoints', function () {

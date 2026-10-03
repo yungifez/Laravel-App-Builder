@@ -3,6 +3,7 @@ import { initializeTheme } from '@/composables/useAppearance';
 import AppLayout from '@/layouts/AppLayout.vue';
 import AppPageLayout from '@/layouts/AppPageLayout.vue';
 import AuthLayout from '@/layouts/AuthLayout.vue';
+import PublicLayout from '@/layouts/PublicLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import WorkspaceLayout from '@/layouts/WorkspaceLayout.vue';
 import { initializeFlashToast } from '@/lib/flashToast';
@@ -25,6 +26,8 @@ void createInertiaApp({
             case name === 'feature-requests/Show':
             case name.startsWith('operations/'):
                 return AppPageLayout;
+            case name.startsWith('public/'):
+                return PublicLayout;
             case name.startsWith('auth/'):
                 return AuthLayout;
             case name.startsWith('settings/'):

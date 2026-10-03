@@ -320,6 +320,35 @@ class RunLifecycleTest extends TestCase
         $this->assertSame(RunStatus::Verifying, $run->status);
     }
 
+    public function test_a_run_stops_once_the_owner_used_this_months_plan()
+    {
+        config(['billing.plans.free.monthly_usd' => 5]);
+        $featureRequest = $this->invitationRequest();
+        Run::factory()->for(FeatureRequest::factory()->for($featureRequest->project))->create()
+            ->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 5.5]);
+
+        $run = app(StartRun::class)->handle($featureRequest)->refresh();
+
+        $this->assertSame(RunStatus::Failed, $run->status);
+        $this->assertSame('usage_limit', $run->stop_reason);
+        $this->assertStringStartsWith('You have used all the AI use your plan includes this month.', (string) $run->error);
+        $this->assertFalse(RetryFeatureRequest::retryable($featureRequest->refresh()));
+
+        $this->travel(1)->months();
+
+        $this->assertTrue(RetryFeatureRequest::retryable($featureRequest->refresh()));
+    }
+
+    public function test_another_owners_use_does_not_count_towards_a_plan()
+    {
+        config(['billing.plans.free.monthly_usd' => 5, 'builder.construction.budgets.daily_usd' => 0]);
+        Run::factory()->create()->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 50]);
+
+        $run = app(StartRun::class)->handle($this->invitationRequest())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+    }
+
     public function test_a_passing_verification_completes_the_run_after_review()
     {
         [$run, $verification] = $this->verifyingRun(VerificationStatus::Passed);

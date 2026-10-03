@@ -47,6 +47,7 @@ use App\Http\Controllers\PreviewProblemFixController;
 use App\Http\Controllers\PreviewRowController;
 use App\Http\Controllers\PreviewScheduledTaskRunController;
 use App\Http\Controllers\PreviewSignInController;
+use App\Http\Controllers\PricingController;
 use App\Http\Controllers\ProjectCarefulAreaController;
 use App\Http\Controllers\ProjectCompatibilityController;
 use App\Http\Controllers\ProjectController;
@@ -78,6 +79,7 @@ use App\Http\Controllers\WelcomeController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', WelcomeController::class)->name('home');
+Route::get('pricing', PricingController::class)->name('pricing');
 
 // A link the owner shared: anyone holding it can try the app, with no account.
 Route::get('s/{token}', [SharedAppController::class, 'show'])->where('token', '[A-Za-z0-9]{40}')->middleware('throttle:30,1')->name('shared-apps.show');

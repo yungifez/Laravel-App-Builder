@@ -5,6 +5,7 @@ namespace App\Actions\Operations;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\RunEvent;
+use App\Models\User;
 use App\Operations\ModelCalls;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -31,9 +32,11 @@ class SummarizeSpend
      * makes the total a lower bound. Infrastructure (boxes, hosting) is not
      * recorded anywhere yet, so it is never part of the total.
      *
+     * With an owner, only the calls made for that owner's apps are summed.
+     *
      * @return array{calls: int, unpriced_calls: int, reported_usd: float, estimated_usd: float, total_usd: float, input_tokens: int, output_tokens: int, decision_calls: int, setup_calls: int, setup_usd: float, undated_setup_calls: int, unmetered_decision_calls: int, completeness: string}
      */
-    public function handle(CarbonImmutable $since): array
+    public function handle(CarbonImmutable $since, ?User $owner = null): array
     {
         $source = ModelCalls::SOURCE_SQL;
 
@@ -41,6 +44,7 @@ class SummarizeSpend
         $row = RunEvent::query()
             ->where('type', 'model_call')
             ->where('created_at', '>=', $since)
+            ->when($owner, fn (Builder $events) => $events->whereHas('run.featureRequest.project', fn (Builder $projects) => $projects->where('user_id', $owner?->id)))
             ->toBase()
             ->selectRaw("count(*) as calls,
                 count(*) filter (where ({$source}) is null) as unpriced,
@@ -50,10 +54,11 @@ class SummarizeSpend
                 sum(coalesce((data->>'output_tokens')::bigint, 0)) as output_tokens")
             ->first();
 
-        [$setupCalls, $setupUsd, $setupUnpriced, $undated] = $this->setup($since);
+        [$setupCalls, $setupUsd, $setupUnpriced, $undated] = $this->setup($since, $owner);
 
         /** @var object{calls: int|string, unpriced: int|string, estimated: float|string|null, input_tokens: int|string|null, output_tokens: int|string|null} $decided */
         $decided = FeatureRequest::query()
+            ->when($owner, fn (Builder $requests) => $requests->whereHas('project', fn (Builder $projects) => $projects->where('user_id', $owner?->id)))
             ->toBase()
             ->crossJoin(DB::raw('jsonb_array_elements(feature_requests.decision_model_calls::jsonb) as call'))
             ->whereRaw("(call->>'at')::timestamptz >= ?", [$since])
@@ -68,6 +73,7 @@ class SummarizeSpend
         // was called, but what it cost is unknown.
         $decisions = FeatureRequest::query()
             ->whereNull('decision_model_calls')
+            ->when($owner, fn (Builder $requests) => $requests->whereHas('project', fn (Builder $projects) => $projects->where('user_id', $owner?->id)))
             ->whereHas('decisions', fn (Builder $decisions) => $decisions->where('created_at', '>=', $since)->whereNotNull('model'))
             ->count();
 
@@ -103,14 +109,14 @@ class SummarizeSpend
      *
      * @return array{int, float, int, int}
      */
-    protected function setup(CarbonImmutable $since): array
+    protected function setup(CarbonImmutable $since, ?User $owner = null): array
     {
         $calls = 0;
         $usd = 0.0;
         $unpriced = 0;
         $undated = 0;
 
-        Project::query()->whereNotNull('setup_model_calls')->select(['id', 'setup_model_calls'])->each(function (Project $project) use ($since, &$calls, &$usd, &$unpriced, &$undated) {
+        Project::query()->whereNotNull('setup_model_calls')->when($owner, fn (Builder $projects) => $projects->where('user_id', $owner?->id))->select(['id', 'setup_model_calls'])->each(function (Project $project) use ($since, &$calls, &$usd, &$unpriced, &$undated) {
             foreach ($project->setup_model_calls ?? [] as $call) {
                 if (! isset($call['at'])) {
                     $undated++;

@@ -58,7 +58,8 @@ class OwnerWording
             return null;
         }
 
-        if (str_starts_with($message, __('This is our fault'))) {
+        // A plan's limit is the owner's to act on, and says when it lifts.
+        if (str_starts_with($message, __('This is our fault')) || str_starts_with($message, __('You have used all the AI use'))) {
             return $message;
         }
 

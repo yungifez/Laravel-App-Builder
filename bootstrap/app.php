@@ -22,6 +22,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state', 'time_zone', 'screen']);
 
+        // Stripe signs its webhooks, so Cashier checks them instead.
+        $middleware->validateCsrfTokens(except: ['stripe/*']);
+
         $middleware->web(append: [
             HandleAppearance::class,
             HandleInertiaRequests::class,

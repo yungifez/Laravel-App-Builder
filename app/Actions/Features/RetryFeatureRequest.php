@@ -2,6 +2,7 @@
 
 namespace App\Actions\Features;
 
+use App\Actions\Billing\MeasureUsage;
 use App\Actions\Operations\SummarizeSpend;
 use App\Enums\ExperimentStatus;
 use App\Enums\FeatureRequestStatus;
@@ -37,6 +38,11 @@ class RetryFeatureRequest
         // The owner was told to try again tomorrow: today it would only
         // stop the same way.
         if ($featureRequest->latestRun?->stop_reason === 'spend_limit' && app(SummarizeSpend::class)->dailyLimitReached()) {
+            return false;
+        }
+
+        // Neither while the owner's plan has no use left this month.
+        if ($featureRequest->latestRun?->stop_reason === 'usage_limit' && app(MeasureUsage::class)->handle($featureRequest->project->owner)['reached']) {
             return false;
         }
 
