@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Operations;
 
+use App\Actions\Billing\MeasureUsage;
 use App\Models\ContactMessage;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -103,5 +104,50 @@ class PeopleTest extends TestCase
 
         $this->assertNotNull($waiting->refresh()->handled_at);
         $this->assertNull($handled->refresh()->handled_at);
+    }
+
+    public function test_an_operator_gives_a_plan_without_payment_and_takes_it_back()
+    {
+        $owner = User::factory()->create();
+        $measure = app(MeasureUsage::class);
+
+        $this->actingAs($owner)->put(route('operations.people.plan.update', $owner), ['plan' => 'max'])->assertForbidden();
+        $this->assertSame('free', $measure->plan($owner->refresh()));
+
+        $this->actingAs($this->operator)
+            ->put(route('operations.people.plan.update', $owner), ['plan' => 'pro', 'until' => now()->addMonth()->toDateString()])
+            ->assertRedirect(route('operations.people.show', $owner));
+
+        $this->assertSame('pro', $measure->plan($owner->refresh()));
+        $this->assertSame((float) config('billing.plans.pro.monthly_usd'), $measure->handle($owner)['allowance_usd']);
+
+        $this->get(route('operations.people.show', $owner))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('person.plan', 'Pro')
+                ->where('person.granted', 'pro')
+                ->where('person.granted_until', now()->addMonth()->toDateString())
+                ->has('plans', 2));
+
+        // The grant ends on its date.
+        $this->travel(32)->days();
+        $this->assertSame('free', $measure->plan($owner->refresh()));
+        $this->travelBack();
+
+        $this->put(route('operations.people.plan.update', $owner), ['plan' => null])->assertRedirect();
+        $this->assertNull($owner->refresh()->granted_plan);
+        $this->assertSame('free', $measure->plan($owner));
+    }
+
+    public function test_only_a_paid_plan_can_be_given_and_not_into_the_past()
+    {
+        $owner = User::factory()->create();
+
+        $this->actingAs($this->operator)
+            ->put(route('operations.people.plan.update', $owner), ['plan' => 'free'])
+            ->assertSessionHasErrors('plan');
+        $this->put(route('operations.people.plan.update', $owner), ['plan' => 'pro', 'until' => now()->subDay()->toDateString()])
+            ->assertSessionHasErrors('until');
+
+        $this->assertNull($owner->refresh()->granted_plan);
     }
 }

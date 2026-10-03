@@ -27,6 +27,8 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string|null $two_factor_recovery_codes
  * @property Carbon|null $two_factor_confirmed_at
  * @property string|null $remember_token
+ * @property string|null $granted_plan A plan an operator gave without payment
+ * @property Carbon|null $granted_plan_until
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -49,6 +51,7 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
             'detail_level' => 'integer',
+            'granted_plan_until' => 'datetime',
         ];
     }
 

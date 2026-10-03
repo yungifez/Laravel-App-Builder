@@ -152,4 +152,19 @@ class BillingTest extends TestCase
         Run::factory()->for(FeatureRequest::factory()->for($project))->create()
             ->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => $usd]);
     }
+
+    public function test_an_owner_sees_a_plan_we_gave_them_and_when_it_ends()
+    {
+        $owner = User::factory()->create(['granted_plan' => 'pro', 'granted_plan_until' => now()->addDays(10)]);
+
+        $this->actingAs($owner)
+            ->get(route('billing.edit'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('currentPlan', 'pro')
+                ->where('given.until', now()->addDays(10)->isoFormat('D MMMM YYYY')));
+
+        $this->actingAs(User::factory()->create())
+            ->get(route('billing.edit'))
+            ->assertInertia(fn (Assert $page) => $page->where('given', null));
+    }
 }

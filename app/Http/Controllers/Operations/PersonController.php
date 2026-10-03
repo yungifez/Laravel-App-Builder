@@ -74,6 +74,8 @@ class PersonController extends Controller
                 'joined_at' => $user->created_at?->toIso8601String(),
                 'two_factor' => $user->two_factor_confirmed_at !== null,
                 'plan' => (string) config("billing.plans.{$usage['plan']}.name"),
+                'granted' => $measureUsage->granted($user),
+                'granted_until' => $measureUsage->granted($user) === null ? null : $user->granted_plan_until?->toDateString(),
                 'stripe' => $user->hasStripeId(),
                 'usage' => [
                     'percent' => $usage['percent'],
@@ -83,6 +85,8 @@ class PersonController extends Controller
                     'unlimited' => $usage['unlimited'],
                 ],
             ],
+            // The plans an operator can give: all but the one everybody has.
+            'plans' => collect((array) config('billing.plans'))->slice(1)->map(fn (array $plan, string $key) => ['key' => $key, 'name' => $plan['name']])->values(),
             'apps' => $user->projects()
                 ->withCount('featureRequests')
                 ->latest('id')

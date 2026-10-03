@@ -43,6 +43,7 @@ use App\Http\Controllers\Operations\DeveloperApplicationController as Operations
 use App\Http\Controllers\Operations\DeveloperReviewClaimController;
 use App\Http\Controllers\Operations\DeveloperReviewController as OperationsDeveloperReviewController;
 use App\Http\Controllers\Operations\PersonController as OperationsPersonController;
+use App\Http\Controllers\Operations\PersonPlanController;
 use App\Http\Controllers\PageConsistencyController;
 use App\Http\Controllers\PreviewController;
 use App\Http\Controllers\PreviewDataController;
@@ -197,6 +198,7 @@ Route::middleware(['auth', 'verified', 'can:viewOperations'])->prefix('operation
     Route::get('changes/{featureRequest}', [OperationsChangeController::class, 'show'])->name('changes.show');
     Route::get('people', [OperationsPersonController::class, 'index'])->name('people.index');
     Route::get('people/{user}', [OperationsPersonController::class, 'show'])->name('people.show');
+    Route::put('people/{user}/plan', [PersonPlanController::class, 'update'])->name('people.plan.update');
     Route::get('messages', [OperationsContactMessageController::class, 'index'])->name('messages.index');
     Route::put('messages/{contactMessage}', [OperationsContactMessageController::class, 'update'])->name('messages.update');
     Route::get('developers', [OperationsDeveloperApplicationController::class, 'index'])->name('developers.index');

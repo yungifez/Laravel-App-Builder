@@ -31,6 +31,7 @@ const props = defineProps<{
     currentPlan: string;
     usage: { percent: number; resetsOn: string; unlimited: boolean };
     canManage: boolean;
+    given: { until: string | null } | null;
 }>();
 
 const choosing = ref<string | null>(null);
@@ -81,6 +82,17 @@ function choose(plan: Plan): void {
                     :style="{ width: `${usage.percent}%` }"
                 />
             </div>
+            <p
+                v-if="given"
+                class="text-sm text-muted-foreground"
+                data-test="plan-given"
+            >
+                {{
+                    given.until
+                        ? `We gave you this plan until ${given.until}. You pay nothing for it.`
+                        : 'We gave you this plan. You pay nothing for it.'
+                }}
+            </p>
             <a
                 v-if="canManage"
                 :href="portal().url"

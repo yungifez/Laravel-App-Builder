@@ -39,24 +39,44 @@ class MeasureUsage
     }
 
     /**
-     * Get the plan an owner is on: the one whose Stripe price their valid
-     * subscription has, else the first plan.
+     * Get the plan an owner is on: the bigger of the one whose Stripe price
+     * their valid subscription has and the one an operator gave them, else
+     * the first plan.
      */
     public function plan(User $owner): string
     {
         /** @var array<string, array{stripe_price: string|null}> $plans */
         $plans = config('billing.plans');
+        $keys = array_keys($plans);
+        $on = [0];
         $subscription = $owner->subscription();
 
         if ($subscription?->valid()) {
             foreach ($plans as $key => $plan) {
                 if ($plan['stripe_price'] !== null && $subscription->hasPrice($plan['stripe_price'])) {
-                    return $key;
+                    $on[] = (int) array_search($key, $keys, true);
                 }
             }
         }
 
-        return (string) array_key_first($plans);
+        if ($this->granted($owner) !== null) {
+            $on[] = (int) array_search($this->granted($owner), $keys, true);
+        }
+
+        return (string) $keys[max($on)];
+    }
+
+    /**
+     * Get the plan an operator gave the owner, while it lasts.
+     */
+    public function granted(User $owner): ?string
+    {
+        $plan = $owner->granted_plan;
+        $until = $owner->granted_plan_until;
+
+        return $plan !== null && array_key_exists($plan, (array) config('billing.plans')) && ($until === null || $until->isFuture())
+            ? $plan
+            : null;
     }
 
     /**

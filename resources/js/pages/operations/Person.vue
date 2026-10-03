@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { Head, setLayoutProps } from '@inertiajs/vue3';
+import { Form, Head, setLayoutProps } from '@inertiajs/vue3';
+import PersonPlanController from '@/actions/App/Http/Controllers/Operations/PersonPlanController';
+import InputError from '@/components/InputError.vue';
 import { stamp, usd } from '@/lib/operations';
 import { attention } from '@/routes/operations';
 import { index, show } from '@/routes/operations/people';
@@ -15,6 +17,8 @@ const props = defineProps<{
         joined_at: string | null;
         two_factor: boolean;
         plan: string;
+        granted: string | null;
+        granted_until: string | null;
         stripe: boolean;
         usage: {
             percent: number;
@@ -24,6 +28,7 @@ const props = defineProps<{
             unlimited: boolean;
         };
     };
+    plans: { key: string; name: string }[];
     apps: { name: string; changes: number; created_at: string | null }[];
     messages: {
         id: number;
@@ -32,6 +37,9 @@ const props = defineProps<{
         handled: boolean;
     }[];
 }>();
+
+const field =
+    'min-h-11 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-h-9';
 
 setLayoutProps({
     breadcrumbs: [
@@ -95,6 +103,53 @@ setLayoutProps({
                     />
                 </div>
             </template>
+
+            <!-- A plan given without payment, for a tester or a partner.
+                 A bigger paid plan still counts. -->
+            <Form
+                v-bind="PersonPlanController.update.form(person.id)"
+                class="flex flex-wrap items-end gap-3 pt-2"
+                v-slot="{ errors, processing }"
+                data-test="grant-plan"
+            >
+                <label class="grid gap-1.5 text-sm">
+                    <span class="font-medium">Give a plan without payment</span>
+                    <select
+                        name="plan"
+                        :value="person.granted ?? ''"
+                        :class="field"
+                    >
+                        <option value="">None</option>
+                        <option
+                            v-for="plan in plans"
+                            :key="plan.key"
+                            :value="plan.key"
+                        >
+                            {{ plan.name }}
+                        </option>
+                    </select>
+                </label>
+                <label class="grid gap-1.5 text-sm">
+                    <span class="font-medium">Until</span>
+                    <input
+                        type="date"
+                        name="until"
+                        :value="person.granted_until ?? ''"
+                        :class="field"
+                    />
+                </label>
+                <button
+                    type="submit"
+                    :disabled="processing"
+                    class="inline-flex min-h-11 items-center rounded-md border bg-background px-3 text-sm font-medium select-none hover:bg-muted sm:min-h-9"
+                >
+                    Save
+                </button>
+                <p class="w-full text-xs text-muted-foreground">
+                    Leave the date empty to give it for good.
+                </p>
+                <InputError :message="errors.plan ?? errors.until" />
+            </Form>
         </section>
 
         <section class="space-y-2">
