@@ -1,0 +1,126 @@
+{
+    "weeks": [
+        {
+            "starts_on": "2026-09-28",
+            "entries": [
+                {
+                    "title": "Plans that include a month of AI use",
+                    "body": "Each plan includes an amount of AI use that starts again every month. We warn you before you run out."
+                },
+                {
+                    "title": "See what your app does behind each page",
+                    "body": "The emails it sends, the work it does on its own and the outside services it calls, page by page."
+                },
+                {
+                    "title": "Make email or another service fail on purpose",
+                    "body": "Pick what goes wrong, then use your app as a visitor would. Nothing is really sent."
+                },
+                {
+                    "title": "Changes that break when sent twice are sent back",
+                    "body": "A change that saves or sends something is tried with a form sent twice and with failed emails. A change that leaves half its work behind does not reach you."
+                },
+                {
+                    "title": "Changes to records are tried by strangers first",
+                    "body": "A change that touches a record is tried by someone signed out and by someone it does not belong to, such as a person outside the team. A change that lets them in is sent back."
+                },
+                {
+                    "title": "Watch the AI think while it works",
+                    "body": "You see each step in plain words, and each check as it runs, not a spinner."
+                },
+                {
+                    "title": "Say whose fault it is",
+                    "body": "When a change cannot be made, we say why and what to do. When it is our fault, we say so."
+                },
+                {
+                    "title": "Share a link so others can try your app",
+                    "body": "Anyone with the link can use your app without an account."
+                },
+                {
+                    "title": "Sign in to your app as any of its people",
+                    "body": "One tap shows your app as a customer or a member of staff sees it."
+                },
+                {
+                    "title": "Change a saved value in place",
+                    "body": "Open what your app saved and correct one value without asking for a change."
+                },
+                {
+                    "title": "Download your app's code",
+                    "body": "Your app is yours. Take its code with you at any time."
+                },
+                {
+                    "title": "More design choices",
+                    "body": "Dashed or dotted borders, capitals or small letters, picture shapes, and text cut to a set number of lines."
+                },
+                {
+                    "title": "Try every design change on its own copy first",
+                    "body": "Design changes wait on a copy of your app until you keep them."
+                },
+                {
+                    "title": "A simpler home page and pricing page",
+                    "body": "Both now get to the point, work with the keyboard and read well in dark mode."
+                }
+            ]
+        },
+        {
+            "starts_on": "2026-09-21",
+            "entries": [
+                {
+                    "title": "Start a new app by saying what it is for",
+                    "body": "Write one sentence, or start from a sketch, a screenshot or a ready-made app."
+                },
+                {
+                    "title": "Point at a part of your app and change how it looks",
+                    "body": "Colours, space, words, pictures, links and motion change at once. No AI is used."
+                },
+                {
+                    "title": "Undo and redo any design change",
+                    "body": "Each step back or forward shows at once, removed parts included."
+                },
+                {
+                    "title": "See your changed screen as a phone, a tablet and a computer",
+                    "body": "We also tell you when words are too faint to read or when keyboard users cannot see what is selected."
+                },
+                {
+                    "title": "Every change shows how it is known to work",
+                    "body": "One word says how well a change was checked, with the story of each step beside it."
+                },
+                {
+                    "title": "Only questions worth your time",
+                    "body": "We ask you only when the answer matters, say why, and keep your answer as a decision you can change later."
+                },
+                {
+                    "title": "Know what a change may affect before you ask",
+                    "body": "Pick a part, and we name the other parts a change to it may reach."
+                },
+                {
+                    "title": "What changed since you last looked",
+                    "body": "Your app's page lists what is new since your last visit, and which changes are not online yet."
+                },
+                {
+                    "title": "Read the emails your app sends",
+                    "body": "While you try your app, every email it sends shows up for you instead of going out."
+                },
+                {
+                    "title": "Open the rows and files your app saved",
+                    "body": "Read what your app stored, such as uploads and records, and start it fresh when you want."
+                },
+                {
+                    "title": "Connect payments and email by pasting your keys",
+                    "body": "Paste in the key from a payment or email service we support, and your app can take payments and send email."
+                },
+                {
+                    "title": "Fix problems from the notice that tells you",
+                    "body": "When your app runs into a problem, the notice offers a fix in one click."
+                },
+                {
+                    "title": "Security problems in your app's building blocks",
+                    "body": "We tell you when a part your app is built on has a known serious security problem."
+                },
+                {
+                    "title": "Pick a look when you start",
+                    "body": "Each new app starts in one of four looks, and you can change it any time."
+                }
+            ]
+        }
+    ]
+}
