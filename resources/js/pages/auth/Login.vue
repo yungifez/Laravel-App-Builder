@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { fieldError, focusFirstError } from '@/lib/forms';
 import { register } from '@/routes';
 import { store } from '@/routes/login';
 import { request } from '@/routes/password';
@@ -43,6 +44,7 @@ defineProps<{
     />
 
     <Form
+        @error="focusFirstError"
         v-bind="store.form()"
         :reset-on-success="['password']"
         v-slot="{ errors, processing }"
@@ -55,13 +57,15 @@ defineProps<{
                     id="email"
                     type="email"
                     name="email"
+                    class="h-11 sm:h-9"
+                    v-bind="fieldError(errors, 'email')"
                     required
                     v-focus
                     :tabindex="1"
                     autocomplete="email"
                     placeholder="email@example.com"
                 />
-                <InputError :message="errors.email" />
+                <InputError id="email-error" :message="errors.email" />
             </div>
 
             <div class="grid gap-2">
@@ -70,7 +74,7 @@ defineProps<{
                     <TextLink
                         v-if="canResetPassword"
                         :href="request()"
-                        class="text-sm"
+                        class="py-3 text-sm sm:py-0"
                         :tabindex="5"
                     >
                         Forgot your password?
@@ -79,12 +83,14 @@ defineProps<{
                 <PasswordInput
                     id="password"
                     name="password"
+                    class="h-11 sm:h-9"
+                    v-bind="fieldError(errors, 'password')"
                     required
                     :tabindex="2"
                     autocomplete="current-password"
                     placeholder="Password"
                 />
-                <InputError :message="errors.password" />
+                <InputError id="password-error" :message="errors.password" />
             </div>
 
             <div class="flex items-center justify-between">
@@ -96,7 +102,7 @@ defineProps<{
 
             <Button
                 type="submit"
-                class="mt-4 w-full"
+                class="mt-4 h-11 w-full sm:h-9"
                 :tabindex="4"
                 :disabled="processing"
                 data-test="login-button"

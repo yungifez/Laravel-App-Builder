@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { fieldError, focusFirstError } from '@/lib/forms';
 import { peekIdea } from '@/lib/startIdea';
 import { login } from '@/routes';
 import { store } from '@/routes/register';
@@ -47,6 +48,7 @@ onMounted(() => {
     </div>
 
     <Form
+        @error="focusFirstError"
         v-bind="store.form()"
         :reset-on-success="['password', 'password_confirmation']"
         v-slot="{ errors, processing }"
@@ -63,9 +65,11 @@ onMounted(() => {
                     :tabindex="1"
                     autocomplete="name"
                     name="name"
+                    class="h-11 sm:h-9"
+                    v-bind="fieldError(errors, 'name')"
                     placeholder="Full name"
                 />
-                <InputError :message="errors.name" />
+                <InputError id="name-error" :message="errors.name" />
             </div>
 
             <div class="grid gap-2">
@@ -77,9 +81,11 @@ onMounted(() => {
                     :tabindex="2"
                     autocomplete="email"
                     name="email"
+                    class="h-11 sm:h-9"
+                    v-bind="fieldError(errors, 'email')"
                     placeholder="email@example.com"
                 />
-                <InputError :message="errors.email" />
+                <InputError id="email-error" :message="errors.email" />
             </div>
 
             <div class="grid gap-2">
@@ -90,10 +96,12 @@ onMounted(() => {
                     :tabindex="3"
                     autocomplete="new-password"
                     name="password"
+                    class="h-11 sm:h-9"
+                    v-bind="fieldError(errors, 'password')"
                     placeholder="Password"
                     :passwordrules="passwordRules"
                 />
-                <InputError :message="errors.password" />
+                <InputError id="password-error" :message="errors.password" />
             </div>
 
             <div class="grid gap-2">
@@ -104,15 +112,20 @@ onMounted(() => {
                     :tabindex="4"
                     autocomplete="new-password"
                     name="password_confirmation"
+                    class="h-11 sm:h-9"
+                    v-bind="fieldError(errors, 'password_confirmation')"
                     placeholder="Confirm password"
                     :passwordrules="passwordRules"
                 />
-                <InputError :message="errors.password_confirmation" />
+                <InputError
+                    id="password_confirmation-error"
+                    :message="errors.password_confirmation"
+                />
             </div>
 
             <Button
                 type="submit"
-                class="mt-2 w-full"
+                class="mt-2 h-11 w-full sm:h-9"
                 tabindex="5"
                 :disabled="processing"
                 data-test="register-user-button"

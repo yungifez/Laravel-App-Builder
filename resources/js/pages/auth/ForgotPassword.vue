@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { fieldError, focusFirstError } from '@/lib/forms';
 import { login } from '@/routes';
 import { email } from '@/routes/password';
 
@@ -32,23 +33,29 @@ defineProps<{
     </div>
 
     <div class="space-y-6">
-        <Form v-bind="email.form()" v-slot="{ errors, processing }">
+        <Form
+            @error="focusFirstError"
+            v-bind="email.form()"
+            v-slot="{ errors, processing }"
+        >
             <div class="grid gap-2">
                 <Label for="email">Email address</Label>
                 <Input
                     id="email"
                     type="email"
                     name="email"
+                    class="h-11 sm:h-9"
+                    v-bind="fieldError(errors, 'email')"
                     autocomplete="off"
                     v-focus
                     placeholder="email@example.com"
                 />
-                <InputError :message="errors.email" />
+                <InputError id="email-error" :message="errors.email" />
             </div>
 
             <div class="my-6 flex items-center justify-start">
                 <Button
-                    class="w-full"
+                    class="h-11 w-full sm:h-9"
                     :disabled="processing"
                     data-test="email-password-reset-link-button"
                 >

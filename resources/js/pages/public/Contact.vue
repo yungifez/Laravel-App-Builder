@@ -6,6 +6,7 @@ import PageMeta from '@/components/PageMeta.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { fieldError, focusFirstError } from '@/lib/forms';
 
 defineProps<{
     senderName: string | null;
@@ -41,6 +42,7 @@ defineProps<{
         <Form
             v-bind="ContactController.store.form()"
             reset-on-success
+            @error="focusFirstError"
             class="space-y-6 rounded-md bg-muted px-5 py-6 sm:px-8 sm:py-8"
             v-slot="{ errors, processing }"
         >
@@ -67,11 +69,12 @@ defineProps<{
                     id="name"
                     name="name"
                     :default-value="senderName ?? ''"
-                    class="bg-background"
+                    v-bind="fieldError(errors, 'name')"
+                    class="h-11 bg-background sm:h-9"
                     required
                     autocomplete="name"
                 />
-                <InputError :message="errors.name" />
+                <InputError id="name-error" :message="errors.name" />
             </div>
 
             <div class="grid gap-2">
@@ -81,11 +84,12 @@ defineProps<{
                     name="email"
                     type="email"
                     :default-value="senderEmail ?? ''"
-                    class="bg-background"
+                    v-bind="fieldError(errors, 'email')"
+                    class="h-11 bg-background sm:h-9"
                     required
                     autocomplete="email"
                 />
-                <InputError :message="errors.email" />
+                <InputError id="email-error" :message="errors.email" />
             </div>
 
             <div class="grid gap-2">
@@ -97,12 +101,17 @@ defineProps<{
                     required
                     minlength="10"
                     maxlength="5000"
-                    class="w-full rounded-md border border-input bg-background px-3 py-2 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+                    v-bind="fieldError(errors, 'message')"
+                    class="w-full rounded-md border border-input bg-background px-3 py-2 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-invalid:border-destructive md:text-sm dark:bg-input/30"
                 />
-                <InputError :message="errors.message" />
+                <InputError id="message-error" :message="errors.message" />
             </div>
 
-            <Button :disabled="processing" data-test="contact-send">
+            <Button
+                :disabled="processing"
+                class="h-11 sm:h-9"
+                data-test="contact-send"
+            >
                 {{ processing ? 'Sending…' : 'Send' }}
             </Button>
         </Form>

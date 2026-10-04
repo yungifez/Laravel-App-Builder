@@ -4,6 +4,7 @@ import { computed, ref, watchEffect } from 'vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { fieldError, focusFirstError } from '@/lib/forms';
 import {
     InputOTP,
     InputOTPGroup,
@@ -80,9 +81,12 @@ const toggleRecoveryMode = (clearErrors: () => void): void => {
                             </InputOTPGroup>
                         </InputOTP>
                     </div>
-                    <InputError :message="errors.code" />
+                    <InputError id="code-error" :message="errors.code" />
                 </div>
-                <Button type="submit" class="w-full" :disabled="processing"
+                <Button
+                    type="submit"
+                    class="h-11 w-full sm:h-9"
+                    :disabled="processing"
                     >Continue</Button
                 >
                 <div class="text-sm text-muted-foreground">
@@ -100,6 +104,7 @@ const toggleRecoveryMode = (clearErrors: () => void): void => {
 
         <template v-else>
             <Form
+                @error="focusFirstError"
                 v-bind="store.form()"
                 class="space-y-4"
                 reset-on-error
@@ -107,13 +112,22 @@ const toggleRecoveryMode = (clearErrors: () => void): void => {
             >
                 <Input
                     name="recovery_code"
+                    class="h-11 sm:h-9"
+                    v-bind="fieldError(errors, 'recovery_code')"
                     type="text"
+                    aria-label="Recovery code"
                     placeholder="Enter recovery code"
                     v-focus
                     required
                 />
-                <InputError :message="errors.recovery_code" />
-                <Button type="submit" class="w-full" :disabled="processing"
+                <InputError
+                    id="recovery_code-error"
+                    :message="errors.recovery_code"
+                />
+                <Button
+                    type="submit"
+                    class="h-11 w-full sm:h-9"
+                    :disabled="processing"
                     >Continue</Button
                 >
 

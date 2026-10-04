@@ -30,12 +30,16 @@ defineProps<{
     </div>
 
     <Form v-bind="send.form()" class="space-y-6" v-slot="{ processing }">
-        <Button :disabled="processing" variant="secondary">
+        <Button :disabled="processing" variant="secondary" class="h-11 sm:h-9">
             <Spinner v-if="processing" />
             Resend verification email
         </Button>
 
-        <TextLink :href="logout()" as="button" class="block text-sm">
+        <TextLink
+            :href="logout()"
+            as="button"
+            class="block py-3 text-sm sm:py-0"
+        >
             Log out
         </TextLink>
     </Form>
