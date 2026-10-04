@@ -2,8 +2,12 @@
 
 namespace Tests\Feature\VisualEditing;
 
+use App\Actions\Billing\MeasureUsage;
 use App\Actions\Projects\CreateProject;
 use App\Actions\Workspaces\FormatAppFiles;
+use App\Ai\Agents\ChangeReviewer;
+use App\Ai\Agents\FeaturePlanner;
+use App\Ai\Agents\NotesDrafter;
 use App\Enums\PreviewStatus;
 use App\Jobs\FormatEditedFiles;
 use App\Jobs\RebuildPreview;
@@ -215,7 +219,10 @@ class VisualEditingTest extends TestCase
     public function test_the_owner_changes_how_an_element_looks_as_a_commit_without_a_model()
     {
         Queue::fake();
+        $agents = [FeaturePlanner::class, ChangeReviewer::class, NotesDrafter::class];
+        array_map(fn (string $agent) => $agent::fake(), $agents);
         $preview = $this->runningPreview();
+        $usedBefore = app(MeasureUsage::class)->handle($this->owner)['used_usd'];
 
         $this->actingAs($this->owner)
             ->from(route('projects.editor.show', $this->project))
@@ -242,6 +249,10 @@ class VisualEditingTest extends TestCase
         $this->assertSame('Change how a box looks on tablets and up', $this->editedLog(1)[0]['subject']);
 
         Queue::assertPushed(RebuildPreview::class, fn (RebuildPreview $job) => $job->preview->is($preview));
+
+        // The home page says a design edit uses none of the owner's plan.
+        array_map(fn (string $agent) => $agent::assertNeverPrompted(), $agents);
+        $this->assertSame($usedBefore, app(MeasureUsage::class)->handle($this->owner)['used_usd']);
     }
 
     public function test_the_rebuild_after_an_edit_runs_with_the_previews_not_behind_coding_runs()
