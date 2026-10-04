@@ -75,6 +75,12 @@ use App\Http\Controllers\ProjectServiceController;
 use App\Http\Controllers\ProjectShareController;
 use App\Http\Controllers\ProjectUnderstandingController;
 use App\Http\Controllers\RunCancellationController;
+use App\Http\Controllers\SampleAppController;
+use App\Http\Controllers\SampleDesignController;
+use App\Http\Controllers\SampleEditController;
+use App\Http\Controllers\SampleEditReversionController;
+use App\Http\Controllers\SampleMotionController;
+use App\Http\Controllers\SampleTextController;
 use App\Http\Controllers\SharedAppController;
 use App\Http\Controllers\ThemeColorController;
 use App\Http\Controllers\VerificationShotController;
@@ -87,11 +93,24 @@ use App\Http\Controllers\VisualPartController;
 use App\Http\Controllers\VisualPictureController;
 use App\Http\Controllers\VisualTextController;
 use App\Http\Controllers\WelcomeController;
+use App\Http\Middleware\KeepSampleToItself;
 use Illuminate\Support\Facades\Route;
 use Spatie\Honeypot\ProtectAgainstSpam;
 
 Route::get('/', WelcomeController::class)->name('home');
 Route::get('pricing', PricingController::class)->name('pricing');
+// The designer on a sample page anyone can try, without an app or an
+// account. Edits live in the visitor's session only.
+Route::prefix('try/designer')->name('sample-design.')->middleware([KeepSampleToItself::class, 'throttle:120,1'])->group(function () {
+    Route::get('/', [SampleDesignController::class, 'show'])->name('show');
+    Route::delete('/', [SampleDesignController::class, 'destroy'])->name('destroy');
+    Route::get('app', SampleAppController::class)->name('app');
+    Route::post('edits', [SampleEditController::class, 'store'])->name('edits.store');
+    Route::post('texts', [SampleTextController::class, 'store'])->name('texts.store');
+    Route::post('motions', [SampleMotionController::class, 'store'])->name('motions.store');
+    Route::post('edits/{edit}/reversion', [SampleEditReversionController::class, 'store'])->whereUuid('edit')->name('edits.reversion.store');
+    Route::delete('edits/{edit}/reversion', [SampleEditReversionController::class, 'destroy'])->whereUuid('edit')->name('edits.reversion.destroy');
+});
 Route::get('contact', [ContactController::class, 'show'])->name('contact');
 Route::get('privacy', LegalPageController::class)->defaults('page', 'privacy')->name('privacy');
 Route::get('terms', LegalPageController::class)->defaults('page', 'terms')->name('terms');

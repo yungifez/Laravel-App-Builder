@@ -53,6 +53,21 @@ type Source = {
     colors: () => AppColor[];
     /** Whether clicking in the app selects a part of it. */
     designing: Ref<boolean>;
+    /** A sample page to try the designer on, outside any app. */
+    sample?: SampleDesign;
+};
+
+/**
+ * Where a sample page opens and where its edits go. It takes changes to
+ * how a part looks and moves, and new words; the rest needs an app.
+ */
+export type SampleDesign = {
+    entry: string;
+    edit: string;
+    text: string;
+    motion: string;
+    undo: (id: string) => string;
+    redo: (id: string) => string;
 };
 
 type Values = Partial<Record<VisualProperty, VisualValue | null>>;
@@ -1196,9 +1211,11 @@ export function useAppPreview(source: Source) {
                 frames.value = [
                     {
                         key: ++frameKeys,
-                        src: showPreview(preview.id, {
-                            query: { to: savedPath() },
-                        }).url,
+                        src:
+                            source.sample?.entry ??
+                            showPreview(preview.id, {
+                                query: { to: savedPath() },
+                            }).url,
                         shows: 0,
                         revision: preview.revision,
                     },
@@ -1268,7 +1285,8 @@ export function useAppPreview(source: Source) {
         const newest = source.edits()[0]?.id ?? 0;
 
         router.post(
-            VisualEditController.store.url(source.projectId()),
+            source.sample?.edit ??
+                VisualEditController.store.url(source.projectId()),
             {
                 preview: preview.id,
                 target: batch.target.value,
@@ -1319,6 +1337,11 @@ export function useAppPreview(source: Source) {
         placement: 'before' | 'after',
         by: number | null = null,
     ): void {
+        // A sample page has no app to keep this in.
+        if (source.sample) {
+            return;
+        }
+
         const part = selected.value;
         const seen = source.preview()?.revision ?? null;
         // Undo can move it back at once only when the app on show is the
@@ -1433,6 +1456,11 @@ export function useAppPreview(source: Source) {
     function reshape(how: 'duplicate' | 'remove'): void;
     function reshape(how: 'add', kind: NewPartKind): void;
     function reshape(how: Reshape, kind?: NewPartKind): void {
+        // A sample page has no app to keep this in.
+        if (source.sample) {
+            return;
+        }
+
         const preview = source.preview();
         const part = selected.value;
         // A shared piece is copied or taken out where it is used.
@@ -1638,7 +1666,8 @@ export function useAppPreview(source: Source) {
         saveError.value = null;
 
         router.post(
-            VisualTextController.store.url(source.projectId()),
+            source.sample?.text ??
+                VisualTextController.store.url(source.projectId()),
             {
                 preview: preview.id,
                 target: at,
@@ -1673,6 +1702,11 @@ export function useAppPreview(source: Source) {
     // Send a link to a new address. Nothing shows in the app, so the new
     // address is written, and the app rebuilds with it.
     function relink(href: string): void {
+        // A sample page has no app to keep this in.
+        if (source.sample) {
+            return;
+        }
+
         const preview = source.preview();
         const part = selected.value;
         const address = href.trim();
@@ -1752,7 +1786,8 @@ export function useAppPreview(source: Source) {
         saveError.value = null;
 
         router.post(
-            VisualMotionController.store.url(source.projectId()),
+            source.sample?.motion ??
+                VisualMotionController.store.url(source.projectId()),
             {
                 preview: preview.id,
                 target: at,
@@ -1811,6 +1846,11 @@ export function useAppPreview(source: Source) {
     // Save a theme colour for the look the app shows now. Changes waiting
     // to be saved go first, so the colour builds on them.
     function saveColor(token: string, value: string): void {
+        // A sample page has no app to keep this in.
+        if (source.sample) {
+            return;
+        }
+
         const preview = source.preview();
 
         if (preview === null) {
@@ -1921,6 +1961,11 @@ export function useAppPreview(source: Source) {
     // the owner's own file; the file is kept in the app, which rebuilds
     // with it.
     function repicture(picture: File): void {
+        // A sample page has no app to keep this in.
+        if (source.sample) {
+            return;
+        }
+
         const preview = source.preview();
         const part = selected.value;
         const was = element.value?.picture?.src ?? null;
@@ -2456,13 +2501,15 @@ export function useAppPreview(source: Source) {
 
         if (next.key === 'undo') {
             router.post(
-                VisualEditReversionController.store.url(edit.id),
+                source.sample?.undo(edit.id) ??
+                    VisualEditReversionController.store.url(edit.id),
                 {},
                 options,
             );
         } else {
             router.delete(
-                VisualEditReversionController.destroy.url(edit.id),
+                source.sample?.redo(edit.id) ??
+                    VisualEditReversionController.destroy.url(edit.id),
                 options,
             );
         }

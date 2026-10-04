@@ -19,6 +19,7 @@ void createInertiaApp({
         switch (true) {
             case name === 'Welcome':
             case name.startsWith('shared-apps/'):
+            case name.startsWith('try/'):
                 return null;
             case name === 'projects/Show':
                 return [SignedInAsLayout, WorkspaceLayout];

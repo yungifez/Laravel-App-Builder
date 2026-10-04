@@ -13,6 +13,8 @@ const props = defineProps<{
     projectId: string;
     preview: EditorPreview | null;
     state: AppPreviewState;
+    /** A sample page to try the designer on, rather than an app. */
+    sample?: boolean;
 }>();
 
 // A desktop layout starts at 1024px. When the pane is narrower, the app is
@@ -90,7 +92,9 @@ watch(scale, (value) => (props.state.zoom = value), { immediate: true });
                 data-test="preview-opening"
             >
                 <Spinner class="size-6" />
-                <p class="text-sm text-muted-foreground">Opening your app…</p>
+                <p class="text-sm text-muted-foreground">
+                    {{ sample ? 'Opening the sample…' : 'Opening your app…' }}
+                </p>
             </div>
             <iframe
                 v-for="(appFrame, index) in state.frames"

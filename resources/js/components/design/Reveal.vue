@@ -14,7 +14,9 @@ defineProps<{ open: boolean }>();
         ]"
         :inert="!open"
     >
-        <div class="min-h-0 overflow-clip [overflow-clip-margin:0.25rem]">
+        <div
+            class="min-h-0 min-w-0 overflow-clip [overflow-clip-margin:0.25rem]"
+        >
             <div class="space-y-2 pt-2">
                 <slot />
             </div>

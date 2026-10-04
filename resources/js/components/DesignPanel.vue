@@ -113,6 +113,9 @@ const props = defineProps<{
     state: AppPreviewState;
     // The designer works on a change the owner has not kept yet.
     onChange?: boolean;
+    // A sample page to try the designer on, with no app behind it: only
+    // what changes the page in place is offered, and nothing asks the AI.
+    sample?: boolean;
 }>();
 
 const asking = ref(false);
@@ -267,7 +270,7 @@ function listed(names: string[]): string {
 // Where the part lives in the code, and its Tailwind classes, only for
 // someone who chose to see how changes are built (§28.4).
 const page = usePage();
-const showCode = computed(() => (page.props.auth.user.detail_level ?? 1) >= 3);
+const showCode = computed(() => (page.props.auth.user?.detail_level ?? 1) >= 3);
 
 // The choices a property offers, with an icon where one says it better.
 const icons: Partial<Record<string, Component>> = {
@@ -824,6 +827,25 @@ function describeEdit(edit: VisualEditSummary): string {
     return describeChanged(edit.properties);
 }
 
+// The newest change in place, said aloud for owners who cannot see the
+// app change beside the panel.
+const announced = ref('');
+
+watch(
+    () => props.edits,
+    (edits, before) => {
+        const was = new Map(before.map((edit) => [edit.id, edit.reverted_at]));
+        const moved = edits.find(
+            (edit) =>
+                !was.has(edit.id) || was.get(edit.id) !== edit.reverted_at,
+        );
+
+        if (moved) {
+            announced.value = `${moved.reverted_at === null ? 'Changed' : 'Undone'}: ${describeEdit(moved)}`;
+        }
+    },
+);
+
 // What a change set its one property to, in words, with the colour itself
 // when it is a colour.
 function describeResult(
@@ -944,6 +966,7 @@ const recent = computed(() => {
 
 <template>
     <div class="flex min-h-0 flex-col" data-test="inspector">
+        <p class="sr-only" role="status">{{ announced }}</p>
         <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto">
             <div
                 v-if="
@@ -996,7 +1019,11 @@ const recent = computed(() => {
 
                 <!-- A change I decide on, so the owner reads what it may do
                      before asking. -->
-                <section class="px-4 pb-4" data-test="make-consistent">
+                <section
+                    v-if="!sample"
+                    class="px-4 pb-4"
+                    data-test="make-consistent"
+                >
                     <button
                         v-if="!tidying"
                         type="button"
@@ -1044,6 +1071,7 @@ const recent = computed(() => {
                 </section>
 
                 <ThemeColors
+                    v-if="!sample"
                     :choices="themeColorChoices(state.colors)"
                     :colors="state.theme"
                     :dark="state.themeDark"
@@ -1234,7 +1262,7 @@ const recent = computed(() => {
                         <ChevronDown class="size-4" />
                     </Button>
                     <Button
-                        v-if="element?.editable"
+                        v-if="element?.editable && !sample"
                         variant="ghost"
                         size="icon"
                         class="size-11 shrink-0 text-muted-foreground sm:size-7"
@@ -1247,7 +1275,7 @@ const recent = computed(() => {
                     >
                         <Copy class="size-4" />
                     </Button>
-                    <DropdownMenu v-if="element?.editable">
+                    <DropdownMenu v-if="element?.editable && !sample">
                         <DropdownMenuTrigger as-child>
                             <Button
                                 variant="ghost"
@@ -1303,7 +1331,7 @@ const recent = computed(() => {
                         <EyeOff class="size-4" />
                     </Button>
                     <Button
-                        v-if="element?.editable"
+                        v-if="element?.editable && !sample"
                         variant="ghost"
                         size="icon"
                         class="size-11 shrink-0 text-muted-foreground hover:text-destructive sm:size-7"
@@ -1431,7 +1459,10 @@ const recent = computed(() => {
                             </section>
 
                             <section
-                                v-if="element.link || state.selected?.href"
+                                v-if="
+                                    !sample &&
+                                    (element.link || state.selected?.href)
+                                "
                                 class="space-y-2"
                                 data-test="link"
                             >
@@ -1513,7 +1544,7 @@ const recent = computed(() => {
                             </section>
 
                             <section
-                                v-if="element.picture"
+                                v-if="element.picture && !sample"
                                 class="space-y-2"
                                 data-test="picture"
                                 @dragover.prevent
@@ -2389,6 +2420,7 @@ const recent = computed(() => {
                         <!-- The form arrives rather than cutting in; the button
                              goes at once. -->
                         <Transition
+                            v-if="!sample"
                             enter-active-class="transition duration-base ease-settle"
                             enter-from-class="opacity-0 translate-y-1"
                         >
@@ -2523,7 +2555,7 @@ const recent = computed(() => {
         </div>
 
         <DesignEditsBar
-            v-if="!onChange"
+            v-if="!onChange && !sample"
             :project-id="projectId"
             :waiting="(page.props.designEdits as DesignEdits | null) ?? null"
         />
@@ -2590,7 +2622,7 @@ const recent = computed(() => {
                 data-test="saving"
             >
                 <LoaderCircle class="size-3.5 animate-spin" />
-                Saving
+                {{ sample ? 'Changing' : 'Saving' }}
             </p>
             <!-- Saved into the code, then the preview is rebuilt with it:
                  the owner sees their change is real, not a mock-up. On the
@@ -2615,11 +2647,13 @@ const recent = computed(() => {
             >
                 <Check class="size-3.5" />
                 {{
-                    !state.upToDate
-                        ? 'Saved'
-                        : onChange
-                          ? 'Saved · in this change'
-                          : 'Saved'
+                    sample
+                        ? 'Changed'
+                        : !state.upToDate
+                          ? 'Saved'
+                          : onChange
+                            ? 'Saved · in this change'
+                            : 'Saved'
                 }}
             </p>
         </footer>
