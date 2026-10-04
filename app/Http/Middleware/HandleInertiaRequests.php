@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Features\LiftedLimit;
 use App\Models\FeatureRequest;
 use App\Models\User;
+use App\Projects\Starter;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Arr;
@@ -63,6 +64,11 @@ class HandleInertiaRequests extends Middleware
             // Whether the owner's screen is wide, so the app is first drawn
             // at the size it stays at. The browser leaves this in a cookie.
             'wideScreen' => $request->cookie('screen') === 'wide',
+            // The public menu starts an app from a ready-made idea, so the
+            // public pages carry the ideas; the home page sends its own.
+            'starters' => fn () => $request->routeIs('pricing', 'contact', 'privacy', 'terms', 'developers')
+                ? array_map(fn (Starter $starter) => $starter->toArray(), Starter::all())
+                : [],
         ];
     }
 

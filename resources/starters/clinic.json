@@ -1,6 +1,6 @@
 {
     "name": "Care Clinic",
-    "purpose": "Patients book appointments, and staff see the day's list.",
+    "purpose": "Patients book appointments, and my staff see the day's list.",
     "design": "calm",
     "includes": [
         "Patients pick a service, a practitioner and a free time",

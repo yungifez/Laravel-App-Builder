@@ -86,6 +86,11 @@
     }
 }
 
+/* A section a menu link jumps to lands below the sticky header. */
+section[id] {
+    scroll-margin-top: 4.5rem;
+}
+
 @layer utilities {
     body,
     html {
@@ -149,7 +154,7 @@
     --card-foreground: hsl(220 16% 92%);
     --popover: hsl(224 14% 10%);
     --popover-foreground: hsl(220 16% 92%);
-    --primary: hsl(221 88% 60%);
+    --primary: hsl(221 83% 53%);
     --primary-foreground: hsl(0 0% 100%);
     --secondary: hsl(224 12% 13%);
     --secondary-foreground: hsl(220 16% 92%);
@@ -169,7 +174,7 @@
     --chart-5: #102a6b;
     --sidebar-background: hsl(224 16% 6%);
     --sidebar-foreground: hsl(220 16% 92%);
-    --sidebar-primary: hsl(221 88% 60%);
+    --sidebar-primary: hsl(221 83% 53%);
     --sidebar-primary-foreground: hsl(0 0% 100%);
     --sidebar-accent: hsl(224 12% 13%);
     --sidebar-accent-foreground: hsl(220 16% 92%);
@@ -357,6 +362,14 @@
     }
     to {
         box-shadow: 0 0 0 10px transparent;
+    }
+}
+
+/* A small thing that rises into place when it is swapped in. */
+@keyframes rise-in {
+    from {
+        opacity: 0;
+        translate: 0 0.375rem;
     }
 }
 

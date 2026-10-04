@@ -1,16 +1,9 @@
 <script setup lang="ts">
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import AppLogo from '@/components/AppLogo.vue';
-import {
-    contact,
-    developers,
-    home,
-    login,
-    pricing,
-    privacy,
-    register,
-    terms,
-} from '@/routes';
+import PublicFooter from '@/components/PublicFooter.vue';
+import ReadyMadeMenu from '@/components/ReadyMadeMenu.vue';
+import { home, login, pricing, register } from '@/routes';
 import { index } from '@/routes/projects';
 
 // The header names the page you are on, so the links double as a map.
@@ -42,7 +35,10 @@ const navLink = (path: string): string =>
                     <Link :href="home()" class="flex items-center gap-2">
                         <AppLogo />
                     </Link>
+                    <!-- The same menu as the home page's: start from a
+                         ready-made app, or see the price. -->
                     <nav class="hidden items-center gap-6 text-sm md:flex">
+                        <ReadyMadeMenu :starters="$page.props.starters" />
                         <Link
                             :href="pricing()"
                             :class="navLink('/pricing')"
@@ -50,14 +46,6 @@ const navLink = (path: string): string =>
                                 here('/pricing') ? 'page' : undefined
                             "
                             >Pricing</Link
-                        >
-                        <Link
-                            :href="developers()"
-                            :class="navLink('/developers')"
-                            :aria-current="
-                                here('/developers') ? 'page' : undefined
-                            "
-                            >For developers</Link
                         >
                     </nav>
                 </div>
@@ -91,60 +79,6 @@ const navLink = (path: string): string =>
             <slot />
         </main>
 
-        <footer class="border-t">
-            <div
-                class="mx-auto grid max-w-7xl gap-10 px-4 py-14 text-sm sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] sm:px-8"
-            >
-                <div>
-                    <div class="flex items-center gap-2"><AppLogo /></div>
-                    <p class="mt-3 text-muted-foreground">
-                        Real apps that stay yours.
-                    </p>
-                </div>
-                <nav aria-label="Product">
-                    <p class="font-medium">Product</p>
-                    <ul class="mt-3 space-y-2 text-muted-foreground">
-                        <li>
-                            <Link
-                                :href="pricing()"
-                                class="hover:text-foreground"
-                                >Pricing</Link
-                            >
-                        </li>
-                        <li>
-                            <Link
-                                :href="developers()"
-                                class="hover:text-foreground"
-                                >For developers</Link
-                            >
-                        </li>
-                    </ul>
-                </nav>
-                <nav aria-label="Company">
-                    <p class="font-medium">Company</p>
-                    <ul class="mt-3 space-y-2 text-muted-foreground">
-                        <li>
-                            <Link
-                                :href="contact()"
-                                class="hover:text-foreground"
-                                >Contact</Link
-                            >
-                        </li>
-                        <li>
-                            <Link
-                                :href="privacy()"
-                                class="hover:text-foreground"
-                                >Privacy</Link
-                            >
-                        </li>
-                        <li>
-                            <Link :href="terms()" class="hover:text-foreground"
-                                >Terms</Link
-                            >
-                        </li>
-                    </ul>
-                </nav>
-            </div>
-        </footer>
+        <PublicFooter />
     </div>
 </template>

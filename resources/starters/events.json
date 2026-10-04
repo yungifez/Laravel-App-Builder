@@ -1,6 +1,6 @@
 {
     "name": "Local Events",
-    "purpose": "People sign up for our events, and I see who is coming.",
+    "purpose": "People sign up for my events, and I see who is coming.",
     "design": "sharp",
     "includes": [
         "A page for each event with its date, place and places left",
