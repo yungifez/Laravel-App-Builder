@@ -28,7 +28,7 @@ const onLogin = computed(() => page.component === 'auth/Login');
         <meta
             head-key="description"
             name="description"
-            content="Build apps that don't stay prototypes. Every change passes fixed checks before you keep it."
+            content="Don't just build a prototype. Every change passes fixed checks before you keep it."
         />
     </Head>
     <div class="flex min-h-svh flex-col bg-background text-foreground">

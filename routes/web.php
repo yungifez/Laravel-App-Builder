@@ -3,6 +3,7 @@
 use App\Features\AppBoundaries;
 use App\Features\AppDrift;
 use App\Features\AppFaults;
+use App\Http\Controllers\ChangelogController;
 use App\Http\Controllers\ClearedProblemController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\DashboardController;
@@ -99,6 +100,9 @@ use Spatie\Honeypot\ProtectAgainstSpam;
 
 Route::get('/', WelcomeController::class)->name('home');
 Route::get('pricing', PricingController::class)->name('pricing');
+Route::inertia('how-it-works', 'public/HowItWorks')->name('how-it-works');
+Route::inertia('security', 'public/Security')->name('security');
+Route::get('changelog', ChangelogController::class)->name('changelog');
 // The designer on a sample page anyone can try, without an app or an
 // account. Edits live in the visitor's session only.
 Route::prefix('try/designer')->name('sample-design.')->middleware([KeepSampleToItself::class, 'throttle:120,1'])->group(function () {

@@ -43,7 +43,7 @@
         @vite(['resources/css/app.css', 'resources/js/app.ts', "resources/js/pages/{$page['component']}.vue"])
         <x-inertia::head>
             <title>{{ config('app.name', 'Laravel') }}</title>
-            <meta name="description" data-inertia="description" content="Build apps that don't stay prototypes. Every change passes fixed checks before you keep it.">
+            <meta name="description" data-inertia="description" content="Don't just build a prototype. Every change passes fixed checks before you keep it.">
         </x-inertia::head>
     </head>
     <body class="font-sans antialiased">

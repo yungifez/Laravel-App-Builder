@@ -14,11 +14,11 @@ it('shows a visitor what makes it different and what they keep, and starts them 
         ->assertPresent('@welcome-features')
         ->assertPresent('@welcome-stage')
         ->assertSeeIn('@welcome-stage', 'Let customers cancel a booking up to a day before.')
-        ->assertSee('Build apps that don’t stay prototypes.')
+        ->assertSee('Don’t just build a prototype.')
         ->assertSee('Checks decide if it works, not the')
         ->assertSee('Without checks')
         ->assertSee('See what your app does when things go')
-        ->assertSee('Every change shows what was')
+        ->assertSee('Keep it, and the change shows what was tested')
         ->assertSee('Free to start. No card needed.')
         ->assertSee('Checked, with gaps')
         ->assertSee('Undo one change.')
@@ -36,23 +36,13 @@ it('plays the checks once a visitor scrolls to them', function () {
         ->assertSee('The checks passed. It is ready for you to keep.');
 });
 
-it('starts a visitor from a ready-made app in the menu', function () {
-    visit('/')
-        ->click('@ready-made-menu')
-        ->click('@ready-made-clinic')
-        ->assertPathIs('/register');
-});
+it('opens the real designer once a visitor scrolls to it', function () {
+    $page = visit('/');
 
-it('lets a visitor change a part of the app in the designer', function () {
-    visit('/')
-        ->click('@designer-cancel-0')
-        ->assertSeeIn('@welcome-designer', 'One item of a list. A change here changes every item.')
-        ->click('@designer-corners-pill')
-        ->assertSeeIn('@welcome-designer', '1 edit not kept yet')
-        ->click('@designer-keep')
-        ->assertSeeIn('@welcome-designer', 'Kept as a change you can undo.');
-});
+    $page->script("document.querySelector('[data-test=welcome-designer]').scrollIntoView()");
 
+    $page->wait(2)->assertPresent('@welcome-designer-frame');
+});
 it('shows undo as a new step on top of the history', function () {
     visit('/')
         ->click('@welcome-undo')

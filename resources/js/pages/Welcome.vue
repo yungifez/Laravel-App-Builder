@@ -30,14 +30,21 @@ import {
     SkipForward,
 } from '@lucide/vue';
 import type { Directive } from 'vue';
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import {
+    computed,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+    watch,
+} from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
 import PublicFooter from '@/components/PublicFooter.vue';
-import ReadyMadeMenu from '@/components/ReadyMadeMenu.vue';
 import { faults } from '@/lib/appFaults';
 import { keepIdea } from '@/lib/startIdea';
-import { home, login, pricing, register } from '@/routes';
+import { home, howItWorks, login, pricing, register } from '@/routes';
 import { index } from '@/routes/projects';
+import * as sampleDesign from '@/routes/sample-design';
 import type { DesignOption, Starter } from '@/types';
 
 // The page answers one question: why build here and not with any other
@@ -208,7 +215,7 @@ const heroChecks = [
     'Your app’s own tests passed',
     'The code fits together',
     'The code is set out tidily',
-    'No packages with known security problems',
+    'New tests for this change passed',
 ];
 
 // The stages the workspace names, and the beat each one starts on.
@@ -571,6 +578,38 @@ function setLook(edit: CancelLook): void {
     designEdits.value++;
 }
 
+// The real designer, in a frame of its own page. It loads once the
+// section is in view and tells this page when it is ready.
+const designerSrc = ref<string | null>(null);
+const designerReady = ref(false);
+const designerFailed = ref(false);
+let designerWaiting: ReturnType<typeof setTimeout> | undefined;
+
+function openDesigner(): void {
+    designerSrc.value = sampleDesign.show().url;
+    designerWaiting = setTimeout(() => {
+        designerFailed.value = !designerReady.value;
+    }, 15000);
+}
+
+function reopenDesigner(): void {
+    designerFailed.value = false;
+    designerSrc.value = null;
+    clearTimeout(designerWaiting);
+    nextTick(openDesigner);
+}
+
+function designerSays(event: MessageEvent): void {
+    if (
+        event.origin === window.location.origin &&
+        event.data?.type === 'sample-design-ready'
+    ) {
+        designerReady.value = true;
+        designerFailed.value = false;
+        clearTimeout(designerWaiting);
+    }
+}
+
 function undoDesign(): void {
     headingLook.value = {};
     cancelLooks.value = designRows.map(() => ({}));
@@ -728,7 +767,7 @@ const questions: { ask: string; answer: string; pricing?: boolean }[] = [
     },
     {
         ask: 'Can my app take payments or send email?',
-        answer: 'Yes. Ask for it, and paste in the key your payment or email service gives you. Then it works like any other change.',
+        answer: 'Yes. Ask for it, and paste in the key from a payment or email service we support. Then it works like any other change.',
     },
 ];
 
@@ -747,6 +786,24 @@ onMounted(() => {
         designPart.value = { kind: 'cancel', row: 1 };
     }
 
+    // The designer opens as its section comes into view. Until then, its
+    // picture shows a Cancel button picked, as if clicked.
+    window.addEventListener('message', designerSays);
+
+    if (designPanel.value !== null) {
+        whenSeen(designPanel.value, () => {
+            openDesigner();
+
+            if (!still.value) {
+                designHinting = setTimeout(() => {
+                    if (!designTouched.value) {
+                        designPart.value = { kind: 'cancel', row: 1 };
+                    }
+                }, 1200);
+            }
+        });
+    }
+
     // The demos below wait for the visitor, so they play in view.
     if (!still.value) {
         if (checksPanel.value !== null) {
@@ -757,18 +814,6 @@ onMounted(() => {
         if (receiptCard.value !== null) {
             receiptShown.value = -1;
             whenSeen(receiptCard.value, fillReceipt);
-        }
-
-        // The designer opens on a Cancel button, as if clicked, so the
-        // visitor sees that parts of the app can be picked.
-        if (designPanel.value !== null) {
-            whenSeen(designPanel.value, () => {
-                designHinting = setTimeout(() => {
-                    if (!designTouched.value) {
-                        designPart.value = { kind: 'cancel', row: 1 };
-                    }
-                }, 1200);
-            });
         }
 
         // One hint that the list can be pressed, unless they got there first.
@@ -809,6 +854,8 @@ onBeforeUnmount(() => {
     clearInterval(filling);
     clearTimeout(hinting);
     clearTimeout(designHinting);
+    clearTimeout(designerWaiting);
+    window.removeEventListener('message', designerSays);
     seen?.disconnect();
     stageSeen?.disconnect();
     document.documentElement.style.scrollPaddingTop = '';
@@ -823,6 +870,11 @@ onBeforeUnmount(() => {
     <div
         class="min-h-svh overflow-x-clip bg-background text-foreground [&_:is(a,button,summary):focus-visible]:outline-2 [&_:is(a,button,summary):focus-visible]:outline-offset-2 [&_:is(a,button,summary):focus-visible]:outline-ring"
     >
+        <a
+            href="#main"
+            class="sr-only rounded-md bg-background px-3 py-2 text-sm font-medium shadow-md focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50"
+            >Skip to the content</a
+        >
         <header class="sticky top-0 z-30 border-b bg-background">
             <div
                 class="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-8"
@@ -832,11 +884,20 @@ onBeforeUnmount(() => {
                         <AppLogo />
                     </Link>
                     <nav class="hidden items-center gap-6 text-sm md:flex">
-                        <ReadyMadeMenu :starters="starters" />
                         <Link
                             :href="pricing()"
-                            class="text-muted-foreground transition-colors hover:text-foreground"
+                            class="inline-flex min-h-11 items-center text-muted-foreground transition-colors hover:text-foreground pointer-fine:min-h-0"
                             >Pricing</Link
+                        >
+                        <Link
+                            :href="howItWorks()"
+                            class="inline-flex min-h-11 items-center text-muted-foreground transition-colors hover:text-foreground pointer-fine:min-h-0"
+                            >How it works</Link
+                        >
+                        <Link
+                            :href="sampleDesign.show().url"
+                            class="inline-flex min-h-11 items-center text-muted-foreground transition-colors hover:text-foreground pointer-fine:min-h-0"
+                            >Try the designer</Link
                         >
                     </nav>
                 </div>
@@ -874,7 +935,7 @@ onBeforeUnmount(() => {
             </div>
         </header>
 
-        <main>
+        <main id="main">
             <!-- The first screen is the box: say what the app is for, and
                  go. What they type waits for them after signing up. Then
                  the real workspace makes one change, on a soft panel. -->
@@ -885,13 +946,14 @@ onBeforeUnmount(() => {
                     <h1
                         class="font-display text-5xl leading-[1.02] font-medium tracking-[-0.04em] text-balance sm:text-7xl"
                     >
-                        Build apps that don’t stay prototypes.
+                        Don’t just build a prototype.
                     </h1>
                     <p
                         class="mx-auto mt-6 max-w-2xl text-lg text-balance text-muted-foreground sm:text-xl"
                     >
-                        Here the AI never decides it’s done. Checks do, and they
-                        tell you what they did not&nbsp;cover.
+                        Most other builders make apps that can’t ship. Here the
+                        AI never decides it’s done. Checks do, and they tell you
+                        what they did not&nbsp;cover.
                     </p>
 
                     <form
@@ -923,12 +985,15 @@ onBeforeUnmount(() => {
                                 <span
                                     id="idea-help"
                                     class="text-sm text-muted-foreground"
-                                    aria-live="polite"
-                                    >{{
+                                    ><span aria-live="polite">{{
                                         hint
                                             ? 'Change it, or press Start again.'
-                                            : 'Free to start. No card needed.'
+                                            : ''
                                     }}</span
+                                    ><template v-if="!hint"
+                                        >Free to start. No card
+                                        needed.</template
+                                    ></span
                                 >
                                 <button
                                     type="submit"
@@ -1550,59 +1615,55 @@ onBeforeUnmount(() => {
                         Play again
                     </button>
                 </div>
-            </section>
 
-            <!-- How a kept change reports itself: each line says how the
-                 app knows it, and what nothing checked is named. -->
-            <section
-                class="mx-auto max-w-7xl px-4 pt-24 sm:px-8 lg:pt-32"
-                data-test="welcome-receipt"
-            >
-                <h2
-                    v-reveal
-                    class="max-w-5xl reveal font-display text-3xl leading-[1.1] font-medium tracking-[-0.025em] text-pretty sm:text-[2.75rem]"
-                >
-                    Every change shows what was&nbsp;tested.
-                    <span class="text-muted-foreground">And what was not.</span>
-                </h2>
+                <!-- What keeping it leads to: the change reports itself,
+                     each line says how the app knows it, and what nothing
+                     checked is named. -->
                 <div
-                    class="mt-12 grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]"
+                    class="mt-16 grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]"
+                    data-test="welcome-receipt"
                 >
-                    <!-- What each mark means, as the change page uses them. -->
-                    <dl class="grid max-w-md gap-5 lg:pt-8">
-                        <div
-                            v-for="mark in marks"
-                            :key="mark.key"
-                            class="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-3"
-                        >
-                            <dt class="contents">
-                                <Check
-                                    v-if="mark.key === 'tested'"
-                                    class="mt-1 size-4 text-emerald-600 dark:text-emerald-400"
-                                    aria-hidden="true"
-                                />
-                                <Minus
-                                    v-else-if="mark.key === 'untouched'"
-                                    class="mt-1 size-4 text-muted-foreground"
-                                    aria-hidden="true"
-                                />
-                                <CircleDashed
-                                    v-else
-                                    class="mt-1 size-4 text-muted-foreground"
-                                    aria-hidden="true"
-                                />
-                                <span
-                                    class="font-medium first-letter:uppercase"
-                                    >{{ mark.label }}</span
-                                >
-                            </dt>
-                            <dd
-                                class="col-start-2 mt-1 text-pretty text-muted-foreground"
+                    <div class="max-w-md lg:pt-8">
+                        <p class="text-lg text-pretty">
+                            Keep it, and the change shows what was tested. And
+                            what was not.
+                        </p>
+                        <!-- What each mark means, as the change page uses them. -->
+                        <dl class="mt-6 grid gap-5">
+                            <div
+                                v-for="mark in marks"
+                                :key="mark.key"
+                                class="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-3"
                             >
-                                {{ mark.means }}
-                            </dd>
-                        </div>
-                    </dl>
+                                <dt class="contents">
+                                    <Check
+                                        v-if="mark.key === 'tested'"
+                                        class="mt-1 size-4 text-emerald-600 dark:text-emerald-400"
+                                        aria-hidden="true"
+                                    />
+                                    <Minus
+                                        v-else-if="mark.key === 'untouched'"
+                                        class="mt-1 size-4 text-muted-foreground"
+                                        aria-hidden="true"
+                                    />
+                                    <CircleDashed
+                                        v-else
+                                        class="mt-1 size-4 text-muted-foreground"
+                                        aria-hidden="true"
+                                    />
+                                    <span
+                                        class="font-medium first-letter:uppercase"
+                                        >{{ mark.label }}</span
+                                    >
+                                </dt>
+                                <dd
+                                    class="col-start-2 mt-1 text-pretty text-muted-foreground"
+                                >
+                                    {{ mark.means }}
+                                </dd>
+                            </div>
+                        </dl>
+                    </div>
                     <div
                         v-reveal
                         class="w-full max-w-xl reveal delay-100 lg:justify-self-end"
@@ -1799,7 +1860,7 @@ onBeforeUnmount(() => {
                 </h2>
                 <div
                     ref="whatIfPanel"
-                    class="mt-12 grid items-center gap-10 rounded-md bg-muted px-3 py-10 sm:px-10 sm:py-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]"
+                    class="mt-12 grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]"
                     data-test="welcome-what-if"
                 >
                     <div class="px-2 sm:px-0">
@@ -1807,38 +1868,58 @@ onBeforeUnmount(() => {
                             Pick what goes wrong, then use your app as a visitor
                             would. Nothing is really sent.
                         </p>
-                        <div
-                            class="mt-6 grid gap-1"
-                            role="group"
-                            aria-label="What goes wrong"
-                        >
-                            <button
+                        <fieldset class="mt-6 max-w-md border-t">
+                            <legend class="sr-only">What goes wrong</legend>
+                            <label
                                 v-for="fault in whatIfs"
                                 :key="fault.key"
-                                type="button"
-                                :aria-pressed="whatIf === fault.key"
                                 :class="[
-                                    'flex min-h-11 press items-center gap-3 rounded-md border px-3 text-left text-sm select-none',
-                                    whatIf === fault.key
-                                        ? 'border-border bg-background font-medium shadow-xs'
-                                        : 'border-transparent text-muted-foreground hover:bg-background/60 hover:text-foreground',
+                                    'flex min-h-11 cursor-pointer items-center gap-3 border-b px-1 text-sm select-none has-focus-visible:outline-2 has-focus-visible:outline-ring',
+                                    whatIf === fault.key && 'font-medium',
                                 ]"
-                                @click="pickWhatIf(fault.key)"
                             >
+                                <input
+                                    type="radio"
+                                    name="what-if"
+                                    class="sr-only"
+                                    :value="fault.key"
+                                    :checked="whatIf === fault.key"
+                                    @change="pickWhatIf(fault.key)"
+                                />
                                 <span
                                     :class="[
-                                        'size-2 shrink-0 rounded-full transition-colors duration-base',
+                                        'grid size-4 shrink-0 place-items-center rounded-full border transition-colors duration-base',
                                         whatIf === fault.key
                                             ? fault.key === 'none'
-                                                ? 'bg-emerald-600 dark:bg-emerald-400'
-                                                : 'bg-amber-600 dark:bg-amber-400'
-                                            : 'bg-muted-foreground/30',
+                                                ? 'border-emerald-600 dark:border-emerald-400'
+                                                : 'border-amber-600 dark:border-amber-400'
+                                            : 'border-muted-foreground/50',
                                     ]"
                                     aria-hidden="true"
-                                />
+                                >
+                                    <span
+                                        v-if="whatIf === fault.key"
+                                        :class="[
+                                            'size-2 rounded-full',
+                                            fault.key === 'none'
+                                                ? 'bg-emerald-600 dark:bg-emerald-400'
+                                                : 'bg-amber-600 dark:bg-amber-400',
+                                        ]"
+                                    />
+                                </span>
                                 {{ fault.label }}
-                            </button>
-                        </div>
+                            </label>
+                        </fieldset>
+                        <p class="sr-only" role="status">
+                            {{
+                                whatIfTouched
+                                    ? whatIfViews[whatIf]?.happened.replace(
+                                          ' · ',
+                                          ', ',
+                                      )
+                                    : ''
+                            }}
+                        </p>
                     </div>
 
                     <div
@@ -1847,7 +1928,6 @@ onBeforeUnmount(() => {
                     >
                         <div
                             class="overflow-hidden rounded-xl border bg-background shadow-2xl shadow-black/10 dark:border-input"
-                            aria-live="polite"
                         >
                             <div
                                 class="flex items-center gap-2 border-b px-4 py-3 text-sm font-semibold"
@@ -1944,364 +2024,447 @@ onBeforeUnmount(() => {
                         >You don’t have to ask the&nbsp;AI.</span
                     >
                 </h2>
+                <p class="mt-6 max-w-xl text-lg text-pretty">
+                    Design edits make no AI call, so they use none of your plan.
+                </p>
+                <!-- The real designer opens here as the section comes into
+                     view. Until it says it is ready, a picture of it stays
+                     up, so the visitor never sees an empty box. -->
                 <div
-                    ref="designPanel"
-                    class="mt-12 grid items-start gap-8 rounded-md bg-panel-blue px-3 py-10 sm:px-10 sm:py-16 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]"
+                    class="relative mt-12 h-[640px] overflow-hidden rounded-md bg-panel-blue md:h-[560px] lg:h-[600px]"
                 >
-                    <div class="min-w-0">
-                        <div
-                            v-if="designs.length > 0"
-                            class="grid grid-cols-2 gap-1 sm:flex sm:items-center"
-                            role="group"
-                            aria-label="Look"
-                        >
-                            <span
-                                class="col-span-2 text-sm text-muted-foreground sm:mr-2"
-                                >Look</span
-                            >
-                            <button
-                                v-for="design in designs"
-                                :key="design.key"
-                                type="button"
-                                :aria-pressed="lookKey === design.key"
-                                :class="[
-                                    'inline-flex min-h-11 press items-center gap-2 rounded-md border px-3 text-sm select-none pointer-fine:min-h-9',
-                                    lookKey === design.key
-                                        ? 'border-border bg-background font-medium shadow-xs'
-                                        : 'border-transparent text-muted-foreground hover:bg-background/60 hover:text-foreground',
-                                ]"
-                                @click="pickLook(design.key)"
-                            >
-                                <span
-                                    aria-hidden="true"
-                                    class="size-3.5 rounded-full border"
-                                    :style="{
-                                        background: design.colors.primary,
-                                    }"
-                                />
-                                {{ design.name }}
-                            </button>
-                        </div>
-
-                        <!-- The app in the chosen look. Each part is a real
-                             button, so a keyboard can pick it too. -->
-                        <div
-                            class="mt-4 overflow-hidden border shadow-2xl shadow-black/10 transition-[background-color,color,border-radius] duration-base motion-reduce:transition-none"
-                            :style="{
-                                background: look?.colors.background,
-                                color: look?.colors.foreground,
-                                borderColor: look?.colors.border,
-                                borderRadius: look?.radius,
-                            }"
-                            aria-label="Studio Classes, the app you are changing"
-                            role="group"
-                        >
+                    <div
+                        ref="designPanel"
+                        :inert="designerSrc !== null"
+                        class="grid items-start gap-8 px-3 py-10 sm:px-10 sm:py-16 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]"
+                    >
+                        <div class="min-w-0">
                             <div
-                                class="flex items-center gap-2 border-b px-4 py-3 text-sm font-semibold"
-                                :style="{ borderColor: look?.colors.border }"
+                                v-if="designs.length > 0"
+                                class="grid grid-cols-2 gap-1 sm:flex sm:items-center"
+                                role="group"
+                                aria-label="Look"
                             >
                                 <span
-                                    class="grid size-6 place-items-center rounded-md transition-colors duration-base"
-                                    :style="{
-                                        background: look?.colors.primary,
-                                        color: look?.colors[
-                                            'primary-foreground'
-                                        ],
-                                    }"
-                                    aria-hidden="true"
+                                    class="col-span-2 text-sm text-muted-foreground sm:mr-2"
+                                    >Look</span
                                 >
-                                    <CalendarDays class="size-3.5" />
-                                </span>
-                                Studio Classes
-                            </div>
-                            <div class="p-4 sm:p-5">
                                 <button
+                                    v-for="design in designs"
+                                    :key="design.key"
                                     type="button"
-                                    :aria-pressed="
-                                        isPicked({ kind: 'heading' })
-                                    "
+                                    :aria-pressed="lookKey === design.key"
                                     :class="[
-                                        'block rounded-sm text-left text-lg font-semibold outline-offset-4 transition-[color,outline-color] duration-quick',
-                                        isPicked({ kind: 'heading' })
-                                            ? 'outline-2 outline-[#7c3aed]'
-                                            : 'pointer-fine:hover:outline-1 pointer-fine:hover:outline-[#a78bfa] pointer-fine:hover:outline-dashed',
+                                        'inline-flex min-h-11 press items-center gap-2 rounded-md border px-3 text-sm select-none pointer-fine:min-h-9',
+                                        lookKey === design.key
+                                            ? 'border-border bg-background font-medium shadow-xs'
+                                            : 'border-transparent text-muted-foreground hover:bg-background/60 hover:text-foreground',
                                     ]"
-                                    :style="{
-                                        color:
-                                            headingLook.colour === 'background'
-                                                ? undefined
-                                                : lookColour(
-                                                      headingLook.colour,
-                                                  ),
-                                    }"
-                                    @click="pickPart({ kind: 'heading' })"
+                                    @click="pickLook(design.key)"
                                 >
-                                    {{ headingLook.words || 'Your bookings' }}
+                                    <span
+                                        aria-hidden="true"
+                                        class="size-3.5 rounded-full border"
+                                        :style="{
+                                            background: design.colors.primary,
+                                        }"
+                                    />
+                                    {{ design.name }}
                                 </button>
+                            </div>
+
+                            <!-- The app in the chosen look. Each part is a real
+                             button, so a keyboard can pick it too. -->
+                            <div
+                                class="mt-4 overflow-hidden border shadow-2xl shadow-black/10 transition-[background-color,color,border-radius] duration-base motion-reduce:transition-none"
+                                :style="{
+                                    background: look?.colors.background,
+                                    color: look?.colors.foreground,
+                                    borderColor: look?.colors.border,
+                                    borderRadius: look?.radius,
+                                }"
+                                aria-label="Studio Classes, the app you are changing"
+                                role="group"
+                            >
                                 <div
-                                    class="mt-3 divide-y border-y text-sm"
+                                    class="flex items-center gap-2 border-b px-4 py-3 text-sm font-semibold"
                                     :style="{
                                         borderColor: look?.colors.border,
                                     }"
                                 >
+                                    <span
+                                        class="grid size-6 place-items-center rounded-md transition-colors duration-base"
+                                        :style="{
+                                            background: look?.colors.primary,
+                                            color: look?.colors[
+                                                'primary-foreground'
+                                            ],
+                                        }"
+                                        aria-hidden="true"
+                                    >
+                                        <CalendarDays class="size-3.5" />
+                                    </span>
+                                    Studio Classes
+                                </div>
+                                <div class="p-4 sm:p-5">
+                                    <button
+                                        type="button"
+                                        :aria-pressed="
+                                            isPicked({ kind: 'heading' })
+                                        "
+                                        :class="[
+                                            'block rounded-sm text-left text-lg font-semibold outline-offset-4 transition-[color,outline-color] duration-quick',
+                                            isPicked({ kind: 'heading' })
+                                                ? 'outline-2 outline-[#7c3aed]'
+                                                : 'pointer-fine:hover:outline-1 pointer-fine:hover:outline-[#a78bfa] pointer-fine:hover:outline-dashed',
+                                        ]"
+                                        :style="{
+                                            color:
+                                                headingLook.colour ===
+                                                'background'
+                                                    ? undefined
+                                                    : lookColour(
+                                                          headingLook.colour,
+                                                      ),
+                                        }"
+                                        @click="pickPart({ kind: 'heading' })"
+                                    >
+                                        {{
+                                            headingLook.words || 'Your bookings'
+                                        }}
+                                    </button>
                                     <div
-                                        v-for="(row, index) in designRows"
-                                        :key="row.name"
-                                        class="flex items-center justify-between gap-3 py-3"
+                                        class="mt-3 divide-y border-y text-sm"
                                         :style="{
                                             borderColor: look?.colors.border,
                                         }"
                                     >
-                                        <span class="min-w-0">
-                                            <span class="block font-medium">{{
-                                                row.name
-                                            }}</span>
-                                            <span
-                                                :style="{
-                                                    color: look?.colors[
-                                                        'muted-foreground'
-                                                    ],
-                                                }"
-                                                >{{ row.when }}</span
-                                            >
-                                        </span>
-                                        <button
-                                            type="button"
-                                            :aria-pressed="
-                                                isPicked({
-                                                    kind: 'cancel',
-                                                    row: index,
-                                                })
-                                            "
-                                            :aria-label="`Cancel button for ${row.name}`"
-                                            :data-test="`designer-cancel-${index}`"
-                                            :class="[
-                                                'min-h-9 shrink-0 border px-3 font-medium outline-offset-3 transition-[background-color,color,border-radius,outline-color] duration-base motion-reduce:transition-none',
-                                                isPicked({
-                                                    kind: 'cancel',
-                                                    row: index,
-                                                })
-                                                    ? 'outline-2 outline-[#7c3aed]'
-                                                    : isLikeIt(index)
-                                                      ? 'outline-1 outline-[#a78bfa] outline-dashed'
-                                                      : 'pointer-fine:hover:outline-1 pointer-fine:hover:outline-[#a78bfa] pointer-fine:hover:outline-dashed',
-                                            ]"
-                                            :style="cancelStyle(index)"
-                                            @click="
-                                                pickPart({
-                                                    kind: 'cancel',
-                                                    row: index,
-                                                })
-                                            "
+                                        <div
+                                            v-for="(row, index) in designRows"
+                                            :key="row.name"
+                                            class="flex items-center justify-between gap-3 py-3"
+                                            :style="{
+                                                borderColor:
+                                                    look?.colors.border,
+                                            }"
                                         >
-                                            {{
-                                                cancelLooks[index].words ||
-                                                'Cancel'
-                                            }}
-                                        </button>
+                                            <span class="min-w-0">
+                                                <span
+                                                    class="block font-medium"
+                                                    >{{ row.name }}</span
+                                                >
+                                                <span
+                                                    :style="{
+                                                        color: look?.colors[
+                                                            'muted-foreground'
+                                                        ],
+                                                    }"
+                                                    >{{ row.when }}</span
+                                                >
+                                            </span>
+                                            <button
+                                                type="button"
+                                                :aria-pressed="
+                                                    isPicked({
+                                                        kind: 'cancel',
+                                                        row: index,
+                                                    })
+                                                "
+                                                :aria-label="`Cancel button for ${row.name}`"
+                                                :data-test="`designer-cancel-${index}`"
+                                                :class="[
+                                                    'min-h-9 shrink-0 border px-3 font-medium outline-offset-3 transition-[background-color,color,border-radius,outline-color] duration-base motion-reduce:transition-none',
+                                                    isPicked({
+                                                        kind: 'cancel',
+                                                        row: index,
+                                                    })
+                                                        ? 'outline-2 outline-[#7c3aed]'
+                                                        : isLikeIt(index)
+                                                          ? 'outline-1 outline-[#a78bfa] outline-dashed'
+                                                          : 'pointer-fine:hover:outline-1 pointer-fine:hover:outline-[#a78bfa] pointer-fine:hover:outline-dashed',
+                                                ]"
+                                                :style="cancelStyle(index)"
+                                                @click="
+                                                    pickPart({
+                                                        kind: 'cancel',
+                                                        row: index,
+                                                    })
+                                                "
+                                            >
+                                                {{
+                                                    cancelLooks[index].words ||
+                                                    'Cancel'
+                                                }}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- The panel beside it, as the workspace shows it. -->
-                    <div
-                        class="flex min-h-[22rem] flex-col rounded-xl border bg-background text-sm shadow-xl shadow-black/5 dark:border-input"
-                    >
+                        <!-- The panel beside it, as the workspace shows it. -->
                         <div
-                            v-if="designPart === null"
-                            class="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground"
+                            class="flex min-h-[22rem] flex-col rounded-xl border bg-background text-sm shadow-xl shadow-black/5 dark:border-input"
                         >
-                            <MousePointerClick
-                                class="size-5"
-                                aria-hidden="true"
-                            />
-                            Click any part of your app
-                        </div>
-                        <div
-                            v-else
-                            :key="
-                                designPart.kind === 'heading'
-                                    ? 'heading'
-                                    : 'cancel'
-                            "
-                            class="flex-1 space-y-5 p-5 motion-safe:animate-[rise-in_250ms_var(--ease-settle)_both]"
-                        >
-                            <div>
-                                <p class="font-medium">
-                                    {{
-                                        designPart.kind === 'heading'
-                                            ? 'Heading'
-                                            : 'Cancel button'
-                                    }}
-                                </p>
-                                <p
-                                    v-if="designPart.kind === 'cancel'"
-                                    class="mt-1 text-muted-foreground"
-                                >
-                                    One item of a list. A change here changes
-                                    every item.
-                                </p>
-                            </div>
                             <div
-                                v-if="designPart.kind === 'cancel'"
-                                class="flex rounded-md bg-muted p-0.5"
-                                role="group"
-                                aria-label="Which ones change"
+                                v-if="designPart === null"
+                                class="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground"
                             >
-                                <button
-                                    v-for="choice in [
-                                        { one: false, label: 'All like it' },
-                                        { one: true, label: 'Only this one' },
-                                    ]"
-                                    :key="choice.label"
-                                    type="button"
-                                    :aria-pressed="onlyThisOne === choice.one"
-                                    :class="[
-                                        'min-h-11 flex-1 rounded px-2 text-sm transition-colors duration-quick select-none pointer-fine:min-h-8',
-                                        onlyThisOne === choice.one
-                                            ? 'bg-background font-medium shadow-xs'
-                                            : 'text-muted-foreground hover:text-foreground',
-                                    ]"
-                                    @click="onlyThisOne = choice.one"
-                                >
-                                    {{ choice.label }}
-                                </button>
-                            </div>
-                            <label class="block">
-                                <span class="text-xs font-medium">Words</span>
-                                <input
-                                    :value="
-                                        pickedLook.words ??
-                                        (designPart.kind === 'heading'
-                                            ? 'Your bookings'
-                                            : 'Cancel')
-                                    "
-                                    class="mt-1.5 block h-11 w-full rounded-md bg-muted px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 pointer-fine:h-9"
-                                    maxlength="24"
-                                    @change="
-                                        setLook({
-                                            words: (
-                                                $event.target as HTMLInputElement
-                                            ).value,
-                                        })
-                                    "
+                                <MousePointerClick
+                                    class="size-5"
+                                    aria-hidden="true"
                                 />
-                            </label>
-                            <div role="group" aria-label="Colour">
-                                <span class="text-xs font-medium">Colour</span>
-                                <div class="mt-1.5 flex gap-1.5">
-                                    <button
-                                        v-for="choice in colourChoices"
-                                        :key="choice.key"
-                                        type="button"
-                                        :aria-label="choice.label"
-                                        :title="choice.label"
-                                        :aria-pressed="
-                                            chosenColour === choice.key
-                                        "
-                                        :class="[
-                                            'grid size-11 place-items-center rounded-md border transition-shadow duration-quick pointer-fine:size-8',
-                                            chosenColour === choice.key
-                                                ? 'ring-2 ring-[#7c3aed] ring-offset-2 ring-offset-background'
-                                                : 'hover:ring-1 hover:ring-border',
-                                        ]"
-                                        :style="{
-                                            background: lookColour(choice.key),
-                                            color:
-                                                choice.key === 'primary' ||
-                                                choice.key === 'foreground'
-                                                    ? look?.colors.background
-                                                    : look?.colors.foreground,
-                                        }"
-                                        @click="setLook({ colour: choice.key })"
-                                    >
-                                        <Check
-                                            v-if="chosenColour === choice.key"
-                                            class="size-4"
-                                            aria-hidden="true"
-                                        />
-                                    </button>
-                                </div>
+                                Click any part of your app
                             </div>
                             <div
-                                v-if="designPart.kind === 'cancel'"
-                                role="group"
-                                aria-label="Corners"
+                                v-else
+                                :key="
+                                    designPart.kind === 'heading'
+                                        ? 'heading'
+                                        : 'cancel'
+                                "
+                                class="flex-1 space-y-5 p-5 motion-safe:animate-[rise-in_250ms_var(--ease-settle)_both]"
                             >
-                                <span class="text-xs font-medium">Corners</span>
+                                <div>
+                                    <p class="font-medium">
+                                        {{
+                                            designPart.kind === 'heading'
+                                                ? 'Heading'
+                                                : 'Cancel button'
+                                        }}
+                                    </p>
+                                    <p
+                                        v-if="designPart.kind === 'cancel'"
+                                        class="mt-1 text-muted-foreground"
+                                    >
+                                        One item of a list. A change here
+                                        changes every item.
+                                    </p>
+                                </div>
                                 <div
-                                    class="mt-1.5 flex rounded-md bg-muted p-0.5"
+                                    v-if="designPart.kind === 'cancel'"
+                                    class="flex rounded-md bg-muted p-0.5"
+                                    role="group"
+                                    aria-label="Which ones change"
                                 >
                                     <button
-                                        v-for="choice in cornerChoices"
-                                        :key="choice.key"
+                                        v-for="choice in [
+                                            {
+                                                one: false,
+                                                label: 'All like it',
+                                            },
+                                            {
+                                                one: true,
+                                                label: 'Only this one',
+                                            },
+                                        ]"
+                                        :key="choice.label"
                                         type="button"
                                         :aria-pressed="
-                                            chosenCorners === choice.key
+                                            onlyThisOne === choice.one
                                         "
                                         :class="[
                                             'min-h-11 flex-1 rounded px-2 text-sm transition-colors duration-quick select-none pointer-fine:min-h-8',
-                                            chosenCorners === choice.key
+                                            onlyThisOne === choice.one
                                                 ? 'bg-background font-medium shadow-xs'
                                                 : 'text-muted-foreground hover:text-foreground',
                                         ]"
-                                        :data-test="`designer-corners-${choice.label.toLowerCase()}`"
-                                        @click="
-                                            setLook({ corners: choice.key })
-                                        "
+                                        @click="onlyThisOne = choice.one"
                                     >
                                         {{ choice.label }}
                                     </button>
                                 </div>
+                                <label class="block">
+                                    <span class="text-xs font-medium"
+                                        >Words</span
+                                    >
+                                    <input
+                                        :value="
+                                            pickedLook.words ??
+                                            (designPart.kind === 'heading'
+                                                ? 'Your bookings'
+                                                : 'Cancel')
+                                        "
+                                        class="mt-1.5 block h-11 w-full rounded-md bg-muted px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 pointer-fine:h-9"
+                                        maxlength="24"
+                                        @change="
+                                            setLook({
+                                                words: (
+                                                    $event.target as HTMLInputElement
+                                                ).value,
+                                            })
+                                        "
+                                    />
+                                </label>
+                                <div role="group" aria-label="Colour">
+                                    <span class="text-xs font-medium"
+                                        >Colour</span
+                                    >
+                                    <div class="mt-1.5 flex gap-1.5">
+                                        <button
+                                            v-for="choice in colourChoices"
+                                            :key="choice.key"
+                                            type="button"
+                                            :aria-label="choice.label"
+                                            :title="choice.label"
+                                            :aria-pressed="
+                                                chosenColour === choice.key
+                                            "
+                                            :class="[
+                                                'grid size-11 place-items-center rounded-md border transition-shadow duration-quick pointer-fine:size-8',
+                                                chosenColour === choice.key
+                                                    ? 'ring-2 ring-[#7c3aed] ring-offset-2 ring-offset-background'
+                                                    : 'hover:ring-1 hover:ring-border',
+                                            ]"
+                                            :style="{
+                                                background: lookColour(
+                                                    choice.key,
+                                                ),
+                                                color:
+                                                    choice.key === 'primary' ||
+                                                    choice.key === 'foreground'
+                                                        ? look?.colors
+                                                              .background
+                                                        : look?.colors
+                                                              .foreground,
+                                            }"
+                                            @click="
+                                                setLook({ colour: choice.key })
+                                            "
+                                        >
+                                            <Check
+                                                v-if="
+                                                    chosenColour === choice.key
+                                                "
+                                                class="size-4"
+                                                aria-hidden="true"
+                                            />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div
+                                    v-if="designPart.kind === 'cancel'"
+                                    role="group"
+                                    aria-label="Corners"
+                                >
+                                    <span class="text-xs font-medium"
+                                        >Corners</span
+                                    >
+                                    <div
+                                        class="mt-1.5 flex rounded-md bg-muted p-0.5"
+                                    >
+                                        <button
+                                            v-for="choice in cornerChoices"
+                                            :key="choice.key"
+                                            type="button"
+                                            :aria-pressed="
+                                                chosenCorners === choice.key
+                                            "
+                                            :class="[
+                                                'min-h-11 flex-1 rounded px-2 text-sm transition-colors duration-quick select-none pointer-fine:min-h-8',
+                                                chosenCorners === choice.key
+                                                    ? 'bg-background font-medium shadow-xs'
+                                                    : 'text-muted-foreground hover:text-foreground',
+                                            ]"
+                                            :data-test="`designer-corners-${choice.label.toLowerCase()}`"
+                                            @click="
+                                                setLook({ corners: choice.key })
+                                            "
+                                        >
+                                            {{ choice.label }}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Edits wait to be kept, as in the workspace. -->
+                            <div
+                                class="flex min-h-14 items-center gap-2 border-t px-4 py-2 text-xs"
+                                aria-live="polite"
+                            >
+                                <template v-if="designEdits > 0">
+                                    <p
+                                        class="min-w-0 flex-1 text-muted-foreground"
+                                    >
+                                        {{
+                                            designEdits === 1
+                                                ? '1 edit not kept yet'
+                                                : `${designEdits} edits not kept yet`
+                                        }}
+                                    </p>
+                                    <button
+                                        type="button"
+                                        class="min-h-11 rounded-md px-2.5 font-medium text-muted-foreground select-none hover:bg-muted hover:text-foreground pointer-fine:min-h-8"
+                                        @click="undoDesign"
+                                    >
+                                        Undo all
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="min-h-11 press rounded-md bg-primary px-3 font-medium text-primary-foreground select-none hover:bg-primary/90 pointer-fine:min-h-8"
+                                        data-test="designer-keep"
+                                        @click="keepDesign"
+                                    >
+                                        Keep
+                                    </button>
+                                </template>
+                                <p
+                                    v-else-if="designKept"
+                                    class="flex items-center gap-1.5 text-muted-foreground"
+                                >
+                                    <Check
+                                        class="size-3.5 text-emerald-600 dark:text-emerald-400"
+                                        aria-hidden="true"
+                                    />
+                                    Kept as a change you can undo.
+                                </p>
+                                <p v-else class="text-muted-foreground">
+                                    Click a part of the app to change it.
+                                </p>
                             </div>
                         </div>
-
-                        <!-- Edits wait to be kept, as in the workspace. -->
-                        <div
-                            class="flex min-h-14 items-center gap-2 border-t px-4 py-2 text-xs"
-                            aria-live="polite"
-                        >
-                            <template v-if="designEdits > 0">
-                                <p class="min-w-0 flex-1 text-muted-foreground">
-                                    {{
-                                        designEdits === 1
-                                            ? '1 edit not kept yet'
-                                            : `${designEdits} edits not kept yet`
-                                    }}
-                                </p>
-                                <button
-                                    type="button"
-                                    class="min-h-11 rounded-md px-2.5 font-medium text-muted-foreground select-none hover:bg-muted hover:text-foreground pointer-fine:min-h-8"
-                                    @click="undoDesign"
-                                >
-                                    Undo all
-                                </button>
-                                <button
-                                    type="button"
-                                    class="min-h-11 press rounded-md bg-primary px-3 font-medium text-primary-foreground select-none hover:bg-primary/90 pointer-fine:min-h-8"
-                                    data-test="designer-keep"
-                                    @click="keepDesign"
-                                >
-                                    Keep
-                                </button>
-                            </template>
-                            <p
-                                v-else-if="designKept"
-                                class="flex items-center gap-1.5 text-muted-foreground"
-                            >
-                                <Check
-                                    class="size-3.5 text-emerald-600 dark:text-emerald-400"
-                                    aria-hidden="true"
-                                />
-                                Kept as a change you can undo.
-                            </p>
-                            <p v-else class="text-muted-foreground">
-                                No AI, so it uses none of your plan.
-                            </p>
-                        </div>
                     </div>
+                    <iframe
+                        v-if="designerSrc !== null"
+                        :src="designerSrc"
+                        title="Try the designer"
+                        loading="lazy"
+                        :class="[
+                            'absolute inset-0 size-full bg-background motion-safe:transition-opacity motion-safe:duration-panel',
+                            designerReady
+                                ? 'opacity-100'
+                                : 'pointer-events-none opacity-0',
+                        ]"
+                        data-test="welcome-designer-frame"
+                    />
+                    <p
+                        class="absolute inset-x-0 bottom-4 flex justify-center px-4"
+                        role="status"
+                    >
+                        <span
+                            v-if="designerFailed"
+                            class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border bg-background px-3 py-2 text-sm shadow-sm"
+                        >
+                            The designer did not open. This is our fault.
+                            <button
+                                type="button"
+                                class="min-h-11 font-medium text-primary underline-offset-4 hover:underline pointer-fine:min-h-8"
+                                @click="reopenDesigner"
+                            >
+                                Try again
+                            </button>
+                        </span>
+                        <span
+                            v-else-if="designerSrc !== null && !designerReady"
+                            class="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground shadow-sm"
+                        >
+                            <LoaderCircle
+                                class="size-3.5 motion-safe:animate-spin"
+                                aria-hidden="true"
+                            />
+                            Opening the designer…
+                        </span>
+                    </p>
                 </div>
             </section>
 
@@ -2325,7 +2488,7 @@ onBeforeUnmount(() => {
                     class="mt-12 grid reveal items-start gap-8 delay-100 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] lg:gap-16"
                 >
                     <div
-                        class="grid gap-1"
+                        class="grid divide-y border-y lg:mt-1"
                         role="group"
                         aria-label="Ready-made apps"
                         data-test="welcome-starters"
@@ -2336,10 +2499,10 @@ onBeforeUnmount(() => {
                             type="button"
                             :aria-pressed="shownStarter?.key === item.key"
                             :class="[
-                                'group grid min-h-11 press gap-0.5 rounded-md border px-4 py-3 text-left select-none',
+                                'group grid min-h-11 gap-0.5 border-l-2 py-4 pr-2 pl-4 text-left transition-colors duration-base select-none',
                                 shownStarter?.key === item.key
-                                    ? 'border-border bg-muted'
-                                    : 'border-transparent hover:bg-muted/60',
+                                    ? 'border-l-primary [&>span:first-child]:font-semibold'
+                                    : 'border-l-transparent hover:border-l-border',
                             ]"
                             @click="shownStarterKey = item.key"
                         >
@@ -2357,8 +2520,8 @@ onBeforeUnmount(() => {
                             class="rounded-xl border bg-background p-5 shadow-2xl shadow-black/10 motion-safe:animate-[rise-in_300ms_var(--ease-settle)_both] sm:p-7 dark:border-input"
                         >
                             <p class="text-sm text-muted-foreground">
-                                The first version of {{ shownStarter.name }}
-                                already does this
+                                The first version of {{ shownStarter.name }} is
+                                built to do this
                             </p>
                             <ul class="mt-4 divide-y border-y">
                                 <li
@@ -2481,12 +2644,14 @@ onBeforeUnmount(() => {
                             <span
                                 id="idea-end-help"
                                 class="text-sm text-muted-foreground"
-                                aria-live="polite"
-                                >{{
+                                ><span aria-live="polite">{{
                                     hint
                                         ? 'Change it, or press Start again.'
-                                        : 'Free to start. No card needed.'
+                                        : ''
                                 }}</span
+                                ><template v-if="!hint"
+                                    >Free to start. No card needed.</template
+                                ></span
                             >
                             <button
                                 type="submit"

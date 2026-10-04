@@ -35,9 +35,9 @@ function choose(plan: Plan): void {
 }
 
 const included = [
-    'Every change checked before you see it',
+    'Every change checked before you keep it',
     'A live preview of every change',
-    'Undo any change you kept',
+    'Undo a change you kept',
     "Your app's code, yours to download",
 ];
 
@@ -62,7 +62,7 @@ const questions = [
 <template>
     <PageMeta
         title="Pricing"
-        description="Every plan builds the same way and checks each change before you see it. Bigger plans only include more use each month."
+        description="Every plan builds the same way and checks each change before you keep it. Bigger plans only include more use each month."
     />
 
     <section class="mx-auto max-w-7xl px-4 pt-20 pb-24 sm:px-8 sm:pt-32">
@@ -177,7 +177,7 @@ const questions = [
                 >Bigger plans only include more use.</span
             >
         </h2>
-        <ul class="mt-10 grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+        <ul class="mt-10 grid max-w-3xl gap-x-8 gap-y-4 sm:grid-cols-2">
             <li
                 v-for="line in included"
                 :key="line"
