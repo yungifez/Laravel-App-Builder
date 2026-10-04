@@ -298,6 +298,14 @@ class TailwindClassesTest extends TestCase
             ['height' => -16],
             ['rotate' => 'lots'],
             ['text_align' => 'middle'],
+            // Absurd amounts, as a typo or a forged request sends them.
+            ['padding_x' => 1e308],
+            ['margin_y' => -20000],
+            ['gap' => INF],
+            ['width' => 50000],
+            ['translate_x' => '5000%'],
+            ['rotate' => 7200],
+            ['border' => 1e9],
         ] as $changes) {
             try {
                 TailwindClasses::write('', 'base', $changes);
@@ -306,6 +314,13 @@ class TailwindClassesTest extends TestCase
                 $this->addToAssertionCount(1);
             }
         }
+    }
+
+    public function test_large_but_real_amounts_are_still_written()
+    {
+        $this->assertSame('w-480', TailwindClasses::write('', 'base', ['width' => 1920]));
+        $this->assertSame('-translate-x-[200%]', TailwindClasses::write('', 'base', ['translate_x' => '-200%']));
+        $this->assertSame('-rotate-180', TailwindClasses::write('', 'base', ['rotate' => -180]));
     }
 
     /**

@@ -117,6 +117,16 @@ class TailwindClasses
 
     protected const SIDES = ['top', 'right', 'bottom', 'left'];
 
+    /**
+     * The largest amounts a change may write. Anything past them is a typo
+     * or a forged request, and would put an absurd class in the app.
+     */
+    protected const MOST_PIXELS = 10000;
+
+    protected const MOST_PERCENT = 1000;
+
+    protected const MOST_DEGREES = 360;
+
     protected static ?TailwindMerge $merger = null;
 
     /**
@@ -268,6 +278,10 @@ class TailwindClasses
      */
     public static function spacing(int|float $pixels): string
     {
+        if (! is_finite($pixels) || abs($pixels) > self::MOST_PIXELS) {
+            throw new InvalidArgumentException("Invalid spacing [{$pixels}].");
+        }
+
         if ($pixels == 1) {
             return 'px';
         }
@@ -612,7 +626,7 @@ class TailwindClasses
             'border' => match (true) {
                 $value === 1 => 'border',
                 in_array($value, [0, 2, 4, 8], true) => "border-{$value}",
-                is_numeric($value) && $value > 0 => 'border-['.self::number((float) $value).'px]',
+                is_numeric($value) && $value > 0 && $value <= self::MOST_PIXELS => 'border-['.self::number((float) $value).'px]',
                 default => throw new InvalidArgumentException("Invalid border [{$value}]."),
             },
             default => isset(self::MEASURES[$property])
@@ -681,6 +695,7 @@ class TailwindClasses
             'spacing' => is_int($value) || is_float($value) ? self::spacing($value) : null,
             'length' => self::lengthUtility($value, $measure['keywords'] ?? []),
             'degrees' => match (true) {
+                (is_int($value) || is_float($value)) && $value > self::MOST_DEGREES => null,
                 is_int($value) || (is_float($value) && floor($value) == $value) => (string) (int) $value,
                 is_float($value) => '['.self::number($value).'deg]',
                 default => null,
@@ -731,6 +746,10 @@ class TailwindClasses
 
         if (is_string($value) && preg_match('/^(\d+(?:\.\d+)?)%$/', $value, $match) === 1) {
             $percent = (float) $match[1];
+
+            if ($percent > self::MOST_PERCENT) {
+                return null;
+            }
 
             foreach (self::FRACTIONS as [$top, $bottom]) {
                 if (abs($percent - $top / $bottom * 100) < 0.01) {
