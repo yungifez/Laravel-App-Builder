@@ -24,7 +24,7 @@ defineOptions({
 });
 
 // What they typed on the home page, shown so they know it is not lost.
-// It is read after mount because it lives in this browser tab only.
+// It is read after mount because it lives in this browser only.
 const idea = ref('');
 
 onMounted(() => {
