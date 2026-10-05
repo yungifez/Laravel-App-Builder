@@ -220,6 +220,48 @@ class DesignEditsTest extends TestCase
         $this->assertStringContainsString('md:gap-6', (string) $this->repository->show($this->project, $tip, 'resources/js/pages/Plans.vue'));
     }
 
+    public function test_kept_words_and_size_edits_join_the_app_together()
+    {
+        $this->editHeading(['text_size' => '2xl'], 'text-xl');
+        $this->actingAs($this->owner)
+            ->post(route('visual-texts.store', $this->project), [
+                'preview' => $this->preview->uuid,
+                'target' => 'resources/js/pages/Plans.vue:3:9',
+                'before' => 'Plans',
+                'text' => 'Prices',
+                'revision' => $this->repository->head($this->project, $this->preview->refresh()->branch()),
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->actingAs($this->owner)
+            ->post(route('design-edits.store', $this->project))
+            ->assertSessionHasNoErrors();
+        $this->finishCheck($this->draft(), VerificationStatus::Unverified);
+
+        $this->assertStringContainsString(
+            '<h1 class="text-xl md:text-2xl">Prices</h1>',
+            (string) $this->repository->show($this->project, $this->repository->head($this->project), 'resources/js/pages/Plans.vue'),
+        );
+    }
+
+    public function test_an_undone_edit_stays_out_when_the_rest_are_kept()
+    {
+        $this->edit(['gap' => 24]);
+        $this->editHeading(['text_size' => '2xl'], 'text-xl');
+
+        $this->actingAs($this->owner)
+            ->post(route('visual-edits.reversion.store', $this->project->visualEdits()->latest('id')->firstOrFail()))
+            ->assertSessionHasNoErrors();
+        $this->actingAs($this->owner)
+            ->post(route('design-edits.store', $this->project))
+            ->assertSessionHasNoErrors();
+        $this->finishCheck($this->draft(), VerificationStatus::Unverified);
+
+        $kept = (string) $this->repository->show($this->project, $this->repository->head($this->project), 'resources/js/pages/Plans.vue');
+        $this->assertStringContainsString('md:gap-6', $kept);
+        $this->assertStringContainsString('<h1 class="text-xl">Plans</h1>', $kept);
+    }
+
     public function test_there_is_nothing_to_keep_without_edits()
     {
         $this->actingAs($this->owner)
@@ -261,6 +303,20 @@ class DesignEditsTest extends TestCase
             'device' => 'md',
             'changes' => $changes,
         ];
+    }
+
+    /**
+     * @param  array<string, string>  $changes
+     */
+    protected function editHeading(array $changes, string $expected): void
+    {
+        $this->actingAs($this->owner)
+            ->post(route('visual-edits.store', $this->project), [
+                ...$this->editFields([], $expected),
+                'target' => 'resources/js/pages/Plans.vue:3:9',
+                'changes' => $changes,
+            ])
+            ->assertSessionHasNoErrors();
     }
 
     protected function draft(): FeatureRequest
