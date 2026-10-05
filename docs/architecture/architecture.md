@@ -1617,7 +1617,7 @@ plan and the review follow what the pictures show. A retry keeps them.
 The existing run model stays: states queued → planning → implementing →
 verifying → reviewing → completed, plus needs_user_decision, cancelling →
 cancelled and failed; a lease with a fencing token per run; budgets (operations,
-minutes, repairs); cancellation; the reconciler. A request that only asks about
+minutes, repairs, AI spend); cancellation; the reconciler. A request that only asks about
 the app ends at planning: the planner's `answer` is shown, the run moves from
 planning to completed and the request is "answered", with no workspace change,
 verification or review. Fencing moves from individual
@@ -1627,6 +1627,21 @@ coding agent works, not only at tool calls. When a renewal finds the lease lost
 or the run cancelled, the agent and its whole process group are stopped at
 once: fencing refuses a stale worker's writes to our records, but only
 stopping the process keeps it out of a workspace another worker took over.
+
+**Every stop on money or limits has a next step.** Before each planning or
+building step the run checks our daily spend, the plan's monthly use and the
+change's own spend. Each stop tells the owner what to do next:
+
+| Stop                         | Set by                                                                                                                 | The owner sees                                                                                                                                                        |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Our daily AI spend           | `BUILDER_DAILY_SPEND_USD` (10; 0 is off)                                                                               | "This is our fault": new work is paused, and the time it starts again in the owner's time zone. Once lifted, the stop says so and offers "Try again".                 |
+| The plan's monthly AI use    | `MeasureUsage` against the plan                                                                                        | The date it starts again and a "See your plan" link. Once lifted, "Try again".                                                                                        |
+| One change's AI spend        | `BUILDER_RUN_MAX_USD` (25; 0 is off), also tool operations, minutes and the agent's own `BUILDER_AGENT_MAX_BUDGET_USD` | "Keep trying" goes on from where it stopped with the same amount again, when the workspace and plan are still there. Otherwise "Try again" or ask for a smaller part. |
+| Our AI account out of credit | the provider's credit error                                                                                            | "This is our fault", try again later. Operators see "AI account out of credit" in Operations.                                                                         |
+
+A new request is refused before it is saved while our spend is paused or the
+plan is used up, so no stopped change is left behind. Every other stopped
+change offers "Try again", "Ask in other words" or a link to the newer try.
 
 ## 12. Verification
 
@@ -1655,6 +1670,43 @@ Only DERIVED, CONFIRMED and PACKAGE CONTRACT statements feed hard gates. AI
 interpretations and proposals produce warnings and review prompts only. Purely
 visual edits get light verification: build, `vue-tsc`, a visual smoke test, and
 a behaviour diff showing that no behaviour changed.
+
+**As built: the semantic checks.** Each one reads the files as the change
+leaves them, with a parser or a script in the workspace, never a model. A
+finding goes back to the coder as a blocking finding while repairs are left.
+When the coder cannot fix it, or the owner wants what it found, the owner
+keeps it in the change's proof ("If that is what you want, say so"), per
+finding (`AcceptFindings`). Each is on by default and has its own switch.
+
+- **Migrations** (`MigrationChecks`, `BUILDER_MIGRATION_CHECK`): when a change
+  adds a migration, the workspace runs `migrate`, undoes the added migrations,
+  seeds and runs `migrate` again. A step that fails, or an existing migration
+  the change edited, is sent back ("add a new migration instead"). After the
+  undo, `migrate --pretend` gives the SQL. Drops, renames, type changes,
+  NOT NULL without a default and, on PostgreSQL only, an index or unique
+  constraint built without `CONCURRENTLY` are sent back with the safe way
+  (`->online()`). The owner reads them as what happens to stored information.
+- **Queued work** (`QueuedWork`, `BUILDER_QUEUED_CHECK`): a new class that is
+  queued (a job, listener, mail or notification) must say how many times it is
+  tried, how long it waits between tries, and what happens when it gives up
+  (`failed()`).
+- **Records that belong to someone** (`OwnedRecords`, `BUILDER_OWNER_CHECK`):
+  a new table with an owner column (`builder.verification.owners.columns`,
+  such as `user_id` or `team_id`) needs a policy that reads that column or a
+  global scope on its model. A table with no model is skipped.
+- **Packages** (`PackagePolicy`, `BUILDER_PACKAGE_POLICY`): a lockfile change
+  is compared before and after. A package the change asks for by name must be
+  on the allowlist, every new package must have an allowed licence, and it
+  must come from the public registry. The lists are in
+  `builder.verification.packages`.
+- **Messages to people** (`NewMessages`, `BUILDER_MESSAGE_APPROVAL`): a new
+  mail, or a notification with a new mail or SMS channel, is not sent back,
+  since the owner may want it. The change cannot be kept until the owner says
+  they want what it sends. A later change that sends something new asks again.
+- **Laravel structure** (`ArchPresets`): a check that runs Pest's `laravel`
+  and `security` architecture presets from a temporary test outside the app's
+  tests, when the app has Pest 3 or later. Only problems the change adds go
+  back. Not built: presets for our own conventions.
 
 **Scope by risk, never by diff size.** "Small" is a property of meaning: a
 three-line authorization change is riskier than a 200-line isolated component.
@@ -1686,6 +1738,25 @@ is in a file the change touches and the report shows it ran and passed. A
 named test that is missing, skipped or misnamed is a blocking finding. A
 suite without a report leaves the reviewer's claim as a claim, shown to the
 owner as not confirmed.
+
+**As built: tests written first, by another model.** After the plan and before
+the coder starts, `WriteTestsFirst` asks a test writer (`TestWriter`, on the
+reviewer tier through `ModelRole::Reviewer`) for one test per verify item:
+the base, alternate and exception cases. It reads the plan, the data shape,
+the routes and up to two of the app's own feature tests, and never sees the
+coder's work. `WrittenTests` checks its answer without a model. Each file is
+new, under `tests/`, run by the suite and parses. Each item has exactly one
+named test that exists in its file. The files stay within
+`verification.written_first.max_files` and `max_bytes`. A refused answer is
+asked for again with every rule it broke, up to `attempts` times. Then the run
+goes on without written tests (`tests_not_written`), and the coder writes them
+as before. The coder's brief lists the tests and says not to change them.
+They are frozen by being written back as written after the coder finishes
+(`written_tests_restored`), as protected files are, not by refusing its
+writes. Each item's evidence is then its written test, not the reviewer's
+claim. `BUILDER_TESTS_WRITTEN_FIRST` turns it off. Not built: the owner does
+not confirm the tests in plain words, a written test that is itself wrong is
+repaired like any failure, and runs on a worker driver get none.
 
 **The change is judged, not the app it started from.** Format and lint
 checks run only on the files the change added or modified
@@ -2799,14 +2870,17 @@ path.
 - The runtime gets a base URL and a short-lived token; the gateway injects the
   real credential, so an agent with a shell never sees it; it records usage and
   enforces budgets as hard limits.
-  Built (`ModelGateway`, `/api/gateway/{provider}`, off by default behind
-  `BUILDER_MODEL_GATEWAY`): each runner-agent run gets a `gw_` token in place
+  Built (`ModelGateway`, `/api/gateway/{provider}`, on by default through
+  `BUILDER_MODEL_GATEWAY`; with it off, a box refuses to start an agent rather
+  than receive the real key): each runner-agent run gets a `gw_` token in place
   of `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, and a base URL that points at the
   control plane. The gateway passes each call on with the real key and streams
   the answer back. It counts calls and output tokens per run, and it refuses a
   run past `max_requests` or `max_output_tokens`. The token works for one
   provider and closes when the run ends. It is plain Laravel and HTTP, so it
-  does not depend on a cloud vendor. Not built yet: budgets per account.
+  does not depend on a cloud vendor. Not built yet: budgets per account in the
+  gateway. The plan's monthly AI use is enforced before each step instead
+  ([§11](#11-execution-agents-runtimes-and-routing)).
 - The gateway also adds our instructions on its side (how to work, the
   discretion and observability rules), so the box holds only the task: the
   plan, its acceptance criteria and the owner's own request for their own app
@@ -2848,6 +2922,28 @@ the owner saw with that list (`seen`). When the app changed since, for example
 a change kept in another tab, `PublishProject` refuses: the owner did not see
 what would go online. The list then shows the newer version. The commit is
 fixed when the publish starts, and the checks and the push use that commit.
+
+### Undoing a kept change
+
+"Undo this change" (`RevertChange`) writes a new commit that reverses the
+change's commit, in the owner's name, and reverses the notes it changed. It
+locks the change first, so two quick clicks undo it once. A kept change that
+a later kept change builds on (its commit is in that change's history) is not
+undone by itself, even when git sees no conflict: the later one may rely on
+it. The owner is told which to undo first, newest first, by name.
+
+An undo never runs a migration's `down()`. When the change added a migration,
+the owner is told that what the app stored because of it is still there.
+
+An undo changes the app in the builder, not the live app. While the newest
+online version still holds the undone change, the owner sees that it is still
+online and "Put it online again", with how many other kept changes go online
+too. An undone change shows as "Undone", with nothing to try or check.
+
+A change that no longer fits the app (its patch does not apply any more, or
+its checks stopped for a reason that needs a new attempt) cannot be kept as it
+is. It shows "Could not finish" and offers only "Try again" and "Ask in other
+words"; keeping it is refused on the server too.
 
 ### Going back to the version before
 
@@ -3455,6 +3551,33 @@ app's repository (§19). The database is the lasting copy:
 - Notes that older versions kept in `.builder/` are imported when a project is
   imported. `php artisan projects:move-notes` moves them out of existing
   repositories with one commit.
+
+**Keeping the notes right (as built).** The notes help only while they match
+the code, so drift is found without a model and the owner fixes it in place:
+
+- **No keys.** A live secret key is cut from the notes before they are saved,
+  and the owner's own edit with one is refused ("Keep keys in your app's
+  settings, not in its notes").
+- **The quick check** (`CheckProjectNotes`) lists notes that point at files
+  that are not in the app, or say a part is connected to something the notes
+  do not describe. "Remove from the notes" removes only what the check still
+  finds (`FixNotesDrift`), and is refused when the notes changed since. It also
+  lists behaviours the app's tests check that no part's rules describe, for
+  the owner to copy in.
+- **Notes written before later code.** Each notes file's save time is set
+  against `git log` of its part's paths since then. A part with at least
+  `BUILDER_STALE_NOTES_MIN_FILES` (3) later-changed files, not counting its
+  tests or removed files, is listed with those files. The owner corrects the
+  notes or says "These notes are still right", which saves a `checked` time
+  in the notes so they are not listed again until the code moves on. Commit
+  times and save times come from different clocks, so a rebase can move a
+  file in or out of the count; the threshold keeps one such file from listing
+  a part.
+- **After each change.** The review lists the parts whose code the change
+  touched without rewriting their notes (`notes_behind`), and the change's
+  page points to them ("These notes may now be out of date"). When the notes
+  update failed, it says it is our fault. The project's numbers count the
+  changes that left notes behind.
 
 The layout of the files:
 
@@ -4395,6 +4518,42 @@ Telemetry (1–6) and the owner sessions run alongside.
 - at least 3–5 real owners have used the loop, and we know what they did and
   did not value.
 
+**Where V1 stands (2026-10-05).** Met, as built:
+
+- **Secrets, cost and budgets.** Live keys are cut from everything sent to a
+  model (`RedactSecrets`) and from the notes. The coding agent in a box
+  reaches its model through the gateway, never with the real key. Every model
+  call is priced on its change, or counted as unpriced. Each change, each day
+  and each plan has a limit that stops the work ([§11](#11-execution-agents-runtimes-and-routing)).
+- **Verification is independent of the agent.** The checks run after the
+  agent stops and judge only what the change adds. Protected files and the
+  tests written first are put back as they were. The semantic checks
+  ([§12](#12-verification)) read the result without a model.
+- **Every kept change can be undone, including after it went online.** The
+  undo is a new commit. A change that later kept changes build on is undone
+  after them, newest first. An undone change stays online until the app is
+  put online again, and the owner is told so (§17).
+- **The behaviour diff says how each line is known**: tested, in the change
+  but not tested, or not shown in the change.
+- **The owner can read and correct the notes, and drift is caught**
+  ([§26.3](#263-context-as-markdown-in-the-application)): notes pointing at nothing, behaviours no rule
+  describes, notes written before later code, and parts a change left behind.
+- **Every failure ends in a next step**: setup, the checks, money and limits,
+  a change that no longer fits, and publishing.
+- **Telemetry answers the four questions**, per app and across every app.
+
+Not met:
+
+- **Isolated sandboxes.** Each workspace runs as its own user, cannot reach
+  private addresses, and only it can open its previews (runner machines).
+  Workspaces on one machine still share its kernel, and can reach the whole
+  internet. A stronger boundary per run is not built yet.
+- **Someone other than us** has not created an app and shipped changes, edits
+  and a deploy without our help. Importing an existing app is out of scope
+  for V1 (§18).
+- **3–5 real owners** have not used the loop yet, so what they value is
+  unknown.
+
 Two corrections to direction 16, from §26.12: 15px padding is `p-3.75` in
 Tailwind v4 (a theme-relative utility), not `p-[15px]`; and any fraction is a
 valid width (`w-73/100`), though `w-[73%]` reads more clearly and is fine as
@@ -4777,6 +4936,13 @@ compiled packet, same model and code) tests it directly.
   reached the host), _published_ (the app answered its checks after the push)
   and _healthy_ (not measured: nothing checks a published app afterwards)
   are separate. Every percentage is shown with its counts.
+- **The four V1 measures** (cost per kept change, first try passed, touched
+  parts not asked about, edits without a model) are worked out in one place
+  (`MeasureChanges`). Each owner sees them for their app and operators see
+  them across every app (Numbers), so a word means one thing. Cost counts
+  every request, kept or not, and the decision model's calls about it. Calls
+  without a known price are counted, never guessed. A first try passes only
+  with tests for the change.
 - **Operations screens (built, phase 1):** operators named in
   `config/operations.php` see what needs attention (silent queue workers,
   backlog, stuck runs and expired leases, failures by stage and reason,
