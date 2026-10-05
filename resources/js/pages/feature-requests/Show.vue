@@ -365,7 +365,8 @@ const doneWhen = computed(() => {
                     state:
                         item.says === null
                             ? ('none' as const)
-                            : verified?.evidence === 'tested'
+                            : verified?.evidence === 'tested' ||
+                                verified?.evidence === 'already_true'
                               ? ('checked' as const)
                               : ('open' as const),
                     label: verified ? verifyLabel(verified) : null,
