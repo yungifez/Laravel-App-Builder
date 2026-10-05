@@ -269,25 +269,35 @@ const whereChanged = computed(() => {
         folder: file.path.split('/').slice(0, -1).join('/'),
     }));
     const areas = run.value?.review?.areas;
+    const group = (
+        area: { name: string; files: string[] },
+        unasked: boolean,
+    ) => ({
+        name: area.name,
+        unasked,
+        files: files.filter((file) => area.files.includes(file.path)),
+    });
     const groups = [
-        ...(areas?.requested ?? []),
-        ...(areas?.may_also_affect ?? []),
-    ]
-        .map((area) => ({
-            name: area.name,
-            files: files.filter((file) => area.files.includes(file.path)),
-        }))
-        .filter((group) => group.files.length > 0);
+        ...[...(areas?.requested ?? []), ...(areas?.may_also_affect ?? [])].map(
+            (area) => group(area, false),
+        ),
+        ...(areas?.unexpected ?? []).map((area) => group(area, true)),
+    ].filter((group) => group.files.length > 0);
     const placed = new Set(
         groups.flatMap((group) => group.files.map((file) => file.path)),
     );
     const rest = files.filter((file) => !placed.has(file.path));
 
+    // Files no part of the app claims are counted, so the owner sees how much
+    // of the change the notes cannot explain.
     return rest.length > 0
         ? [
               ...groups,
               {
-                  name: groups.length > 0 ? 'Other files' : 'Files',
+                  name: areas
+                      ? `Not in any part of your app (${rest.length})`
+                      : 'Files',
+                  unasked: areas !== undefined,
                   files: rest,
               },
           ]
@@ -442,7 +452,16 @@ const foundNothing = computed(() => {
 
 const changes = computed(() => run.value?.review?.changes ?? []);
 const asked = computed(() =>
-    changes.value.filter((change) => change.section !== 'unexpected'),
+    changes.value.filter(
+        (change) =>
+            change.section !== 'unexpected' &&
+            change.section !== 'may_also_affect',
+    ),
+);
+// A neighbouring part the change reached on purpose: not what was asked,
+// not a surprise either, so it gets neither the green check nor the warning.
+const mayAlso = computed(() =>
+    changes.value.filter((change) => change.section === 'may_also_affect'),
 );
 const unexpected = computed(() =>
     changes.value.filter((change) => change.section === 'unexpected'),
@@ -1121,6 +1140,32 @@ const checks = computed(() => {
                         </ul>
 
                         <div
+                            v-if="mayAlso.length > 0"
+                            class="space-y-1"
+                            data-test="review-may-also"
+                        >
+                            <p
+                                class="text-xs font-medium text-muted-foreground"
+                            >
+                                This may also have changed
+                            </p>
+                            <ul class="space-y-1 text-xs">
+                                <li
+                                    v-for="(item, index) in mayAlso"
+                                    :key="index"
+                                    :title="`Before: ${item.before}`"
+                                >
+                                    {{ item.behavior }}
+                                    <span
+                                        v-if="item.area_name"
+                                        class="text-muted-foreground"
+                                        >· {{ item.area_name }}</span
+                                    >
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div
                             v-if="unexpected.length > 0"
                             class="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3"
                             data-test="review-unexpected"
@@ -1605,8 +1650,12 @@ const checks = computed(() => {
                                     class="space-y-2"
                                 >
                                     <h3
-                                        class="text-sm font-medium text-muted-foreground"
+                                        class="flex items-center gap-1.5 text-sm font-medium text-muted-foreground"
                                     >
+                                        <CircleAlert
+                                            v-if="group.unasked"
+                                            class="size-3.5 text-amber-500"
+                                        />
                                         {{ group.name }}
                                     </h3>
                                     <p

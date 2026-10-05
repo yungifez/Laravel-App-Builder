@@ -1,8 +1,11 @@
 <?php
 
 use App\Actions\Projects\CreateProject;
+use App\Context\ProjectContext;
+use App\Context\ProjectNotes;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Features\PatchSummary;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
@@ -232,5 +235,27 @@ it('starts the chat full screen and gives the app half once it is open', functio
         ->assertMissing('@header-open-app')
         ->click('@chat-full')
         ->assertVisible('@header-open-app')
+        ->assertNoJavaScriptErrors();
+});
+
+it('keeps what may also have changed apart from what was asked, and counts files no part claims', function () {
+    $this->actingAs($this->owner);
+
+    askForInvitations($this->project);
+
+    $run = $this->project->featureRequests()->sole()->latestRun;
+    $files = collect(PatchSummary::files($run->featureRequest->refresh()->patch))
+        ->pluck('path')->reject(fn (string $path) => str_starts_with($path, ProjectNotes::directory().'/') || str_starts_with($path, ProjectContext::LEGACY_DIRECTORY.'/'))->values()->all();
+    $review = $run->review;
+    $review['changes'][] = ['behavior' => 'Seats are counted when someone joins.', 'before' => 'Seats were counted monthly.', 'now' => 'Seats are counted at once.', 'area' => 'billing', 'section' => 'may_also_affect'];
+    // No part claims any file, so all of them are counted as unclaimed.
+    $review['classification'] = [...$review['classification'], 'requested' => [], 'may_also_affect' => ['billing' => []], 'unexpected' => [], 'unclaimed' => $files];
+    $run->update(['review' => $review]);
+
+    visit(route('projects.show', ['project' => $this->project, 'change' => $run->featureRequest->uuid]))
+        ->assertSeeIn('@review-may-also', 'Seats are counted when someone joins.')
+        ->assertDontSeeIn('@run-review', 'Seats are counted when someone joins.')
+        ->click('@beside-code')
+        ->assertSeeIn('@detail-how', 'Not in any part of your app ('.count($files).')')
         ->assertNoJavaScriptErrors();
 });
