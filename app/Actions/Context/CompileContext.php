@@ -7,9 +7,15 @@ use App\Context\ContextPack;
 use App\Context\Effect;
 use App\Context\ProjectContext;
 use App\Enums\ContextMode;
+use Illuminate\Support\Facades\Context;
 
 class CompileContext
 {
+    /**
+     * The hidden context key a context experiment's trial sets to its mode.
+     */
+    public const TRIAL_MODE = 'context_trial_mode';
+
     /**
      * Test files listed for an area, at most.
      */
@@ -34,7 +40,9 @@ class CompileContext
      */
     public function handle(ProjectContext $context, array $targets, ?ContextMode $mode = null, array $files = []): ContextPack
     {
-        $mode ??= ContextMode::from((string) config('builder.context.mode'));
+        // A context experiment's trial asks for its own way, carried with the
+        // queued work that builds its change (see RunContextExperiment).
+        $mode ??= ContextMode::from((string) (Context::getHidden(self::TRIAL_MODE) ?? config('builder.context.mode')));
         $targets = $context->known($targets);
         $sections = [];
 

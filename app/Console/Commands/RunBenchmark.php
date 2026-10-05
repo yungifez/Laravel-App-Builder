@@ -2,17 +2,13 @@
 
 namespace App\Console\Commands;
 
-use App\Actions\Changes\AcceptChange;
 use App\Actions\Features\RequestFeature;
-use App\Actions\Runs\AnswerRunQuestion;
-use App\Enums\RunStatus;
+use App\Actions\Runs\AwaitChange;
 use App\Models\Project;
-use App\Models\User;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Console\View\TaskResult;
-use Illuminate\Support\Sleep;
 
 #[Signature('builder:benchmark {project : The project, by id} {--changes=1 : How many of the next changes to make}')]
 #[Description('Make the next changes of the Evolution Benchmark in a project, as an owner would')]
@@ -25,7 +21,7 @@ class RunBenchmark extends Command
      * would give. A change that fails stops the benchmark: the ones after
      * it build on it. `builder:evolution` then shows how the changes went.
      */
-    public function handle(RequestFeature $requestFeature, AnswerRunQuestion $answerRunQuestion, AcceptChange $acceptChange): int
+    public function handle(RequestFeature $requestFeature, AwaitChange $awaitChange): int
     {
         $project = Project::query()->find($this->argument('project'));
 
@@ -50,8 +46,8 @@ class RunBenchmark extends Command
         foreach (array_slice($next, 0, max(1, (int) $this->option('changes'))) as $prompt) {
             $number = array_search($prompt, $sequence, true) + 1;
             $failure = null;
-            $this->components->task("Change {$number}: {$prompt}", function () use ($requestFeature, $answerRunQuestion, $acceptChange, $project, $owner, $prompt, &$failure) {
-                $failure = $this->make($requestFeature, $answerRunQuestion, $acceptChange, $project, $owner, $prompt);
+            $this->components->task("Change {$number}: {$prompt}", function () use ($requestFeature, $awaitChange, $project, $owner, $prompt, &$failure) {
+                $failure = $awaitChange->handle($requestFeature->handle($project, $owner, $prompt), $owner, keep: true)['reason'];
 
                 return $failure === null ? TaskResult::Success->value : TaskResult::Failure->value;
             });
@@ -64,43 +60,5 @@ class RunBenchmark extends Command
         }
 
         return self::SUCCESS;
-    }
-
-    /**
-     * Make one change and keep it. Return why it could not be kept, or null.
-     */
-    protected function make(RequestFeature $requestFeature, AnswerRunQuestion $answerRunQuestion, AcceptChange $acceptChange, Project $project, User $owner, string $prompt): ?string
-    {
-        $request = $requestFeature->handle($project, $owner, $prompt);
-        $deadline = now()->addSeconds((int) config('builder.benchmark.wait'));
-
-        while (now()->lessThan($deadline)) {
-            $request->refresh();
-            $run = $request->latestRun;
-
-            if ($run?->status === RunStatus::NeedsUserDecision && $run->question !== null) {
-                $answerRunQuestion->handle($request, $owner, $run->question['recommended'] ?? $run->question['options'][0] ?? null);
-            } elseif ($run?->status === RunStatus::NeedsUserDecision) {
-                // No question: the run gave up and waits for the owner to
-                // change the request, which the benchmark never does.
-                return 'It stopped and waits for the owner. '.($run->error ?? '');
-            } elseif ($run?->status === RunStatus::Completed) {
-                $kept = $acceptChange->handle($request, $owner);
-
-                if ($kept->commit_sha !== null) {
-                    return null;
-                }
-
-                // The app moved on while the change was made: it is built
-                // again on top, and that one is kept instead.
-                $request = $kept;
-            } elseif ($run !== null && in_array($run->status, [RunStatus::Failed, RunStatus::Cancelled], true)) {
-                return "It stopped: {$run->status->value}. ".($run->error ?? $request->error ?? '');
-            }
-
-            Sleep::for(10)->seconds();
-        }
-
-        return 'It took longer than the benchmark waits for one change.';
     }
 }

@@ -3623,6 +3623,17 @@ distributions and paired differences, and read as trends. If C never pulls
 ahead, or only far beyond realistic sizes, we use flat notes: that is a good
 outcome, because it is simpler.
 
+As built: `builder:context-experiment {project} --modes=flat,selective`
+makes each next benchmark request once per mode, on the same commit. The
+mode travels with the change's queued work in hidden Laravel Context, so
+`CompileContext` uses it, and a run that compiled another mode is left out.
+Each `ContextTrial` keeps the §26.7 measures from the run's events. Then the
+selective change is kept so the next round builds on it, and the others are
+put away. `builder:context-results` shows each mode, then the median
+difference from selective over the rounds where both completed. Below
+`builder.context.experiment.min_pairs` pairs it says "too few pairs" instead.
+Every trial spends real model calls; nothing runs it on a schedule.
+
 The simulated owner is an engineering tool for iteration, scenarios and
 automated checks. It is not evidence that people value anything.
 

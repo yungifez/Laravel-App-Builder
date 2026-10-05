@@ -698,6 +698,13 @@ return [
             'min_changes' => (int) env('BUILDER_HISTORY_MIN_CHANGES', 2),
             'window' => (int) env('BUILDER_HISTORY_WINDOW', 50),
         ],
+
+        // The context experiment (builder:context-experiment, §26.7) shows
+        // a mode's difference from selective only once this many rounds
+        // completed in both, so a pair or two never reads like a trend.
+        'experiment' => [
+            'min_pairs' => (int) env('BUILDER_CONTEXT_EXPERIMENT_MIN_PAIRS', 5),
+        ],
     ],
 
     /*
