@@ -1113,6 +1113,28 @@ return [
             ],
         ],
 
+        // Whether a new route that changes data with no check on who may
+        // use it, or a route that lost its check, sends the change back.
+        // Only Laravel's own checks are read. The owner may keep either,
+        // such as a contact form anyone may send.
+        'routes_send_back' => (bool) env('BUILDER_ROUTES_SEND_BACK', true),
+
+        // Small mistakes made on purpose in the change's new PHP code, one
+        // at a time: a call that refuses, saves or sends left out, or a
+        // comparison turned around. The tests that run each line run again;
+        // a mistake none of them notices is behaviour no test pins down.
+        // At most "max" mistakes within "budget_seconds", after the checks
+        // pass. Measured only, never a reason to send a change back by
+        // itself: the reviewer and the owner read it.
+        'mutants' => [
+            'enabled' => (bool) env('BUILDER_MUTANTS', true),
+            'max' => (int) env('BUILDER_MUTANTS_MAX', 8),
+            'budget_seconds' => (int) env('BUILDER_MUTANTS_BUDGET_SECONDS', 240),
+            'command' => ['php', 'artisan', 'test', '--log-junit=storage/logs/mutants.xml'],
+            'timeout' => 180,
+            'report' => 'storage/logs/mutants.xml',
+        ],
+
         // A check with "files" runs only on the files the change added or
         // modified with those extensions: layout and lint are about the
         // lines written, and the rest of the app is not the change's to
@@ -1365,25 +1387,3 @@ return [
     ],
 
 ];
-        // Whether a new route that changes data with no check on who may
-        // use it, or a route that lost its check, sends the change back.
-        // Only Laravel's own checks are read. The owner may keep either,
-        // such as a contact form anyone may send.
-        'routes_send_back' => (bool) env('BUILDER_ROUTES_SEND_BACK', true),
-
-        // Small mistakes made on purpose in the change's new PHP code, one
-        // at a time: a call that refuses, saves or sends left out, or a
-        // comparison turned around. The tests that run each line run again;
-        // a mistake none of them notices is behaviour no test pins down.
-        // At most "max" mistakes within "budget_seconds", after the checks
-        // pass. Measured only, never a reason to send a change back by
-        // itself: the reviewer and the owner read it.
-        'mutants' => [
-            'enabled' => (bool) env('BUILDER_MUTANTS', true),
-            'max' => (int) env('BUILDER_MUTANTS_MAX', 8),
-            'budget_seconds' => (int) env('BUILDER_MUTANTS_BUDGET_SECONDS', 240),
-            'command' => ['php', 'artisan', 'test', '--log-junit=storage/logs/mutants.xml'],
-            'timeout' => 180,
-            'report' => 'storage/logs/mutants.xml',
-        ],
-
