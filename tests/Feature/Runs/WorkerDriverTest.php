@@ -15,6 +15,7 @@ use App\Actions\Runs\NarrateWork;
 use App\Actions\Runs\StartRun;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
+use App\Ai\Agents\NotesKeeper;
 use App\Context\ProjectNotes;
 use App\Enums\PreviewStatus;
 use App\Enums\RunStatus;
@@ -78,6 +79,7 @@ class WorkerDriverTest extends TestCase
             ]],
         ]]);
         ChangeReviewer::fake([['approved' => true, 'summary' => 'Looks right.', 'findings' => [], 'changes' => [], 'verify' => []]]);
+        NotesKeeper::fake([['files' => []]]);
     }
 
     public function test_the_run_waits_for_the_worker_and_tells_it_how_to_hand_the_change_back()

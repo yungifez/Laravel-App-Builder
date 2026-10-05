@@ -583,6 +583,10 @@ return [
             // spend fewer of the owner's tokens; keep it under the proxy's
             // request timeout.
             'status_wait_seconds' => (int) env('BUILDER_WORKER_STATUS_WAIT_SECONDS', 45),
+            // Whether the reviewer's model updates the notes after a worker's
+            // change. The worker never sees the notes, so without it they
+            // fall behind the code.
+            'keep_notes' => (bool) env('BUILDER_WORKER_KEEP_NOTES', true),
         ],
 
         // Our coding agents reach their model through the control plane:

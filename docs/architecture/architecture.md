@@ -1439,7 +1439,13 @@ tokenable model (`HasApiTokens` on `Run`). This adds one table:
   goes back to it.
 - **Notes:** the worker's copy of the app has no `.product-notes`. Its brief
   tells it to describe each area it changed in its summary, and notes in a
-  handed-back patch are left out, so they never clash with ours.
+  handed-back patch are left out, so they never clash with ours. After the
+  patch is applied, the reviewer's model (`NotesKeeper`) rewrites the notes
+  of the areas the change touched, from the change and the summary
+  (`KeepWorkerNotes`). They are read back like our own agent's notes and
+  kept only when the change is accepted. If the model fails, the notes stay
+  as they were and the run records `notes_not_updated`; the change goes on.
+  `builder.agents.workers.keep_notes` turns this off.
 - **A new try:** when the change tries a stopped one again, the brief lists
   what its checks reported and its review's blocking findings. This holds
   for our own agent too.

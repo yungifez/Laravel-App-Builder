@@ -5,6 +5,7 @@ namespace Tests\Feature\Runs;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
 use App\Ai\Agents\NotesDrafter;
+use App\Ai\Agents\NotesKeeper;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use Tests\TestCase;
@@ -41,6 +42,7 @@ class AgentInstructionsTest extends TestCase
             'planner' => [FeaturePlanner::class],
             'reviewer' => [ChangeReviewer::class],
             'notes' => [NotesDrafter::class],
+            'notes keeper' => [NotesKeeper::class],
         ];
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Runs\Drivers;
 
+use App\Actions\Context\KeepWorkerNotes;
 use App\Actions\Runs\TryWorkerChange;
 use App\Context\ProjectNotes;
 use App\Enums\RunStatus;
@@ -73,6 +74,7 @@ class WorkerDriver extends SdkDriver
         }
 
         $this->restoreProtectedPaths($run);
+        app(KeepWorkerNotes::class)->handle($run, $workspace, (string) $submission->data['summary']);
 
         return (string) $submission->data['summary'];
     }
