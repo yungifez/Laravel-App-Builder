@@ -2,6 +2,7 @@
 
 namespace App\Actions\Features;
 
+use App\Actions\Billing\MeasureUsage;
 use App\Actions\Projects\ConnectOwnTool;
 use App\Actions\Runs\DescribeRunProgress;
 use App\Actions\Runs\KeepTryingRun;
@@ -265,6 +266,9 @@ class DescribeFeatureRequest
                 ? OwnerWording::failure($run->error)
                 : OwnerWording::message($run->error))),
             'question' => $run->status === RunStatus::NeedsUserDecision ? $run->question : null,
+            // Stopped because the month's AI use ran out, and it still has:
+            // the owner gets a way to their plan, not just the words.
+            'plan_ran_out' => $run->stop_reason === 'usage_limit' && app(MeasureUsage::class)->handle($featureRequest->project->owner)['reached'],
             // Stopped because it found nothing to change: what it checked
             // and why, in its own words, so a fix for something that is
             // not broken does not read as a failure.

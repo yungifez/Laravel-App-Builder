@@ -47,6 +47,7 @@ import {
     CollapsibleContent,
     CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import { edit as billing } from '@/routes/billing';
 import { show as showFeatureRequest } from '@/routes/feature-requests';
 import { show as showProject } from '@/routes/projects';
 import { index as developers } from '@/routes/projects/developers';
@@ -903,6 +904,13 @@ const checks = computed(() => {
                             >
                                 {{ reason }}
                             </p>
+                            <Link
+                                v-if="run?.plan_ran_out"
+                                :href="billing()"
+                                class="text-sm font-medium underline underline-offset-4"
+                                data-test="thread-see-plan"
+                                >See your plan</Link
+                            >
                             <p
                                 v-if="!reason?.includes('Nothing in your app')"
                                 class="text-xs text-muted-foreground"

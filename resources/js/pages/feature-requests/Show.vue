@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/collapsible';
 import { Label } from '@/components/ui/label';
 import { when } from '@/lib/when';
+import { edit as billing } from '@/routes/billing';
 import { show as showFeatureRequest } from '@/routes/feature-requests';
 import { index, show as showProject } from '@/routes/projects';
 import type {
@@ -506,6 +507,13 @@ function lineClass(line: string): string {
                 <!-- The reason already says whose fault it was and what to
                      do next, so it is the text itself. -->
                 <p data-test="run-failed-reason">{{ run.error }}</p>
+                <Link
+                    v-if="run.plan_ran_out"
+                    :href="billing()"
+                    class="font-medium underline underline-offset-4"
+                    data-test="run-see-plan"
+                    >See your plan</Link
+                >
             </AlertDescription>
         </Alert>
 

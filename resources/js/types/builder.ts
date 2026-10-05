@@ -248,6 +248,8 @@ export type Run = {
     error: string | null;
     /** It stopped finding nothing to change: what it checked and why. */
     found_nothing?: string | null;
+    /** It stopped because the month's AI use ran out, and it still has. */
+    plan_ran_out?: boolean;
     question: {
         text: string;
         why: string;
