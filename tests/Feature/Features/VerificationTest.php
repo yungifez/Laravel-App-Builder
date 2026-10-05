@@ -8,6 +8,7 @@ use App\Context\Capability;
 use App\Context\ProjectContext;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
+use App\Features\ArchPresets;
 use App\Jobs\ExecuteRun;
 use App\Models\FeatureRequest;
 use App\Models\Run;
@@ -1596,6 +1597,52 @@ class VerificationTest extends TestCase
         $off = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
         app(RequestVerification::class)->handle($off);
         $this->assertArrayNotHasKey('messages', $off->verifications()->sole()->evidence ?? []);
+    }
+
+    public function test_laravels_structure_rules_send_back_only_the_problems_the_change_brought_and_never_touch_the_patch()
+    {
+        $step = collect((require config_path('builder.php'))['verification']['checks'])->firstWhere('name', ArchPresets::CHECK);
+        config(['builder.verification.checks' => [$step], 'builder.verification.migrations.enabled' => false]);
+        $verify = function (string $before, string $after, bool $hasPresets = true, bool $timesOut = false) {
+            $atStart = false;
+            $this->driver->onExec = function (string $workspace, array $command) use (&$atStart, $before, $after, $hasPresets, $timesOut) {
+                if ($command[0] === 'git') {
+                    $atStart = in_array('--reverse', $command, true);
+                }
+
+                return match (true) {
+                    $command === ['test', '-e', ArchPresets::NEEDS] => new CommandResult(exitCode: $hasPresets ? 0 : 1, output: '', errorOutput: '', durationMs: 5),
+                    $command[0] === 'sh' && str_contains($command[2] ?? '', ArchPresets::DIRECTORY) => new CommandResult(exitCode: 1, output: $atStart ? $before : $after, errorOutput: '', durationMs: 10, timedOut: $timesOut),
+                    default => new CommandResult(exitCode: 0, output: '', errorOutput: '', durationMs: 5),
+                };
+            };
+            $request = FeatureRequest::factory()->generated()->create();
+            $patch = $request->patch;
+
+            app(RequestVerification::class)->handle($request);
+
+            // Whatever the check did, the change is the one the coder made.
+            $this->assertSame($patch, $request->refresh()->patch);
+
+            return collect($request->verifications()->sole()->results)->firstWhere('name', ArchPresets::CHECK);
+        };
+        $old = "preset → laravel Expecting 'app/Http/Controllers/RunnerController.php' not to have public methods besides 'index'.";
+        $new = "preset → laravel Expecting 'app/Http/Controllers/RoomController.php' not to have public methods besides 'index'.";
+
+        // The change brought a problem ahead of the app's older one.
+        $brought = $verify($old, $new);
+        $this->assertSame(['failed', 'failed', [$new]], [$brought['outcome'], $brought['at_start'], $brought['new_problems']]);
+
+        // The app's older problem, and nothing new ahead of it.
+        $older = $verify($old, $old);
+        $this->assertSame(['failed', 'failed', []], [$older['outcome'], $older['at_start'], $older['new_problems']]);
+
+        // An app whose Pest has no presets is not checked, and says so.
+        $this->assertSame('not_applicable', $verify('', '', hasPresets: false)['outcome']);
+
+        // A run stopped by its time limit says nothing about the code, and
+        // it leaves the change as it was.
+        $this->assertSame('errored', $verify($old, $new, timesOut: true)['outcome']);
     }
 
     public function test_the_packages_a_change_adds_to_a_lockfile_are_read_for_the_dependency_policy()

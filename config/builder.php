@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\Consequence;
+use App\Features\ArchPresets;
 use App\Features\CodeShortcuts;
 use App\Runs\Tools\ApplyPatch;
 use App\Runs\Tools\ListFiles;
@@ -1154,6 +1155,10 @@ return [
         'checks' => [
             ['name' => 'Tests', 'command' => ['php', 'artisan', 'test', '--log-junit=storage/logs/junit.xml'], 'timeout' => 600, 'report' => 'storage/logs/junit.xml'],
             ['name' => 'Static analysis', 'command' => ['vendor/bin/phpstan', 'analyse', '--no-progress'], 'timeout' => 600, 'light_repair' => '/\bFound 1 error\b/', 'needs' => 'vendor/bin/phpstan'],
+            // Laravel's structure and security rules, as Pest 3's
+            // architecture presets (§12). Before Pest 3 there are none, so
+            // the check does not apply. It prints the first problem of each.
+            ['name' => ArchPresets::CHECK, 'command' => ['sh', '-c', ArchPresets::script()], 'timeout' => 300, 'needs' => ArchPresets::NEEDS],
             ['name' => 'PHP formatting', 'command' => ['vendor/bin/pint', '--test'], 'timeout' => 300, 'files' => ['php'], 'light_repair' => true, 'needs' => 'vendor/bin/pint'],
             ['name' => 'Frontend format and lint', 'command' => ['npx', 'vp', 'check', '--no-error-on-unmatched-pattern'], 'timeout' => 300, 'files' => ['ts', 'vue', 'js', 'mjs', 'css', 'json', 'md'], 'needs' => 'node_modules/.bin/vp'],
             ['name' => 'TypeScript', 'command' => ['npm', 'run', 'types:check'], 'timeout' => 300, 'needs' => 'tsconfig.json'],

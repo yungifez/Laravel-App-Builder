@@ -7,6 +7,7 @@ use App\Actions\Features\DescribeProof;
 use App\Context\ChangeClassification;
 use App\Context\ProjectNotes;
 use App\Enums\VerificationStatus;
+use App\Features\ArchPresets;
 use App\Features\MigrationChecks;
 use App\Features\NewMessages;
 use App\Features\OwnedRecords;
@@ -480,6 +481,22 @@ class ChangeProofTest extends TestCase
         app(AcceptFindings::class)->handle($request, OwnedRecords::UNGUARDED, $request->project->owner);
         $line = collect(app(DescribeProof::class)->handle($request))->firstWhere('decision.finding', OwnedRecords::UNGUARDED);
         $this->assertSame(['chosen', true], [$line['kind'], $line['decision']['accepted']]);
+    }
+
+    public function test_the_check_of_laravels_structure_rules_says_what_it_checked_and_what_it_cannot_see()
+    {
+        $said = function (array $result) {
+            $request = FeatureRequest::factory()->generated()->create();
+            Verification::factory()->for($request)->create(['status' => VerificationStatus::Passed, 'results' => [
+                ['name' => ArchPresets::CHECK, 'stage' => 'checks', 'exit_code' => 0, 'timed_out' => false, 'duration_ms' => 5, 'output' => '', ...$result],
+            ]]);
+
+            return collect(app(DescribeProof::class)->handle($request))->filter(fn (array $line) => str_contains($line['text'], 'structure'))->map(fn (array $line) => [$line['kind'], $line['text']])->values()->all();
+        };
+
+        $this->assertSame([['passed', 'The code follows Laravel\'s usual structure, and it uses no PHP functions known to be unsafe.']], $said(['outcome' => 'passed']));
+        $this->assertSame([['gap', 'Your app broke Laravel\'s structure rules before this change, and the change adds no problem ahead of those. I see only the first problem of each kind, so a new one behind them stays hidden until they are fixed. Ask me to fix them.']], $said(['outcome' => 'failed', 'at_start' => 'failed', 'new_problems' => []]));
+        $this->assertSame([['gap', 'I did not check the code against Laravel\'s structure rules. Your app\'s tests do not use a version of Pest that has them.']], $said(['outcome' => 'not_applicable']));
     }
 
     public function test_new_emails_and_text_messages_are_said_until_the_owner_approves_them()

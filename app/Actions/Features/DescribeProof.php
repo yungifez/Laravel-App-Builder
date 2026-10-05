@@ -8,6 +8,7 @@ use App\Actions\Runs\CompleteRunVerification;
 use App\Context\NotesDocument;
 use App\Enums\VerificationStatus;
 use App\Features\AppBoundaries;
+use App\Features\ArchPresets;
 use App\Features\AppContainment;
 use App\Features\AppDrift;
 use App\Features\AppFaults;
@@ -66,7 +67,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('whose records'), $this->owners($featureRequest, $verification)), ...$this->about(__('packages'), $this->packages($featureRequest, $verification)), ...$this->about(__('messages'), $this->messages($featureRequest, $verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('whose records'), $this->owners($featureRequest, $verification)), ...$this->about(__('packages'), $this->packages($featureRequest, $verification)), ...$this->about(__('messages'), $this->messages($featureRequest, $verification)), ...$this->about(__('structure'), $this->structure($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return $this->asked($featureRequest, array_values(collect($lines)->unique('text')->all()));
@@ -175,7 +176,7 @@ class DescribeProof
                 $separate = true;
             } elseif ($result['stage'] === 'checks' && isset($result['tests'])) {
                 $tests += count(array_filter($result['tests'], fn (array $test) => $test['outcome'] === 'passed'));
-            } elseif ($result['stage'] === 'checks') {
+            } elseif ($result['stage'] === 'checks' && $result['name'] !== ArchPresets::CHECK) {
                 $others++;
             }
         }
@@ -550,6 +551,27 @@ class DescribeProof
         }
 
         return [['kind' => 'chosen', 'text' => __('You approved what the change sends to people. If a later change sends something new, I will ask again.'), ...$decision(true)]];
+    }
+
+    /**
+     * Say what the check of Laravel's structure and security rules found
+     * (§12), and its limit: it sees the first problem of each kind, so an
+     * older one can hide a newer one. A problem the change brought is sent
+     * back with the other failed checks, so it is not said here.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function structure(Verification $verification): array
+    {
+        $result = collect($verification->results ?? [])->firstWhere('name', ArchPresets::CHECK);
+
+        return match (true) {
+            $result === null => [],
+            $result['outcome'] === 'passed' => [['kind' => 'passed', 'text' => __('The code follows Laravel\'s usual structure, and it uses no PHP functions known to be unsafe.')]],
+            $result['outcome'] === 'not_applicable' => [['kind' => 'gap', 'text' => __('I did not check the code against Laravel\'s structure rules. Your app\'s tests do not use a version of Pest that has them.')]],
+            $result['outcome'] === 'failed' && ($result['at_start'] ?? null) === 'failed' && ($result['new_problems'] ?? []) === [] => [['kind' => 'gap', 'text' => __('Your app broke Laravel\'s structure rules before this change, and the change adds no problem ahead of those. I see only the first problem of each kind, so a new one behind them stays hidden until they are fixed. Ask me to fix them.')]],
+            default => [],
+        };
     }
 
     /**
