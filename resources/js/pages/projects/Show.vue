@@ -1330,7 +1330,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                     <Link
                         :href="showUnderstanding(project.id)"
                         data-test="understanding-link"
-                        >What I know about it</Link
+                        >Your business</Link
                     >
                 </DropdownMenuItem>
                 <DropdownMenuItem

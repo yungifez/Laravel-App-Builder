@@ -49,6 +49,17 @@ const props = defineProps<{
     revision: string | null;
     about: { introduction: string; sections: NotesSection[] };
     guidance: string | null;
+    // The outside services the app is connected to, by name only.
+    services: { name: string; provider: string }[];
+    // What the owner might add later, as offered with kept changes.
+    later: string[];
+    // Earlier wordings of the guidance, newest first, and who wrote each.
+    guidanceHistory: {
+        text: string;
+        at: string | null;
+        by: string | null;
+        mine: boolean;
+    }[];
     // What the owner wants the app to achieve, in their words.
     goal: string | null;
     // Whether changes keep the app's old data and links working; chosen
@@ -292,7 +303,7 @@ watch(
                 { title: 'Your apps', href: index() },
                 { title: project.name, href: show(project.id) },
                 {
-                    title: 'What I know',
+                    title: 'Your business',
                     href: showUnderstanding(project.id),
                 },
             ],
@@ -336,7 +347,7 @@ function setCompatibility(keep: boolean | null): void {
 </script>
 
 <template>
-    <Head :title="`${project.name}: what I know`" />
+    <Head :title="`${project.name}: your business`" />
 
     <div
         class="mx-auto flex max-w-5xl flex-col gap-20 px-4 pt-12 pb-24 sm:px-8"
@@ -810,7 +821,7 @@ function setCompatibility(keep: boolean | null): void {
                                     <p
                                         class="mb-3 text-sm font-medium text-muted-foreground"
                                     >
-                                        Always true
+                                        Must always be true
                                     </p>
                                     <ul
                                         v-if="area.rules.length"
@@ -954,6 +965,54 @@ function setCompatibility(keep: boolean | null): void {
                 </section>
             </div>
 
+            <!-- What the app is connected to, and what could come next -->
+            <div
+                v-if="services.length || later.length"
+                class="grid gap-16 lg:grid-cols-2 lg:gap-12"
+            >
+                <section v-if="services.length" data-test="services">
+                    <h2 class="mb-4 text-xl font-semibold tracking-[-0.02em]">
+                        Connected services
+                    </h2>
+                    <ul class="space-y-2.5">
+                        <li
+                            v-for="service in services"
+                            :key="service.name"
+                            class="flex gap-2.5"
+                        >
+                            <Check
+                                class="mt-1 size-3.5 shrink-0 text-muted-foreground"
+                            />
+                            <span class="min-w-0"
+                                >{{ service.name }}
+                                <span class="text-muted-foreground"
+                                    >with {{ service.provider }}</span
+                                ></span
+                            >
+                        </li>
+                    </ul>
+                </section>
+
+                <!-- Follow-ups offered with kept changes; one tap asks -->
+                <section v-if="later.length" data-test="later">
+                    <h2 class="mb-4 text-xl font-semibold tracking-[-0.02em]">
+                        Things to add later
+                    </h2>
+                    <ul class="space-y-1">
+                        <li v-for="idea in later" :key="idea">
+                            <Link
+                                :href="
+                                    show(project.id, { query: { ask: idea } })
+                                "
+                                class="-mx-2 flex min-h-11 items-center rounded-md px-2 hover:bg-accent sm:min-h-9"
+                                data-test="later-idea"
+                                >{{ idea }}</Link
+                            >
+                        </li>
+                    </ul>
+                </section>
+            </div>
+
             <!-- How it should be built, and what changed so far -->
             <div class="grid gap-16 lg:grid-cols-2 lg:gap-12">
                 <section data-test="guidance">
@@ -986,6 +1045,44 @@ function setCompatibility(keep: boolean | null): void {
                             change.
                         </p>
                     </NotesPart>
+                    <!-- Changes to the guidance are kept like changes to the
+                         code, so the owner can see what it said before. -->
+                    <Collapsible
+                        v-if="guidanceHistory.length"
+                        data-test="guidance-history"
+                    >
+                        <CollapsibleTrigger
+                            class="min-h-11 text-xs text-muted-foreground select-none hover:underline sm:min-h-0"
+                        >
+                            Earlier versions ({{ guidanceHistory.length }})
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                            <ol class="mt-2 space-y-4">
+                                <li
+                                    v-for="version in guidanceHistory"
+                                    :key="`${version.at}-${version.text}`"
+                                >
+                                    <p class="text-xs text-muted-foreground">
+                                        {{
+                                            [
+                                                version.mine
+                                                    ? 'You'
+                                                    : version.by,
+                                                when(version.at),
+                                            ]
+                                                .filter(Boolean)
+                                                .join(', ')
+                                        }}
+                                    </p>
+                                    <p
+                                        class="max-w-prose text-sm whitespace-pre-line text-muted-foreground"
+                                    >
+                                        {{ plain(version.text) }}
+                                    </p>
+                                </li>
+                            </ol>
+                        </CollapsibleContent>
+                    </Collapsible>
                     <!-- Guidance can also come from one of our developers,
                          and what the owner keeps of it lands here. -->
                     <Link

@@ -4,6 +4,7 @@ namespace App\Context;
 
 use App\Models\Project;
 use App\Models\ProjectNote;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use InvalidArgumentException;
@@ -58,6 +59,16 @@ class ProjectNotes
         DB::transaction(function () use ($project, $branch, $files) {
             foreach ($files as $path => $contents) {
                 self::assertPath($path);
+
+                $before = $project->notes()->where('branch', $branch)->where('path', $path)->value('contents');
+
+                if ($before === $contents) {
+                    continue;
+                }
+
+                // Each write is kept, so the notes have a history like the
+                // code does, and who wrote it.
+                $project->noteRevisions()->create(['branch' => $branch, 'path' => $path, 'contents' => $contents, 'user_id' => Auth::id()]);
 
                 if ($contents === null) {
                     $project->notes()->where('branch', $branch)->where('path', $path)->delete();
@@ -144,6 +155,7 @@ class ProjectNotes
     public function forget(Project $project, string $branch): void
     {
         $project->notes()->where('branch', $branch)->delete();
+        $project->noteRevisions()->where('branch', $branch)->delete();
     }
 
     /**

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Toaster } from '@/components/ui/sonner';
 import type { BreadcrumbItem } from '@/types';
 
-// Pages that belong to one app ("What I know", a change's details) open
+// Pages that belong to one app ("Your business", a change's details) open
 // full screen like the workspace, with one way back to it. The pages set
 // the same breadcrumbs as before: the second-to-last is where back goes,
 // and the last names the page.

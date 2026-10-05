@@ -4,11 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Actions\Context\CheckProjectNotes;
 use App\Actions\Context\EstimateExploration;
+use App\Actions\Context\ListGuidanceHistory;
 use App\Actions\Context\ReadProjectContext;
 use App\Actions\Context\RecordDecision;
 use App\Actions\Context\UpdateProjectNotes;
 use App\Actions\Features\DescribeAskedFor;
 use App\Actions\Features\ListDecisions;
+use App\Actions\Features\ListLaterIdeas;
 use App\Actions\Features\TallyKeptProof;
 use App\Context\Capability;
 use App\Context\NotesDocument;
@@ -23,6 +25,7 @@ use App\Models\RunEvent;
 use App\Models\TestObservation;
 use App\Projects\ProjectRepository;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -76,6 +79,15 @@ class ProjectUnderstandingController extends Controller
                 'in_use' => $project->mayBeInUse(),
             ],
             'guidance' => $notes->section(UpdateProjectNotes::GUIDANCE_SECTION),
+            // The outside services the app is connected to, by name only.
+            'services' => array_map(fn (string $service) => [
+                'name' => config("builder.services.{$service}.name"),
+                'provider' => config("builder.services.{$service}.provider"),
+            ], $project->connectedServices()),
+            // What the owner might add later, as offered with kept changes.
+            'later' => fn () => app(ListLaterIdeas::class)->handle($project),
+            // Its earlier wordings, so a change to it can be traced and undone.
+            'guidanceHistory' => fn () => app(ListGuidanceHistory::class)->handle($project, Auth::id()),
             'areas' => array_values(array_map(fn (Capability $capability) => [
                 'key' => $capability->key,
                 'name' => $capability->name,

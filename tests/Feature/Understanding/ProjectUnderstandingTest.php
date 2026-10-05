@@ -14,6 +14,7 @@ use App\Models\TestObservation;
 use App\Models\User;
 use App\Models\Verification;
 use App\Projects\ProjectRepository;
+use App\Runs\Plan;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\PreparesRuns;
@@ -164,11 +165,11 @@ class ProjectUnderstandingTest extends TestCase
         $kept = FeatureRequest::factory()->generated()->for($this->project)->create(['summary' => 'Count team members', 'accepted_at' => now()]);
         Run::factory()->for($kept)->create([
             'answers' => [['question' => 'Should owners count as members?', 'answer' => 'Yes', 'decided_by' => 'owner']],
-            'plan' => ['summary' => '', 'acceptance_criteria' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null, 'assumptions' => [
+            'plan' => (new Plan('', assumptions: [
                 'Counts include people of every role.',
                 'No database migration is needed.',
                 'The `members` relation is reused.',
-            ]],
+            ]))->toArray(),
         ]);
         $undone = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now(), 'reverted_at' => now()]);
         Run::factory()->for($undone)->create(['answers' => [['question' => 'Which colour?', 'answer' => 'Red', 'decided_by' => 'owner']]]);
@@ -191,10 +192,10 @@ class ProjectUnderstandingTest extends TestCase
     public function test_something_i_decided_that_the_owner_keeps_becomes_their_decision_once()
     {
         $kept = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now()]);
-        $run = Run::factory()->for($kept)->create(['plan' => ['summary' => '', 'acceptance_criteria' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null, 'assumptions' => [
+        $run = Run::factory()->for($kept)->create(['plan' => (new Plan('', assumptions: [
             'Counts include people of every role.',
             'Invited people count once they join.',
-        ]]]);
+        ]))->toArray()]);
 
         $this->actingAs($this->owner);
 
@@ -224,7 +225,7 @@ class ProjectUnderstandingTest extends TestCase
 
     public function test_something_the_owner_agrees_with_is_no_longer_noted_as_assumed()
     {
-        $plan = ['summary' => '', 'acceptance_criteria' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null, 'assumptions' => ['Counts include people of every role.']];
+        $plan = (new Plan('', assumptions: ['Counts include people of every role.']))->toArray();
         $notes = app(ProjectNotes::class);
         $branch = $this->project->branch();
         $files = $notes->files($this->project, $branch);
@@ -266,7 +267,7 @@ class ProjectUnderstandingTest extends TestCase
     public function test_only_what_the_change_decided_can_be_kept()
     {
         $kept = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now()]);
-        $run = Run::factory()->for($kept)->create(['plan' => ['summary' => '', 'acceptance_criteria' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null, 'assumptions' => ['Counts include people of every role.']]]);
+        $run = Run::factory()->for($kept)->create(['plan' => (new Plan('', assumptions: ['Counts include people of every role.']))->toArray()]);
 
         $this->actingAs($this->owner)
             ->post(route('feature-requests.assumptions.store', $kept), ['assumption' => 'Everyone is an admin.'])
@@ -282,7 +283,7 @@ class ProjectUnderstandingTest extends TestCase
     public function test_all_decisions_are_counted_while_the_newest_are_listed()
     {
         $kept = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now()]);
-        Run::factory()->for($kept)->create(['plan' => ['summary' => '', 'acceptance_criteria' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null, 'assumptions' => array_map(fn (int $n) => "Choice {$n} is kept.", range(1, 15))]]);
+        Run::factory()->for($kept)->create(['plan' => (new Plan('', assumptions: array_map(fn (int $n) => "Choice {$n} is kept.", range(1, 15))))->toArray()]);
 
         $this->actingAs($this->owner)
             ->get(route('projects.understanding.show', $this->project))
@@ -631,6 +632,46 @@ class ProjectUnderstandingTest extends TestCase
             "## Engineering direction\n\n- External services go through adapters.\n",
             $this->notes('project.md'),
         );
+    }
+
+    public function test_the_page_shows_the_connected_services_and_what_to_add_later()
+    {
+        $this->project->forceFill(['service_keys' => ['payments' => ['STRIPE_KEY' => 'pk_test_a', 'STRIPE_SECRET' => 'sk_test_b']]])->save();
+        $older = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now()->subDay()]);
+        Run::factory()->for($older)->create(['plan' => (new Plan('Plans.', next: ['Let teams pay yearly.', 'Send a receipt.']))->toArray()]);
+        $newer = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now()]);
+        Run::factory()->for($newer)->create(['plan' => (new Plan('Receipts.', next: ['Send a receipt.']))->toArray()]);
+        // An undone change offers nothing.
+        $undone = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now(), 'reverted_at' => now()]);
+        Run::factory()->for($undone)->create(['plan' => (new Plan('Gone.', next: ['Undo me.']))->toArray()]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('services', [['name' => 'Take payments', 'provider' => 'Stripe']])
+                ->where('later', ['Send a receipt.', 'Let teams pay yearly.']));
+    }
+
+    public function test_earlier_wordings_of_the_guidance_stay_visible_with_who_wrote_them()
+    {
+        $developer = User::factory()->create(['name' => 'Ada']);
+        $this->actingAs($this->owner)->put(route('projects.understanding.update', $this->project), ['part' => 'section:Engineering direction', 'body' => '- Keep payments in one place.', 'revision' => $this->version()]);
+        $this->actingAs($developer);
+        app(ProjectNotes::class)->put($this->project, 'main', ['project.md' => str_replace('Keep payments in one place.', 'Queue every email.', $this->notes('project.md'))]);
+        // A write to another part of the notes is not a new wording.
+        $this->actingAs($this->owner)->put(route('projects.understanding.update', $this->project), ['part' => 'introduction', 'body' => 'A shop for teams.', 'revision' => $this->version()]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('guidance', '- Queue every email.')
+                ->has('guidanceHistory', 2)
+                ->where('guidanceHistory.0.text', '- Keep payments in one place.')
+                ->where('guidanceHistory.0.mine', true)
+                ->where('guidanceHistory.1.text', '- Use Actions for changes.')
+                ->where('guidanceHistory.1.by', null));
+
+        $this->assertSame($developer->id, $this->project->noteRevisions()->latest('id')->skip(1)->first()?->user_id);
     }
 
     public function test_an_edit_made_on_an_old_version_is_refused()

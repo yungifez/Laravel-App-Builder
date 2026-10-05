@@ -204,6 +204,16 @@ class Project extends Model
     }
 
     /**
+     * Get every write to the notes, so their history can be shown.
+     *
+     * @return HasMany<ProjectNoteRevision, $this>
+     */
+    public function noteRevisions(): HasMany
+    {
+        return $this->hasMany(ProjectNoteRevision::class);
+    }
+
+    /**
      * Get the files its workspaces need that are not part of its code.
      *
      * @return HasMany<WorkspaceFile, $this>
