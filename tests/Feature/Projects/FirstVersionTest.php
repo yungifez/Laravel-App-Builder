@@ -4,6 +4,7 @@ namespace Tests\Feature\Projects;
 
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
@@ -77,6 +78,30 @@ class FirstVersionTest extends TestCase
         $run->update(['question' => ['text' => 'Who books?', 'why' => '', 'options' => ['Me', 'Anyone'], 'recommended' => null]]);
 
         $this->assertSame('asking', $this->firstVersionShown()['state']);
+    }
+
+    public function test_a_first_version_waiting_on_a_finding_asks_for_an_answer_instead_of_another_try(): void
+    {
+        $change = $this->firstVersion(['status' => FeatureRequestStatus::Generated]);
+        Run::factory()->for($change)->create(['status' => RunStatus::NeedsUserDecision, 'stop_reason' => StopReason::FindingProposed, 'error' => 'I asked you about something the checks found.']);
+        $proposal = $change->findingProposals()->create(['kind' => 'owner_unchecked', 'identity' => 'owner_unchecked|App\Models\Item', 'reason' => 'Items are shared by the household.']);
+
+        $this->assertSame('asking', $this->firstVersionShown()['state']);
+        $this->assertFalse($this->firstVersionShown()['can_retry']);
+
+        // Once answered, the run's own stop shows again.
+        $proposal->update(['agreed' => true]);
+
+        $this->assertSame('stopped', $this->firstVersionShown()['state']);
+    }
+
+    public function test_a_first_version_stopped_for_another_decision_is_not_asking(): void
+    {
+        $change = $this->firstVersion(['status' => FeatureRequestStatus::Generated]);
+        Run::factory()->for($change)->create(['status' => RunStatus::NeedsUserDecision, 'stop_reason' => StopReason::ReviewFindings, 'error' => 'The review found problems this run cannot fix.']);
+        $change->findingProposals()->create(['kind' => 'owner_unchecked', 'identity' => 'owner_unchecked|App\Models\Item', 'reason' => 'Items are shared by the household.']);
+
+        $this->assertSame('stopped', $this->firstVersionShown()['state']);
     }
 
     public function test_an_app_brought_in_or_without_a_first_version_to_make_shows_the_app(): void

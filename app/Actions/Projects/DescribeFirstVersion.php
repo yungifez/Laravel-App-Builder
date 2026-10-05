@@ -3,8 +3,11 @@
 namespace App\Actions\Projects;
 
 use App\Actions\Features\DescribeFeatureRequest;
+use App\Actions\Features\ProposeFindings;
 use App\Actions\Features\RetryFeatureRequest;
 use App\Enums\FeatureRequestStatus;
+use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 
@@ -15,7 +18,10 @@ use App\Models\Project;
  */
 class DescribeFirstVersion
 {
-    public function __construct(protected DescribeFeatureRequest $describeFeatureRequest) {}
+    public function __construct(
+        protected DescribeFeatureRequest $describeFeatureRequest,
+        protected ProposeFindings $proposeFindings,
+    ) {}
 
     /**
      * @return array{change: string, state: 'making'|'asking'|'ready'|'stopped', error: string|null, can_retry: bool, checking: bool}|null
@@ -31,6 +37,11 @@ class DescribeFirstVersion
         $described = $this->describeFeatureRequest->handle($change);
         $state = match (true) {
             $change->latestRun?->question !== null => 'asking',
+            // A finding the checks asked the owner about is a question too;
+            // another try would only skip it.
+            $change->latestRun?->status === RunStatus::NeedsUserDecision
+                && $change->latestRun->stop_reason === StopReason::FindingProposed
+                && $this->proposeFindings->pending($change) !== [] => 'asking',
             // Made, then stopped in the checks or the review, as the chat
             // shows it.
             $described['featureRequest']['stopped'], RetryFeatureRequest::stoppedWhileChecking($change) => 'stopped',
