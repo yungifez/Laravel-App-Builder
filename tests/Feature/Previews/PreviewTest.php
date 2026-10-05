@@ -4,17 +4,21 @@ namespace Tests\Feature\Previews;
 
 use App\Actions\Previews\RequestPreview;
 use App\Enums\PreviewStatus;
+use App\Jobs\ClosePreview;
 use App\Jobs\StartPreview;
 use App\Models\FeatureRequest;
 use App\Models\Preview;
+use App\Models\PreviewRebuild;
 use App\Models\Project;
 use App\Models\User;
+use App\Models\Workspace;
 use App\Previews\PreviewGateway;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
@@ -547,6 +551,96 @@ class PreviewTest extends TestCase
             ->assertSee('parent.postMessage({builder:true,type:"lost"},"'.PreviewGateway::builderOrigin().'")', false)
             // A builder that starts to listen later says hello and hears it again.
             ->assertSee('e.data.type==="hello"', false);
+    }
+
+    public function test_an_app_that_stopped_mid_session_is_marked_stopped_at_once_and_its_box_removed()
+    {
+        Bus::fake([ClosePreview::class]);
+        $preview = $this->previewWithSession('secret-value');
+        $preview->update(['workspace_id' => Workspace::factory()->create()->id]);
+        $other = Preview::factory()->ready()->create(['upstream_url' => 'http://127.0.0.1:20009']);
+        Http::fake([
+            '127.0.0.1:20001*' => fn () => throw new ConnectionException('Connection refused'),
+            '*' => Http::response('ok'),
+        ]);
+
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/dashboard", ['builder_preview' => 'secret-value'])
+            ->assertStatus(502);
+
+        // A reload shows it stopped, and why, without waiting for the reaper.
+        $this->assertSame(PreviewStatus::Stopped, $preview->refresh()->status);
+        $this->assertStringContainsString('This is our fault', (string) $preview->error);
+        // Another owner's app on the same runner runs on.
+        $this->assertSame(PreviewStatus::Ready, $other->refresh()->status);
+
+        // The box goes on the previews queue, not in the request.
+        Bus::assertDispatched(ClosePreview::class, fn (ClosePreview $job) => $job->preview->is($preview) && $job->queue === config('builder.preview.queue'));
+        Bus::assertDispatchedTimes(ClosePreview::class, 1);
+        app()->call([new ClosePreview($preview), 'handle']);
+        $this->assertSame([$preview->workspace->driver_id], $this->driver->destroyed);
+        $this->assertSame(PreviewStatus::Stopped, $preview->refresh()->status);
+        $this->assertNull($preview->session_hash);
+    }
+
+    public function test_an_app_taking_a_change_or_still_answering_is_left_running_when_a_request_fails()
+    {
+        Bus::fake([ClosePreview::class]);
+        $preview = $this->previewWithSession('secret-value');
+        // One slow page times out, but the app still answers.
+        Http::fake([
+            '127.0.0.1:20001/slow' => fn () => throw new ConnectionException('Operation timed out'),
+            '*' => Http::response('ok'),
+        ]);
+        $probed = fn () => Http::recorded(fn (ClientRequest $request) => $request->url() === 'http://127.0.0.1:20001')->count();
+
+        // A copy taking a kept change can be closed for a moment; it is
+        // never checked or stopped.
+        $rebuild = PreviewRebuild::query()->create(['preview_id' => $preview->id, 'project_id' => $preview->featureRequest->project_id, 'from_revision' => 'a', 'to_revision' => 'b', 'status' => 'running', 'started_at' => now()]);
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/slow", ['builder_preview' => 'secret-value'])
+            ->assertStatus(502);
+        $this->assertSame(PreviewStatus::Ready, $preview->refresh()->status);
+        $this->assertSame(0, $probed());
+
+        $rebuild->update(['status' => 'rebuilt', 'finished_at' => now()]);
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/slow", ['builder_preview' => 'secret-value'])
+            ->assertStatus(502);
+        $this->assertSame(1, $probed());
+        $this->assertSame(PreviewStatus::Ready, $preview->refresh()->status);
+        Bus::assertNotDispatched(ClosePreview::class);
+    }
+
+    public function test_requests_that_fail_together_check_and_stop_the_app_once()
+    {
+        Bus::fake([ClosePreview::class]);
+        $preview = $this->previewWithSession('secret-value');
+        $asked = 0;
+        Http::fake(function () use (&$asked) {
+            $asked++;
+
+            throw new ConnectionException('Connection refused');
+        });
+
+        // Another request of the same page load is already checking.
+        $lock = Cache::lock("previews:{$preview->id}:lost", 30);
+        $this->assertTrue($lock->get());
+
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/build/app.js", ['builder_preview' => 'secret-value'])
+            ->assertStatus(502)
+            ->assertSee('type:"lost"', false);
+
+        // Only the asset was asked for: no second check, no second stop.
+        $this->assertSame(1, $asked);
+        $this->assertSame(PreviewStatus::Ready, $preview->refresh()->status);
+        Bus::assertNotDispatched(ClosePreview::class);
+
+        $lock->release();
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/build/app.css", ['builder_preview' => 'secret-value'])
+            ->assertStatus(502);
+        $this->assertSame(PreviewStatus::Stopped, $preview->refresh()->status);
+        // A stopped copy's page has closed, so a late request checks nothing.
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/build/app.png", ['builder_preview' => 'secret-value'])
+            ->assertForbidden();
+        Bus::assertDispatchedTimes(ClosePreview::class, 1);
     }
 
     public function test_the_owner_can_stop_a_preview_and_its_session_ends()

@@ -2,9 +2,12 @@
 
 namespace App\Previews;
 
+use App\Actions\Previews\FindStoppedPreviews;
 use App\Actions\Previews\GrantPreviewAccess;
 use App\Enums\PreviewStatus;
+use App\Jobs\ClosePreview;
 use App\Models\Preview;
+use App\Models\PreviewRebuild;
 use App\Workspaces\RunnerDoor;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Request;
@@ -306,6 +309,8 @@ class PreviewGateway
         try {
             $upstream = $pending->send($request->getMethod(), rtrim((string) $preview->upstream_url, '/').$request->getRequestUri(), $options);
         } catch (ConnectionException) {
+            $this->noteStopped($preview);
+
             return $this->page(502, __('The preview is not responding. Start it again from the builder.'), tellBuilder: true);
         }
 
@@ -331,6 +336,31 @@ class PreviewGateway
         }
 
         return $response;
+    }
+
+    /**
+     * Mark a running app that no longer answers as stopped at once, with
+     * our reason, so a reload or another tab shows it stopped instead of
+     * waiting for `previews:reap`. One page asks for many files that fail
+     * together, so only one request checks and the rest just get the page.
+     * A copy that is starting or taking a change can be closed for a
+     * moment, so only a ready copy whose port stays silent counts. The box
+     * is removed on the previews queue, so this answer stays quick.
+     */
+    protected function noteStopped(Preview $preview): void
+    {
+        rescue(fn () => Cache::lock("previews:{$preview->id}:lost", 30)->get(function () use ($preview) {
+            $preview = $preview->fresh();
+
+            if ($preview?->status !== PreviewStatus::Ready
+                || PreviewRebuild::query()->where('preview_id', $preview->id)->where('status', 'running')->exists()
+                || app(FindStoppedPreviews::class)->answers($preview)) {
+                return;
+            }
+
+            $preview->update(['status' => PreviewStatus::Stopped, 'error' => __('This is our fault: the app stopped on our side. Start it again.'), 'stopped_at' => now()]);
+            ClosePreview::dispatch($preview);
+        }));
     }
 
     /**

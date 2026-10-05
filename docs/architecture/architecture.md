@@ -2847,6 +2847,11 @@ own workspace and serves it at `http://{host}.{preview domain}`.
   stripped.
 - Reaped after maximum age or idle time; stopping kills the server and removes
   the workspace.
+- An app that stops answering mid-session is marked stopped, with our reason,
+  on the first request that cannot reach it. Only a ready copy whose port
+  stays silent counts, and only one request of a page load checks (a short
+  lock). The box is removed on the previews queue; the idle workspace reaper
+  is the backstop.
 - Serves built assets; hot reload arrives with the edge proxy.
 
 ### What the app does behind the page

@@ -269,7 +269,8 @@ watch(scale, (value) => (props.state.zoom = value), { immediate: true });
                         Your app stopped
                     </p>
                     <p class="max-w-xs text-sm text-muted-foreground">
-                        Your work is safe.
+                        This is our fault: it stopped on our side. Your work is
+                        safe.
                     </p>
                 </template>
                 <p v-else class="text-lg font-medium">See your app here</p>
