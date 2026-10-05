@@ -25,6 +25,15 @@
 //                 address; previews listen only there
 //   RUNNER_FIREWALL  "off" to leave the machine's firewall alone; by
 //                 default the runner fences workspaces in when it can
+//   RUNNER_EGRESS_ALLOW  the hosts workspaces may reach, separated by
+//                 commas, such as package registries; ".example.com" also
+//                 lets its subdomains through. When set, commands go out
+//                 through the runner's proxy, which lets only these hosts
+//                 and the control plane through, and the firewall refuses
+//                 everything else. Unset, workspaces may reach the internet.
+//   RUNNER_EGRESS_PORT  the proxy's port on this machine (default 3128)
+//   RUNNER_REQUIRE_FENCE  "on" to stop at once when the firewall cannot be
+//                 set, so no workspace ever runs without it
 //   RUNNER_PREVIEW_DOOR_PORT  a port for the preview door, for a control
 //                 plane that shares no private network with this machine
 //                 (such as one on Laravel Cloud). The door answers HTTPS
@@ -57,8 +66,13 @@ import {
     statSync,
     writeFileSync,
 } from 'node:fs';
-import { request as forward, get as httpGet } from 'node:http';
+import {
+    createServer as createHttpServer,
+    request as forward,
+    get as httpGet,
+} from 'node:http';
 import { createServer as createHttpsServer, get as httpsGet } from 'node:https';
+import { connect as connectTcp } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -68,6 +82,12 @@ const token = process.env.RUNNER_TOKEN ?? '';
 const root = process.env.RUNNER_ROOT ?? '/workspaces';
 const serviceHost = process.env.RUNNER_SERVICE_HOST || null;
 const doorPort = Number(process.env.RUNNER_PREVIEW_DOOR_PORT) || null;
+const egressAllow = (process.env.RUNNER_EGRESS_ALLOW ?? '')
+    .split(',')
+    .map((host) => host.trim().toLowerCase())
+    .filter((host) => host !== '');
+const egressPort = Number(process.env.RUNNER_EGRESS_PORT) || 3128;
+const requireFence = process.env.RUNNER_REQUIRE_FENCE === 'on';
 
 // Children never inherit the runner's token or settings.
 delete process.env.RUNNER_TOKEN;
@@ -338,6 +358,120 @@ function unfence(fence, pick) {
 }
 
 /**
+ * Whether a workspace may reach this host and port through the proxy: the
+ * hosts on the list on the web's ports, and the control plane on its own.
+ */
+function egressAllowed(host, port) {
+    const name = host.toLowerCase().replace(/^\[|\]$/g, '');
+    const controlPlane = new URL(url);
+
+    if (name === controlPlane.hostname.toLowerCase()) {
+        return (
+            port ===
+            (Number(controlPlane.port) ||
+                (controlPlane.protocol === 'https:' ? 443 : 80))
+        );
+    }
+
+    return (
+        [80, 443].includes(port) &&
+        egressAllow.some((allowed) =>
+            allowed.startsWith('.')
+                ? name === allowed.slice(1) || name.endsWith(allowed)
+                : name === allowed,
+        )
+    );
+}
+
+/**
+ * The proxy workspaces go out through when RUNNER_EGRESS_ALLOW is set. It
+ * runs as the runner's user, which the firewall lets out, and passes on
+ * only calls to the hosts on the list: plain HTTP, and HTTPS tunnels.
+ */
+function egressProxy() {
+    const refuse = (host) =>
+        `${host} is not on the list of places workspaces on this machine may reach.\n`;
+
+    const server = createHttpServer((request, response) => {
+        let target = null;
+
+        try {
+            target = new URL(request.url ?? '');
+        } catch {
+            // Not a proxy request.
+        }
+
+        if (
+            target === null ||
+            target.protocol !== 'http:' ||
+            !egressAllowed(target.hostname, Number(target.port) || 80)
+        ) {
+            response.writeHead(403, { 'Content-Type': 'text/plain' });
+            response.end(refuse(target?.hostname ?? 'This address'));
+
+            return;
+        }
+
+        const upstream = forward(
+            {
+                host: target.hostname,
+                port: target.port || 80,
+                method: request.method,
+                path: `${target.pathname}${target.search}`,
+                headers: request.headers,
+            },
+            (answer) => {
+                response.writeHead(answer.statusCode ?? 502, answer.headers);
+                answer.pipe(response);
+            },
+        );
+
+        upstream.on('error', () => {
+            if (!response.headersSent) {
+                response.writeHead(502);
+            }
+
+            response.end();
+        });
+        request.pipe(upstream);
+    });
+
+    server.on('connect', (request, socket, head) => {
+        // A client that hangs up early is no fault of the runner's.
+        socket.on('error', () => socket.destroy());
+
+        const match = /^\[?([^\]]+?)\]?:(\d+)$/.exec(request.url ?? '');
+
+        if (match === null || !egressAllowed(match[1], Number(match[2]))) {
+            socket.end(
+                `HTTP/1.1 403 Forbidden\r\n\r\n${refuse(match?.[1] ?? 'This address')}`,
+            );
+
+            return;
+        }
+
+        const upstream = connectTcp(Number(match[2]), match[1], () => {
+            socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+            upstream.write(head);
+            upstream.pipe(socket);
+            socket.pipe(upstream);
+        });
+
+        upstream.on('error', () => socket.destroy());
+        socket.on('close', () => upstream.destroy());
+    });
+
+    server.on('error', (error) => {
+        console.error(`The egress proxy stopped: ${error.message}`);
+        process.exit(1);
+    });
+    server.listen(egressPort, '127.0.0.1');
+    console.log(
+        `Workspaces reach only: ${egressAllow.join(', ')} and the control plane.`,
+    );
+}
+
+/**
  * Set the firewall up, keeping the preview rules of workspaces that are
  * still here so a restart of the runner leaves them fenced.
  */
@@ -370,19 +504,23 @@ function fenceUp() {
             ];
             firewall(fence.program, ['-F', FENCE]);
 
+            const reject = ['-j', 'REJECT', '--reject-with', fence.reject];
+
             for (const rule of [
                 ['-o', 'lo', '-j', PORTS],
                 ['-o', 'lo', '-j', 'RETURN'],
-                ['-p', 'udp', '--dport', '53', '-j', 'RETURN'],
-                ['-p', 'tcp', '--dport', '53', '-j', 'RETURN'],
-                ...fence.private.map((range) => [
-                    '-d',
-                    range,
-                    '-j',
-                    'REJECT',
-                    '--reject-with',
-                    fence.reject,
-                ]),
+                // With a list, the proxy looks names up; workspaces need not.
+                ...(egressAllow.length > 0
+                    ? [reject]
+                    : [
+                          ['-p', 'udp', '--dport', '53', '-j', 'RETURN'],
+                          ['-p', 'tcp', '--dport', '53', '-j', 'RETURN'],
+                          ...fence.private.map((range) => [
+                              '-d',
+                              range,
+                              ...reject,
+                          ]),
+                      ]),
             ]) {
                 firewall(fence.program, ['-A', FENCE, ...rule]);
             }
@@ -536,6 +674,23 @@ function environment(as, extra = {}, workspace = null) {
         if (process.env[name] !== undefined) {
             env[name] = process.env[name];
         }
+    }
+
+    // With a list of places to reach, everything goes out through the
+    // proxy; the app's own previews on this machine do not.
+    if (egressAllow.length > 0) {
+        const proxy = `http://127.0.0.1:${egressPort}`;
+
+        for (const name of [
+            'HTTP_PROXY',
+            'HTTPS_PROXY',
+            'http_proxy',
+            'https_proxy',
+        ]) {
+            env[name] = proxy;
+        }
+
+        env.NO_PROXY = env.no_proxy = 'localhost,127.0.0.1,::1';
     }
 
     return {
@@ -1198,6 +1353,23 @@ async function main() {
         }
 
         fenceUp();
+    }
+
+    if (fences.length === 0 && requireFence) {
+        console.error(
+            'RUNNER_REQUIRE_FENCE is on, but the firewall could not be set, so no workspace may run here.',
+        );
+        process.exit(1);
+    }
+
+    if (egressAllow.length > 0) {
+        egressProxy();
+
+        if (fences.length === 0) {
+            console.error(
+                'RUNNER_EGRESS_ALLOW is set, but the firewall is off: a workspace can still go around the proxy.',
+            );
+        }
     }
 
     const door = openDoor();

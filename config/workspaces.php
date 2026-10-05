@@ -211,6 +211,14 @@ return [
         // there, and the cloud firewall must let everyone reach that port.
         // Leave it empty when a private network joins them.
         'preview_door_port' => env('WORKSPACE_MACHINES_PREVIEW_DOOR_PORT'),
+        // The only hosts workspaces on each machine may reach, separated by
+        // commas, such as "repo.packagist.org,.github.com,.githubusercontent.com,registry.npmjs.org"
+        // (a leading dot lets subdomains through); the control plane is
+        // always reachable. Empty lets workspaces reach the internet, as
+        // now. With "require_fence", a machine whose runner cannot set its
+        // firewall runs no workspaces at all.
+        'egress_allow' => env('WORKSPACE_MACHINES_EGRESS_ALLOW'),
+        'require_fence' => (bool) env('WORKSPACE_MACHINES_REQUIRE_FENCE', false),
         // Names this control plane's machines on the cloud. Give each
         // control plane that shares a cloud project its own.
         'pool_label' => env('WORKSPACE_MACHINES_POOL_LABEL', 'builder'),

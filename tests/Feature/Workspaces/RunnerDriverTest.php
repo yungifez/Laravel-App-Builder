@@ -199,6 +199,13 @@ class RunnerDriverTest extends TestCase
         $this->assertTrue($result->successful(), $result->output().$result->errorOutput());
     }
 
+    public function test_the_real_runner_lets_workspaces_reach_only_the_hosts_on_its_list()
+    {
+        $result = Process::timeout(60)->run(['node', base_path('tests/Fixtures/box-runner-egress.mjs'), base_path('resources/box-runner/runner.mjs')]);
+
+        $this->assertTrue($result->successful(), $result->output().$result->errorOutput());
+    }
+
     public function test_the_real_runner_gives_each_workspace_a_user_of_its_own()
     {
         // Switching users needs root, which the runner has in its box and

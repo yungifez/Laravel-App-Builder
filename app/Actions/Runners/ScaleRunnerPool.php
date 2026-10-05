@@ -267,6 +267,8 @@ class ScaleRunnerPool
                 $image,
                 $cloud->serviceHostCommand(),
                 config('workspaces.machines.preview_door_port') === null ? null : (int) config('workspaces.machines.preview_door_port'),
+                str_replace(' ', '', (string) config('workspaces.machines.egress_allow')) ?: null,
+                (bool) config('workspaces.machines.require_fence'),
             ))]);
         } catch (Throwable $exception) {
             $runner->delete();

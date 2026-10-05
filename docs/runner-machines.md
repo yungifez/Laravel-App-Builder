@@ -174,6 +174,18 @@ The settings:
   network joins them.
 - `RUNNER_FIREWALL=off` tells the runner not to change the firewall. Use it
   only when you fence workspaces in another way.
+- `RUNNER_EGRESS_ALLOW` lists the only hosts workspaces may reach, separated
+  by commas. A leading dot also allows subdomains, for example
+  `repo.packagist.org,.github.com,.githubusercontent.com,registry.npmjs.org`. Workspace commands
+  then go out through a proxy in the runner, and the firewall refuses all
+  other traffic. The control plane stays reachable. Leave it out to let
+  workspaces reach the internet. This is off until you choose to turn it on.
+- `RUNNER_REQUIRE_FENCE=on` stops the runner at start when it cannot set
+  the firewall, so no workspace runs unfenced.
+
+For machines the control plane starts itself, set
+`WORKSPACE_MACHINES_EGRESS_ALLOW` and `WORKSPACE_MACHINES_REQUIRE_FENCE=true`
+on the control plane. New machines get these settings.
 
 The runner runs as root in the container, on the host network, with
 permission to set the firewall (`--cap-add NET_ADMIN`). It needs root to give

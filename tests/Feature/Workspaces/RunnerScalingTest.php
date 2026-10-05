@@ -359,6 +359,20 @@ class RunnerScalingTest extends TestCase
         // Without a private network, the runner opens its preview door.
         $door = (new RunnerBootScript)->make('https://builder.example.test', 'token', 'image', 'hostname -I', 8443);
         $this->assertStringContainsString("RUNNER_TOKEN=token\nRUNNER_PREVIEW_DOOR_PORT=8443\nENV\n", $door);
+        $this->assertStringNotContainsString('RUNNER_EGRESS_ALLOW', $script);
+        $this->assertStringNotContainsString('RUNNER_REQUIRE_FENCE', $script);
+
+        // With a list, workspaces reach only those hosts, and the runner
+        // starts only where it can set its firewall.
+        $fenced = (new RunnerBootScript)->make('https://builder.example.test', 'token', 'image', 'hostname -I', null, 'repo.packagist.org,.github.com', true);
+        $this->assertStringContainsString("RUNNER_TOKEN=token\nRUNNER_EGRESS_ALLOW=repo.packagist.org,.github.com\nRUNNER_REQUIRE_FENCE=on\nENV\n", $fenced);
+
+        try {
+            (new RunnerBootScript)->make('https://builder.example.test', 'token', 'image', 'hostname -I', null, "a.test\nrm -rf /");
+            $this->fail('An unsafe host list went into the boot script.');
+        } catch (InvalidArgumentException) {
+            // Refused.
+        }
 
         $this->expectException(InvalidArgumentException::class);
         (new RunnerBootScript)->make("https://x.test\nrm -rf /", 'token', 'image', 'hostname -I');

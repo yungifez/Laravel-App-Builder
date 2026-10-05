@@ -16,11 +16,19 @@ class RunnerBootScript
     /**
      * Build the boot script for one runner. With a preview door port, the
      * runner opens its preview door there, for a control plane that shares
-     * no private network with it.
+     * no private network with it. With a list of hosts, workspaces reach
+     * only those and the control plane; with the fence required, the
+     * runner does not start where it cannot set its firewall.
      */
-    public function make(string $controlPlaneUrl, string $token, string $boxImage, string $serviceHostCommand, ?int $previewDoorPort = null): string
+    public function make(string $controlPlaneUrl, string $token, string $boxImage, string $serviceHostCommand, ?int $previewDoorPort = null, ?string $egressAllow = null, bool $requireFence = false): string
     {
         $door = $previewDoorPort === null ? '' : "RUNNER_PREVIEW_DOOR_PORT={$previewDoorPort}\n";
+
+        if (filled($egressAllow) && ! preg_match('#^[A-Za-z0-9.,-]+$#', $egressAllow)) {
+            throw new InvalidArgumentException('The list of hosts workspaces may reach cannot go into a boot script as it is.');
+        }
+
+        $door .= (filled($egressAllow) ? "RUNNER_EGRESS_ALLOW={$egressAllow}\n" : '').($requireFence ? "RUNNER_REQUIRE_FENCE=on\n" : '');
 
         foreach (['control plane address' => $controlPlaneUrl, 'token' => $token, 'box image' => $boxImage] as $what => $value) {
             // Each goes into the script as written, so it must stay one
