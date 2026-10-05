@@ -541,12 +541,16 @@ return [
             // sets how hard the model thinks (low, medium, high and so on),
             // and "light_effort" does the same for light tasks. Less effort
             // costs less; unset, the provider's default is used.
+            // "strong_model" and "strong_effort" take a stalled repair when
+            // no other agent can (see "escalate_after").
             'claude' => [
                 'provider' => 'anthropic',
                 'model' => env('BUILDER_CLAUDE_AGENT_MODEL'),
                 'light_model' => env('BUILDER_CLAUDE_AGENT_LIGHT_MODEL'),
                 'effort' => env('BUILDER_CLAUDE_AGENT_EFFORT'),
                 'light_effort' => env('BUILDER_CLAUDE_AGENT_LIGHT_EFFORT'),
+                'strong_model' => env('BUILDER_CLAUDE_AGENT_STRONG_MODEL'),
+                'strong_effort' => env('BUILDER_CLAUDE_AGENT_STRONG_EFFORT'),
             ],
             // Codex's own sandbox needs Linux user namespaces, which most
             // containers do not allow. Where the workspace is already the
@@ -558,6 +562,8 @@ return [
                 'light_model' => env('BUILDER_CODEX_AGENT_LIGHT_MODEL'),
                 'effort' => env('BUILDER_CODEX_AGENT_EFFORT'),
                 'light_effort' => env('BUILDER_CODEX_AGENT_LIGHT_EFFORT'),
+                'strong_model' => env('BUILDER_CODEX_AGENT_STRONG_MODEL'),
+                'strong_effort' => env('BUILDER_CODEX_AGENT_STRONG_EFFORT'),
                 'sandbox' => env('BUILDER_CODEX_SANDBOX', 'workspace-write'),
                 // Set to false to use what "codex login" saved, such as a ChatGPT
                 // plan, kept where "home" says (Codex's own default if null).
@@ -576,6 +582,8 @@ return [
 
         // After this many repairs that did not pass, the next repair goes to
         // the next agent in "order", which starts fresh with the whole brief.
+        // With no other agent to try, it goes to the same agent's
+        // "strong_model" when one is set. Either happens once per run.
         'escalate_after' => (int) env('BUILDER_AGENT_ESCALATE_AFTER', 2),
 
         'circuit' => [

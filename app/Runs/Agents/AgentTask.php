@@ -2,6 +2,7 @@
 
 namespace App\Runs\Agents;
 
+use App\Enums\AgentTier;
 use App\Models\User;
 
 /**
@@ -17,8 +18,8 @@ final readonly class AgentTask
         public ?int $maxTurns = null,
         public ?float $maxBudgetUsd = null,
         public int $timeoutSeconds = 1200,
-        // A small, well-defined task: the agent's light model may take it.
-        public bool $light = false,
+        // Which of the agent's models takes it.
+        public AgentTier $tier = AgentTier::Usual,
         public ?array $resume = null,
         // The agent to try first, ahead of the configured order.
         public ?string $prefer = null,

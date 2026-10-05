@@ -1583,7 +1583,7 @@ error"). Several problems, several failing checks, a timeout or a check that
 does not say how many problems it found go to the usual model. The pass
 continues the agent's session, so the light model reads only the problem.
 After a light repair that did not pass, the next repair goes to the usual
-model; the coder's `model_call` event records `light`.
+model; the coder's `model_call` event records its `tier` (light, usual or strong).
 `builder.agents.light_repairs` turns it off.
 
 **Another agent after two failed repairs (built).** A repair continues the
@@ -1592,8 +1592,12 @@ session of the agent that built last, so it is tried first. After
 repair goes once to the next agent in `builder.agents.order`. It starts
 fresh with the whole brief and the problems, not inside the session that
 stalled, and the run records an `escalated` event (never shown to the
-owner). Later repairs continue the new agent's session. A stronger model of
-the same provider is not a tier yet.
+owner). Later repairs continue the new agent's session. When no other agent
+can take it (only one is set, or the others' circuits are open), the repair
+goes once to the same agent's `strong_model`, if one is set, and starts
+fresh. The event then says `tier: strong`. Its work is priced at the strong
+model's own rate, or left unpriced when it has none. Without a strong model,
+repairs stay on the usual model in their session.
 
 **Review triggers:** the behaviour diff touches permissions, money, deletion,
 external communication, tenant data or migrations; the covering tests are weak;

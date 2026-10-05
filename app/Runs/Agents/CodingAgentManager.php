@@ -35,6 +35,17 @@ class CodingAgentManager extends Manager
     }
 
     /**
+     * Determine if an agent has a stronger model set for a repair its usual
+     * model could not finish.
+     */
+    public function hasStrongModel(string $adapter): bool
+    {
+        $model = $this->config->get("builder.agents.adapters.{$adapter}.strong_model");
+
+        return is_string($model) && $model !== '';
+    }
+
+    /**
      * Get the provider that serves an agent.
      */
     public function providerOf(string $adapter): string
@@ -75,6 +86,8 @@ class CodingAgentManager extends Manager
         $lightModel = $this->config->get("builder.agents.adapters.{$adapter}.light_model");
         $effort = $this->config->get("builder.agents.adapters.{$adapter}.effort");
         $lightEffort = $this->config->get("builder.agents.adapters.{$adapter}.light_effort");
+        $strongModel = $this->config->get("builder.agents.adapters.{$adapter}.strong_model");
+        $strongEffort = $this->config->get("builder.agents.adapters.{$adapter}.strong_effort");
 
         return new RunnerAgent(
             $adapter,
@@ -87,6 +100,8 @@ class CodingAgentManager extends Manager
             is_string($lightModel) && $lightModel !== '' ? $lightModel : null,
             is_string($effort) && $effort !== '' ? $effort : null,
             is_string($lightEffort) && $lightEffort !== '' ? $lightEffort : null,
+            is_string($strongModel) && $strongModel !== '' ? $strongModel : null,
+            is_string($strongEffort) && $strongEffort !== '' ? $strongEffort : null,
             $this->container->make(ModelGateway::class),
         );
     }

@@ -7,7 +7,11 @@ use App\Actions\Runs\StartRun;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
 use App\Enums\AgentOutcomeStatus;
+use App\Enums\AgentTier;
+use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Enums\VerificationStatus;
+use App\Features\OwnerWording;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -18,6 +22,7 @@ use App\Runs\Agents\AgentOutcome;
 use App\Runs\Agents\AgentTask;
 use App\Runs\Agents\CodingAgentManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Tests\Concerns\PreparesRuns;
@@ -75,8 +80,8 @@ class RepairRoutingTest extends TestCase
         $this->failChecks($run, [$this->tests(['teams have a description' => 'failed'])]);
         $this->failChecks($run, [$this->tests(['teams have a description' => 'failed'])]);
 
-        $this->assertSame([false, true, false, true], array_map(fn (AgentTask $task) => $task->light, $this->agent->tasks));
-        $this->assertSame([false, true, false, true], $run->events()->where('type', 'model_call')->where('data->role', 'coder')->orderBy('sequence')->get()->map(fn (RunEvent $event) => $event->data['light'])->all());
+        $this->assertSame([false, true, false, true], array_map(fn (AgentTask $task) => $task->tier === AgentTier::Light, $this->agent->tasks));
+        $this->assertSame([false, true, false, true], $run->events()->where('type', 'model_call')->where('data->role', 'coder')->orderBy('sequence')->get()->map(fn (RunEvent $event) => $event->data['tier'] === 'light')->all());
     }
 
     public function test_only_a_problem_a_check_can_judge_goes_to_the_light_model()
@@ -94,7 +99,7 @@ class RepairRoutingTest extends TestCase
         // A check that ran out of time.
         $this->failChecks($run, [[...$this->check('PHP formatting', ''), 'timed_out' => true]]);
 
-        $this->assertSame([false, false, false, false, false, false], array_map(fn (AgentTask $task) => $task->light, $this->agent->tasks));
+        $this->assertSame([false, false, false, false, false, false], array_map(fn (AgentTask $task) => $task->tier === AgentTier::Light, $this->agent->tasks));
     }
 
     public function test_one_static_analysis_error_or_a_formatting_failure_goes_to_the_light_model()
@@ -105,7 +110,7 @@ class RepairRoutingTest extends TestCase
         $this->failChecks($run, [$this->check('Tests', 'Boom', ['outcome' => 'errored'])]);
         $this->failChecks($run, [$this->check('PHP formatting', "  ⨯ app/Team.php\n")]);
 
-        $this->assertSame([false, true, false, true], array_map(fn (AgentTask $task) => $task->light, $this->agent->tasks));
+        $this->assertSame([false, true, false, true], array_map(fn (AgentTask $task) => $task->tier === AgentTier::Light, $this->agent->tasks));
     }
 
     public function test_after_two_repairs_that_did_not_pass_the_other_agent_starts_fresh()
@@ -141,6 +146,86 @@ class RepairRoutingTest extends TestCase
         $this->assertCount(3, $this->agent->tasks);
     }
 
+    public function test_with_no_other_agent_the_same_agent_s_strong_model_takes_the_repair_once()
+    {
+        config(['builder.agents.adapters.claude.strong_model' => 'strong-model']);
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $twoTests = [$this->tests(['teams have a description' => 'failed', 'teams have a name' => 'failed'])];
+
+        $this->failChecks($run, $twoTests);
+        $this->failChecks($run, $twoTests);
+        $this->failChecks($run, $twoTests);
+
+        [, , , $strong] = $this->agent->tasks;
+        $this->assertSame(AgentTier::Strong, $strong->tier);
+        $this->assertNull($strong->resume, 'It reads the whole brief, not the stalled session.');
+        $this->assertStringContainsString("Owner's request", $strong->prompt);
+        $this->assertSame(['from' => 'claude', 'to' => 'claude', 'tier' => 'strong'], $run->events()->where('type', 'escalated')->sole()->data);
+        $this->assertNull(OwnerWording::event($run->events()->where('type', 'escalated')->sole()), 'The owner sees nothing new; the event is for operators.');
+
+        // It happens once: the next repair continues the strong session, and
+        // when the repairs run out the run stops the usual way.
+        $this->failChecks($run, $twoTests);
+        $this->assertSame(AgentTier::Strong, $this->agent->tasks[4]->tier);
+        $this->assertSame('session-4', $this->agent->tasks[4]->resume['session'] ?? null);
+        $this->failChecks($run, $twoTests);
+        $this->failChecks($run, $twoTests);
+
+        $this->assertCount(6, $this->agent->tasks);
+        $this->assertSame(1, $run->events()->where('type', 'escalated')->count());
+        $this->assertSame(RunStatus::NeedsUserDecision, $run->refresh()->status);
+        $this->assertSame(StopReason::VerificationFailed, $run->stop_reason);
+        $this->assertSame(['usual', 'usual', 'usual', 'strong', 'strong', 'strong'], $run->events()->where('type', 'model_call')->where('data->role', 'coder')->orderBy('sequence')->get()->map(fn (RunEvent $event) => $event->data['tier'])->all());
+    }
+
+    public function test_another_agent_still_comes_before_the_strong_model()
+    {
+        config(['builder.agents.adapters.claude.strong_model' => 'strong-model']);
+        $codex = $this->codex();
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $twoTests = [$this->tests(['teams have a description' => 'failed', 'teams have a name' => 'failed'])];
+
+        $this->failChecks($run, $twoTests);
+        $this->failChecks($run, $twoTests);
+        $this->failChecks($run, $twoTests);
+
+        $this->assertSame(AgentTier::Usual, $codex->tasks[0]->tier);
+        $this->assertSame([AgentTier::Usual], array_values(array_unique(array_map(fn (AgentTask $task) => $task->tier, $this->agent->tasks), SORT_REGULAR)));
+        $this->assertSame(['from' => 'claude', 'to' => 'codex'], $run->events()->where('type', 'escalated')->sole()->data);
+    }
+
+    public function test_when_the_other_agent_s_circuit_is_open_the_strong_model_takes_the_repair()
+    {
+        config(['builder.agents.adapters.claude.strong_model' => 'strong-model']);
+        $codex = $this->codex();
+        Cache::put('builder:agents:codex:provider-failures', (int) config('builder.agents.circuit.failures'));
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $twoTests = [$this->tests(['teams have a description' => 'failed', 'teams have a name' => 'failed'])];
+
+        $this->failChecks($run, $twoTests);
+        $this->failChecks($run, $twoTests);
+        $this->failChecks($run, $twoTests);
+
+        $this->assertSame([], $codex->tasks);
+        $this->assertSame(AgentTier::Strong, $this->agent->tasks[3]->tier);
+        $this->assertSame(['from' => 'claude', 'to' => 'claude', 'tier' => 'strong'], $run->events()->where('type', 'escalated')->sole()->data);
+    }
+
+    public function test_with_no_strong_model_the_repair_stays_on_the_usual_model_in_its_session()
+    {
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $twoTests = [$this->tests(['teams have a description' => 'failed', 'teams have a name' => 'failed'])];
+
+        $this->failChecks($run, $twoTests);
+        $this->failChecks($run, $twoTests);
+        $this->failChecks($run, $twoTests);
+
+        $this->assertSame(AgentTier::Usual, $this->agent->tasks[3]->tier);
+        $this->assertSame('session-3', $this->agent->tasks[3]->resume['session'] ?? null);
+        $this->assertFalse($run->events()->where('type', 'escalated')->exists());
+        $this->assertSame(RunStatus::Verifying, $run->refresh()->status);
+    }
+
     public function test_light_repairs_can_be_turned_off()
     {
         config(['builder.agents.light_repairs' => false]);
@@ -148,7 +233,23 @@ class RepairRoutingTest extends TestCase
 
         $this->failChecks($run, [$this->tests(['teams have a description' => 'failed'])]);
 
-        $this->assertSame([false, false], array_map(fn (AgentTask $task) => $task->light, $this->agent->tasks));
+        $this->assertSame([false, false], array_map(fn (AgentTask $task) => $task->tier === AgentTier::Light, $this->agent->tasks));
+    }
+
+    /**
+     * Add codex after claude, writing its own file each time.
+     */
+    protected function codex(): FakeCodingAgent
+    {
+        config(['builder.agents.order' => ['claude', 'codex'], 'ai.providers.openai.key' => 'openai-test-key']);
+        $codex = new FakeCodingAgent('openai', function (Workspace $workspace) use (&$codex) {
+            File::put(config('workspaces.drivers.local.root')."/{$workspace->driver_id}/app/Team.php", "<?php\n// codex ".count($codex->tasks)."\n");
+
+            return new AgentOutcome('codex', 'openai', null, AgentOutcomeStatus::Completed, 'Done.', session: 'codex-'.count($codex->tasks));
+        });
+        app(CodingAgentManager::class)->extend('codex', fn () => $codex);
+
+        return $codex;
     }
 
     /**

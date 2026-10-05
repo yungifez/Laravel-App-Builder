@@ -3,6 +3,7 @@
 namespace App\Runs;
 
 use App\Actions\Runs\CompleteRunVerification;
+use App\Enums\AgentTier;
 use App\Features\TestReport;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\Run;
@@ -28,7 +29,7 @@ class RepairTier
 
         $previous = $run->events()->where('type', 'model_call')->where('data->role', 'coder')->reorder('sequence', 'desc')->first();
 
-        if ($previous instanceof RunEvent && ($previous->data['light'] ?? false) === true) {
+        if ($previous instanceof RunEvent && ($previous->data['tier'] ?? null) === AgentTier::Light->value) {
             return false;
         }
 

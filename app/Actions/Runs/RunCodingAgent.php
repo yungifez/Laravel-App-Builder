@@ -138,7 +138,7 @@ class RunCodingAgent
             'role' => 'coder',
             ...$outcome->toArray(),
             // So a light repair that did not pass is not tried light again.
-            'light' => $task->light,
+            'tier' => $task->tier->value,
             'cost_usd' => $reported ?? $estimate,
             'session_cost_usd' => $outcome->costUsd,
             'cost_source' => match (true) {
@@ -251,18 +251,36 @@ class RunCodingAgent
      */
     protected function order(?string $prefer = null): array
     {
+        $available = $this->available($prefer);
+
+        return [...$available, ...array_values(array_diff($this->preferred($prefer), $available))];
+    }
+
+    /**
+     * Get the agents whose provider is not failing, in the configured order
+     * with the preferred agent first.
+     *
+     * @return list<string>
+     */
+    public function available(?string $prefer = null): array
+    {
         $threshold = (int) config('builder.agents.circuit.failures');
-        $open = fn (string $adapter) => (int) Cache::get($this->circuitKey($adapter), 0) >= $threshold;
+
+        return array_values(array_filter($this->preferred($prefer), fn (string $adapter) => (int) Cache::get($this->circuitKey($adapter), 0) < $threshold));
+    }
+
+    /**
+     * Get the configured agents with the preferred one first.
+     *
+     * @return list<string>
+     */
+    protected function preferred(?string $prefer): array
+    {
         $order = $this->agents->order();
 
-        if ($prefer !== null && in_array($prefer, $order, true)) {
-            $order = [$prefer, ...array_values(array_diff($order, [$prefer]))];
-        }
-
-        return [
-            ...array_values(array_filter($order, fn (string $adapter) => ! $open($adapter))),
-            ...array_values(array_filter($order, $open)),
-        ];
+        return $prefer !== null && in_array($prefer, $order, true)
+            ? [$prefer, ...array_values(array_diff($order, [$prefer]))]
+            : $order;
     }
 
     /**

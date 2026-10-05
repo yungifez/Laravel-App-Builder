@@ -9,6 +9,7 @@ use App\Actions\Runs\RunCodingAgent;
 use App\Actions\Runs\WriteBrief;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\AgentOutcomeStatus;
+use App\Enums\AgentTier;
 use App\Enums\ModelRole;
 use App\Features\AcceptanceSelector;
 use App\Models\Run;
@@ -62,10 +63,14 @@ class SdkDriver extends AgentDriver
         // budget, and so does a repair of one problem a check can judge.
         $tidy = ($run->featureRequest->tidy['tier'] ?? null) === 'light';
         $escalate = $this->escalation($run);
+        // Once a repair went to the strong model, the repairs after it stay
+        // there: the usual model already could not finish.
+        $strong = ($escalate['tier'] ?? null) === AgentTier::Strong->value
+            || ($escalate === null && $run->events()->where('type', 'escalated')->where('data->tier', AgentTier::Strong->value)->exists());
         // A request the decision model is sure is trivial is first built by
         // the light model too, once that decision is switched on to act.
-        $trivial = $escalate === null && ! $tidy && $run->repairs === 0 && $this->actOnDecision->handle($run, 'complexity', 'trivial');
-        $light = $escalate === null && ($tidy || $trivial || $this->repairTier->light($run));
+        $trivial = $escalate === null && ! $strong && ! $tidy && $run->repairs === 0 && $this->actOnDecision->handle($run, 'complexity', 'trivial');
+        $light = $escalate === null && ! $strong && ($tidy || $trivial || $this->repairTier->light($run));
 
         if ($escalate !== null) {
             $run->recordEvent('escalated', $escalate);
@@ -78,9 +83,14 @@ class SdkDriver extends AgentDriver
             maxTurns: (int) config('builder.agents.max_turns'),
             maxBudgetUsd: (float) ($tidy ? config('builder.verification.shortcuts.tidy.max_budget_usd') : config('builder.agents.max_budget_usd')),
             timeoutSeconds: (int) config('builder.construction.budgets.minutes') * 60,
-            light: $light,
-            // The other agent starts fresh, with the whole brief and the
-            // problems, rather than inside the session that stalled.
+            tier: match (true) {
+                $strong => AgentTier::Strong,
+                $light => AgentTier::Light,
+                default => AgentTier::Usual,
+            },
+            // The other agent, or the strong model, starts fresh with the
+            // whole brief and the problems, rather than inside the session
+            // that stalled.
             resume: $resume = $escalate === null ? $this->resumeFor($run) : null,
             // A repair stays with the agent whose session it continues.
             prefer: $escalate['to'] ?? $resume['adapter'] ?? null,
@@ -107,10 +117,13 @@ class SdkDriver extends AgentDriver
 
     /**
      * After "escalate_after" repairs that did not pass, hand the next repair
-     * to the other agent (§11): new eyes on the same problems. It happens
-     * once; later repairs continue with whichever agent built last.
+     * to the other agent (§11): new eyes on the same problems. With no other
+     * agent to take it (only one is set up, or the other's provider keeps
+     * failing), the same agent's strong model takes it, when one is set. It
+     * happens once; later repairs continue with whichever agent and model
+     * built last, until the repairs run out.
      *
-     * @return array{from: string, to: string}|null
+     * @return array{from: string, to: string, tier?: string}|null
      */
     protected function escalation(Run $run): ?array
     {
@@ -119,9 +132,18 @@ class SdkDriver extends AgentDriver
         }
 
         $from = $this->lastBuild($run)->data['adapter'] ?? null;
-        $to = array_values(array_diff($this->agents->order(), [$from]))[0] ?? null;
 
-        return is_string($from) && is_string($to) ? ['from' => $from, 'to' => $to] : null;
+        if (! is_string($from)) {
+            return null;
+        }
+
+        $to = array_values(array_diff($this->runCodingAgent->available(), [$from]))[0] ?? null;
+
+        return match (true) {
+            $to !== null => ['from' => $from, 'to' => $to],
+            $this->agents->hasStrongModel($from) => ['from' => $from, 'to' => $from, 'tier' => AgentTier::Strong->value],
+            default => null,
+        };
     }
 
     /**

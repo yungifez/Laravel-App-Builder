@@ -3,6 +3,7 @@
 namespace App\Runs\Agents;
 
 use App\Actions\Workspaces\RunWorkspaceCommand;
+use App\Enums\AgentTier;
 use App\Models\Workspace;
 use App\Runs\Contracts\CodingAgent;
 use App\Runs\Exceptions\LeaseLost;
@@ -33,6 +34,8 @@ class RunnerAgent implements CodingAgent
      * @param  string|null  $lightModel  The cheaper model for light tasks, or null to use the usual one
      * @param  string|null  $effort  How hard the model thinks, or null for its default
      * @param  string|null  $lightEffort  How hard it thinks on light tasks, or null to use $effort
+     * @param  string|null  $strongModel  The stronger model for a repair the usual one could not finish, or null for none
+     * @param  string|null  $strongEffort  How hard it thinks on strong tasks, or null to use $effort
      */
     public function __construct(
         protected string $adapter,
@@ -45,8 +48,34 @@ class RunnerAgent implements CodingAgent
         protected ?string $lightModel = null,
         protected ?string $effort = null,
         protected ?string $lightEffort = null,
+        protected ?string $strongModel = null,
+        protected ?string $strongEffort = null,
         protected ?ModelGateway $gateway = null,
     ) {}
+
+    /**
+     * Get the model that takes a task of the given tier.
+     */
+    public function modelFor(AgentTier $tier): ?string
+    {
+        return match ($tier) {
+            AgentTier::Light => $this->lightModel ?? $this->model,
+            AgentTier::Usual => $this->model,
+            AgentTier::Strong => $this->strongModel ?? $this->model,
+        };
+    }
+
+    /**
+     * Get how hard the model thinks on a task of the given tier.
+     */
+    protected function effortFor(AgentTier $tier): ?string
+    {
+        return match ($tier) {
+            AgentTier::Light => $this->lightEffort ?? $this->effort,
+            AgentTier::Usual => $this->effort,
+            AgentTier::Strong => $this->strongEffort ?? $this->effort,
+        };
+    }
 
     public function provider(): string
     {
@@ -89,8 +118,8 @@ class RunnerAgent implements CodingAgent
                 'adapter' => $this->adapter,
                 // A key the owner pasted into a request or a note stays here.
                 'prompt' => Secrets::redact($prompt),
-                'model' => $task->light ? ($this->lightModel ?? $this->model) : $this->model,
-                'effort' => $task->light ? ($this->lightEffort ?? $this->effort) : $this->effort,
+                'model' => $this->modelFor($task->tier),
+                'effort' => $this->effortFor($task->tier),
                 'session' => $resume['session'] ?? null,
                 'follow_up' => isset($resume['prompt']) ? Secrets::redact($resume['prompt']) : null,
                 'max_turns' => $task->maxTurns,
@@ -131,7 +160,9 @@ class RunnerAgent implements CodingAgent
 
         $this->removeTaskFiles($workspace);
 
-        $outcome = AgentOutcome::fromRunnerOutput($this->adapter, $this->provider, $this->model, $result->output, $result->timed_out, $result->lost);
+        // The outcome names the model that took the task, so its work is
+        // priced at that model's own rate.
+        $outcome = AgentOutcome::fromRunnerOutput($this->adapter, $this->provider, $this->modelFor($task->tier), $result->output, $result->timed_out, $result->lost);
 
         // However the agent took the refusal, the run stops for the plan.
         return $opened !== null && $this->gateway?->refused($opened['token']) ? $outcome->stoppedForUsage() : $outcome;

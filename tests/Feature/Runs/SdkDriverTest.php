@@ -13,6 +13,7 @@ use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
 use App\Context\ProjectNotes;
 use App\Enums\AgentOutcomeStatus;
+use App\Enums\AgentTier;
 use App\Enums\RunStatus;
 use App\Enums\StopReason;
 use App\Enums\VerificationStatus;
@@ -799,6 +800,57 @@ class SdkDriverTest extends TestCase
         // Switched off, which is the default, or not trivial: the usual model.
         $this->assertStringStartsWith('model=claude-opus-5 ', $build('trivial', [])[0]);
         $this->assertStringStartsWith('model=claude-opus-5 ', $build('normal', ['complexity'])[0]);
+    }
+
+    public function test_a_repair_on_the_strong_model_is_run_and_recorded_as_the_strong_model()
+    {
+        config([
+            'ai.providers.anthropic.key' => 'test-anthropic-key',
+            'builder.agents.order' => ['claude'],
+            'builder.agents.runner.path' => base_path('tests/Fixtures/fake-agent-runner.mjs'),
+            'builder.agents.adapters.claude.model' => 'claude-opus-5',
+            'builder.agents.adapters.claude.strong_model' => 'claude-strong-5',
+            'builder.agents.adapters.claude.strong_effort' => 'max',
+            'builder.construction.budgets.repairs' => 5,
+        ]);
+        FeaturePlanner::fake([$this->plan()]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        foreach (range(1, 3) as $repair) {
+            $this->failVerification($run->refresh(), "Expected description to be fillable ({$repair}).");
+        }
+
+        $accounts = $run->events()->where('type', 'build_finished')->orderBy('sequence')->get()->map(fn (RunEvent $event) => $event->data['account'])->all();
+        $this->assertStringStartsWith('model=claude-opus-5 ', $accounts[2]);
+        $this->assertStringStartsWith('model=claude-strong-5 ', $accounts[3]);
+        $this->assertStringEndsWith('effort=max', $accounts[3]);
+        $calls = $run->events()->where('type', 'model_call')->where('data->role', 'coder')->orderBy('sequence')->get()->map(fn (RunEvent $event) => [$event->data['model'], $event->data['tier']])->all();
+        $this->assertSame([['claude-opus-5', 'usual'], ['claude-strong-5', 'strong']], array_slice($calls, 2));
+    }
+
+    public function test_the_strong_model_s_work_is_priced_at_its_own_rate_or_left_unpriced()
+    {
+        config(['builder.agents.order' => ['codex'], 'builder.agents.adapters.codex.strong_model' => 'codex-strong', 'builder.construction.budgets.repairs' => 5]);
+        $this->agent('codex', 'openai', function (Workspace $workspace, AgentTask $task) {
+            File::put($this->path($workspace, 'app/Codex.php'), "<?php\n// ".count($this->agents['codex']->tasks)."\n");
+
+            return new AgentOutcome('codex', 'openai', $task->tier === AgentTier::Strong ? 'codex-strong' : 'codex-model', AgentOutcomeStatus::Completed, 'Done.', turns: 1, inputTokens: 100_000, outputTokens: 10_000);
+        });
+        $costs = function (array $prices) {
+            config(['builder.prices' => $prices]);
+            FeaturePlanner::fake([$this->plan()]);
+            $run = app(StartRun::class)->handle($this->request())->refresh();
+            foreach (range(1, 3) as $repair) {
+                $this->failVerification($run->refresh(), "Expected description to be fillable ({$repair}).");
+            }
+
+            return $run->events()->where('type', 'model_call')->where('data->role', 'coder')->orderBy('sequence')->get()->map(fn (RunEvent $event) => $event->data['cost_usd'])->all();
+        };
+
+        $this->assertSame([0.28, 0.28, 0.28, 1.4], $costs(['codex-model' => ['input' => 2, 'output' => 8], 'codex-strong' => ['input' => 10, 'output' => 40]]));
+        // With no price for the strong model, its work is unpriced, not free
+        // and not counted at the usual model's rate.
+        $this->assertSame([0.28, 0.28, 0.28, null], $costs(['codex-model' => ['input' => 2, 'output' => 8]]));
     }
 
     public function test_a_resumed_claude_session_costs_only_what_it_added()
