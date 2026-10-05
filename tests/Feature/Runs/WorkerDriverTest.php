@@ -3,6 +3,7 @@
 namespace Tests\Feature\Runs;
 
 use App\Actions\Features\DescribeFeatureRequest;
+use App\Actions\Features\HandChangeToOwner;
 use App\Actions\Previews\GrantPreviewAccess;
 use App\Actions\Previews\MakePreviewPerson;
 use App\Actions\Previews\SignInToPreview;
@@ -452,6 +453,27 @@ class WorkerDriverTest extends TestCase
 
         $this->artisan('runs:reconcile')->assertSuccessful();
         Queue::assertPushed(ExecuteRun::class, 1);
+    }
+
+    public function test_a_run_whose_worker_never_handed_the_change_back_stops_once_its_connection_runs_out()
+    {
+        $run = $this->startRun();
+        app(GrantWorkerAccess::class)->handle($run);
+        Queue::fake([ExecuteRun::class]);
+
+        $this->travel((int) config('builder.agents.workers.minutes') - 1)->minutes();
+        $this->artisan('runs:reconcile')->assertSuccessful();
+        $this->assertSame(RunStatus::Implementing, $run->refresh()->status, 'The connection is still open.');
+
+        $this->travel(2)->minutes();
+        $this->artisan('runs:reconcile')->assertSuccessful();
+
+        $run->refresh();
+        $this->assertSame(RunStatus::Failed, $run->status);
+        $this->assertSame('Your own coding tool did not hand this change back before its connection ran out, so I stopped it. Your app is as it was, and you can hand the change to your tool again.', $run->error);
+        $this->assertSame('worker_lapsed', $run->stop_reason);
+        $this->assertTrue(HandChangeToOwner::available($run->featureRequest->refresh()), 'The owner can hand it to their tool again.');
+        Queue::assertNothingPushed();
     }
 
     protected function startRun(bool $notes = false, ?FeatureRequest $retryOf = null): Run
