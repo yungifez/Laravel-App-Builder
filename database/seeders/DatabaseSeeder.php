@@ -18,6 +18,10 @@ class DatabaseSeeder extends Seeder
      * This seeder creates a user with a known password, so it only runs when
      * APP_ENV=local.
      *
+     * Walks of the new-owner loop sign up through the app itself, not this
+     * seeder, as walk-owner-<date>@example.test with the password
+     * Walk-Owner-Local-2026, on localhost only.
+     *
      * @throws RuntimeException
      */
     public function run(): void
