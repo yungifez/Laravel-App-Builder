@@ -183,13 +183,13 @@ const changeSections: {
     },
 ];
 
-// What backs each line the reviewer wrote. "Unconfirmed" means no changed
-// file belongs to its area, so only the reviewer says it.
+// What backs each line the reviewer wrote. "Not shown in the change" means
+// no changed file belongs to its area, so only the reviewer says it.
 const changeEvidence: Record<RunReview['changes'][number]['evidence'], string> =
     {
         tested: 'Tested',
         in_change: 'Not tested',
-        not_in_change: 'Unconfirmed',
+        not_in_change: 'Not shown in the change',
     };
 
 function evidenceLabel(item: RunReview['preserved'][number]): string {
@@ -862,7 +862,7 @@ function lineClass(line: string): string {
                                             >· {{ change.area_name }}</span
                                         >
                                         <span
-                                            class="font-normal text-muted-foreground"
+                                            class="ml-1 font-normal text-muted-foreground"
                                             >·
                                             {{
                                                 changeEvidence[change.evidence]

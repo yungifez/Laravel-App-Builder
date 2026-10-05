@@ -10,7 +10,7 @@ import {
     LoaderCircle,
     SearchCheck,
     ShieldCheck,
-    X,
+    Unlink,
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
@@ -806,7 +806,7 @@ function setCompatibility(keep: boolean | null): void {
                                                 ruleOut(area, connection.to)
                                             "
                                         >
-                                            <X class="size-3" />
+                                            <Unlink class="size-3" />
                                         </button>
                                     </span>
                                 </p>
