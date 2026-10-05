@@ -4,6 +4,7 @@ namespace App\Actions\Projects;
 
 use App\Actions\Features\DescribeFeatureRequest;
 use App\Actions\Features\RetryFeatureRequest;
+use App\Enums\FeatureRequestStatus;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 
@@ -17,23 +18,13 @@ class DescribeFirstVersion
     public function __construct(protected DescribeFeatureRequest $describeFeatureRequest) {}
 
     /**
-     * @return array{change: string, state: 'making'|'asking'|'ready'|'stopped', error: string|null, can_retry: bool}|null
+     * @return array{change: string, state: 'making'|'asking'|'ready'|'stopped', error: string|null, can_retry: bool, checking: bool}|null
      */
     public function handle(Project $project): ?array
     {
-        // An app brought in, or one with a kept change, is the owner's own.
-        if (! $project->started_here || $project->featureRequests()->whereNotNull('accepted_at')->exists()) {
-            return null;
-        }
+        $change = $this->change($project);
 
-        // Tries again carry the same words, so the newest one decides.
-        $change = $project->featureRequests()
-            ->whereNull('parent_id')
-            ->where('prompt', 'like', __('Make the first version:').'%')
-            ->latest('id')
-            ->first();
-
-        if (! $change instanceof FeatureRequest) {
+        if ($change === null) {
             return null;
         }
 
@@ -43,9 +34,9 @@ class DescribeFirstVersion
             // Made, then stopped in the checks or the review, as the chat
             // shows it.
             $described['featureRequest']['stopped'], RetryFeatureRequest::stoppedWhileChecking($change) => 'stopped',
-            // Ready once it can be kept: the checks have passed, and the
-            // pane opens the app with it as for any change to decide on.
-            $described['featureRequest']['can_accept'] => 'ready',
+            // Ready to try once made, as the list of changes offers it; the
+            // checks may still run, and the pane says so.
+            $change->status === FeatureRequestStatus::Generated => 'ready',
             default => 'making',
         };
 
@@ -54,6 +45,33 @@ class DescribeFirstVersion
             'state' => $state,
             'error' => $state === 'stopped' ? ($described['featureRequest']['error'] ?? $described['run']['error'] ?? null) : null,
             'can_retry' => $state === 'stopped' && $described['featureRequest']['can_retry'],
+            'checking' => $state === 'ready' && ! $described['featureRequest']['can_accept'],
         ];
+    }
+
+    /**
+     * Whether the app still waits on its first version, in any state.
+     */
+    public function pending(Project $project): bool
+    {
+        return $this->change($project) !== null;
+    }
+
+    /**
+     * The first version's change, while the app has none kept.
+     */
+    protected function change(Project $project): ?FeatureRequest
+    {
+        // An app brought in, or one with a kept change, is the owner's own.
+        if (! $project->started_here || $project->featureRequests()->whereNotNull('accepted_at')->exists()) {
+            return null;
+        }
+
+        // Tries again carry the same words, so the newest one decides.
+        return $project->featureRequests()
+            ->whereNull('parent_id')
+            ->where('prompt', 'like', __('Make the first version:').'%')
+            ->latest('id')
+            ->first();
     }
 }

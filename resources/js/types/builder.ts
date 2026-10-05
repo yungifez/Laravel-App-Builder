@@ -548,6 +548,8 @@ export type FirstVersion = {
     state: 'making' | 'asking' | 'ready' | 'stopped';
     error: string | null;
     can_retry: boolean;
+    /** Made, but the checks still run. */
+    checking: boolean;
 };
 
 export type EditorPreview = {

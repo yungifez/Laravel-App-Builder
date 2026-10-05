@@ -187,6 +187,13 @@ watch(scale, (value) => (props.state.zoom = value), { immediate: true });
                 <p class="text-lg font-medium" data-test="first-version-ready">
                     Your first version is ready
                 </p>
+                <p
+                    v-if="firstVersion.checking"
+                    class="text-sm text-muted-foreground"
+                    data-test="first-version-checking"
+                >
+                    Checks are still running.
+                </p>
                 <!-- Opens the change and starts the app with it, in one step. -->
                 <Form
                     v-bind="

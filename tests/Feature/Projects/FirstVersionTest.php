@@ -7,6 +7,7 @@ use App\Enums\RunStatus;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
+use App\VisualEditing\DesignDrafts;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -40,21 +41,25 @@ class FirstVersionTest extends TestCase
             ->viewData('page')['props']['featureRequest']['error'];
 
         $this->assertNotEmpty($error);
-        $this->assertFirstVersion(['change' => $stopped->uuid, 'state' => 'stopped', 'error' => $error, 'can_retry' => true]);
+        $this->assertFirstVersion(['change' => $stopped->uuid, 'state' => 'stopped', 'error' => $error, 'can_retry' => true, 'checking' => false]);
     }
 
     public function test_a_first_version_being_made_and_then_ready_are_shown_until_it_is_kept(): void
     {
         $change = $this->firstVersion(['status' => FeatureRequestStatus::Generating]);
-        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'making', 'error' => null, 'can_retry' => false]);
+        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'making', 'error' => null, 'can_retry' => false, 'checking' => false]);
 
-        // Made, but the checks still run: not yet something to try.
+        // Made, while the checks still run: to try, as the list offers it,
+        // but not yet to keep.
         $change->update(['status' => FeatureRequestStatus::Generated]);
         $run = Run::factory()->for($change)->create(['status' => RunStatus::Verifying]);
-        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'making', 'error' => null, 'can_retry' => false]);
+        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'ready', 'error' => null, 'can_retry' => false, 'checking' => true]);
+        $this->actingAs($this->project->owner)
+            ->get(route('projects.show', ['project' => $this->project, 'change' => $change->uuid]))
+            ->assertInertia(fn (Assert $page) => $page->where('change.featureRequest.can_accept', false)->etc());
 
         $run->update(['status' => RunStatus::Completed]);
-        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'ready', 'error' => null, 'can_retry' => false]);
+        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'ready', 'error' => null, 'can_retry' => false, 'checking' => false]);
 
         $change->update(['commit_sha' => 'a', 'accepted_at' => now()]);
         $this->assertFirstVersion(null);
@@ -86,6 +91,31 @@ class FirstVersionTest extends TestCase
         $this->assertFirstVersion(null);
     }
 
+    public function test_design_edits_on_the_template_wait_unoffered_until_the_first_version_is_kept(): void
+    {
+        $change = $this->firstVersion(['status' => FeatureRequestStatus::Generating]);
+        $draft = FeatureRequest::factory()->for($this->project)->create([
+            'generator' => DesignDrafts::GENERATOR,
+            'status' => FeatureRequestStatus::Generated,
+            'patch' => "--- a/x\n+++ b/x\n",
+        ]);
+
+        $this->assertDesignEditsShown(false);
+
+        // Kept by a direct send too, it would land under the first version.
+        $this->actingAs($this->project->owner)
+            ->post(route('design-edits.store', $this->project))
+            ->assertSessionHasErrors(['keep' => "Your app's first version is not kept yet. Keep your design edits once it is."]);
+        $this->assertSame(0, $draft->verifications()->count());
+
+        // Stopped is still not kept.
+        $change->update(['status' => FeatureRequestStatus::Failed]);
+        $this->assertDesignEditsShown(false);
+
+        $change->update(['status' => FeatureRequestStatus::Generated, 'commit_sha' => 'a', 'accepted_at' => now()]);
+        $this->assertDesignEditsShown(true);
+    }
+
     /**
      * @param  array<string, mixed>  $attributes
      */
@@ -103,6 +133,15 @@ class FirstVersionTest extends TestCase
             ->get(route('projects.show', $this->project))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where('first_version', $expected)->etc());
+    }
+
+    protected function assertDesignEditsShown(bool $shown): void
+    {
+        $designEdits = $this->actingAs($this->project->owner)
+            ->get(route('projects.show', $this->project))
+            ->viewData('page')['props']['designEdits'];
+
+        $this->assertSame($shown, $designEdits !== null);
     }
 
     /**

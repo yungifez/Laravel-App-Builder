@@ -2,6 +2,7 @@
 
 namespace App\Actions\VisualEditing;
 
+use App\Actions\Projects\DescribeFirstVersion;
 use App\Enums\VerificationStatus;
 use App\Models\Project;
 use App\Models\VisualEdit;
@@ -12,11 +13,12 @@ class DescribeDesignEdits
     public function __construct(
         private DesignDrafts $designDrafts,
         private CommitDesignEdits $commitDesignEdits,
+        private DescribeFirstVersion $describeFirstVersion,
     ) {}
 
     /**
      * Describe the design edits that wait on the app to be kept, or null
-     * when none wait. A problem from checking them is told until the owner
+     * when none wait or the app has no first version kept. A problem from checking them is told until the owner
      * edits again.
      *
      * @return array{edits: int, checking: bool, problem: string|null}|null
@@ -25,7 +27,9 @@ class DescribeDesignEdits
     {
         $draft = $this->designDrafts->find($project);
 
-        if ($draft === null || trim((string) $draft->patch) === '') {
+        // Edits made on the template wait, unoffered, until the first
+        // version is kept (KeepDesignEdits).
+        if ($draft === null || trim((string) $draft->patch) === '' || $this->describeFirstVersion->pending($project)) {
             return null;
         }
 
