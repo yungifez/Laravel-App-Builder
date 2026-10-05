@@ -123,6 +123,7 @@ export type ProjectTelemetry = {
     repairs_before_acceptance: number | null;
     reviewed: number;
     with_unexpected_changes: number;
+    with_notes_behind: number;
     input_tokens: number;
     output_tokens: number;
     visual_edits: number;

@@ -63,11 +63,39 @@ class ProjectTelemetryTest extends TestCase
         $this->assertSame(1.0, $telemetry['repairs_before_acceptance']);
         $this->assertSame(2, $telemetry['reviewed']);
         $this->assertSame(1, $telemetry['with_unexpected_changes']);
+        $this->assertSame(0, $telemetry['with_notes_behind']);
         $this->assertSame(6500, $telemetry['input_tokens']);
 
         $this->actingAs($project->owner)
             ->get(route('projects.show', $project))
             ->assertInertia(fn (Assert $page) => $page->where('telemetry.accepted', 1)->where('telemetry.cost_per_accepted_change_usd', 2));
+    }
+
+    public function test_it_counts_reviewed_changes_that_left_notes_behind()
+    {
+        $project = Project::factory()->create();
+
+        $this->completedRun($this->request($project), repairs: 0, unexpected: [], notesBehind: ['billing', 'teams']);
+        $this->completedRun($this->request($project), repairs: 0, unexpected: [], notesBehind: ['billing']);
+        // A change whose notes kept up with its code.
+        $this->completedRun($this->request($project), repairs: 0, unexpected: []);
+
+        $telemetry = app(SummarizeProjectTelemetry::class)->handle($project);
+
+        $this->assertSame(3, $telemetry['reviewed']);
+        $this->assertSame(2, $telemetry['with_notes_behind']);
+    }
+
+    public function test_a_change_that_was_never_reviewed_has_no_notes_to_leave_behind()
+    {
+        $project = Project::factory()->create();
+
+        Run::factory()->for($this->request($project))->create(['status' => RunStatus::Failed, 'review' => null]);
+
+        $telemetry = app(SummarizeProjectTelemetry::class)->handle($project);
+
+        $this->assertSame(0, $telemetry['reviewed']);
+        $this->assertSame(0, $telemetry['with_notes_behind']);
     }
 
     public function test_it_counts_each_time_the_owner_acted_per_kept_change()
@@ -112,14 +140,15 @@ class ProjectTelemetryTest extends TestCase
 
     /**
      * @param  array<string, list<string>>  $unexpected
+     * @param  list<string>  $notesBehind
      */
-    protected function completedRun(FeatureRequest $request, int $repairs, array $unexpected): Run
+    protected function completedRun(FeatureRequest $request, int $repairs, array $unexpected, array $notesBehind = []): Run
     {
         return Run::factory()->for($request)->create([
             'status' => RunStatus::Completed,
             'repairs' => $repairs,
             'review' => ['approved' => true, 'summary' => 'ok', 'preserved' => [], 'verified' => [], 'coverage' => [], 'findings' => [], 'changes' => [], 'classification' => [
-                'requested' => [], 'may_also_affect' => [], 'unexpected' => $unexpected, 'unclaimed' => [], 'context_updates' => [], 'targets' => [], 'notes_behind' => [], 'observed' => null,
+                'requested' => [], 'may_also_affect' => [], 'unexpected' => $unexpected, 'unclaimed' => [], 'context_updates' => [], 'targets' => [], 'notes_behind' => $notesBehind, 'observed' => null,
             ]],
         ]);
     }
