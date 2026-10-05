@@ -35,6 +35,7 @@ use App\Features\InventedColours;
 use App\Features\MigrationChecks;
 use App\Features\NodeInPhpTests;
 use App\Features\OwnedRecords;
+use App\Features\PackagePolicy;
 use App\Features\PatchSummary;
 use App\Features\QueuedWork;
 use App\Features\ScreenCheck;
@@ -586,6 +587,14 @@ class ConstructRun
 
         foreach (OwnedRecords::findings($owners, $accepted) as $finding) {
             $gate[] = ['kind' => $finding['kind'], 'identity' => OwnedRecords::identity($finding), 'text' => OwnedRecords::finding($finding, $owners)];
+        }
+
+        // New packages outside the dependency policy (§12, §13). The owner
+        // may keep a package they chose.
+        $packages = $evidence['packages'] ?? ['added' => 0, 'problems' => []];
+
+        foreach (PackagePolicy::findings($packages, $accepted) as $finding) {
+            $gate[] = ['kind' => $finding['kind'], 'identity' => PackagePolicy::identity($finding), 'text' => PackagePolicy::finding($finding, $packages)];
         }
 
         if (config('builder.verification.faults.send_back')) {

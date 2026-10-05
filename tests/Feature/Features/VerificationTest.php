@@ -1568,4 +1568,39 @@ class VerificationTest extends TestCase
         app(RequestVerification::class)->handle($off);
         $this->assertArrayNotHasKey('owners', $off->verifications()->sole()->evidence ?? []);
     }
+
+    public function test_the_packages_a_change_adds_to_a_lockfile_are_read_for_the_dependency_policy()
+    {
+        $lock = fn (array $names) => json_encode(['packages' => array_map(fn (string $name) => ['name' => $name, 'version' => 'v1.0.0', 'license' => ['MIT'], 'notification-url' => 'https://packagist.org/downloads/'], $names)], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
+        $files = [
+            'composer.lock' => $lock(['laravel/framework', 'acme/pdf']),
+            'composer.json' => '{"require": {"laravel/framework": "^13.0", "acme/pdf": "^1.0"}}',
+        ];
+        $patch = "diff --git a/composer.lock b/composer.lock\nnew file mode 100644\n--- /dev/null\n+++ b/composer.lock\n@@ -0,0 +1 @@\n+{\n";
+        $this->driver->onExec = function (string $workspace) use ($files) {
+            foreach ($files as $path => $contents) {
+                $this->driver->files["{$workspace}:{$path}"] = $contents;
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        config(['builder.verification.migrations.enabled' => false, 'builder.verification.packages.allowed.composer' => ['laravel/*']]);
+        $change = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
+
+        app(RequestVerification::class)->handle($change);
+
+        $this->assertSame(['added' => 2, 'problems' => [
+            ['name' => 'acme/pdf', 'version' => 'v1.0.0', 'license' => ['MIT'], 'source' => 'https://packagist.org/downloads/', 'manager' => 'composer', 'at' => 'composer.lock', 'direct' => true, 'rules' => ['package_unlisted']],
+        ]], $change->verifications()->sole()->evidence['packages']);
+
+        // A change that adds no package keeps nothing, and the check can be turned off.
+        $plain = FeatureRequest::factory()->generated()->create(['patch' => $this->changeWithTests()]);
+        app(RequestVerification::class)->handle($plain);
+        $this->assertArrayNotHasKey('packages', $plain->verifications()->sole()->evidence ?? []);
+
+        config(['builder.verification.packages.enabled' => false]);
+        $off = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
+        app(RequestVerification::class)->handle($off);
+        $this->assertArrayNotHasKey('packages', $off->verifications()->sole()->evidence ?? []);
+    }
 }

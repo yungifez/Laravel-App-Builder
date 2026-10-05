@@ -1184,6 +1184,27 @@ return [
             'columns' => ['user_id', 'owner_id', 'team_id', 'tenant_id', 'account_id', 'organization_id', 'organisation_id', 'company_id', 'workspace_id'],
         ],
 
+        // Whether the packages a change adds to the Composer or npm lockfile
+        // follow the dependency policy (§12, §13 policy v0). A package the
+        // change asks for by name must match a pattern on the allowlist,
+        // deny by default. Every new package, asked for or pulled in, must
+        // carry an allowed SPDX license and come from the public registry:
+        // Packagist marks its packages with its download counter, and npm
+        // records the address each package came from. A break is sent back
+        // to the coder. The owner may keep a package they chose.
+        'packages' => [
+            'enabled' => (bool) env('BUILDER_PACKAGE_POLICY', true),
+            'allowed' => [
+                'composer' => ['laravel/*', 'illuminate/*', 'inertiajs/*', 'livewire/*', 'pestphp/*', 'phpunit/*', 'larastan/*', 'nunomaduro/*', 'symfony/*', 'league/*', 'spatie/*', 'guzzlehttp/*', 'nesbot/carbon', 'fakerphp/faker', 'mockery/mockery', 'tightenco/ziggy'],
+                'npm' => ['vue', '@vue/*', '@inertiajs/*', '@laravel/*', 'laravel-vite-plugin', 'laravel-echo', 'pusher-js', 'vite', '@vitejs/*', 'vue-tsc', 'typescript', '@types/*', 'tailwindcss', '@tailwindcss/*', 'tailwind-merge', 'tw-animate-css', 'class-variance-authority', 'clsx', 'reka-ui', 'lucide-vue-next', '@vueuse/*', 'axios', 'concurrently', 'eslint', '@eslint/*', 'typescript-eslint', 'eslint-*', 'prettier', 'prettier-plugin-*'],
+            ],
+            'licenses' => ['MIT', 'MIT-0', 'ISC', '0BSD', 'BSD-2-Clause', 'BSD-3-Clause', 'Apache-2.0', 'Unlicense', 'CC0-1.0', 'CC-BY-4.0', 'BlueOak-1.0.0', 'Python-2.0', 'Zlib'],
+            'registries' => [
+                'composer' => 'https://packagist.org/',
+                'npm' => 'https://registry.npmjs.org/',
+            ],
+        ],
+
         // Known security problems in the packages the app uses, looked up
         // in the public advisory lists. Advice, never a check: a problem in
         // a package is rarely the change's doing, so it never fails the

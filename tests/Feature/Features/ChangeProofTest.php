@@ -8,6 +8,7 @@ use App\Context\ProjectNotes;
 use App\Enums\VerificationStatus;
 use App\Features\MigrationChecks;
 use App\Features\OwnedRecords;
+use App\Features\PackagePolicy;
 use App\Features\QueuedWork;
 use App\Models\FeatureRequest;
 use App\Models\Run;
@@ -477,6 +478,32 @@ class ChangeProofTest extends TestCase
         app(AcceptFindings::class)->handle($request, OwnedRecords::UNGUARDED, $request->project->owner);
         $line = collect(app(DescribeProof::class)->handle($request))->firstWhere('decision.finding', OwnedRecords::UNGUARDED);
         $this->assertSame(['chosen', true], [$line['kind'], $line['decision']['accepted']]);
+    }
+
+    public function test_new_packages_outside_the_dependency_policy_are_said_by_kind_until_the_owner_keeps_them()
+    {
+        $package = fn (string $name, array $rules) => ['name' => $name, 'manager' => 'composer', 'version' => 'v1.0.0', 'at' => 'composer.lock', 'direct' => true, 'license' => ['MIT'], 'source' => 'https://packagist.org/downloads/', 'rules' => $rules];
+        $proof = function (array $problems) {
+            $request = FeatureRequest::factory()->generated()->create();
+            $this->checked($request, evidence: ['packages' => ['added' => 3, 'problems' => $problems]]);
+
+            return [$request, collect(app(DescribeProof::class)->handle($request))];
+        };
+
+        [, $kept] = $proof([]);
+        $this->assertTrue($kept->contains('text', 'The new packages are ones I trust, and they are free to use.'));
+
+        [$request, $open] = $proof([$package('acme/pdf', [PackagePolicy::UNLISTED, PackagePolicy::LICENSE]), $package('acme/zip', [PackagePolicy::UNLISTED])]);
+        $line = $open->firstWhere('decision.finding', PackagePolicy::UNLISTED);
+        $this->assertSame('gap', $line['kind']);
+        $this->assertSame('The change adds acme/pdf, acme/zip, which I do not add without asking. If you want them anyway, say so.', $line['text']);
+        $this->assertSame('gap', $open->firstWhere('decision.finding', PackagePolicy::LICENSE)['kind']);
+
+        // Keeping the packages leaves the license to decide on its own.
+        app(AcceptFindings::class)->handle($request, PackagePolicy::UNLISTED, $request->project->owner);
+        $proved = collect(app(DescribeProof::class)->handle($request));
+        $this->assertSame(['chosen', true], [$proved->firstWhere('decision.finding', PackagePolicy::UNLISTED)['kind'], $proved->firstWhere('decision.finding', PackagePolicy::UNLISTED)['decision']['accepted']]);
+        $this->assertSame('gap', $proved->firstWhere('decision.finding', PackagePolicy::LICENSE)['kind']);
     }
 
     public function test_a_change_whose_stored_information_changes_can_lose_data_says_where_until_the_owner_keeps_it()

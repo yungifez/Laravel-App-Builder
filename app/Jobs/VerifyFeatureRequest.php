@@ -30,6 +30,7 @@ use App\Features\Mutants;
 use App\Features\NewCode;
 use App\Features\NewTests;
 use App\Features\OwnedRecords;
+use App\Features\PackagePolicy;
 use App\Features\PatchSummary;
 use App\Features\ProtectedInputs;
 use App\Features\QueuedWork;
@@ -243,6 +244,7 @@ class VerifyFeatureRequest implements ShouldQueue
             $this->checkMigrations($driver, $runWorkspaceCommand, $workspace, $featureRequest);
             $this->readQueuedWork($driver, $workspace, $featureRequest);
             $this->readOwnedRecords($driver, $workspace, $featureRequest);
+            $this->readPackages($driver, $workspace, $featureRequest);
 
             if ($checksPassed && in_array($acceptance, [self::OUTCOME_PASSED, self::OUTCOME_NOT_APPLICABLE], true)) {
                 $checksPassed = $this->probeAccess($driver, $runWorkspaceCommand, $workspace, $featureRequest);
@@ -945,6 +947,31 @@ class VerifyFeatureRequest implements ShouldQueue
         ), []);
 
         $this->keepEvidence('owners', $owned === [] ? null : $owned);
+    }
+
+    /**
+     * Read the packages the change adds to the app's lockfiles, while the
+     * change is still in the workspace, for the dependency policy (§12).
+     * It is kept as evidence; the gate sends a finding back to the coder.
+     */
+    protected function readPackages(WorkspaceDriver $driver, Workspace $workspace, FeatureRequest $featureRequest): void
+    {
+        /** @var array{enabled: bool, allowed: array{composer: list<string>, npm: list<string>}, licenses: list<string>, registries: array{composer: string, npm: string}} $config */
+        $config = config('builder.verification.packages');
+
+        if (! $config['enabled']) {
+            return;
+        }
+
+        $packages = rescue(fn () => PackagePolicy::inPatch(
+            $featureRequest->patch,
+            $config['allowed'],
+            $config['licenses'],
+            $config['registries'],
+            fn (string $path) => rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), null, report: false),
+        ));
+
+        $this->keepEvidence('packages', $packages);
     }
 
     /**

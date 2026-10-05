@@ -798,6 +798,27 @@ class AgentDriverTest extends TestCase
         $this->assertSame(RunStatus::Completed, $run->refresh()->status);
     }
 
+    public function test_a_new_package_outside_the_dependency_policy_sends_the_change_back_until_the_owner_keeps_it()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]));
+        $approve = ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]];
+        ChangeReviewer::fake([$approve, $approve]);
+        $packages = ['packages' => ['added' => 1, 'problems' => [['name' => 'acme/pdf', 'manager' => 'composer', 'version' => 'v1.0.0', 'at' => 'composer.lock', 'direct' => true, 'license' => ['MIT'], 'source' => 'https://packagist.org/downloads/', 'rules' => ['package_unlisted']]]]];
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, evidence: $packages);
+
+        $this->assertSame(1, $run->refresh()->repairs);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'The change adds acme/pdf (composer.lock), which is not on the list of packages this app may add.'));
+
+        // A package the owner chose on purpose.
+        AcceptedFinding::factory()->for($run->featureRequest)->create(['kind' => 'package_unlisted', 'identity' => 'package_unlisted|composer:acme/pdf']);
+        $this->passVerification($run, evidence: $packages);
+
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+    }
+
     public function test_what_the_owner_wants_the_app_to_leave_behind_is_not_held_against_the_change()
     {
         FeaturePlanner::fake([$this->plan()]);

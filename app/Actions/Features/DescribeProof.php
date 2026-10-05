@@ -19,6 +19,7 @@ use App\Features\MigrationChecks;
 use App\Features\NewCode;
 use App\Features\NewTests;
 use App\Features\OwnedRecords;
+use App\Features\PackagePolicy;
 use App\Features\PatchSummary;
 use App\Features\QueuedWork;
 use App\Features\ScreenCheck;
@@ -64,7 +65,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('whose records'), $this->owners($featureRequest, $verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('whose records'), $this->owners($featureRequest, $verification)), ...$this->about(__('packages'), $this->packages($featureRequest, $verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return $this->asked($featureRequest, array_values(collect($lines)->unique('text')->all()));
@@ -469,6 +470,50 @@ class DescribeProof
         }
 
         return [['kind' => 'passed', 'text' => __('The new records that belong to someone have a rule that checks whom they belong to.')]];
+    }
+
+    /**
+     * Say whether the packages the change adds follow the dependency
+     * policy, as read from its lockfiles (§12, §13). Each kind of break
+     * holds the change until the owner says they want it.
+     *
+     * @return list<array{kind: string, text: string, decision?: array{change: string, finding: string, accepted: bool}}>
+     */
+    protected function packages(FeatureRequest $featureRequest, Verification $verification): array
+    {
+        $packages = $verification->evidence['packages'] ?? null;
+
+        if ($packages === null) {
+            return [];
+        }
+
+        $gaps = [
+            PackagePolicy::UNLISTED => 'The change adds :names, which I do not add without asking. If you want them anyway, say so.',
+            PackagePolicy::LICENSE => 'The change brings in :names, whose terms of use I cannot accept for you. If you accept them, say so.',
+            PackagePolicy::SOURCE => 'The change installs :names from somewhere other than the public package lists. If you trust that place, say so.',
+        ];
+        $chosen = [
+            PackagePolicy::UNLISTED => 'You said you want this: the change adds packages I do not add without asking. If a later change adds others, I will ask again.',
+            PackagePolicy::LICENSE => 'You said you accept the terms of use of the new packages. If a later change brings others, I will ask again.',
+            PackagePolicy::SOURCE => 'You said you trust where the new packages come from. If a later change brings others, I will ask again.',
+        ];
+        // A kept change is part of the app: there is nothing left to decide.
+        $open = ! $featureRequest->isAccepted();
+        $found = PackagePolicy::findings($packages);
+        $left = PackagePolicy::findings($packages, $this->acceptFindings->identities($featureRequest));
+        $lines = [];
+
+        foreach (PackagePolicy::OWNED as $kind) {
+            $kindLeft = array_values(array_filter($left, fn (array $finding) => $finding['kind'] === $kind));
+
+            if ($kindLeft !== []) {
+                $lines[] = ['kind' => 'gap', 'text' => __($gaps[$kind], ['names' => implode(', ', array_map(fn (array $finding) => PackagePolicy::name($finding['subject']), $kindLeft))]), ...($open ? ['decision' => ['change' => $featureRequest->uuid, 'finding' => $kind, 'accepted' => false]] : [])];
+            } elseif (array_filter($found, fn (array $finding) => $finding['kind'] === $kind) !== []) {
+                $lines[] = ['kind' => 'chosen', 'text' => __($chosen[$kind]), ...($open ? ['decision' => ['change' => $featureRequest->uuid, 'finding' => $kind, 'accepted' => true]] : [])];
+            }
+        }
+
+        return $lines !== [] ? $lines : [['kind' => 'passed', 'text' => __('The new packages are ones I trust, and they are free to use.')]];
     }
 
     /**
