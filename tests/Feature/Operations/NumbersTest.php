@@ -2,10 +2,13 @@
 
 namespace Tests\Feature\Operations;
 
+use App\Enums\RunStatus;
+use App\Enums\VerificationStatus;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
 use App\Models\User;
+use App\Models\VisualEdit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -70,6 +73,81 @@ class NumbersTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('days', 7)->has('daily', 7));
         $this->get(route('operations.numbers', ['days' => 3]))
             ->assertInertia(fn (Assert $page) => $page->where('days', 30));
+    }
+
+    public function test_the_numbers_answer_how_changes_went_across_every_app()
+    {
+        // A kept change that passed first time and touched only what it was about.
+        $kept = $this->change(['commit_sha' => 'abc', 'accepted_at' => now()], cost: 2.0, unexpected: [], first: VerificationStatus::Passed);
+        // Another app's change, abandoned after it failed and touched billing.
+        $this->change([], cost: 1.0, unexpected: ['billing' => ['app/Billing.php']], first: VerificationStatus::Failed);
+        $kept->update(['decision_model_calls' => [['provider' => 'anthropic', 'model' => 'm', 'input_tokens' => 1, 'output_tokens' => 1, 'cost_usd' => null, 'cost_source' => null, 'at' => now()->toIso8601String()]]]);
+        VisualEdit::factory()->count(2)->create();
+
+        $this->actingAs($this->operator)
+            ->get(route('operations.numbers'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('changes.kept', 1)
+                ->where('changes.cost_per_kept_change_usd', 3)
+                ->where('changes.unpriced_calls', 1)
+                ->where('changes.runs_verified', 2)
+                ->where('changes.first_attempt_passed', 1)
+                ->where('changes.reviewed', 2)
+                ->where('changes.with_unexpected_changes', 1)
+                ->where('changes.edits_without_model', 2));
+    }
+
+    public function test_with_nothing_kept_there_is_no_cost_per_kept_change()
+    {
+        $this->change([], cost: 1.0, unexpected: [], first: VerificationStatus::Failed);
+
+        $this->actingAs($this->operator)
+            ->get(route('operations.numbers'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('changes.kept', 0)
+                ->where('changes.cost_per_kept_change_usd', null)
+                ->where('changes.edits_without_model', 0));
+    }
+
+    public function test_changes_and_edits_before_the_window_are_left_out()
+    {
+        $this->change(['commit_sha' => 'old', 'accepted_at' => now()->subDays(40), 'created_at' => now()->subDays(40)], cost: 5.0, unexpected: [], first: VerificationStatus::Passed);
+        VisualEdit::factory()->create(['created_at' => now()->subDays(40)]);
+        $this->change(['commit_sha' => 'new', 'accepted_at' => now()], cost: 1.0, unexpected: [], first: VerificationStatus::Passed);
+
+        $this->actingAs($this->operator)
+            ->get(route('operations.numbers'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('changes.kept', 1)
+                ->where('changes.cost_per_kept_change_usd', 1)
+                ->where('changes.runs_verified', 1)
+                ->where('changes.edits_without_model', 0));
+
+        // A wider window takes the older change in.
+        $this->get(route('operations.numbers', ['days' => 90]))
+            ->assertInertia(fn (Assert $page) => $page->where('changes.kept', 2)->where('changes.edits_without_model', 1));
+    }
+
+    /**
+     * Make a reviewed change in its own app, with one model call and its
+     * first check.
+     *
+     * @param  array<string, mixed>  $attributes
+     * @param  array<string, list<string>>  $unexpected
+     */
+    protected function change(array $attributes, float $cost, array $unexpected, VerificationStatus $first): FeatureRequest
+    {
+        $request = FeatureRequest::factory()->generated()->create($attributes);
+        $run = Run::factory()->for($request)->create([
+            'status' => RunStatus::Completed,
+            'review' => ['approved' => true, 'summary' => 'ok', 'preserved' => [], 'verified' => [], 'coverage' => [], 'findings' => [], 'changes' => [], 'classification' => [
+                'requested' => [], 'may_also_affect' => [], 'unexpected' => $unexpected, 'unclaimed' => [], 'context_updates' => [], 'targets' => [], 'notes_behind' => [], 'observed' => null,
+            ]],
+        ]);
+        $run->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'claude', 'input_tokens' => 10, 'output_tokens' => 1, 'cost_usd' => $cost]);
+        $request->verifications()->create(['run_id' => $run->id, 'status' => $first]);
+
+        return $request;
     }
 
     protected function subscribe(User $user, string $price, string $status = 'active'): void

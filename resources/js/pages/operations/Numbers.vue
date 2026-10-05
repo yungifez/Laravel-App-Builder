@@ -28,6 +28,16 @@ const props = defineProps<{
         building: number;
     };
     spend: { total_usd: number; completeness: string };
+    changes: {
+        kept: number;
+        unpriced_calls: number;
+        cost_per_kept_change_usd: number | null;
+        runs_verified: number;
+        first_attempt_passed: number;
+        reviewed: number;
+        with_unexpected_changes: number;
+        edits_without_model: number;
+    };
     daily: Day[];
 }>();
 
@@ -70,6 +80,11 @@ function day(date: string): string {
         month: 'short',
         day: 'numeric',
     });
+}
+
+// A share is never shown without what it is a share of.
+function share(part: number, whole: number): string {
+    return whole === 0 ? '—' : `${Math.round((part / whole) * 100)}%`;
 }
 
 const whole = new Intl.NumberFormat(undefined, {
@@ -152,6 +167,67 @@ const whole = new Intl.NumberFormat(undefined, {
                             ? ' · at least this much'
                             : ''
                     }}
+                </dd>
+            </div>
+        </dl>
+
+        <!-- How the changes went across every app, by the measures each
+             owner sees for their own -->
+        <dl
+            class="grid grid-cols-2 gap-x-6 gap-y-6 border-b pb-6 sm:grid-cols-4"
+            data-test="changes"
+        >
+            <div>
+                <dt class="text-sm text-muted-foreground">
+                    Cost per kept change
+                </dt>
+                <dd class="mt-1 text-2xl tabular-nums">
+                    {{ usd(changes.cost_per_kept_change_usd) }}
+                </dd>
+                <dd class="text-xs text-muted-foreground">
+                    {{ changes.kept }} kept{{
+                        changes.unpriced_calls > 0
+                            ? ` · ${changes.unpriced_calls} calls unpriced`
+                            : ''
+                    }}
+                </dd>
+            </div>
+            <div>
+                <dt class="text-sm text-muted-foreground">First try passed</dt>
+                <dd class="mt-1 text-2xl tabular-nums">
+                    {{
+                        share(
+                            changes.first_attempt_passed,
+                            changes.runs_verified,
+                        )
+                    }}
+                </dd>
+                <dd class="text-xs text-muted-foreground">
+                    {{ changes.first_attempt_passed }} of
+                    {{ changes.runs_verified }} checked
+                </dd>
+            </div>
+            <div>
+                <dt class="text-sm text-muted-foreground">
+                    Touched parts not asked about
+                </dt>
+                <dd class="mt-1 text-2xl tabular-nums">
+                    {{
+                        share(changes.with_unexpected_changes, changes.reviewed)
+                    }}
+                </dd>
+                <dd class="text-xs text-muted-foreground">
+                    {{ changes.with_unexpected_changes }} of
+                    {{ changes.reviewed }} reviewed
+                </dd>
+            </div>
+            <div>
+                <dt class="text-sm text-muted-foreground">Edits without AI</dt>
+                <dd class="mt-1 text-2xl tabular-nums">
+                    {{ changes.edits_without_model }}
+                </dd>
+                <dd class="text-xs text-muted-foreground">
+                    changes to how it looks
                 </dd>
             </div>
         </dl>

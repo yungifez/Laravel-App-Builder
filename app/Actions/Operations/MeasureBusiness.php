@@ -2,27 +2,30 @@
 
 namespace App\Actions\Operations;
 
+use App\Actions\Projects\MeasureChanges;
 use App\Models\FeatureRequest;
 use App\Models\User;
+use App\Models\VisualEdit;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Laravel\Cashier\SubscriptionItem;
 
 /**
  * The numbers an operator watches to run the business: what comes in each
- * month, who joins, who builds, and what the AI costs against it.
+ * month, who joins, who builds, what the AI costs against it, and how
+ * the changes went across every app.
  */
 class MeasureBusiness
 {
     /** Stripe counts these subscriptions as paying, or about to. */
     public const PAYING = ['active', 'trialing', 'past_due'];
 
-    public function __construct(protected SummarizeSpend $summarizeSpend) {}
+    public function __construct(protected SummarizeSpend $summarizeSpend, protected MeasureChanges $measureChanges) {}
 
     /**
      * Measure the business over the last given number of days.
      *
-     * @return array{days: int, revenue: array{monthly_usd: int, plans: list<array{key: string, name: string, price: int, paying: int, given: int}>}, people: array{total: int, joined: int, building: int, verified: int}, spend: array{total_usd: float, completeness: string}, daily: list<array{date: string, joined: int, changes: int}>}
+     * @return array{days: int, revenue: array{monthly_usd: int, plans: list<array{key: string, name: string, price: int, paying: int, given: int}>}, people: array{total: int, joined: int, building: int, verified: int}, spend: array{total_usd: float, completeness: string}, changes: array{kept: int, cost_usd: float, unpriced_calls: int, input_tokens: int, output_tokens: int, cost_per_kept_change_usd: float|null, runs_verified: int, first_attempt_passed: int, first_attempt_unverified: int, reviewed: int, with_unexpected_changes: int, edits_without_model: int}, daily: list<array{date: string, joined: int, changes: int}>}
      */
     public function handle(int $days): array
     {
@@ -48,6 +51,12 @@ class MeasureBusiness
                     ->count('projects.user_id'),
             ],
             'spend' => array_intersect_key($this->summarizeSpend->handle($since), array_flip(['total_usd', 'completeness'])),
+            // The changes asked for in the window, by the same measures each
+            // owner sees for their own app.
+            'changes' => $this->measureChanges->handle(
+                FeatureRequest::query()->where('created_at', '>=', $since),
+                VisualEdit::query()->where('created_at', '>=', $since),
+            ),
             'daily' => $this->daily($since, $days),
         ];
     }

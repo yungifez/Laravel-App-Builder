@@ -23,7 +23,7 @@ class ProjectTelemetryTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_it_reports_cost_per_accepted_change_first_attempt_passes_and_unexpected_changes()
+    public function test_it_reports_cost_per_kept_change_first_attempt_passes_and_unexpected_changes()
     {
         $project = Project::factory()->create(['setup_model_calls' => [
             ['role' => 'planner', 'provider' => 'anthropic', 'model' => 'm', 'input_tokens' => 9000, 'output_tokens' => 900, 'cost_usd' => 0.04],
@@ -49,12 +49,12 @@ class ProjectTelemetryTest extends TestCase
         $telemetry = app(SummarizeProjectTelemetry::class)->handle($project);
 
         $this->assertSame(2, $telemetry['requests']);
-        $this->assertSame(3, $telemetry['visual_edits']);
-        $this->assertSame(1, $telemetry['accepted']);
+        $this->assertSame(3, $telemetry['edits_without_model']);
+        $this->assertSame(1, $telemetry['kept']);
         $this->assertSame(2.0, $telemetry['cost_usd']);
         $this->assertSame(0.04, $telemetry['setup_cost_usd']);
         $this->assertSame(1, $telemetry['unpriced_calls']);
-        $this->assertSame(2.0, $telemetry['cost_per_accepted_change_usd']);
+        $this->assertSame(2.0, $telemetry['cost_per_kept_change_usd']);
         $this->assertSame(2, $telemetry['runs_verified']);
         // The only first attempt that got through passed with no test for
         // the change: that is unverified, never a pass.
@@ -68,7 +68,7 @@ class ProjectTelemetryTest extends TestCase
 
         $this->actingAs($project->owner)
             ->get(route('projects.show', $project))
-            ->assertInertia(fn (Assert $page) => $page->where('telemetry.accepted', 1)->where('telemetry.cost_per_accepted_change_usd', 2));
+            ->assertInertia(fn (Assert $page) => $page->where('telemetry.kept', 1)->where('telemetry.cost_per_kept_change_usd', 2));
     }
 
     public function test_it_counts_reviewed_changes_that_left_notes_behind()
@@ -116,7 +116,7 @@ class ProjectTelemetryTest extends TestCase
         $telemetry = app(SummarizeProjectTelemetry::class)->handle($project);
 
         $this->assertSame(1.5, $telemetry['cost_usd']);
-        $this->assertSame(1.5, $telemetry['cost_per_accepted_change_usd']);
+        $this->assertSame(1.5, $telemetry['cost_per_kept_change_usd']);
         // A call with no known price is counted, never guessed.
         $this->assertSame(1, $telemetry['unpriced_calls']);
         $this->assertSame(1200, $telemetry['input_tokens']);
@@ -140,7 +140,7 @@ class ProjectTelemetryTest extends TestCase
         $telemetry = app(SummarizeProjectTelemetry::class)->handle($project);
 
         $this->assertSame(['adjustments' => 1, 'stops' => 1, 'retries' => 1, 'undos' => 1], $telemetry['owner_actions']);
-        $this->assertSame(2.0, $telemetry['owner_actions_per_accepted_change']);
+        $this->assertSame(2.0, $telemetry['owner_actions_per_kept_change']);
     }
 
     public function test_model_calls_are_priced_from_the_configured_prices_and_unknown_models_are_left_unpriced()

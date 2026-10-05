@@ -112,11 +112,11 @@ export type FeatureRequestSummary = {
 
 export type ProjectTelemetry = {
     requests: number;
-    accepted: number;
+    kept: number;
     reverted: number;
     cost_usd: number;
     unpriced_calls: number;
-    cost_per_accepted_change_usd: number | null;
+    cost_per_kept_change_usd: number | null;
     runs_verified: number;
     first_attempt_passed: number;
     first_attempt_unverified: number;
@@ -126,7 +126,7 @@ export type ProjectTelemetry = {
     with_notes_behind: number;
     input_tokens: number;
     output_tokens: number;
-    visual_edits: number;
+    edits_without_model: number;
     setup_cost_usd: number;
     owner_actions: {
         adjustments: number;
@@ -134,7 +134,7 @@ export type ProjectTelemetry = {
         retries: number;
         undos: number;
     };
-    owner_actions_per_accepted_change: number | null;
+    owner_actions_per_kept_change: number | null;
 };
 
 export type ProjectCommit = {

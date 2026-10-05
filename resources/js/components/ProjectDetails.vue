@@ -33,7 +33,7 @@ function day(at: string): string {
 // The answer first: what was asked, what stayed, what it cost.
 const headline = computed(() => [
     { label: 'Asked', value: String(props.telemetry.requests) },
-    { label: 'Kept', value: String(props.telemetry.accepted) },
+    { label: 'Kept', value: String(props.telemetry.kept) },
     { label: 'Undone', value: String(props.telemetry.reverted) },
     { label: 'Spent', value: dollars(props.telemetry.cost_usd) },
 ]);
@@ -58,7 +58,7 @@ const actions = computed(() => {
 <template>
     <div class="space-y-8 text-sm" data-test="project-details">
         <section
-            v-if="telemetry.requests > 0 || telemetry.visual_edits > 0"
+            v-if="telemetry.requests > 0 || telemetry.edits_without_model > 0"
             class="space-y-6"
             data-test="project-telemetry"
         >
@@ -81,7 +81,7 @@ const actions = computed(() => {
                 <div class="flex items-baseline justify-between gap-4 py-2">
                     <dt class="text-muted-foreground">Cost per kept change</dt>
                     <dd class="tabular-nums">
-                        {{ dollars(telemetry.cost_per_accepted_change_usd) }}
+                        {{ dollars(telemetry.cost_per_kept_change_usd) }}
                     </dd>
                 </div>
                 <div class="py-2">
@@ -150,10 +150,7 @@ const actions = computed(() => {
                             Times you stepped in, per kept change
                         </dt>
                         <dd class="tabular-nums">
-                            {{
-                                telemetry.owner_actions_per_accepted_change ??
-                                '–'
-                            }}
+                            {{ telemetry.owner_actions_per_kept_change ?? '–' }}
                         </dd>
                     </div>
                     <dd class="mt-0.5 text-xs text-muted-foreground">
@@ -164,7 +161,9 @@ const actions = computed(() => {
                     <dt class="text-muted-foreground">
                         Changes to how it looks
                     </dt>
-                    <dd class="tabular-nums">{{ telemetry.visual_edits }}</dd>
+                    <dd class="tabular-nums">
+                        {{ telemetry.edits_without_model }}
+                    </dd>
                 </div>
                 <div
                     v-if="telemetry.setup_cost_usd > 0"
