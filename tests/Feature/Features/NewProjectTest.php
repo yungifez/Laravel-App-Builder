@@ -210,6 +210,18 @@ class NewProjectTest extends TestCase
             ->assertSessionHasErrors(['purpose' => 'Tell me in a sentence or two what your app is for.']);
     }
 
+    public function test_an_app_without_a_name_says_why_it_needs_one()
+    {
+        config(['builder.projects.template' => $this->makeProjectSource($this->laravelApp())]);
+        $owner = User::factory()->create();
+
+        $this->actingAs($owner)
+            ->post(route('projects.new.store'), ['name' => '', 'purpose' => 'Plan the week.'])
+            ->assertSessionHasErrors(['name' => 'Give your app a name, so you can tell it apart from your other apps.']);
+
+        $this->assertSame(0, $owner->projects()->count());
+    }
+
     public function test_starting_a_new_app_is_offered_only_when_the_template_is_in_place()
     {
         $owner = User::factory()->create();

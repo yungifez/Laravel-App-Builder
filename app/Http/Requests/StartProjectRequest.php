@@ -59,6 +59,7 @@ class StartProjectRequest extends FormRequest
     {
         return [
             'purpose.required' => __('Tell me in a sentence or two what your app is for.'),
+            'name.required' => __('Give your app a name, so you can tell it apart from your other apps.'),
             'design.in' => __('Pick one of the looks shown.'),
         ];
     }

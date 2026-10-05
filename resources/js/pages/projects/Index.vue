@@ -185,7 +185,6 @@ function submitOnShortcut(event: KeyboardEvent): void {
                         ref="purposeField"
                         name="purpose"
                         rows="3"
-                        required
                         placeholder="My cleaners see their jobs for the day, and customers book a clean online."
                         class="block w-full resize-none bg-transparent px-5 pt-4 pb-2 text-base outline-none placeholder:text-muted-foreground"
                         @keydown="submitOnShortcut"
@@ -254,7 +253,6 @@ function submitOnShortcut(event: KeyboardEvent): void {
                             id="new-name"
                             ref="nameField"
                             name="name"
-                            required
                             autocomplete="off"
                             placeholder="Name it"
                             class="h-11 min-w-0 flex-1 rounded-sm bg-muted px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-9 sm:w-36 sm:flex-none"
