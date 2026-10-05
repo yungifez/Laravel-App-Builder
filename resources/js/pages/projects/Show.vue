@@ -1483,9 +1483,10 @@ function sendOnEnter(event: KeyboardEvent): void {
 
             <NotificationBell />
             <!-- Others try the app before it goes online, as Lovable's
-                 share link does. An idea is the owner's own, so not here. -->
+                 share link does. An idea is the owner's own, so not here,
+                 and before a first version is kept there is no app yet. -->
             <Button
-                v-if="!ideas.current"
+                v-if="!ideas.current && first_version === null"
                 variant="outline"
                 class="ml-1 h-11 select-none sm:h-9"
                 aria-label="Share"
@@ -1506,7 +1507,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                 Use this idea
             </Button>
             <Button
-                v-else
+                v-else-if="first_version === null"
                 class="relative ml-1 h-11 select-none sm:h-9"
                 data-test="publish-open"
                 @click="publishOpen = true"
