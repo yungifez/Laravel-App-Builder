@@ -25,6 +25,7 @@ use App\Features\AppRoutes;
 use App\Features\AppTraces;
 use App\Features\BoundaryCode;
 use App\Features\CodeShortcuts;
+use App\Features\MigrationChecks;
 use App\Features\Mutants;
 use App\Features\NewCode;
 use App\Features\NewTests;
@@ -237,6 +238,7 @@ class VerifyFeatureRequest implements ShouldQueue
             $this->observeTests($driver, $runWorkspaceCommand, $workspace, $featureRequest);
             $acceptance = $this->runAcceptance($driver, $runWorkspaceCommand, $workspace, $featureRequest);
             $this->readBoundaryCode($driver, $workspace, $featureRequest);
+            $this->checkMigrations($driver, $runWorkspaceCommand, $workspace, $featureRequest);
 
             if ($checksPassed && in_array($acceptance, [self::OUTCOME_PASSED, self::OUTCOME_NOT_APPLICABLE], true)) {
                 $checksPassed = $this->probeAccess($driver, $runWorkspaceCommand, $workspace, $featureRequest);
@@ -867,6 +869,35 @@ class VerifyFeatureRequest implements ShouldQueue
                 $this->keepEvidence('new_tests', NewTests::found($tests, $ranBefore, $ranWithout));
             }
         }, report: false);
+    }
+
+    /**
+     * Prove that the change's migrations run, are undone and run again on
+     * the workspace's database filled by the app's seeders, and note each
+     * migration that already existed and that the change edits (§9, §12).
+     * It is kept as evidence; the gate sends a finding back to the coder,
+     * so the checks' result here does not change.
+     */
+    protected function checkMigrations(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): void
+    {
+        /** @var array{enabled: bool, timeout: int, directory: string} $config */
+        $config = config('builder.verification.migrations');
+        $added = MigrationChecks::added($featureRequest->patch);
+        $edited = MigrationChecks::edited($featureRequest->patch);
+
+        if (! $config['enabled'] || ($added === [] && $edited === [])) {
+            return;
+        }
+
+        $read = fn (string $file) => (string) rescue(fn () => $driver->readFile((string) $workspace->driver_id, "{$config['directory']}/{$file}"), '', report: false);
+        $report = null;
+
+        if ($added !== []) {
+            $command = $runWorkspaceCommand->handle($workspace, ['sh', '-c', MigrationChecks::script($config['directory']), 'sh', ...$added], $config['timeout']);
+            $report = $command->timed_out ? null : $read('report.json');
+        }
+
+        $this->keepEvidence('migrations', MigrationChecks::evidence($added, $edited, $report, fn (string $step) => $read("{$step}.log")));
     }
 
     /**

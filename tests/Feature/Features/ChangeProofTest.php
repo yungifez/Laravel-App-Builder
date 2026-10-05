@@ -6,6 +6,7 @@ use App\Actions\Features\AcceptFindings;
 use App\Actions\Features\DescribeProof;
 use App\Context\ProjectNotes;
 use App\Enums\VerificationStatus;
+use App\Features\MigrationChecks;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\Verification;
@@ -392,6 +393,42 @@ class ChangeProofTest extends TestCase
         $unknown = $texts(['added' => [], 'removed' => [], 'changed' => [['route' => 'GET /teams', 'lost' => ['App\\Http\\Middleware\\EnsureAdmin'], 'gained' => []]]]);
         $this->assertFalse($unknown->contains('text', $kept));
         $this->assertFalse($unknown->contains('kind', 'gap'));
+    }
+
+    public function test_a_change_to_how_information_is_stored_says_whether_it_was_undone_and_made_again()
+    {
+        $added = ['database/migrations/2026_10_05_000000_add_notes_to_teams.php'];
+        $proof = function (array $edited, ?string $report) use ($added) {
+            $request = FeatureRequest::factory()->generated()->create();
+            $this->checked($request, evidence: ['migrations' => MigrationChecks::evidence($report === null ? [] : $added, $edited, $report, fn () => 'Rolling back')]);
+
+            return [$request, collect(app(DescribeProof::class)->handle($request))];
+        };
+
+        [, $passed] = $proof([], '{"up":0,"down":0,"again":0}');
+        $this->assertTrue($passed->contains('text', 'The change to how your information is stored was undone and made again on sample information, and it worked both times.'));
+        $this->assertFalse($passed->contains('kind', 'gap'));
+
+        // A change with no migrations says nothing about stored information.
+        $request = FeatureRequest::factory()->generated()->create();
+        $this->checked($request);
+        $this->assertFalse(collect(app(DescribeProof::class)->handle($request))->contains(fn (array $line) => str_contains($line['text'], 'how your information is stored')));
+
+        // A migration that cannot be undone is a gap until the owner keeps it.
+        [$request, $undone] = $proof([], '{"up":0,"down":1,"again":-1}');
+        $line = $undone->firstWhere('text', 'The change to how your information is stored cannot be undone. If you keep it, going back to an earlier version later may lose information.');
+        $this->assertSame('gap', $line['kind']);
+        $this->assertSame(['finding' => MigrationChecks::FAILS, 'accepted' => false], Arr::only($line['decision'], ['finding', 'accepted']));
+        $this->assertFalse($undone->contains('text', 'The change to how your information is stored was undone and made again on sample information, and it worked both times.'));
+
+        app(AcceptFindings::class)->handle($request, MigrationChecks::FAILS, $request->project->owner);
+        $line = collect(app(DescribeProof::class)->handle($request))->firstWhere('kind', 'chosen');
+        $this->assertSame('You said you want this: the change to how your information is stored stays, though it did not pass every try. If a later change does the same, I will ask again.', $line['text']);
+        $this->assertTrue($line['decision']['accepted']);
+
+        // An earlier migration that was rewritten never reaches the live app.
+        [, $rewritten] = $proof(['database/migrations/2026_01_01_000000_create_teams_table.php'], null);
+        $this->assertSame('gap', $rewritten->firstWhere('text', 'The change rewrites an earlier change to how your information is stored. Your live app already made that earlier change, so the rewrite would never reach it.')['kind']);
     }
 
     public function test_how_many_of_the_new_lines_of_code_a_test_ran_is_said()

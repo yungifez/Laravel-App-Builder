@@ -16,6 +16,7 @@ use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Enums\WorkspaceStatus;
+use App\Features\MigrationChecks;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\AcceptedFinding;
 use App\Models\Deployment;
@@ -724,6 +725,32 @@ class AgentDriverTest extends TestCase
 
         // The failure was caused again and nothing stayed.
         $this->passVerification($run, evidence: $faults([]));
+
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+    }
+
+    public function test_a_migration_that_cannot_be_undone_sends_the_change_back_until_the_owner_keeps_it()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder(
+            $this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]),
+            $this->writes([], 'Dropped the column in down().'),
+        );
+        $approve = ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]];
+        ChangeReviewer::fake([$approve, $approve]);
+        $migrations = fn (string $report) => ['migrations' => MigrationChecks::evidence(['database/migrations/2026_10_05_000000_add_description_to_teams.php'], [], $report, fn () => 'SQLSTATE[42701]: Duplicate column: description')];
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, evidence: $migrations('{"up":0,"down":0,"again":1}'));
+
+        $run->refresh();
+        $this->assertSame(1, $run->repairs);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'did not run again after they were undone')
+            && str_contains($prompt, 'Duplicate column: description'));
+
+        // The owner keeps a migration that cannot be undone on purpose.
+        AcceptedFinding::factory()->for($run->featureRequest)->create(['kind' => MigrationChecks::FAILS, 'identity' => 'migration_fails|down']);
+        $this->passVerification($run, evidence: $migrations('{"up":0,"down":1,"again":-1}'));
 
         $this->assertSame(RunStatus::Completed, $run->refresh()->status);
     }

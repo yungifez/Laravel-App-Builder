@@ -1133,6 +1133,18 @@ return [
             ['name' => 'TypeScript', 'command' => ['npm', 'run', 'types:check'], 'timeout' => 300, 'needs' => 'tsconfig.json'],
         ],
 
+        // Proof that a change's migrations run (architecture §9, §12): the
+        // migrations it adds are undone, then run again on the workspace's
+        // database filled by the app's seeders. A failure, or an edit to a
+        // migration that already exists, is sent back to the coder. The
+        // owner may keep it. Each step's log and the report go to
+        // "directory" in the workspace.
+        'migrations' => [
+            'enabled' => (bool) env('BUILDER_MIGRATION_CHECK', true),
+            'timeout' => (int) env('BUILDER_MIGRATION_CHECK_TIMEOUT', 600),
+            'directory' => 'storage/logs/migrations',
+        ],
+
         // Known security problems in the packages the app uses, looked up
         // in the public advisory lists. Advice, never a check: a problem in
         // a package is rarely the change's doing, so it never fails the

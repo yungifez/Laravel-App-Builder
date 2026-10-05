@@ -1448,4 +1448,60 @@ class VerificationTest extends TestCase
         $this->assertArrayNotHasKey('faults', $off->verifications()->sole()->evidence ?? []);
         $this->assertSame([], array_filter(array_column($this->driver->executed, 'command'), fn (array $command) => array_slice($command, 0, 4) === $fail));
     }
+
+    public function test_the_migrations_a_change_adds_are_run_undone_and_run_again_and_an_edited_one_is_noted()
+    {
+        $added = 'database/migrations/2026_10_05_000000_add_notes_to_teams.php';
+        $edited = 'database/migrations/2026_01_01_000000_create_teams_table.php';
+        $this->driver->onExec = function (string $workspace, array $command) {
+            if (array_slice($command, 0, 2) === ['sh', '-c'] && str_contains($command[2], 'migrate:rollback')) {
+                $this->driver->files["{$workspace}:storage/logs/migrations/report.json"] = '{"up":0,"down":1,"again":-1}';
+                $this->driver->files["{$workspace}:storage/logs/migrations/down.log"] = 'SQLSTATE[42P01]: Undefined table: notes';
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        $change = FeatureRequest::factory()->generated()->create(['patch' => implode("\n", [
+            "diff --git a/{$added} b/{$added}",
+            'new file mode 100644',
+            '--- /dev/null',
+            "+++ b/{$added}",
+            '@@ -0,0 +1 @@',
+            '+<?php',
+            "diff --git a/{$edited} b/{$edited}",
+            "--- a/{$edited}",
+            "+++ b/{$edited}",
+            '@@ -1 +1 @@',
+            '-old',
+            '+new',
+            '',
+        ])]);
+
+        app(RequestVerification::class)->handle($change);
+
+        // The added migrations are named to the script, so only they are undone.
+        $runs = array_values(array_filter(array_column($this->driver->executed, 'command'), fn (array $command) => str_contains($command[2] ?? '', 'migrate:rollback')));
+        $this->assertCount(1, $runs);
+        $this->assertSame(['sh', $added], array_slice($runs[0], 3));
+        $this->assertSame([
+            'added' => [$added],
+            'edited' => [$edited],
+            'up' => true,
+            'down' => false,
+            'again' => null,
+            'failed' => 'down',
+            'output' => 'SQLSTATE[42P01]: Undefined table: notes',
+        ], $change->verifications()->sole()->evidence['migrations']);
+
+        // A change with no migrations runs nothing, and the check can be turned off.
+        $plain = FeatureRequest::factory()->generated()->create(['patch' => $this->changeWithTests()]);
+        app(RequestVerification::class)->handle($plain);
+        $this->assertArrayNotHasKey('migrations', $plain->verifications()->sole()->evidence ?? []);
+
+        config(['builder.verification.migrations.enabled' => false]);
+        $off = FeatureRequest::factory()->generated()->create(['patch' => $change->patch]);
+        app(RequestVerification::class)->handle($off);
+        $this->assertArrayNotHasKey('migrations', $off->verifications()->sole()->evidence ?? []);
+        $this->assertCount(1, array_filter(array_column($this->driver->executed, 'command'), fn (array $command) => str_contains($command[2] ?? '', 'migrate:rollback')));
+    }
 }

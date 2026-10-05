@@ -31,6 +31,7 @@ use App\Features\AppRoutes;
 use App\Features\BoundaryCode;
 use App\Features\Exceptions\CannotGenerateFeature;
 use App\Features\InventedColours;
+use App\Features\MigrationChecks;
 use App\Features\NodeInPhpTests;
 use App\Features\PatchSummary;
 use App\Features\ScreenCheck;
@@ -552,6 +553,16 @@ class ConstructRun
             foreach (AppRoutes::findings($evidence['routes'] ?? null, $accepted) as $finding) {
                 $gate[] = ['kind' => $finding['kind'], 'identity' => AppRoutes::identity($finding), 'text' => AppRoutes::finding($finding)];
             }
+        }
+
+        // A migration that did not run up, down and up again, or one that
+        // already existed and was edited, breaks the owner's live data when
+        // published (§9). The owner may keep one, such as a data migration
+        // that cannot be undone on purpose.
+        $migrations = $evidence['migrations'] ?? null;
+
+        foreach (MigrationChecks::findings($migrations, $accepted) as $finding) {
+            $gate[] = ['kind' => $finding['kind'], 'identity' => MigrationChecks::identity($finding), 'text' => MigrationChecks::finding($finding, $migrations)];
         }
 
         if (config('builder.verification.faults.send_back')) {

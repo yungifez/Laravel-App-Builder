@@ -15,6 +15,7 @@ use App\Features\AppRoutes;
 use App\Features\AppTraces;
 use App\Features\CodeShortcuts;
 use App\Features\InventedColours;
+use App\Features\MigrationChecks;
 use App\Features\NewCode;
 use App\Features\NewTests;
 use App\Features\PatchSummary;
@@ -61,7 +62,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return $this->asked($featureRequest, array_values(collect($lines)->unique('text')->all()));
@@ -344,6 +345,57 @@ class DescribeProof
         }
 
         return [['kind' => 'passed', 'text' => __('Every part of your app that asks people to sign in still does.')]];
+    }
+
+    /**
+     * Say whether the change's changes to how information is stored work
+     * on the app, and can be undone. They were run, undone and run again
+     * on the workspace's database with sample records (§9, §12). A step
+     * that failed, or an earlier change that this one rewrites, holds the
+     * change until the owner says they want it, as for addresses.
+     *
+     * @return list<array{kind: string, text: string, decision?: array{change: string, finding: string, accepted: bool}}>
+     */
+    protected function stored(FeatureRequest $featureRequest, Verification $verification): array
+    {
+        $migrations = $verification->evidence['migrations'] ?? null;
+
+        if ($migrations === null) {
+            return [];
+        }
+
+        $gaps = [
+            'up' => 'The change to how your information is stored did not work on your app. If you keep it, publishing may break your live app.',
+            'down' => 'The change to how your information is stored cannot be undone. If you keep it, going back to an earlier version later may lose information.',
+            'again' => 'The change to how your information is stored did not work again after it was undone on sample information. If you keep it, publishing may break your live app.',
+            MigrationChecks::EDITED => 'The change rewrites an earlier change to how your information is stored. Your live app already made that earlier change, so the rewrite would never reach it.',
+        ];
+        $chosen = [
+            MigrationChecks::FAILS => 'You said you want this: the change to how your information is stored stays, though it did not pass every try. If a later change does the same, I will ask again.',
+            MigrationChecks::EDITED => 'You said you want this: the change rewrites an earlier change to how your information is stored. If a later change does the same, I will ask again.',
+        ];
+        // A kept change is part of the app: there is nothing left to decide.
+        $open = ! $featureRequest->isAccepted();
+        $found = MigrationChecks::findings($migrations);
+        $left = MigrationChecks::findings($migrations, $this->acceptFindings->identities($featureRequest));
+        $lines = [];
+
+        foreach (MigrationChecks::OWNED as $kind) {
+            $kindFound = array_values(array_filter($found, fn (array $finding) => $finding['kind'] === $kind));
+            $kindLeft = array_values(array_filter($left, fn (array $finding) => $finding['kind'] === $kind));
+
+            if ($kindLeft !== []) {
+                $lines[] = ['kind' => 'gap', 'text' => __($gaps[$kind === MigrationChecks::FAILS ? $kindLeft[0]['subject'] : $kind]), ...($open ? ['decision' => ['change' => $featureRequest->uuid, 'finding' => $kind, 'accepted' => false]] : [])];
+            } elseif ($kindFound !== []) {
+                $lines[] = ['kind' => 'chosen', 'text' => __($chosen[$kind]), ...($open ? ['decision' => ['change' => $featureRequest->uuid, 'finding' => $kind, 'accepted' => true]] : [])];
+            }
+        }
+
+        if ($lines !== [] || $migrations['again'] !== true) {
+            return $lines;
+        }
+
+        return [['kind' => 'passed', 'text' => __('The change to how your information is stored was undone and made again on sample information, and it worked both times.')]];
     }
 
     /**
