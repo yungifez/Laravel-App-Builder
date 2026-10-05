@@ -20,7 +20,8 @@ class DeploymentController extends Controller
         // The version the owner saw listed when they chose to publish.
         $seen = $request->validate(['seen' => ['nullable', 'string', 'regex:/^[0-9a-f]{40,64}$/']])['seen'] ?? null;
 
-        $publishProject->handle($project, $request->user(), $seen);
+        // The owner said yes to losing information online, for that version.
+        $publishProject->handle($project, $request->user(), $seen, $request->boolean('lose_data'));
 
         return back();
     }

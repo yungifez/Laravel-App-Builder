@@ -16,6 +16,7 @@ import ProjectPublishingController from '@/actions/App/Http/Controllers/ProjectP
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Collapsible,
     CollapsibleContent,
@@ -92,6 +93,17 @@ const dataWords = {
     reshapes: 'Changes how your app keeps some information',
     rewrites: 'Rewrites information your app already keeps',
 } as const;
+
+// Deleting or reshaping what the live app keeps cannot be undone by going
+// back, so the owner says yes to it for the version they see.
+const losesData = computed(() =>
+    (props.publishing.unpublished?.added ?? []).some((item) =>
+        (item.data ?? []).some((kind) =>
+            ['deletes', 'reshapes'].includes(kind),
+        ),
+    ),
+);
+const loseData = ref(false);
 
 const goingOnline = computed(() => {
     const added = props.publishing.unpublished?.added ?? [];
@@ -378,8 +390,21 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                     name="seen"
                     :value="publishing.head"
                 />
+                <Label
+                    v-if="losesData"
+                    class="mb-3 flex items-start gap-2 text-sm leading-snug font-normal"
+                    data-test="lose-data"
+                >
+                    <Checkbox
+                        v-model="loseData"
+                        name="lose_data"
+                        class="mt-0.5"
+                    />
+                    I understand some information my app keeps online will be
+                    deleted or changed.
+                </Label>
                 <Button
-                    :disabled="processing"
+                    :disabled="processing || (losesData && !loseData)"
                     :variant="troubled || checkFailed ? 'outline' : 'default'"
                     class="h-11 w-full select-none sm:h-9"
                     data-test="publish-button"
@@ -394,6 +419,7 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                     }}
                 </Button>
                 <InputError class="mt-2" :message="errors.publish" />
+                <InputError class="mt-2" :message="errors.lose_data" />
                 <p
                     class="mt-2 text-xs text-muted-foreground"
                     data-test="publish-checked-first"
