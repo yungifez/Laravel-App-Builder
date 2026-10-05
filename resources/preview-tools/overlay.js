@@ -1984,13 +1984,11 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
         // this kind of part. Motion is stilled while measuring, so a
         // transition cannot hide the difference.
         if (message.type === 'check') {
-            const missed = [];
-
-            for (const part of message.parts || []) {
+            const misses = (part) => {
                 const [element] = matching(part.location);
 
                 if (!element || !Array.isArray(part.properties)) {
-                    continue;
+                    return false;
                 }
 
                 const style = element.getAttribute('style');
@@ -2027,16 +2025,33 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
 
                 element.setAttribute('class', classes ?? '');
 
-                if (
-                    part.properties.every(
-                        (group) => after[group.join()] === before[group.join()],
-                    )
-                ) {
-                    missed.push(part.edit);
-                }
-            }
+                return part.properties.every(
+                    (group) => after[group.join()] === before[group.join()],
+                );
+            };
 
-            send({ type: 'checked', missed });
+            // A page that styles itself in the browser writes the CSS for a
+            // new class a moment after the class appears, so a change that
+            // seems not to show is measured again before it is put back:
+            // first after two frames, then every 250 ms for about a second.
+            const settle = (parts, tries) => {
+                const missed = parts.filter(misses);
+
+                if (missed.length > 0 && tries === 4) {
+                    requestAnimationFrame(() =>
+                        requestAnimationFrame(() => settle(missed, tries - 1)),
+                    );
+                } else if (missed.length > 0 && tries > 0) {
+                    setTimeout(() => settle(missed, tries - 1), 250);
+                } else {
+                    send({
+                        type: 'checked',
+                        missed: missed.map((part) => part.edit),
+                    });
+                }
+            };
+
+            settle(message.parts || [], 4);
         }
 
         if (message.type === 'style') {
