@@ -1184,8 +1184,7 @@ at the end. Where the app has no such group, or already has a route or
 controller by that name, nothing of it is written over or added. The run's
 `scaffolded` event and the brief say what was left and why. The screens stay
 with the coding agent, since they depend on how the app draws its own. Not
-built yet: asking about the shape before building when it is hard to change
-later; shapes for records the app already has.
+built yet: shapes for records the app already has.
 
 **Rejected: sub-agents by file type.** "A small agent writes the request
 class" moves the risk to the hand-off. To brief it, the larger agent must
@@ -2921,9 +2920,17 @@ path.
   (`model_gateway_grants`, the token's hash only), so an emptied cache stops
   no run; each keeps the calls and the input and output tokens its run spent,
   and is pruned a month after it ends. It is plain Laravel and HTTP, so it
-  does not depend on a cloud vendor. Not built yet: budgets per account in the
-  gateway. The plan's monthly AI use is enforced before each step instead
-  ([§11](#11-execution-agents-runtimes-and-routing)).
+  does not depend on a cloud vendor. The plan's monthly AI use is checked
+  before each step ([§11](#11-execution-agents-runtimes-and-routing)) and,
+  while an agent works, in the gateway. A grant opens with what is left of
+  the owner's month (`MeasureUsage`). Each call is priced from
+  `builder.prices` as it streams back. The owner's runs share what was left:
+  a call is refused once the runs still open, or closed since, have spent
+  it. The refusal is a permission error in the provider's own shape, so the
+  agent's SDK stops rather than retrying. The run then stops with
+  `usage_limit` and the plan's own wording, with no failover to another
+  agent. A model without a price costs nothing here, and an operator's
+  account has no limit.
 - The gateway also adds our instructions on its side (how to work, the
   discretion and observability rules), so the box holds only the task: the
   plan, its acceptance criteria and the owner's own request for their own app

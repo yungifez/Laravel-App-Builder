@@ -781,9 +781,7 @@ class ConstructRun
         $usage = $this->measureUsage->handle($run->featureRequest->project->owner);
 
         if ($usage['reached']) {
-            throw new UsageLimitReached(__('You have used all the AI use your plan includes this month. It starts again on :date, or you can move to a bigger plan in Settings. Nothing in your app changed.', [
-                'date' => $usage['resets_at']->isoFormat('D MMMM'),
-            ]));
+            throw UsageLimitReached::until($usage['resets_at']);
         }
     }
 

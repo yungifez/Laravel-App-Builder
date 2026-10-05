@@ -2,7 +2,9 @@
 
 namespace App\Runs;
 
+use App\Actions\Billing\MeasureUsage;
 use App\Models\ModelGatewayGrant;
+use App\Models\User;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
 
@@ -13,6 +15,11 @@ use Illuminate\Support\Str;
  * control plane, out of the workspace, where the agent has a shell. Grants
  * are kept in the database (ModelGatewayGrant), so what each run spent
  * stays readable after it ends.
+ *
+ * Every call passes here, so here is where an account's monthly AI use is
+ * held to its plan while an agent works, not only before each step. A
+ * grant takes what is left of it when it opens, and the account's runs
+ * share that.
  */
 class ModelGateway
 {
@@ -53,18 +60,23 @@ class ModelGateway
      * in place of the key. The token lasts as long as the run may take.
      * Our working rules, when given, are added to each of the run's calls
      * on our side (GatewayInstructions), so the box never holds them.
+     * The owner's account, when given, holds the run to what is left of
+     * its monthly AI use.
      *
      * @return array{token: string, environment: array<string, string>}
      */
-    public function open(string $provider, int $seconds, ?string $instructions = null): array
+    public function open(string $provider, int $seconds, ?string $instructions = null, ?User $owner = null): array
     {
         $client = self::CLIENTS[$provider];
         $token = 'gw_'.Str::random(48);
+        $usage = $owner === null ? null : app(MeasureUsage::class)->handle($owner);
 
         ModelGatewayGrant::query()->create([
             'token_hash' => $this->hash($token),
             'provider' => $provider,
             'instructions' => $instructions,
+            'user_id' => $owner?->id,
+            'allowance_usd' => $usage === null || $usage['unlimited'] ? null : max(0.0, $usage['allowance_usd'] - $usage['used_usd']),
             'expires_at' => now()->addSeconds($seconds + 60),
         ]);
 
@@ -128,13 +140,53 @@ class ModelGateway
      * limits. A call that ends after its run closed still counts: it was
      * spent.
      */
-    public function count(string $token, int $inputTokens, int $outputTokens): void
+    public function count(string $token, int $inputTokens, int $outputTokens, float $costUsd = 0.0): void
     {
         ModelGatewayGrant::query()->where('token_hash', $this->hash($token))->incrementEach([
             'requests' => 1,
             'input_tokens' => max(0, $inputTokens),
             'output_tokens' => max(0, $outputTokens),
+            'cost_usd' => max(0.0, $costUsd),
         ]);
+    }
+
+    /**
+     * Determine if the account may spend more through this grant. What was
+     * left when it opened is shared with the account's other runs: each
+     * run still open, or closed since, spent from it. A run closed before
+     * was already counted in what was left. A call past it is refused, and
+     * the grant remembers, so the run stops for the plan rather than
+     * failing.
+     */
+    public function withinAllowance(string $token): bool
+    {
+        $grant = ModelGatewayGrant::query()->where('token_hash', $this->hash($token))->first();
+
+        if ($grant === null || $grant->allowance_usd === null || $grant->user_id === null) {
+            return true;
+        }
+
+        $spent = (float) ModelGatewayGrant::query()
+            ->where('user_id', $grant->user_id)
+            ->where(fn ($query) => $query->whereNull('closed_at')->orWhere('closed_at', '>', $grant->created_at))
+            ->sum('cost_usd');
+
+        if ($spent < (float) $grant->allowance_usd) {
+            return true;
+        }
+
+        $grant->forceFill(['refused_at' => now()])->save();
+
+        return false;
+    }
+
+    /**
+     * Determine if a call through the grant was refused because the
+     * account used all its monthly AI use.
+     */
+    public function refused(string $token): bool
+    {
+        return ModelGatewayGrant::query()->where('token_hash', $this->hash($token))->whereNotNull('refused_at')->exists();
     }
 
     /**

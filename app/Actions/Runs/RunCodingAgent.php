@@ -2,6 +2,7 @@
 
 namespace App\Actions\Runs;
 
+use App\Actions\Billing\MeasureUsage;
 use App\Actions\Context\SelectAreas;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Context\ContextPack;
@@ -17,6 +18,7 @@ use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\LeaseLost;
 use App\Runs\Exceptions\ProvidersUnavailable;
 use App\Runs\Exceptions\RunCancelled;
+use App\Runs\Exceptions\UsageLimitReached;
 use App\Runs\RunLease;
 use Closure;
 use Illuminate\Support\Facades\Cache;
@@ -29,6 +31,7 @@ class RunCodingAgent
         private CodingAgentManager $agents,
         private RunWorkspaceCommand $runWorkspaceCommand,
         private SelectAreas $selectAreas,
+        private MeasureUsage $measureUsage,
     ) {}
 
     /**
@@ -49,6 +52,7 @@ class RunCodingAgent
      * @throws ConstructionFailed
      * @throws LeaseLost
      * @throws RunCancelled
+     * @throws UsageLimitReached when the gateway refused a call for the owner's monthly AI use.
      */
     public function handle(Run $run, RunLease $lease, Workspace $workspace, AgentTask $task): AgentOutcome
     {
@@ -76,6 +80,14 @@ class RunCodingAgent
                 $this->restore($workspace, $snapshot);
                 $this->recordEvent($run, $lease, 'runner_lost', ['adapter' => $adapter]);
                 $outcome = $this->attempt($run, $lease, $workspace, $task, $adapter);
+            }
+
+            // The owner's plan, not the provider, stopped it: no other
+            // agent may take over, and what it spent is already logged.
+            if ($outcome->errorKind === AgentOutcome::USAGE_LIMIT) {
+                $this->restore($workspace, $snapshot);
+
+                throw UsageLimitReached::until($this->measureUsage->handle($run->featureRequest->project->owner)['resets_at']);
             }
 
             if ($outcome->status !== AgentOutcomeStatus::ProviderUnavailable && ! $this->couldNotStart($outcome)) {

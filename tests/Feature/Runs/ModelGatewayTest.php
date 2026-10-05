@@ -3,6 +3,7 @@
 namespace Tests\Feature\Runs;
 
 use App\Models\ModelGatewayGrant;
+use App\Models\User;
 use App\Runs\ModelGateway;
 use App\Runs\ModelUsage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -152,6 +153,74 @@ class ModelGatewayTest extends TestCase
         $this->assertStringNotContainsString('Before each group of steps', $response->getContent());
         $this->assertStringContainsString('is too long', $response->getContent());
         $this->assertSame(1, app(ModelGateway::class)->grant($opened['token'])['requests'] ?? null);
+    }
+
+    public function test_a_run_under_its_owners_monthly_use_passes_and_each_call_is_priced_from_config()
+    {
+        Http::fake(['api.anthropic.com/*' => Http::response(self::STREAM)]);
+        config(['billing.plans.free.monthly_usd' => 1, 'builder.prices' => ['claude' => ['input' => 1000, 'output' => 1000]]]);
+        $opened = app(ModelGateway::class)->open('anthropic', 600, owner: $owner = User::factory()->create());
+
+        $this->call('POST', '/api/gateway/anthropic/v1/messages', [], [], [], ['HTTP_X_API_KEY' => $opened['token'], 'CONTENT_TYPE' => 'application/json'], '{"model":"claude","messages":[]}')
+            ->assertOk()->streamedContent();
+
+        $grant = ModelGatewayGrant::query()->sole();
+        $this->assertSame([$owner->id, '1.000000', '0.262000', null], [$grant->user_id, $grant->allowance_usd, $grant->cost_usd, $grant->refused_at]);
+        $this->assertTrue(app(ModelGateway::class)->withinAllowance($opened['token']));
+    }
+
+    public function test_an_owners_runs_share_what_is_left_of_the_months_use()
+    {
+        // A new answer each call: one answer's stream reads once.
+        Http::fake(['api.anthropic.com/*' => fn () => Http::response(self::STREAM)]);
+        config(['billing.plans.free.monthly_usd' => 0.5, 'builder.prices' => ['claude' => ['input' => 1000, 'output' => 1000]]]);
+        $gateway = app(ModelGateway::class);
+        $owner = User::factory()->create();
+        $call = fn (string $token) => $this->call('POST', '/api/gateway/anthropic/v1/messages', [], [], [], ['HTTP_X_API_KEY' => $token, 'CONTENT_TYPE' => 'application/json'], '{"model":"claude","messages":[]}');
+
+        $first = $gateway->open('anthropic', 600, owner: $owner);
+        $second = $gateway->open('anthropic', 600, owner: $owner);
+        $someoneElse = $gateway->open('anthropic', 600, owner: User::factory()->create());
+
+        $call($first['token'])->assertOk()->streamedContent();
+        $call($someoneElse['token'])->assertOk()->streamedContent();
+        $call($second['token'])->assertOk()->streamedContent();
+
+        // Together they spent 0.524 of the 0.50 left: the next call from
+        // either run is refused, while another owner's run goes on.
+        $call($first['token'])->assertForbidden();
+        $this->assertFalse($gateway->withinAllowance($second['token']));
+        $this->assertTrue($gateway->withinAllowance($someoneElse['token']));
+
+        // A run that ended before a new one opened was counted in what was
+        // left when it opened, so it is not counted twice.
+        $gateway->close($first['token']);
+        $gateway->close($second['token']);
+        $this->travel(1)->seconds();
+        $this->assertTrue($gateway->withinAllowance($gateway->open('anthropic', 600, owner: $owner)['token']));
+    }
+
+    public function test_a_call_past_the_owners_monthly_use_is_refused_and_never_sent_on()
+    {
+        Http::fake(['api.anthropic.com/*' => Http::response(self::STREAM), 'api.openai.com/*' => Http::response('{}')]);
+        config(['billing.plans.free.monthly_usd' => 0.2, 'builder.prices' => ['claude' => ['input' => 1000, 'output' => 1000]]]);
+        $gateway = app(ModelGateway::class);
+        $opened = $gateway->open('anthropic', 600, owner: $owner = User::factory()->create());
+        $call = fn () => $this->call('POST', '/api/gateway/anthropic/v1/messages', [], [], [], ['HTTP_X_API_KEY' => $opened['token'], 'CONTENT_TYPE' => 'application/json'], '{"model":"claude","messages":[]}');
+
+        $call()->assertOk()->streamedContent();
+        $this->assertFalse($gateway->refused($opened['token']));
+
+        // A permission error in the provider's own shape, so the agent's SDK
+        // stops rather than trying again.
+        $call()->assertForbidden()->assertExactJson(['type' => 'error', 'error' => ['type' => 'permission_error', 'message' => 'This account has used all the AI use its plan includes this month.']]);
+        $this->assertTrue($gateway->refused($opened['token']));
+        Http::assertSentCount(1);
+
+        $openai = $gateway->open('openai', 600, owner: $owner);
+        $this->postJson('/api/gateway/openai/v1/responses', [], ['Authorization' => "Bearer {$openai['token']}"])
+            ->assertForbidden()->assertJsonPath('error.code', 'insufficient_quota');
+        Http::assertSentCount(1);
     }
 
     public function test_an_openai_agent_sends_its_token_as_a_bearer_token()

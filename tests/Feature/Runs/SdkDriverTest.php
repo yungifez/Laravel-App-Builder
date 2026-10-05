@@ -22,6 +22,7 @@ use App\Models\ModelGatewayGrant;
 use App\Models\Project;
 use App\Models\Run;
 use App\Models\RunEvent;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceCommand;
 use App\Runs\Agents\AgentOutcome;
@@ -40,6 +41,7 @@ use Laravel\Ai\Exceptions\InsufficientCreditsException;
 use Laravel\Ai\Prompts\AgentPrompt;
 use Laravel\Ai\Providers\Provider;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\Concerns\PreparesRuns;
 use Tests\Fakes\FakeCodingAgent;
@@ -613,9 +615,9 @@ class SdkDriverTest extends TestCase
             /** @var list<string> */
             public array $tokens = [];
 
-            public function open(string $provider, int $seconds, ?string $instructions = null): array
+            public function open(string $provider, int $seconds, ?string $instructions = null, ?User $owner = null): array
             {
-                $opened = parent::open($provider, $seconds, $instructions);
+                $opened = parent::open($provider, $seconds, $instructions, $owner);
                 $this->tokens[] = $opened['token'];
 
                 return $opened;
@@ -629,6 +631,79 @@ class SdkDriverTest extends TestCase
         $this->assertCount(1, $gateway->tokens);
         $this->assertNull($gateway->grant($gateway->tokens[0]), 'The token is closed once the run ends.');
         $this->assertStringContainsString('## How to work', (string) $gateway->instructions($gateway->tokens[0]));
+        // The run spends its owner's monthly AI use.
+        $this->assertSame($run->featureRequest->project->owner->id, ModelGatewayGrant::query()->sole()->user_id);
+    }
+
+    /**
+     * @return array<string, array{bool, bool, string}>
+     */
+    public static function endsAfterARefusal(): array
+    {
+        $result = json_encode(['type' => 'result', 'adapter' => 'claude', 'status' => 'failed', 'error_kind' => 'error_during_execution', 'turns' => 3, 'cost_usd' => 0.4])."\n";
+
+        return [
+            'the agent gives up' => [false, false, $result],
+            'the agent waits until it times out' => [true, false, ''],
+            'the runner goes away' => [false, true, ''],
+        ];
+    }
+
+    #[DataProvider('endsAfterARefusal')]
+    public function test_a_call_the_gateway_refused_marks_the_agents_outcome_as_stopped_by_the_plan(bool $timedOut, bool $lost, string $output)
+    {
+        config([
+            'ai.providers.anthropic.key' => 'test-anthropic-key',
+            'builder.agents.gateway.enabled' => true,
+            'builder.agents.gateway.url' => 'http://control-plane.test',
+            'billing.plans.free.monthly_usd' => 5,
+        ]);
+        $workspace = Workspace::factory()->create(['driver' => 'docker']);
+        $driver = Mockery::mock(WorkspaceDriver::class);
+        $driver->shouldReceive('writeFile')->once();
+        $workspaces = Mockery::mock(WorkspaceManager::class);
+        $workspaces->shouldReceive('driver')->with('docker')->andReturn($driver);
+        $commands = Mockery::mock(RunWorkspaceCommand::class);
+        $commands->shouldReceive('handle')->andReturnUsing(function (Workspace $box, array $command) use ($timedOut, $lost, $output) {
+            // While the agent works, the gateway refuses one of its calls,
+            // and the agent ends however it takes that.
+            ModelGatewayGrant::query()->sole()->forceFill(['cost_usd' => 5, 'refused_at' => now()])->save();
+
+            return new WorkspaceCommand([
+                'command' => $command,
+                'exit_code' => $output === '' ? 1 : 0,
+                'timed_out' => $timedOut,
+                'lost' => $lost,
+                'duration_ms' => 5,
+                'output' => $output,
+                'error_output' => '',
+            ]);
+        });
+        $this->app->instance(WorkspaceManager::class, $workspaces);
+        $this->app->instance(RunWorkspaceCommand::class, $commands);
+
+        $outcome = app(CodingAgentManager::class)->driver('claude')->run($workspace, new AgentTask('Add teams.', owner: User::factory()->create()));
+
+        // Not a lost runner, a timeout or the agent's own failure: the plan.
+        $this->assertSame([AgentOutcomeStatus::Failed, AgentOutcome::USAGE_LIMIT], [$outcome->status, $outcome->errorKind]);
+        $this->assertSame($output === '' ? [0, null] : [3, 0.4], [$outcome->turns, $outcome->costUsd], 'What it spent is kept.');
+        $this->assertSame('5.000000', ModelGatewayGrant::query()->sole()->allowance_usd);
+    }
+
+    public function test_an_agent_stopped_by_the_plan_stops_the_run_for_the_plan_without_failing_over()
+    {
+        $this->agent('claude', 'anthropic', fn () => $this->outcome('claude', 'anthropic', AgentOutcomeStatus::Failed, errorKind: AgentOutcome::USAGE_LIMIT, error: 'Refused.'));
+        $this->agent('codex', 'openai', fn () => $this->fail('Another agent must not spend past the plan.'));
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(RunStatus::Failed, $run->status);
+        $this->assertSame('usage_limit', $run->stop_reason);
+        // It reads as the plan running out, not as our fault.
+        $this->assertMatchesRegularExpression('/^You have used all the AI use your plan includes this month\. It starts again on \d{1,2} \w+, or you can move to a bigger plan in Settings\. Nothing in your app changed\.$/', (string) $run->error);
+        $this->assertStringNotContainsString('our fault', (string) $run->error);
+        $this->assertSame(0, $run->events()->where('type', 'failover')->count());
+        $this->assertSame(0.01, $run->events()->where('type', 'model_call')->where('data->role', 'coder')->sole()->data['cost_usd']);
     }
 
     public function test_an_agent_that_reports_no_cost_is_priced_from_config_only_when_its_model_is_known()

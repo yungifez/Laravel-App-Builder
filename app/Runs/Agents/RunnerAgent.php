@@ -74,7 +74,7 @@ class RunnerAgent implements CodingAgent
         $prompt = $task->prompt;
 
         if ($this->gateway?->enabled() && $keyVariable !== null && isset($credentials[$keyVariable])) {
-            $opened = $this->gateway->open($this->provider, $task->timeoutSeconds, $task->instructions);
+            $opened = $this->gateway->open($this->provider, $task->timeoutSeconds, $task->instructions, $task->owner);
             $credentials = [...$credentials, ...$opened['environment']];
         } elseif ($keyVariable !== null && isset($credentials[$keyVariable]) && $workspace->driver !== 'local') {
             // A box runs the owner's code with a shell, so a real key must
@@ -131,7 +131,10 @@ class RunnerAgent implements CodingAgent
 
         $this->removeTaskFiles($workspace);
 
-        return AgentOutcome::fromRunnerOutput($this->adapter, $this->provider, $this->model, $result->output, $result->timed_out, $result->lost);
+        $outcome = AgentOutcome::fromRunnerOutput($this->adapter, $this->provider, $this->model, $result->output, $result->timed_out, $result->lost);
+
+        // However the agent took the refusal, the run stops for the plan.
+        return $opened !== null && $this->gateway?->refused($opened['token']) ? $outcome->stoppedForUsage() : $outcome;
     }
 
     /**

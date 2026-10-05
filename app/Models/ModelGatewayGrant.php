@@ -18,6 +18,10 @@ use Illuminate\Support\Carbon;
  * @property string $token_hash
  * @property string $provider
  * @property string|null $instructions Our working rules, added to each call
+ * @property int|null $user_id The account whose monthly AI use the run spends
+ * @property string|null $allowance_usd What was left of it when the grant opened; null has no limit
+ * @property string $cost_usd What the run's calls cost, from the configured prices
+ * @property Carbon|null $refused_at When a call was refused for the account's monthly AI use
  * @property int $requests
  * @property int $input_tokens
  * @property int $output_tokens
@@ -26,7 +30,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['token_hash', 'provider', 'instructions', 'expires_at', 'closed_at'])]
+#[Fillable(['token_hash', 'provider', 'instructions', 'user_id', 'allowance_usd', 'expires_at', 'closed_at'])]
 #[Hidden(['instructions'])]
 class ModelGatewayGrant extends Model
 {
@@ -44,6 +48,9 @@ class ModelGatewayGrant extends Model
             'requests' => 'integer',
             'input_tokens' => 'integer',
             'output_tokens' => 'integer',
+            'allowance_usd' => 'decimal:6',
+            'cost_usd' => 'decimal:6',
+            'refused_at' => 'datetime',
             'expires_at' => 'datetime',
             'closed_at' => 'datetime',
         ];

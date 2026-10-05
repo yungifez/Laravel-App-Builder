@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Runs\RecordModelUsage;
 use App\Runs\GatewayInstructions;
 use App\Runs\ModelGateway;
 use App\Runs\ModelUsage;
@@ -21,11 +22,17 @@ class ModelGatewayController extends Controller
     /**
      * Send an agent's model call on with the real key and our working
      * rules, and stream the answer back as it comes, counting what the
-     * model read and wrote.
+     * model read and wrote and what that cost.
      */
     public function __invoke(Request $request, ModelGateway $gateway, GatewayInstructions $gatewayInstructions, string $provider, string $path = ''): Response
     {
         $token = (string) $request->attributes->get('gateway_token');
+
+        if (! $gateway->withinAllowance($token)) {
+            return $this->refuse($provider);
+        }
+
+        $model = $request->string('model')->value();
         $instructions = $gateway->instructions($token);
         $call = $instructions === null ? $request->getContent() : $gatewayInstructions->add($provider, $path, $request->getContent(), $instructions);
         $headers = array_filter(
@@ -59,7 +66,7 @@ class ModelGatewayController extends Controller
         $body = $response->toPsrResponse()->getBody();
         $usage = new ModelUsage;
 
-        return new StreamedResponse(function () use ($body, $usage, $gateway, $token) {
+        return new StreamedResponse(function () use ($body, $usage, $gateway, $token, $model) {
             try {
                 while (! $body->eof()) {
                     $chunk = $body->read(8192);
@@ -78,7 +85,8 @@ class ModelGatewayController extends Controller
                     flush();
                 }
             } finally {
-                $gateway->count($token, $usage->inputTokens(), $usage->outputTokens());
+                // A model without a configured price costs nothing here.
+                $gateway->count($token, $usage->inputTokens(), $usage->outputTokens(), RecordModelUsage::cost($model, $usage->inputTokens(), $usage->outputTokens(), $usage->cachedInputTokens()) ?? 0.0);
             }
         }, $response->status(), array_filter([
             'Content-Type' => $response->header('Content-Type') ?: null,
@@ -86,5 +94,19 @@ class ModelGatewayController extends Controller
             'X-Accel-Buffering' => 'no',
             'Cache-Control' => 'no-cache',
         ]));
+    }
+
+    /**
+     * Refuse a call the account's monthly AI use cannot cover, in the
+     * provider's own error shape. It is a permission error, so the agent's
+     * SDK stops rather than trying again; the run then stops for the plan.
+     */
+    protected function refuse(string $provider): Response
+    {
+        $message = 'This account has used all the AI use its plan includes this month.';
+
+        return response()->json($provider === 'anthropic'
+            ? ['type' => 'error', 'error' => ['type' => 'permission_error', 'message' => $message]]
+            : ['error' => ['message' => $message, 'type' => 'insufficient_quota', 'code' => 'insufficient_quota']], 403);
     }
 }

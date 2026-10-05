@@ -17,6 +17,13 @@ final readonly class AgentOutcome
     public const RUNNER_LOST = 'runner_lost';
 
     /**
+     * The gateway refused a call: the account used all the AI use its plan
+     * includes this month. No fault of the agent, and no other agent may
+     * take over.
+     */
+    public const USAGE_LIMIT = 'usage_limit';
+
+    /**
      * @param  list<array{kind: string, text?: string, file?: string}>  $story  What the agent did and said, in order
      */
     public function __construct(
@@ -37,6 +44,31 @@ final readonly class AgentOutcome
         public ?string $session = null,
         public bool $resumed = false,
     ) {}
+
+    /**
+     * Get this outcome as stopped by the account's monthly AI use, keeping
+     * what it spent.
+     */
+    public function stoppedForUsage(): self
+    {
+        return new self(
+            adapter: $this->adapter,
+            provider: $this->provider,
+            model: $this->model,
+            status: AgentOutcomeStatus::Failed,
+            summary: $this->summary,
+            errorKind: self::USAGE_LIMIT,
+            error: __('The gateway refused a call: the account used all the AI use its plan includes this month.'),
+            turns: $this->turns,
+            inputTokens: $this->inputTokens,
+            outputTokens: $this->outputTokens,
+            costUsd: $this->costUsd,
+            story: $this->story,
+            cachedInputTokens: $this->cachedInputTokens,
+            session: $this->session,
+            resumed: $this->resumed,
+        );
+    }
 
     /**
      * Read the runner's result line: the last line of its output that is a

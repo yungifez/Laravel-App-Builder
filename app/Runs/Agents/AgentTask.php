@@ -2,6 +2,8 @@
 
 namespace App\Runs\Agents;
 
+use App\Models\User;
+
 /**
  * One coding task for an agent working in the run's workspace.
  */
@@ -23,5 +25,8 @@ final readonly class AgentTask
         // Our working rules. The gateway adds them to each model call on
         // our side, so the box holds only the task (architecture §16).
         public ?string $instructions = null,
+        // The account whose monthly AI use the agent spends. The gateway
+        // holds each of its calls to what is left.
+        public ?User $owner = null,
     ) {}
 }
