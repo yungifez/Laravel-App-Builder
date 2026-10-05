@@ -4,11 +4,13 @@ namespace App\Actions\Features;
 
 use App\Actions\Billing\MeasureUsage;
 use App\Actions\Projects\ConnectOwnTool;
+use App\Actions\Publishing\DescribeUnpublished;
 use App\Actions\Runs\DescribeRunProgress;
 use App\Actions\Runs\KeepTryingRun;
 use App\Actions\Runs\NarrateWork;
 use App\Context\ProjectContext;
 use App\Context\ProjectNotes;
+use App\Enums\DeploymentStatus;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\PreviewStatus;
 use App\Enums\RunStatus;
@@ -17,6 +19,7 @@ use App\Features\NewCode;
 use App\Features\OwnerWording;
 use App\Features\PatchSummary;
 use App\Features\RepeatedFailure;
+use App\Models\Experiment;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\RunEvent;
@@ -44,6 +47,7 @@ class DescribeFeatureRequest
         private NarrateWork $narrateWork,
         private DescribeProof $describeProof,
         private ProjectRepository $repository,
+        private DescribeUnpublished $describeUnpublished,
     ) {}
 
     /**
@@ -85,6 +89,9 @@ class DescribeFeatureRequest
                 'accepted_at' => $featureRequest->accepted_at?->toIso8601String(),
                 'revert_sha' => $featureRequest->revert_sha,
                 'reverted_at' => $featureRequest->reverted_at?->toIso8601String(),
+                // Undoing a change does not take it off the live app: the
+                // owner is told, and can put the app online again.
+                'still_online' => $this->stillOnline($featureRequest),
                 'can_accept' => $featureRequest->status === FeatureRequestStatus::Generated
                     && $featureRequest->commit_sha === null
                     && $featureRequest->latestRun?->status === RunStatus::Completed,
@@ -114,6 +121,35 @@ class DescribeFeatureRequest
                     'status' => $followUp->status->value,
                     'target_step' => $followUp->target_step,
                 ]),
+        ];
+    }
+
+    /**
+     * Say whether an undone change is still in the live app: the newest
+     * publish holds it. Gives the version to put online, and how many
+     * other kept changes go online with it, so the owner is not surprised.
+     *
+     * @return array{head: string|null, others: int}|null
+     */
+    protected function stillOnline(FeatureRequest $featureRequest): ?array
+    {
+        if ($featureRequest->reverted_at === null) {
+            return null;
+        }
+
+        $project = $featureRequest->project;
+        $live = $project->deployments()->where('status', DeploymentStatus::Published)->latest('id')->first();
+
+        if ($live === null || $live->featureRequests()->whereKey($featureRequest->id)->doesntExist()) {
+            return null;
+        }
+
+        $head = $this->repository->exists($project) ? ($this->repository->head($project, Experiment::mainBranch()) ?: null) : null;
+        $waiting = $this->describeUnpublished->handle($project, $head);
+
+        return [
+            'head' => $head,
+            'others' => $waiting === null ? 0 : count($waiting['added']) + min($waiting['edits'], 1),
         ];
     }
 

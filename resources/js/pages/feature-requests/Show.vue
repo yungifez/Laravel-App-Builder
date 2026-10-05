@@ -10,6 +10,7 @@ import {
     Target,
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
+import DeploymentController from '@/actions/App/Http/Controllers/DeploymentController';
 import FeatureRequestAcceptanceController from '@/actions/App/Http/Controllers/FeatureRequestAcceptanceController';
 import FeatureRequestAnswerController from '@/actions/App/Http/Controllers/FeatureRequestAnswerController';
 import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
@@ -886,8 +887,45 @@ function lineClass(line: string): string {
                         class="space-y-3 py-5"
                         data-test="change-decision"
                     >
+                        <Form
+                            v-if="featureRequest.still_online"
+                            v-bind="DeploymentController.store.form(project.id)"
+                            :options="{ preserveScroll: true }"
+                            v-slot="{ processing, errors }"
+                            class="space-y-3"
+                            data-test="still-online"
+                        >
+                            <p class="text-muted-foreground">
+                                You undid this change, but it is still online.
+                                Put your app online again to take it off.
+                            </p>
+                            <p
+                                v-if="featureRequest.still_online.others > 0"
+                                class="text-muted-foreground"
+                            >
+                                {{
+                                    featureRequest.still_online.others === 1
+                                        ? 'One other change you kept goes online too.'
+                                        : `${featureRequest.still_online.others} other changes you kept go online too.`
+                                }}
+                            </p>
+                            <input
+                                v-if="featureRequest.still_online.head"
+                                type="hidden"
+                                name="seen"
+                                :value="featureRequest.still_online.head"
+                            />
+                            <Button
+                                :disabled="processing"
+                                class="h-11 w-full select-none sm:h-9"
+                                data-test="publish-button"
+                            >
+                                Put it online again
+                            </Button>
+                            <InputError :message="errors.publish" />
+                        </Form>
                         <p
-                            v-if="featureRequest.reverted_at"
+                            v-else-if="featureRequest.reverted_at"
                             class="text-muted-foreground"
                         >
                             You undid this change. Your app works as it did
