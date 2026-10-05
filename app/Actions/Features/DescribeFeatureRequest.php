@@ -141,11 +141,11 @@ class DescribeFeatureRequest
             'preview' => $this->latestPreview($featureRequest),
             'followUps' => $featureRequest->followUps()->latest()->get()
                 ->map(fn (FeatureRequest $followUp) => [
-                        'id' => $followUp->uuid,
-                        'prompt' => $followUp->prompt,
-                        'status' => $followUp->status->value,
-                        'target_step' => $followUp->target_step,
-                    ]),
+                    'id' => $followUp->uuid,
+                    'prompt' => $followUp->prompt,
+                    'status' => $followUp->status->value,
+                    'target_step' => $followUp->target_step,
+                ]),
         ];
     }
 
