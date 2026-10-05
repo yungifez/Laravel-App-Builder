@@ -18,7 +18,10 @@ use App\Models\Run;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Runs\Exceptions\ProvidersUnavailable;
+use GuzzleHttp\Psr7\Response as Psr7Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response as ClientResponse;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -195,6 +198,37 @@ class BudgetNextStepTest extends TestCase
 
         $this->assertStop($change, $busy->getMessage(), canRetry: true);
         $this->assertNull($this->attention('ai_out_of_credit'));
+    }
+
+    public function test_too_many_requests_that_says_the_account_is_empty_is_out_of_credit(): void
+    {
+        $empty = ProvidersUnavailable::because($this->tooMany('{"error":{"message":"You exceeded your current quota, please check your plan and billing details.","type":"insufficient_quota","code":"insufficient_quota"}}'));
+
+        $this->assertSame(StopReason::OutOfCredit, $empty->reason());
+        $this->assertStringEndsWith('Try again later.', $empty->getMessage());
+    }
+
+    public function test_too_many_requests_that_says_slow_down_stays_busy(): void
+    {
+        $busy = ProvidersUnavailable::because($this->tooMany('{"type":"error","error":{"type":"rate_limit_error","message":"Number of request tokens has exceeded your per-minute rate limit."}}'));
+
+        $this->assertSame(StopReason::ProvidersUnavailable, $busy->reason());
+        $this->assertStringEndsWith('Try again in a few minutes.', $busy->getMessage());
+    }
+
+    public function test_too_many_requests_with_an_empty_or_unreadable_answer_stays_busy(): void
+    {
+        foreach (['', '<html>Too Many Requests</html>', '{"error":"slow down"}'] as $body) {
+            $this->assertSame(StopReason::ProvidersUnavailable, ProvidersUnavailable::because($this->tooMany($body))->reason(), $body);
+        }
+    }
+
+    /**
+     * Make the SDK's rate-limit exception for a 429 answer with the given body.
+     */
+    protected function tooMany(string $body): RateLimitedException
+    {
+        return RateLimitedException::forProvider('openai', 429, new RequestException(new ClientResponse(new Psr7Response(429, ['Content-Type' => 'application/json'], $body))));
     }
 
     /**

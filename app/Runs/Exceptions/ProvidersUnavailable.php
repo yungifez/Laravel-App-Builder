@@ -48,19 +48,42 @@ class ProvidersUnavailable extends RuntimeException
      */
     public static function because(FailoverableException $exception): self
     {
+        // Some services answer an empty account with "too many requests"
+        // (429), so a rate limit whose body says so is out of credit too.
+        $credit = $exception instanceof InsufficientCreditsException
+            || ($exception instanceof RateLimitedException && self::answerSaysOutOfCredit($exception));
+
         // Our AI service turning the request away is our fault, not the
         // owner's, so the owner is told so.
         $reason = match (true) {
+            $credit => __('This is our fault: our account with the AI service we use has run out of credit.'),
             $exception instanceof RateLimitedException => __('This is our fault: the AI service we use is turning requests away because we sent too many.'),
-            $exception instanceof InsufficientCreditsException => __('This is our fault: our account with the AI service we use has run out of credit.'),
             $exception instanceof ProviderOverloadedException => __('This is our fault: the AI service we use is too busy right now.'),
             default => __('This is our fault: we could not reach the AI service we use.'),
         };
 
         // When credit comes back is not known, so no wait is promised.
-        $credit = $exception instanceof InsufficientCreditsException;
-
         return new self($reason.' '.($credit ? __('Nothing in your app changed. Try again later.') : __('Nothing in your app changed. Try again in a few minutes.')), $credit ? StopReason::OutOfCredit : StopReason::ProvidersUnavailable, $exception);
+    }
+
+    /**
+     * Determine if the answer behind an SDK exception says our account is
+     * out of credit. An answer that is missing or not JSON says nothing.
+     */
+    protected static function answerSaysOutOfCredit(Throwable $exception): bool
+    {
+        $previous = $exception->getPrevious();
+
+        if (! $previous instanceof RequestException) {
+            return false;
+        }
+
+        $type = $previous->response->json('error.type');
+        $code = $previous->response->json('error.code');
+        $message = $previous->response->json('error.message');
+
+        return ($code === 'insufficient_quota' || $type === 'insufficient_quota')
+            || self::saysOutOfCredit(is_string($type) ? $type : null, is_string($message) ? $message : null);
     }
 
     /**
