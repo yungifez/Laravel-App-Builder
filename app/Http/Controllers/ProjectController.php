@@ -315,7 +315,7 @@ class ProjectController extends Controller
                         'id' => $deployment->id,
                         'status' => $deployment->status->value,
                         'commit' => $deployment->commit_sha,
-                        'checks' => $deployment->checks ?? [],
+                        'checks' => array_map(fn (array $check) => ['name' => $check['name'], 'passed' => $check['passed']], $deployment->checks ?? []),
                         // Which check runs now, while it is checked first,
                         // and why sending it takes long when the host is
                         // making the app's first home online.

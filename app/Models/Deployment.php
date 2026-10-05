@@ -28,7 +28,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property string|null $host_release_id The host's own ID for this release, when it has one
  * @property string|null $host_status The host's last word on the release, for operators
  * @property DeploymentStatus $status
- * @property list<array{name: string, passed: bool}>|null $checks
+ * @property list<array{name: string, passed: bool, output?: string}>|null $checks What a failed check said is for the builder, never the owner
  * @property string|null $error
  * @property CarbonImmutable|null $pushed_at
  * @property CarbonImmutable|null $confirmed_at When the app answered its checks at its address

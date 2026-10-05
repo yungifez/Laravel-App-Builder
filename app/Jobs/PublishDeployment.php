@@ -9,13 +9,16 @@ use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\DeploymentStatus;
 use App\Models\Deployment;
 use App\Models\Workspace;
+use App\Models\WorkspaceCommand;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
 use App\Publishing\Exceptions\PublishingFailed;
 use App\Publishing\PublishingHostManager;
+use App\Support\Secrets;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Str;
 use Throwable;
 
 class PublishDeployment implements ShouldQueue
@@ -214,7 +217,7 @@ class PublishDeployment implements ShouldQueue
             }
 
             $command = $runWorkspaceCommand->handle($workspace, $step['command'], $step['timeout']);
-            $results[] = ['name' => $step['name'], 'passed' => $command->exit_code === 0 && ! $command->timed_out];
+            $results[] = $this->result($step['name'], $command);
             $this->deployment->update(['checks' => $results]);
 
             if (! end($results)['passed']) {
@@ -228,12 +231,30 @@ class PublishDeployment implements ShouldQueue
             }
 
             $command = $runWorkspaceCommand->handle($workspace, $step['command'], $step['timeout']);
-            $results[] = ['name' => $step['name'], 'passed' => $command->exit_code === 0 && ! $command->timed_out];
+            $results[] = $this->result($step['name'], $command);
             $passed = $passed && end($results)['passed'];
             $this->deployment->update(['checks' => $results]);
         }
 
         return $passed;
+    }
+
+    /**
+     * Record how a step went, and what a failed one said, so a fix can be
+     * asked for from it. The output is for the builder, not the owner.
+     *
+     * @return array{name: string, passed: bool, output?: string}
+     */
+    protected function result(string $name, WorkspaceCommand $command): array
+    {
+        if ($command->exit_code === 0 && ! $command->timed_out) {
+            return ['name' => $name, 'passed' => true];
+        }
+
+        // The end is where test runners and installers say what went wrong.
+        $output = Str::substr(trim($command->output."\n".$command->error_output), -3000);
+
+        return ['name' => $name, 'passed' => false, 'output' => Secrets::redact($command->timed_out ? "It ran out of time.\n".$output : $output)];
     }
 
     /**

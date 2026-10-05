@@ -10,6 +10,7 @@ use App\Features\OwnedRecords;
 use App\Features\PackagePolicy;
 use App\Features\QueuedWork;
 use App\Http\Controllers\ChangelogController;
+use App\Http\Controllers\CheckFixController;
 use App\Http\Controllers\ClearedProblemController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\DashboardController;
@@ -163,6 +164,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/deployments', [DeploymentController::class, 'store'])->name('deployments.store');
     Route::post('projects/{project}/deployments/{deployment}/restoration', [DeploymentRestorationController::class, 'store'])->scopeBindings()->name('deployments.restoration.store');
     Route::post('projects/{project}/live-error-fixes', [LiveErrorFixController::class, 'store'])->name('live-error-fixes.store');
+    Route::post('projects/{project}/check-fixes', [CheckFixController::class, 'store'])->name('check-fixes.store');
     Route::post('projects/{project}/preview-problem-fixes', [PreviewProblemFixController::class, 'store'])->name('preview-problem-fixes.store');
     Route::post('projects/{project}/preview-sign-ins', [PreviewSignInController::class, 'store'])->name('preview-sign-ins.store');
     Route::post('projects/{project}/preview-people', [PreviewPersonController::class, 'store'])->name('preview-people.store');

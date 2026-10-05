@@ -33,6 +33,7 @@ use Illuminate\Support\Carbon;
  * @property array{file: string, line: int, column: int, tag: string, text: string|null, area: string|null}|null $selection The element the owner pointed at in the preview
  * @property list<array{path: string, name: string}>|null $images Pictures the owner attached to show what they mean, on the request images disk
  * @property array{deployment_id?: int, preview_id?: int, problem?: string, errors: list<array{class: string|null, message: string, count: int, place?: string|null, trace?: list<string>}>}|null $live_errors The errors the published app raised, or the app on show while the owner tried it, when the ask is to fix them
+ * @property array{deployment_id: int, checks: list<array{name: string, output: string}>}|null $failed_checks The checks that kept the app from going online, with what each said, when the ask is to fix them
  * @property array{of: int, tier: string, shortcuts: list<array{rule: string, path: string, line: int}>}|null $tidy The shortcuts a kept change took, when this is the background pass that fixes them, and whether the light or the full coder makes it
  * @property string|null $target_step
  * @property FeatureRequestStatus $status
@@ -55,7 +56,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['experiment_id', 'project_id', 'user_id', 'parent_id', 'retry_of_id', 'prompt', 'selection', 'images', 'live_errors', 'tidy', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'note_changes', 'steps', 'acceptance', 'error', 'decision_model_calls', 'base_revision', 'design_base', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at', 'dismissed_at'])]
+#[Fillable(['experiment_id', 'project_id', 'user_id', 'parent_id', 'retry_of_id', 'prompt', 'selection', 'images', 'live_errors', 'failed_checks', 'tidy', 'target_step', 'status', 'generator', 'solution_key', 'summary', 'patch', 'note_changes', 'steps', 'acceptance', 'error', 'decision_model_calls', 'base_revision', 'design_base', 'commit_sha', 'accepted_at', 'revert_sha', 'reverted_at', 'dismissed_at'])]
 class FeatureRequest extends Model
 {
     /**
@@ -85,6 +86,7 @@ class FeatureRequest extends Model
             'selection' => 'array',
             'images' => 'array',
             'live_errors' => 'array',
+            'failed_checks' => 'array',
             'tidy' => 'array',
             'accepted_at' => 'datetime',
             'reverted_at' => 'datetime',
@@ -153,6 +155,10 @@ class FeatureRequest extends Model
             return $this->prompt."\n\n".$this->liveErrorInstructions($this->live_errors['errors'], isset($this->live_errors['preview_id']));
         }
 
+        if ($this->failed_checks !== null) {
+            return $this->prompt."\n\n".$this->failedCheckInstructions($this->failed_checks['checks']);
+        }
+
         if ($this->tidy !== null) {
             return $this->prompt."\n\nFix only these, and change nothing else:\n".implode("\n", array_map(fn (array $shortcut) => '- '.CodeShortcuts::finding($shortcut), $this->tidy['shortcuts']));
         }
@@ -191,6 +197,22 @@ class FeatureRequest extends Model
             : 'People using the published app ran into these errors since its current version went online, most frequent first.';
 
         return "{$intro} Find why each happens and fix the cause, with a test that fails without the fix:\n".implode("\n", $lines);
+    }
+
+    /**
+     * Describe the checks that kept the app from going online. They ran on
+     * the main app's version the owner tried to publish.
+     *
+     * @param  list<array{name: string, output: string}>  $checks
+     */
+    protected function failedCheckInstructions(array $checks): string
+    {
+        $lines = array_map(
+            fn (array $check) => "- {$check['name']} failed. Its output ends with:\n```\n".$this->redact($check['output'])."\n```",
+            $checks,
+        );
+
+        return "These checks failed when the owner tried to put the app online, so it did not go online. Find why each fails and fix the cause in the app's code. Do not skip, weaken or delete a check or a test to make it pass:\n".implode("\n", $lines);
     }
 
     /**

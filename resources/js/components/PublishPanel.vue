@@ -8,6 +8,7 @@ import {
     LoaderCircle,
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
+import CheckFixController from '@/actions/App/Http/Controllers/CheckFixController';
 import DeploymentController from '@/actions/App/Http/Controllers/DeploymentController';
 import DeploymentRestorationController from '@/actions/App/Http/Controllers/DeploymentRestorationController';
 import LiveErrorFixController from '@/actions/App/Http/Controllers/LiveErrorFixController';
@@ -103,6 +104,14 @@ const goingOnline = computed(() => {
 
 // Problems online: fixing them comes before anything else here.
 const troubled = computed(() => (live.value?.problems ?? 0) > 0);
+
+// A check stopped the newest version going online. Trying again would fail
+// the same way, so fixing it comes first.
+const checkFailed = computed(
+    () =>
+        latest.value?.status === 'failed' &&
+        latest.value.checks.some((check) => !check.passed),
+);
 
 const times = (count: number) => (count === 1 ? 'once' : `${count} times`);
 
@@ -340,6 +349,21 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
             </Form>
 
             <Form
+                v-else-if="checkFailed && !active"
+                v-bind="CheckFixController.store.form(projectId)"
+                v-slot="{ errors, processing }"
+            >
+                <Button
+                    :disabled="processing"
+                    class="h-11 w-full select-none sm:h-9"
+                    data-test="fix-failed-checks"
+                >
+                    Fix it
+                </Button>
+                <InputError class="mt-2" :message="errors.fix" />
+            </Form>
+
+            <Form
                 v-if="!active && !upToDate && !sentCurrent"
                 v-bind="DeploymentController.store.form(projectId)"
                 :options="{ preserveScroll: true }"
@@ -356,7 +380,7 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                 />
                 <Button
                     :disabled="processing"
-                    :variant="troubled ? 'outline' : 'default'"
+                    :variant="troubled || checkFailed ? 'outline' : 'default'"
                     class="h-11 w-full select-none sm:h-9"
                     data-test="publish-button"
                 >

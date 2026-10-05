@@ -303,7 +303,9 @@ class PublishingTest extends TestCase
     public function test_a_failing_check_stops_the_publish_and_nothing_is_pushed()
     {
         $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main']);
-        $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(exitCode: $command === ['php', 'artisan', 'test'] ? 1 : 0, output: '', errorOutput: '', durationMs: 5);
+        $this->driver->onExec = fn (string $workspace, array $command) => $command === ['php', 'artisan', 'test']
+            ? new CommandResult(exitCode: 1, output: "FAILED  Tests\\Feature\\CartTest > it totals the cart\n", errorOutput: 'sk-ant-api03-'.str_repeat('a', 40), durationMs: 5)
+            : new CommandResult(exitCode: 0, output: '', errorOutput: '', durationMs: 5);
 
         $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
 
@@ -311,6 +313,15 @@ class PublishingTest extends TestCase
         $this->assertSame(DeploymentStatus::Failed, $deployment->status);
         $this->assertSame('A check did not pass, so I did not publish. Your app online has not changed.', $deployment->error);
         $this->assertSame([true, false, true], array_column((array) $deployment->checks, 'passed'));
+
+        // What the failed check said is kept for a fix, without secrets,
+        // and stays off the owner's page.
+        $failed = (array) $deployment->checks[1];
+        $this->assertStringContainsString('CartTest > it totals the cart', $failed['output'] ?? '');
+        $this->assertStringNotContainsString('sk-ant-api03', $failed['output'] ?? '');
+        $this->assertArrayNotHasKey('output', (array) $deployment->checks[0]);
+        $this->actingAs($this->owner)->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('publishing.deployments.0.checks.1', ['name' => $failed['name'], 'passed' => false]));
         $this->assertTrue(Process::run(['git', '--git-dir', $this->remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/main'])->failed());
     }
 
