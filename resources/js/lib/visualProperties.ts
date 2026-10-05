@@ -640,17 +640,30 @@ export const properties: PropertyDefinition[] = [
     },
 ];
 
-// A colour while the pointer is on a part takes the same choices as the
-// colour it replaces.
+// A look for one state of a part takes the same choices as the look it
+// replaces.
 for (const [key, from, label] of [
     ['hover_text_color', 'text_color', 'Text colour when pointed at'],
     ['hover_background', 'background', 'Fill when pointed at'],
+    ['focus_text_color', 'text_color', 'Text colour when focused'],
+    ['focus_background', 'background', 'Fill when focused'],
+    ['focus_border_color', 'border_color', 'Border colour when focused'],
+    ['active_text_color', 'text_color', 'Text colour when pressed'],
+    ['active_background', 'background', 'Fill when pressed'],
+    ['disabled_text_color', 'text_color', 'Text colour when turned off'],
+    ['disabled_background', 'background', 'Fill when turned off'],
+    ['disabled_opacity', 'opacity', 'Opacity when turned off'],
 ] as const) {
     properties.push({
         ...properties.find((item) => item.key === from)!,
         key,
         label,
     });
+}
+
+/** Whether a property is a part's look in one state, such as pressed. */
+export function forState(property: VisualProperty): boolean {
+    return /^(hover|focus|active|disabled)_/.test(property);
 }
 
 /** Find a property's definition. */
@@ -1095,6 +1108,7 @@ export function inlineStyles(
                 styles.translate = `${usable(x) ? length(x, { full: '100%' }) : 'var(--tw-translate-x, 0)'} ${usable(y) ? length(y, { full: '100%' }) : 'var(--tw-translate-y, 0)'}`;
                 break;
             }
+            case 'disabled_opacity':
             case 'opacity':
                 styles.opacity = String(Number(value) / 100);
                 break;
@@ -1192,17 +1206,24 @@ export function inlineStyles(
             case 'text_weight':
                 styles.fontWeight = weights[value] ?? String(value);
                 break;
-            // A colour for when the pointer is on the part shows while it
-            // is being chosen; once saved, the app's own class takes over.
+            // A look for one state shows while it is being chosen; once
+            // saved, the app's own class takes over.
             case 'hover_text_color':
+            case 'focus_text_color':
+            case 'active_text_color':
+            case 'disabled_text_color':
             case 'text_color':
                 styles.color = color(value);
                 break;
+            case 'focus_border_color':
             case 'border_color':
                 styles.borderColor =
                     value === 'transparent' ? 'transparent' : color(value);
                 break;
             case 'hover_background':
+            case 'focus_background':
+            case 'active_background':
+            case 'disabled_background':
             case 'background':
                 styles.backgroundColor =
                     value === 'transparent' ? 'transparent' : color(value);

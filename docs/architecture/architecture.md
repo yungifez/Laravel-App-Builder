@@ -2692,7 +2692,9 @@ is used, as a Vue component is, and a Livewire tag is left alone because it
 passes what it gets to the component's code. `@foreach` and Alpine `x-for`
 mark a part as repeated; `@if`, `@unless` and the like mark it as shown at
 times. The edit writers read Blade too: a class, link or picture printed by
-Blade (`{{ }}`, `@class`) is left to the coding agent, and a part moves only
+Blade (`{{ }}`, `@class`) is left to the coding agent, except the first entry
+of `@class([…])` when it is a plain string with no condition, which is edited
+as `class="…"` is. A part moves only
 within one branch of one block, never into or out of an `@if` or
 `@foreach`. Conventions for generated
 code: meaningful component names, every server action through Wayfinder, no
@@ -4312,7 +4314,11 @@ or arbitrary" is rarely about validity. The rules:
 value, tablet is `md:` and desktop is `lg:`. Tailwind is mobile-first, so the
 inspector shows inherited values as "same as phone" and editing phone changes
 every device that has no value of its own. States map to `hover:`, `focus:`,
-`active:` and `disabled:`, and combine (`lg:hover:`).
+`active:` and `disabled:`, and combine (`lg:hover:`). Each state takes text
+and fill colours; focus also takes a border colour, and disabled an opacity. A
+new focus colour is written as `focus-visible:`, so it shows for the keyboard
+only. A part that already uses `focus:` keeps it. A class for two states at
+once (`disabled:hover:`) is left as it is.
 
 **Writing source with the app's own merge.** The edit runs `twMerge` from the
 application's own `node_modules`, with its own configuration, in the workspace
@@ -4330,7 +4336,8 @@ classes. V0 edits:
 - static `class="…"` attributes;
 - literal string arguments of `cn(…)` in `:class`, where each
   `condition && '…'` argument is a named state ("Selected", "Error") the owner
-  can pick.
+  can pick. Not built: only the first string of `cn(…)` is edited. A named
+  state needs a picker in the panel, and design work is paused.
 
 Anything else (`:class="styles(x)"`, template strings, cva variants, computed
 properties) goes to the agent. Blade uses the same mutation on `class="…"` and

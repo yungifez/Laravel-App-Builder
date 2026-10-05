@@ -21,6 +21,7 @@ import VisualTextController from '@/actions/App/Http/Controllers/VisualTextContr
 import {
     definition,
     devices,
+    forState,
     inlineStyles,
     settle,
     stepFrom,
@@ -493,6 +494,14 @@ export function useAppPreview(source: Source) {
         'background',
         'hover_text_color',
         'hover_background',
+        'focus_text_color',
+        'focus_background',
+        'focus_border_color',
+        'active_text_color',
+        'active_background',
+        'disabled_text_color',
+        'disabled_background',
+        'disabled_opacity',
         'fill_color',
         'stroke_color',
     ];
@@ -1205,7 +1214,8 @@ export function useAppPreview(source: Source) {
 
     // Ask the rebuilt app whether the saved changes it now shows really
     // show. A change on another screen size cannot be seen at this one, and
-    // a hover colour shows only when pointed at, so neither is asked about.
+    // a look for a state such as pressed shows only in that state, so
+    // neither is asked about.
     function check(batches: Batch[], to: Window | null | undefined): void {
         const parts = batches.flatMap((batch) => {
             if (batch.saved === undefined || batch.device !== device.value) {
@@ -1213,7 +1223,7 @@ export function useAppPreview(source: Source) {
             }
 
             const properties = Object.entries(batch.values)
-                .filter(([property]) => !property.startsWith('hover_'))
+                .filter(([property]) => !forState(property as VisualProperty))
                 .map(([property, value]) =>
                     Object.keys(inlineStyles({ [property]: value })),
                 )

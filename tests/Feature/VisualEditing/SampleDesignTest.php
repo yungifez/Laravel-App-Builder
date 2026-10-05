@@ -78,6 +78,29 @@ class SampleDesignTest extends TestCase
         $this->assertStringContainsString('rounded-full', $this->button());
     }
 
+    public function test_a_look_while_focused_pressed_or_turned_off_is_written_with_its_state(): void
+    {
+        $this->get(route('sample-design.show'));
+
+        $this->post(route('sample-design.edits.store'), [
+            'target' => self::BUTTON,
+            'expected' => self::CLASSES,
+            'device' => 'base',
+            'changes' => ['focus_border_color' => 'primary', 'active_background' => 'accent', 'disabled_opacity' => 50],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame(self::CLASSES.' focus-visible:border-primary active:bg-accent disabled:opacity-50', $this->button());
+
+        $this->post(route('sample-design.edits.store'), [
+            'target' => self::BUTTON,
+            'expected' => $this->button(),
+            'device' => 'base',
+            'changes' => ['disabled_opacity' => 101],
+        ])->assertSessionHasErrors();
+
+        $this->assertStringContainsString('disabled:opacity-50', $this->button());
+    }
+
     public function test_motion_and_new_words_change_the_sample(): void
     {
         $this->get(route('sample-design.show'));

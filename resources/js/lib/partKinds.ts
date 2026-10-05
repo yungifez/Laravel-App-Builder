@@ -72,7 +72,7 @@ export type LookSection =
 // Which section each property is in, by the group it belongs to. Colours
 // go with what they paint: words with the text, the rest with the fill.
 export function sectionOf(property: VisualProperty): LookSection | null {
-    if (property === 'text_color' || property === 'hover_text_color') {
+    if (property.endsWith('text_color')) {
         return 'text';
     }
 

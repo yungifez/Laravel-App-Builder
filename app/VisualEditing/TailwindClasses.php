@@ -42,6 +42,9 @@ class TailwindClasses
         'text_size', 'text_weight', 'text_align', 'font_style', 'text_decoration', 'text_case', 'line_clamp', 'line_height', 'letter_spacing', 'text_color', 'background',
         'object_fit', 'object_position', 'aspect_ratio',
         'hover_text_color', 'hover_background',
+        'focus_text_color', 'focus_background', 'focus_border_color',
+        'active_text_color', 'active_background',
+        'disabled_text_color', 'disabled_background', 'disabled_opacity',
         'fill_color', 'stroke_color',
     ];
 
@@ -77,10 +80,22 @@ class TailwindClasses
     protected const COLORS = ['text' => 'text_color', 'bg' => 'background', 'border' => 'border_color', 'fill' => 'fill_color', 'stroke' => 'stroke_color'];
 
     /**
-     * The colours a part can take while the pointer is on it, written with
-     * a "hover:" before the colour's class.
+     * What a part can look like in a state of its own, by the variant written
+     * before the class: while the pointer is on it, while it has the
+     * keyboard's focus, while it is pressed, or while it cannot be used.
      */
-    protected const HOVER = ['text_color' => 'hover_text_color', 'background' => 'hover_background'];
+    protected const STATES = [
+        'hover' => ['text_color' => 'hover_text_color', 'background' => 'hover_background'],
+        'focus' => ['text_color' => 'focus_text_color', 'background' => 'focus_background', 'border_color' => 'focus_border_color'],
+        'active' => ['text_color' => 'active_text_color', 'background' => 'active_background'],
+        'disabled' => ['text_color' => 'disabled_text_color', 'background' => 'disabled_background', 'opacity' => 'disabled_opacity'],
+    ];
+
+    /**
+     * The variants read as each state. "focus-visible:" is focus from the
+     * keyboard only, which is how a new focus colour is written.
+     */
+    protected const VARIANTS = ['hover' => 'hover', 'focus' => 'focus', 'focus-visible' => 'focus', 'active' => 'active', 'disabled' => 'disabled'];
 
     /**
      * Colours that are not the app's: Tailwind's palette, white and black,
@@ -314,14 +329,15 @@ class TailwindClasses
     {
         $parts = explode(':', $token);
 
-        // A colour while the pointer is on the part, as "md:hover:bg-accent";
-        // other classes for that moment are left as they are.
-        if (count($parts) > 1 && $parts[count($parts) - 2] === 'hover') {
+        // A look for one state, as "md:hover:bg-accent"; other classes for
+        // that state are left as they are.
+        if (count($parts) > 1 && isset(self::VARIANTS[$parts[count($parts) - 2]])) {
+            $state = self::VARIANTS[$parts[count($parts) - 2]];
             array_splice($parts, -2, 1);
             $parsed = self::parse(implode(':', $parts), $colors);
 
-            return $parsed !== null && isset(self::HOVER[$parsed[1]])
-                ? [$parsed[0], self::HOVER[$parsed[1]], $parsed[2]]
+            return $parsed !== null && isset(self::STATES[$state][$parsed[1]])
+                ? [$parsed[0], self::STATES[$state][$parsed[1]], $parsed[2]]
                 : null;
         }
 
@@ -484,7 +500,7 @@ class TailwindClasses
             $new = $value === null ? [] : [self::utility($group, $value, $colors)];
         }
 
-        $prefix = ($device === 'base' ? '' : "{$device}:").(in_array($group, self::HOVER, true) ? 'hover:' : '');
+        $prefix = ($device === 'base' ? '' : "{$device}:").self::variant($group, array_intersect_key($tokens, $replaced));
         $new = array_map(fn (string $utility) => $prefix.$utility, $new);
 
         foreach ($tokens as $index => $token) {
@@ -499,6 +515,30 @@ class TailwindClasses
         array_splice($kept, $position, 0, $new);
 
         return $kept;
+    }
+
+    /**
+     * Get the variant a property for a state is written with. Focus keeps
+     * the variant the part already has, so a colour on any focus stays on
+     * any focus.
+     *
+     * @param  array<int, string>  $replaced  the classes the new ones replace
+     */
+    protected static function variant(string $property, array $replaced): string
+    {
+        foreach (self::STATES as $state => $properties) {
+            if (! in_array($property, $properties, true)) {
+                continue;
+            }
+
+            if ($state === 'focus') {
+                return array_filter($replaced, fn (string $token) => str_contains($token, 'focus:')) !== [] ? 'focus:' : 'focus-visible:';
+            }
+
+            return "{$state}:";
+        }
+
+        return '';
     }
 
     /**
@@ -601,8 +641,10 @@ class TailwindClasses
      */
     protected static function utility(string $property, int|float|string $value, array $colors): string
     {
-        if (($color = array_search($property, self::HOVER, true)) !== false) {
-            return self::utility($color, $value, $colors);
+        foreach (self::STATES as $properties) {
+            if (($plain = array_search($property, $properties, true)) !== false) {
+                return self::utility($plain, $value, $colors);
+            }
         }
 
         if (($prefix = array_search($property, self::COLORS, true)) !== false) {

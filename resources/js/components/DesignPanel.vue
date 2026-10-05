@@ -525,14 +525,88 @@ function askAboutMotion(): void {
     asking.value = true;
 }
 
+// The states a part can look different in, and the parts that have them:
+// links and buttons answer the pointer and can be pressed, anything that
+// takes the keyboard can be focused, and controls can be turned off. A
+// part with a look for a state already shows that state too.
+type StateGroup = 'pointed' | 'focused' | 'pressed' | 'off';
+const stateGroups: {
+    key: StateGroup;
+    name: string;
+    test: string;
+    tags: string[];
+    colors: [VisualProperty, string][];
+    opacity?: VisualProperty;
+}[] = [
+    {
+        key: 'pointed',
+        name: 'When pointed at',
+        test: 'pointed-at',
+        tags: ['a', 'button'],
+        colors: [
+            ['hover_text_color', 'Text'],
+            ['hover_background', 'Fill'],
+        ],
+    },
+    {
+        key: 'focused',
+        name: 'When focused',
+        test: 'focused',
+        tags: ['a', 'button', 'input', 'textarea', 'select'],
+        colors: [
+            ['focus_text_color', 'Text'],
+            ['focus_background', 'Fill'],
+            ['focus_border_color', 'Border'],
+        ],
+    },
+    {
+        key: 'pressed',
+        name: 'When pressed',
+        test: 'pressed',
+        tags: ['a', 'button'],
+        colors: [
+            ['active_text_color', 'Text'],
+            ['active_background', 'Fill'],
+        ],
+    },
+    {
+        key: 'off',
+        name: 'When turned off',
+        test: 'turned-off',
+        tags: ['button', 'input', 'textarea', 'select'],
+        colors: [
+            ['disabled_text_color', 'Text'],
+            ['disabled_background', 'Fill'],
+        ],
+        opacity: 'disabled_opacity',
+    },
+];
+const stateProperties = (group: (typeof stateGroups)[number]) => [
+    ...group.colors.map(([property]) => property),
+    ...(group.opacity ? [group.opacity] : []),
+];
+const stateSet = (group: (typeof stateGroups)[number]): boolean =>
+    stateProperties(group).some(
+        (property) => props.state.valueOf(property) != null,
+    );
+const hasState = (key: StateGroup): boolean => {
+    const group = stateGroups.find((item) => item.key === key)!;
+
+    return (
+        group.tags.includes(props.state.selected?.tag ?? '') || stateSet(group)
+    );
+};
+
 // One group of choices is open at a time, so the panel asks one thing.
 // Another part opens on the group that matters most for it, unless the
 // group already open is offered for it too.
-type Group = LookSection | 'pointed' | 'motion';
+type Group = LookSection | StateGroup | 'motion';
 const opened = ref<Group | null>(null);
+const isState = (group: Group): group is StateGroup =>
+    stateGroups.some((item) => item.key === group);
 const offered = (group: Group): boolean =>
-    group === 'pointed'
-        ? answersPointer.value
+    isState(group)
+        ? hasState(group)
         : group === 'motion'
           ? movesHere.value
           : shows(group) &&
@@ -643,15 +717,6 @@ const moves = computed(() => {
 function set(property: VisualProperty, value: VisualValue | null): void {
     props.state.change(property, value);
 }
-
-// Links and buttons answer the pointer, so they show the colours for
-// then; any part that has such a colour already shows them too.
-const answersPointer = computed(
-    () =>
-        ['a', 'button'].includes(props.state.selected?.tag ?? '') ||
-        props.state.valueOf('hover_text_color') != null ||
-        props.state.valueOf('hover_background') != null,
-);
 
 // How the picture fills its box: as set, or else as the app draws it.
 const pictureFit = computed(
@@ -2194,38 +2259,74 @@ const recent = computed(() => {
                                 </Reveal>
                             </PanelSection>
 
-                            <!-- Colours while the pointer is on it. The
-                                 preview shows them while they are chosen;
-                                 after that, point at the part to see them. -->
+                            <!-- How it looks in a state of its own. The
+                                 preview shows each look while it is
+                                 chosen; after that, put the part in that
+                                 state to see it. -->
                             <PanelSection
-                                v-if="answersPointer"
-                                name="When pointed at"
-                                :open="opened === 'pointed'"
-                                :changed="
-                                    state.valueOf('hover_text_color') != null ||
-                                    state.valueOf('hover_background') != null
-                                "
-                                data-test="pointed-at"
-                                @toggle="toggle('pointed')"
+                                v-for="group in stateGroups.filter((item) =>
+                                    hasState(item.key),
+                                )"
+                                :key="group.key"
+                                :name="group.name"
+                                :open="opened === group.key"
+                                :changed="stateSet(group)"
+                                :data-test="group.test"
+                                @toggle="toggle(group.key)"
                             >
                                 <Swatches
-                                    label="Text"
-                                    name="Text colour when pointed at"
+                                    v-for="[property, label] in group.colors"
+                                    :key="property"
+                                    :label="label"
+                                    :name="definition(property).label"
                                     kind="color"
                                     :colors="drawnColors"
-                                    :value="state.valueOf('hover_text_color')"
-                                    :options="options('hover_text_color')"
-                                    @change="set('hover_text_color', $event)"
+                                    :value="state.valueOf(property)"
+                                    :options="options(property)"
+                                    @change="set(property, $event)"
                                 />
-                                <Swatches
-                                    label="Fill"
-                                    name="Fill when pointed at"
-                                    kind="color"
-                                    :colors="drawnColors"
-                                    :value="state.valueOf('hover_background')"
-                                    :options="options('hover_background')"
-                                    @change="set('hover_background', $event)"
-                                />
+                                <label
+                                    v-if="group.opacity"
+                                    class="flex items-center gap-3"
+                                >
+                                    <span
+                                        class="w-14 text-xs text-muted-foreground"
+                                        >Opacity</span
+                                    >
+                                    <input
+                                        :id="`property-${group.opacity}-slider`"
+                                        type="range"
+                                        min="0"
+                                        max="100"
+                                        :step="state.fine ? 1 : 5"
+                                        :value="
+                                            typeof state.valueOf(
+                                                group.opacity,
+                                            ) === 'number'
+                                                ? state.valueOf(group.opacity)
+                                                : 100
+                                        "
+                                        class="min-h-11 flex-1 accent-foreground sm:min-h-6"
+                                        @pointerdown="state.hold(true)"
+                                        @pointerup="state.hold(false)"
+                                        @input="
+                                            set(
+                                                group.opacity,
+                                                Number(
+                                                    (
+                                                        $event.target as HTMLInputElement
+                                                    ).value,
+                                                ),
+                                            )
+                                        "
+                                    />
+                                    <span
+                                        class="w-10 text-right text-xs tabular-nums"
+                                        >{{
+                                            state.valueOf(group.opacity) ?? 100
+                                        }}%</span
+                                    >
+                                </label>
                             </PanelSection>
 
                             <!-- How it moves. Play shows its entrance

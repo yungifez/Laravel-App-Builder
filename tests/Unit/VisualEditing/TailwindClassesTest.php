@@ -207,6 +207,41 @@ class TailwindClassesTest extends TestCase
         $this->assertSame('bg-primary', TailwindClasses::write('bg-primary hover:bg-accent', 'base', ['hover_background' => null], $colors));
     }
 
+    public function test_a_look_while_focused_pressed_or_disabled_is_read_and_written_with_its_variant()
+    {
+        $colors = ['primary', 'accent', 'ring'];
+        $button = 'bg-primary focus-visible:border-ring focus-visible:ring-ring/50 active:bg-accent disabled:pointer-events-none disabled:opacity-50';
+
+        $this->assertSame(['background' => 'primary', 'focus_border_color' => 'ring', 'active_background' => 'accent', 'disabled_opacity' => 50], TailwindClasses::read($button, $colors)['base']);
+        $this->assertSame(
+            'bg-primary focus-visible:border-accent focus-visible:ring-ring/50 active:bg-primary disabled:pointer-events-none disabled:opacity-40',
+            TailwindClasses::write($button, 'base', ['focus_border_color' => 'accent', 'active_background' => 'primary', 'disabled_opacity' => 40], $colors),
+        );
+
+        // A new focus colour shows for the keyboard only; one already on any
+        // focus stays on any focus.
+        $this->assertSame('bg-primary focus-visible:bg-accent', TailwindClasses::write('bg-primary', 'base', ['focus_background' => 'accent'], $colors));
+        $this->assertSame(['focus_text_color' => 'primary'], TailwindClasses::read('md:focus:text-primary', $colors)['md']);
+        $this->assertSame('md:focus:text-accent', TailwindClasses::write('md:focus:text-primary', 'md', ['focus_text_color' => 'accent'], $colors));
+        $this->assertSame('lg:disabled:text-accent', TailwindClasses::write('', 'lg', ['disabled_text_color' => 'accent'], $colors));
+        $this->assertSame('bg-primary', TailwindClasses::write('bg-primary disabled:opacity-50', 'base', ['disabled_opacity' => null], $colors));
+    }
+
+    public function test_a_look_for_two_states_at_once_or_a_state_we_do_not_edit_is_left_as_it_is()
+    {
+        $colors = ['primary', 'accent'];
+        $classes = 'disabled:hover:bg-primary aria-invalid:border-accent focus-visible:ring-[3px] active:bg-accent';
+
+        $this->assertSame(['active_background' => 'accent'], TailwindClasses::read($classes, $colors)['base']);
+        $this->assertSame(
+            'disabled:hover:bg-primary aria-invalid:border-accent focus-visible:ring-[3px] active:bg-primary',
+            TailwindClasses::write($classes, 'base', ['active_background' => 'primary'], $colors),
+        );
+
+        $this->expectException(InvalidArgumentException::class);
+        TailwindClasses::write('', 'base', ['active_background' => 'not-a-colour'], $colors);
+    }
+
     public function test_a_border_line_style_is_read_and_written_beside_its_width_and_colour()
     {
         $this->assertSame(['border' => 2, 'border_style' => 'dashed'], TailwindClasses::read('border-2 border-dashed')['base']);
