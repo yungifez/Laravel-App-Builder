@@ -294,12 +294,32 @@ class ChangeAcceptanceTest extends TestCase
         $followUp = $this->completedChange(self::ADD_SECOND_COMMENT, ['parent_id' => $parent->id, 'target_step' => 'permission', 'base_revision' => $parent->refresh()->commit_sha]);
         $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $followUp))->assertSessionHasNoErrors();
 
+        // The owner is told which change to undo first, not just that it failed.
         $this->actingAs($this->owner)
             ->post(route('feature-requests.reversion.store', $parent))
-            ->assertSessionHasErrors('change');
+            ->assertSessionHasErrors(['change' => 'A change you kept after this one builds on it, so it cannot be undone by itself. Undo “'.$followUp->prompt.'” first, then undo this one.']);
 
         $this->assertNull($parent->refresh()->reverted_at);
         $this->assertSame('', trim($this->repository->git($this->project, ['status', '--porcelain'])->output()));
+    }
+
+    public function test_a_blocked_undo_names_only_the_later_changes_that_touch_the_same_files_newest_first()
+    {
+        $parent = $this->completedChange(self::ADD_COMMENT);
+        $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $parent));
+        $this->travel(1)->minute();
+        $first = $this->completedChange(self::ADD_SECOND_COMMENT, ['prompt' => 'Add a second note', 'parent_id' => $parent->id, 'target_step' => 'permission', 'base_revision' => $parent->refresh()->commit_sha]);
+        $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $first))->assertSessionHasNoErrors();
+        $this->travel(1)->minute();
+        $unrelated = $this->completedChange("diff --git a/app/B.php b/app/B.php\nnew file mode 100644\n--- /dev/null\n+++ b/app/B.php\n@@ -0,0 +1 @@\n+<?php\n", ['prompt' => 'Add another page']);
+        $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $unrelated))->assertSessionHasNoErrors();
+        $this->travel(1)->minute();
+        $second = $this->completedChange("diff --git a/app/A.php b/app/A.php\n--- a/app/A.php\n+++ b/app/A.php\n@@ -1,3 +1,4 @@\n <?php\n // added\n // second\n+// third\n", ['prompt' => 'Add a third note']);
+        $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $second))->assertSessionHasNoErrors();
+
+        $this->actingAs($this->owner)
+            ->post(route('feature-requests.reversion.store', $parent))
+            ->assertSessionHasErrors(['change' => 'Changes you kept after this one build on it, so it cannot be undone by itself. Undo these first, newest first, then undo this one: “Add a third note”, “Add a second note”.']);
     }
 
     public function test_accepting_a_change_saves_what_it_did_to_the_notes_outside_the_repository()
