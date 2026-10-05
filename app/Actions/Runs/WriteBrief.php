@@ -164,8 +164,12 @@ class WriteBrief
             $sections[] = "## Tests already written\n\nThese tests were written from the plan before you started, one for each item above, and they are already in the app. Build the change so they pass. Do not change them: they are put back as written when you finish, and the change is only accepted when they pass. You need not write other tests for these items.\n\n".$this->list(array_map(fn (array $test) => "{$test['item']}. {$test['file']}: {$test['name']}", $plan->writtenTests));
         }
 
-        if (($scaffolded = $this->scaffolded($run)) !== []) {
-            $sections[] = "## Files already written from the data shape\n\nThese hold the new records the plan stores: the migration, model, factory and form request, and where the plan says who may do what, the policy and the tests that guard it. Names, rules and access come from one shape, so they agree. Build on them rather than writing them again, and change them where the request needs it. Each form request asks the model's policy: where no policy was written, write one. Where only the person who added a record may use it, its form request does not take that person: set it from the signed-in user.\n\n".$this->list($scaffolded);
+        if (($scaffolded = $this->scaffolded($run, 'files')) !== []) {
+            $sections[] = "## Files already written from the data shape\n\nThese hold the new records the plan stores: the migration, model, factory and form requests, the controller actions that add, change and remove one, and their routes; where the plan says who may do what, also the policy and the tests that guard it. Names, rules and access come from one shape, so they agree. Build on them rather than writing them again, and change them where the request needs it. Each form request and controller action asks the model's policy: where no policy was written, write one. Where only the person who added a record may use it, its form request does not take that person: the controller sets it from the signed-in user. The screens are yours to write: any action you add to a controller asks the policy before it shows or changes a record.\n\n".$this->list($scaffolded);
+        }
+
+        if (($left = $this->scaffolded($run, 'notes')) !== []) {
+            $sections[] = "## Left for you to write from the data shape\n\n".$this->list($left);
         }
 
         $sections[] = self::compatibility($run->featureRequest->project->keepsOldWorking());
@@ -195,14 +199,15 @@ class WriteBrief
 
     /**
      * List the files written from the plan's data shape before the agent
-     * started.
+     * started, or the notes on what was left to it.
      *
+     * @param  'files'|'notes'  $key
      * @return list<string>
      */
-    protected function scaffolded(Run $run): array
+    protected function scaffolded(Run $run, string $key): array
     {
         return array_values(array_unique($run->events()->where('type', 'scaffolded')->get()
-            ->flatMap(fn (RunEvent $event) => (array) ($event->data['files'] ?? []))
+            ->flatMap(fn (RunEvent $event) => (array) ($event->data[$key] ?? []))
             ->map(strval(...))
             ->all()));
     }

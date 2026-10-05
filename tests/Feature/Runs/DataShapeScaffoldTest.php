@@ -25,6 +25,24 @@ class DataShapeScaffoldTest extends TestCase
 {
     use PreparesRuns, RefreshDatabase;
 
+    /**
+     * The routes of a new app from the Laravel starter kits.
+     */
+    protected const ROUTES = <<<'PHP'
+        <?php
+
+        use Illuminate\Support\Facades\Route;
+
+        Route::inertia('/', 'Welcome')->name('home');
+
+        Route::middleware(['auth', 'verified'])->group(function () {
+            Route::inertia('dashboard', 'Dashboard')->name('dashboard');
+        });
+
+        require __DIR__.'/settings.php';
+
+        PHP;
+
     protected FakeCodingAgent $agent;
 
     /** @var list<string> */
@@ -43,6 +61,8 @@ class DataShapeScaffoldTest extends TestCase
             'builder.models.planner' => ['provider' => 'anthropic', 'model' => 'planner-model'],
             'builder.agents.order' => ['claude'],
             'ai.providers.anthropic.key' => 'anthropic-test-key',
+            // The shape is not asked about here; ShapeQuestionTest covers that.
+            'builder.construction.questions.before_building' => 0,
         ]);
 
         ChangeReviewer::fake([['approved' => true, 'summary' => 'Looks right.', 'findings' => [], 'changes' => [], 'verify' => []]]);
@@ -51,7 +71,7 @@ class DataShapeScaffoldTest extends TestCase
         $agent = $this->agent = new FakeCodingAgent('anthropic', function (Workspace $workspace) {
             $root = config('workspaces.drivers.local.root').'/'.$workspace->driver_id;
             $this->found = array_values(array_filter(
-                ['app/Models/Booking.php', 'app/Models/Team.php', 'app/Http/Requests/StoreBookingRequest.php', 'database/factories/BookingFactory.php'],
+                ['app/Models/Booking.php', 'app/Models/Team.php', 'app/Http/Requests/StoreBookingRequest.php', 'database/factories/BookingFactory.php', 'app/Http/Controllers/BookingController.php'],
                 fn (string $path) => File::exists("{$root}/{$path}") && ! str_contains(File::get("{$root}/{$path}"), 'class Team'),
             ));
             File::ensureDirectoryExists("{$root}/tests/Feature");
@@ -74,17 +94,22 @@ class DataShapeScaffoldTest extends TestCase
         $run = app(StartRun::class)->handle($featureRequest = $this->request())->refresh();
 
         $this->assertSame(RunStatus::Verifying, $run->status);
-        $this->assertSame(['app/Models/Booking.php', 'app/Http/Requests/StoreBookingRequest.php', 'database/factories/BookingFactory.php'], $this->found);
+        $this->assertSame(['app/Models/Booking.php', 'app/Http/Requests/StoreBookingRequest.php', 'database/factories/BookingFactory.php', 'app/Http/Controllers/BookingController.php'], $this->found);
 
-        $scaffolded = $run->events()->where('type', 'scaffolded')->sole()->data['files'];
-        $this->assertCount(4, $scaffolded);
-        $this->assertMatchesRegularExpression('#^database/migrations/\d{4}_\d{2}_\d{2}_\d{6}_create_bookings_table\.php$#', $scaffolded[0]);
+        $scaffolded = $run->events()->where('type', 'scaffolded')->sole()->data;
+        $this->assertCount(7, $scaffolded['files']);
+        $this->assertSame([], $scaffolded['notes']);
+        $this->assertMatchesRegularExpression('#^database/migrations/\d{4}_\d{2}_\d{2}_\d{6}_create_bookings_table\.php$#', $scaffolded['files'][0]);
+        $this->assertSame(['app/Http/Controllers/BookingController.php', 'app/Http/Requests/UpdateBookingRequest.php', 'routes/web.php'], array_slice($scaffolded['files'], 4));
 
         // The scaffold is part of the change like any file the agent wrote.
         $patch = (string) $featureRequest->refresh()->patch;
         $this->assertStringContainsString("+            \$table->foreignId('team_id')->constrained('teams')->cascadeOnDelete();", $patch);
         $this->assertStringContainsString("+            'status' => ['required', 'in:pending,confirmed'],", $patch);
         $this->assertStringContainsString('+++ b/tests/Feature/BookingTest.php', $patch);
+        // The routes go with the app's routes for signed-in people.
+        $this->assertStringContainsString("     Route::inertia('dashboard', 'Dashboard')->name('dashboard');\n+    Route::resource('bookings', BookingController::class)->only(['store', 'update', 'destroy']);\n });", $patch);
+        $this->assertStringContainsString("+use App\\Http\\Controllers\\BookingController;\n use Illuminate\\Support\\Facades\\Route;", $patch);
 
         $brief = $this->agent->tasks[0]->prompt;
         $this->assertStringContainsString('## Files already written from the data shape', $brief);
@@ -96,6 +121,25 @@ class DataShapeScaffoldTest extends TestCase
             'For each booking I keep: the team booked and whether it is settled (pending or confirmed).',
             app(DescribeFeatureRequest::class)->handle($featureRequest)['run']['plan']['assumptions'][0],
         );
+    }
+
+    public function test_a_route_the_app_already_has_is_not_written_over_and_the_agent_is_told()
+    {
+        FeaturePlanner::fake([$this->plan([
+            ['name' => 'Booking', 'fields' => [['name' => 'starts_at', 'type' => 'datetime', 'required' => true, 'choices' => [], 'of' => null]], 'access' => null],
+        ])]);
+
+        $routes = self::ROUTES."\nRoute::post('book', fn () => 'booked')->name('bookings.store');\n";
+        $run = app(StartRun::class)->handle($featureRequest = $this->request(['routes/web.php' => $routes]))->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(['app/Models/Booking.php', 'app/Http/Requests/StoreBookingRequest.php', 'database/factories/BookingFactory.php'], $this->found);
+
+        $scaffolded = $run->events()->where('type', 'scaffolded')->sole()->data;
+        $this->assertNotContains('routes/web.php', $scaffolded['files']);
+        $this->assertSame(['Booking: the app already has a route bookings.store in routes/web.php, so no controller or routes were written for it. Add its actions beside that route.'], $scaffolded['notes']);
+        $this->assertStringNotContainsString('+++ b/routes/web.php', (string) $featureRequest->refresh()->patch);
+        $this->assertStringContainsString("## Left for you to write from the data shape\n\n- Booking: the app already has a route bookings.store", $this->agent->tasks[0]->prompt);
     }
 
     public function test_a_record_the_app_already_has_is_left_to_the_agent()
@@ -140,9 +184,12 @@ class DataShapeScaffoldTest extends TestCase
         ];
     }
 
-    protected function request(): FeatureRequest
+    /**
+     * @param  array<string, string>  $files
+     */
+    protected function request(array $files = []): FeatureRequest
     {
-        $project = Project::factory()->create(['source_path' => $this->makeProjectSource()]);
+        $project = Project::factory()->create(['source_path' => $this->makeProjectSource($files + ['routes/web.php' => self::ROUTES])]);
 
         return FeatureRequest::factory()->for($project)->create(['prompt' => 'Let people book a team.']);
     }

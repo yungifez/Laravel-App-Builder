@@ -12,6 +12,11 @@ use Illuminate\Support\Str;
  * tests that guard it. Every name and rule comes from the one shape, so they cannot
  * drift apart. The coding agent builds on the result as ordinary code.
  *
+ * Each new record also gets the controller actions that change it and their
+ * routes (routes()), since a route that skips the policy is where the wrong
+ * person changes a record. The screens are left to the coding agent: they
+ * depend on how the app draws its own.
+ *
  * Only new records are written. A record whose model the app already has is
  * left to the coding agent, since changing it means reading what is there.
  *
@@ -48,7 +53,7 @@ class Scaffold
         foreach ($this->inOrder($records) as $record) {
             $table = FieldType::table($record['name']);
 
-            if (in_array("app/Models/{$record['name']}.php", $existing, true) || $this->hasMigration($existing, $table)) {
+            if (! $this->isNew($record, $existing)) {
                 continue;
             }
 
@@ -57,7 +62,7 @@ class Scaffold
             $files["database/migrations/{$stamp}_create_{$table}_table.php"] = $this->migration($record);
             $files["app/Models/{$record['name']}.php"] = $this->model($record, $attributes);
             $files["database/factories/{$record['name']}Factory.php"] = $this->factory($record);
-            $files["app/Http/Requests/Store{$record['name']}Request.php"] = $this->request($record);
+            $files["app/Http/Requests/Store{$record['name']}Request.php"] = $this->request($record, 'create');
 
             if (($record['access'] ?? null) !== null) {
                 $files["app/Policies/{$record['name']}Policy.php"] = $this->policy($record, $record['access']);
@@ -66,6 +71,86 @@ class Scaffold
         }
 
         return $files;
+    }
+
+    /**
+     * Get the controller, update request and routes that let people change
+     * each new record, and notes on what was left to the coding agent and
+     * why. A route the app already has is never written over: that record
+     * gets neither a controller nor routes.
+     *
+     * @param  list<Record>  $records
+     * @param  list<string>  $existing  The paths the app has now
+     * @param  array<string, string>  $routes  The app's route files, by path
+     * @return array{files: array<string, string>, notes: list<string>}
+     */
+    public function routes(array $records, array $existing, array $routes): array
+    {
+        $files = [];
+        $notes = [];
+        $resources = [];
+
+        foreach ($this->inOrder($records) as $record) {
+            if (! $this->isNew($record, $existing)) {
+                continue;
+            }
+
+            $name = $record['name'];
+            $uri = RouteFile::uri($name);
+            $controller = "app/Http/Controllers/{$name}Controller.php";
+            $request = "app/Http/Requests/Update{$name}Request.php";
+
+            if (($found = array_values(array_intersect([$controller, $request], $existing))) !== []) {
+                $notes[] = "{$name}: the app already has {$found[0]}, so no controller or routes were written for it.";
+
+                continue;
+            }
+
+            if (($taken = RouteFile::taken($routes, $uri)) !== null) {
+                $notes[] = "{$name}: the app already has a route {$taken}, so no controller or routes were written for it. Add its actions beside that route.";
+
+                continue;
+            }
+
+            $files[$controller] = $this->controller($record, in_array('app/Http/Controllers/Controller.php', $existing, true));
+            $files[$request] = $this->request($record, 'update');
+            $access = $record['access'] ?? null;
+            $resources[] = [
+                'name' => $name,
+                'uri' => $uri,
+                // Without access in the shape the policy is still to be
+                // written, so the routes sit with the signed-in ones.
+                'signed_in' => $access === null || array_diff([$access['create'], $access['update'], $access['delete']], ['everyone']) !== [],
+            ];
+        }
+
+        if ($resources !== []) {
+            $web = isset($routes['routes/web.php']) ? RouteFile::add($routes['routes/web.php'], $resources) : null;
+
+            if ($web !== null) {
+                $files['routes/web.php'] = $web;
+            } else {
+                $names = implode(', ', array_column($resources, 'name'));
+                $notes[] = isset($routes['routes/web.php'])
+                    ? "{$names}: routes/web.php has no plain group of routes for signed-in people (Route::middleware('auth')->group(function () { … })), so their routes were not added. Add them where the app keeps routes for signed-in people."
+                    : "{$names}: the app has no routes/web.php, so their routes were not added. Add them where the app keeps its routes.";
+            }
+        }
+
+        return ['files' => $files, 'notes' => $notes];
+    }
+
+    /**
+     * Determine if the record is new to the app: neither its model nor a
+     * migration that creates its table exists.
+     *
+     * @param  Record  $record
+     * @param  list<string>  $existing
+     */
+    protected function isNew(array $record, array $existing): bool
+    {
+        return ! in_array("app/Models/{$record['name']}.php", $existing, true)
+            && ! $this->hasMigration($existing, FieldType::table($record['name']));
     }
 
     /**
@@ -303,14 +388,17 @@ class Scaffold
     }
 
     /**
-     * Write the form request. It asks the model's policy, so nobody may
-     * create one until a policy says who may.
+     * Write the form request for adding or changing a record. It asks the
+     * model's policy, so nobody may do either until a policy says who may.
      *
      * @param  Record  $record
+     * @param  'create'|'update'  $action
      */
-    protected function request(array $record): string
+    protected function request(array $record, string $action): string
     {
         $name = $record['name'];
+        $class = ($action === 'create' ? 'Store' : 'Update')."{$name}Request";
+        $subject = $action === 'create' ? "{$name}::class" : '$this->route('.var_export(str_replace('-', '_', Str::singular(RouteFile::uri($name))), true).')';
 
         // The person who added a record is the signed-in user, never a
         // value the form sends: anyone could name someone else.
@@ -319,25 +407,28 @@ class Scaffold
             fn (array $field) => var_export(FieldType::attribute($field), true).' => ['.implode(', ', array_map(fn (string $rule) => var_export($rule, true), FieldType::from($field['type'])->rules($field))).'],',
             array_values(array_filter($record['fields'], fn (array $field) => FieldType::attribute($field) !== $creator)),
         );
+        $use = $this->imports([
+            ...($action === 'create' ? ["App\\Models\\{$name}"] : []),
+            'Illuminate\\Contracts\\Validation\\ValidationRule',
+            'Illuminate\\Foundation\\Http\\FormRequest',
+            'Illuminate\\Support\\Facades\\Gate',
+        ]);
 
         return <<<PHP
             <?php
 
             namespace App\Http\Requests;
 
-            use App\Models\\{$name};
-            use Illuminate\Contracts\Validation\ValidationRule;
-            use Illuminate\Foundation\Http\FormRequest;
-            use Illuminate\Support\Facades\Gate;
+            {$use}
 
-            class Store{$name}Request extends FormRequest
+            class {$class} extends FormRequest
             {
                 /**
                  * Determine if the user is authorized to make this request.
                  */
                 public function authorize(): bool
                 {
-                    return Gate::allows('create', {$name}::class);
+                    return Gate::allows('{$action}', {$subject});
                 }
 
                 /**
@@ -350,6 +441,77 @@ class Scaffold
                     return [
             {$this->lines($rules, 12)}
                     ];
+                }
+            }
+
+            PHP;
+    }
+
+    /**
+     * Write the controller actions that change a record. Each one asks the
+     * policy, through its form request or the gate, before it changes
+     * anything. Each sends the person back to where they were, which suits
+     * whatever the app draws its screens with.
+     *
+     * @param  Record  $record
+     */
+    protected function controller(array $record, bool $base): string
+    {
+        $name = $record['name'];
+        $variable = Str::camel($name);
+        $words = $this->words($name);
+        $creator = in_array('creator', $record['access'] ?? [], true) ? self::creator($record['fields']) : null;
+
+        // The person who added it is the signed-in user, never the form.
+        $values = $creator === null ? '$request->validated()' : "[...\$request->validated(), '{$creator}' => \$request->user()?->id]";
+        $use = $this->imports([
+            "App\\Http\\Requests\\Store{$name}Request",
+            "App\\Http\\Requests\\Update{$name}Request",
+            "App\\Models\\{$name}",
+            'Illuminate\\Http\\RedirectResponse',
+            'Illuminate\\Support\\Facades\\Gate',
+        ]);
+        $extends = $base ? ' extends Controller' : '';
+
+        return <<<PHP
+            <?php
+
+            namespace App\Http\Controllers;
+
+            {$use}
+
+            class {$name}Controller{$extends}
+            {
+                /**
+                 * Store a new {$words}.
+                 */
+                public function store(Store{$name}Request \$request): RedirectResponse
+                {
+                    {$name}::create({$values});
+
+                    return back();
+                }
+
+                /**
+                 * Update the {$words}.
+                 */
+                public function update(Update{$name}Request \$request, {$name} \${$variable}): RedirectResponse
+                {
+                    \${$variable}->update(\$request->validated());
+
+                    return back();
+                }
+
+                /**
+                 * Remove the {$words}.
+                 */
+                public function destroy({$name} \${$variable}): RedirectResponse
+                {
+                    Gate::authorize('delete', \${$variable});
+
+                    \${$variable}->delete();
+
+                    return back();
                 }
             }
 

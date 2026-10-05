@@ -140,6 +140,57 @@ class ScaffoldTest extends TestCase
         $this->assertArrayNotHasKey('app/Policies/CustomerPolicy.php', (new Scaffold)->files([self::customer()], [], new DateTimeImmutable));
     }
 
+    public function test_every_action_that_changes_a_new_record_asks_its_policy()
+    {
+        $access = ['view' => 'creator', 'create' => 'signed_in', 'update' => 'creator', 'delete' => 'creator'];
+        $record = ['name' => 'BookingSlot', 'fields' => [self::field('user', 'belongs_to', of: 'User'), self::field('starts_at', 'datetime')], 'access' => $access];
+        $routes = "<?php\n\nuse Illuminate\\Support\\Facades\\Route;\n\nRoute::middleware('auth')->group(function () {\n    Route::view('home', 'home');\n});\n";
+
+        $reached = (new Scaffold)->routes([$record], ['app/Http/Controllers/Controller.php'], ['routes/web.php' => $routes]);
+
+        $this->assertSame(['app/Http/Controllers/BookingSlotController.php', 'app/Http/Requests/UpdateBookingSlotRequest.php', 'routes/web.php'], array_keys($reached['files']));
+        $this->assertSame([], $reached['notes']);
+
+        foreach ($reached['files'] as $path => $contents) {
+            token_get_all($contents, TOKEN_PARSE);
+        }
+
+        $controller = $reached['files']['app/Http/Controllers/BookingSlotController.php'];
+        $this->assertStringContainsString('class BookingSlotController extends Controller', $controller);
+        $this->assertStringContainsString('public function store(StoreBookingSlotRequest $request): RedirectResponse', $controller);
+        $this->assertStringContainsString('public function update(UpdateBookingSlotRequest $request, BookingSlot $bookingSlot): RedirectResponse', $controller);
+        $this->assertStringContainsString("public function destroy(BookingSlot \$bookingSlot): RedirectResponse\n    {\n        Gate::authorize('delete', \$bookingSlot);", $controller);
+        // Who added it is the signed-in user, never the form.
+        $this->assertStringContainsString("BookingSlot::create([...\$request->validated(), 'user_id' => \$request->user()?->id]);", $controller);
+
+        $update = $reached['files']['app/Http/Requests/UpdateBookingSlotRequest.php'];
+        $this->assertStringContainsString("return Gate::allows('update', \$this->route('booking_slot'));", $update);
+        $this->assertStringNotContainsString('use App\\Models\\BookingSlot;', $update);
+        $this->assertStringNotContainsString("'user_id'", $update);
+
+        $this->assertStringContainsString("    Route::resource('booking-slots', BookingSlotController::class)->only(['store', 'update', 'destroy']);\n});", $reached['files']['routes/web.php']);
+    }
+
+    public function test_an_app_without_a_group_for_signed_in_people_gets_the_controller_and_a_note()
+    {
+        $reached = (new Scaffold)->routes([self::customer()], [], ['routes/web.php' => "<?php\n\nRoute::view('/', 'welcome');\n"]);
+
+        $this->assertSame(['app/Http/Controllers/CustomerController.php', 'app/Http/Requests/UpdateCustomerRequest.php'], array_keys($reached['files']));
+        $this->assertStringContainsString("class CustomerController\n{", $reached['files']['app/Http/Controllers/CustomerController.php']);
+        $this->assertStringContainsString('Customer::create($request->validated());', $reached['files']['app/Http/Controllers/CustomerController.php']);
+        $this->assertSame(["Customer: routes/web.php has no plain group of routes for signed-in people (Route::middleware('auth')->group(function () { … })), so their routes were not added. Add them where the app keeps routes for signed-in people."], $reached['notes']);
+    }
+
+    public function test_a_controller_or_route_the_app_has_is_never_written_over()
+    {
+        $scaffold = new Scaffold;
+        $routes = ['routes/web.php' => "<?php\n\nRoute::middleware('auth')->group(function () {\n    Route::resource('customers', ClientController::class);\n});\n"];
+
+        $this->assertSame(['files' => [], 'notes' => ['Customer: the app already has a route customers in routes/web.php, so no controller or routes were written for it. Add its actions beside that route.']], $scaffold->routes([self::customer()], [], $routes));
+        $this->assertSame(['files' => [], 'notes' => ['Customer: the app already has app/Http/Controllers/CustomerController.php, so no controller or routes were written for it.']], $scaffold->routes([self::customer()], ['app/Http/Controllers/CustomerController.php'], []));
+        $this->assertSame(['files' => [], 'notes' => []], $scaffold->routes([self::customer()], ['app/Models/Customer.php'], $routes), 'a record the app has');
+    }
+
     public function test_access_is_kept_only_when_it_can_be_checked()
     {
         $access = ['view' => 'creator', 'create' => 'signed_in', 'update' => 'creator', 'delete' => 'creator'];

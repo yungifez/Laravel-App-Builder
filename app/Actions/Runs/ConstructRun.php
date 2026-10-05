@@ -279,8 +279,8 @@ class ConstructRun
 
         // A worker outside our boxes writes in its own copy of the app, so
         // the files are written only where our agents work.
-        if ($run->driver !== 'worker' && ($scaffolded = $this->scaffoldDataShape->handle($workspace, $plan)) !== []) {
-            $this->recordEvent($run, $lease, 'scaffolded', ['files' => $scaffolded]);
+        if ($run->driver !== 'worker' && ($scaffolded = $this->scaffoldDataShape->handle($workspace, $plan)) !== ['files' => [], 'notes' => []]) {
+            $this->recordEvent($run, $lease, 'scaffolded', $scaffolded);
         }
 
         // The tests written from the plan are there before the coder

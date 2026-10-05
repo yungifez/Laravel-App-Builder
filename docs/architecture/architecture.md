@@ -1172,9 +1172,20 @@ shape first among the decisions made for them ("I decided … for you"):
 `ShapeWording` puts the planner's labels for each record and field into fixed
 sentences ("For each booking I keep: who booked, when it starts and a note if
 there is one. Only the person who added a booking can see, change or remove
-it."), so no code name reaches them. Not built yet: routes and controllers;
-asking about the shape before building when it is hard to change later;
-shapes for records the app already has.
+it."), so no code name reaches them. Each new record also gets the
+controller actions that add, change and remove one (`store`, `update`,
+`destroy`), with an update form request. Each action asks the policy through
+its form request or the gate. Who added a record is set from the signed-in
+user, and each action sends the person back. Its resource routes go into the
+app's `routes/web.php` in the file's own style (`RouteFile`, which reads the
+file as PHP tokens). A route only signed-in people may use goes in the first
+`auth` group that sets no prefix, name or domain. A route anyone may use goes
+at the end. Where the app has no such group, or already has a route or
+controller by that name, nothing of it is written over or added. The run's
+`scaffolded` event and the brief say what was left and why. The screens stay
+with the coding agent, since they depend on how the app draws its own. Not
+built yet: asking about the shape before building when it is hard to change
+later; shapes for records the app already has.
 
 **Rejected: sub-agents by file type.** "A small agent writes the request
 class" moves the risk to the hand-off. To brief it, the larger agent must
