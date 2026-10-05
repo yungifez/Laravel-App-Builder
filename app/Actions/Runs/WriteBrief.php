@@ -232,6 +232,8 @@ class WriteBrief
         ## Keep the app's information and links working
 
         Its stored data and links may matter to someone. When the shape of something changes, prefer a migration that carries the existing data to the new shape over keeping the old and new ways side by side. Keep an old way only when something outside the app depends on it, such as a link people saved or another service calling it, and say so in your summary.
+
+        Never edit a migration that already exists: it has already run on the live database, so a change to it would never reach the data. Add a new migration instead.
         TEXT;
     }
 

@@ -1010,6 +1010,7 @@ class AgentDriverTest extends TestCase
         app(StartRun::class)->handle($this->request());
 
         $this->assertSame(2, collect($this->coder->tasks)->filter(fn (AgentTask $task) => str_contains($task->prompt, 'prefer a migration that carries the existing data to the new shape')
+            && str_contains($task->prompt, 'Never edit a migration that already exists')
             && ! str_contains($task->prompt, '## No need to keep the old way working'))->count());
     }
 
