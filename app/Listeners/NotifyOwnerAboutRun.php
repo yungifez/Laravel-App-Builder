@@ -3,6 +3,7 @@
 namespace App\Listeners;
 
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Events\RunStatusChanged;
 use App\Features\OwnerWording;
 use App\Features\RepeatedFailure;
@@ -46,7 +47,7 @@ class NotifyOwnerAboutRun
             ? RunStatus::Failed
             : $event->to;
 
-        $owner->notify(new ChangeNeedsYou($featureRequest, $status, $status === RunStatus::Failed ? $this->reason($featureRequest, $event->run->error) : null));
+        $owner->notify(new ChangeNeedsYou($featureRequest, $status, $status === RunStatus::Failed ? $this->reason($featureRequest, $event->run->error, $event->run->stop_reason) : null));
     }
 
     /**
@@ -54,12 +55,12 @@ class NotifyOwnerAboutRun
      * happened and what to do. A note has little room, and a change that
      * did not work never changed the app, so that goes unsaid.
      */
-    protected function reason(FeatureRequest $featureRequest, ?string $error): string
+    protected function reason(FeatureRequest $featureRequest, ?string $error, ?StopReason $stop): string
     {
-        $reason = OwnerWording::failure($error) ?? OwnerWording::failure('unknown');
+        $reason = OwnerWording::failure($error, $stop) ?? ($stop ?? StopReason::ConstructionFailed)->said();
         $reason = str((string) $reason)->replace(' '.__('Nothing in your app changed.'), '')->toString();
 
-        return RepeatedFailure::of($featureRequest) ? RepeatedFailure::reason($reason) : $reason;
+        return $stop !== null && RepeatedFailure::of($featureRequest) ? RepeatedFailure::reason($reason, $stop) : $reason;
     }
 
     /**

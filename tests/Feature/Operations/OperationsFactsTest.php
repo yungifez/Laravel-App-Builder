@@ -9,6 +9,7 @@ use App\Actions\Runs\TransitionRun;
 use App\Actions\Workspaces\DestroyWorkspace;
 use App\Enums\ModelRole;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Enums\WorkspaceStatus;
 use App\Jobs\ExecuteRun;
 use App\Models\ExecutionConfig;
@@ -25,6 +26,7 @@ use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Events\Looping;
 use Illuminate\Queue\Events\WorkerStopping;
 use Illuminate\Support\Facades\Queue;
+use InvalidArgumentException;
 use Laravel\Ai\Responses\AgentResponse;
 use Laravel\Ai\Responses\Data\Meta;
 use Laravel\Ai\Responses\Data\TextUsage;
@@ -65,14 +67,16 @@ class OperationsFactsTest extends TestCase
         $run = Run::factory()->implementing()->create();
         $transition = app(TransitionRun::class);
 
-        $transition->handle($run, RunStatus::NeedsUserDecision, details: ['reason' => 'budget_exhausted']);
-        $this->assertSame('budget_exhausted', $run->fresh()?->stop_reason);
+        $transition->handle($run, RunStatus::NeedsUserDecision, details: ['reason' => StopReason::BudgetExhausted]);
+        $this->assertSame(StopReason::BudgetExhausted, $run->fresh()?->stop_reason);
 
         $transition->handle($run, RunStatus::Implementing);
         $this->assertNull($run->fresh()?->stop_reason);
 
+        // A stop always says why: there is no unknown one.
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('A run that moves to failed needs a StopReason as its reason.');
         $transition->handle($run, RunStatus::Failed);
-        $this->assertSame('unknown', $run->fresh()?->stop_reason);
     }
 
     public function test_a_worker_that_died_on_its_last_try_is_recorded_as_such()
@@ -83,7 +87,7 @@ class OperationsFactsTest extends TestCase
 
         $run->refresh();
         $this->assertSame(RunStatus::Failed, $run->status);
-        $this->assertSame('worker_stopped', $run->stop_reason);
+        $this->assertSame(StopReason::WorkerStopped, $run->stop_reason);
         $this->assertSame('worker_stopped', $run->events()->where('type', 'status')->reorder('sequence', 'desc')->value('data')['reason']);
     }
 
@@ -105,7 +109,7 @@ class OperationsFactsTest extends TestCase
         (new ExecuteRun($run))->failed(new RuntimeException('reviewer down'));
 
         $this->assertSame(RunStatus::Failed, $run->refresh()->status);
-        $this->assertSame('worker_stopped', $run->stop_reason);
+        $this->assertSame(StopReason::WorkerStopped, $run->stop_reason);
         // The owner hears that the change passed its checks, not only that
         // something stopped.
         $this->assertStringContainsString('passed its checks', (string) $run->error);

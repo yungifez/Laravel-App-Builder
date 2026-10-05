@@ -6,6 +6,7 @@ use App\Actions\Features\RequestVerification;
 use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Runs\FailRun;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Jobs\ExecuteRun;
 use App\Models\Run;
 use App\Runs\Drivers\WorkerDriver;
@@ -40,7 +41,7 @@ class ReconcileRuns extends Command
                 // the run stops, so it does not wait forever.
                 if ($run->driver === 'worker' && $run->status === RunStatus::Implementing && $run->workspace_id !== null && $workers->submission($run) === null) {
                     if ($this->connectionLapsed($run)) {
-                        $failRun->handle($run, __('Your own coding tool did not hand this change back before its connection ran out, so I stopped it. Your app is as it was, and you can hand the change to your tool again.'), cause: 'worker_lapsed');
+                        $failRun->handle($run, __('Your own coding tool did not hand this change back before its connection ran out, so I stopped it. Your app is as it was, and you can hand the change to your tool again.'), cause: StopReason::WorkerLapsed);
                         $lapsed++;
                     }
 

@@ -64,7 +64,7 @@ class WriteTestsFirst
                 throw ProvidersUnavailable::because($exception);
             } catch (RequestException $exception) {
                 $stop = ProvidersUnavailable::fromResponse($exception);
-                $run->recordEvent('ai_service_error', ['reason' => $stop->reason(), ...(array) $stop->serviceError()]);
+                $run->recordEvent('ai_service_error', ['reason' => $stop->reason()->value, ...(array) $stop->serviceError()]);
 
                 throw $stop;
             }
@@ -187,7 +187,7 @@ class WriteTestsFirst
                 throw ProvidersUnavailable::because($exception);
             } catch (RequestException $exception) {
                 $stop = ProvidersUnavailable::fromResponse($exception);
-                $run->recordEvent('ai_service_error', ['reason' => $stop->reason(), ...(array) $stop->serviceError()]);
+                $run->recordEvent('ai_service_error', ['reason' => $stop->reason()->value, ...(array) $stop->serviceError()]);
 
                 throw $stop;
             }

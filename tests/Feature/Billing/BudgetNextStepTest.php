@@ -7,6 +7,7 @@ use App\Actions\Runs\StartRun;
 use App\Ai\Agents\FeaturePlanner;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Enums\WorkspaceStatus;
 use App\Jobs\DecideFeatureRequest;
 use App\Jobs\ExecuteRun;
@@ -171,7 +172,7 @@ class BudgetNextStepTest extends TestCase
 
         $run = app(StartRun::class)->handle($change)->refresh();
 
-        $this->assertSame('out_of_credit', $run->stop_reason);
+        $this->assertSame(StopReason::OutOfCredit, $run->stop_reason);
         $this->assertStop($change, self::OUT_OF_CREDIT, canRetry: true);
         $this->assertSame(["Run {$run->id}"], array_column($this->attention('ai_out_of_credit')['records'] ?? [], 'label'));
     }
@@ -181,10 +182,10 @@ class BudgetNextStepTest extends TestCase
         $busy = ProvidersUnavailable::because(RateLimitedException::forProvider('anthropic', 429));
         $empty = ProvidersUnavailable::because(InsufficientCreditsException::forProvider('anthropic'));
 
-        $this->assertSame('providers_unavailable', $busy->reason());
+        $this->assertSame(StopReason::ProvidersUnavailable, $busy->reason());
         $this->assertStringEndsWith('Try again in a few minutes.', $busy->getMessage());
         // When credit comes back is not known, so no wait is promised.
-        $this->assertSame('out_of_credit', $empty->reason());
+        $this->assertSame(StopReason::OutOfCredit, $empty->reason());
         $this->assertStringEndsWith('Try again later.', $empty->getMessage());
         $this->assertTrue(ProvidersUnavailable::saysOutOfCredit('billing_error', null));
         $this->assertTrue(ProvidersUnavailable::saysOutOfCredit(null, 'Your credit balance is too low.'));

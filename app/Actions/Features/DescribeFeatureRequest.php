@@ -13,8 +13,10 @@ use App\Context\ProjectContext;
 use App\Context\ProjectNotes;
 use App\Enums\DeploymentStatus;
 use App\Enums\FeatureRequestStatus;
+use App\Enums\NextStep;
 use App\Enums\PreviewStatus;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Features\LiftedLimit;
 use App\Features\NewCode;
 use App\Features\OwnerWording;
@@ -76,8 +78,8 @@ class DescribeFeatureRequest
                 'status' => $featureRequest->status->value,
                 'summary' => $featureRequest->summary,
                 'error' => $this->sameWay($sameWay, LiftedLimit::reason($featureRequest, $featureRequest->status === FeatureRequestStatus::Failed
-                    ? OwnerWording::failure($featureRequest->error)
-                    : OwnerWording::message($featureRequest->error))),
+                    ? OwnerWording::failure($featureRequest->error, $featureRequest->latestRun?->stop_reason)
+                    : OwnerWording::message($featureRequest->error)), $featureRequest->latestRun?->stop_reason),
                 'target_step' => $parent === null || $featureRequest->target_step === null
                     ? null
                     : $parent->step($featureRequest->target_step),
@@ -112,11 +114,12 @@ class DescribeFeatureRequest
                 // place to go on from.
                 // It stopped without a change to keep: even when it cannot be
                 // tried again, the owner can still ask in other words.
-                'stopped' => $featureRequest->latestRun?->question === null && (
-                    in_array($featureRequest->status, [FeatureRequestStatus::Failed, FeatureRequestStatus::Cancelled], true)
-                    || ($featureRequest->status !== FeatureRequestStatus::Generated
-                        && in_array($featureRequest->latestRun?->status, [RunStatus::Failed, RunStatus::NeedsUserDecision, RunStatus::Cancelled], true))
-                ),
+                'stopped' => $featureRequest->latestRun?->question === null
+                    && $featureRequest->latestRun?->stop_reason?->nextStep() !== NextStep::Answer && (
+                        in_array($featureRequest->status, [FeatureRequestStatus::Failed, FeatureRequestStatus::Cancelled], true)
+                        || ($featureRequest->status !== FeatureRequestStatus::Generated
+                            && in_array($featureRequest->latestRun?->status, [RunStatus::Failed, RunStatus::NeedsUserDecision, RunStatus::Cancelled], true))
+                    ),
                 'tried_again' => FeatureRequest::query()->where('retry_of_id', $featureRequest->id)->latest('id')->value('uuid'),
                 // It stopped just as the try before it did, so trying again
                 // is no longer the first thing offered.
@@ -138,11 +141,11 @@ class DescribeFeatureRequest
             'preview' => $this->latestPreview($featureRequest),
             'followUps' => $featureRequest->followUps()->latest()->get()
                 ->map(fn (FeatureRequest $followUp) => [
-                    'id' => $followUp->uuid,
-                    'prompt' => $followUp->prompt,
-                    'status' => $followUp->status->value,
-                    'target_step' => $followUp->target_step,
-                ]),
+                        'id' => $followUp->uuid,
+                        'prompt' => $followUp->prompt,
+                        'status' => $followUp->status->value,
+                        'target_step' => $followUp->target_step,
+                    ]),
         ];
     }
 
@@ -313,9 +316,9 @@ class DescribeFeatureRequest
      * Say a stop that repeats the try before it as such, in place of the
      * advice to try again.
      */
-    protected function sameWay(bool $sameWay, ?string $reason): ?string
+    protected function sameWay(bool $sameWay, ?string $reason, ?StopReason $stop): ?string
     {
-        return $sameWay && $reason !== null ? RepeatedFailure::reason($reason) : $reason;
+        return $sameWay && $reason !== null && $stop !== null ? RepeatedFailure::reason($reason, $stop) : $reason;
     }
 
     /**
@@ -332,16 +335,18 @@ class DescribeFeatureRequest
             'status' => $run->status->value,
             // A stop the owner did not ask for is ours, and says so.
             'error' => $this->sameWay($sameWay, LiftedLimit::reason($featureRequest, in_array($run->status, [RunStatus::Failed, RunStatus::NeedsUserDecision], true)
-                ? OwnerWording::failure($run->error)
-                : OwnerWording::message($run->error))),
+                ? OwnerWording::failure($run->error, $run->stop_reason)
+                : OwnerWording::message($run->error)), $run->stop_reason),
             'question' => $run->status === RunStatus::NeedsUserDecision ? $run->question : null,
+            // What the owner can do about the stop; the page offers only that.
+            'next_step' => in_array($run->status, [RunStatus::Failed, RunStatus::NeedsUserDecision], true) ? $run->stop_reason?->nextStep()->value : null,
             // Stopped because the month's AI use ran out, and it still has:
             // the owner gets a way to their plan, not just the words.
-            'plan_ran_out' => $run->stop_reason === 'usage_limit' && app(MeasureUsage::class)->handle($featureRequest->project->owner)['reached'],
+            'plan_ran_out' => $run->stop_reason === StopReason::UsageLimit && app(MeasureUsage::class)->handle($featureRequest->project->owner)['reached'],
             // Stopped because it found nothing to change: what it checked
             // and why, in its own words, so a fix for something that is
             // not broken does not read as a failure.
-            'found_nothing' => $run->status === RunStatus::NeedsUserDecision && str_starts_with((string) $run->error, 'The run finished without changing')
+            'found_nothing' => $run->status === RunStatus::NeedsUserDecision && $run->stop_reason === StopReason::NoChanges
                 ? ($run->events()->where('type', 'build_finished')->latest('sequence')->first()?->data['account'] ?? null)
                 : null,
             'answers' => $run->answers ?? [],

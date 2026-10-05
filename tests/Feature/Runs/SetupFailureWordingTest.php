@@ -5,6 +5,7 @@ namespace Tests\Feature\Runs;
 use App\Actions\Runs\TransitionRun;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Runs\SetupFailure;
@@ -22,7 +23,7 @@ class SetupFailureWordingTest extends TestCase
         $request = FeatureRequest::factory()->create(['status' => FeatureRequestStatus::Failed, 'error' => $error]);
         $run = Run::factory()->implementing()->for($request)->create();
 
-        app(TransitionRun::class)->handle($run, RunStatus::Failed, attributes: ['error' => $error], details: ['reason' => 'construction_failed']);
+        app(TransitionRun::class)->handle($run, RunStatus::Failed, attributes: ['error' => $error], details: ['reason' => StopReason::ConstructionFailed]);
 
         $said = "Something in your app's code went wrong while building your app's pages, before I changed anything. Nothing in your app changed. Ask one of our developers to look at it.";
 

@@ -4,6 +4,7 @@ namespace Tests\Feature\Runs;
 
 use App\Actions\Runs\TransitionRun;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Features\SpendPause;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -29,7 +30,7 @@ class OwnerNotificationTest extends TestCase
 
         app(TransitionRun::class)->handle($run, RunStatus::NeedsUserDecision, attributes: [
             'question' => ['text' => 'Who can invite?', 'why' => '', 'options' => ['Owners', 'Everyone'], 'recommended' => null],
-        ]);
+        ], details: ['reason' => StopReason::Question]);
         $notification = $owner->notifications()->sole();
         $this->assertSame('question', $notification->data['kind']);
         $this->assertSame('I have a question about your change', $notification->data['title']);
@@ -37,7 +38,7 @@ class OwnerNotificationTest extends TestCase
 
         // A newer note about the same change replaces the unread one.
         app(TransitionRun::class)->handle($run, RunStatus::Implementing);
-        app(TransitionRun::class)->handle($run, RunStatus::Failed);
+        app(TransitionRun::class)->handle($run, RunStatus::Failed, details: ['reason' => StopReason::ConstructionFailed]);
         $this->assertSame('failed', $owner->notifications()->sole()->data['kind']);
     }
 
@@ -47,7 +48,7 @@ class OwnerNotificationTest extends TestCase
 
         app(TransitionRun::class)->handle($run, RunStatus::NeedsUserDecision, attributes: [
             'error' => 'The run finished without changing the project.',
-        ]);
+        ], details: ['reason' => StopReason::NoChanges]);
 
         $notification = $run->featureRequest->user->notifications()->sole();
         $this->assertSame('failed', $notification->data['kind']);
@@ -62,7 +63,7 @@ class OwnerNotificationTest extends TestCase
 
         app(TransitionRun::class)->handle($run, RunStatus::Failed, attributes: [
             'error' => "No AI provider could take the request.\nopenai: 429",
-        ]);
+        ], details: ['reason' => StopReason::ProvidersUnavailable]);
 
         $this->assertSame('This is our fault: the AI service we use is busy right now. Try again in a few minutes.', $owner->notifications()->sole()->data['reason']);
 
@@ -71,7 +72,7 @@ class OwnerNotificationTest extends TestCase
 
         // A failure with nothing kept still says whose fault it is.
         $other = Run::factory()->implementing()->create();
-        app(TransitionRun::class)->handle($other, RunStatus::Failed);
+        app(TransitionRun::class)->handle($other, RunStatus::Failed, details: ['reason' => StopReason::ConstructionFailed]);
 
         $this->assertSame('This is our fault: something went wrong on our side while I worked on this. Try again.', $other->featureRequest->user->notifications()->sole()->data['reason']);
     }
@@ -84,7 +85,7 @@ class OwnerNotificationTest extends TestCase
         $owner = $run->featureRequest->user;
         $paused = 'This is our fault: we paused new work for today to keep our costs in check. Try again tomorrow.';
 
-        app(TransitionRun::class)->handle($run, RunStatus::Failed, attributes: ['error' => $paused], details: ['reason' => 'spend_limit']);
+        app(TransitionRun::class)->handle($run, RunStatus::Failed, attributes: ['error' => $paused], details: ['reason' => StopReason::SpendLimit]);
 
         $this->actingAs($owner)->get(route('projects.index'))->assertInertia(fn (Assert $page) => $page
             ->where('notifications.items.0.reason', SpendPause::message()));
@@ -99,7 +100,7 @@ class OwnerNotificationTest extends TestCase
     {
         $run = Run::factory()->implementing()->create();
         $owner = $run->featureRequest->user;
-        app(TransitionRun::class)->handle($run, RunStatus::Failed);
+        app(TransitionRun::class)->handle($run, RunStatus::Failed, details: ['reason' => StopReason::ConstructionFailed]);
         $notification = $owner->notifications()->sole();
 
         $this->actingAs(User::factory()->create())
@@ -128,10 +129,10 @@ class OwnerNotificationTest extends TestCase
     {
         $first = Run::factory()->implementing()->create();
         $owner = $first->featureRequest->user;
-        app(TransitionRun::class)->handle($first, RunStatus::Failed);
+        app(TransitionRun::class)->handle($first, RunStatus::Failed, details: ['reason' => StopReason::ConstructionFailed]);
 
         $again = FeatureRequest::factory()->for($first->featureRequest->project)->for($owner)->create(['retry_of_id' => $first->feature_request_id]);
-        app(TransitionRun::class)->handle(Run::factory()->implementing()->for($again)->create(), RunStatus::Failed);
+        app(TransitionRun::class)->handle(Run::factory()->implementing()->for($again)->create(), RunStatus::Failed, details: ['reason' => StopReason::ConstructionFailed]);
 
         $this->assertSame($again->id, $owner->notifications()->sole()->data['feature_request_id']);
     }
@@ -141,23 +142,23 @@ class OwnerNotificationTest extends TestCase
         $first = Run::factory()->implementing()->create();
         $owner = $first->featureRequest->user;
         $project = $first->featureRequest->project;
-        app(TransitionRun::class)->handle($first, RunStatus::Failed);
+        app(TransitionRun::class)->handle($first, RunStatus::Failed, details: ['reason' => StopReason::ConstructionFailed]);
         $owner->unreadNotifications->markAsRead();
 
         // Two tries of the first one, then a try of the second.
         $second = FeatureRequest::factory()->for($project)->for($owner)->create(['retry_of_id' => $first->feature_request_id]);
-        app(TransitionRun::class)->handle(Run::factory()->implementing()->for($second)->create(), RunStatus::Failed);
+        app(TransitionRun::class)->handle(Run::factory()->implementing()->for($second)->create(), RunStatus::Failed, details: ['reason' => StopReason::ConstructionFailed]);
         $owner->unreadNotifications->markAsRead();
         $beside = FeatureRequest::factory()->for($project)->for($owner)->create(['retry_of_id' => $first->feature_request_id]);
-        app(TransitionRun::class)->handle(Run::factory()->implementing()->for($beside)->create(), RunStatus::Failed);
+        app(TransitionRun::class)->handle(Run::factory()->implementing()->for($beside)->create(), RunStatus::Failed, details: ['reason' => StopReason::ConstructionFailed]);
         $last = FeatureRequest::factory()->for($project)->for($owner)->create(['retry_of_id' => $second->id]);
-        app(TransitionRun::class)->handle(Run::factory()->implementing()->for($last)->create(), RunStatus::Failed);
+        app(TransitionRun::class)->handle(Run::factory()->implementing()->for($last)->create(), RunStatus::Failed, details: ['reason' => StopReason::ConstructionFailed]);
 
         $this->assertSame($last->id, $owner->notifications()->sole()->data['feature_request_id']);
 
         // Another change keeps its own note.
         $other = Run::factory()->implementing()->for(FeatureRequest::factory()->for($project)->for($owner))->create();
-        app(TransitionRun::class)->handle($other, RunStatus::Failed);
+        app(TransitionRun::class)->handle($other, RunStatus::Failed, details: ['reason' => StopReason::ConstructionFailed]);
         $this->assertSame(2, $owner->notifications()->count());
     }
 
@@ -166,7 +167,7 @@ class OwnerNotificationTest extends TestCase
         $owner = User::factory()->create();
         $project = Project::factory()->for($owner, 'owner')->create(['name' => 'Studio Classes']);
         $run = Run::factory()->implementing()->for(FeatureRequest::factory()->for($project)->for($owner))->create();
-        app(TransitionRun::class)->handle($run, RunStatus::Failed);
+        app(TransitionRun::class)->handle($run, RunStatus::Failed, details: ['reason' => StopReason::ConstructionFailed]);
 
         $this->actingAs($owner)
             ->get(route('projects.index'))
@@ -180,8 +181,8 @@ class OwnerNotificationTest extends TestCase
         $first = Run::factory()->implementing()->create();
         $owner = $first->featureRequest->user;
         $second = Run::factory()->implementing()->for(FeatureRequest::factory()->for($first->featureRequest->project))->create();
-        app(TransitionRun::class)->handle($first, RunStatus::Failed);
-        app(TransitionRun::class)->handle($second, RunStatus::Failed);
+        app(TransitionRun::class)->handle($first, RunStatus::Failed, details: ['reason' => StopReason::ConstructionFailed]);
+        app(TransitionRun::class)->handle($second, RunStatus::Failed, details: ['reason' => StopReason::ConstructionFailed]);
 
         $this->actingAs($owner)->get(route('projects.show', ['project' => $first->featureRequest->project, 'change' => $first->featureRequest->uuid]));
         $this->assertSame(1, $owner->unreadNotifications()->count());
@@ -196,12 +197,12 @@ class OwnerNotificationTest extends TestCase
         $run = Run::factory()->implementing()->create();
         $owner = $run->featureRequest->user;
 
-        app(TransitionRun::class)->handle($run, RunStatus::Failed);
+        app(TransitionRun::class)->handle($run, RunStatus::Failed, details: ['reason' => StopReason::ConstructionFailed]);
         Notification::assertSentTo($owner, ChangeNeedsYou::class, fn ($notification, array $channels) => $channels === ['database']);
 
         config(['builder.notifications.email' => true]);
         $run = Run::factory()->implementing()->for($run->featureRequest)->create();
-        app(TransitionRun::class)->handle($run, RunStatus::Failed);
+        app(TransitionRun::class)->handle($run, RunStatus::Failed, details: ['reason' => StopReason::ConstructionFailed]);
         Notification::assertSentTo($owner, ChangeNeedsYou::class, fn ($notification, array $channels) => $channels === ['database', 'mail']);
     }
 }

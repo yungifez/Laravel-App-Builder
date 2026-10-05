@@ -6,7 +6,9 @@ use App\Actions\Billing\MeasureUsage;
 use App\Actions\Operations\SummarizeSpend;
 use App\Enums\ExperimentStatus;
 use App\Enums\FeatureRequestStatus;
+use App\Enums\NextStep;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Models\FeatureRequest;
 use App\Models\User;
 use Illuminate\Validation\ValidationException;
@@ -30,6 +32,12 @@ class RetryFeatureRequest
             return false;
         }
 
+        // Nor has one that stopped to ask about something: the owner's
+        // next step is to answer, so trying again is not offered.
+        if ($featureRequest->latestRun?->stop_reason?->nextStep() === NextStep::Answer) {
+            return false;
+        }
+
         // It was tried again already: that try stands for it now.
         if (FeatureRequest::query()->where('retry_of_id', $featureRequest->id)->exists()) {
             return false;
@@ -37,12 +45,12 @@ class RetryFeatureRequest
 
         // The owner was told to try again tomorrow: today it would only
         // stop the same way.
-        if ($featureRequest->latestRun?->stop_reason === 'spend_limit' && app(SummarizeSpend::class)->dailyLimitReached()) {
+        if ($featureRequest->latestRun?->stop_reason === StopReason::SpendLimit && app(SummarizeSpend::class)->dailyLimitReached()) {
             return false;
         }
 
         // Neither while the owner's plan has no use left this month.
-        if ($featureRequest->latestRun?->stop_reason === 'usage_limit' && app(MeasureUsage::class)->handle($featureRequest->project->owner)['reached']) {
+        if ($featureRequest->latestRun?->stop_reason === StopReason::UsageLimit && app(MeasureUsage::class)->handle($featureRequest->project->owner)['reached']) {
             return false;
         }
 

@@ -3,6 +3,7 @@
 namespace App\Actions\Runs;
 
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Events\RunStatusChanged;
 use App\Models\Run;
 use App\Runs\Exceptions\InvalidRunTransition;
@@ -10,6 +11,7 @@ use App\Runs\Exceptions\LeaseLost;
 use App\Runs\Exceptions\RunCancelled;
 use App\Runs\RunLease;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 class TransitionRun
 {
@@ -21,11 +23,12 @@ class TransitionRun
      * left is to cancelled.
      *
      * @param  array<string, mixed>  $attributes  Other columns to update with the state
-     * @param  array<string, mixed>  $details  Extra data for the event
+     * @param  array<string, mixed>  $details  Extra data for the event; a move to failed or needs_user_decision gives its StopReason as "reason"
      *
      * @throws LeaseLost
      * @throws RunCancelled
      * @throws InvalidRunTransition
+     * @throws InvalidArgumentException when a run stops without a StopReason
      */
     public function handle(Run $run, RunStatus $to, ?RunLease $lease = null, array $attributes = [], array $details = []): Run
     {
@@ -47,11 +50,16 @@ class TransitionRun
             $locked->status = $to;
 
             // Why the run failed or waits on its owner, for grouping and
-            // filtering. It clears when the run moves on, so it never names
-            // a stop the run has since left behind.
-            $locked->stop_reason = in_array($to, [RunStatus::Failed, RunStatus::NeedsUserDecision], true)
-                ? (is_string($details['reason'] ?? null) ? $details['reason'] : 'unknown')
-                : ($to === RunStatus::Cancelled ? 'cancelled' : null);
+            // filtering and for what the owner is told. It clears when the
+            // run moves on, so it never names a stop the run has since left
+            // behind. A stop always says why: there is no unknown one.
+            $locked->stop_reason = match (true) {
+                in_array($to, [RunStatus::Failed, RunStatus::NeedsUserDecision], true) => ($details['reason'] ?? null) instanceof StopReason
+                    ? $details['reason']
+                    : throw new InvalidArgumentException("A run that moves to {$to->value} needs a StopReason as its reason."),
+                $to === RunStatus::Cancelled => StopReason::Cancelled,
+                default => null,
+            };
 
             if ($from === RunStatus::Queued) {
                 $locked->started_at ??= now();

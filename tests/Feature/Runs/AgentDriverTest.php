@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Runs;
 
-use App\Actions\Features\AnswerFindingProposals;
 use App\Actions\Features\DescribeProof;
 use App\Actions\Features\RequestFollowUp;
 use App\Actions\Runs\CompleteRunVerification;
@@ -16,6 +15,7 @@ use App\Enums\AgentOutcomeStatus;
 use App\Enums\DeploymentStatus;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Enums\VerificationStatus;
 use App\Enums\WorkspaceStatus;
 use App\Features\MigrationChecks;
@@ -986,7 +986,7 @@ class AgentDriverTest extends TestCase
         $this->passVerification($run, evidence: $evidence);
 
         $run->refresh();
-        $this->assertSame([RunStatus::NeedsUserDecision, AnswerFindingProposals::STOP], [$run->status, $run->stop_reason]);
+        $this->assertSame([RunStatus::NeedsUserDecision, StopReason::FindingProposed], [$run->status, $run->stop_reason]);
         $line = collect(app(DescribeProof::class)->handle($run->featureRequest))->first(fn (array $line) => isset($line['decision']));
         $this->assertSame('The owner asked for every refused visit to be logged, and this is that log.', $line['decision']['proposal']);
 
@@ -1017,7 +1017,7 @@ class AgentDriverTest extends TestCase
         $run = app(StartRun::class)->handle($this->request())->refresh();
         $this->passVerification($run, evidence: $evidence);
         $this->passVerification($run, evidence: $evidence);
-        $this->assertSame(AnswerFindingProposals::STOP, $run->refresh()->stop_reason);
+        $this->assertSame(StopReason::FindingProposed, $run->refresh()->stop_reason);
 
         $this->actingAs($run->featureRequest->project->owner)
             ->put(route('feature-requests.finding-proposals.update', [$run->featureRequest, 'changed_while_authorizing']), ['agreed' => false])
@@ -1503,7 +1503,7 @@ class AgentDriverTest extends TestCase
 
         $run->refresh();
         $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
-        $this->assertSame('written_test_still_fails', $run->stop_reason);
+        $this->assertSame(StopReason::WrittenTestStillFails, $run->stop_reason);
         $this->assertSame('A test written before the work began still fails the same way after it was corrected once: "a team keeps its description". The change may be right and the test wrong. Ask me to try again, or say more about what you asked for.', $run->error);
         $this->assertCount(2, $prompts, 'One writing and one correction.');
         $this->assertSame(3, $run->repairs);

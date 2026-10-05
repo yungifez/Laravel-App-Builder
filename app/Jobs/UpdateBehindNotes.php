@@ -92,7 +92,7 @@ class UpdateBehindNotes implements ShouldQueue
             return;
         } catch (RequestException $exception) {
             $stop = ProvidersUnavailable::fromResponse($exception);
-            $this->run->recordEvent('ai_service_error', ['reason' => $stop->reason(), ...(array) $stop->serviceError()]);
+            $this->run->recordEvent('ai_service_error', ['reason' => $stop->reason()->value, ...(array) $stop->serviceError()]);
             $this->stop($stop);
 
             return;
@@ -147,7 +147,7 @@ class UpdateBehindNotes implements ShouldQueue
         }
 
         $this->run->recordEvent('notes_update_failed', [
-            'reason' => $exception instanceof ProvidersUnavailable ? $exception->reason() : ($ours ? 'ours' : 'owner'),
+            'reason' => $exception instanceof ProvidersUnavailable ? $exception->reason()->value : ($ours ? 'ours' : 'owner'),
             'message' => match (true) {
                 $exception instanceof ProvidersUnavailable, ! $ours => $exception->getMessage(),
                 default => __('This is our fault: I could not update these notes. They are as they were. Try again later.'),

@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools;
 
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Models\Run;
 use App\Runs\Drivers\WorkerDriver;
 use App\Runs\WorkerTask;
@@ -121,7 +122,7 @@ class CheckStatus extends Tool
     {
         $reason = $run->error ?? __('No reason was given.');
 
-        return in_array($run->stop_reason, ['worker_stopped', 'construction_failed'], true)
+        return in_array($run->stop_reason, [StopReason::WorkerStopped, StopReason::ConstructionFailed], true)
             ? __("The change stopped on our side, not because of your work. The owner sees: \":reason\"\n\nThere is nothing more to do on it. The owner can try it again.", ['reason' => $reason])
             : __("The change stopped. The owner sees: \":reason\"\n\nThere is nothing more to do on it.", ['reason' => $reason]);
     }

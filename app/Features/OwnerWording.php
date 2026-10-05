@@ -3,6 +3,7 @@
 namespace App\Features;
 
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Models\RunEvent;
 
 /**
@@ -20,19 +21,6 @@ class OwnerWording
     protected const INTERNAL = '/\b(planner|coder|reviewer|models?|providers?|drivers?|workers?|lease|fencing|tokens?|adapters?|agents?|prompts?|budgets?|operations?|tools?|workspaces?|platform|builder|control plane|acceptance|reference solutions?|patch(es)?|containers?|docker|runner)\b/i';
 
     /**
-     * Why a change stopped, by the start of the message the run kept.
-     */
-    protected const STOPS = [
-        '/^Verification did not pass/' => 'This is our fault: your app\'s checks still failed after I tried to fix them, so I stopped. Nothing in your app changed. Try again, or ask in other words.',
-        '/^The review found problems/' => 'This is our fault: when I looked over the change, I found problems I could not fix, so I stopped. Nothing in your app changed. Try again, or ask in other words.',
-        '/^The run finished without changing/' => 'This is our fault: I finished without changing anything in your app. Try again, or ask in other words.',
-        '/^The checks could not run/' => 'This is our fault: your app\'s checks could not run because of a problem on our side. Nothing in your app changed. Try again.',
-        '/^(The run used all|The agent used up|This change used all the AI work)/' => 'This is our fault: this change needed more work than I can do in one go, so I stopped. Nothing in your app changed. Try again, or ask for a smaller part first.',
-        '/^No AI provider could take.*(credit balance|quota|billing)/is' => 'This is our fault: our account with the AI service we use cannot take more work right now. Nothing in your app changed. Try again later.',
-        '/^No AI provider could take/' => 'This is our fault: the AI service we use is busy right now. Nothing in your app changed. Try again in a few minutes.',
-    ];
-
-    /**
      * Keep a message the owner can read, or replace one that shows how
      * changes are made.
      */
@@ -48,11 +36,12 @@ class OwnerWording
     }
 
     /**
-     * Say why a change failed. The owner's own request never fails a change
-     * (an unclear one is asked about), so a failure is ours and says so.
-     * What went wrong in detail stays with the run for operators.
+     * Say why a change stopped. The owner's own request never fails a change
+     * (an unclear one is asked about), so a stop says whose fault it is and
+     * what to do next. What went wrong in detail stays with the run for
+     * operators.
      */
-    public static function failure(?string $message): ?string
+    public static function failure(?string $message, ?StopReason $stop): ?string
     {
         if ($message === null || trim($message) === '') {
             return null;
@@ -68,15 +57,9 @@ class OwnerWording
             }
         }
 
-        // A known stop says what happened, so the owner knows whether to
+        // Why it stopped says what happened, so the owner knows whether to
         // try again now, later, or in other words.
-        foreach (self::STOPS as $pattern => $said) {
-            if (preg_match($pattern, $message) === 1) {
-                return __($said);
-            }
-        }
-
-        return __('This is our fault: something went wrong on our side while I worked on this. Nothing in your app changed. Try again.');
+        return $stop?->said() ?? StopReason::ConstructionFailed->said();
     }
 
     /**
@@ -141,16 +124,16 @@ class OwnerWording
         }
 
         if ($to === RunStatus::NeedsUserDecision) {
-            return match ($data['reason'] ?? null) {
-                'question' => __('Asked you a question'),
-                'finding_proposed' => __('Asked you whether to keep something the checks found'),
-                'verification_interrupted' => __('The checks could not run because of a problem on our side. This is our fault.'),
+            return match (StopReason::tryFrom((string) ($data['reason'] ?? ''))) {
+                StopReason::Question => __('Asked you a question'),
+                StopReason::FindingProposed => __('Asked you whether to keep something the checks found'),
+                StopReason::VerificationInterrupted => __('The checks could not run because of a problem on our side. This is our fault.'),
                 // Nothing to decide: the owner only tries again.
-                'providers_unavailable' => __('Stopped because the AI service we use could not take the work. This is our fault.'),
-                'out_of_credit' => __('Stopped because our account with the AI service is out of credit. This is our fault.'),
-                'request_refused' => __('Stopped because the AI service could not accept how we asked it. This is our fault.'),
-                'written_tests_changed' => __('Stopped because the tool making the change changed the tests written to check it'),
-                'written_test_still_fails' => __('Stopped because a test written before the work began still fails after it was corrected once'),
+                StopReason::ProvidersUnavailable => __('Stopped because the AI service we use could not take the work. This is our fault.'),
+                StopReason::OutOfCredit => __('Stopped because our account with the AI service is out of credit. This is our fault.'),
+                StopReason::RequestRefused => __('Stopped because the AI service could not accept how we asked it. This is our fault.'),
+                StopReason::WrittenTestsChanged => __('Stopped because the tool making the change changed the tests written to check it'),
+                StopReason::WrittenTestStillFails => __('Stopped because a test written before the work began still fails after it was corrected once'),
                 default => __('Stopped to ask what you want to do'),
             };
         }

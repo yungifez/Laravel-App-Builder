@@ -8,6 +8,7 @@ use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Context\ContextPack;
 use App\Enums\AgentOutcomeStatus;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Models\Run;
 use App\Models\RunEvent;
 use App\Models\Workspace;
@@ -116,7 +117,7 @@ class RunCodingAgent
 
         throw new ProvidersUnavailable(__('No AI provider could take the task right now (:reason). Try again later.', [
             'reason' => $previous->error ?? $previous->errorKind ?? 'unknown',
-        ]), ProvidersUnavailable::saysOutOfCredit($previous->errorKind, $previous->error) ? 'out_of_credit' : 'providers_unavailable');
+        ]), ProvidersUnavailable::saysOutOfCredit($previous->errorKind, $previous->error) ? StopReason::OutOfCredit : StopReason::ProvidersUnavailable);
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Models\Concerns\HasPublicId;
 use App\Scaffolding\Scaffold;
 use Carbon\CarbonImmutable;
@@ -41,7 +42,7 @@ use Laravel\Sanctum\HasApiTokens;
  * @property array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array{area: string|null, section: string, evidence: 'tested'|'in_change'|'not_in_change', behavior: string, before: string, now: string}>, classification: array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>, observed: array{areas: array<string, int>, tests: int, unmapped: list<string>, foundation: list<string>, by_line: list<string>}|null, notes_behind: list<string>}, preserved: list<array{area: string|null, statement: string, evidence: string, unchanged: bool, tests: int}>, verified: list<array{criterion: string, kind: string, case: string, test_file: string|null, test_name: string|null, evidence: string, named_in_diff: bool}>, coverage: list<array{area: string, tests_passed: int, cases: array{base: string, alternate: string, exception: string}}>}|null $review The latest review of the run's change
  * @property array{image: string|null, image_digest: string|null, tools: array{php: string|null, composer: string|null, node: string|null, npm: string|null, postgres: string|null}, lockfiles: array<string, string>}|null $environment What the run's workspace built with: its box image, tool versions and lockfile hashes
  * @property string|null $error
- * @property string|null $stop_reason Why the run failed or waits on its owner, such as "budget_exhausted"
+ * @property StopReason|null $stop_reason Why the run failed, waits on its owner or was cancelled
  * @property array{text: string, why: string, options: list<string>, recommended: string|null}|null $question What the run waits for the owner to answer before it plans again
  * @property list<array{question: string, answer: string, decided_by: string}>|null $answers What the owner answered before building, oldest first
  * @property list<string>|null $kept_assumptions What I decided for the owner that they said to keep
@@ -71,6 +72,7 @@ class Run extends Model
     {
         return [
             'status' => RunStatus::class,
+            'stop_reason' => StopReason::class,
             'fencing_token' => 'integer',
             'workspace_revision' => 'integer',
             'plan' => 'array',

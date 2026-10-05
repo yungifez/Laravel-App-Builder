@@ -235,7 +235,7 @@ const doneWhen = computed(() => {
             (item) =>
                 item.criterion === criterion &&
                 item.kind === kind &&
-                item.evidence === 'tested',
+                ['tested', 'already_true'].includes(item.evidence),
         );
 
     return criteria.map((text, index) => {
@@ -436,13 +436,30 @@ const steps: Partial<Record<Run['status'], string>> = {
     cancelling: 'Stopping',
 };
 
+// A stop whose next step is the owner's answer did not fail: it asks,
+// and points to where the answer goes.
+const asks = computed(
+    () =>
+        run.value?.status === 'needs_user_decision' &&
+        run.value.question === null &&
+        run.value.next_step === 'answer',
+);
+
 const failed = computed(
     () =>
         run.value?.status === 'failed' ||
         (run.value?.status === 'needs_user_decision' &&
-            run.value.question === null) ||
+            run.value.question === null &&
+            !asks.value) ||
         (run.value === null && request.value.status === 'failed'),
 );
+
+// Bring the answer the stop waits for into view.
+function showAnswer(): void {
+    document
+        .querySelector('[data-test="change-proof-proposal"]')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
 
 watch(failed, (on) => emit('stopped', on), { immediate: true });
 onBeforeUnmount(() => emit('stopped', false));
@@ -911,6 +928,23 @@ const checks = computed(() => {
                                     Ask me more
                                 </label>
                             </div>
+                        </div>
+
+                        <!-- Waits for the owner's answer -->
+                        <div
+                            v-if="asks"
+                            class="space-y-2 rounded-md border bg-muted/40 p-3"
+                            data-test="thread-asks"
+                        >
+                            <p class="text-sm">{{ reason }}</p>
+                            <Button
+                                size="sm"
+                                class="h-11 select-none sm:h-8"
+                                data-test="thread-show-answer"
+                                @click="showAnswer"
+                            >
+                                Answer
+                            </Button>
                         </div>
 
                         <!-- Could not finish -->

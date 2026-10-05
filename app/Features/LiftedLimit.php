@@ -4,6 +4,7 @@ namespace App\Features;
 
 use App\Actions\Features\RetryFeatureRequest;
 use App\Actions\Runs\KeepTryingRun;
+use App\Enums\StopReason;
 use App\Models\FeatureRequest;
 
 /**
@@ -27,18 +28,18 @@ class LiftedLimit
         $lifted = RetryFeatureRequest::retryable($featureRequest);
 
         return match ($featureRequest->latestRun?->stop_reason) {
-            'spend_limit' => $lifted
+            StopReason::SpendLimit => $lifted
                 ? __('This is our fault: we paused new work for a day to keep our costs in check. That pause is over, so you can try again now. Nothing in your app changed.')
                 : SpendPause::message(),
-            'usage_limit' => $lifted
+            StopReason::UsageLimit => $lifted
                 ? __('This stopped because your plan\'s AI use for the month ran out. It has started again, so you can try again now. Nothing in your app changed.')
                 : $reason,
-            'budget_exhausted' => $lifted && KeepTryingRun::possible($featureRequest)
+            StopReason::BudgetExhausted => $lifted && KeepTryingRun::possible($featureRequest)
                 ? __('This is our fault: this change needed more work than I can do in one go, so I stopped. Nothing in your app changed. Keep trying to go on from where I stopped, or ask for a smaller part first.')
                 : $reason,
             // Said only for this stop, which the operators' attention list
             // shows, so "we have been told" is true.
-            'out_of_credit' => __('This is our fault. Our account with the AI service is out of credit. We have been told. Try again later.'),
+            StopReason::OutOfCredit => __('This is our fault. Our account with the AI service is out of credit. We have been told. Try again later.'),
             default => $reason,
         };
     }

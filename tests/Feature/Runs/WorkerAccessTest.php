@@ -5,6 +5,7 @@ namespace Tests\Feature\Runs;
 use App\Actions\Runs\GrantWorkerAccess;
 use App\Actions\Runs\TransitionRun;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Models\Run;
 use App\Runs\Plan;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -55,7 +56,7 @@ class WorkerAccessTest extends TestCase
         $this->travelBack();
 
         $this->getTask($token)->assertOk();
-        app(TransitionRun::class)->handle($run, RunStatus::Failed);
+        app(TransitionRun::class)->handle($run, RunStatus::Failed, details: ['reason' => StopReason::WorkerStopped]);
 
         $this->assertSame(0, $run->tokens()->count(), 'A change that ended revokes its tokens.');
         $this->getTask($token)->assertUnauthorized();

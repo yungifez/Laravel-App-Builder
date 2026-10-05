@@ -12,7 +12,6 @@ use App\Actions\Context\KeepAssumptions;
 use App\Actions\Context\ReadProjectContext;
 use App\Actions\Context\SelectAreas;
 use App\Actions\Features\AcceptFindings;
-use App\Actions\Features\AnswerFindingProposals;
 use App\Actions\Features\ProposeFindings;
 use App\Actions\Features\RequestVerification;
 use App\Actions\Operations\SummarizeSpend;
@@ -25,6 +24,7 @@ use App\Context\ProjectContext;
 use App\Enums\Consequence;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Features\AppBoundaries;
 use App\Features\AppContainment;
 use App\Features\AppDrift;
@@ -128,20 +128,20 @@ class ConstructRun
         } catch (BudgetExhausted $exception) {
             // What is left to do is kept so the owner can ask it to keep
             // trying: whatever it was fixing, and finishing the change.
-            $this->stopForDecision($run, $lease, $exception->getMessage(), 'budget_exhausted', ['feedback' => [
-                'reason' => 'budget_exhausted',
+            $this->stopForDecision($run, $lease, $exception->getMessage(), StopReason::BudgetExhausted, ['feedback' => [
+                'reason' => StopReason::BudgetExhausted->value,
                 'details' => [...($run->feedback['details'] ?? []), __('You stopped before you finished. Finish the change.')],
             ]]);
         } catch (ProvidersUnavailable $exception) {
             $this->stopForDecision($run, $lease, $exception->getMessage(), $exception->reason());
         } catch (ConstructionFailed $exception) {
-            $this->failRun->handle($run, $exception->getMessage(), $lease, 'construction_failed');
+            $this->failRun->handle($run, $exception->getMessage(), StopReason::ConstructionFailed, $lease);
         } catch (CannotGenerateFeature $exception) {
-            $this->failRun->handle($run, $exception->getMessage(), $lease, 'cannot_generate');
+            $this->failRun->handle($run, $exception->getMessage(), StopReason::CannotGenerate, $lease);
         } catch (SpendLimitReached $exception) {
-            $this->failRun->handle($run, $exception->getMessage(), $lease, 'spend_limit');
+            $this->failRun->handle($run, $exception->getMessage(), StopReason::SpendLimit, $lease);
         } catch (UsageLimitReached $exception) {
-            $this->failRun->handle($run, $exception->getMessage(), $lease, 'usage_limit');
+            $this->failRun->handle($run, $exception->getMessage(), StopReason::UsageLimit, $lease);
         }
     }
 
@@ -215,7 +215,7 @@ class ConstructRun
         }
 
         $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['question' => $question, 'error' => null], [
-            'reason' => 'question',
+            'reason' => StopReason::Question,
             'question' => $question['text'],
         ]);
 
@@ -240,7 +240,7 @@ class ConstructRun
         if ($plan->question !== null && $planningContext->mayAsk) {
             if ($plan->asksOwner(config('builder.construction.questions.ask_about'))) {
                 $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['question' => $plan->question, 'error' => null], [
-                    'reason' => 'question',
+                    'reason' => StopReason::Question,
                     'question' => $plan->question['text'],
                 ]);
 
@@ -392,7 +392,7 @@ class ConstructRun
             } else {
                 $this->stopForDecision($run, $lease, __('The tool making this change changed the tests written to check it, so the change proves nothing: :tests. Ask it to try again and leave those tests as they are.', [
                     'tests' => implode(', ', array_map(fn (array $test) => $test['name'] ?? $test['file'], $changed)),
-                ]), 'written_tests_changed');
+                ]), StopReason::WrittenTestsChanged);
             }
 
             return;
@@ -420,7 +420,7 @@ class ConstructRun
         $noteChanges = $this->extractCandidateChange->notes($workspace);
 
         if (trim($patch) === '') {
-            $this->stopForDecision($run, $lease, __('The run finished without changing the project.'), 'no_changes');
+            $this->stopForDecision($run, $lease, __('The run finished without changing the project.'), StopReason::NoChanges);
 
             return;
         }
@@ -627,7 +627,7 @@ class ConstructRun
         // Only what the agent asked the owner to keep holds the change: the
         // owner answers, not the agent. Their answer runs this review again.
         if ($asked !== [] && count($review->blockingFindings()) === count($asked)) {
-            $this->stopForDecision($run, $lease, __('I asked you about something the checks found. Read it in how we know the change works, and answer.'), AnswerFindingProposals::STOP, [
+            $this->stopForDecision($run, $lease, __('I asked you about something the checks found. Read it in how we know the change works, and answer.'), StopReason::FindingProposed, [
                 ...$stored,
                 'feedback' => $feedback,
             ]);
@@ -646,7 +646,7 @@ class ConstructRun
         }
 
         // The findings are kept so the owner can ask it to keep trying.
-        $this->stopForDecision($run, $lease, __('The review found problems this run cannot fix: :summary', ['summary' => $review->summary]), 'review_findings', [
+        $this->stopForDecision($run, $lease, __('The review found problems this run cannot fix: :summary', ['summary' => $review->summary]), StopReason::ReviewFindings, [
             ...$stored,
             'feedback' => $feedback,
         ]);
@@ -857,7 +857,7 @@ class ConstructRun
      *
      * @param  array<string, mixed>  $attributes  Other columns to save with the stop
      */
-    protected function stopForDecision(Run $run, RunLease $lease, string $reason, string $cause, array $attributes = []): void
+    protected function stopForDecision(Run $run, RunLease $lease, string $reason, StopReason $cause, array $attributes = []): void
     {
         $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['error' => $reason, ...$attributes], [
             'reason' => $cause,

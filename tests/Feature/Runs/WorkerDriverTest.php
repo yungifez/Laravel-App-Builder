@@ -21,6 +21,7 @@ use App\Ai\Agents\TestWriter;
 use App\Context\ProjectNotes;
 use App\Enums\PreviewStatus;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Enums\VerificationStatus;
 use App\Jobs\ExecuteRun;
 use App\Jobs\StartPreview;
@@ -162,7 +163,7 @@ class WorkerDriverTest extends TestCase
         $token = app(ConnectOwnTool::class)->handle($run->featureRequest->project);
         $this->tool('get_task', $token);
 
-        app(FailRun::class)->handle($run, 'This is our fault: something on our side stopped.', cause: 'worker_stopped');
+        app(FailRun::class)->handle($run, 'This is our fault: something on our side stopped.', cause: StopReason::WorkerStopped);
 
         $this->tool('check_status', $token)
             ->assertSee('No change waits for you now. The last one ended')
@@ -482,7 +483,7 @@ class WorkerDriverTest extends TestCase
         $run->refresh();
         $this->assertSame(RunStatus::Failed, $run->status);
         $this->assertSame('Your own coding tool did not hand this change back before its connection ran out, so I stopped it. Your app is as it was, and you can hand the change to your tool again.', $run->error);
-        $this->assertSame('worker_lapsed', $run->stop_reason);
+        $this->assertSame(StopReason::WorkerLapsed, $run->stop_reason);
         $this->assertTrue(HandChangeToOwner::available($run->featureRequest->refresh()), 'The owner can hand it to their tool again.');
         Queue::assertNothingPushed();
     }

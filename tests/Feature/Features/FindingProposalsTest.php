@@ -5,6 +5,7 @@ namespace Tests\Feature\Features;
 use App\Actions\Features\AnswerFindingProposals;
 use App\Actions\Features\ProposeFindings;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Enums\VerificationStatus;
 use App\Features\AppBoundaries;
 use App\Jobs\ExecuteRun;
@@ -42,7 +43,7 @@ class FindingProposalsTest extends TestCase
 
         return Run::factory()->for($change)->create([
             'status' => RunStatus::NeedsUserDecision,
-            'stop_reason' => AnswerFindingProposals::STOP,
+            'stop_reason' => StopReason::FindingProposed,
             'feedback' => ['reason' => 'review_findings', 'details' => [], 'gate' => app(ProposeFindings::class)->keyed($change, [
                 ['kind' => AppBoundaries::CHANGED_WHILE_AUTHORIZING, 'identity' => self::SAVE, 'text' => 'GET /posts saved while checking.'],
                 ['kind' => AppBoundaries::CHANGED_WHILE_RENDERING, 'identity' => self::SEND, 'text' => 'GET /posts called out while building.'],

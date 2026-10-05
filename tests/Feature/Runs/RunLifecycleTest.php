@@ -12,6 +12,7 @@ use App\Actions\Runs\TransitionRun;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\PreviewStatus;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Enums\VerificationStatus;
 use App\Enums\WorkspaceStatus;
 use App\Events\RunStatusChanged;
@@ -270,7 +271,7 @@ class RunLifecycleTest extends TestCase
         $run = app(StartRun::class)->handle($this->invitationRequest())->refresh();
 
         $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
-        $this->assertSame('budget_exhausted', $run->stop_reason);
+        $this->assertSame(StopReason::BudgetExhausted, $run->stop_reason);
         $this->assertSame('This change used all the AI work one try may take. Your app is as it was. You can ask it to keep trying.', $run->error);
     }
 
@@ -350,7 +351,7 @@ class RunLifecycleTest extends TestCase
         $run = app(StartRun::class)->handle($featureRequest)->refresh();
 
         $this->assertSame(RunStatus::Failed, $run->status);
-        $this->assertSame('usage_limit', $run->stop_reason);
+        $this->assertSame(StopReason::UsageLimit, $run->stop_reason);
         $this->assertStringStartsWith('You have used all the AI use your plan includes this month.', (string) $run->error);
         $this->assertFalse(RetryFeatureRequest::retryable($featureRequest->refresh()));
 

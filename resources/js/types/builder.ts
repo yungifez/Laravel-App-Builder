@@ -270,6 +270,8 @@ export type Run = {
     found_nothing?: string | null;
     /** It stopped because the month's AI use ran out, and it still has. */
     plan_ran_out?: boolean;
+    /** What the owner can do about the stop; the page offers only that. */
+    next_step?: 'retry' | 'settings' | 'answer' | 'contact' | null;
     question: {
         text: string;
         why: string;

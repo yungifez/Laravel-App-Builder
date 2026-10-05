@@ -5,6 +5,7 @@ namespace Tests\Feature\Features;
 use App\Actions\Runs\TransitionRun;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Features\SpendPause;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -109,7 +110,7 @@ class RepeatedFailureTest extends TestCase
         $again = FeatureRequest::factory()->for($this->project)->for($this->owner)->create(['retry_of_id' => $first->id]);
         $run = Run::factory()->implementing()->for($again)->create();
 
-        app(TransitionRun::class)->handle($run, RunStatus::Failed, attributes: ['error' => $error], details: ['reason' => 'construction_failed']);
+        app(TransitionRun::class)->handle($run, RunStatus::Failed, attributes: ['error' => $error], details: ['reason' => StopReason::ConstructionFailed]);
 
         $this->assertSame(
             'This is our fault: the AI stopped before it finished the change. It stopped the same way last time, so trying again will likely stop the same way. Ask for a smaller part of it in the chat, or ask one of our developers.',

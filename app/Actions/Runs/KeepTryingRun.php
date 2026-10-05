@@ -3,6 +3,7 @@
 namespace App\Actions\Runs;
 
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Enums\WorkspaceStatus;
 use App\Jobs\ExecuteRun;
 use App\Models\FeatureRequest;
@@ -16,7 +17,7 @@ class KeepTryingRun
      * of attempts to fix what the checks or the second look found, or of
      * turns or time while it built the change.
      */
-    public const STOPS = ['verification_failed', 'review_findings', 'budget_exhausted'];
+    public const STOPS = [StopReason::VerificationFailed, StopReason::ReviewFindings, StopReason::BudgetExhausted];
 
     public function __construct(private TransitionRun $transitionRun) {}
 
@@ -49,23 +50,23 @@ class KeepTryingRun
      */
     protected static function feedback(Run $run): ?array
     {
-        if (($run->feedback['reason'] ?? null) === $run->stop_reason) {
+        if (($run->feedback['reason'] ?? null) === $run->stop_reason?->value) {
             return $run->feedback;
         }
 
         $details = match ($run->stop_reason) {
-            'verification_failed' => ($verification = $run->verifications()->reorder('id', 'desc')->first()) === null
+            StopReason::VerificationFailed => ($verification = $run->verifications()->reorder('id', 'desc')->first()) === null
                 ? []
                 : app(CompleteRunVerification::class)->failures($verification),
-            'review_findings' => array_values(array_map(
+            StopReason::ReviewFindings => array_values(array_map(
                 fn (array $finding) => trim(($finding['file'] !== null ? "{$finding['file']}: " : '').$finding['summary']),
                 array_filter($run->review['findings'] ?? [], fn (array $finding) => $finding['severity'] === 'blocking'),
             )),
-            'budget_exhausted' => [__('You stopped before you finished. Finish the change.')],
+            StopReason::BudgetExhausted => [__('You stopped before you finished. Finish the change.')],
             default => [],
         };
 
-        return $details === [] ? null : ['reason' => (string) $run->stop_reason, 'details' => $details];
+        return $details === [] || $run->stop_reason === null ? null : ['reason' => $run->stop_reason->value, 'details' => $details];
     }
 
     /**
@@ -87,7 +88,7 @@ class KeepTryingRun
             'repairs' => $run->repairs + 1,
             'feedback' => self::feedback($run),
             'error' => null,
-        ], details: ['reason' => 'kept_trying', 'stopped' => $run->stop_reason]);
+        ], details: ['reason' => 'kept_trying', 'stopped' => $run->stop_reason?->value]);
 
         ExecuteRun::dispatch($run);
 

@@ -7,6 +7,7 @@ use App\Actions\Runs\ConstructRun;
 use App\Actions\Runs\FailRun;
 use App\Actions\Runs\ReleaseRunLease;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Models\Run;
 use App\Runs\Exceptions\RunLeaseHeld;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -89,6 +90,6 @@ class ExecuteRun implements ShouldQueue
 
         app(FailRun::class)->handle($run, $run->status === RunStatus::Reviewing
             ? __('This is our fault: your change passed its checks, but my last look over it kept stopping on our side, so I did not keep it. Nothing in your app changed. Try again.')
-            : __('This is our fault: something on our side stopped while I worked on this. Nothing in your app changed. Try again.'), cause: 'worker_stopped');
+            : __('This is our fault: something on our side stopped while I worked on this. Nothing in your app changed. Try again.'), cause: StopReason::WorkerStopped);
     }
 }

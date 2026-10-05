@@ -7,6 +7,7 @@ use App\Actions\Runs\StartRun;
 use App\Ai\Agents\FeaturePlanner;
 use App\Ai\Agents\TestWriter;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -60,7 +61,7 @@ class RequestRefusedTest extends TestCase
 
         $this->assertSame(1, $this->asked);
         $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
-        $this->assertSame('request_refused', $run->stop_reason);
+        $this->assertSame(StopReason::RequestRefused, $run->stop_reason);
         $this->assertSame(self::REFUSED, $run->error);
         // Operators see what the service said, and never what we asked.
         $this->assertSame(['reason' => 'request_refused', 'status' => 400, 'type' => 'invalid_request_error'], $run->events()->where('type', 'ai_service_error')->sole()->data);
@@ -73,7 +74,7 @@ class RequestRefusedTest extends TestCase
         $run = $this->runAnswered(500, 'api_error');
 
         $this->assertSame(1, $this->asked);
-        $this->assertSame('providers_unavailable', $run->stop_reason);
+        $this->assertSame(StopReason::ProvidersUnavailable, $run->stop_reason);
         $this->assertSame(self::UNREACHABLE, $run->error);
         $this->assertNull($this->attention('ai_request_refused'));
         $this->assertNextStep($run, self::UNREACHABLE);
@@ -83,7 +84,7 @@ class RequestRefusedTest extends TestCase
     {
         $run = $this->runAnswered(401, 'authentication_error');
 
-        $this->assertSame('request_refused', $run->stop_reason);
+        $this->assertSame(StopReason::RequestRefused, $run->stop_reason);
         $this->assertStringEndsNotWith('Try again in a few minutes.', (string) $run->error);
         $this->assertNotNull($this->attention('ai_request_refused'));
     }
@@ -92,7 +93,7 @@ class RequestRefusedTest extends TestCase
     {
         $limited = $this->runAnswered(429, 'rate_limit_error');
 
-        $this->assertSame('providers_unavailable', $limited->stop_reason);
+        $this->assertSame(StopReason::ProvidersUnavailable, $limited->stop_reason);
         $this->assertSame(1, $this->asked);
         $this->assertStringEndsWith('Try again in a few minutes.', (string) $limited->error);
 
@@ -137,14 +138,14 @@ class RequestRefusedTest extends TestCase
         $refused = $answer(400, 'invalid_request_error');
 
         $this->assertSame(1, $this->asked);
-        $this->assertSame('request_refused', $refused->stop_reason);
+        $this->assertSame(StopReason::RequestRefused, $refused->stop_reason);
         $this->assertSame(self::REFUSED, $refused->error);
         $this->assertSame(['reason' => 'request_refused', 'status' => 400, 'type' => 'invalid_request_error'], $refused->events()->where('type', 'ai_service_error')->sole()->data);
 
         $failing = $answer(503, 'overloaded_error');
 
         $this->assertSame(1, $this->asked);
-        $this->assertSame('providers_unavailable', $failing->stop_reason);
+        $this->assertSame(StopReason::ProvidersUnavailable, $failing->stop_reason);
         $this->assertSame(self::UNREACHABLE, $failing->error);
     }
 

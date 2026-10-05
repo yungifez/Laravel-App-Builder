@@ -14,6 +14,7 @@ use App\Ai\Agents\FeaturePlanner;
 use App\Context\ProjectNotes;
 use App\Enums\AgentOutcomeStatus;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Enums\VerificationStatus;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\Decision;
@@ -698,7 +699,7 @@ class SdkDriverTest extends TestCase
         $run = app(StartRun::class)->handle($this->request())->refresh();
 
         $this->assertSame(RunStatus::Failed, $run->status);
-        $this->assertSame('usage_limit', $run->stop_reason);
+        $this->assertSame(StopReason::UsageLimit, $run->stop_reason);
         // It reads as the plan running out, not as our fault.
         $this->assertMatchesRegularExpression('/^You have used all the AI use your plan includes this month\. It starts again on \d{1,2} \w+, or you can move to a bigger plan in Settings\. Nothing in your app changed\.$/', (string) $run->error);
         $this->assertStringNotContainsString('our fault', (string) $run->error);

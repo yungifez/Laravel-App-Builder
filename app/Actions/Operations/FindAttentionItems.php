@@ -7,6 +7,7 @@ use App\Enums\BoxCommandStatus;
 use App\Enums\DeploymentStatus;
 use App\Enums\PreviewStatus;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Enums\VerificationStatus;
 use App\Enums\WorkspaceStatus;
 use App\Jobs\ExecuteRun;
@@ -183,10 +184,10 @@ class FindAttentionItems
     {
         $query = Run::query()->whereHas('events', fn (Builder $events) => $events
             ->where('type', 'status')
-            ->where('data->reason', 'budget_exhausted')
+            ->where('data->reason', StopReason::BudgetExhausted->value)
             ->where('created_at', '>=', $since));
 
-        return $this->item('budgets_exhausted', 'Runs out of budget', $query, fn (Run $run) => $this->runRecord($run, Str::limit((string) $run->error, 160)), href: route('operations.changes.index', ['reason' => 'budget_exhausted']));
+        return $this->item('budgets_exhausted', 'Runs out of budget', $query, fn (Run $run) => $this->runRecord($run, Str::limit((string) $run->error, 160)), href: route('operations.changes.index', ['reason' => StopReason::BudgetExhausted->value]));
     }
 
     /**
@@ -199,10 +200,10 @@ class FindAttentionItems
     {
         $query = Run::query()->whereHas('events', fn (Builder $events) => $events
             ->where('type', 'status')
-            ->where('data->reason', 'out_of_credit')
+            ->where('data->reason', StopReason::OutOfCredit->value)
             ->where('created_at', '>=', $since));
 
-        return $this->item('ai_out_of_credit', 'AI account out of credit', $query, fn (Run $run) => $this->runRecord($run, Str::limit((string) $run->error, 160)), href: route('operations.changes.index', ['reason' => 'out_of_credit']));
+        return $this->item('ai_out_of_credit', 'AI account out of credit', $query, fn (Run $run) => $this->runRecord($run, Str::limit((string) $run->error, 160)), href: route('operations.changes.index', ['reason' => StopReason::OutOfCredit->value]));
     }
 
     /**
@@ -215,10 +216,10 @@ class FindAttentionItems
     {
         $query = Run::query()->whereHas('events', fn (Builder $events) => $events
             ->where('type', 'status')
-            ->where('data->reason', 'request_refused')
+            ->where('data->reason', StopReason::RequestRefused->value)
             ->where('created_at', '>=', $since));
 
-        return $this->item('ai_request_refused', 'AI service refused our requests', $query, fn (Run $run) => $this->runRecord($run, Str::limit((string) $run->error, 160)), href: route('operations.changes.index', ['reason' => 'request_refused']));
+        return $this->item('ai_request_refused', 'AI service refused our requests', $query, fn (Run $run) => $this->runRecord($run, Str::limit((string) $run->error, 160)), href: route('operations.changes.index', ['reason' => StopReason::RequestRefused->value]));
     }
 
     /**
@@ -554,7 +555,7 @@ class FindAttentionItems
             ->where('type', 'status')
             ->where('created_at', '>=', $since)
             ->whereIn('data->to', [RunStatus::Failed->value, RunStatus::NeedsUserDecision->value])
-            ->where(fn (Builder $query) => $query->whereNull('data->reason')->orWhere('data->reason', '!=', 'question'))
+            ->where(fn (Builder $query) => $query->whereNull('data->reason')->orWhere('data->reason', '!=', StopReason::Question->value))
             ->toBase()
             ->selectRaw("data->>'from' as stage, coalesce(data->>'reason', 'unknown') as reason, count(*) as count")
             ->groupByRaw("data->>'from', coalesce(data->>'reason', 'unknown')")

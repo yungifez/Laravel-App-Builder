@@ -183,7 +183,7 @@ class DescribeChangeHistory
             'driver' => $run->driver,
             'config_version' => $run->config_version,
             'status' => $run->status->value,
-            'stop_reason' => $run->stop_reason,
+            'stop_reason' => $run->stop_reason?->value,
             'error' => $run->error === null ? null : Str::limit($run->error, 1000),
             'repairs' => $run->repairs,
             'created_at' => $run->created_at?->toIso8601String(),

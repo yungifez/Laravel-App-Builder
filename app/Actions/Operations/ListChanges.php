@@ -160,7 +160,7 @@ class ListChanges
             'unpriced_calls' => count($calls) - count($priced),
             'cost_usd' => round(array_sum(array_map(fn (array $call) => (float) $call['cost_usd'], $priced)), 4),
             'repairs' => $run?->repairs,
-            'stop_reason' => $run?->stop_reason,
+            'stop_reason' => $run?->stop_reason?->value,
             'elapsed_seconds' => $end !== null && $change->created_at !== null ? (int) $change->created_at->diffInSeconds($end) : null,
         ];
     }
