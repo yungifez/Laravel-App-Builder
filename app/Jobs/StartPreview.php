@@ -14,6 +14,7 @@ use App\Models\Preview;
 use App\Models\Workspace;
 use App\Previews\PreviewCouldNotStart;
 use App\Previews\PreviewFailure;
+use App\Previews\PreviewStopped;
 use App\Projects\ProjectRepository;
 use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\Drivers\CopyExclusions;
@@ -80,6 +81,7 @@ class StartPreview implements ShouldQueue
         try {
             $workspace = $provisionWorkspace->handle($project->owner, (string) config('builder.preview.workspace_driver'));
             $this->preview->update(['workspace_id' => $workspace->id]);
+            $this->ensureStarting();
 
             $driver = $workspaces->driver($workspace->driver);
             // A change the owner can design on runs from its own branch, which
@@ -123,6 +125,7 @@ class StartPreview implements ShouldQueue
                 }
             }
 
+            $this->ensureStarting();
             $port = $allocatePreviewPort->handle();
             $this->preview->update(['port' => $port]);
 
@@ -131,13 +134,27 @@ class StartPreview implements ShouldQueue
 
             $this->waitUntilReady($upstream);
 
-            $this->preview->update([
+            $ready = Preview::query()->whereKey($this->preview->id)->where('status', PreviewStatus::Starting)->update([
                 'status' => PreviewStatus::Ready,
                 'upstream_url' => $upstream,
                 'ready_at' => now(),
                 'last_seen_at' => now(),
             ]);
+
+            if ($ready === 0) {
+                throw new PreviewStopped;
+            }
         } catch (Throwable $exception) {
+            // The owner opened a newer copy, or closed this one, while it
+            // started. Its workspace was closed under it, which can stop
+            // a step half way. That is no failure: the copy stays stopped,
+            // and anything it started after the stop is removed.
+            if ($exception instanceof PreviewStopped || $this->preview->refresh()->status === PreviewStatus::Stopped) {
+                $stopPreview->handle($this->preview->refresh());
+
+                return;
+            }
+
             report($exception);
 
             // Anything we did not word for the owner is ours.
@@ -145,6 +162,18 @@ class StartPreview implements ShouldQueue
                 ? $exception->getMessage()
                 : PreviewFailure::ours()."\n".$exception->getMessage()]);
             $stopPreview->handle($this->preview);
+        }
+    }
+
+    /**
+     * Stop here if the copy was stopped while it started.
+     *
+     * @throws PreviewStopped
+     */
+    protected function ensureStarting(): void
+    {
+        if ($this->preview->fresh()?->status !== PreviewStatus::Starting) {
+            throw new PreviewStopped;
         }
     }
 

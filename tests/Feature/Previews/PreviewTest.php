@@ -263,6 +263,56 @@ class PreviewTest extends TestCase
         $this->assertSame(PreviewStatus::Ready, $running->featureRequest->previews()->latest('id')->first()?->status);
     }
 
+    public function test_a_copy_replaced_while_it_installs_stays_stopped_and_the_new_copy_starts()
+    {
+        Http::fake(['*/up' => Http::response('ok')]);
+        $request = FeatureRequest::factory()->generated()->create();
+        $replaced = false;
+        $this->driver->onExec = function (string $id, array $command) use ($request, &$replaced) {
+            if ($command === ['composer', 'install'] && ! $replaced) {
+                $replaced = true;
+                // The owner opens a newer copy. Closing this copy's workspace
+                // kills its install, as the runner's close does.
+                app(RequestPreview::class)->handle($request->refresh());
+
+                return new CommandResult(exitCode: 137, output: '', errorOutput: '', durationMs: 324);
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        [$replacedCopy, $newCopy] = $request->previews()->orderBy('id')->get()->all();
+        $this->assertSame(PreviewStatus::Stopped, $replacedCopy->status);
+        $this->assertNull($replacedCopy->error);
+        $this->assertSame(PreviewStatus::Ready, $newCopy->status);
+        $this->assertSame([$replacedCopy->workspace?->driver_id], $this->driver->destroyed);
+        $this->assertNotSame($replacedCopy->workspace_id, $newCopy->workspace_id);
+    }
+
+    public function test_a_copy_stopped_before_its_workspace_was_recorded_never_becomes_ready()
+    {
+        Http::fake(['*/up' => Http::response('ok')]);
+        $request = FeatureRequest::factory()->generated()->create();
+        $this->driver->onExec = function () use ($request) {
+            // Stopped by a request that came before the copy recorded its
+            // workspace, so the stop could not close it.
+            $request->previews()->update(['status' => PreviewStatus::Stopped, 'stopped_at' => now()]);
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $preview = $request->previews()->sole();
+        $this->assertSame(PreviewStatus::Stopped, $preview->status);
+        $this->assertNull($preview->error);
+        $this->assertNull($preview->ready_at);
+        $this->assertSame([], $this->driver->services);
+        $this->assertSame([$preview->workspace?->driver_id], $this->driver->destroyed);
+    }
+
     public function test_opening_a_preview_hands_the_owner_a_single_use_grant_that_becomes_a_preview_session()
     {
         $preview = Preview::factory()->ready()->create();
