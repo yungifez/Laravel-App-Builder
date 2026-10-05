@@ -6,6 +6,7 @@ use App\Context\ProjectContext;
 use App\Features\TestMap;
 use App\Features\UnsafeCode;
 use App\Models\Project;
+use App\Models\ProjectNote;
 use App\Models\TestObservation;
 use App\Projects\Frontend;
 use App\Projects\ProjectRepository;
@@ -85,6 +86,18 @@ class CheckProjectNotes
             $findings[] = ['title' => __('Some parts of the app are not described in any notes.'), 'details' => $unclaimed];
         }
 
+        // Rewriting is the fix, so no fix button: the owner reads the part
+        // and corrects it.
+        foreach ($this->staleNotes($project, $context, $head, $files) as $name => $changed) {
+            $shown = array_slice($changed, 0, 10);
+
+            if (count($changed) > count($shown)) {
+                $shown[] = __('and :count more', ['count' => count($changed) - count($shown)]);
+            }
+
+            $findings[] = ['title' => __('The notes on ":name" were written before later changes to its code. Read them below and correct anything that changed.', ['name' => $name]), 'details' => $shown];
+        }
+
         return $findings;
     }
 
@@ -145,6 +158,57 @@ class CheckProjectNotes
     protected static function plain(string $text): string
     {
         return rtrim(Str::lower(Str::squish($text)), '.');
+    }
+
+    /**
+     * Get, by part name, the code files the notes claim that changed after
+     * the part's notes were last written. Only files the part names in its
+     * paths count, never its tests, and only once at least the configured
+     * number changed: most parts' code moves a little after their notes,
+     * and a finding on every part would teach the owner to skip them all.
+     *
+     * A kept change is committed before what it did to the notes is saved,
+     * so a change that rewrote its notes is never counted against them.
+     *
+     * @param  list<string>  $files  The files at the tip of the branch
+     * @return array<string, list<string>>
+     */
+    protected function staleNotes(Project $project, ProjectContext $context, string $head, array $files): array
+    {
+        $written = ProjectNote::query()
+            ->where('project_id', $project->id)
+            ->where('branch', $project->branch())
+            ->whereIn('path', array_values(array_filter(array_map(fn ($capability) => $capability->file, $context->capabilities))))
+            ->pluck('updated_at', 'path')
+            ->filter();
+
+        if ($written->isEmpty()) {
+            return [];
+        }
+
+        $changed = $this->repository->changedSince($project, $head, $written->min());
+        $minimum = Config::integer('builder.context.stale_notes.min_files');
+        $stale = [];
+
+        foreach ($context->capabilities as $capability) {
+            $at = $written->get((string) $capability->file);
+
+            if ($at === null) {
+                continue;
+            }
+
+            $since = array_keys(array_filter($changed, fn (int $time, string $path) => $time > $at->getTimestamp()
+                && in_array($path, $files, true)
+                && ! in_array($path, $capability->testFiles, true)
+                && Str::is($capability->paths, $path), ARRAY_FILTER_USE_BOTH));
+
+            if (count($since) >= $minimum) {
+                sort($since);
+                $stale[$capability->name] = $since;
+            }
+        }
+
+        return $stale;
     }
 
     /**

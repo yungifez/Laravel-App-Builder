@@ -705,6 +705,12 @@ return [
         'experiment' => [
             'min_pairs' => (int) env('BUILDER_CONTEXT_EXPERIMENT_MIN_PAIRS', 5),
         ],
+
+        // The quick check says a part's notes may be out of date once this
+        // many of the files they name changed after the notes were written.
+        'stale_notes' => [
+            'min_files' => (int) env('BUILDER_STALE_NOTES_MIN_FILES', 3),
+        ],
     ],
 
     /*

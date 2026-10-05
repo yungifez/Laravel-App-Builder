@@ -10,6 +10,7 @@ use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\Exceptions\RepositoryMissing;
 use App\Publishing\GitHubRepositories;
 use App\Workspaces\Drivers\CopyExclusions;
+use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Process\ProcessResult;
@@ -453,6 +454,32 @@ class ProjectRepository
         foreach (array_filter(explode("\n", trim($output))) as $line) {
             [$status, $path] = explode("\t", $line, 2) + ['', ''];
             $files[$path] = $status === 'D';
+        }
+
+        return $files;
+    }
+
+    /**
+     * Get the files the commits since a moment changed, up to a revision,
+     * each with when it last changed (Unix seconds). Commits are timed by
+     * when they were committed, so a change kept today counts even when it
+     * was written long ago. A committer's wrong clock or a rebase can skew
+     * those times, which is fine for a nudge but not for a fact.
+     *
+     * @return array<string, int>
+     */
+    public function changedSince(Project $project, string $revision, CarbonInterface $since): array
+    {
+        $output = $this->git($project, ['log', '--format=%x1e%ct', '--name-only', '--no-renames', '--since='.$since->toIso8601String(), $revision])->output();
+        $files = [];
+
+        foreach (array_filter(explode("\x1e", $output), fn (string $commit) => trim($commit) !== '') as $commit) {
+            $lines = array_values(array_filter(explode("\n", trim($commit))));
+            $time = (int) array_shift($lines);
+
+            foreach ($lines as $path) {
+                $files[$path] = max($files[$path] ?? 0, $time);
+            }
         }
 
         return $files;
