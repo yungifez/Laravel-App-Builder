@@ -22,6 +22,7 @@ use App\Context\Capability;
 use App\Context\ChangeClassification;
 use App\Context\ContextPack;
 use App\Context\ProjectContext;
+use App\Enums\Consequence;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Features\AppBoundaries;
@@ -63,6 +64,7 @@ use App\Runs\Plan;
 use App\Runs\Review;
 use App\Runs\ReviewEvidence;
 use App\Runs\RunLease;
+use App\Runs\ShapeQuestion;
 use App\Runs\ToolExecutor;
 use App\Runs\ToolSession;
 use Illuminate\Support\Facades\DB;
@@ -103,6 +105,7 @@ class ConstructRun
         private ScaffoldDataShape $scaffoldDataShape,
         private KeepAssumptions $keepAssumptions,
         private WriteTestsFirst $writeTestsFirst,
+        private ShapeQuestion $shapeQuestion,
     ) {}
 
     /**
@@ -188,6 +191,38 @@ class ConstructRun
     }
 
     /**
+     * Show the owner a new record's shape that is hard to change later
+     * before it is built (§8), through the same pause as a question. A
+     * shape the owner answered about is built as they said. Null when the
+     * run now waits for the owner.
+     */
+    protected function shaped(Run $run, RunLease $lease, Plan $plan, bool $mayAsk): ?Plan
+    {
+        $question = $this->shapeQuestion->for($plan);
+
+        if ($question === null) {
+            return $plan;
+        }
+
+        $answer = $this->shapeQuestion->answered($plan, $run->answers ?? []);
+
+        if ($answer !== null) {
+            return $this->shapeQuestion->apply($plan, $answer);
+        }
+
+        if (! $mayAsk || ! in_array(Consequence::DataShape->value, config('builder.construction.questions.ask_about'), true)) {
+            return $plan;
+        }
+
+        $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['question' => $question, 'error' => null], [
+            'reason' => 'question',
+            'question' => $question['text'],
+        ]);
+
+        return null;
+    }
+
+    /**
      * Prepare the workspace, have the driver plan the change, compile the
      * project context for the areas the change is about, and save both.
      */
@@ -224,6 +259,12 @@ class ConstructRun
         if ($plan->answer !== null) {
             $this->answer($run, $lease, $plan, $workspace);
 
+            return;
+        }
+
+        $plan = $this->shaped($run, $lease, $plan, $planningContext->mayAsk);
+
+        if ($plan === null) {
             return;
         }
 

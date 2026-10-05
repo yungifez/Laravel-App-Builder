@@ -407,6 +407,16 @@ final readonly class Plan
     }
 
     /**
+     * Keep the records the change stores, as the owner answered about them.
+     *
+     * @param  list<Record>  $dataShape
+     */
+    public function withDataShape(array $dataShape): self
+    {
+        return new self(...[...get_object_vars($this), 'dataShape' => $dataShape]);
+    }
+
+    /**
      * Build on the recommended option instead of asking, and list the choice
      * with the other decisions, where the owner reviews it with the change.
      */
