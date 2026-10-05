@@ -1167,6 +1167,14 @@ return [
             'directory' => 'storage/logs/migrations',
         ],
 
+        // Whether new queued work (a job, queued listener, mailable or
+        // notification) is read for how often it tries, how long it waits
+        // between tries and what it does when it gives up (§12). Work that
+        // leaves one out is sent back to the coder. The owner may keep it.
+        'queued' => [
+            'enabled' => (bool) env('BUILDER_QUEUED_CHECK', true),
+        ],
+
         // Known security problems in the packages the app uses, looked up
         // in the public advisory lists. Advice, never a check: a problem in
         // a package is rarely the change's doing, so it never fails the

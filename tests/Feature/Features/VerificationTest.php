@@ -1505,4 +1505,32 @@ class VerificationTest extends TestCase
         $this->assertArrayNotHasKey('migrations', $off->verifications()->sole()->evidence ?? []);
         $this->assertCount(1, array_filter(array_column($this->driver->executed, 'command'), fn (array $command) => str_contains($command[2] ?? '', 'migrate:rollback')));
     }
+
+    public function test_the_work_a_change_queues_is_read_for_how_it_tries_again_and_fails()
+    {
+        $job = "<?php\n\nnamespace App\\Jobs;\n\nuse Illuminate\\Contracts\\Queue\\ShouldQueue;\n\nclass SendReminder implements ShouldQueue\n{\n    public \$tries = 3;\n}\n";
+        $patch = "diff --git a/app/Jobs/SendReminder.php b/app/Jobs/SendReminder.php\nnew file mode 100644\n--- /dev/null\n+++ b/app/Jobs/SendReminder.php\n@@ -0,0 +1 @@\n+<?php\n";
+        $this->driver->onExec = function (string $workspace, array $command) use ($job) {
+            $this->driver->files["{$workspace}:app/Jobs/SendReminder.php"] = $job;
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        $change = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
+
+        app(RequestVerification::class)->handle($change);
+
+        $this->assertSame([
+            ['class' => 'App\\Jobs\\SendReminder', 'kind' => 'job', 'at' => 'app/Jobs/SendReminder.php:7', 'missing' => ['backoff', 'failed']],
+        ], $change->verifications()->sole()->evidence['queued']);
+
+        // A change that queues nothing keeps nothing, and the check can be turned off.
+        $plain = FeatureRequest::factory()->generated()->create(['patch' => $this->changeWithTests()]);
+        app(RequestVerification::class)->handle($plain);
+        $this->assertArrayNotHasKey('queued', $plain->verifications()->sole()->evidence ?? []);
+
+        config(['builder.verification.queued.enabled' => false]);
+        $off = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
+        app(RequestVerification::class)->handle($off);
+        $this->assertArrayNotHasKey('queued', $off->verifications()->sole()->evidence ?? []);
+    }
 }

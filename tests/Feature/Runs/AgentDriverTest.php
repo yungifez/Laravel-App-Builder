@@ -755,6 +755,28 @@ class AgentDriverTest extends TestCase
         $this->assertSame(RunStatus::Completed, $run->refresh()->status);
     }
 
+    public function test_new_queued_work_that_does_not_say_how_it_fails_sends_the_change_back()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder(
+            $this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]),
+            $this->writes([], 'Added tries, backoff and failed().'),
+        );
+        $approve = ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]];
+        ChangeReviewer::fake([$approve, $approve]);
+        $queued = fn (array $missing) => ['queued' => [['class' => 'App\Jobs\SendReminder', 'kind' => 'job', 'at' => 'app/Jobs/SendReminder.php:8', 'missing' => $missing]]];
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, evidence: $queued(['backoff', 'failed']));
+
+        $this->assertSame(1, $run->refresh()->repairs);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'App\Jobs\SendReminder (app/Jobs/SendReminder.php:8) is queued but does not say how long to wait between tries'));
+
+        $this->passVerification($run, evidence: $queued([]));
+
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+    }
+
     public function test_what_the_owner_wants_the_app_to_leave_behind_is_not_held_against_the_change()
     {
         FeaturePlanner::fake([$this->plan()]);

@@ -19,6 +19,7 @@ use App\Features\MigrationChecks;
 use App\Features\NewCode;
 use App\Features\NewTests;
 use App\Features\PatchSummary;
+use App\Features\QueuedWork;
 use App\Features\ScreenCheck;
 use App\Features\TestReport;
 use App\Features\UndescribedImages;
@@ -62,7 +63,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return $this->asked($featureRequest, array_values(collect($lines)->unique('text')->all()));
@@ -402,6 +403,39 @@ class DescribeProof
         }
 
         return [['kind' => 'passed', 'text' => __('The change to how your information is stored was undone and made again on sample information, and it worked both times.')]];
+    }
+
+    /**
+     * Say whether the work the change sends to the queue says how often it
+     * tries, how long it waits and what it does when it gives up, as read
+     * from its code (§12). Work that leaves one out holds the change until
+     * the owner says they want it.
+     *
+     * @return list<array{kind: string, text: string, decision?: array{change: string, finding: string, accepted: bool}}>
+     */
+    protected function queued(FeatureRequest $featureRequest, Verification $verification): array
+    {
+        $queued = $verification->evidence['queued'] ?? null;
+
+        if ($queued === null) {
+            return [];
+        }
+
+        $open = ! $featureRequest->isAccepted();
+        $decision = fn (bool $accepted) => $open ? ['decision' => ['change' => $featureRequest->uuid, 'finding' => QueuedWork::UNGUARDED, 'accepted' => $accepted]] : [];
+        $left = QueuedWork::findings($queued, $this->acceptFindings->identities($featureRequest));
+
+        if ($left !== []) {
+            return [['kind' => 'gap', 'text' => __('New work your app does in the background, :names, does not say what to do when it fails. On your live app it would not be tried again, and nobody would be told. If it must run only once, say so.', [
+                'names' => implode(', ', array_map(fn (array $finding) => '“'.QueuedWork::name($finding['subject']).'”', $left)),
+            ]), ...$decision(false)]];
+        }
+
+        if (QueuedWork::findings($queued) !== []) {
+            return [['kind' => 'chosen', 'text' => __('You said you want this: new work your app does in the background is not tried again when it fails. If a later change does the same, I will ask again.'), ...$decision(true)]];
+        }
+
+        return [['kind' => 'passed', 'text' => __('The new work your app does in the background is tried again when it fails, and says what to do when it gives up.')]];
     }
 
     /**

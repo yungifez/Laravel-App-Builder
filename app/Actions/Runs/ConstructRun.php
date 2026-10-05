@@ -34,6 +34,7 @@ use App\Features\InventedColours;
 use App\Features\MigrationChecks;
 use App\Features\NodeInPhpTests;
 use App\Features\PatchSummary;
+use App\Features\QueuedWork;
 use App\Features\ScreenCheck;
 use App\Features\TestChanges;
 use App\Features\UndescribedImages;
@@ -563,6 +564,15 @@ class ConstructRun
 
         foreach (MigrationChecks::findings($migrations, $accepted) as $finding) {
             $gate[] = ['kind' => $finding['kind'], 'identity' => MigrationChecks::identity($finding), 'text' => MigrationChecks::finding($finding, $migrations)];
+        }
+
+        // New queued work that does not say how it tries again or fails
+        // fails quietly on the live app (§12). The owner may keep work that
+        // must run once only.
+        $queued = $evidence['queued'] ?? [];
+
+        foreach (QueuedWork::findings($queued, $accepted) as $finding) {
+            $gate[] = ['kind' => $finding['kind'], 'identity' => QueuedWork::identity($finding), 'text' => QueuedWork::finding($finding, $queued)];
         }
 
         if (config('builder.verification.faults.send_back')) {

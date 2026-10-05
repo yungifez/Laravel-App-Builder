@@ -31,6 +31,7 @@ use App\Features\NewCode;
 use App\Features\NewTests;
 use App\Features\PatchSummary;
 use App\Features\ProtectedInputs;
+use App\Features\QueuedWork;
 use App\Features\ReplayProbes;
 use App\Features\ScreenCheck;
 use App\Features\TestMap;
@@ -239,6 +240,7 @@ class VerifyFeatureRequest implements ShouldQueue
             $acceptance = $this->runAcceptance($driver, $runWorkspaceCommand, $workspace, $featureRequest);
             $this->readBoundaryCode($driver, $workspace, $featureRequest);
             $this->checkMigrations($driver, $runWorkspaceCommand, $workspace, $featureRequest);
+            $this->readQueuedWork($driver, $workspace, $featureRequest);
 
             if ($checksPassed && in_array($acceptance, [self::OUTCOME_PASSED, self::OUTCOME_NOT_APPLICABLE], true)) {
                 $checksPassed = $this->probeAccess($driver, $runWorkspaceCommand, $workspace, $featureRequest);
@@ -898,6 +900,25 @@ class VerifyFeatureRequest implements ShouldQueue
         }
 
         $this->keepEvidence('migrations', MigrationChecks::evidence($added, $edited, $report, fn (string $step) => $read("{$step}.log")));
+    }
+
+    /**
+     * Read the work the change sends to the queue, while the change is
+     * still in the workspace, for how it tries again and fails (§12). It
+     * is kept as evidence; the gate sends a finding back to the coder.
+     */
+    protected function readQueuedWork(WorkspaceDriver $driver, Workspace $workspace, FeatureRequest $featureRequest): void
+    {
+        if (! config('builder.verification.queued.enabled')) {
+            return;
+        }
+
+        $queued = rescue(fn () => QueuedWork::inPatch(
+            $featureRequest->patch,
+            fn (string $path) => rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), null, report: false),
+        ), []);
+
+        $this->keepEvidence('queued', $queued === [] ? null : $queued);
     }
 
     /**

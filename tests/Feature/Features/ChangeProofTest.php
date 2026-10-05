@@ -7,6 +7,7 @@ use App\Actions\Features\DescribeProof;
 use App\Context\ProjectNotes;
 use App\Enums\VerificationStatus;
 use App\Features\MigrationChecks;
+use App\Features\QueuedWork;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\Verification;
@@ -429,6 +430,29 @@ class ChangeProofTest extends TestCase
         // An earlier migration that was rewritten never reaches the live app.
         [, $rewritten] = $proof(['database/migrations/2026_01_01_000000_create_teams_table.php'], null);
         $this->assertSame('gap', $rewritten->firstWhere('text', 'The change rewrites an earlier change to how your information is stored. Your live app already made that earlier change, so the rewrite would never reach it.')['kind']);
+    }
+
+    public function test_new_background_work_that_does_not_say_what_to_do_when_it_fails_is_said_until_the_owner_keeps_it()
+    {
+        $work = fn (string $class, array $missing) => ['class' => $class, 'kind' => 'job', 'at' => 'app/Jobs/X.php:8', 'missing' => $missing];
+        $proof = function (array $queued) {
+            $request = FeatureRequest::factory()->generated()->create();
+            $this->checked($request, evidence: ['queued' => $queued]);
+
+            return [$request, collect(app(DescribeProof::class)->handle($request))];
+        };
+
+        [, $guarded] = $proof([$work('App\Jobs\SendInvoiceReminder', [])]);
+        $this->assertTrue($guarded->contains('text', 'The new work your app does in the background is tried again when it fails, and says what to do when it gives up.'));
+
+        [$request, $unguarded] = $proof([$work('App\Jobs\SendInvoiceReminder', ['failed']), $work('App\Jobs\CloseOldTeams', ['tries', 'backoff', 'failed'])]);
+        $line = $unguarded->firstWhere('decision.finding', QueuedWork::UNGUARDED);
+        $this->assertSame('gap', $line['kind']);
+        $this->assertSame('New work your app does in the background, “send invoice reminder”, “close old teams”, does not say what to do when it fails. On your live app it would not be tried again, and nobody would be told. If it must run only once, say so.', $line['text']);
+
+        app(AcceptFindings::class)->handle($request, QueuedWork::UNGUARDED, $request->project->owner);
+        $line = collect(app(DescribeProof::class)->handle($request))->firstWhere('decision.finding', QueuedWork::UNGUARDED);
+        $this->assertSame(['chosen', true], [$line['kind'], $line['decision']['accepted']]);
     }
 
     public function test_a_change_whose_stored_information_changes_can_lose_data_says_where_until_the_owner_keeps_it()
