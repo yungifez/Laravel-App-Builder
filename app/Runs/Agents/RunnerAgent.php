@@ -62,37 +62,48 @@ class RunnerAgent implements CodingAgent
         // use to it, so it starts fresh with the whole prompt.
         $resume = $task->resume !== null && $task->resume['adapter'] === $this->adapter ? $task->resume : null;
 
-        $this->workspaces->driver($workspace->driver)->writeFile((string) $workspace->driver_id, $taskFile, (string) json_encode([
-            'adapter' => $this->adapter,
-            // A key the owner pasted into a request or a note stays here.
-            'prompt' => Secrets::redact($task->prompt),
-            'model' => $task->light ? ($this->lightModel ?? $this->model) : $this->model,
-            'effort' => $task->light ? ($this->lightEffort ?? $this->effort) : $this->effort,
-            'session' => $resume['session'] ?? null,
-            'follow_up' => isset($resume['prompt']) ? Secrets::redact($resume['prompt']) : null,
-            'max_turns' => $task->maxTurns,
-            'max_budget_usd' => $task->maxBudgetUsd,
-            'sandbox' => $this->sandbox,
-            'protected_paths' => config('builder.construction.protected_paths', []),
-        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-
         $credentials = array_filter($this->credentials, fn (string $value) => $value !== '');
         $opened = null;
 
         // With the gateway on, the agent gets a token that opens it for this
         // run in place of the key, so the key never enters the workspace.
-        // An agent signed in its own way, with no key, is left as it is.
+        // The gateway also adds our working rules to each call, so the box
+        // holds only the task. An agent signed in its own way, with no key,
+        // is left as it is, and reads the rules with the task.
         $keyVariable = $this->gateway?->keyVariable($this->provider);
+        $prompt = $task->prompt;
 
         if ($this->gateway?->enabled() && $keyVariable !== null && isset($credentials[$keyVariable])) {
-            $opened = $this->gateway->open($this->provider, $task->timeoutSeconds);
+            $opened = $this->gateway->open($this->provider, $task->timeoutSeconds, $task->instructions);
             $credentials = [...$credentials, ...$opened['environment']];
         } elseif ($keyVariable !== null && isset($credentials[$keyVariable]) && $workspace->driver !== 'local') {
             // A box runs the owner's code with a shell, so a real key must
             // not go in. Only a plain folder on this host may have one.
-            $this->removeTaskFiles($workspace);
-
             throw new RuntimeException('The model gateway is off, so the agent would get the real key inside the workspace. Turn on BUILDER_MODEL_GATEWAY.');
+        } elseif ($task->instructions !== null) {
+            $prompt .= "\n\n".$task->instructions;
+        }
+
+        try {
+            $this->workspaces->driver($workspace->driver)->writeFile((string) $workspace->driver_id, $taskFile, (string) json_encode([
+                'adapter' => $this->adapter,
+                // A key the owner pasted into a request or a note stays here.
+                'prompt' => Secrets::redact($prompt),
+                'model' => $task->light ? ($this->lightModel ?? $this->model) : $this->model,
+                'effort' => $task->light ? ($this->lightEffort ?? $this->effort) : $this->effort,
+                'session' => $resume['session'] ?? null,
+                'follow_up' => isset($resume['prompt']) ? Secrets::redact($resume['prompt']) : null,
+                'max_turns' => $task->maxTurns,
+                'max_budget_usd' => $task->maxBudgetUsd,
+                'sandbox' => $this->sandbox,
+                'protected_paths' => config('builder.construction.protected_paths', []),
+            ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        } catch (Throwable $exception) {
+            if ($opened !== null) {
+                $this->gateway->close($opened['token']);
+            }
+
+            throw $exception;
         }
 
         try {

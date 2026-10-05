@@ -20,5 +20,8 @@ final readonly class AgentTask
         public ?array $resume = null,
         // The agent to try first, ahead of the configured order.
         public ?string $prefer = null,
+        // Our working rules. The gateway adds them to each model call on
+        // our side, so the box holds only the task (architecture §16).
+        public ?string $instructions = null,
     ) {}
 }

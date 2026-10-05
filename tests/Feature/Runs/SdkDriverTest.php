@@ -18,6 +18,7 @@ use App\Enums\VerificationStatus;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\Decision;
 use App\Models\FeatureRequest;
+use App\Models\ModelGatewayGrant;
 use App\Models\Project;
 use App\Models\Run;
 use App\Models\RunEvent;
@@ -26,7 +27,6 @@ use App\Models\WorkspaceCommand;
 use App\Runs\Agents\AgentOutcome;
 use App\Runs\Agents\AgentTask;
 use App\Runs\Agents\CodingAgentManager;
-use App\Runs\Agents\RunnerAgent;
 use App\Runs\ModelGateway;
 use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\WorkspaceManager;
@@ -93,8 +93,13 @@ class SdkDriverTest extends TestCase
         $this->assertSame(RunStatus::Verifying, $run->status);
         $this->assertStringContainsString('+    public ?string $description = null;', (string) $featureRequest->refresh()->patch);
         $this->assertStringContainsString("## Keep as it is\n\nDo not change these.", $this->agents['claude']->tasks[0]->prompt);
-        $this->assertStringContainsString('## How to work', $this->agents['claude']->tasks[0]->prompt);
-        $this->assertStringContainsString('To add a package, run `composer require` or `npm install`', $this->agents['claude']->tasks[0]->prompt);
+        // How to work goes apart from the task, for the gateway to add.
+        $this->assertStringNotContainsString('## How to work', $this->agents['claude']->tasks[0]->prompt);
+        $this->assertStringNotContainsString("## Write as the app's own developer", $this->agents['claude']->tasks[0]->prompt);
+        $this->assertStringNotContainsString('Make it easy to see what the app does', $this->agents['claude']->tasks[0]->prompt);
+        $this->assertStringContainsString("## Write as the app's own developer", (string) $this->agents['claude']->tasks[0]->instructions);
+        $this->assertStringContainsString('## How to work', (string) $this->agents['claude']->tasks[0]->instructions);
+        $this->assertStringContainsString('To add a package, run `composer require` or `npm install`', (string) $this->agents['claude']->tasks[0]->instructions);
         $this->assertSame(['claude'], $run->events()->where('type', 'model_call')->where('data->role', 'coder')->get()->pluck('data.adapter')->all());
         $this->assertSame(0, $run->events()->where('type', 'failover')->count());
 
@@ -118,9 +123,9 @@ class SdkDriverTest extends TestCase
         app(StartRun::class)->handle($this->request());
 
         // A failure found after it finishes costs a whole repair pass.
-        $prompt = $this->agents['claude']->tasks[0]->prompt;
-        $this->assertStringContainsString('Before you finish, run `vendor/bin/phpstan analyse`, and fix anything reported.', $prompt);
-        $this->assertStringNotContainsString('`php artisan test`', $prompt);
+        $rules = (string) $this->agents['claude']->tasks[0]->instructions;
+        $this->assertStringContainsString('Before you finish, run `vendor/bin/phpstan analyse`, and fix anything reported.', $rules);
+        $this->assertStringNotContainsString('`php artisan test`', $rules);
     }
 
     public function test_the_agent_is_not_asked_to_run_a_check_the_app_does_not_have()
@@ -130,7 +135,7 @@ class SdkDriverTest extends TestCase
 
         app(StartRun::class)->handle($this->request());
 
-        $this->assertStringNotContainsString('Before you finish, run', $this->agents['claude']->tasks[0]->prompt);
+        $this->assertStringNotContainsString('Before you finish, run', $this->agents['claude']->tasks[0]->prompt."\n\n".$this->agents['claude']->tasks[0]->instructions);
     }
 
     public function test_provider_trouble_resets_the_workspace_and_fails_over_to_the_other_agent()
@@ -530,6 +535,34 @@ class SdkDriverTest extends TestCase
         config(['ai.providers.anthropic.key' => 'test-anthropic-key', 'builder.agents.gateway.enabled' => false]);
         $workspace = Workspace::factory()->create(['driver' => 'docker']);
         $driver = Mockery::mock(WorkspaceDriver::class);
+        // It refuses before anything reaches the box.
+        $driver->shouldNotReceive('writeFile');
+        $workspaces = Mockery::mock(WorkspaceManager::class);
+        $workspaces->shouldReceive('driver')->with('docker')->andReturn($driver);
+        $commands = Mockery::mock(RunWorkspaceCommand::class);
+        $commands->shouldNotReceive('handle');
+        $this->app->instance(WorkspaceManager::class, $workspaces);
+        $this->app->instance(RunWorkspaceCommand::class, $commands);
+
+        try {
+            app(CodingAgentManager::class)->driver('claude')->run($workspace, new AgentTask('Add teams.', instructions: '## How to work'));
+            $this->fail('The agent started with the real key.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringStartsWith('The model gateway is off', $exception->getMessage());
+        }
+
+        $this->assertSame(0, ModelGatewayGrant::query()->count());
+    }
+
+    public function test_through_the_gateway_the_box_gets_only_the_task_and_the_gateway_keeps_our_rules()
+    {
+        config([
+            'ai.providers.anthropic.key' => 'test-anthropic-key',
+            'builder.agents.gateway.enabled' => true,
+            'builder.agents.gateway.url' => 'http://control-plane.test',
+        ]);
+        $workspace = Workspace::factory()->create(['driver' => 'docker']);
+        $driver = Mockery::mock(WorkspaceDriver::class);
         $driver->shouldReceive('writeFile')->once()->withArgs(function (string $id, string $path, string $contents) use (&$task) {
             $task = json_decode($contents, true);
 
@@ -538,21 +571,32 @@ class SdkDriverTest extends TestCase
         $workspaces = Mockery::mock(WorkspaceManager::class);
         $workspaces->shouldReceive('driver')->with('docker')->andReturn($driver);
         $commands = Mockery::mock(RunWorkspaceCommand::class);
-        $commands->shouldReceive('handle')->once()->withArgs(fn (Workspace $box, array $command) => $command === ['rm', '-rf', RunnerAgent::TASK_DIRECTORY]);
+        $commands->shouldReceive('handle')->andReturnUsing(fn (Workspace $box, array $command) => new WorkspaceCommand([
+            'command' => $command,
+            'exit_code' => 0,
+            'timed_out' => false,
+            'lost' => false,
+            'duration_ms' => 5,
+            'output' => json_encode(['type' => 'result', 'adapter' => 'claude', 'status' => 'completed', 'summary' => 'Done.', 'turns' => 1, 'session' => 'fake-session'])."\n",
+            'error_output' => '',
+        ]));
         $this->app->instance(WorkspaceManager::class, $workspaces);
         $this->app->instance(RunWorkspaceCommand::class, $commands);
 
-        try {
-            app(CodingAgentManager::class)->driver('claude')->run($workspace, new AgentTask('Add teams. Use sk_live_'.str_repeat('x', 24).' for payments.'));
-            $this->fail('The agent started with the real key.');
-        } catch (RuntimeException $exception) {
-            $this->assertStringStartsWith('The model gateway is off', $exception->getMessage());
-        }
+        $outcome = app(CodingAgentManager::class)->driver('claude')->run($workspace, new AgentTask(
+            'Add teams. Use sk_live_'.str_repeat('x', 24).' for payments.',
+            instructions: "## How to work\n\nFollow the app's AGENTS.md.",
+        ));
 
-        // The agent is also told which files it may not change, and never
-        // sees a key the owner pasted.
+        $this->assertSame(AgentOutcomeStatus::Completed, $outcome->status);
+        // The agent is told which files it may not change, never sees a key
+        // the owner pasted, and never holds our rules.
         $this->assertContains('tests/Acceptance', $task['protected_paths']);
         $this->assertSame('Add teams. Use [secret removed] for payments.', $task['prompt']);
+        $this->assertStringNotContainsString('How to work', (string) json_encode($task));
+        $grant = ModelGatewayGrant::query()->sole();
+        $this->assertSame("## How to work\n\nFollow the app's AGENTS.md.", $grant->instructions);
+        $this->assertNotNull($grant->closed_at);
     }
 
     public function test_with_the_model_gateway_on_the_agent_gets_a_run_token_and_never_the_key()
@@ -569,9 +613,9 @@ class SdkDriverTest extends TestCase
             /** @var list<string> */
             public array $tokens = [];
 
-            public function open(string $provider, int $seconds): array
+            public function open(string $provider, int $seconds, ?string $instructions = null): array
             {
-                $opened = parent::open($provider, $seconds);
+                $opened = parent::open($provider, $seconds, $instructions);
                 $this->tokens[] = $opened['token'];
 
                 return $opened;
@@ -584,6 +628,7 @@ class SdkDriverTest extends TestCase
         $this->assertFalse(WorkspaceCommand::query()->get()->contains(fn (WorkspaceCommand $command) => str_contains((string) json_encode($command->command), 'test-anthropic-key')));
         $this->assertCount(1, $gateway->tokens);
         $this->assertNull($gateway->grant($gateway->tokens[0]), 'The token is closed once the run ends.');
+        $this->assertStringContainsString('## How to work', (string) $gateway->instructions($gateway->tokens[0]));
     }
 
     public function test_an_agent_that_reports_no_cost_is_priced_from_config_only_when_its_model_is_known()

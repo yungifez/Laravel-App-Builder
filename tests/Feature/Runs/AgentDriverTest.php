@@ -1385,7 +1385,8 @@ class AgentDriverTest extends TestCase
     protected function assertCoderPrompted(Closure $matches): void
     {
         $this->assertTrue(
-            collect($this->coder->tasks)->contains(fn (AgentTask $task) => $matches($task->prompt)),
+            // How to work goes apart from the task, for the gateway to add.
+            collect($this->coder->tasks)->contains(fn (AgentTask $task) => $matches($task->prompt."\n\n".$task->instructions)),
             'No task given to the coding agent matches.',
         );
     }

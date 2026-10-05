@@ -72,7 +72,8 @@ class SdkDriver extends AgentDriver
         }
 
         $outcome = $this->runCodingAgent->handle($run, $tools->lease(), $workspace, new AgentTask(
-            prompt: $this->writeBrief->handle($run, $plan),
+            prompt: $this->writeBrief->task($run, $plan),
+            instructions: $this->writeBrief->rules(),
             maxTurns: (int) config('builder.agents.max_turns'),
             maxBudgetUsd: (float) ($tidy ? config('builder.verification.shortcuts.tidy.max_budget_usd') : config('builder.agents.max_budget_usd')),
             timeoutSeconds: (int) config('builder.construction.budgets.minutes') * 60,

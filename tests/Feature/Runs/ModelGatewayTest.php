@@ -116,6 +116,44 @@ class ModelGatewayTest extends TestCase
         $this->assertNotNull($gateway->grant($recent['token']));
     }
 
+    public function test_the_gateway_adds_our_rules_to_each_call_so_the_box_never_holds_them()
+    {
+        Http::fake(['api.anthropic.com/*' => Http::response(self::STREAM), 'api.openai.com/*' => Http::response('{"usage":{"output_tokens":4}}')]);
+        $gateway = app(ModelGateway::class);
+        $claude = $gateway->open('anthropic', 600, 'Explain each step in plain words.');
+        $codex = $gateway->open('openai', 600, 'Explain each step in plain words.');
+
+        $this->call('POST', '/api/gateway/anthropic/v1/messages', [], [], [], ['HTTP_X_API_KEY' => $claude['token'], 'CONTENT_TYPE' => 'application/json'],
+            '{"model":"claude","system":"You are a coding agent.","tools":[{"name":"t","input_schema":{"type":"object","properties":{}}}],"messages":[]}')->streamedContent();
+        $this->call('POST', '/api/gateway/anthropic/v1/messages', [], [], [], ['HTTP_X_API_KEY' => $claude['token'], 'CONTENT_TYPE' => 'application/json'],
+            '{"model":"claude","system":[{"type":"text","text":"You are a coding agent.","cache_control":{"type":"ephemeral"}}],"messages":[]}')->streamedContent();
+        $this->withToken($codex['token'])->postJson('/api/gateway/openai/v1/responses', ['model' => 'gpt', 'instructions' => 'You are Codex.', 'input' => []])->assertOk();
+        $this->withToken($codex['token'])->postJson('/api/gateway/openai/v1/chat/completions', ['model' => 'gpt', 'messages' => [['role' => 'user', 'content' => 'Hi']]])->assertOk();
+
+        $sent = Http::recorded()->map(fn (array $pair) => json_decode($pair[0]->body(), true))->all();
+        $ours = ['type' => 'text', 'text' => 'Explain each step in plain words.'];
+        $this->assertSame([['type' => 'text', 'text' => 'You are a coding agent.'], $ours], $sent[0]['system']);
+        // An empty schema stays an object, as the provider needs it.
+        $this->assertStringContainsString('"properties":{}', Http::recorded()->first()[0]->body());
+        $this->assertSame([['type' => 'text', 'text' => 'You are a coding agent.', 'cache_control' => ['type' => 'ephemeral']], $ours], $sent[1]['system']);
+        $this->assertSame("You are Codex.\n\nExplain each step in plain words.", $sent[2]['instructions']);
+        $this->assertSame([['role' => 'system', 'content' => 'Explain each step in plain words.'], ['role' => 'user', 'content' => 'Hi']], $sent[3]['messages']);
+    }
+
+    public function test_an_error_that_quotes_the_call_never_shows_our_rules_to_the_box()
+    {
+        $rules = "## How to work\n\nBefore each group of steps, write one or two plain sentences on what you are about to do.";
+        Http::fake(['api.anthropic.com/*' => Http::response(['type' => 'error', 'error' => ['type' => 'invalid_request_error', 'message' => 'system.1.text: "'.$rules.'" is too long']], 400)]);
+        $opened = app(ModelGateway::class)->open('anthropic', 600, $rules);
+
+        $response = $this->postJson('/api/gateway/anthropic/v1/messages', ['model' => 'claude', 'messages' => []], ['x-api-key' => $opened['token']]);
+
+        $response->assertStatus(400);
+        $this->assertStringNotContainsString('Before each group of steps', $response->getContent());
+        $this->assertStringContainsString('is too long', $response->getContent());
+        $this->assertSame(1, app(ModelGateway::class)->grant($opened['token'])['requests'] ?? null);
+    }
+
     public function test_an_openai_agent_sends_its_token_as_a_bearer_token()
     {
         Http::fake(['api.openai.com/*' => Http::response('{"usage":{"output_tokens":40}}')]);

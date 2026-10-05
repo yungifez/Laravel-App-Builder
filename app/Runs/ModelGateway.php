@@ -51,10 +51,12 @@ class ModelGateway
     /**
      * Open the gateway for one run and get the environment its agent needs
      * in place of the key. The token lasts as long as the run may take.
+     * Our working rules, when given, are added to each of the run's calls
+     * on our side (GatewayInstructions), so the box never holds them.
      *
      * @return array{token: string, environment: array<string, string>}
      */
-    public function open(string $provider, int $seconds): array
+    public function open(string $provider, int $seconds, ?string $instructions = null): array
     {
         $client = self::CLIENTS[$provider];
         $token = 'gw_'.Str::random(48);
@@ -62,6 +64,7 @@ class ModelGateway
         ModelGatewayGrant::query()->create([
             'token_hash' => $this->hash($token),
             'provider' => $provider,
+            'instructions' => $instructions,
             'expires_at' => now()->addSeconds($seconds + 60),
         ]);
 
@@ -110,6 +113,14 @@ class ModelGateway
             'output_tokens' => $grant->output_tokens,
             'until' => $grant->expires_at->getTimestamp(),
         ];
+    }
+
+    /**
+     * Get our working rules for the run a token was opened for, if any.
+     */
+    public function instructions(string $token): ?string
+    {
+        return ModelGatewayGrant::query()->where('token_hash', $this->hash($token))->first()?->instructions;
     }
 
     /**

@@ -376,6 +376,9 @@ class WorkerDriverTest extends TestCase
         $token = app(GrantWorkerAccess::class)->handle($run);
 
         $task = $this->tool('get_task', $token)->json('result.content.0.text');
+        // A worker of the owner's reads the rules with the task: they are
+        // written to be read.
+        $this->assertStringContainsString('## How to work', $task);
         $this->assertStringContainsString('Do not create a .product-notes/ folder', $task);
         $this->assertStringNotContainsString('Keep the notes in', $task);
 

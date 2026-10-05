@@ -28,10 +28,49 @@ class WriteBrief
 
     /**
      * Write the whole brief: the change, what to keep, and how to work.
+     * A worker outside our boxes reads it all, so the rules it gets are
+     * written to be read.
      */
     public function handle(Run $run, Plan $plan): string
     {
-        return $this->plan($run, $plan)."\n\n".($this->outside($run) ? $this->outsideRules() : $this->workingRules());
+        $outside = $this->outside($run);
+
+        return $this->plan($run, $plan)."\n\n".$this->conduct($outside)."\n\n".($outside ? $this->outsideRules() : $this->workingRules());
+    }
+
+    /**
+     * Write only the task: the change and what to keep. Our own agents get
+     * how to work apart (rules()), through the model gateway.
+     */
+    public function task(Run $run, Plan $plan): string
+    {
+        return $this->plan($run, $plan);
+    }
+
+    /**
+     * Write how our own agents work, the same for every change.
+     */
+    public function rules(): string
+    {
+        return $this->conduct(false)."\n\n".$this->workingRules();
+    }
+
+    /**
+     * How to build whatever the change is: keep what the app does easy to
+     * see, what must hold when something fails, and what to keep to
+     * ourselves.
+     */
+    protected function conduct(bool $outside): string
+    {
+        $sections = [$this->observability($outside)];
+
+        if (Config::boolean('builder.verification.faults.enabled') && Config::boolean('builder.verification.faults.send_back')) {
+            $sections[] = self::FAILURES;
+        }
+
+        $sections[] = self::DISCRETION;
+
+        return implode("\n\n", $sections);
     }
 
     /**
@@ -129,18 +168,11 @@ class WriteBrief
             $sections[] = "## Files already written from the data shape\n\nThese hold the new records the plan stores: the migration, model, factory and form request, and where the plan says who may do what, the policy and the tests that guard it. Names, rules and access come from one shape, so they agree. Build on them rather than writing them again, and change them where the request needs it. Each form request asks the model's policy: where no policy was written, write one. Where only the person who added a record may use it, its form request does not take that person: set it from the signed-in user.\n\n".$this->list($scaffolded);
         }
 
-        $sections[] = $this->observability($this->outside($run));
         $sections[] = self::compatibility($run->featureRequest->project->keepsOldWorking());
 
         if (($services = $run->featureRequest->project->connectedServices()) !== []) {
             $sections[] = self::services($services);
         }
-
-        if (Config::boolean('builder.verification.faults.enabled') && Config::boolean('builder.verification.faults.send_back')) {
-            $sections[] = self::FAILURES;
-        }
-
-        $sections[] = self::DISCRETION;
 
         if ($plan->preserve !== []) {
             $sections[] = "## Keep as it is\n\nDo not change these. If the request cannot be done without changing one, stop and say so.\n\n".$this->list(array_column($plan->preserve, 'statement'));
