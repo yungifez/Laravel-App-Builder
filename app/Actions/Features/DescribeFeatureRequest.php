@@ -96,6 +96,16 @@ class DescribeFeatureRequest
                     && $featureRequest->commit_sha === null
                     && $featureRequest->latestRun?->status === RunStatus::Completed,
                 'can_retry' => RetryFeatureRequest::retryable($featureRequest),
+                // The newer try of this change, when it was tried again: the
+                // place to go on from.
+                // It stopped without a change to keep: even when it cannot be
+                // tried again, the owner can still ask in other words.
+                'stopped' => $featureRequest->latestRun?->question === null && (
+                    in_array($featureRequest->status, [FeatureRequestStatus::Failed, FeatureRequestStatus::Cancelled], true)
+                    || ($featureRequest->status !== FeatureRequestStatus::Generated
+                        && in_array($featureRequest->latestRun?->status, [RunStatus::Failed, RunStatus::NeedsUserDecision, RunStatus::Cancelled], true))
+                ),
+                'tried_again' => FeatureRequest::query()->where('retry_of_id', $featureRequest->id)->latest('id')->value('uuid'),
                 // It stopped just as the try before it did, so trying again
                 // is no longer the first thing offered.
                 'failed_same_way' => $sameWay,

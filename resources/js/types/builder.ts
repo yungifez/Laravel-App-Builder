@@ -181,6 +181,10 @@ export type FeatureRequestDetail = {
     still_online: { head: string | null; others: number } | null;
     can_accept: boolean;
     can_retry: boolean;
+    /** It stopped without a change to keep, so asking in other words is offered. */
+    stopped: boolean;
+    /** The newer try of this change, when it was tried again. */
+    tried_again: string | null;
     // It stopped just as the try before it did.
     failed_same_way: boolean;
     /** It stopped only for want of tries, and can go on from its work so far. */

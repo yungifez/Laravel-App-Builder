@@ -554,13 +554,31 @@ function lineClass(line: string): string {
             </AlertDescription>
         </Alert>
 
+        <!-- A stopped change always ends in a next step: try it again,
+             go on from the newer try, or ask in other words. -->
         <div
-            v-if="featureRequest.can_retry"
+            v-if="
+                featureRequest.can_retry ||
+                featureRequest.tried_again ||
+                featureRequest.stopped
+            "
             class="-mt-6 flex max-w-2xl flex-wrap items-center gap-3"
             data-test="retry"
         >
+            <Button
+                v-if="featureRequest.tried_again"
+                class="h-11 sm:h-9"
+                as-child
+                data-test="tried-again"
+            >
+                <Link :href="showFeatureRequest(featureRequest.tried_again)"
+                    >See the newer try</Link
+                >
+            </Button>
             <Form
-                v-if="featureRequest.can_keep_trying"
+                v-if="
+                    featureRequest.can_retry && featureRequest.can_keep_trying
+                "
                 v-bind="
                     FeatureRequestKeepTryingController.store.form(
                         featureRequest.id,
@@ -579,6 +597,7 @@ function lineClass(line: string): string {
                 <InputError class="mt-2" :message="errors.keep_trying" />
             </Form>
             <Form
+                v-if="featureRequest.can_retry"
                 v-bind="
                     FeatureRequestRetryController.store.form(featureRequest.id)
                 "
