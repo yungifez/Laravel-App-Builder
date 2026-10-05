@@ -1757,7 +1757,13 @@ export function useAppPreview(source: Source) {
         }
 
         post({ type: 'words', text: words });
-        selected.value = { ...part, words, text: words.slice(0, 80) };
+        selected.value = {
+            ...part,
+            words,
+            text: words.slice(0, 80),
+            // As the app names it, so the panel header follows.
+            name: words.slice(0, 60),
+        };
         moving.value = true;
         saveError.value = null;
 
@@ -2442,7 +2448,13 @@ export function useAppPreview(source: Source) {
 
             if (part !== null && part.words === shownNow) {
                 post({ type: 'words', text: words });
-                selected.value = { ...part, words, text: words.slice(0, 80) };
+                selected.value = {
+                    ...part,
+                    words,
+                    text: words.slice(0, 80),
+                    // As the app names it, so the panel header follows.
+                    name: words.slice(0, 60),
+                };
             }
         }
 
