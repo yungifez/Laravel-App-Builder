@@ -16,6 +16,7 @@ use App\Enums\AgentOutcomeStatus;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Jobs\VerifyFeatureRequest;
+use App\Models\Decision;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
@@ -583,6 +584,33 @@ class SdkDriverTest extends TestCase
         $this->assertStringStartsWith('model=claude-haiku-5 ', $account(['of' => 1, 'tier' => 'light', 'shortcuts' => []]));
         $this->assertStringStartsWith('model=claude-opus-5 ', $account(['of' => 1, 'tier' => 'full', 'shortcuts' => []]));
         $this->assertStringStartsWith('model=claude-opus-5 ', $account(null));
+    }
+
+    public function test_a_request_the_decision_model_is_sure_is_trivial_is_first_built_by_the_light_model_once_switched_on()
+    {
+        config([
+            'ai.providers.anthropic.key' => 'test-anthropic-key',
+            'builder.agents.runner.path' => base_path('tests/Fixtures/fake-agent-runner.mjs'),
+            'builder.agents.adapters.claude.model' => 'claude-opus-5',
+            'builder.agents.adapters.claude.light_model' => 'claude-haiku-5',
+        ]);
+        $build = function (string $choice, array $act) {
+            config(['builder.decisions.act' => $act]);
+            FeaturePlanner::fake([$this->plan()]);
+            $request = $this->request();
+            Decision::factory()->for($request)->create(['name' => 'complexity', 'choice' => $choice, 'confidence' => 0.95, 'threshold' => 0.9]);
+            $run = app(StartRun::class)->handle($request)->refresh();
+
+            return [$run->events()->where('type', 'build_finished')->sole()->data['account'], $run->events()->where('type', 'decision_acted')->count()];
+        };
+
+        [$account, $acted] = $build('trivial', ['complexity']);
+        $this->assertStringStartsWith('model=claude-haiku-5 ', $account);
+        $this->assertSame(1, $acted);
+
+        // Switched off, which is the default, or not trivial: the usual model.
+        $this->assertStringStartsWith('model=claude-opus-5 ', $build('trivial', [])[0]);
+        $this->assertStringStartsWith('model=claude-opus-5 ', $build('normal', ['complexity'])[0]);
     }
 
     public function test_a_resumed_claude_session_costs_only_what_it_added()

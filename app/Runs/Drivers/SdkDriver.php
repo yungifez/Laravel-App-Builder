@@ -2,6 +2,7 @@
 
 namespace App\Runs\Drivers;
 
+use App\Actions\Decisions\ActOnDecision;
 use App\Actions\Runs\ExtractCandidateChange;
 use App\Actions\Runs\RecordModelUsage;
 use App\Actions\Runs\RunCodingAgent;
@@ -47,6 +48,7 @@ class SdkDriver extends AgentDriver
         protected ExtractCandidateChange $extractCandidateChange,
         protected WriteBrief $writeBrief,
         protected RepairTier $repairTier,
+        protected ActOnDecision $actOnDecision,
     ) {
         parent::__construct($acceptanceSelector, $recordModelUsage);
     }
@@ -59,7 +61,10 @@ class SdkDriver extends AgentDriver
         // budget, and so does a repair of one problem a check can judge.
         $tidy = ($run->featureRequest->tidy['tier'] ?? null) === 'light';
         $escalate = $this->escalation($run);
-        $light = $escalate === null && ($tidy || $this->repairTier->light($run));
+        // A request the decision model is sure is trivial is first built by
+        // the light model too, once that decision is switched on to act.
+        $trivial = $escalate === null && ! $tidy && $run->repairs === 0 && $this->actOnDecision->handle($run, 'complexity', 'trivial');
+        $light = $escalate === null && ($tidy || $trivial || $this->repairTier->light($run));
 
         if ($escalate !== null) {
             $run->recordEvent('escalated', $escalate);

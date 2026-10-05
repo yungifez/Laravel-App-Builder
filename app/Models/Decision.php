@@ -11,8 +11,9 @@ use Illuminate\Support\Carbon;
 
 /**
  * A typed decision about a change request, made by a cheap decision model
- * before any expensive work (architecture §26.9). In shadow mode it never
- * acts: it is kept to compare with what actually happened.
+ * before any expensive work (architecture §26.9). It acts only when the
+ * operator switched it on and it is confident; otherwise it is kept to
+ * compare with what actually happened.
  *
  * @property int $id
  * @property int $feature_request_id

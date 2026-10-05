@@ -318,16 +318,23 @@ return [
     | laravel/ai "typesafe" provider) answers a few questions about the
     | request: how big it is, whether it is only a question, and whether it
     | touches permissions, stored data or deletes things. Each answer has a
-    | confidence, and may only ever act at or above its threshold. For now
-    | nothing acts (shadow mode): answers are kept and compared with what
-    | happened, with `php artisan builder:decisions`. Without a key for any
-    | listed provider, no decisions are made.
+    | confidence, and may only ever act at or above its threshold. Only the
+    | decisions named in "act" do; the rest run in shadow mode: answers are
+    | kept and compared with what happened, with `php artisan
+    | builder:decisions`. Without a key for any listed provider, no
+    | decisions are made.
     |
     */
 
     'decisions' => [
         'providers' => json_decode((string) env('BUILDER_DECISION_PROVIDERS', '["typesafe"]'), true) ?: [],
         'timeout' => (int) env('BUILDER_DECISION_TIMEOUT', 10),
+
+        // The decisions allowed to act, such as "complexity": a request it
+        // is sure is trivial is first built by the coding agent's light
+        // model. None by default. Switch one on only once
+        // builder:decisions shows its confident answers are rarely wrong.
+        'act' => array_values(array_filter(array_map(trim(...), explode(',', (string) env('BUILDER_DECISIONS_ACT', ''))))),
 
         // Decisions that would make a change cheaper need to be very sure;
         // decisions that would make it safer may act on a lower confidence.

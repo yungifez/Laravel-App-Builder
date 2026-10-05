@@ -3755,7 +3755,8 @@ for it too. The state sent is the owner's words only.
 Each answer is a row in `decisions` (choice, probabilities, confidence,
 threshold, acted, latency, whether a later provider had to answer, and its
 share of the call's cost), not a run event: decisions belong to the request
-and are made before its run exists. `acted` is always false for now.
+and are made before its run exists. `acted` is true only when the answer
+changed the run (see below).
 
 `php artisan builder:decisions` joins the answers with the outcome, read from
 the final diff and its repairs:
@@ -3770,6 +3771,19 @@ It reports, per decision, how often the answer was confident, how often a
 confident answer was right, how often a second provider answered, and what
 the answers cost. A decision may start acting only when that report
 shows its confident errors are rare.
+
+**As built (acting).** A decision acts only when the operator names it in
+`BUILDER_DECISIONS_ACT` (empty by default, so every decision stays in shadow
+mode) and its answer is at or above its threshold. Only _complexity_ acts so
+far. A confident "trivial" sends the first build to the light coder model,
+the same one a background tidy-up uses. A repair after it goes to the usual
+model, so a wrong "trivial" costs one repair, not a failed change. The
+planner still runs: a trivial change still needs its scope and its tests
+written before the coder starts. The question and safety decisions stay in
+shadow mode until their own reports earn it. The run records a
+`decision_acted` event, and `builder:decisions` sets the changes a decision
+acted on against those it left alone, on first-try passes and cost per kept
+change.
 
 **The honest expectation.** A change's cost is dominated by the coder loop and
 verification, and its latency by verification, so a 100 ms decision matters
