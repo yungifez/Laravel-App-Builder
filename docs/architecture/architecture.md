@@ -3722,7 +3722,8 @@ The question decision was added because a question already skips the build
 for it too. The state sent is the owner's words only.
 
 Each answer is a row in `decisions` (choice, probabilities, confidence,
-threshold, acted, latency), not a run event: decisions belong to the request
+threshold, acted, latency, whether a later provider had to answer, and its
+share of the call's cost), not a run event: decisions belong to the request
 and are made before its run exists. `acted` is always false for now.
 
 `php artisan builder:decisions` joins the answers with the outcome, read from
@@ -3734,8 +3735,9 @@ the final diff and its repairs:
 - the number of changed files outside tests, plus the repairs, gives the complexity;
 - an answered request is a question.
 
-It reports, per decision, how often the answer was confident, and how often a
-confident answer was right. A decision may start acting only when that report
+It reports, per decision, how often the answer was confident, how often a
+confident answer was right, how often a second provider answered, and what
+the answers cost. A decision may start acting only when that report
 shows its confident errors are rare.
 
 **The honest expectation.** A change's cost is dominated by the coder loop and

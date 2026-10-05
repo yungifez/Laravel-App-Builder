@@ -19,16 +19,18 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property string $driver The provider that decided
  * @property string|null $model
+ * @property bool $fallback Whether a provider after the first had to answer
  * @property string $choice
  * @property array<string, float> $probabilities
  * @property float $confidence
  * @property float $threshold The confidence it needs before it may act
  * @property bool $acted
  * @property int $latency_ms
+ * @property float|null $cost_usd Its share of what the call cost, when the model's price is known
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'driver', 'model', 'choice', 'probabilities', 'confidence', 'threshold', 'acted', 'latency_ms'])]
+#[Fillable(['name', 'driver', 'model', 'fallback', 'choice', 'probabilities', 'confidence', 'threshold', 'acted', 'latency_ms', 'cost_usd'])]
 class Decision extends Model
 {
     /** @use HasFactory<DecisionFactory> */
@@ -45,8 +47,10 @@ class Decision extends Model
             'probabilities' => 'array',
             'confidence' => 'float',
             'threshold' => 'float',
+            'fallback' => 'boolean',
             'acted' => 'boolean',
             'latency_ms' => 'integer',
+            'cost_usd' => 'float',
         ];
     }
 

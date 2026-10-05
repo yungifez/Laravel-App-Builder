@@ -56,6 +56,9 @@ class ReportDecisions extends Command
                 $confident > 0 ? round(100 * $right / $confident).'%' : '-',
                 $confident - $right,
                 round((float) $group->avg('latency_ms')).' ms',
+                round(100 * $group->where('fallback', true)->count() / $group->count()).'%',
+                // Unknown when no answer's model had a known price.
+                $group->whereNotNull('cost_usd')->isEmpty() ? '-' : '$'.number_format((float) $group->sum('cost_usd'), 4),
             ];
         }
 
@@ -65,7 +68,7 @@ class ReportDecisions extends Command
             return self::SUCCESS;
         }
 
-        $this->table(['Decision', 'Made', 'Outcome known', 'Confident (of known)', 'Confident and right', 'Confident and wrong', 'Average time'], $rows);
+        $this->table(['Decision', 'Made', 'Outcome known', 'Confident (of known)', 'Confident and right', 'Confident and wrong', 'Average time', 'Second provider', 'Cost'], $rows);
 
         return self::SUCCESS;
     }

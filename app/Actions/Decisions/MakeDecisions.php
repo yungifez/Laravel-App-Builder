@@ -50,6 +50,9 @@ class MakeDecisions
             'at' => now()->toIso8601String(),
         ]]]);
 
+        // The one call answers every question, so each answer carries an
+        // equal share of its cost.
+        $share = $cost === null ? null : round($cost / max(count($response->answers), 1), 6);
         $decisions = [];
 
         foreach ($response->answers as $name => $answer) {
@@ -57,9 +60,11 @@ class MakeDecisions
                 ...$this->describe($answer),
                 'driver' => (string) $response->meta->provider,
                 'model' => $response->meta->model,
+                'fallback' => (string) $response->meta->provider !== $providers[0],
                 'threshold' => (float) (config("builder.decisions.thresholds.{$name}") ?? 1),
                 'acted' => false,
                 'latency_ms' => $latency,
+                'cost_usd' => $share,
             ]);
         }
 

@@ -13,6 +13,7 @@ use App\Models\FeatureRequest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Laravel\Ai\Classification;
+use Laravel\Ai\Exceptions\ProviderOverloadedException;
 use Laravel\Ai\Prompts\ClassificationPrompt;
 use Laravel\Ai\Responses\Data\BooleanAnswer;
 use Laravel\Ai\Responses\Data\ChoiceAnswer;
@@ -73,6 +74,7 @@ class DecisionTest extends TestCase
         $this->assertSame('yes', $decisions['permissions']->choice);
         $this->assertFalse($decisions['permissions']->confident());
         $this->assertSame('typesafe', $decisions['complexity']->driver);
+        $this->assertFalse($decisions->contains(fn (Decision $decision) => $decision->fallback));
         $this->assertFalse($decisions->contains(fn (Decision $decision) => $decision->acted));
 
         // The call is metered once for all five answers.
@@ -113,6 +115,25 @@ class DecisionTest extends TestCase
         $this->assertSame([], app(ObserveOutcome::class)->handle(FeatureRequest::factory()->create()));
     }
 
+    public function test_a_decision_answered_by_the_second_provider_says_it_fell_back()
+    {
+        config(['ai.providers.openrouter.key' => 'openrouter-test-key', 'builder.decisions.providers' => ['typesafe', 'openrouter']]);
+        Classification::fake(function (ClassificationPrompt $prompt) {
+            if ($prompt->provider->name() === 'typesafe') {
+                throw ProviderOverloadedException::forProvider('typesafe');
+            }
+
+            return ['question' => new BooleanAnswer(0.9)];
+        });
+        $request = FeatureRequest::factory()->create();
+
+        app(MakeDecisions::class)->handle($request);
+
+        $question = $request->decisions()->where('name', 'question')->sole();
+        $this->assertSame('openrouter', $question->driver);
+        $this->assertTrue($question->fallback);
+    }
+
     public function test_the_report_counts_confident_answers_that_were_right_and_wrong()
     {
         $answered = FeatureRequest::factory()->create(['status' => FeatureRequestStatus::Answered]);
@@ -123,8 +144,21 @@ class DecisionTest extends TestCase
 
         $this->artisan('builder:decisions')
             ->expectsTable(
-                ['Decision', 'Made', 'Outcome known', 'Confident (of known)', 'Confident and right', 'Confident and wrong', 'Average time'],
-                [['question', 3, 2, 2, '50%', 1, '250 ms']],
+                ['Decision', 'Made', 'Outcome known', 'Confident (of known)', 'Confident and right', 'Confident and wrong', 'Average time', 'Second provider', 'Cost'],
+                [['question', 3, 2, 2, '50%', 1, '250 ms', '0%', '$0.0003']],
+            )
+            ->assertSuccessful();
+    }
+
+    public function test_the_report_shows_how_often_a_second_provider_answered_and_an_unknown_cost()
+    {
+        Decision::factory()->create(['name' => 'complexity', 'choice' => 'normal', 'fallback' => true, 'cost_usd' => null]);
+        Decision::factory()->create(['name' => 'complexity', 'choice' => 'normal', 'cost_usd' => null]);
+
+        $this->artisan('builder:decisions')
+            ->expectsTable(
+                ['Decision', 'Made', 'Outcome known', 'Confident (of known)', 'Confident and right', 'Confident and wrong', 'Average time', 'Second provider', 'Cost'],
+                [['complexity', 2, 0, 0, '-', 0, '250 ms', '50%', '-']],
             )
             ->assertSuccessful();
     }

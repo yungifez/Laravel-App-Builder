@@ -23,12 +23,14 @@ class DecisionFactory extends Factory
             'name' => 'question',
             'driver' => 'typesafe',
             'model' => null,
+            'fallback' => false,
             'choice' => 'no',
             'probabilities' => ['yes' => 0.05, 'no' => 0.95],
             'confidence' => 0.95,
             'threshold' => 0.9,
             'acted' => false,
             'latency_ms' => 250,
+            'cost_usd' => 0.0001,
         ];
     }
 }
