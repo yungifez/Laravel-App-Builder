@@ -1304,14 +1304,14 @@ const checks = computed(() => {
                                         :key="index"
                                         data-test="decision"
                                     >
-                                        {{ assumption }}
+                                        {{ assumption.text }}
                                         <span
                                             class="flex min-h-6 items-center gap-3"
                                         >
                                             <span
                                                 v-if="
                                                     run.kept_assumptions.includes(
-                                                        assumption,
+                                                        assumption.text,
                                                     )
                                                 "
                                                 class="inline-flex items-center gap-1 text-foreground"
@@ -1336,7 +1336,7 @@ const checks = computed(() => {
                                                 <input
                                                     type="hidden"
                                                     name="assumption"
-                                                    :value="assumption"
+                                                    :value="assumption.text"
                                                 />
                                                 <button
                                                     :disabled="processing"
@@ -1353,7 +1353,7 @@ const checks = computed(() => {
                                                         {
                                                             query: {
                                                                 change: request.id,
-                                                                ask: `Change this: “${assumption}”\n\nInstead, `,
+                                                                ask: `Change this: “${assumption.text}”\n\nInstead, `,
                                                             },
                                                         },
                                                     )
@@ -1592,7 +1592,7 @@ const checks = computed(() => {
                                             .assumptions"
                                         :key="index"
                                     >
-                                        {{ assumption }}
+                                        {{ assumption.text }}
                                     </p>
                                 </section>
                                 <section

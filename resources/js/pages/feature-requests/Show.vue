@@ -1319,7 +1319,7 @@ function lineClass(line: string): string {
                             :key="index"
                             class="py-4"
                         >
-                            {{ assumption }}
+                            {{ assumption.text }}
                         </li>
                     </ul>
                 </section>

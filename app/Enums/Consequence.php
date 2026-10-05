@@ -25,4 +25,21 @@ enum Consequence: string
 
     /** A major way the business works. */
     case MajorWorkflow = 'major_workflow';
+
+    /**
+     * Get how serious a wrong guess here is, 0 the most: what cannot be got
+     * back comes before what can be put right.
+     */
+    public function seriousness(): int
+    {
+        return match ($this) {
+            self::DataLoss => 0,
+            self::Money => 1,
+            self::Legal => 2,
+            self::Access => 3,
+            self::OutsideServices => 4,
+            self::MajorWorkflow => 5,
+            self::DataShape => 6,
+        };
+    }
 }

@@ -305,7 +305,12 @@ export type Run = {
         acceptance_criteria: string[];
         /** How each criterion is tried, numbered from 1. */
         cases: PlanCase[];
-        assumptions: string[];
+        /**
+         * What was decided for the owner, already in reading order: glance
+         * ones first (touch something that matters or cannot be undone),
+         * then quiet ones. The server decides both.
+         */
+        assumptions: { text: string; level: 'glance' | 'quiet' }[];
         understood_as: string | null;
         current_behavior: string | null;
         preserve: string[];

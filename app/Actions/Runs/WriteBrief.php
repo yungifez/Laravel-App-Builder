@@ -194,7 +194,7 @@ class WriteBrief
         }
 
         if ($plan->assumptions !== []) {
-            $sections[] = "## Assumptions\n\n".$this->list($plan->assumptions);
+            $sections[] = "## Assumptions\n\n".$this->list($plan->assumptionTexts());
         }
 
         if (($earlier = $this->earlierTry($run)) !== []) {

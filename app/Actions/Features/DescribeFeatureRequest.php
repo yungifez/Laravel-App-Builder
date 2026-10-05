@@ -11,6 +11,7 @@ use App\Actions\Runs\KeepTryingRun;
 use App\Actions\Runs\NarrateWork;
 use App\Context\ProjectContext;
 use App\Context\ProjectNotes;
+use App\Enums\Consequence;
 use App\Enums\DeploymentStatus;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\NextStep;
@@ -27,6 +28,7 @@ use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\RunEvent;
 use App\Projects\ProjectRepository;
+use App\Runs\Assumption;
 use App\Runs\Drivers\WorkerDriver;
 use App\Runs\Plan;
 use App\Scaffolding\ShapeWording;
@@ -377,9 +379,14 @@ class DescribeFeatureRequest
                 // How each criterion is tried: the usual way, another way
                 // and a refusal, or why one does not apply.
                 'cases' => $run->plan['cases'],
-                // What a new record keeps and who may use it is decided
-                // for the owner like any assumption, so it is shown first.
-                'assumptions' => [...app(ShapeWording::class)->describe(Plan::fromArray($run->plan)->dataShape), ...$run->plan['assumptions']],
+                // What was decided for the owner, in the order they read it
+                // and with how much attention each needs, decided here so
+                // the page only shows it. What a new record keeps and who
+                // may use it is one of them: it touches the data's shape.
+                'assumptions' => array_map(fn (Assumption $assumption) => ['text' => $assumption->text, 'level' => $assumption->level()->value], Assumption::byAttention([
+                    ...array_map(fn (string $text) => new Assumption($text, [Consequence::DataShape]), app(ShapeWording::class)->describe(Plan::fromArray($run->plan)->dataShape)),
+                    ...Plan::fromArray($run->plan)->assumptions,
+                ])),
                 'understood_as' => $run->plan['understood_as'] ?? null,
                 'current_behavior' => $run->plan['current_behavior'] ?? null,
                 'preserve' => array_column(Plan::fromArray($run->plan)->preserve, 'statement'),

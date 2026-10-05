@@ -138,7 +138,7 @@ class RunQuestionTest extends TestCase
 
         $this->assertSame(RunStatus::Verifying, $run->status);
         $this->assertNull($run->question);
-        $this->assertContains('Can customers use more than one location? I went with: No.', $run->plan['assumptions']);
+        $this->assertContains('Can customers use more than one location? I went with: No.', array_column($run->plan['assumptions'], 'text'));
         $this->assertSame(['question' => 'Can customers use more than one location?', 'option' => 'No', 'touches' => ['data_shape']], $run->events()->where('type', 'question_decided')->sole()->data);
     }
 

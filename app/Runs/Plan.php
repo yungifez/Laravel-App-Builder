@@ -24,7 +24,7 @@ final readonly class Plan
 {
     /**
      * @param  list<string>  $acceptanceCriteria
-     * @param  list<string>  $assumptions
+     * @param  list<Assumption>  $assumptions  What was decided where the request was silent
      * @param  list<string>  $tasks
      * @param  list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>  $steps
      * @param  list<string>  $acceptance  Protected acceptance test files that apply to the change
@@ -111,7 +111,11 @@ final readonly class Plan
             'acceptance_criteria' => [...$build, 'max:30'],
             'acceptance_criteria.*' => ['required', 'string', 'max:1000'],
             'assumptions' => ['present', 'array', 'max:30'],
-            'assumptions.*' => ['string', 'max:1000'],
+            'assumptions.*' => ['array'],
+            'assumptions.*.text' => ['required', 'string', 'max:1000'],
+            'assumptions.*.touches' => ['present', 'array', 'max:10'],
+            'assumptions.*.reversible' => ['required', 'boolean'],
+            'assumptions.*.easier_after_seeing' => ['required', 'boolean'],
             'tasks' => [...$build, 'max:30'],
             'tasks.*' => ['required', 'string', 'max:2000'],
             'steps' => [...$build, 'max:20'],
@@ -148,13 +152,13 @@ final readonly class Plan
             throw new ConstructionFailed(__('The planner returned an invalid plan: :errors', ['errors' => implode(' ', $validator->errors()->all())]));
         }
 
-        /** @var array{summary: string, acceptance_criteria: array<int, string>, assumptions: array<int, string>, tasks: array<int, string>, steps: array<int, array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, capabilities?: array<int, string>, understood_as?: string|null, current_behavior?: string|null, preserve?: array<int, array{area?: string|null, statement: string}>, question?: array{text: string, why?: string|null, options: array<int, string>, recommended?: string|null, touches?: array<int, string>, reversible?: bool, easier_after_seeing?: bool}|null, commit_subject?: string|null, answer?: string|null, next?: array<int, string>, goal?: string|null} $valid */
+        /** @var array{summary: string, acceptance_criteria: array<int, string>, assumptions: array<int, array{text: string, touches: array<int, mixed>, reversible: bool, easier_after_seeing: bool}>, tasks: array<int, string>, steps: array<int, array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, capabilities?: array<int, string>, understood_as?: string|null, current_behavior?: string|null, preserve?: array<int, array{area?: string|null, statement: string}>, question?: array{text: string, why?: string|null, options: array<int, string>, recommended?: string|null, touches?: array<int, string>, reversible?: bool, easier_after_seeing?: bool}|null, commit_subject?: string|null, answer?: string|null, next?: array<int, string>, goal?: string|null} $valid */
         $valid = $validator->validated();
 
         return new self(
             summary: $valid['summary'],
             acceptanceCriteria: array_values($valid['acceptance_criteria']),
-            assumptions: array_values($valid['assumptions']),
+            assumptions: array_values(array_map(Assumption::fromArray(...), $valid['assumptions'])),
             tasks: array_values($valid['tasks']),
             steps: array_values(array_map(fn (array $step) => [
                 'key' => $step['key'],
@@ -417,6 +421,16 @@ final readonly class Plan
     }
 
     /**
+     * Get what was decided for the owner, as text.
+     *
+     * @return list<string>
+     */
+    public function assumptionTexts(): array
+    {
+        return array_map(fn (Assumption $assumption) => $assumption->text, $this->assumptions);
+    }
+
+    /**
      * Build on the recommended option instead of asking, and list the choice
      * with the other decisions, where the owner reviews it with the change.
      */
@@ -431,7 +445,12 @@ final readonly class Plan
             'question' => null,
             'assumptions' => [
                 ...$this->assumptions,
-                __(':question I went with: :option.', ['question' => $this->question['text'], 'option' => rtrim($this->question['recommended'], '.')]),
+                new Assumption(
+                    text: __(':question I went with: :option.', ['question' => $this->question['text'], 'option' => rtrim($this->question['recommended'], '.')]),
+                    touches: Assumption::touches($this->question['touches'] ?? []),
+                    reversible: $this->question['reversible'] ?? true,
+                    easierAfterSeeing: $this->question['easier_after_seeing'] ?? false,
+                ),
             ],
         ]);
     }
@@ -470,14 +489,14 @@ final readonly class Plan
     /**
      * Restore a plan saved on a run.
      *
-     * @param  array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>, understood_as?: string|null, current_behavior?: string|null, preserve?: list<array{area: string|null, statement: string}>, commit_subject?: string|null, answer?: string|null, next?: list<string>, goal?: string|null, data_shape?: list<Record>, cases: list<array{criterion: int, kind: string, says: string|null, none: string|null}>, written_tests: list<array{item: int, file: string, name: string}>, written_files: array<string, string>}  $data
+     * @param  array{summary: string, acceptance_criteria: list<string>, assumptions: list<array{text: string, touches: list<string>, reversible: bool, easier_after_seeing: bool}>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>, understood_as?: string|null, current_behavior?: string|null, preserve?: list<array{area: string|null, statement: string}>, commit_subject?: string|null, answer?: string|null, next?: list<string>, goal?: string|null, data_shape?: list<Record>, cases: list<array{criterion: int, kind: string, says: string|null, none: string|null}>, written_tests: list<array{item: int, file: string, name: string}>, written_files: array<string, string>}  $data
      */
     public static function fromArray(array $data): self
     {
         return new self(
             summary: $data['summary'],
             acceptanceCriteria: $data['acceptance_criteria'],
-            assumptions: $data['assumptions'],
+            assumptions: array_map(Assumption::fromArray(...), $data['assumptions']),
             tasks: $data['tasks'],
             steps: $data['steps'],
             acceptance: $data['acceptance'],
@@ -500,14 +519,14 @@ final readonly class Plan
     /**
      * Get the plan as stored on the run.
      *
-     * @return array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities: list<string>, understood_as: string|null, current_behavior: string|null, preserve: list<array{area: string|null, statement: string}>, commit_subject: string|null, answer: string|null, next: list<string>, goal: string|null, data_shape: list<Record>, cases: list<array{criterion: int, kind: string, says: string|null, none: string|null}>, written_tests: list<array{item: int, file: string, name: string}>, written_files: array<string, string>}
+     * @return array{summary: string, acceptance_criteria: list<string>, assumptions: list<array{text: string, touches: list<string>, reversible: bool, easier_after_seeing: bool}>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities: list<string>, understood_as: string|null, current_behavior: string|null, preserve: list<array{area: string|null, statement: string}>, commit_subject: string|null, answer: string|null, next: list<string>, goal: string|null, data_shape: list<Record>, cases: list<array{criterion: int, kind: string, says: string|null, none: string|null}>, written_tests: list<array{item: int, file: string, name: string}>, written_files: array<string, string>}
      */
     public function toArray(): array
     {
         return [
             'summary' => $this->summary,
             'acceptance_criteria' => $this->acceptanceCriteria,
-            'assumptions' => $this->assumptions,
+            'assumptions' => array_map(fn (Assumption $assumption) => $assumption->toArray(), $this->assumptions),
             'tasks' => $this->tasks,
             'steps' => $this->steps,
             'acceptance' => $this->acceptance,

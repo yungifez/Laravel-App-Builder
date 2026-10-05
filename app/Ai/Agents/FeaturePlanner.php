@@ -51,7 +51,7 @@ class FeaturePlanner implements Agent, HasMiddleware, HasStructuredOutput
         - commit_subject: the git commit subject the application's own developer would write for this change: imperative, under 60 characters, about the code, for example "Add a phone number to the contact form". Do not quote the request.
         - acceptance_criteria: observable behaviour that must hold when the change is done, including who may and may not do things. The owner reads them, so write what a person sees or can do, without code words: "A team with no description shows only its name", not "A team with a null description".
         - cases: one entry for each acceptance criterion, in the same order, saying how a test tries it. base: the main way it happens ("An owner with two invoices sees both"). alternate: another valid way that should also work ("An owner with no invoices sees that there are none yet"). exception: a way the app must refuse: bad input, the wrong person or a record that is not there ("A signed-in person who is not the owner is turned away"). Each is one plain sentence with the people and values a test would use. When alternate or exception truly cannot apply, set it to "" and say why in no_alternate or no_exception ("It only changes a colour, so nothing can be refused"); otherwise set those to "". Failing outside services are tried by other checks, so an exception is always a refusal. When the app answers as usual but shows something else ("A visitor who picks a past day sees no times", "An owner who gives a date that does not exist sees today's bookings"), that is an alternate, not an exception: nothing was refused. When nothing in the criterion can be refused, set exception to "" and say why in no_exception.
-        - assumptions: decisions you made where the request was silent. Prefer the conventional Laravel choice.
+        - assumptions: decisions you made where the request was silent. Prefer the conventional Laravel choice. Write each text as one short line the owner reads at a glance, under about 60 characters, without code words ("Only the person who added a booking can delete it"). Say what a wrong guess would touch, from the same list as a question's touches (empty when it touches none of them), whether the owner could change it later without losing or rewriting data, money or anyone's access (reversible), and whether it is easier to judge once they can try the change (easier_after_seeing).
         - tasks: concrete, ordered instructions for a developer who will make the change with file tools. Name the files and Laravel features to use (migrations, models, policies, form requests, actions, notifications, screens made the way the app makes its others, tests).
         - preserve: what must stay as it is, each with the key of the area it belongs to (or ""). Take them from the rules and behaviours in the project notes for the areas the change is about and the areas they may also affect, for example "Owners can still refund any amount". List only what a careless change could plausibly break.
         - capabilities: the keys of the areas of the application (listed under "Areas of the application") that this change is about. Leave it empty when there is no list or none fits. The developer receives those areas' notes.
@@ -88,7 +88,12 @@ class FeaturePlanner implements Agent, HasMiddleware, HasStructuredOutput
                 'exception' => $schema->string()->required(),
                 'no_exception' => $schema->string()->required(),
             ])->withoutAdditionalProperties())->required(),
-            'assumptions' => $schema->array()->items($schema->string())->required(),
+            'assumptions' => $schema->array()->items($schema->object([
+                'text' => $schema->string()->required(),
+                'touches' => $schema->array()->items($schema->string()->enum(array_column(Consequence::cases(), 'value')))->required(),
+                'reversible' => $schema->boolean()->required(),
+                'easier_after_seeing' => $schema->boolean()->required(),
+            ])->withoutAdditionalProperties())->required(),
             'tasks' => $schema->array()->items($schema->string())->required(),
             'understood_as' => $schema->string()->required(),
             'current_behavior' => $schema->string()->required(),

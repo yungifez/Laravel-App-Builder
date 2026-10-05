@@ -5,6 +5,7 @@ namespace App\Runs\Drivers;
 use App\Features\FeatureGeneratorManager;
 use App\Features\PatchSummary;
 use App\Models\Run;
+use App\Runs\Assumption;
 use App\Runs\Contracts\ConstructionDriver;
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Plan;
@@ -35,7 +36,7 @@ class ScriptedDriver implements ConstructionDriver
         return new Plan(
             summary: $change->summary,
             acceptanceCriteria: [],
-            assumptions: [__('Replays the known-good solution ":key".', ['key' => $change->solutionKey])],
+            assumptions: [new Assumption(__('Replays the known-good solution ":key".', ['key' => $change->solutionKey]))],
             tasks: [__('Apply the solution\'s patch.')],
             steps: $change->steps,
             acceptance: $change->acceptance,

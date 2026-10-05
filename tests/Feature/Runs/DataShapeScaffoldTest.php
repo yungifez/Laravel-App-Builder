@@ -118,7 +118,7 @@ class DataShapeScaffoldTest extends TestCase
         // The owner sees what is kept in their words, first among the
         // decisions made for them.
         $this->assertSame(
-            'For each booking I keep: the team booked and whether it is settled (pending or confirmed).',
+            ['text' => 'For each booking I keep: the team booked and whether it is settled (pending or confirmed).', 'level' => 'glance'],
             app(DescribeFeatureRequest::class)->handle($featureRequest)['run']['plan']['assumptions'][0],
         );
     }

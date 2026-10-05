@@ -14,6 +14,7 @@ use App\Models\TestObservation;
 use App\Models\User;
 use App\Models\Verification;
 use App\Projects\ProjectRepository;
+use App\Runs\Assumption;
 use App\Runs\Plan;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -166,9 +167,9 @@ class ProjectUnderstandingTest extends TestCase
         Run::factory()->for($kept)->create([
             'answers' => [['question' => 'Should owners count as members?', 'answer' => 'Yes', 'decided_by' => 'owner']],
             'plan' => (new Plan('', assumptions: [
-                'Counts include people of every role.',
-                'No database migration is needed.',
-                'The `members` relation is reused.',
+                new Assumption('Counts include people of every role.'),
+                new Assumption('No database migration is needed.'),
+                new Assumption('The `members` relation is reused.'),
             ]))->toArray(),
         ]);
         $undone = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now(), 'reverted_at' => now()]);
@@ -193,8 +194,8 @@ class ProjectUnderstandingTest extends TestCase
     {
         $kept = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now()]);
         $run = Run::factory()->for($kept)->create(['plan' => (new Plan('', assumptions: [
-            'Counts include people of every role.',
-            'Invited people count once they join.',
+            new Assumption('Counts include people of every role.'),
+            new Assumption('Invited people count once they join.'),
         ]))->toArray()]);
 
         $this->actingAs($this->owner);
@@ -225,7 +226,7 @@ class ProjectUnderstandingTest extends TestCase
 
     public function test_something_the_owner_agrees_with_is_no_longer_noted_as_assumed()
     {
-        $plan = (new Plan('', assumptions: ['Counts include people of every role.']))->toArray();
+        $plan = (new Plan('', assumptions: [new Assumption('Counts include people of every role.')]))->toArray();
         $notes = app(ProjectNotes::class);
         $branch = $this->project->branch();
         $files = $notes->files($this->project, $branch);
@@ -254,7 +255,7 @@ class ProjectUnderstandingTest extends TestCase
         $waiting = FeatureRequest::factory()->generated()->for($this->project)->create(['note_changes' => [
             'project.md' => ['before' => "# Acme\n", 'after' => "# Acme\n\n{$assumed}\n"],
         ]]);
-        Run::factory()->for($waiting)->create(['plan' => [...$plan, 'assumptions' => ['Invited people count once they join.']]]);
+        Run::factory()->for($waiting)->create(['plan' => [...$plan, 'assumptions' => [['text' => 'Invited people count once they join.', 'touches' => [], 'reversible' => true, 'easier_after_seeing' => false]]]]);
 
         $this->post(route('feature-requests.assumptions.store', $waiting), ['assumption' => 'Invited people count once they join.'])
             ->assertRedirect();
@@ -267,7 +268,7 @@ class ProjectUnderstandingTest extends TestCase
     public function test_only_what_the_change_decided_can_be_kept()
     {
         $kept = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now()]);
-        $run = Run::factory()->for($kept)->create(['plan' => (new Plan('', assumptions: ['Counts include people of every role.']))->toArray()]);
+        $run = Run::factory()->for($kept)->create(['plan' => (new Plan('', assumptions: [new Assumption('Counts include people of every role.')]))->toArray()]);
 
         $this->actingAs($this->owner)
             ->post(route('feature-requests.assumptions.store', $kept), ['assumption' => 'Everyone is an admin.'])
@@ -283,7 +284,7 @@ class ProjectUnderstandingTest extends TestCase
     public function test_all_decisions_are_counted_while_the_newest_are_listed()
     {
         $kept = FeatureRequest::factory()->generated()->for($this->project)->create(['accepted_at' => now()]);
-        Run::factory()->for($kept)->create(['plan' => (new Plan('', assumptions: array_map(fn (int $n) => "Choice {$n} is kept.", range(1, 15))))->toArray()]);
+        Run::factory()->for($kept)->create(['plan' => (new Plan('', assumptions: array_map(fn (int $n) => new Assumption("Choice {$n} is kept."), range(1, 15))))->toArray()]);
 
         $this->actingAs($this->owner)
             ->get(route('projects.understanding.show', $this->project))

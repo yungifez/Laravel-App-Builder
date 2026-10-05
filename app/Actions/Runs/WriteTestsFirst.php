@@ -247,7 +247,7 @@ class WriteTestsFirst
         }
 
         if ($plan->assumptions !== []) {
-            $sections[] = "## Assumptions\n\n- ".implode("\n- ", $plan->assumptions);
+            $sections[] = "## Assumptions\n\n- ".implode("\n- ", $plan->assumptionTexts());
         }
 
         if ($context->routes !== []) {

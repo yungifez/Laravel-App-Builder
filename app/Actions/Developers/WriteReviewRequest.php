@@ -145,7 +145,7 @@ class WriteReviewRequest
             filled($plan['summary'] ?? null) ? "## How it was understood\n\n{$plan['summary']}".$this->items('', $plan['tasks'], 0) : null,
             $this->items('What must stay as it is', array_column($plan['preserve'] ?? [], 'statement')),
             $this->items('What it should do when done', $plan['acceptance_criteria'] ?? []),
-            $this->items('Assumptions made without asking the owner', $plan['assumptions'] ?? []),
+            $this->items('Assumptions made without asking the owner', array_column($plan['assumptions'] ?? [], 'text')),
             $this->items('Questions the owner answered', array_map(fn (array $answer) => "{$answer['question']} {$answer['answer']}", $run->answers ?? [])),
             ...$this->rules($notes),
             // A change that stopped before it was understood names no

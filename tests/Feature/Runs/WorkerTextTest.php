@@ -5,6 +5,7 @@ namespace Tests\Feature\Runs;
 use App\Actions\Runs\GrantWorkerAccess;
 use App\Enums\RunStatus;
 use App\Models\Run;
+use App\Runs\Assumption;
 use App\Runs\Plan;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Arr;
@@ -33,7 +34,7 @@ class WorkerTextTest extends TestCase
                 acceptanceCriteria: ['A member can book a class with room left.'],
                 tasks: ['Add booking.'],
                 preserve: [['area' => 'classes', 'statement' => 'A full class takes no more bookings.']],
-                assumptions: ['A booking needs a signed-in member.'],
+                assumptions: [new Assumption('A booking needs a signed-in member.')],
             ))->toArray(),
         ]);
         $token = app(GrantWorkerAccess::class)->handle($run);

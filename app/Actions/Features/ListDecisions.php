@@ -108,7 +108,7 @@ class ListDecisions
             $decisions[] = [...$change, 'question' => $answer['question'], 'decision' => $answer['answer'], 'by' => $answer['decided_by'] === 'owner' ? 'owner' : 'builder'];
         }
 
-        foreach ($run->plan['assumptions'] ?? [] as $assumption) {
+        foreach (array_column($run->plan['assumptions'] ?? [], 'text') as $assumption) {
             if (preg_match(self::BUILD_WORDS, $assumption) !== 1) {
                 $decisions[] = [...$change, 'question' => null, 'decision' => $assumption, 'by' => in_array($assumption, $run->kept_assumptions ?? [], true) ? 'owner' : 'builder'];
             }

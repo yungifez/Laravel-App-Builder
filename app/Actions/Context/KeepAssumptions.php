@@ -42,7 +42,7 @@ class KeepAssumptions
     public function handle(Workspace $workspace, Plan $plan, array $targets): array
     {
         $assumptions = array_values(array_filter(
-            array_map(trim(...), $plan->assumptions),
+            array_map(trim(...), $plan->assumptionTexts()),
             fn (string $assumption) => $assumption !== '' && preg_match(ListDecisions::BUILD_WORDS, $assumption) !== 1,
         ));
 

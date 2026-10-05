@@ -24,7 +24,7 @@ class KeepAssumption
     {
         $run = $featureRequest->latestRun;
 
-        if ($run === null || ! in_array($assumption, $run->plan['assumptions'] ?? [], true)) {
+        if ($run === null || ! in_array($assumption, array_column($run->plan['assumptions'] ?? [], 'text'), true)) {
             throw ValidationException::withMessages(['assumption' => __('This change did not decide that.')]);
         }
 

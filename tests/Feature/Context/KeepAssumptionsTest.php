@@ -10,6 +10,7 @@ use App\Context\ProjectNotes;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
+use App\Runs\Assumption;
 use App\Runs\Plan;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
@@ -25,8 +26,8 @@ class KeepAssumptionsTest extends TestCase
     {
         $run = $this->prepare(['project.md' => "# Project\n\nA booking app.\n", 'capabilities/bookings.md' => "# Bookings\n\nRooms are booked.\n"]);
         $plan = new Plan('Book rooms', assumptions: [
-            'Any signed-in member may book any room.',
-            'The bookings table gets a starts_at column.',
+            new Assumption('Any signed-in member may book any room.'),
+            new Assumption('The bookings table gets a starts_at column.'),
         ]);
 
         $kept = app(KeepAssumptions::class)->handle($run->workspace, $plan, ['bookings']);
@@ -43,7 +44,7 @@ class KeepAssumptionsTest extends TestCase
     public function test_assumptions_are_added_once_and_go_to_the_project_notes_without_one_area(): void
     {
         $run = $this->prepare(['project.md' => "# Project\n\n## Assumptions\n\n- Bookings last at most a day. (assumed)\n"]);
-        $plan = new Plan('Book rooms', assumptions: ['Bookings last at most a day.', 'A cancelled booking frees the room.']);
+        $plan = new Plan('Book rooms', assumptions: [new Assumption('Bookings last at most a day.'), new Assumption('A cancelled booking frees the room.')]);
 
         app(KeepAssumptions::class)->handle($run->workspace, $plan, ['bookings', 'rooms']);
         $again = app(KeepAssumptions::class)->handle($run->workspace, $plan, ['bookings', 'rooms']);
@@ -57,7 +58,7 @@ class KeepAssumptionsTest extends TestCase
 
     public function test_an_area_without_notes_shares_the_projects_and_an_app_without_notes_gets_none(): void
     {
-        $plan = new Plan('Book rooms', assumptions: ['A cancelled booking frees the room.']);
+        $plan = new Plan('Book rooms', assumptions: [new Assumption('A cancelled booking frees the room.')]);
         $run = $this->prepare(['project.md' => "# Project\n"]);
 
         app(KeepAssumptions::class)->handle($run->workspace, $plan, ['bookings']);
@@ -73,7 +74,7 @@ class KeepAssumptionsTest extends TestCase
     public function test_a_replayed_known_solution_keeps_nothing(): void
     {
         $run = $this->prepare(['project.md' => "# Project\n"]);
-        $plan = new Plan('Book rooms', assumptions: ['Replays the known-good solution "rooms".'], solutionKey: 'rooms');
+        $plan = new Plan('Book rooms', assumptions: [new Assumption('Replays the known-good solution "rooms".')], solutionKey: 'rooms');
 
         $this->assertSame([], app(KeepAssumptions::class)->handle($run->workspace, $plan, []));
     }

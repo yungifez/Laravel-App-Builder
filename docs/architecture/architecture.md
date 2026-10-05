@@ -619,6 +619,16 @@ run stops only for a hard-to-reverse choice in one of the consequences listed
 in `builder.construction.questions.ask_about`. Otherwise it builds on the
 recommended option and lists that option with the change's other decisions.
 
+**Decisions are sorted by code, not by the model.** The planner tags each
+assumption the same way: what it touches, whether it can be undone, and
+whether it is easier to judge after trying the change. Each text is one short
+line. `Assumption::level()` makes one worth a glance when it touches any
+consequence or cannot be undone; the rest are quiet. The thread gets them in
+reading order: glance ones first, those that cannot be undone first among
+them, then by the most serious consequence (`Consequence::seriousness()`).
+The page does no sorting. What must be decided first stays the one question
+and its gate.
+
 ### Not annoying people
 
 - **One question by default, depth on demand.** At most one question before
