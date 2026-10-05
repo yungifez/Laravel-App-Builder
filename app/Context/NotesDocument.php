@@ -2,6 +2,7 @@
 
 namespace App\Context;
 
+use Carbon\CarbonInterface;
 use Illuminate\Support\Str;
 use Symfony\Component\Yaml\Yaml;
 
@@ -131,6 +132,16 @@ class NotesDocument
     public function withNotConnected(array $keys): self
     {
         return $this->withField('not_connected', $keys === [] ? '' : 'not_connected: ['.implode(', ', $keys)."]\n");
+    }
+
+    /**
+     * Say when the owner last read an area's notes against its code and
+     * found them right. Saving it moves the notes' clock, so the quick
+     * check stops calling them out of date (see CheckProjectNotes).
+     */
+    public function withChecked(CarbonInterface $at): self
+    {
+        return $this->withField('checked', "checked: '".$at->utc()->format('Y-m-d H:i:s')."'\n");
     }
 
     /**

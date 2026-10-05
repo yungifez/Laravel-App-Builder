@@ -590,6 +590,40 @@ function setCompatibility(keep: boolean | null): void {
                                         :message="errors.fix"
                                     />
                                 </Form>
+                                <Form
+                                    v-if="finding.confirm && revision"
+                                    v-bind="
+                                        updateUnderstanding.form(project.id)
+                                    "
+                                    :options="{ preserveScroll: true }"
+                                    v-slot="{ errors, processing }"
+                                    class="mt-1"
+                                    @success="runCheck"
+                                >
+                                    <input
+                                        type="hidden"
+                                        name="part"
+                                        :value="finding.confirm.part"
+                                    />
+                                    <input
+                                        type="hidden"
+                                        name="revision"
+                                        :value="revision"
+                                    />
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        class="h-11 select-none sm:h-8"
+                                        :disabled="processing"
+                                        data-test="confirm-notes"
+                                    >
+                                        These notes are still right
+                                    </Button>
+                                    <InputError
+                                        class="mt-1"
+                                        :message="errors.body"
+                                    />
+                                </Form>
                             </div>
                         </li>
                     </ul>

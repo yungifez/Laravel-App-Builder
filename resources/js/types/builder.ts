@@ -844,6 +844,8 @@ export type CheckFinding = {
     details: string[];
     /** How the notes alone can put it right: the items to take out of one part. */
     fix?: { part: string; remove: string[] };
+    // Notes that may be out of date: the owner can say they are still right.
+    confirm?: { part: string };
 };
 
 export type DeploymentSummary = {

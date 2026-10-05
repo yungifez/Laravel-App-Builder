@@ -25,7 +25,7 @@ class CheckProjectNotes
      * A finding the notes alone can put right also says how: "fix" names
      * the part of the notes and the items to take out of it.
      *
-     * @return list<array{title: string, details: list<string>, fix?: array{part: string, remove: list<string>}}>
+     * @return list<array{title: string, details: list<string>, fix?: array{part: string, remove: list<string>}, confirm?: array{part: string}}>
      */
     public function handle(Project $project): array
     {
@@ -87,15 +87,15 @@ class CheckProjectNotes
         }
 
         // Rewriting is the fix, so no fix button: the owner reads the part
-        // and corrects it.
-        foreach ($this->staleNotes($project, $context, $head, $files) as $name => $changed) {
+        // and corrects it, or says the notes are still right.
+        foreach ($this->staleNotes($project, $context, $head, $files) as $key => [$name, $changed]) {
             $shown = array_slice($changed, 0, 10);
 
             if (count($changed) > count($shown)) {
                 $shown[] = __('and :count more', ['count' => count($changed) - count($shown)]);
             }
 
-            $findings[] = ['title' => __('The notes on ":name" were written before later changes to its code. Read them below and correct anything that changed.', ['name' => $name]), 'details' => $shown];
+            $findings[] = ['title' => __('The notes on ":name" were written before later changes to its code. Read them below and correct anything that changed.', ['name' => $name]), 'details' => $shown, 'confirm' => ['part' => "checked:{$key}"]];
         }
 
         return $findings;
@@ -161,7 +161,7 @@ class CheckProjectNotes
     }
 
     /**
-     * Get, by part name, the code files the notes claim that changed after
+     * Get, by part key, the part's name and the code files the notes claim that changed after
      * the part's notes were last written. Only files the part names in its
      * paths count, never its tests, and only once at least the configured
      * number changed: most parts' code moves a little after their notes,
@@ -171,7 +171,7 @@ class CheckProjectNotes
      * so a change that rewrote its notes is never counted against them.
      *
      * @param  list<string>  $files  The files at the tip of the branch
-     * @return array<string, list<string>>
+     * @return array<string, array{0: string, 1: list<string>}>
      */
     protected function staleNotes(Project $project, ProjectContext $context, string $head, array $files): array
     {
@@ -204,7 +204,7 @@ class CheckProjectNotes
 
             if (count($since) >= $minimum) {
                 sort($since);
-                $stale[$capability->name] = $since;
+                $stale[$capability->key] = [$capability->name, $since];
             }
         }
 
