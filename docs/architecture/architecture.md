@@ -3634,6 +3634,16 @@ difference from selective over the rounds where both completed. Below
 `builder.context.experiment.min_pairs` pairs it says "too few pairs" instead.
 Every trial spends real model calls; nothing runs it on a schedule.
 
+`builder:planted-changes {project}` tests the Effects half of hypothesis C
+without model calls. For each kept change, it plants a one-line edit in each
+area the change was not about. Each plant uses the first file in sorted order
+that the area claims, from paths named in kept diffs or in the notes, so the
+same changes always give the same plants. It then classifies each planted
+diff from the run's saved context, with the Effects and without them. It
+reports where each plant lands and which plants Effects moved from
+unexpected to may also affect. It reads saved diffs only. It does not touch a
+repository and saves nothing. It uses the same "too few pairs" rule.
+
 The simulated owner is an engineering tool for iteration, scenarios and
 automated checks. It is not evidence that people value anything.
 
