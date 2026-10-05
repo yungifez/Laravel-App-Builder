@@ -125,7 +125,12 @@ class ExperimentTest extends TestCase
         $this->assertSame(ExperimentStatus::Merged, $experiment->status);
         $this->assertSame($main, $experiment->merge_sha);
         $this->assertSame("<?php\n// added\n", $this->repository->show($this->project, $main, 'app/A.php'));
-        $this->assertSame('Comments', $this->repository->log($this->project, 1, 'main')[0]['subject']);
+        // One step keeps its own subject; the idea's name stays the owner's.
+        $this->assertSame(
+            trim($this->repository->git($this->project, ['log', '-1', '--format=%s', (string) $change->refresh()->commit_sha])->output()),
+            $this->repository->log($this->project, 1, 'main')[0]['subject'],
+        );
+        $this->assertNotSame('Comments', $this->repository->log($this->project, 1, 'main')[0]['subject']);
         $this->assertSame('', trim($this->repository->git($this->project, ['branch', '--list', $experiment->branch])->output()));
         $this->assertNull($this->project->refresh()->experiment_id);
 
@@ -153,6 +158,7 @@ class ExperimentTest extends TestCase
         $this->assertSame($before, trim($this->repository->git($this->project, ['rev-parse', "{$main}^"])->output()));
         $this->assertSame('', trim($this->repository->git($this->project, ['rev-parse', '--verify', '--quiet', "{$main}^2"], throw: false)->output()));
         $this->assertSame(2, substr_count($this->repository->git($this->project, ['log', '-1', '--format=%b', $main])->output(), '* '));
+        $this->assertSame('Combine several changes', $this->repository->log($this->project, 1, 'main')[0]['subject']);
         $this->assertSame("<?php\n", $this->repository->show($this->project, $main, 'app/B.php'));
 
         // The idea's own steps stay readable, outside every branch.

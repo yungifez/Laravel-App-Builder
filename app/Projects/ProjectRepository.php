@@ -174,8 +174,8 @@ class ProjectRepository
     /**
      * Bring a branch into the main branch as one commit, the way a pull
      * request is squashed: the main branch's history gets one entry for the
-     * whole branch, not one for each step taken on it. The message lists
-     * those steps under its first line. When the main branch changed the
+     * whole branch, not one for each step taken on it. A single step keeps
+     * its own message; several are listed under the given first line. When the main branch changed the
      * same lines since, nothing is merged. A branch with nothing new merges
      * as the main branch's current commit.
      *
@@ -212,7 +212,9 @@ class ProjectRepository
                 return $this->tip($project);
             }
 
-            $this->commit($project, count($steps) > 1 ? $message."\n\n".implode("\n", array_map(fn (string $step) => "* {$step}", $steps)) : $message, $author);
+            // One step keeps its own subject; several are listed under the
+            // given one.
+            $this->commit($project, count($steps) > 1 ? $message."\n\n".implode("\n", array_map(fn (string $step) => "* {$step}", $steps)) : $steps[0], $author);
 
             return $this->tip($project);
         });

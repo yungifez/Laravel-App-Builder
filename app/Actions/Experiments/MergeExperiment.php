@@ -16,9 +16,9 @@ class MergeExperiment
 
     /**
      * Use an idea in the app: bring its branch into the main branch as one
-     * commit named after the idea, then go back to the main app. When the
-     * main app changed the same places since the idea started, nothing is
-     * merged and the owner is told.
+     * commit, then go back to the main app. When the main app changed the
+     * same places since the idea started, nothing is merged and the owner
+     * is told.
      *
      * @throws ValidationException when the idea is not open or does not merge cleanly.
      */
@@ -35,7 +35,8 @@ class MergeExperiment
                 $project,
                 $experiment->branch,
                 Experiment::mainBranch(),
-                $experiment->name,
+                // The idea's name is the owner's, so it stays out of the app's history.
+                'Combine several changes',
                 ['name' => $owner->name, 'email' => $owner->email],
             );
         } catch (RepositoryConflict $exception) {
