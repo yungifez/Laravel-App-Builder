@@ -1977,6 +1977,68 @@ html[data-builder-dragging],html[data-builder-dragging] *{user-select:none!impor
 
         // Show an edit before it is saved: set inline styles on every element
         // from the same place in the source (for example, each item of a list).
+        // Whether saved changes show in the rebuilt app: each part is drawn
+        // with its classes from before the change and after it, and a
+        // change that moves none of the styles it sets did not show. Its
+        // classes may be overruled by the app's own CSS, or do nothing on
+        // this kind of part. Motion is stilled while measuring, so a
+        // transition cannot hide the difference.
+        if (message.type === 'check') {
+            const missed = [];
+
+            for (const part of message.parts || []) {
+                const [element] = matching(part.location);
+
+                if (!element || !Array.isArray(part.properties)) {
+                    continue;
+                }
+
+                const style = element.getAttribute('style');
+                const classes = element.getAttribute('class');
+                const read = (names) => {
+                    element.setAttribute('class', names);
+                    const computed = getComputedStyle(element);
+
+                    return Object.fromEntries(
+                        part.properties.map((group) => [
+                            group.join(),
+                            group.map((name) => computed[name]).join(' '),
+                        ]),
+                    );
+                };
+
+                // The app's own inline style, without the previews of
+                // changes not saved yet.
+                element.setAttribute(
+                    'style',
+                    element.getAttribute('data-builder-style') ?? style ?? '',
+                );
+                element.style.transition = 'none';
+                element.style.animation = 'none';
+
+                const after = read(part.after);
+                const before = read(part.before);
+
+                if (style === null) {
+                    element.removeAttribute('style');
+                } else {
+                    element.setAttribute('style', style);
+                }
+
+                element.setAttribute('class', classes ?? '');
+
+                if (
+                    part.properties.every(
+                        (group) => after[group.join()] === before[group.join()],
+                    )
+                ) {
+                    missed.push(part.edit);
+                }
+            }
+
+            send({ type: 'checked', missed });
+        }
+
         if (message.type === 'style') {
             for (const element of styled) {
                 element.setAttribute(

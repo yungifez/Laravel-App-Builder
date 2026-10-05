@@ -305,6 +305,7 @@ class TailwindClassesTest extends TestCase
             ['width' => 50000],
             ['translate_x' => '5000%'],
             ['rotate' => 7200],
+            ['rotate' => NAN],
             ['border' => 1e9],
         ] as $changes) {
             try {

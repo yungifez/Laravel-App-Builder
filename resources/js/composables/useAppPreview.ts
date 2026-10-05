@@ -85,6 +85,8 @@ type Batch = {
     revision: string;
     /** The classes the part has after an undo or redo. */
     shows?: string;
+    /** The saved edit, with the classes before and after it. */
+    saved?: { id: VisualEditSummary['id']; before: string; after: string };
 };
 
 type Step = 'undo' | 'redo';
@@ -214,6 +216,8 @@ export function useAppPreview(source: Source) {
     const selected = ref<SelectedElement | null>(null);
     const onlyThisOne = ref(true);
     const saveError = ref<string | null>(null);
+    // A saved change the rebuilt app did not show, so it was put back.
+    const overruled = ref<string | null>(null);
     // Changes waiting to be saved, oldest first, and the one being saved.
     const queue = ref<Batch[]>([]);
     const sending = ref<Batch | null>(null);
@@ -455,6 +459,7 @@ export function useAppPreview(source: Source) {
         }
 
         saveError.value = null;
+        overruled.value = null;
         undone.value = [];
         showUnshown();
 
@@ -734,6 +739,8 @@ export function useAppPreview(source: Source) {
 
         // The new app shows these saved changes itself, and names a moved
         // part by its new place.
+        const shown = saved.value.slice(0, next.shows);
+
         saved.value = saved.value.slice(next.shows);
 
         const moved =
@@ -747,6 +754,7 @@ export function useAppPreview(source: Source) {
         }
 
         setUp(to);
+        check(shown, to);
 
         // A chosen picture shows in an app built before it was saved; the
         // app built with it shows it itself.
@@ -839,6 +847,30 @@ export function useAppPreview(source: Source) {
             return;
         }
 
+        // A saved change that did not show is put back, so the owner is
+        // never left with a change they cannot see; the agent can make it.
+        // The app answers as it takes its place, so it may still be the next
+        // frame.
+        if (
+            data.type === 'checked' &&
+            Array.isArray(data.missed) &&
+            frames.value.some((item) => windowOf(item.key) === event.source)
+        ) {
+            for (const id of data.missed) {
+                const edit = source
+                    .edits()
+                    .find((edit) => edit.id === id && !isUndone(edit));
+
+                if (edit !== undefined) {
+                    step(edit);
+                    overruled.value =
+                        "This change didn't show in your app, so I put it back. Something else in your app decides how this part looks.";
+                }
+            }
+
+            return;
+        }
+
         // The next frame only says when it has drawn, and what is next to
         // the part picked in it: it shows the picked part at its new place.
         if (
@@ -916,6 +948,15 @@ export function useAppPreview(source: Source) {
         }
 
         if (data.type === 'select') {
+            // The rebuilt app picks the same part again; only another part
+            // ends the word about a change put back.
+            if (
+                (data.element as SelectedElement).source !==
+                selected.value?.source
+            ) {
+                overruled.value = null;
+            }
+
             save();
             selected.value = data.element as SelectedElement;
             onlyThisOne.value = true;
@@ -1162,6 +1203,48 @@ export function useAppPreview(source: Source) {
         );
     }
 
+    // Ask the rebuilt app whether the saved changes it now shows really
+    // show. A change on another screen size cannot be seen at this one, and
+    // a hover colour shows only when pointed at, so neither is asked about.
+    function check(batches: Batch[], to: Window | null | undefined): void {
+        const parts = batches.flatMap((batch) => {
+            if (batch.saved === undefined || batch.device !== device.value) {
+                return [];
+            }
+
+            const properties = Object.entries(batch.values)
+                .filter(([property]) => !property.startsWith('hover_'))
+                .map(([property, value]) =>
+                    Object.keys(inlineStyles({ [property]: value })),
+                )
+                .filter((names) => names.length > 0);
+
+            return properties.length === 0
+                ? []
+                : [
+                      {
+                          edit: batch.saved.id,
+                          location: {
+                              kind:
+                                  batch.target.instance === null
+                                      ? 'any'
+                                      : batch.target.instance
+                                        ? 'instance'
+                                        : 'source',
+                              value: batch.target.value,
+                          },
+                          before: batch.saved.before,
+                          after: batch.saved.after,
+                          properties,
+                      },
+                  ];
+        });
+
+        if (parts.length > 0) {
+            post({ type: 'check', parts }, to);
+        }
+    }
+
     // Remember the part while it can be edited. Once the rebuilt app shows
     // every saved change, the kept copy of them is no longer needed.
     watch(
@@ -1315,7 +1398,20 @@ export function useAppPreview(source: Source) {
                         target: batch.target.value,
                         classes: edit.classes,
                     };
+                    batch.saved = {
+                        id: edit.id,
+                        before: expected,
+                        after: edit.classes,
+                    };
                     saved.value.push(batch);
+
+                    // A page that is ready at once, as the sample is, opens
+                    // with this change before the change is counted.
+                    const waiting = frames.value[1];
+
+                    if (waiting?.revision === edit.revision) {
+                        waiting.shows = saved.value.length;
+                    }
                 },
                 onError: (errors) => failed(Object.values(errors)[0] ?? null),
                 onFinish: () => {
@@ -2612,6 +2708,7 @@ export function useAppPreview(source: Source) {
         updating,
         upToDate,
         saveError,
+        overruled,
         target,
         change,
         nudge,

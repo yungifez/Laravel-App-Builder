@@ -695,7 +695,7 @@ class TailwindClasses
             'spacing' => is_int($value) || is_float($value) ? self::spacing($value) : null,
             'length' => self::lengthUtility($value, $measure['keywords'] ?? []),
             'degrees' => match (true) {
-                (is_int($value) || is_float($value)) && $value > self::MOST_DEGREES => null,
+                (is_int($value) || is_float($value)) && (! is_finite($value) || $value > self::MOST_DEGREES) => null,
                 is_int($value) || (is_float($value) && floor($value) == $value) => (string) (int) $value,
                 is_float($value) => '['.self::number($value).'deg]',
                 default => null,

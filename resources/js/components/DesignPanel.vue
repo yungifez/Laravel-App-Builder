@@ -515,6 +515,11 @@ function moveAs(change: Partial<MotionChoice>): void {
 // the panel cannot change.
 const askStart = ref('');
 
+function askAboutLook(): void {
+    askStart.value = 'Change how this looks: ';
+    asking.value = true;
+}
+
 function askAboutMotion(): void {
     askStart.value = 'Change how this moves: ';
     asking.value = true;
@@ -2609,7 +2614,24 @@ const recent = computed(() => {
                 Fine tune
             </button>
             <p
-                v-if="state.saveError"
+                v-if="state.overruled"
+                class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 px-2 text-xs text-muted-foreground"
+                role="status"
+                data-test="overruled"
+            >
+                {{ state.overruled }}
+                <button
+                    v-if="!sample"
+                    type="button"
+                    class="min-h-11 font-medium text-foreground underline underline-offset-4 sm:min-h-6"
+                    data-test="overruled-ask"
+                    @click="askAboutLook()"
+                >
+                    Ask me to change it
+                </button>
+            </p>
+            <p
+                v-else-if="state.saveError"
                 class="min-w-0 flex-1 px-2 text-xs text-destructive"
                 role="alert"
                 data-test="save-error"
