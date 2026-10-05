@@ -11,6 +11,12 @@ use Illuminate\Support\Str;
 final readonly class AgentOutcome
 {
     /**
+     * The computer running the agent restarted or went away mid-task: no
+     * fault of the agent or the change.
+     */
+    public const RUNNER_LOST = 'runner_lost';
+
+    /**
      * @param  list<array{kind: string, text?: string, file?: string}>  $story  What the agent did and said, in order
      */
     public function __construct(
@@ -34,11 +40,18 @@ final readonly class AgentOutcome
 
     /**
      * Read the runner's result line: the last line of its output that is a
-     * JSON object of type "result". A run that timed out or printed no result
-     * failed.
+     * JSON object of type "result". A run that timed out, was lost with its
+     * runner, or printed no result failed.
      */
-    public static function fromRunnerOutput(string $adapter, string $provider, ?string $model, string $output, bool $timedOut): self
+    public static function fromRunnerOutput(string $adapter, string $provider, ?string $model, string $output, bool $timedOut, bool $lost): self
     {
+        if ($lost) {
+            return new self($adapter, $provider, $model, AgentOutcomeStatus::Failed,
+                errorKind: self::RUNNER_LOST,
+                error: __('The runner restarted or went away while the agent worked.'),
+            );
+        }
+
         $result = null;
 
         foreach (array_reverse(explode("\n", trim($output))) as $line) {

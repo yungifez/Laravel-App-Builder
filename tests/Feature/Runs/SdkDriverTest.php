@@ -201,6 +201,73 @@ class SdkDriverTest extends TestCase
         $this->assertSame(0, $run->events()->where('type', 'failover')->count());
     }
 
+    public function test_an_agent_whose_runner_restarted_starts_over_once_on_its_own()
+    {
+        $tries = 0;
+        $halfLeft = null;
+        $this->agent('claude', 'anthropic', function (Workspace $workspace, AgentTask $task) use (&$tries, &$halfLeft) {
+            // The first try leaves a half-written file behind as it goes.
+            if (++$tries === 1) {
+                File::put($this->path($workspace, 'Half.php'), "<?php\n");
+
+                return $this->outcome('claude', 'anthropic', AgentOutcomeStatus::Failed, errorKind: AgentOutcome::RUNNER_LOST, error: 'Lost.');
+            }
+
+            $halfLeft = File::exists($this->path($workspace, 'Half.php'));
+
+            return ($this->writes('claude', 'anthropic', 'app/Claude.php', "<?php\n"))($workspace, $task);
+        });
+        $this->agent('codex', 'openai', fn () => $this->fail('A lost runner is not the agent\'s fault, so it does not fail over.'));
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(2, $tries);
+        $this->assertNotSame(RunStatus::Failed, $run->status);
+        $this->assertSame(['adapter' => 'claude'], $run->events()->where('type', 'runner_lost')->sole()->data);
+        $this->assertFalse($halfLeft, 'The second try starts from where the first began.');
+        $this->assertSame(0, $run->events()->where('type', 'failover')->count());
+    }
+
+    public function test_a_runner_lost_twice_stops_the_change_and_says_it_is_our_fault()
+    {
+        $tries = 0;
+        $this->agent('claude', 'anthropic', function () use (&$tries) {
+            $tries++;
+
+            return $this->outcome('claude', 'anthropic', AgentOutcomeStatus::Failed, errorKind: AgentOutcome::RUNNER_LOST, error: 'Lost.');
+        });
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(2, $tries, 'It starts over once, not again and again.');
+        $this->assertSame(RunStatus::Failed, $run->status);
+        $this->assertSame('This is our fault: the computer working on your change restarted, so the AI could not finish. Nothing in your app changed. Try again.', $run->error);
+        $this->assertSame(AgentOutcome::RUNNER_LOST, $run->events()->where('type', 'agent_failed')->sole()->data['kind']);
+    }
+
+    public function test_only_a_lost_runner_reads_as_one_and_a_real_timeout_still_says_timeout()
+    {
+        $timedOut = AgentOutcome::fromRunnerOutput('claude', 'anthropic', null, '', timedOut: true, lost: false);
+        $lost = AgentOutcome::fromRunnerOutput('claude', 'anthropic', null, '', timedOut: true, lost: true);
+
+        $this->assertSame(['timeout', 'The agent did not finish in time.'], [$timedOut->errorKind, $timedOut->error]);
+        $this->assertSame(AgentOutcome::RUNNER_LOST, $lost->errorKind);
+
+        // A timed-out agent is not started over, and the owner hears it stopped.
+        $tries = 0;
+        $this->agent('claude', 'anthropic', function () use (&$tries, $timedOut) {
+            $tries++;
+
+            return $timedOut;
+        });
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(1, $tries);
+        $this->assertSame('This is our fault: the AI stopped before it finished the change. Nothing in your app changed. Try again.', $run->error);
+        $this->assertSame(0, $run->events()->where('type', 'runner_lost')->count());
+    }
+
     public function test_an_agent_that_breaks_before_its_first_turn_hands_the_change_to_the_other_agent()
     {
         $this->agent('claude', 'anthropic', fn () => new AgentOutcome('claude', 'anthropic', null, AgentOutcomeStatus::Failed, null, 'exception', 'Exited with code 1: Reading prompt from stdin...'));

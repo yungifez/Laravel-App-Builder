@@ -67,28 +67,16 @@ class RunCodingAgent
                 ]);
             }
 
-            $outcome = $this->agents->driver($adapter)->run($workspace, $task, $this->heartbeat($run, $lease));
+            $outcome = $this->attempt($run, $lease, $workspace, $task, $adapter);
 
-            // Claude's SDK reports what the session cost. Codex's does not, so
-            // its tokens are priced from config when the model is known.
-            $estimate = $outcome->costUsd === null && $outcome->model !== null
-                ? RecordModelUsage::cost($outcome->model, $outcome->inputTokens, $outcome->outputTokens, $outcome->cachedInputTokens)
-                : null;
-            $reported = $this->callCost($outcome);
-
-            $this->recordEvent($run, $lease, 'model_call', [
-                'role' => 'coder',
-                ...$outcome->toArray(),
-                // So a light repair that did not pass is not tried light again.
-                'light' => $task->light,
-                'cost_usd' => $reported ?? $estimate,
-                'session_cost_usd' => $outcome->costUsd,
-                'cost_source' => match (true) {
-                    $outcome->costUsd !== null => 'reported',
-                    $estimate !== null => 'estimated',
-                    default => null,
-                },
-            ]);
+            // The computer working on it restarted or went away. Neither the
+            // agent nor the task was at fault, so it starts over once on its
+            // own. A second loss stops the change and says it is our fault.
+            if ($outcome->errorKind === AgentOutcome::RUNNER_LOST) {
+                $this->restore($workspace, $snapshot);
+                $this->recordEvent($run, $lease, 'runner_lost', ['adapter' => $adapter]);
+                $outcome = $this->attempt($run, $lease, $workspace, $task, $adapter);
+            }
 
             if ($outcome->status !== AgentOutcomeStatus::ProviderUnavailable && ! $this->couldNotStart($outcome)) {
                 Cache::forget($this->circuitKey($adapter));
@@ -117,6 +105,37 @@ class RunCodingAgent
         throw new ProvidersUnavailable(__('No AI provider could take the task right now (:reason). Try again later.', [
             'reason' => $previous->error ?? $previous->errorKind ?? 'unknown',
         ]), ProvidersUnavailable::saysOutOfCredit($previous->errorKind, $previous->error) ? 'out_of_credit' : 'providers_unavailable');
+    }
+
+    /**
+     * Run the task once with one agent, and log what the call cost.
+     */
+    protected function attempt(Run $run, RunLease $lease, Workspace $workspace, AgentTask $task, string $adapter): AgentOutcome
+    {
+        $outcome = $this->agents->driver($adapter)->run($workspace, $task, $this->heartbeat($run, $lease));
+
+        // Claude's SDK reports what the session cost. Codex's does not, so
+        // its tokens are priced from config when the model is known.
+        $estimate = $outcome->costUsd === null && $outcome->model !== null
+            ? RecordModelUsage::cost($outcome->model, $outcome->inputTokens, $outcome->outputTokens, $outcome->cachedInputTokens)
+            : null;
+        $reported = $this->callCost($outcome);
+
+        $this->recordEvent($run, $lease, 'model_call', [
+            'role' => 'coder',
+            ...$outcome->toArray(),
+            // So a light repair that did not pass is not tried light again.
+            'light' => $task->light,
+            'cost_usd' => $reported ?? $estimate,
+            'session_cost_usd' => $outcome->costUsd,
+            'cost_source' => match (true) {
+                $outcome->costUsd !== null => 'reported',
+                $estimate !== null => 'estimated',
+                default => null,
+            },
+        ]);
+
+        return $outcome;
     }
 
     /**

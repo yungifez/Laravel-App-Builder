@@ -13,6 +13,7 @@ use App\Enums\ModelRole;
 use App\Features\AcceptanceSelector;
 use App\Models\Run;
 use App\Models\RunEvent;
+use App\Runs\Agents\AgentOutcome;
 use App\Runs\Agents\AgentTask;
 use App\Runs\Agents\CodingAgentManager;
 use App\Runs\Exceptions\BudgetExhausted;
@@ -94,7 +95,9 @@ class SdkDriver extends AgentDriver
             // owner hears whose fault it is and what to do.
             $run->recordEvent('agent_failed', ['kind' => $outcome->errorKind, 'error' => Str::limit((string) $outcome->error, 2000)]);
 
-            throw new ConstructionFailed(__('This is our fault: the AI stopped before it finished the change. Nothing in your app changed. Try again.'));
+            throw new ConstructionFailed($outcome->errorKind === AgentOutcome::RUNNER_LOST
+                ? __('This is our fault: the computer working on your change restarted, so the AI could not finish. Nothing in your app changed. Try again.')
+                : __('This is our fault: the AI stopped before it finished the change. Nothing in your app changed. Try again.'));
         }
 
         return (string) $outcome->summary;

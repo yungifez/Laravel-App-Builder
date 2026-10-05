@@ -120,7 +120,7 @@ class RunnerAgent implements CodingAgent
 
         $this->removeTaskFiles($workspace);
 
-        return AgentOutcome::fromRunnerOutput($this->adapter, $this->provider, $this->model, $result->output, $result->timed_out);
+        return AgentOutcome::fromRunnerOutput($this->adapter, $this->provider, $this->model, $result->output, $result->timed_out, $result->lost);
     }
 
     /**
