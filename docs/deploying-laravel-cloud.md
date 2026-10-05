@@ -59,7 +59,12 @@ php artisan projects:template
   The disk is new at each deploy, so make it in each build. It takes about a
   minute. Cloud stops a build after 15 minutes.
 
-Add `php artisan migrate --force` as a deploy command.
+Add `php artisan migrate --force` as a deploy command. Add
+`php artisan ai:check-formats || true` after it. It makes one tiny call per
+agent, with no project data, to show that the AI service accepts each answer
+format. A refused format stops every call to that agent, and tests cannot show
+it. It does not stop the deploy: a failure shows on the operations page. It
+also runs daily in production.
 
 ## 3. Add the domains
 

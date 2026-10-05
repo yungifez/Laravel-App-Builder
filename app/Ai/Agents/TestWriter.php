@@ -2,7 +2,9 @@
 
 namespace App\Ai\Agents;
 
+use App\Ai\Attributes\Tier;
 use App\Ai\Middleware\RedactSecrets;
+use App\Enums\ModelRole;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Attributes\Timeout;
 use Laravel\Ai\Contracts\Agent;
@@ -18,6 +20,7 @@ use Stringable;
  * happens to do.
  */
 #[Timeout(300)]
+#[Tier(ModelRole::Reviewer)]
 class TestWriter implements Agent, HasMiddleware, HasStructuredOutput
 {
     use Promptable;

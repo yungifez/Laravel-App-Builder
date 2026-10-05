@@ -2,8 +2,10 @@
 
 namespace App\Ai\Agents;
 
+use App\Ai\Attributes\Tier;
 use App\Ai\Middleware\RedactSecrets;
 use App\Enums\Consequence;
+use App\Enums\ModelRole;
 use App\Scaffolding\FieldType;
 use App\Scaffolding\Scaffold;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -19,6 +21,7 @@ use Stringable;
  * done, the coder's tasks, and the steps the owner can later select.
  */
 #[Timeout(300)]
+#[Tier(ModelRole::Planner)]
 class FeaturePlanner implements Agent, HasMiddleware, HasStructuredOutput
 {
     use Promptable;

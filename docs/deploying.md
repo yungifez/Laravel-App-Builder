@@ -60,9 +60,15 @@ with a disk that lasts, not a platform with a temporary disk.
     $FORGE_PHP artisan optimize
     $FORGE_PHP artisan queue:restart
     $FORGE_PHP artisan reverb:restart
+    $FORGE_PHP artisan ai:check-formats || true
     ```
 
     The build makes the Wayfinder route helpers, so run it on every deploy.
+    `ai:check-formats` makes one tiny call per agent, with no project data,
+    to show that the AI service accepts each answer format. A refused format
+    stops every call to that agent, and tests cannot show it. It does not
+    stop the deploy: a failure shows on the operations page. It also runs
+    daily in production.
 
 ## 3. Set the environment
 

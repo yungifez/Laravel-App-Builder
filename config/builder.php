@@ -311,6 +311,24 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Answer Formats
+    |--------------------------------------------------------------------------
+    |
+    | `php artisan ai:check-formats` tries each agent's answer format once on
+    | its tier's real model, with a tiny prompt and no project data. Fakes in
+    | tests cannot show that the AI service refuses a format, and then every
+    | call to that agent fails. Run it after each deploy; with "enabled" on,
+    | it also runs daily. The agents are found in "directories".
+    |
+    */
+
+    'answer_formats' => [
+        'enabled' => (bool) env('BUILDER_CHECK_ANSWER_FORMATS', env('APP_ENV') === 'production'),
+        'directories' => [app_path('Ai/Agents')],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Decisions
     |--------------------------------------------------------------------------
     |

@@ -12,6 +12,7 @@ use App\Enums\WorkspaceStatus;
 use App\Jobs\ExecuteRun;
 use App\Jobs\PublishDeployment;
 use App\Jobs\VerifyFeatureRequest;
+use App\Models\AnswerFormatCheck;
 use App\Models\BoxCommand;
 use App\Models\Deployment;
 use App\Models\Preview;
@@ -70,6 +71,7 @@ class FindAttentionItems
                 $this->exhaustedBudgets($since),
                 $this->outOfCredit($since),
                 $this->requestsRefused($since),
+                $this->answerFormatsRefused(),
                 $this->failedPreviewStarts($since),
                 $this->failedRebuilds($since),
                 $this->stuckRebuilds($now),
@@ -217,6 +219,25 @@ class FindAttentionItems
             ->where('created_at', '>=', $since));
 
         return $this->item('ai_request_refused', 'AI service refused our requests', $query, fn (Run $run) => $this->runRecord($run, Str::limit((string) $run->error, 160)), href: route('operations.changes.index', ['reason' => 'request_refused']));
+    }
+
+    /**
+     * Agents whose answer format failed its last real try
+     * (ai:check-formats). Every call to such an agent fails the same way
+     * until a later check passes, whenever it was found.
+     *
+     * @return AttentionItem
+     */
+    protected function answerFormatsRefused(): array
+    {
+        $query = AnswerFormatCheck::query()->where('accepted', false);
+
+        return $this->item('ai_format_refused', 'An AI answer format failed its check', $query, fn (AnswerFormatCheck $check) => [
+            'label' => class_basename($check->agent).($check->role === null ? '' : " ({$check->role})"),
+            'detail' => Str::limit(trim(implode(' ', array_filter([$check->reason, $check->service_error['type'] ?? null, $check->message]))), 160),
+            'at' => $check->checked_at->toIso8601String(),
+            'href' => null,
+        ]);
     }
 
     /**
