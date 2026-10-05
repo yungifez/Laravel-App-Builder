@@ -7,6 +7,7 @@ use App\Actions\Features\DescribeProof;
 use App\Context\ProjectNotes;
 use App\Enums\VerificationStatus;
 use App\Features\MigrationChecks;
+use App\Features\OwnedRecords;
 use App\Features\QueuedWork;
 use App\Models\FeatureRequest;
 use App\Models\Run;
@@ -452,6 +453,29 @@ class ChangeProofTest extends TestCase
 
         app(AcceptFindings::class)->handle($request, QueuedWork::UNGUARDED, $request->project->owner);
         $line = collect(app(DescribeProof::class)->handle($request))->firstWhere('decision.finding', QueuedWork::UNGUARDED);
+        $this->assertSame(['chosen', true], [$line['kind'], $line['decision']['accepted']]);
+    }
+
+    public function test_new_records_that_belong_to_someone_with_nothing_keeping_them_apart_are_said_until_the_owner_keeps_it()
+    {
+        $record = fn (string $model, ?string $guard) => ['model' => $model, 'table' => 'x', 'column' => 'team_id', 'at' => 'database/migrations/x.php:12', 'guard' => $guard, 'policy' => null];
+        $proof = function (array $owners) {
+            $request = FeatureRequest::factory()->generated()->create();
+            $this->checked($request, evidence: ['owners' => $owners]);
+
+            return [$request, collect(app(DescribeProof::class)->handle($request))];
+        };
+
+        [, $guarded] = $proof([$record('App\Models\RoomBooking', 'policy')]);
+        $this->assertTrue($guarded->contains('text', 'The new records that belong to someone have a rule that checks whom they belong to.'));
+
+        [$request, $open] = $proof([$record('App\Models\RoomBooking', null), $record('App\Models\Invoice', 'scope')]);
+        $line = $open->firstWhere('decision.finding', OwnedRecords::UNGUARDED);
+        $this->assertSame('gap', $line['kind']);
+        $this->assertSame('The new room bookings belong to someone, but nothing stops one person from seeing or changing another\'s. If anyone may see them, say so.', $line['text']);
+
+        app(AcceptFindings::class)->handle($request, OwnedRecords::UNGUARDED, $request->project->owner);
+        $line = collect(app(DescribeProof::class)->handle($request))->firstWhere('decision.finding', OwnedRecords::UNGUARDED);
         $this->assertSame(['chosen', true], [$line['kind'], $line['decision']['accepted']]);
     }
 

@@ -29,6 +29,7 @@ use App\Features\MigrationChecks;
 use App\Features\Mutants;
 use App\Features\NewCode;
 use App\Features\NewTests;
+use App\Features\OwnedRecords;
 use App\Features\PatchSummary;
 use App\Features\ProtectedInputs;
 use App\Features\QueuedWork;
@@ -241,6 +242,7 @@ class VerifyFeatureRequest implements ShouldQueue
             $this->readBoundaryCode($driver, $workspace, $featureRequest);
             $this->checkMigrations($driver, $runWorkspaceCommand, $workspace, $featureRequest);
             $this->readQueuedWork($driver, $workspace, $featureRequest);
+            $this->readOwnedRecords($driver, $workspace, $featureRequest);
 
             if ($checksPassed && in_array($acceptance, [self::OUTCOME_PASSED, self::OUTCOME_NOT_APPLICABLE], true)) {
                 $checksPassed = $this->probeAccess($driver, $runWorkspaceCommand, $workspace, $featureRequest);
@@ -919,6 +921,30 @@ class VerifyFeatureRequest implements ShouldQueue
         ), []);
 
         $this->keepEvidence('queued', $queued === [] ? null : $queued);
+    }
+
+    /**
+     * Read the tables the change gives an owner column, while the change is
+     * still in the workspace, for what keeps each owner's records apart
+     * (§12). It is kept as evidence; the gate sends a finding back to the
+     * coder.
+     */
+    protected function readOwnedRecords(WorkspaceDriver $driver, Workspace $workspace, FeatureRequest $featureRequest): void
+    {
+        /** @var array{enabled: bool, columns: list<string>} $config */
+        $config = config('builder.verification.owners');
+
+        if (! $config['enabled']) {
+            return;
+        }
+
+        $owned = rescue(fn () => OwnedRecords::inPatch(
+            $featureRequest->patch,
+            $config['columns'],
+            fn (string $path) => rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), null, report: false),
+        ), []);
+
+        $this->keepEvidence('owners', $owned === [] ? null : $owned);
     }
 
     /**

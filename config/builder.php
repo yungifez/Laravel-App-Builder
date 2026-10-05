@@ -1175,6 +1175,15 @@ return [
             'enabled' => (bool) env('BUILDER_QUEUED_CHECK', true),
         ],
 
+        // Whether a table the change gives an owner column (a key named
+        // below) must have a model that keeps each owner's records apart:
+        // a policy that reads the owner, or a global scope (§12). A model
+        // without one is sent back to the coder. The owner may keep it.
+        'owners' => [
+            'enabled' => (bool) env('BUILDER_OWNER_CHECK', true),
+            'columns' => ['user_id', 'owner_id', 'team_id', 'tenant_id', 'account_id', 'organization_id', 'organisation_id', 'company_id', 'workspace_id'],
+        ],
+
         // Known security problems in the packages the app uses, looked up
         // in the public advisory lists. Advice, never a check: a problem in
         // a package is rarely the change's doing, so it never fails the

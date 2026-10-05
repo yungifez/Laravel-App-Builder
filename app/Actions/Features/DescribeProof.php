@@ -18,6 +18,7 @@ use App\Features\InventedColours;
 use App\Features\MigrationChecks;
 use App\Features\NewCode;
 use App\Features\NewTests;
+use App\Features\OwnedRecords;
 use App\Features\PatchSummary;
 use App\Features\QueuedWork;
 use App\Features\ScreenCheck;
@@ -63,7 +64,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('whose records'), $this->owners($featureRequest, $verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return $this->asked($featureRequest, array_values(collect($lines)->unique('text')->all()));
@@ -436,6 +437,38 @@ class DescribeProof
         }
 
         return [['kind' => 'passed', 'text' => __('The new work your app does in the background is tried again when it fails, and says what to do when it gives up.')]];
+    }
+
+    /**
+     * Say whether records the change gives an owner are kept apart by
+     * owner, as read from its code (§12). Records with nothing that keeps
+     * them apart hold the change until the owner says they want it.
+     *
+     * @return list<array{kind: string, text: string, decision?: array{change: string, finding: string, accepted: bool}}>
+     */
+    protected function owners(FeatureRequest $featureRequest, Verification $verification): array
+    {
+        $owners = $verification->evidence['owners'] ?? null;
+
+        if ($owners === null) {
+            return [];
+        }
+
+        $open = ! $featureRequest->isAccepted();
+        $decision = fn (bool $accepted) => $open ? ['decision' => ['change' => $featureRequest->uuid, 'finding' => OwnedRecords::UNGUARDED, 'accepted' => $accepted]] : [];
+        $left = OwnedRecords::findings($owners, $this->acceptFindings->identities($featureRequest));
+
+        if ($left !== []) {
+            return [['kind' => 'gap', 'text' => __('The new :names belong to someone, but nothing stops one person from seeing or changing another\'s. If anyone may see them, say so.', [
+                'names' => implode(', ', array_map(fn (array $finding) => OwnedRecords::name($finding['subject']), $left)),
+            ]), ...$decision(false)]];
+        }
+
+        if (OwnedRecords::findings($owners) !== []) {
+            return [['kind' => 'chosen', 'text' => __('You said you want this: some new records are not kept apart by whom they belong to. If a later change does the same, I will ask again.'), ...$decision(true)]];
+        }
+
+        return [['kind' => 'passed', 'text' => __('The new records that belong to someone have a rule that checks whom they belong to.')]];
     }
 
     /**

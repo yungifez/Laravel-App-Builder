@@ -34,6 +34,7 @@ use App\Features\Exceptions\CannotGenerateFeature;
 use App\Features\InventedColours;
 use App\Features\MigrationChecks;
 use App\Features\NodeInPhpTests;
+use App\Features\OwnedRecords;
 use App\Features\PatchSummary;
 use App\Features\QueuedWork;
 use App\Features\ScreenCheck;
@@ -576,6 +577,15 @@ class ConstructRun
 
         foreach (QueuedWork::findings($queued, $accepted) as $finding) {
             $gate[] = ['kind' => $finding['kind'], 'identity' => QueuedWork::identity($finding), 'text' => QueuedWork::finding($finding, $queued)];
+        }
+
+        // Records that name an owner with nothing that keeps one owner's
+        // from another (§12). The owner may keep records that are public
+        // on purpose.
+        $owners = $evidence['owners'] ?? [];
+
+        foreach (OwnedRecords::findings($owners, $accepted) as $finding) {
+            $gate[] = ['kind' => $finding['kind'], 'identity' => OwnedRecords::identity($finding), 'text' => OwnedRecords::finding($finding, $owners)];
         }
 
         if (config('builder.verification.faults.send_back')) {

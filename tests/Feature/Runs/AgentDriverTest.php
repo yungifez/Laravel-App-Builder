@@ -777,6 +777,27 @@ class AgentDriverTest extends TestCase
         $this->assertSame(RunStatus::Completed, $run->refresh()->status);
     }
 
+    public function test_records_with_an_owner_and_nothing_keeping_them_apart_send_the_change_back_until_the_owner_keeps_them()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]));
+        $approve = ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]];
+        ChangeReviewer::fake([$approve, $approve]);
+        $owners = ['owners' => [['model' => 'App\\Models\\Booking', 'table' => 'bookings', 'column' => 'user_id', 'at' => 'database/migrations/x.php:12', 'guard' => null, 'policy' => null]]];
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, evidence: $owners);
+
+        $this->assertSame(1, $run->refresh()->repairs);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'bookings gets user_id (database/migrations/x.php:12), so its records belong to someone'));
+
+        // Bookings anyone may see, such as a public timetable.
+        AcceptedFinding::factory()->for($run->featureRequest)->create(['kind' => 'owner_unchecked', 'identity' => 'owner_unchecked|App\\Models\\Booking']);
+        $this->passVerification($run, evidence: $owners);
+
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+    }
+
     public function test_what_the_owner_wants_the_app_to_leave_behind_is_not_held_against_the_change()
     {
         FeaturePlanner::fake([$this->plan()]);

@@ -7,6 +7,7 @@ use App\Features\AppFaults;
 use App\Features\AppRoutes;
 use App\Features\BoundaryCode;
 use App\Features\MigrationChecks;
+use App\Features\OwnedRecords;
 use App\Features\QueuedWork;
 use App\Models\FeatureRequest;
 use App\Models\User;
@@ -46,6 +47,7 @@ class AcceptFindings
             ...array_map(AppRoutes::identity(...), array_filter(AppRoutes::findings($evidence['routes'] ?? null), fn (array $finding) => $finding['kind'] === $kind)),
             ...array_map(MigrationChecks::identity(...), array_filter(MigrationChecks::findings($evidence['migrations'] ?? null), fn (array $finding) => $finding['kind'] === $kind)),
             ...array_map(QueuedWork::identity(...), $kind === QueuedWork::UNGUARDED ? QueuedWork::findings($evidence['queued'] ?? null) : []),
+            ...array_map(OwnedRecords::identity(...), $kind === OwnedRecords::UNGUARDED ? OwnedRecords::findings($evidence['owners'] ?? null) : []),
         ];
 
         if ($found === []) {

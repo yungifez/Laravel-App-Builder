@@ -1533,4 +1533,39 @@ class VerificationTest extends TestCase
         app(RequestVerification::class)->handle($off);
         $this->assertArrayNotHasKey('queued', $off->verifications()->sole()->evidence ?? []);
     }
+
+    public function test_the_tables_a_change_gives_an_owner_are_read_for_what_keeps_each_owners_records_apart()
+    {
+        $migration = 'database/migrations/2026_10_05_000000_create_bookings_table.php';
+        $files = [
+            $migration => "<?php\n\nuse Illuminate\\Support\\Facades\\Schema;\n\nreturn new class\n{\n    public function up(): void\n    {\n        Schema::create('bookings', function (\$table) {\n            \$table->foreignId('user_id');\n        });\n    }\n};\n",
+            'app/Models/Booking.php' => "<?php\n\nnamespace App\\Models;\n\nclass Booking\n{\n}\n",
+        ];
+        $patch = implode('', array_map(fn (string $path) => "diff --git a/{$path} b/{$path}\nnew file mode 100644\n--- /dev/null\n+++ b/{$path}\n@@ -0,0 +1 @@\n+<?php\n", array_keys($files)));
+        $this->driver->onExec = function (string $workspace) use ($files) {
+            foreach ($files as $path => $contents) {
+                $this->driver->files["{$workspace}:{$path}"] = $contents;
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        config(['builder.verification.migrations.enabled' => false]);
+        $change = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
+
+        app(RequestVerification::class)->handle($change);
+
+        $this->assertSame([
+            ['table' => 'bookings', 'column' => 'user_id', 'at' => "{$migration}:10", 'model' => 'App\\Models\\Booking', 'guard' => null, 'policy' => null],
+        ], $change->verifications()->sole()->evidence['owners']);
+
+        // A change that gives no table an owner keeps nothing, and the check can be turned off.
+        $plain = FeatureRequest::factory()->generated()->create(['patch' => $this->changeWithTests()]);
+        app(RequestVerification::class)->handle($plain);
+        $this->assertArrayNotHasKey('owners', $plain->verifications()->sole()->evidence ?? []);
+
+        config(['builder.verification.owners.enabled' => false]);
+        $off = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
+        app(RequestVerification::class)->handle($off);
+        $this->assertArrayNotHasKey('owners', $off->verifications()->sole()->evidence ?? []);
+    }
 }
