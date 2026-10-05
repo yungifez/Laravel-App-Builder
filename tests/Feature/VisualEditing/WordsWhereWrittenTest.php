@@ -35,6 +35,7 @@ class WordsWhereWrittenTest extends TestCase
         <p>{{ note }}</p>
         <p>{{ user.name }}</p>
         <button>{{ __('Save') }}</button>
+        <span>{{ $t('Missing') }}</span>
     </template>
 
     <script setup>
@@ -64,6 +65,32 @@ class WordsWhereWrittenTest extends TestCase
 
     VUE;
 
+    protected const WELCOME = <<<'BLADE'
+    <main>
+        <h1>{{ __('Welcome') }}</h1>
+        <p>{{ __('auth.failed') }}</p>
+    </main>
+
+    BLADE;
+
+    protected const WORDS = <<<'JSON'
+    {
+      "Save": "Enregistrer",
+      "Cancel": "Annuler"
+    }
+
+    JSON;
+
+    protected const AUTH = <<<'PHP'
+    <?php
+
+    return [
+        'failed' => 'Ces identifiants ne correspondent pas.',
+        'throttle' => 'Trop d\'essais.',
+    ];
+
+    PHP;
+
     protected ProjectRepository $repository;
 
     protected User $owner;
@@ -85,6 +112,10 @@ class WordsWhereWrittenTest extends TestCase
             'resources/js/pages/Settings.vue' => self::SETTINGS,
             'resources/js/layouts/AuthLayout.vue' => self::LAYOUT,
             'resources/js/pages/Login.vue' => self::LOGIN,
+            'resources/views/welcome.blade.php' => self::WELCOME,
+            'config/app.php' => "<?php\n\nreturn [\n    'locale' => env('APP_LOCALE', 'fr'),\n];\n",
+            'lang/fr.json' => self::WORDS,
+            'lang/fr/auth.php' => self::AUTH,
         ]), draftNotes: false);
         $this->repository->import($this->project);
         $this->preview = Preview::factory()->editable($this->editedHead())->ready()->create([
@@ -117,7 +148,7 @@ class WordsWhereWrittenTest extends TestCase
         $this->assertSame($reworded, $this->fileNow('resources/js/pages/Settings.vue'));
     }
 
-    public function test_words_set_in_a_page_script_or_looked_up_as_a_translation_are_changed_there()
+    public function test_words_set_in_a_page_script_are_changed_there()
     {
         // The page is not around the layout's heading, but it is drawn on
         // the same page.
@@ -130,14 +161,64 @@ class WordsWhereWrittenTest extends TestCase
         // The browser tab's title, written the same, is not what was shown.
         $this->assertStringContainsString("layout: { title: 'Welcome back' }", $this->fileNow('resources/js/pages/Login.vue'));
         $this->assertStringContainsString('<Head title="Log in to your account" />', $this->fileNow('resources/js/pages/Login.vue'));
+    }
 
+    public function test_translated_words_are_changed_in_the_apps_language_file_and_the_key_stays()
+    {
         $this->reword([
             'target' => 'resources/js/pages/Settings.vue:5:5',
-            'before' => 'Save',
-            'text' => 'Keep changes',
+            'before' => 'Enregistrer',
+            'text' => 'Garder "tout"',
+        ])->assertSessionHasNoErrors();
+
+        $reworded = str_replace('"Enregistrer"', '"Garder \\"tout\\""', self::WORDS);
+        $this->assertSame($reworded, $this->fileNow('lang/fr.json'));
+        $this->assertSame(self::SETTINGS, $this->fileNow('resources/js/pages/Settings.vue'));
+
+        $edit = $this->project->visualEdits()->sole();
+        $this->assertSame(['lang/fr.json', 2, 11, 'button'], [$edit->file, $edit->line, $edit->column, $edit->tag]);
+
+        $this->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
+        $this->assertSame(self::WORDS, $this->fileNow('lang/fr.json'));
+    }
+
+    public function test_a_named_key_is_changed_in_its_file_and_a_blade_key_with_no_words_gets_them()
+    {
+        $this->reword([
+            'target' => 'resources/views/welcome.blade.php:3:5',
+            'before' => 'Ces identifiants ne correspondent pas.',
+            'text' => "Ce n'est pas le bon mot de passe.",
+        ])->assertSessionHasNoErrors();
+        $this->assertStringContainsString("'failed' => 'Ce n\\'est pas le bon mot de passe.',", $this->fileNow('lang/fr/auth.php'));
+        $this->assertStringContainsString("'throttle' => 'Trop d\\'essais.',", $this->fileNow('lang/fr/auth.php'));
+
+        // Laravel shows a key it has no words for as written.
+        $this->reword([
+            'target' => 'resources/views/welcome.blade.php:2:5',
+            'before' => 'Welcome',
+            'text' => 'Bienvenue',
             'revision' => $this->editedHead(),
         ])->assertSessionHasNoErrors();
-        $this->assertStringContainsString("<button>{{ __('Keep changes') }}</button>", $this->fileNow('resources/js/pages/Settings.vue'));
+        $this->assertSame(['Save' => 'Enregistrer', 'Cancel' => 'Annuler', 'Welcome' => 'Bienvenue'], json_decode($this->fileNow('lang/fr.json'), true));
+        $this->assertStringContainsString("  \"Cancel\": \"Annuler\",\n  \"Welcome\": \"Bienvenue\"\n}\n", $this->fileNow('lang/fr.json'));
+        $this->assertSame(self::WELCOME, $this->fileNow('resources/views/welcome.blade.php'));
+    }
+
+    public function test_translated_words_that_cannot_be_found_or_changed_since_are_left_alone()
+    {
+        $this->reword(['target' => 'resources/js/pages/Settings.vue:5:5', 'before' => 'Save', 'text' => 'Garder'])
+            ->assertSessionHasErrors(['edit' => 'These words were changed since. Look again and try once more.']);
+
+        // An app in a language it keeps no words for. A script's lookup may
+        // not read a file Laravel would make.
+        $head = $this->repository->commitFiles($this->project, $this->editedHead(), [
+            'config/app.php' => "<?php\n\nreturn [\n    'locale' => 'de',\n];\n",
+        ], 'Speak German', null, app(DesignDrafts::class)->find($this->project)?->designBranch());
+
+        $this->reword(['target' => 'resources/js/pages/Settings.vue:6:5', 'before' => 'Missing', 'text' => 'Fehlt', 'revision' => $head])
+            ->assertSessionHasErrors(['edit' => 'These words come from your app\'s translations, but I can\'t find where. Ask me to change them instead.']);
+
+        $this->assertSame($head, $this->editedHead());
     }
 
     public function test_words_that_cannot_be_told_apart_or_come_from_data_are_left_alone()
@@ -148,7 +229,7 @@ class WordsWhereWrittenTest extends TestCase
             ->assertSessionHasErrors(['edit' => 'These words are written in more than one place, so I can\'t tell which to change. Ask me to change them instead.']);
         $this->reword(['target' => 'resources/js/pages/Settings.vue:4:5', 'before' => 'Ada', 'text' => 'Grace'])
             ->assertSessionHasErrors(['edit' => 'These words come from your app\'s data or code, so I can\'t change them here. Ask me to change them instead.']);
-        $this->reword(['target' => 'resources/js/pages/Settings.vue:5:5', 'before' => 'Save', 'text' => "Don't save"])
+        $this->reword(['target' => 'resources/js/layouts/AuthLayout.vue:2:5', 'before' => 'Log in to your account', 'text' => "Don't wait", 'places' => ['resources/js/pages/Login.vue']])
             ->assertSessionHasErrors(['edit' => 'These words can\'t hold quotes, backslashes or line breaks. Ask me to change them instead.']);
         $this->reword(['target' => 'resources/js/components/Heading.vue:3:9', 'before' => 'Settings', 'text' => 'Mine', 'places' => ['../secrets.vue', '/etc/app.vue', 'config/app.php']])
             ->assertSessionHasErrors(['places.0', 'places.1', 'places.2']);

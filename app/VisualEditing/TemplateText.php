@@ -64,9 +64,8 @@ class TemplateText
 
         $name = '[A-Za-z_$][\w$]*';
         $plain = preg_match('/^'.$name.'(?:\??\.'.$name.')*$/', $match[1]) === 1;
-        $translated = preg_match('/^(?:__|\$t|trans|t)\(\s*([\'"])[^\'"\\\\]*\1\s*\)$/', $match[1]) === 1;
 
-        return $plain || $translated ? $match[1] : null;
+        return $plain || TranslationKey::in($match[1]) !== null ? $match[1] : null;
     }
 
     /**

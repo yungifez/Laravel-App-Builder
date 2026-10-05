@@ -14,6 +14,7 @@ use App\VisualEditing\QuotedWords;
 use App\VisualEditing\SourceLocation;
 use App\VisualEditing\TemplateElement;
 use App\VisualEditing\TemplateText;
+use App\VisualEditing\TranslationKey;
 use Illuminate\Validation\ValidationException;
 
 class ChangeVisualText
@@ -32,6 +33,9 @@ class ChangeVisualText
      *
      * The element must still show "before", the words the owner saw, at
      * "revision", so a newer change to them is never overwritten.
+     *
+     * Words the element looks up as a translation are changed in the app's
+     * translation file for its language, so the key stays.
      *
      * When the element shows a value through `{{ }}` (a title passed to a
      * component, or set in a page's script), the words are changed where
@@ -70,8 +74,14 @@ class ChangeVisualText
         $element = $contents === null ? null : TemplateElement::at($contents, $location->line, $location->column);
         $words = $element === null ? null : TemplateText::inside((string) $contents, $element);
 
-        if ($contents !== null && $element !== null && $words === null && TemplateText::named($contents, $element) !== null) {
-            return $this->changeWhereWritten($preview, $owner, $location, $element, $before, $after, $revision, $places);
+        $named = $contents !== null && $element !== null && $words === null ? TemplateText::named($contents, $element) : null;
+
+        if ($element !== null && $named !== null) {
+            $key = TranslationKey::in($named);
+
+            return $key === null
+                ? $this->changeWhereWritten($preview, $owner, $location, $element, $before, $after, $revision, $places)
+                : $this->changeTranslation($preview, $owner, $location, $element, $key, $before, $after, $revision);
         }
 
         if ($contents === null || $element === null || $words === null) {
@@ -191,5 +201,93 @@ class ChangeVisualText
         }
 
         throw ValidationException::withMessages(['edit' => __('These words come from your app\'s data or code, so I can\'t change them here. Ask me to change them instead.')]);
+    }
+
+    /**
+     * Change words the element looks up as a translation where the app's
+     * language gives them: `lang/{locale}/{file}.php` for a key such as
+     * `auth.failed`, else `lang/{locale}.json`. A key that is still its own
+     * words gets its first entry in the JSON file. Laravel reads that file
+     * for a Blade page; a script's lookup reads it only when the app already
+     * keeps one.
+     *
+     * @throws ValidationException when the words cannot be changed there.
+     */
+    protected function changeTranslation(Preview $preview, User $owner, SourceLocation $location, TemplateElement $element, string $key, string $before, string $after, string $revision): VisualEdit
+    {
+        $project = $preview->project;
+        $locale = TranslationKey::locale($this->repository->show($project, $revision, 'config/app.php'));
+        $group = TranslationKey::grouped($key);
+        $file = null;
+        $changed = null;
+        $found = null;
+
+        if ($group !== null) {
+            $file = "lang/{$locale}/{$group[0]}.php";
+            $contents = $this->repository->show($project, $revision, $file);
+            $found = $contents === null ? null : TranslationKey::inPhp($contents, $group[1]);
+            $changed = $found === null ? null : substr_replace((string) $contents, TranslationKey::php($after), $found['offset'], $found['length']);
+        }
+
+        if ($found === null) {
+            $file = "lang/{$locale}.json";
+            $contents = $this->repository->show($project, $revision, $file);
+            $found = $contents === null ? null : TranslationKey::inJson($contents, $key);
+
+            if ($found !== null) {
+                $changed = substr_replace((string) $contents, TranslationKey::json($after), $found['offset'], $found['length']);
+            } elseif ($contents !== null || str_ends_with($location->file, '.blade.php')) {
+                // Laravel shows a key with no words of its own as written.
+                $changed = TranslationKey::added($contents, $key, $after);
+                $entry = TranslationKey::json($key).': ';
+                $found = $changed === null ? null : ['offset' => (int) strrpos($changed, $entry) + strlen($entry), 'length' => 0, 'value' => $key];
+            }
+        }
+
+        if ($found === null || $changed === null) {
+            throw ValidationException::withMessages(['edit' => __('These words come from your app\'s translations, but I can\'t find where. Ask me to change them instead.')]);
+        }
+
+        if (TemplateText::shown($found['value']) !== TemplateText::shown($before)) {
+            throw ValidationException::withMessages(['edit' => __('These words were changed since. Look again and try once more.')]);
+        }
+
+        $prefix = substr($changed, 0, $found['offset']);
+        $line = substr_count($prefix, "\n") + 1;
+        $column = $found['offset'] - (int) strrpos("\n".$prefix, "\n") + 1;
+        $name = ElementName::for($element->tag);
+
+        try {
+            $sha = $this->repository->commitFiles(
+                $project,
+                $revision,
+                [$file => $changed],
+                "Change the words shown in {$name}\n\nIn {$file}, the words for \"{$key}\", shown by {$location}.",
+                ['name' => $owner->name, 'email' => $owner->email],
+                $preview->branch(),
+            );
+        } catch (RepositoryConflict $exception) {
+            throw ValidationException::withMessages(['edit' => $exception->getMessage()]);
+        }
+
+        $classes = $element->classes['value'] ?? '';
+
+        // The edit is kept in the translation file, so undoing it puts that
+        // file back.
+        return $project->visualEdits()->create([
+            'experiment_id' => $project->experiment_id,
+            'feature_request_id' => $preview->designing()?->id,
+            'user_id' => $owner->id,
+            'file' => $file,
+            'line' => $line,
+            'column' => $column,
+            'tag' => $element->tag,
+            'device' => 'base',
+            'changes' => [VisualEdit::TEXT => ['before' => $found['value'], 'after' => $after]],
+            'classes_before' => $classes,
+            'classes_after' => $classes,
+            'base_revision' => $revision,
+            'commit_sha' => $sha,
+        ]);
     }
 }
