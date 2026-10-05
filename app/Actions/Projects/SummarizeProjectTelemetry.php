@@ -27,7 +27,7 @@ class SummarizeProjectTelemetry
      * Setting the project up (drafting its notes) is reported apart, since
      * it belongs to no change.
      *
-     * @return array{requests: int, kept: int, reverted: int, cost_usd: float, unpriced_calls: int, input_tokens: int, output_tokens: int, cost_per_kept_change_usd: float|null, runs_verified: int, first_attempt_passed: int, first_attempt_unverified: int, reviewed: int, with_unexpected_changes: int, edits_without_model: int, repairs_before_acceptance: float|null, with_notes_behind: int, setup_cost_usd: float, owner_actions: array{adjustments: int, stops: int, retries: int, undos: int}, owner_actions_per_kept_change: float|null}
+     * @return array{requests: int, kept: int, reverted: int, cost_usd: float, unpriced_calls: int, input_tokens: int, output_tokens: int, cost_per_kept_change_usd: float|null, runs_verified: int, first_attempt_passed: int, first_attempt_unverified: int, reviewed: int, with_unexpected_changes: int, unexpected_kept: int, unexpected_undone: int, edits_without_model: int, repairs_before_acceptance: float|null, with_notes_behind: int, setup_cost_usd: float, owner_actions: array{adjustments: int, stops: int, retries: int, undos: int}, owner_actions_per_kept_change: float|null}
      */
     public function handle(Project $project): array
     {

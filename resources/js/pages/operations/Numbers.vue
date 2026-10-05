@@ -36,6 +36,8 @@ const props = defineProps<{
         first_attempt_passed: number;
         reviewed: number;
         with_unexpected_changes: number;
+        unexpected_kept: number;
+        unexpected_undone: number;
         edits_without_model: number;
     };
     daily: Day[];
@@ -219,6 +221,14 @@ const whole = new Intl.NumberFormat(undefined, {
                 <dd class="text-xs text-muted-foreground">
                     {{ changes.with_unexpected_changes }} of
                     {{ changes.reviewed }} reviewed
+                </dd>
+                <dd
+                    v-if="changes.with_unexpected_changes > 0"
+                    class="text-xs text-muted-foreground"
+                    data-test="unexpected-kept"
+                >
+                    {{ changes.unexpected_kept }} kept,
+                    {{ changes.unexpected_undone }} undone
                 </dd>
             </div>
             <div>

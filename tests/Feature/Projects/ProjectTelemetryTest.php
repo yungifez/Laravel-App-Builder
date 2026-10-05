@@ -71,6 +71,25 @@ class ProjectTelemetryTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('telemetry.kept', 1)->where('telemetry.cost_per_kept_change_usd', 2));
     }
 
+    public function test_a_change_that_touched_parts_it_was_not_about_says_whether_the_owner_kept_or_undid_it()
+    {
+        $project = Project::factory()->create();
+        $billing = ['billing' => ['config/billing.php']];
+
+        // Kept and still in the app.
+        $this->completedRun($this->request($project, ['commit_sha' => 'a1', 'accepted_at' => now()]), repairs: 0, unexpected: $billing);
+        // Kept, then undone.
+        $this->completedRun($this->request($project, ['commit_sha' => 'b2', 'accepted_at' => now(), 'revert_sha' => 'c3', 'reverted_at' => now()]), repairs: 0, unexpected: $billing);
+        // Never kept: neither. A change without surprises is not counted.
+        $this->completedRun($this->request($project), repairs: 0, unexpected: $billing);
+        $this->completedRun($this->request($project, ['commit_sha' => 'd4', 'accepted_at' => now()]), repairs: 0, unexpected: []);
+
+        $telemetry = app(SummarizeProjectTelemetry::class)->handle($project);
+
+        $this->assertSame([3, 1, 1], [$telemetry['with_unexpected_changes'], $telemetry['unexpected_kept'], $telemetry['unexpected_undone']]);
+        $this->assertSame([0, 0], array_values(array_intersect_key(app(SummarizeProjectTelemetry::class)->handle(Project::factory()->create()), array_flip(['unexpected_kept', 'unexpected_undone']))));
+    }
+
     public function test_it_counts_reviewed_changes_that_left_notes_behind()
     {
         $project = Project::factory()->create();

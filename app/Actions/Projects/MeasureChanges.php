@@ -28,9 +28,13 @@ class MeasureChanges
      * change. Checks that passed with no such test (unverified) are counted
      * apart, never as passes.
      *
+     * A change that touched parts it was not about says how the owner took
+     * it: kept (and still in the app) or undone. Neither means it was
+     * wrong; together they show whether the owner wanted what it did.
+     *
      * @param  Builder<FeatureRequest>  $requests
      * @param  Builder<VisualEdit>  $edits
-     * @return array{kept: int, cost_usd: float, unpriced_calls: int, input_tokens: int, output_tokens: int, cost_per_kept_change_usd: float|null, runs_verified: int, first_attempt_passed: int, first_attempt_unverified: int, reviewed: int, with_unexpected_changes: int, edits_without_model: int}
+     * @return array{kept: int, cost_usd: float, unpriced_calls: int, input_tokens: int, output_tokens: int, cost_per_kept_change_usd: float|null, runs_verified: int, first_attempt_passed: int, first_attempt_unverified: int, reviewed: int, with_unexpected_changes: int, unexpected_kept: int, unexpected_undone: int, edits_without_model: int}
      */
     public function handle(Builder $requests, Builder $edits): array
     {
@@ -61,6 +65,7 @@ class MeasureChanges
             ->filter(fn (Verification $verification) => $verification->status->finished());
 
         $reviewed = Run::query()->whereIn('id', $runIds)->whereNotNull('review')->get();
+        $unexpected = $requests->only($reviewed->filter(fn (Run $run) => $run->review['classification']['unexpected'] !== [])->pluck('feature_request_id')->unique()->all());
 
         return [
             'kept' => $kept,
@@ -74,6 +79,8 @@ class MeasureChanges
             'first_attempt_unverified' => $finished->filter(fn (Verification $verification) => $verification->status === VerificationStatus::Unverified)->count(),
             'reviewed' => $reviewed->count(),
             'with_unexpected_changes' => $reviewed->filter(fn (Run $run) => $run->review['classification']['unexpected'] !== [])->count(),
+            'unexpected_kept' => $unexpected->filter(fn (FeatureRequest $request) => $request->commit_sha !== null && $request->reverted_at === null)->count(),
+            'unexpected_undone' => $unexpected->filter(fn (FeatureRequest $request) => $request->reverted_at !== null)->count(),
             'edits_without_model' => $edits->count(),
         ];
     }

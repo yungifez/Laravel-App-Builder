@@ -107,17 +107,27 @@ const actions = computed(() => {
                         with nothing to test the change
                     </dd>
                 </div>
-                <div class="flex items-baseline justify-between gap-4 py-2">
-                    <dt class="text-muted-foreground">
-                        Changed parts not asked about
-                    </dt>
-                    <dd class="tabular-nums">
-                        {{ unasked?.count ?? '–' }}
-                        <span
-                            v-if="unasked"
-                            class="ml-1.5 text-muted-foreground"
-                            >{{ unasked.percent }}</span
-                        >
+                <div class="py-2">
+                    <div class="flex items-baseline justify-between gap-4">
+                        <dt class="text-muted-foreground">
+                            Changed parts not asked about
+                        </dt>
+                        <dd class="tabular-nums">
+                            {{ unasked?.count ?? '–' }}
+                            <span
+                                v-if="unasked"
+                                class="ml-1.5 text-muted-foreground"
+                                >{{ unasked.percent }}</span
+                            >
+                        </dd>
+                    </div>
+                    <dd
+                        v-if="telemetry.with_unexpected_changes > 0"
+                        class="mt-0.5 text-xs text-muted-foreground"
+                        data-test="unexpected-kept"
+                    >
+                        You kept {{ telemetry.unexpected_kept }} and undid
+                        {{ telemetry.unexpected_undone }}
                     </dd>
                 </div>
                 <div

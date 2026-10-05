@@ -25,7 +25,7 @@ class MeasureBusiness
     /**
      * Measure the business over the last given number of days.
      *
-     * @return array{days: int, revenue: array{monthly_usd: int, plans: list<array{key: string, name: string, price: int, paying: int, given: int}>}, people: array{total: int, joined: int, building: int, verified: int}, spend: array{total_usd: float, completeness: string}, changes: array{kept: int, cost_usd: float, unpriced_calls: int, input_tokens: int, output_tokens: int, cost_per_kept_change_usd: float|null, runs_verified: int, first_attempt_passed: int, first_attempt_unverified: int, reviewed: int, with_unexpected_changes: int, edits_without_model: int}, daily: list<array{date: string, joined: int, changes: int}>}
+     * @return array{days: int, revenue: array{monthly_usd: int, plans: list<array{key: string, name: string, price: int, paying: int, given: int}>}, people: array{total: int, joined: int, building: int, verified: int}, spend: array{total_usd: float, completeness: string}, changes: array{kept: int, cost_usd: float, unpriced_calls: int, input_tokens: int, output_tokens: int, cost_per_kept_change_usd: float|null, runs_verified: int, first_attempt_passed: int, first_attempt_unverified: int, reviewed: int, with_unexpected_changes: int, unexpected_kept: int, unexpected_undone: int, edits_without_model: int}, daily: list<array{date: string, joined: int, changes: int}>}
      */
     public function handle(int $days): array
     {
