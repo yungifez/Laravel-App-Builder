@@ -11,6 +11,7 @@ use App\Actions\Runs\WriteBrief;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
 use App\Ai\Agents\TestWriter;
+use App\Ai\Middleware\RedactSecrets;
 use App\Enums\AgentOutcomeStatus;
 use App\Enums\DeploymentStatus;
 use App\Enums\FeatureRequestStatus;
@@ -18,6 +19,7 @@ use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Enums\WorkspaceStatus;
 use App\Features\MigrationChecks;
+use App\Jobs\StartPreview;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\AcceptedFinding;
 use App\Models\Deployment;
@@ -28,8 +30,10 @@ use App\Models\Workspace;
 use App\Runs\Agents\AgentOutcome;
 use App\Runs\Agents\AgentTask;
 use App\Runs\Agents\CodingAgentManager;
+use ArrayObject;
 use Closure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -65,6 +69,8 @@ class AgentDriverTest extends TestCase
         parent::setUp();
 
         Queue::fake([VerifyFeatureRequest::class]);
+        // Keeping a change starts the app; KeepOpensAppTest covers that.
+        Bus::fake([StartPreview::class]);
         $this->buildInLocalWorkspaces();
 
         config([
@@ -1422,6 +1428,140 @@ class AgentDriverTest extends TestCase
             && str_contains($prompt, '1. tests/Feature/TeamDescriptionTest.php: a team keeps its description'));
         TestWriter::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, "## What the tests must check\n\n1. Teams have a nullable description. (base case:")
             && $prompt->provider->name() === 'openai');
+    }
+
+    public function test_a_written_test_that_fails_the_same_way_twice_while_all_else_passes_is_corrected_once_and_the_owner_hears_of_it()
+    {
+        config(['builder.construction.budgets.repairs' => 10]);
+        $prompts = $this->writtenTestCalling('/teams/1/description', "test('a team keeps its description', fn () => \$this->get('/teams/1')->assertSee('About'));\n");
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION]), $this->writes([]), $this->writes([]));
+        ChangeReviewer::fake([['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => []]]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->failWrittenTest($run, 'Expected response status code [200] but received 404.');
+        $this->assertSame(['verification_failed'], $this->sentBack($run), 'Once is not enough: the code may still be moving.');
+
+        $this->failWrittenTest($run, 'Expected response status code [200] but received 404.');
+
+        $run->refresh();
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(['file' => 'tests/Feature/TeamDescriptionTest.php', 'test' => 'a team keeps its description', 'reason' => 'Expected response status code [200] but received 404.'], $run->events()->where('type', 'written_test_rewritten')->sole()->data);
+        $this->assertStringContainsString("\$this->get('/teams/1')", $run->plan['written_files']['tests/Feature/TeamDescriptionTest.php']);
+        $this->assertStringContainsString("+test('a team keeps its description', fn () => \$this->get('/teams/1')->assertSee('About'));", (string) $run->featureRequest->patch);
+        $this->assertCount(2, $prompts);
+        $this->assertStringContainsString("## What it said when it failed\n\n```\nExpected response status code [200] but received 404.\n```", $prompts[1]);
+        $this->assertStringContainsString('to check this item: Teams have a nullable description. (base case:', $prompts[1]);
+        $this->assertStringContainsString('- app/Models/Team.php', $prompts[1]);
+        // It goes through RedactSecrets like any TestWriter call, and carries nothing of ours into the app's test.
+        $this->assertDoesNotMatchRegularExpression('/\b(builder|platform|control plane|inspector|planner|reviewer|anthropic|openai)\b/i', $prompts[1]);
+        $this->assertContains(RedactSecrets::class, array_map(get_class(...), TestWriter::make()->middleware()));
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'The test "a team keeps its description" in tests/Feature/TeamDescriptionTest.php, written before you started, was wrong and has been corrected.'));
+
+        $this->passVerification($run, [['file' => '/workspace/tests/Feature/TeamDescriptionTest.php', 'name' => 'a team keeps its description', 'outcome' => 'passed']]);
+
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+        $this->assertContains(
+            ['kind' => 'gap', 'text' => 'A test written before the work began was corrected: "a team keeps its description". It kept failing the same way while everything else passed. Try this part yourself to be sure.'],
+            app(DescribeProof::class)->handle($run->featureRequest),
+        );
+    }
+
+    public function test_a_written_test_that_fails_differently_each_try_or_beside_another_failure_is_not_corrected()
+    {
+        config(['builder.construction.budgets.repairs' => 10]);
+        $prompts = $this->writtenTestCalling('/teams/1/description', "test('a team keeps its description', fn () => expect(true)->toBeTrue());\n");
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION]));
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->failWrittenTest($run, 'Expected response status code [200] but received 404.');
+        $this->failWrittenTest($run, 'Expected response status code [200] but received 500.');
+        $this->assertSame(['verification_failed', 'verification_failed'], $this->sentBack($run));
+
+        // The same failure, but a test of the coder's own fails too.
+        $this->failWrittenTest($run, 'Expected response status code [200] but received 500.', [['file' => '/workspace/tests/Feature/TeamTest.php', 'name' => 'teams have names', 'outcome' => 'failed', 'message' => 'Nope.']]);
+
+        $run->refresh();
+        $this->assertSame(['verification_failed', 'verification_failed', 'verification_failed'], $this->sentBack($run));
+        $this->assertSame(3, $run->repairs);
+        $this->assertCount(1, $prompts, 'Only the first writing.');
+        $this->assertSame(0, $run->events()->whereIn('type', ['written_test_rewritten', 'written_test_not_rewritten'])->count());
+    }
+
+    public function test_a_corrected_written_test_that_still_fails_the_same_way_stops_the_change_and_is_not_corrected_again()
+    {
+        config(['builder.construction.budgets.repairs' => 10]);
+        $prompts = $this->writtenTestCalling('/teams/1/description', "test('a team keeps its description', fn () => \$this->get('/teams/1')->assertSee('About'));\n");
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION]));
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->failWrittenTest($run, 'Expected response status code [200] but received 404.');
+        $this->failWrittenTest($run, 'Expected response status code [200] but received 404.');
+        $this->assertSame(1, $run->events()->where('type', 'written_test_rewritten')->count());
+
+        $this->failWrittenTest($run, "Failed asserting that 'Teams' contains \"About\".");
+        $this->failWrittenTest($run, "Failed asserting that 'Teams' contains \"About\".");
+
+        $run->refresh();
+        $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
+        $this->assertSame('written_test_still_fails', $run->stop_reason);
+        $this->assertSame('A test written before the work began still fails the same way after it was corrected once: "a team keeps its description". The change may be right and the test wrong. Ask me to try again, or say more about what you asked for.', $run->error);
+        $this->assertCount(2, $prompts, 'One writing and one correction.');
+        $this->assertSame(3, $run->repairs);
+    }
+
+    /**
+     * Have the tests written first hold one test that asks for an address
+     * the plan never makes, and its correction. Returns the writer's
+     * prompts, in order.
+     *
+     * @return ArrayObject<int, string>
+     */
+    protected function writtenTestCalling(string $address, string $corrected): ArrayObject
+    {
+        config(['builder.verification.written_first.enabled' => true]);
+        FeaturePlanner::fake([$this->plan()]);
+        $file = 'tests/Feature/TeamDescriptionTest.php';
+        $name = 'a team keeps its description';
+        $prompts = new ArrayObject;
+        TestWriter::fake(function (string $prompt) use ($prompts, $file, $name, $address, $corrected) {
+            $prompts[] = $prompt;
+            $contents = "<?php\n\n".(str_contains($prompt, '## The test to correct') ? $corrected : "test('{$name}', fn () => \$this->get('{$address}')->assertOk());\n");
+
+            return ['files' => [['path' => $file, 'contents' => $contents]], 'tests' => [['item' => 1, 'file' => $file, 'name' => $name]]];
+        });
+
+        return $prompts;
+    }
+
+    /**
+     * Get why each check sent the change back, in order.
+     *
+     * @return list<string>
+     */
+    protected function sentBack(Run $run): array
+    {
+        return $run->events()->where('type', 'status')->where('data->from', RunStatus::Verifying->value)->where('data->to', RunStatus::Implementing->value)->get()->pluck('data.reason')->all();
+    }
+
+    /**
+     * Record a failing verification in which only the written test fails,
+     * saying the given message, and the coder's own test passes unless
+     * others are given, and carry it back.
+     *
+     * @param  list<array{file: string, name: string, outcome: string, message?: string}>  $others
+     */
+    protected function failWrittenTest(Run $run, string $message, array $others = [['file' => '/workspace/tests/Feature/TeamTest.php', 'name' => 'teams have names', 'outcome' => 'passed']]): void
+    {
+        $verification = $run->verifications()->latest('id')->firstOrFail();
+        $verification->update(['status' => VerificationStatus::Failed, 'results' => [
+            ['name' => 'Tests', 'stage' => 'checks', 'outcome' => 'failed', 'exit_code' => 1, 'timed_out' => false, 'duration_ms' => 10, 'output' => "FAILED {$message}", 'tests' => [
+                ['file' => '/workspace/tests/Feature/TeamDescriptionTest.php', 'name' => 'a team keeps its description', 'outcome' => 'failed', 'message' => $message],
+                ...$others,
+            ]],
+            ['name' => 'Format', 'stage' => 'checks', 'outcome' => 'passed', 'exit_code' => 0, 'timed_out' => false, 'duration_ms' => 10, 'output' => 'OK'],
+        ], 'finished_at' => now()]);
+
+        app(CompleteRunVerification::class)->handle($verification);
     }
 
     /**

@@ -117,6 +117,8 @@ class OwnerWording
                 'verification_failed' => __('Some checks failed, so I went back to fix them'),
                 'tests_not_run' => __('My test would not have been run, so I went back to put it where it will be'),
                 'written_tests_changed' => __('The tests written to check the change were changed, so it went back to leave them as they are'),
+                'written_test_wrong' => __('A test written before the work began kept failing the same way, so I am correcting it once'),
+                'written_test_rewritten' => __('I corrected a test written before the work began, and went back to the change'),
                 'review_findings' => __('Went back to fix what I found'),
                 default => __('Went back to improve the change'),
             };
@@ -148,6 +150,7 @@ class OwnerWording
                 'out_of_credit' => __('Stopped because our account with the AI service is out of credit. This is our fault.'),
                 'request_refused' => __('Stopped because the AI service could not accept how we asked it. This is our fault.'),
                 'written_tests_changed' => __('Stopped because the tool making the change changed the tests written to check it'),
+                'written_test_still_fails' => __('Stopped because a test written before the work began still fails after it was corrected once'),
                 default => __('Stopped to ask what you want to do'),
             };
         }

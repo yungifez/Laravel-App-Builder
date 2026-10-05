@@ -67,7 +67,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('whose records'), $this->owners($featureRequest, $verification)), ...$this->about(__('packages'), $this->packages($featureRequest, $verification)), ...$this->about(__('messages'), $this->messages($featureRequest, $verification)), ...$this->about(__('structure'), $this->structure($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('whose records'), $this->owners($featureRequest, $verification)), ...$this->about(__('packages'), $this->packages($featureRequest, $verification)), ...$this->about(__('messages'), $this->messages($featureRequest, $verification)), ...$this->about(__('structure'), $this->structure($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->corrected($featureRequest->latestRun), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return $this->asked($featureRequest, array_values(collect($lines)->unique('text')->all()));
@@ -1068,6 +1068,24 @@ class DescribeProof
                 'url' => route('verifications.shots.show', [$verification, $shot['index']]),
                 'label' => $labels[min($position, 2)],
             ])->all());
+    }
+
+    /**
+     * Name each test written before the work began that was corrected after
+     * the change was built (§12). It was written with the code in view, so
+     * it proves less, and the owner hears of it.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function corrected(?Run $run): array
+    {
+        if ($run === null) {
+            return [];
+        }
+
+        return array_values($run->events()->where('type', 'written_test_rewritten')->get()
+            ->map(fn (RunEvent $event) => ['kind' => 'gap', 'text' => (string) __('A test written before the work began was corrected: ":test". It kept failing the same way while everything else passed. Try this part yourself to be sure.', ['test' => $event->data['test']])])
+            ->all());
     }
 
     /**

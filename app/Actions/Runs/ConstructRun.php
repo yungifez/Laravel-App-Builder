@@ -310,6 +310,42 @@ class ConstructRun
     }
 
     /**
+     * Have each written test that held the change back the same way twice
+     * corrected once before the next try (§12), and tell the coder. The
+     * owner sees each correction in the proof; it is never silent.
+     */
+    protected function correctWrittenTests(Run $run, RunLease $lease, Workspace $workspace, Plan $plan): Plan
+    {
+        /** @var list<string> $details */
+        $details = [];
+
+        foreach ($run->feedback['tests'] ?? [] as $test) {
+            if ($run->events()->whereIn('type', ['written_test_rewritten', 'written_test_not_rewritten'])->where('data->file', $test['file'])->where('data->test', $test['name'])->exists()) {
+                continue;
+            }
+
+            $corrected = $this->writeTestsFirst->rewrite($run, $plan, $workspace, $test);
+
+            if ($corrected === null) {
+                $this->recordEvent($run, $lease, 'written_test_not_rewritten', ['file' => $test['file'], 'test' => $test['name'], 'reason' => $test['message']]);
+
+                continue;
+            }
+
+            $plan = $corrected;
+            $details[] = (string) __('The test ":name" in :file, written before you started, was wrong and has been corrected. Its new version is under "Tests already written": build the change so it passes. The problems below are from before it was corrected.', ['name' => $test['name'], 'file' => $test['file']]);
+            $this->recordEvent($run, $lease, 'written_test_rewritten', ['file' => $test['file'], 'test' => $test['name'], 'reason' => $test['message']]);
+        }
+
+        $this->transitionRun->handle($run, RunStatus::Implementing, $lease, [
+            'plan' => $plan->toArray(),
+            'feedback' => ['reason' => 'verification_failed', 'details' => [...$details, ...(array) ($run->feedback['details'] ?? [])]],
+        ], ['reason' => $details === [] ? 'verification_failed' : 'written_test_rewritten']);
+
+        return $plan;
+    }
+
+    /**
      * Have the driver build (or repair) the change, read it back from the
      * workspace, and hand it to verification.
      */
@@ -317,6 +353,10 @@ class ConstructRun
     {
         $workspace = $this->prepareRunWorkspace->handle($run, $lease);
         $plan = $this->planFor($run);
+
+        if (($run->feedback['reason'] ?? null) === 'written_test_wrong') {
+            $plan = $this->correctWrittenTests($run, $lease, $workspace, $plan);
+        }
 
         // A worker outside our boxes writes in its own copy of the app, so
         // the files are written only where our agents work.

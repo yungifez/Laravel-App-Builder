@@ -130,7 +130,10 @@ class VerifyItemsTest extends TestCase
         <testsuites>
           <testsuite name="Tests\Feature\TeamTest" file="/workspace/tests/Feature/TeamTest.php">
             <testcase name="test_teams_have_a_description" file="/workspace/tests/Feature/TeamTest.php" class="Tests\Feature\TeamTest"/>
-            <testcase name="test_members_cannot_edit" class="Tests\Feature\TeamTest"><failure>Expected 403.</failure></testcase>
+            <testcase name="test_members_cannot_edit" class="Tests\Feature\TeamTest"><failure>Tests\Feature\TeamTest::test_members_cannot_edit
+        Expected 403.
+
+        /workspace/tests/Feature/TeamTest.php:12</failure></testcase>
             <testcase name="test_later" file="/workspace/tests/Feature/TeamTest.php"><skipped/></testcase>
           </testsuite>
           <testsuite name="Tests\Feature\PageTest">
@@ -141,9 +144,9 @@ class VerifyItemsTest extends TestCase
 
         $this->assertSame([
             ['file' => '/workspace/tests/Feature/TeamTest.php', 'name' => 'test_teams_have_a_description', 'outcome' => 'passed'],
-            ['file' => '/workspace/tests/Feature/TeamTest.php', 'name' => 'test_members_cannot_edit', 'outcome' => 'failed'],
+            ['file' => '/workspace/tests/Feature/TeamTest.php', 'name' => 'test_members_cannot_edit', 'outcome' => 'failed', 'message' => 'Expected 403.'],
             ['file' => '/workspace/tests/Feature/TeamTest.php', 'name' => 'test_later', 'outcome' => 'skipped'],
-            ['file' => 'tests/Feature/PageTest.php', 'name' => 'it shows the field', 'outcome' => 'failed'],
+            ['file' => 'tests/Feature/PageTest.php', 'name' => 'it shows the field', 'outcome' => 'failed', 'message' => 'Boom'],
         ], TestReport::fromJunit($xml));
         $this->assertSame([], TestReport::fromJunit('not xml'));
     }

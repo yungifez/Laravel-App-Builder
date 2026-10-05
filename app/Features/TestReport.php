@@ -19,10 +19,11 @@ class TestReport
     public const SKIPPED = 'skipped';
 
     /**
-     * Read each test case in a JUnit report: its file, name and outcome.
-     * An unreadable report reads as no tests.
+     * Read each test case in a JUnit report: its file, name and outcome,
+     * and for a failed one, what it said. An unreadable report reads as no
+     * tests.
      *
-     * @return list<array{file: string, name: string, outcome: string}>
+     * @return list<array{file: string, name: string, outcome: string, message?: string}>
      */
     public static function fromJunit(string $xml): array
     {
@@ -37,14 +38,21 @@ class TestReport
         foreach ($report->xpath('//testcase') ?: [] as $case) {
             $suiteFile = $case->xpath('ancestor::testsuite[@file][1]/@file');
 
+            $failure = match (true) {
+                isset($case->failure) => (string) $case->failure,
+                isset($case->error) => (string) $case->error,
+                default => null,
+            };
+
             $tests[] = [
                 'file' => Str::before((string) ($case['file'] ?? ($suiteFile[0] ?? '')), '::'),
                 'name' => (string) $case['name'],
                 'outcome' => match (true) {
-                    isset($case->failure), isset($case->error) => self::FAILED,
+                    $failure !== null => self::FAILED,
                     isset($case->skipped) => self::SKIPPED,
                     default => self::PASSED,
                 },
+                ...($failure === null ? [] : ['message' => self::message($failure)]),
             ];
         }
 
@@ -62,13 +70,10 @@ class TestReport
      */
     public static function outcome(array $tests, string $file, string $name): ?string
     {
-        $wanted = self::normalize($name);
         $outcomes = [];
 
         foreach ($tests as $test) {
-            $path = str_replace('\\', '/', $test['file']);
-
-            if (($path === $file || str_ends_with($path, '/'.$file)) && self::normalize($test['name']) === $wanted) {
+            if (self::same($test, $file, $name)) {
                 $outcomes[] = $test['outcome'];
             }
         }
@@ -98,6 +103,34 @@ class TestReport
             ->pluck('outcome');
 
         return $outcomes->contains(self::PASSED) && ! $outcomes->contains(self::FAILED);
+    }
+
+    /**
+     * Determine if a test in a report is the named test in the file.
+     *
+     * @param  array{file: string, name: string}  $test
+     */
+    public static function same(array $test, string $file, string $name): bool
+    {
+        $path = str_replace('\\', '/', $test['file']);
+
+        return ($path === $file || str_ends_with($path, '/'.$file)) && self::normalize($test['name']) === self::normalize($name);
+    }
+
+    /**
+     * Keep what a failed test said, without the test's own name on the
+     * first line or where it stopped below: the same failure on two tries
+     * then reads the same.
+     */
+    protected static function message(string $text): string
+    {
+        $lines = explode("\n", trim(str_replace("\r\n", "\n", $text)));
+
+        if (preg_match('/^[\w\\\\]+::\S+/', $lines[0]) === 1) {
+            array_shift($lines);
+        }
+
+        return Str::limit(trim(Str::before(trim(implode("\n", $lines)), "\n\n")), 500);
     }
 
     /**

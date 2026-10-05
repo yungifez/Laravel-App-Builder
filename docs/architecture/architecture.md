@@ -1790,8 +1790,23 @@ compared with the plan (`WriteTestsFirst::changed`). Putting one back would
 not help: the worker's code was made to pass its own version. So a changed
 test sends the change back with the test's name (`written_tests_changed`), and
 stops it for the owner when no tries are left. A written file the patch leaves
-out is put back as written. Not built: a written test that is itself wrong is
-otherwise repaired like any failure.
+out is put back as written. A written test can itself be wrong, and since the
+coder may not change it, it would use up every try and stop a change whose code
+is right. So when the same written test fails with the same message on two
+checks in a row, while the coder's own tests and every other check pass
+(`StuckWrittenTests`), the change goes back with `written_test_wrong`. Before
+that try, the test writer corrects only that test, once
+(`WriteTestsFirst::rewrite`). It sees the plan's item, the redacted failure,
+the app's addresses and the files the change touched. The same
+`WrittenTests::check` rules apply, and the test keeps its name and its file's
+other tests. A test that fails a different way each try is left alone: the
+code is still moving. The correction is recorded (`written_test_rewritten`,
+with the test and the failure), and the coder hears of it. The proof shows it
+to the owner as a gap, since the new test was written with the code in view. A
+corrected test that again fails the same way twice stops the change for the
+owner, naming the test (`written_test_still_fails`). JUnit failures keep their
+message, without the test's name or where it stopped, so the same failure on
+two tries reads the same.
 
 **The change is judged, not the app it started from.** Format and lint
 checks run only on the files the change added or modified

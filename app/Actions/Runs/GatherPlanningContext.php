@@ -95,7 +95,7 @@ class GatherPlanningContext
      *
      * @return list<string>
      */
-    protected function routes(Workspace $workspace): array
+    public function routes(Workspace $workspace): array
     {
         $listing = rescue(fn () => $this->runWorkspaceCommand->handle($workspace, ['php', 'artisan', 'route:list', '--json', '--except-vendor', '--no-ansi'], 60), null, report: false);
         $routes = $listing?->exit_code === 0 ? json_decode($listing->output, true) : null;

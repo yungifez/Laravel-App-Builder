@@ -9,6 +9,7 @@ use App\Jobs\ExecuteRun;
 use App\Models\Run;
 use App\Models\Verification;
 use App\Runs\ConstructionDriverManager;
+use App\Runs\StuckWrittenTests;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -18,6 +19,7 @@ class CompleteRunVerification
         private TransitionRun $transitionRun,
         private ConstructionDriverManager $drivers,
         private RequestVerification $requestVerification,
+        private StuckWrittenTests $stuckWrittenTests,
     ) {}
 
     /**
@@ -29,7 +31,9 @@ class CompleteRunVerification
      * in the app before it. Otherwise the change goes back for a repair,
      * with only the problems it brought, while the driver can repair and
      * the run has repairs left; else the run stops for the owner's
-     * decision.
+     * decision. A test written before the change that holds it back the
+     * same way twice is corrected once before the next try; when it holds
+     * it back again, the run stops and names it.
      */
     public function handle(Verification $verification): void
     {
@@ -62,11 +66,28 @@ class CompleteRunVerification
                 return;
             }
 
+            $stuck = $this->stuckWrittenTests->in($run, $verification);
+            $corrected = $run->events()->whereIn('type', ['written_test_rewritten', 'written_test_not_rewritten'])->get()
+                ->map(fn ($event) => "{$event->data['file']}|{$event->data['test']}")->all();
+            $again = array_values(array_filter($stuck, fn (array $test) => in_array("{$test['file']}|{$test['name']}", $corrected, true)));
+
+            if ($again !== []) {
+                $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, attributes: [
+                    'error' => __('A test written before the work began still fails the same way after it was corrected once: :tests. The change may be right and the test wrong. Ask me to try again, or say more about what you asked for.', [
+                        'tests' => implode(', ', array_map(fn (array $test) => "\"{$test['name']}\"", $again)),
+                    ]),
+                    'feedback' => ['reason' => 'verification_failed', 'details' => $failures],
+                ], details: [...$details, 'reason' => 'written_test_still_fails', 'tests' => array_map(fn (array $test) => ['file' => $test['file'], 'name' => $test['name']], $again), 'choices' => ConstructRun::DECISION_CHOICES]);
+
+                return;
+            }
+
             if ($this->drivers->driver($run->driver)->canRepair() && $run->repairs < $run->repairLimit()) {
                 $this->transitionRun->handle($run, RunStatus::Implementing, attributes: [
                     'repairs' => $run->repairs + 1,
-                    'feedback' => ['reason' => 'verification_failed', 'details' => $failures],
-                ], details: [...$details, 'reason' => 'verification_failed']);
+                    // A stuck written test is corrected before the next try (ConstructRun).
+                    'feedback' => $stuck === [] ? ['reason' => 'verification_failed', 'details' => $failures] : ['reason' => 'written_test_wrong', 'details' => $failures, 'tests' => $stuck],
+                ], details: [...$details, 'reason' => $stuck === [] ? 'verification_failed' : 'written_test_wrong']);
 
                 ExecuteRun::dispatch($run)->afterCommit();
 

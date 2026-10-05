@@ -6,6 +6,7 @@ use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Ai\Agents\TestWriter;
 use App\Context\Capability;
 use App\Enums\ModelRole;
+use App\Features\PatchSummary;
 use App\Features\WrittenTests;
 use App\Models\Run;
 use App\Models\Workspace;
@@ -13,6 +14,7 @@ use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\ProvidersUnavailable;
 use App\Runs\Plan;
 use App\Runs\PlanningContext;
+use App\Support\Secrets;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Str;
@@ -25,6 +27,7 @@ class WriteTestsFirst
         protected RunWorkspaceCommand $runWorkspaceCommand,
         protected WorkspaceManager $workspaces,
         protected RecordModelUsage $recordModelUsage,
+        protected GatherPlanningContext $gatherPlanningContext,
     ) {}
 
     /**
@@ -139,6 +142,84 @@ class WriteTestsFirst
         }
 
         return $changed;
+    }
+
+    /**
+     * Have the writer correct one written test that held the change back
+     * the same way twice while all else passed (StuckWrittenTests). It sees
+     * the plan's item, what the test said when it failed and what the app
+     * now offers, and the same rules apply. Only that test may change: its
+     * name and the file's other tests stay. Null when no answer kept the
+     * rules; the test then stays as written.
+     *
+     * @param  array{item: int, file: string, name: string, message: string}  $test
+     *
+     * @throws ProvidersUnavailable
+     */
+    public function rewrite(Run $run, Plan $plan, Workspace $workspace, array $test): ?Plan
+    {
+        $item = $plan->verifyItems()[$test['item'] - 1] ?? null;
+        $contents = $plan->writtenFiles[$test['file']] ?? null;
+
+        if ($item === null || $contents === null) {
+            return null;
+        }
+
+        $key = WrittenTests::name($test['name']);
+        $others = array_values(array_filter($plan->writtenTests, fn (array $written) => $written['file'] === $test['file'] && WrittenTests::name($written['name']) !== $key));
+        $routes = $this->gatherPlanningContext->routes($workspace);
+        $files = array_column(PatchSummary::files($run->featureRequest->patch), 'path');
+
+        $prompt = implode("\n\n", array_filter([
+            "## The change\n\n{$plan->summary}",
+            "## The test to correct\n\nThe test \"{$test['name']}\" in {$test['file']} was written before the change was built, to check this item: {$item['text']}\n\nThe change was built and tried again. Each time, every other test and check passed, but this test failed the same way. It may expect what the plan never asked for, such as an address or a name the app does not have. Rewrite only this test, so it checks the same item through what the app now offers. Keep its name, and keep every other test in the file exactly as it is. Return the whole file, with this test for item 1.",
+            "## What it said when it failed\n\n```\n".Secrets::redact(Str::limit($test['message'], 2000))."\n```",
+            "## {$test['file']} as written\n\n```php\n{$contents}\n```",
+            $routes === [] ? null : "## Addresses in the app now\n\n- ".implode("\n- ", $routes),
+            $files === [] ? null : "## Files the change added or changed\n\n- ".implode("\n- ", $files),
+        ]));
+        $attempts = max(1, (int) config('builder.verification.written_first.attempts'));
+
+        for ($attempt = 1; ; $attempt++) {
+            try {
+                $response = TestWriter::make()->prompt($prompt, provider: ModelRole::Reviewer->providers());
+            } catch (FailoverableException $exception) {
+                throw ProvidersUnavailable::because($exception);
+            } catch (RequestException $exception) {
+                $stop = ProvidersUnavailable::fromResponse($exception);
+                $run->recordEvent('ai_service_error', ['reason' => $stop->reason(), ...(array) $stop->serviceError()]);
+
+                throw $stop;
+            }
+
+            $this->recordModelUsage->handle($run, ModelRole::Reviewer, $response);
+
+            try {
+                if (! $response instanceof StructuredAgentResponse) {
+                    throw new ConstructionFailed(__('Return the file and the test as structured output.'));
+                }
+
+                $written = WrittenTests::check($response->structured, [$item['kind']], fn () => false);
+                $corrected = $written['files'][$test['file']] ?? null;
+                $problems = array_filter([
+                    $corrected === null || count($written['files']) !== 1 ? (string) __('Return only :file.', ['file' => $test['file']]) : null,
+                    WrittenTests::name($written['tests'][0]['name']) !== $key || $written['tests'][0]['file'] !== $test['file'] ? (string) __('Keep the test\'s name: ":name".', ['name' => $test['name']]) : null,
+                    $corrected !== null && array_filter($others, fn (array $other) => WrittenTests::body($corrected, WrittenTests::name($other['name'])) !== WrittenTests::body($contents, WrittenTests::name($other['name']))) !== [] ? (string) __('Keep every other test in the file exactly as it is.') : null,
+                ]);
+
+                if ($problems !== [] || $corrected === null) {
+                    throw new ConstructionFailed(implode("\n", $problems));
+                }
+
+                return $plan->withWrittenTests([...$plan->writtenFiles, $test['file'] => $corrected], $plan->writtenTests);
+            } catch (ConstructionFailed $exception) {
+                if ($attempt >= $attempts) {
+                    return null;
+                }
+
+                $prompt .= "\n\n## Your previous answer was refused\n\n{$exception->getMessage()}\nReturn the file and the test again, with this fixed.";
+            }
+        }
     }
 
     /**
