@@ -153,6 +153,53 @@ class ProjectStoreTest extends TestCase
         $this->assertDirectoryExists($repository->path($idle));
     }
 
+    public function test_a_forgotten_project_leaves_no_copy_here_or_in_the_store(): void
+    {
+        $repository = app(ProjectRepository::class);
+        $project = Project::factory()->create(['source_path' => $this->makeProjectSource()]);
+        $repository->import($project);
+
+        $repository->forget($project->id);
+
+        $this->assertDirectoryDoesNotExist($repository->path($project));
+        Storage::disk('project-store')->assertMissing("projects/{$project->id}.bundle");
+    }
+
+    public function test_a_server_drops_its_copy_of_a_project_deleted_elsewhere_at_once(): void
+    {
+        $repository = app(ProjectRepository::class);
+        $deleted = Project::factory()->create(['source_path' => $this->makeProjectSource()]);
+        $kept = Project::factory()->create(['source_path' => $this->makeProjectSource()]);
+        $repository->import($deleted);
+        $repository->import($kept);
+
+        $this->onServer($this->worker);
+        $repository->head($deleted->refresh());
+        $repository->head($kept->refresh());
+        $deleted->delete();
+
+        // Both were used a moment ago; only the deleted one goes.
+        $this->travel(11)->minutes();
+        $repository->head($kept);
+
+        $this->assertDirectoryDoesNotExist($repository->path($deleted));
+        $this->assertDirectoryExists($repository->path($kept));
+    }
+
+    public function test_on_github_a_forgotten_project_deletes_its_store_repository(): void
+    {
+        $remotes = $this->storeOnGitHub();
+        $repository = app(ProjectRepository::class);
+        $project = Project::factory()->create(['source_path' => $this->makeProjectSource()]);
+        $repository->import($project);
+
+        $repository->forget($project->id);
+
+        $this->assertDirectoryDoesNotExist($repository->path($project));
+        $this->assertDirectoryDoesNotExist("{$remotes}/acme-code/code-{$project->id}.git");
+        Http::assertSent(fn ($request) => $request->method() === 'DELETE' && $request->url() === "https://api.github.test/repos/acme-code/code-{$project->id}");
+    }
+
     public function test_without_the_store_copies_stay_on_the_disk(): void
     {
         config(['builder.projects.store.driver' => null]);
@@ -251,6 +298,12 @@ class ProjectStoreTest extends TestCase
         ]);
 
         Http::fake(function ($request) use ($remotes) {
+            if ($request->method() === 'DELETE') {
+                File::deleteDirectory($remotes.'/'.Str::after($request->url(), '/repos/').'.git');
+
+                return Http::response(status: 204);
+            }
+
             $path = "{$remotes}/acme-code/{$request['name']}.git";
             File::ensureDirectoryExists($path);
             Process::path($path)->run(['git', 'init', '--quiet', '--bare'])->throw();

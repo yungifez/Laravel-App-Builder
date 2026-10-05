@@ -17,6 +17,12 @@ import {
     DialogTrigger,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { contact } from '@/routes';
+import { download } from '@/routes/projects';
+
+defineProps<{
+    apps: { id: string; name: string; live: boolean }[];
+}>();
 
 const passwordInput = useTemplateRef('passwordInput');
 </script>
@@ -36,8 +42,48 @@ const passwordInput = useTemplateRef('passwordInput');
                 <p class="text-sm">
                     Your apps go with your account, and I cannot bring them
                     back.
+                    <template v-if="apps.length > 0"
+                        >Download the code of each app you want to keep
+                        first.</template
+                    >
                 </p>
             </div>
+            <ul
+                v-if="apps.length > 0"
+                class="divide-y divide-red-100 border-y border-red-100 text-sm dark:divide-red-200/10 dark:border-red-200/10"
+                data-test="delete-user-apps"
+            >
+                <li
+                    v-for="app in apps"
+                    :key="app.id"
+                    class="flex items-center justify-between gap-4 py-2"
+                >
+                    <span class="min-w-0">
+                        <span class="block truncate font-medium">{{
+                            app.name
+                        }}</span>
+                        <span
+                            v-if="app.live"
+                            class="block text-red-600 dark:text-red-100"
+                        >
+                            It is online. Deleting your account does not take it
+                            offline, so
+                            <a
+                                :href="contact().url"
+                                class="underline underline-offset-4"
+                                >write to us</a
+                            >
+                            to move it or take it down.
+                        </span>
+                    </span>
+                    <a
+                        :href="download(app.id).url"
+                        download
+                        class="inline-flex min-h-11 shrink-0 items-center font-medium underline-offset-4 hover:underline sm:min-h-8"
+                        >Download</a
+                    >
+                </li>
+            </ul>
             <Dialog>
                 <DialogTrigger as-child>
                     <Button variant="destructive" data-test="delete-user-button"
@@ -61,8 +107,8 @@ const passwordInput = useTemplateRef('passwordInput');
                             >
                             <DialogDescription>
                                 Your account and every app you made here are
-                                deleted for good. Enter your password to
-                                confirm.
+                                deleted for good, and a paid plan stops at once.
+                                Enter your password to confirm.
                             </DialogDescription>
                         </DialogHeader>
 
@@ -77,6 +123,7 @@ const passwordInput = useTemplateRef('passwordInput');
                                 placeholder="Password"
                             />
                             <InputError :message="errors.password" />
+                            <InputError :message="errors.account" />
                         </div>
 
                         <DialogFooter class="gap-2">

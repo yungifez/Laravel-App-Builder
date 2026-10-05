@@ -759,6 +759,28 @@ class ProjectRepository
     }
 
     /**
+     * Remove every copy of a deleted project's code we keep: this server's
+     * and the store's. Other servers drop theirs when they next sweep. Only
+     * the ID is used, so it works after the project's row is gone.
+     */
+    public function forget(int $projectId): void
+    {
+        $project = new Project;
+        $project->id = $projectId;
+
+        Cache::lock("project-repository:{$projectId}", 120)->block(60, function () use ($project) {
+            File::deleteDirectory($this->path($project));
+            unset(self::$checkedAt[$this->path($project)]);
+
+            if ($this->storedOnGitHub()) {
+                app(GitHubRepositories::class)->delete($this->storeOrganization().'/'.$this->storeName($project));
+            } elseif ($this->stored($project)) {
+                Storage::disk((string) config('builder.projects.store.disk'))->delete($this->storeObject($project));
+            }
+        });
+    }
+
+    /**
      * Determine whether the project's repository is kept in the project
      * store, off this server's disk.
      */
@@ -814,12 +836,17 @@ class ProjectRepository
 
         touch($marker, now()->getTimestamp());
         $idleSince = now()->subMinutes((int) config('builder.projects.store.idle_minutes'))->getTimestamp();
+        $directories = array_filter(File::directories($root), fn (string $directory) => ctype_digit(basename($directory)));
 
-        foreach (File::directories($root) as $directory) {
+        // A project deleted on another server still has a copy here; it
+        // goes now, however recently it was used.
+        $existing = array_flip(Project::query()->whereKey(array_map(fn (string $directory) => (int) basename($directory), $directories))->pluck('id')->all());
+
+        foreach ($directories as $directory) {
             $id = basename($directory);
             $used = $directory.DIRECTORY_SEPARATOR.'.git'.DIRECTORY_SEPARATOR.'builder-used';
 
-            if (! ctype_digit($id) || isset(self::$holding[(int) $id]) || (File::exists($used) ? File::lastModified($used) : File::lastModified($directory)) > $idleSince) {
+            if (isset(self::$holding[(int) $id]) || (isset($existing[(int) $id]) && (File::exists($used) ? File::lastModified($used) : File::lastModified($directory)) > $idleSince)) {
                 continue;
             }
 

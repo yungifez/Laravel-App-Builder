@@ -58,6 +58,21 @@ class GitHubRepositories
     }
 
     /**
+     * Delete a repository ("organization/name"). One already gone counts as
+     * deleted, so a retry after a partial failure succeeds.
+     *
+     * @throws RequestException
+     */
+    public function delete(string $repository): void
+    {
+        $response = $this->request()->delete("/repos/{$repository}");
+
+        if ($response->status() !== 404) {
+            $response->throw();
+        }
+    }
+
+    /**
      * Get the address to push a repository to. It holds the token, so it is
      * built when needed and never stored.
      */
