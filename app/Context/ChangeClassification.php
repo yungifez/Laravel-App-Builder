@@ -90,4 +90,26 @@ final readonly class ChangeClassification
             default => 'other',
         };
     }
+
+    /**
+     * Say what backs a behaviour change the reviewer described for an area:
+     * "tested" when the change touched the area and the area's own tests ran
+     * the changed code, "in_change" when the change only touched it, and
+     * "not_in_change" when no changed file belongs to it. A line with no
+     * area is backed by changed files no area claims.
+     *
+     * @return 'tested'|'in_change'|'not_in_change'
+     */
+    public function evidenceFor(?string $area): string
+    {
+        if ($area === null) {
+            return $this->unclaimed !== [] ? 'in_change' : 'not_in_change';
+        }
+
+        if (! in_array($area, $this->touched(), true)) {
+            return 'not_in_change';
+        }
+
+        return ($this->observed['areas'][$area] ?? 0) > 0 ? 'tested' : 'in_change';
+    }
 }

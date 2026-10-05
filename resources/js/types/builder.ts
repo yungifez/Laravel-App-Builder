@@ -373,6 +373,7 @@ export type RunReview = {
         area: string | null;
         area_name: string | null;
         section: ChangeSection;
+        evidence: 'tested' | 'in_change' | 'not_in_change';
         behavior: string;
         before: string;
         now: string;

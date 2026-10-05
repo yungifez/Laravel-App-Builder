@@ -1230,6 +1230,8 @@ class AgentDriverTest extends TestCase
             'observed' => null,
         ], $run->review['classification']);
         $this->assertSame(['requested', 'unexpected', 'other'], array_column($run->review['changes'], 'section'));
+        // Without a test map, only the changed files back a line; a made-up area has none.
+        $this->assertSame(['in_change', 'in_change', 'not_in_change'], array_column($run->review['changes'], 'evidence'));
         $this->assertSame([
             ['area' => 'teams', 'statement' => 'A team always has a name.', 'evidence' => 'verified', 'unchanged' => false, 'tests' => 1],
             ['area' => 'account', 'statement' => 'People can still sign up.', 'evidence' => 'untouched', 'unchanged' => true, 'tests' => 0],
@@ -1250,6 +1252,7 @@ class AgentDriverTest extends TestCase
                 ->where('run.review.areas.unexpected.0.name', 'Settings')
                 ->where('run.review.changes.1.area_name', 'Settings')
                 ->where('run.review.changes.1.section', 'unexpected')
+                ->where('run.review.changes.1.evidence', 'in_change')
                 ->where('run.review.unclaimed', ['app/Other.php'])
                 ->where('run.plan.understood_as', 'Data change')
                 ->where('run.plan.preserve.1', 'People can still sign up.')

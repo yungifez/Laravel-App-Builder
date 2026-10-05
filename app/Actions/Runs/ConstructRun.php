@@ -640,9 +640,9 @@ class ConstructRun
 
     /**
      * Get a review as stored on the run, with each behaviour change placed in
-     * its section by the area it belongs to.
+     * its section by the area it belongs to, and with what backs it.
      *
-     * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array{area: string|null, section: string, behavior: string, before: string, now: string}>, classification: array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>, observed?: array{areas: array<string, int>, tests: int, unmapped: list<string>, foundation?: list<string>, by_line?: list<string>}|null}}
+     * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array{area: string|null, section: string, evidence: 'tested'|'in_change'|'not_in_change', behavior: string, before: string, now: string}>, classification: array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>, observed: array{areas: array<string, int>, tests: int, unmapped: list<string>, foundation: list<string>, by_line: list<string>}|null}}
      */
     protected function storedReview(Review $review, ChangeClassification $classification): array
     {
@@ -650,7 +650,7 @@ class ConstructRun
             'approved' => $review->approved,
             'summary' => $review->summary,
             'findings' => $review->findings,
-            'changes' => array_map(fn (array $change) => [...$change, 'section' => $classification->sectionFor($change['area'])], $review->changes),
+            'changes' => array_map(fn (array $change) => [...$change, 'section' => $classification->sectionFor($change['area']), 'evidence' => $classification->evidenceFor($change['area'])], $review->changes),
             'classification' => $classification->toArray(),
         ];
     }
