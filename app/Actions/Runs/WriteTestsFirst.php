@@ -39,9 +39,9 @@ class WriteTestsFirst
     {
         $items = $plan->verifyItems();
 
-        // A worker builds in its own copy of the app, so only our agents
-        // start from written tests.
-        if (! config('builder.verification.written_first.enabled') || $run->driver !== 'sdk' || $items === []) {
+        // A worker outside our boxes gets the written tests with its task;
+        // a driver that does not build gets none.
+        if (! config('builder.verification.written_first.enabled') || ! in_array($run->driver, ['sdk', 'worker'], true) || $items === []) {
             return $plan;
         }
 
@@ -107,6 +107,35 @@ class WriteTestsFirst
                 $driver->writeFile((string) $workspace->driver_id, $path, $contents);
                 $changed[] = $path;
             }
+        }
+
+        return $changed;
+    }
+
+    /**
+     * Get the written tests a worker handed back changed. A worker builds
+     * in its own copy, where they cannot be put back, so its code was made
+     * to pass its own version of them. A file it left out is put back as
+     * written, which changes nothing. Each test is named when its own part
+     * of the file changed; otherwise the file is.
+     *
+     * @return list<array{file: string, name: string|null}>
+     */
+    public function changed(Workspace $workspace, Plan $plan): array
+    {
+        $driver = $this->workspaces->driver($workspace->driver);
+        $changed = [];
+
+        foreach ($plan->writtenFiles as $path => $contents) {
+            $now = rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), null, report: false);
+
+            if ($now === null || $now === $contents) {
+                continue;
+            }
+
+            $tests = array_values(array_filter($plan->writtenTests, fn (array $test) => $test['file'] === $path && WrittenTests::body($now, WrittenTests::name($test['name'])) !== WrittenTests::body($contents, WrittenTests::name($test['name']))));
+
+            array_push($changed, ...($tests === [] ? [['file' => $path, 'name' => null]] : array_map(fn (array $test) => ['file' => $path, 'name' => $test['name']], $tests)));
         }
 
         return $changed;

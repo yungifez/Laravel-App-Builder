@@ -17,6 +17,7 @@ use App\Actions\Runs\StartRun;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
 use App\Ai\Agents\NotesKeeper;
+use App\Ai\Agents\TestWriter;
 use App\Context\ProjectNotes;
 use App\Enums\PreviewStatus;
 use App\Enums\RunStatus;
@@ -44,6 +45,13 @@ use Tests\TestCase;
 class WorkerDriverTest extends TestCase
 {
     use PreparesRuns, RefreshDatabase;
+
+    /**
+     * A test written from the plan, and the same test bent to pass.
+     */
+    protected const WRITTEN = "<?php\n\ntest('a team keeps its description', fn () => expect(true)->toBeTrue());\n";
+
+    protected const BENT = "<?php\n\ntest('a team keeps its description', fn () => expect(true)->toBeTrue())->skip();\n";
 
     protected function setUp(): void
     {
@@ -477,6 +485,109 @@ class WorkerDriverTest extends TestCase
         $this->assertSame('worker_lapsed', $run->stop_reason);
         $this->assertTrue(HandChangeToOwner::available($run->featureRequest->refresh()), 'The owner can hand it to their tool again.');
         Queue::assertNothingPushed();
+    }
+
+    public function test_a_worker_gets_the_tests_written_first_and_a_change_that_keeps_them_goes_on()
+    {
+        $this->writeTestsFirst();
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+
+        // Its copy does not have them, so the task gives them whole.
+        $task = $this->tool('get_task', $token)->json('result.content.0.text');
+        $this->assertStringContainsString('add each file below to your copy exactly as written', $task);
+        $this->assertStringContainsString('1. tests/Feature/TeamDescriptionTest.php: a team keeps its description', $task);
+        $this->assertStringContainsString("### tests/Feature/TeamDescriptionTest.php\n\n````php\n".rtrim(self::WRITTEN)."\n````", $task);
+
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange().$this->addingTest(self::WRITTEN), 'summary' => 'Added a description.'])->assertSee('Received.');
+
+        $run->refresh();
+        $this->assertSame(RunStatus::Verifying, $run->status, json_encode($run->events()->pluck('data', 'type')));
+        $this->assertStringContainsString("+test('a team keeps its description', fn () => expect(true)->toBeTrue());", (string) $run->featureRequest->patch);
+        $this->assertSame(0, $run->events()->where('type', 'written_tests_restored')->count());
+        $this->assertSame(0, $run->repairs);
+    }
+
+    public function test_a_worker_gets_no_written_tests_while_writing_them_first_is_off()
+    {
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+
+        TestWriter::assertNeverPrompted();
+        $this->assertSame([], $run->plan['written_tests']);
+        $this->tool('get_task', $token)->assertDontSee('Tests already written');
+
+        // Without written tests, the tests it hands back are all its own.
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange().$this->addingTest(self::BENT), 'summary' => 'Added a description.'])->assertSee('Received.');
+        $this->assertSame(RunStatus::Verifying, $run->refresh()->status);
+    }
+
+    public function test_a_written_test_the_worker_left_out_is_put_back_and_its_check_failing_sends_the_change_back()
+    {
+        $this->writeTestsFirst();
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.'])->assertSee('Received.');
+
+        // Our copy cannot tell left out from not added, so it is put back and checked.
+        $run->refresh();
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(['tests/Feature/TeamDescriptionTest.php'], $run->events()->where('type', 'written_tests_restored')->sole()->data['paths']);
+        $this->assertSame(0, $run->events()->where('type', 'status')->where('data->reason', 'written_tests_changed')->count());
+        $this->assertStringContainsString("+test('a team keeps its description', fn () => expect(true)->toBeTrue());", (string) $run->featureRequest->patch);
+
+        // Its test failing is a failed check like any other.
+        $this->verify($run, VerificationStatus::Failed);
+        $this->assertSame(RunStatus::Implementing, $run->refresh()->status);
+        $this->tool('check_status', $token)->assertSee('The checks found problems.');
+    }
+
+    public function test_a_worker_that_changes_a_written_test_is_sent_back_with_the_test_and_then_stopped()
+    {
+        $this->writeTestsFirst();
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange().$this->addingTest(self::BENT), 'summary' => 'Skipped the slow test.'])->assertSee('Received.');
+
+        $run->refresh();
+        $this->assertSame(RunStatus::Implementing, $run->status);
+        $this->assertSame(1, $run->repairs);
+        $this->assertSame([['file' => 'tests/Feature/TeamDescriptionTest.php', 'name' => 'a team keeps its description']], $run->events()->where('type', 'status')->where('data->reason', 'written_tests_changed')->sole()->data['tests']);
+        $this->assertStringContainsString('You changed the test "a team keeps its description" in tests/Feature/TeamDescriptionTest.php, which was written before the change.', $this->tool('get_task', $token)->json('result.content.0.text'));
+        $this->assertSame(0, $run->verifications()->count(), 'A change that bent its tests is not checked.');
+
+        // With no tries left, it stops and says which test.
+        config(['builder.construction.budgets.repairs' => 1]);
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange().$this->addingTest(self::BENT), 'summary' => 'Skipped it again.'])->assertSee('Received.');
+
+        $run->refresh();
+        $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
+        $this->assertSame(1, $run->events()->where('type', 'status')->where('data->reason', 'written_tests_changed')->where('data->to', RunStatus::NeedsUserDecision->value)->count());
+        $this->assertStringContainsString('changed the tests written to check it, so the change proves nothing: a team keeps its description.', (string) $run->error);
+    }
+
+    /**
+     * Have tests written from the plan before the change, one for its item.
+     */
+    protected function writeTestsFirst(): void
+    {
+        config(['builder.verification.written_first.enabled' => true]);
+        TestWriter::fake([[
+            'files' => [['path' => 'tests/Feature/TeamDescriptionTest.php', 'contents' => self::WRITTEN]],
+            'tests' => [['item' => 1, 'file' => 'tests/Feature/TeamDescriptionTest.php', 'name' => 'a team keeps its description']],
+        ]]);
+    }
+
+    /**
+     * A patch that adds the test file with the given contents.
+     */
+    protected function addingTest(string $contents): string
+    {
+        $lines = explode("\n", rtrim($contents, "\n"));
+
+        return "diff --git a/tests/Feature/TeamDescriptionTest.php b/tests/Feature/TeamDescriptionTest.php\nnew file mode 100644\n--- /dev/null\n+++ b/tests/Feature/TeamDescriptionTest.php\n@@ -0,0 +1,".count($lines)." @@\n".implode('', array_map(fn (string $line) => "+{$line}\n", $lines));
     }
 
     protected function startRun(bool $notes = false, ?FeatureRequest $retryOf = null): Run

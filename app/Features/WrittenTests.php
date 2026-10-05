@@ -174,7 +174,7 @@ class WrittenTests
     /**
      * Name a test the way the test report and the trace name it.
      */
-    protected static function name(string $name): string
+    public static function name(string $name): string
     {
         return Str::after(TestRefusals::key('', $name), '|');
     }

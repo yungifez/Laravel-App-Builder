@@ -123,6 +123,14 @@ class WriteBrief
     }
 
     /**
+     * Give the written tests' files whole, for a worker to add to its copy.
+     */
+    protected function writtenFiles(Plan $plan): string
+    {
+        return implode("\n\n", array_map(fn (string $path, string $contents) => "### {$path}\n\n````php\n".rtrim($contents)."\n````", array_keys($plan->writtenFiles), $plan->writtenFiles));
+    }
+
+    /**
      * Say what to fix from the earlier attempt, and what the agent may do
      * about what the gate found.
      *
@@ -161,7 +169,10 @@ class WriteBrief
         );
 
         if ($plan->writtenTests !== []) {
-            $sections[] = "## Tests already written\n\nThese tests were written from the plan before you started, one for each item above, and they are already in the app. Build the change so they pass. Do not change them: they are put back as written when you finish, and the change is only accepted when they pass. You need not write other tests for these items.\n\n".$this->list(array_map(fn (array $test) => "{$test['item']}. {$test['file']}: {$test['name']}", $plan->writtenTests));
+            // A worker builds in its own copy, which does not have them yet.
+            $sections[] = $run->driver === 'worker'
+                ? "## Tests already written\n\nThese tests were written from the plan before you started, one for each item above. Before you start, add each file below to your copy exactly as written. Build the change so they pass, and hand them back in your patch unchanged: a change that alters them is sent back, and the change is only accepted when they pass. You need not write other tests for these items.\n\n".$this->list(array_map(fn (array $test) => "{$test['item']}. {$test['file']}: {$test['name']}", $plan->writtenTests))."\n\n".$this->writtenFiles($plan)
+                : "## Tests already written\n\nThese tests were written from the plan before you started, one for each item above, and they are already in the app. Build the change so they pass. Do not change them: they are put back as written when you finish, and the change is only accepted when they pass. You need not write other tests for these items.\n\n".$this->list(array_map(fn (array $test) => "{$test['item']}. {$test['file']}: {$test['name']}", $plan->writtenTests));
         }
 
         if (($scaffolded = $this->scaffolded($run, 'files')) !== []) {

@@ -1777,9 +1777,15 @@ not what I meant" on one, with a note, makes the change again the way trying
 again does (`CorrectWrittenCase`). The new run starts with the owner's answer
 ("Is this what you meant: …? No. …"), so the planner plans that case again
 from their words. The answer does not count against the questions the
-planner may ask, and the run records `case_corrected`. Not built: a written
-test that is itself wrong is otherwise repaired like any failure, and runs on
-a worker driver get none.
+planner may ask, and the run records `case_corrected`. A worker driver builds
+in its own copy, so its task gives the written files whole, to add as written
+and hand back unchanged. After its patch is applied, each written test is
+compared with the plan (`WriteTestsFirst::changed`). Putting one back would
+not help: the worker's code was made to pass its own version. So a changed
+test sends the change back with the test's name (`written_tests_changed`), and
+stops it for the owner when no tries are left. A written file the patch leaves
+out is put back as written. Not built: a written test that is itself wrong is
+otherwise repaired like any failure.
 
 **The change is judged, not the app it started from.** Format and lint
 checks run only on the files the change added or modified

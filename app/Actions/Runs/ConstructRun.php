@@ -288,12 +288,34 @@ class ConstructRun
         $this->writeTestsFirst->place($workspace, $plan);
 
         $account = $driver->build($run, $plan, new ToolSession($this->toolExecutor, $run, $lease));
+        // A worker made its code pass the tests in its own copy, so a written
+        // test it changed cannot just be put back: the change goes back.
+        $changed = $run->driver === 'worker' ? $this->writeTestsFirst->changed($workspace, $plan) : [];
 
         if (($restored = $this->writeTestsFirst->place($workspace, $plan)) !== []) {
             $this->recordEvent($run, $lease, 'written_tests_restored', ['paths' => $restored]);
         }
 
         $this->recordEvent($run, $lease, 'build_finished', ['attempt' => $run->repairs, 'account' => Str::limit($account, 2000)]);
+
+        if ($changed !== []) {
+            $details = array_map(fn (array $test) => $test['name'] === null
+                ? __('You changed :file, which holds tests written before the change. Hand it back exactly as written, and change the app so its tests pass.', ['file' => $test['file']])
+                : __('You changed the test ":name" in :file, which was written before the change. Hand it back exactly as written, and change the app so it passes.', ['name' => $test['name'], 'file' => $test['file']]), $changed);
+
+            if ($driver->canRepair() && $run->repairs < $run->repairLimit()) {
+                $this->transitionRun->handle($run, RunStatus::Implementing, $lease, [
+                    'repairs' => $run->repairs + 1,
+                    'feedback' => ['reason' => 'written_tests_changed', 'details' => $details],
+                ], ['reason' => 'written_tests_changed', 'tests' => $changed]);
+            } else {
+                $this->stopForDecision($run, $lease, __('The tool making this change changed the tests written to check it, so the change proves nothing: :tests. Ask it to try again and leave those tests as they are.', [
+                    'tests' => implode(', ', array_map(fn (array $test) => $test['name'] ?? $test['file'], $changed)),
+                ]), 'written_tests_changed');
+            }
+
+            return;
+        }
 
         // What the agent asked to keep, instead of fixing it, goes to the owner.
         $this->proposeFindings->fromReply($run, $account);
