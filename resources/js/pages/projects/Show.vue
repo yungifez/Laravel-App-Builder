@@ -1723,6 +1723,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                 :on-change="designedCopy !== null"
                 :edits="edits"
                 :state="app"
+                :waiting="first_version !== null"
             />
 
             <section
@@ -2593,6 +2594,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                 :on-change="designedCopy !== null"
                 :edits="edits"
                 :state="app"
+                :waiting="first_version !== null"
             />
         </main>
     </div>

@@ -116,6 +116,8 @@ const props = defineProps<{
     // A sample page to try the designer on, with no app behind it: only
     // what changes the page in place is offered, and nothing asks the AI.
     sample?: boolean;
+    // The app has no first version yet, so there is nothing to open.
+    waiting?: boolean;
 }>();
 
 const asking = ref(false);
@@ -1045,7 +1047,7 @@ const recent = computed(() => {
                     state.lost ||
                     !state.opened
                 "
-                class="flex items-center justify-center gap-2 p-4 text-sm text-muted-foreground lg:flex-col lg:py-16"
+                class="flex items-center justify-center gap-2 p-4 text-center text-sm text-muted-foreground lg:flex-col lg:py-16"
             >
                 <MousePointerClick class="size-5 lg:size-8" />
                 <!-- The app is starting or still opening; this says what
@@ -1064,6 +1066,10 @@ const recent = computed(() => {
                         >Tap any part once it opens</span
                     >
                 </template>
+                <template v-else-if="waiting"
+                    >You can change the look once your first version is
+                    ready</template
+                >
                 <template v-else>Open your app first</template>
             </div>
 
