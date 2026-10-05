@@ -17,6 +17,7 @@ use App\Actions\Previews\ReadPreviewSchedule;
 use App\Actions\Previews\ShareApp;
 use App\Actions\Projects\ConnectOwnTool;
 use App\Actions\Projects\CreateProject;
+use App\Actions\Projects\DescribeFirstVersion;
 use App\Actions\Projects\StartProjectFromTemplate;
 use App\Actions\Projects\SummarizeChanges;
 use App\Actions\Projects\SummarizeProjectTelemetry;
@@ -161,7 +162,7 @@ class ProjectController extends Controller
      * app running beside it, and the design panel for changing how it looks.
      * The element the owner selected is loaded on request.
      */
-    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails, ReadPreviewNotices $readPreviewNotices, ReadPreviewPeople $readPreviewPeople, ReadPreviewProblems $readPreviewProblems, ReadPreviewData $readPreviewData, ReadPreviewRows $readPreviewRows, ReadPreviewSchedule $readPreviewSchedule, ReadPreviewFiles $readPreviewFiles, ReadPreviewHappenings $readPreviewHappenings, ReadPreviewPages $readPreviewPages, ReadAppColors $readAppColors, DescribeDesignEdits $describeDesignEdits, DesignDrafts $designDrafts): Response
+    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails, ReadPreviewNotices $readPreviewNotices, ReadPreviewPeople $readPreviewPeople, ReadPreviewProblems $readPreviewProblems, ReadPreviewData $readPreviewData, ReadPreviewRows $readPreviewRows, ReadPreviewSchedule $readPreviewSchedule, ReadPreviewFiles $readPreviewFiles, ReadPreviewHappenings $readPreviewHappenings, ReadPreviewPages $readPreviewPages, ReadAppColors $readAppColors, DescribeDesignEdits $describeDesignEdits, DesignDrafts $designDrafts, DescribeFirstVersion $describeFirstVersion): Response
     {
         Gate::authorize('view', $project);
 
@@ -293,6 +294,9 @@ class ProjectController extends Controller
             ],
             'changes' => fn () => $summarizeChanges->handle($project),
             'preview' => fn () => $describePreview->handle($project),
+            // Until a first version is kept the app is only the template, so
+            // the workspace says how the first version is going instead.
+            'first_version' => fn () => $describeFirstVersion->handle($project),
             'history' => fn () => $repository->log($project, 20),
             'telemetry' => fn () => $summarizeTelemetry->handle($project),
             'publishing' => fn () => [

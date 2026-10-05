@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { Form } from '@inertiajs/vue3';
+import { Form, Link, router } from '@inertiajs/vue3';
 import { useResizeObserver } from '@vueuse/core';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
+import FeatureRequestRetryController from '@/actions/App/Http/Controllers/FeatureRequestRetryController';
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import type { AppPreviewState } from '@/composables/useAppPreview';
-import type { EditorPreview } from '@/types';
+import { show as showProject } from '@/routes/projects';
+import type { EditorPreview, FirstVersion } from '@/types';
 
 const props = defineProps<{
     projectId: string;
@@ -15,6 +18,11 @@ const props = defineProps<{
     state: AppPreviewState;
     /** A sample page to try the designer on, rather than an app. */
     sample?: boolean;
+    /**
+     * Until a first version is kept the app is only the template, so the
+     * pane says how the first version is going instead of opening it.
+     */
+    firstVersion?: FirstVersion | null;
 }>();
 
 // A desktop layout starts at 1024px. When the pane is narrower, the app is
@@ -63,6 +71,19 @@ watch(
 
 onBeforeUnmount(() => clearTimeout(slowTimer));
 
+// Once the app with the first version is starting, open that change, so
+// the pane shows it.
+function openFirstVersion() {
+    if (props.firstVersion) {
+        router.visit(
+            showProject(props.projectId, {
+                query: { change: props.firstVersion.change },
+            }),
+            { preserveState: true, preserveScroll: true },
+        );
+    }
+}
+
 // The overlay in the app draws its handles bigger by as much as the app is
 // drawn smaller, so they stay easy to grab.
 watch(scale, (value) => (props.state.zoom = value), { immediate: true });
@@ -83,7 +104,12 @@ watch(scale, (value) => (props.state.zoom = value), { immediate: true });
              rather than hidden, because a browser stops drawing a hidden
              page. -->
         <template
-            v-if="state.running && !state.lost && state.frames.length > 0"
+            v-if="
+                !firstVersion &&
+                state.running &&
+                !state.lost &&
+                state.frames.length > 0
+            "
         >
             <!-- Behind the app, which covers it once drawn. -->
             <div
@@ -128,7 +154,95 @@ watch(scale, (value) => (props.state.zoom = value), { immediate: true });
             v-else
             class="flex h-full flex-col items-center justify-center gap-3 p-6 text-center"
         >
-            <template v-if="preview?.status === 'starting'">
+            <template v-if="firstVersion?.state === 'making'">
+                <Spinner class="size-6" />
+                <p
+                    class="text-sm text-muted-foreground"
+                    data-test="first-version-making"
+                >
+                    Making the first version of your app…
+                </p>
+            </template>
+
+            <template v-else-if="firstVersion?.state === 'asking'">
+                <p class="text-lg font-medium" data-test="first-version-asking">
+                    Your first version needs an answer from you
+                </p>
+                <Button as-child class="h-11 select-none">
+                    <Link
+                        :href="
+                            showProject(projectId, {
+                                query: { change: firstVersion.change },
+                            })
+                        "
+                        :only="['change']"
+                        preserve-state
+                        preserve-scroll
+                        >Answer</Link
+                    >
+                </Button>
+            </template>
+
+            <template v-else-if="firstVersion?.state === 'ready'">
+                <p class="text-lg font-medium" data-test="first-version-ready">
+                    Your first version is ready
+                </p>
+                <!-- Opens the change and starts the app with it, in one step. -->
+                <Form
+                    v-bind="
+                        FeatureRequestPreviewController.store.form(
+                            firstVersion.change,
+                        )
+                    "
+                    :options="{ preserveScroll: true, preserveState: true }"
+                    @success="openFirstVersion"
+                    v-slot="{ processing }"
+                >
+                    <Button
+                        :disabled="processing"
+                        class="h-11 select-none"
+                        data-test="first-version-try"
+                    >
+                        Try it
+                    </Button>
+                </Form>
+            </template>
+
+            <template v-else-if="firstVersion?.state === 'stopped'">
+                <p
+                    class="text-lg font-medium"
+                    data-test="first-version-stopped"
+                >
+                    Your first version could not be made
+                </p>
+                <p
+                    v-if="firstVersion.error"
+                    class="max-w-sm text-sm text-muted-foreground"
+                >
+                    {{ firstVersion.error }}
+                </p>
+                <Form
+                    v-if="firstVersion.can_retry"
+                    v-bind="
+                        FeatureRequestRetryController.store.form(
+                            firstVersion.change,
+                        )
+                    "
+                    v-slot="{ errors, processing }"
+                    class="space-y-2"
+                >
+                    <Button
+                        :disabled="processing"
+                        class="h-11 select-none"
+                        data-test="first-version-retry"
+                    >
+                        Try again
+                    </Button>
+                    <InputError :message="errors.retry" />
+                </Form>
+            </template>
+
+            <template v-else-if="preview?.status === 'starting'">
                 <Spinner class="size-6" />
                 <p class="text-sm text-muted-foreground">Starting your app…</p>
             </template>

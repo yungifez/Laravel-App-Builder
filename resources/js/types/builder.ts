@@ -542,6 +542,14 @@ export type VisualProperty =
 
 export type VisualValue = number | string;
 
+/** How the first version of an app started here is going, until one is kept. */
+export type FirstVersion = {
+    change: string;
+    state: 'making' | 'asking' | 'ready' | 'stopped';
+    error: string | null;
+    can_retry: boolean;
+};
+
 export type EditorPreview = {
     id: string;
     status: PreviewStatus;

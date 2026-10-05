@@ -109,6 +109,7 @@ import type {
     ChangeState,
     Device,
     EditorPreview,
+    FirstVersion,
     Idea,
     Ideas,
     InspectedElement,
@@ -136,6 +137,7 @@ const props = defineProps<{
     changes: ChangeItem[];
     change: ChangeDetail | null;
     preview: EditorPreview | null;
+    first_version: FirstVersion | null;
     design: boolean;
     element?: InspectedElement | null;
     edits: VisualEditSummary[];
@@ -174,10 +176,13 @@ const codeFull = ref(false);
 
 // The chat has the whole screen until the app is open, since there is
 // nothing to show beside it yet. The owner can switch either way.
+// Until a first version is kept, the pane says how it is going, so it is
+// open from the start.
 const appOpen = computed(
     () =>
-        props.preview !== null &&
-        ['starting', 'ready'].includes(props.preview.status),
+        props.first_version !== null ||
+        (props.preview !== null &&
+            ['starting', 'ready'].includes(props.preview.status)),
 );
 // Kept in the browser history, so Back returns to the chat as it was.
 const chat = useRemember(
@@ -699,8 +704,14 @@ function fillForm(): void {
 }
 
 // The bar over the app shows while the app runs.
+// The template is not the owner's app: nothing to browse before a first
+// version, unless a change shows its own copy.
 const toolbarShown = computed(
-    () => app.running && !app.lost && props.preview !== null,
+    () =>
+        app.running &&
+        !app.lost &&
+        props.preview !== null &&
+        (props.first_version === null || changeCopy.value !== null),
 );
 
 function changeCopySwitch(change: NonNullable<typeof decidingOn.value>) {
@@ -1034,13 +1045,19 @@ const working = computed(() =>
     props.changes.some((change) => change.state === 'working'),
 );
 
+// A first version still being checked is no longer working in the chat, yet
+// the pane waits on it, so it keeps asking too.
 const { start, stop } = usePoll(
     4000,
-    { only: ['changes'] },
+    { only: ['changes', 'first_version'] },
     { autoStart: false },
 );
 
-watch(working, (value) => (value ? start() : stop()), { immediate: true });
+watch(
+    () => working.value || props.first_version?.state === 'making',
+    (value) => (value ? start() : stop()),
+    { immediate: true },
+);
 
 function toEnd(): void {
     nextTick(() => threadEnd.value?.scrollIntoView({ block: 'end' }));
@@ -1404,7 +1421,7 @@ function sendOnEnter(event: KeyboardEvent): void {
         />
 
         <div class="ml-auto flex shrink-0 items-center gap-1">
-            <template v-if="app.running && !app.lost && preview">
+            <template v-if="toolbarShown">
                 <div
                     class="hidden items-center rounded-md bg-muted p-0.5 md:flex"
                     role="group"
@@ -2563,6 +2580,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                     :project-id="project.id"
                     :preview="designedCopy ?? preview"
                     :state="app"
+                    :first-version="first_version"
                 />
             </div>
             <DesignPanel
