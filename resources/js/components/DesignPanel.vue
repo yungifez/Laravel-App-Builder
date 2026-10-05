@@ -2581,6 +2581,12 @@ const recent = computed(() => {
                                     name="selection[area]"
                                     :value="element.area.name"
                                 />
+                                <input
+                                    v-if="element.behavior?.key"
+                                    type="hidden"
+                                    name="selection[behavior]"
+                                    :value="element.behavior.key"
+                                />
                                 <textarea
                                     name="prompt"
                                     rows="2"

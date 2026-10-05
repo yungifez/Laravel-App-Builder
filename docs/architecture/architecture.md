@@ -2693,6 +2693,19 @@ A Vite plugin stamps elements with `data-source` from the single-file-component
 compiler's source locations; Vue's development metadata gives component names;
 the Wayfinder index links elements to behaviours.
 
+Implemented for Wayfinder: `FindBehavior` reads the action a part calls from
+its start tag, or from the form a submit button sends, and the file's
+imports. Where Wayfinder writes, and the aliases that reach it, come from the
+app's `tsconfig.json`, Vite aliases and Wayfinder plugin `path`, with the
+starter kit's `@` and `resources/js` as the default. The call gets a key
+only when the app on show lists exactly one route for it (`route:list
+--json`, run beside the app with a short timeout). The key is the
+controller and method, or the route name for a route with no controller.
+Otherwise there is no key, with the reason: `not_bound` when the part calls
+nothing through Wayfinder, and `not_found` when no single route matches, the
+import is not where the app's Wayfinder writes, or the app did not answer in
+time. A change request carries the key, so the coding agent knows the action.
+
 Implemented: `resources/preview-tools/locate-sources.mjs` stamps Vue files
 (with the app's Vue compiler, loaded only when it finds one) and Blade
 views, Livewire's included, so the designer works whatever the screens are

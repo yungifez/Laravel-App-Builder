@@ -1331,6 +1331,10 @@ return [
         // how many people can have it open at once.
         'share_days' => (int) env('BUILDER_PREVIEW_SHARE_DAYS', 7),
         'shared_sessions' => 50,
+        // How long the app on show may take to list its routes when the
+        // owner picks a part, before the part opens without naming the
+        // server action it starts.
+        'routes_timeout' => (int) env('BUILDER_PREVIEW_ROUTES_TIMEOUT', 10),
         // A preview is idle when no tab shows it, and starts again in
         // seconds, so it can stop soon after.
         'idle_minutes' => (int) env('BUILDER_PREVIEW_IDLE_MINUTES', 10),

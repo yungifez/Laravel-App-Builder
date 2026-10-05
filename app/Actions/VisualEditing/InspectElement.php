@@ -24,6 +24,7 @@ class InspectElement
         private ReadProjectContext $readProjectContext,
         private FollowLocation $followLocation,
         private ReadAppColors $readAppColors,
+        private FindBehavior $findBehavior,
     ) {}
 
     /**
@@ -71,6 +72,9 @@ class InspectElement
             // Which file a picture shows, when it is written plainly and so
             // can be changed here; null when the app decides it.
             'picture' => $element?->tag === 'img' ? ['src' => TemplatePicture::in((string) $contents, $element)['value'] ?? null] : null,
+            // The server action the part starts, through Wayfinder; null
+            // when the part could not be read.
+            'behavior' => $element === null ? null : $this->findBehavior->handle($preview, $head, $location->file, (string) $contents, $element),
             'classes' => $classes,
             'values' => TailwindClasses::effective($classes, $this->readAppColors->names($project)),
             // How it moves, with the ready-made choice that suits this kind

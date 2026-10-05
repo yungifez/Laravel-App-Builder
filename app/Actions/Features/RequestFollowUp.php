@@ -33,7 +33,7 @@ class RequestFollowUp
      * project's latest commit. Answers change nothing, so they are passed
      * over.
      *
-     * @param  array{file: string, line: int, column: int, tag: string, text: string|null, area: string|null}|null  $selection  The element the owner pointed at
+     * @param  array{file: string, line: int, column: int, tag: string, text: string|null, area: string|null, behavior?: string|null}|null  $selection  The element the owner pointed at
      * @param  list<array{path: string, name: string}>  $images  Pictures the owner attached, already kept
      * @param  array<string, mixed>|null  $liveErrors  A problem the change's copy ran into, for a fix
      *

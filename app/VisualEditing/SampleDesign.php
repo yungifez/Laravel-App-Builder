@@ -132,6 +132,7 @@ class SampleDesign
             },
             'link' => null,
             'picture' => null,
+            'behavior' => null,
             'classes' => $classes,
             'values' => TailwindClasses::effective($classes, $this->names()),
             'motion' => [...MotionClasses::read($classes), 'suggested' => MotionClasses::suggested($element->tag ?? null)],

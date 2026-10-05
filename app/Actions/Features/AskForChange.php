@@ -28,7 +28,7 @@ class AskForChange
      * owner expects: each ask starts from the app they last saw. Otherwise
      * it starts from the app as kept.
      *
-     * @param  array{file: string, line: int, column: int, tag: string, text: string|null, area: string|null}|null  $selection  The element the owner pointed at
+     * @param  array{file: string, line: int, column: int, tag: string, text: string|null, area: string|null, behavior?: string|null}|null  $selection  The element the owner pointed at
      * @param  list<array{path: string, name: string}>  $images  Pictures the owner attached, already kept
      *
      * @throws ValidationException when new work is paused, or the plan's

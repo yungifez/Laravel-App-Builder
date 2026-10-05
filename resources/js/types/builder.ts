@@ -671,6 +671,13 @@ export type InspectedElement = {
     /** Which file a picture shows: null for a part that is no picture, and
      * a src of null when the app decides it. */
     picture: { src: string | null } | null;
+    /** The server action the part starts through Wayfinder, by its
+     * controller and method; a key of null says why there is none. */
+    behavior: {
+        key: string | null;
+        route: string | null;
+        reason: 'not_bound' | 'not_found' | null;
+    } | null;
     classes: string;
     /** How it moves, read from its classes. */
     motion: Motion;

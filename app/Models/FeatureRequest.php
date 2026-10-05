@@ -30,7 +30,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $parent_id
  * @property int|null $retry_of_id The stopped request this one tries again
  * @property string $prompt
- * @property array{file: string, line: int, column: int, tag: string, text: string|null, area: string|null}|null $selection The element the owner pointed at in the preview
+ * @property array{file: string, line: int, column: int, tag: string, text: string|null, area: string|null, behavior?: string|null}|null $selection The element the owner pointed at in the preview
  * @property list<array{path: string, name: string}>|null $images Pictures the owner attached to show what they mean, on the request images disk
  * @property array{deployment_id?: int, preview_id?: int, problem?: string, errors: list<array{class: string|null, message: string, count: int, place?: string|null, trace?: list<string>}>}|null $live_errors The errors the published app raised, or the app on show while the owner tried it, when the ask is to fix them
  * @property array{deployment_id: int, checks: list<array{name: string, output: string}>}|null $failed_checks The checks that kept the app from going online, with what each said, when the ask is to fix them
@@ -170,8 +170,9 @@ class FeatureRequest extends Model
         $element = "`<{$selection['tag']}>` at {$selection['file']}:{$selection['line']}";
         $text = filled($selection['text'] ?? null) ? ' (it shows "'.str($selection['text'])->squish()->limit(120).'")' : '';
         $area = filled($selection['area'] ?? null) ? " It belongs to the area \"{$selection['area']}\"." : '';
+        $behavior = filled($selection['behavior'] ?? null) ? " It calls the server action `{$selection['behavior']}`." : '';
 
-        return "{$this->prompt}\n\nThe owner pointed at this element in the app: {$element}{$text}.{$area}";
+        return "{$this->prompt}\n\nThe owner pointed at this element in the app: {$element}{$text}.{$area}{$behavior}";
     }
 
     /**
