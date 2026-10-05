@@ -44,7 +44,7 @@ class BudgetNextStepTest extends TestCase
 
     protected const KEEP_TRYING = 'This is our fault: this change needed more work than I can do in one go, so I stopped. Nothing in your app changed. Keep trying to go on from where I stopped, or ask for a smaller part first.';
 
-    protected const OUT_OF_CREDIT = 'This is our fault. Our account with the AI service is out of credit. We have been told. Try again later.';
+    protected const OUT_OF_CREDIT = 'This is our fault: our account with the AI service we use is out of credit. We have been told. Nothing in your app changed. Try again later.';
 
     protected User $owner;
 

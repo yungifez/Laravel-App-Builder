@@ -1163,12 +1163,36 @@ const checks = computed(() => {
                             </Link>
                         </div>
 
-                        <p
+                        <div
                             v-if="run?.status === 'cancelled'"
-                            class="text-muted-foreground"
+                            class="space-y-2"
                         >
-                            You stopped this. Nothing in your app changed.
-                        </p>
+                            <p class="text-muted-foreground">
+                                You stopped this. Nothing in your app changed.
+                            </p>
+                            <Form
+                                v-if="request.can_retry"
+                                v-bind="
+                                    FeatureRequestRetryController.store.form(
+                                        request.id,
+                                    )
+                                "
+                                v-slot="{ errors, processing }"
+                            >
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    :disabled="processing"
+                                    class="h-11 select-none sm:h-8"
+                                    data-test="retry-button"
+                                >
+                                    Try again
+                                </Button>
+                                <InputError
+                                    :message="errors.retry ?? errors.step"
+                                />
+                            </Form>
+                        </div>
 
                         <!-- What changed, before and now -->
                         <ul

@@ -12,7 +12,6 @@ use App\Models\FeatureRequest;
  * pause says when it lifts, and once it or the plan's monthly use has
  * lifted, that "Try again" works now. A change that used what one try may
  * spend can go on from its work so far, when that work is still there.
- * Our AI account running out of credit is ours, and we were told.
  */
 class LiftedLimit
 {
@@ -37,9 +36,6 @@ class LiftedLimit
             StopReason::BudgetExhausted => $lifted && KeepTryingRun::possible($featureRequest)
                 ? __('This is our fault: this change needed more work than I can do in one go, so I stopped. Nothing in your app changed. Keep trying to go on from where I stopped, or ask for a smaller part first.')
                 : $reason,
-            // Said only for this stop, which the operators' attention list
-            // shows, so "we have been told" is true.
-            StopReason::OutOfCredit => __('This is our fault. Our account with the AI service is out of credit. We have been told. Try again later.'),
             default => $reason,
         };
     }

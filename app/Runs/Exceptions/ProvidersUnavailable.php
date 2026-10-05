@@ -53,17 +53,21 @@ class ProvidersUnavailable extends RuntimeException
         $credit = $exception instanceof InsufficientCreditsException
             || ($exception instanceof RateLimitedException && self::answerSaysOutOfCredit($exception));
 
+        // The operators' attention list shows every stop for credit, so it
+        // says the same as the stop: "we have been told" is true.
+        if ($credit) {
+            return new self(StopReason::OutOfCredit->said(), StopReason::OutOfCredit, $exception);
+        }
+
         // Our AI service turning the request away is our fault, not the
         // owner's, so the owner is told so.
         $reason = match (true) {
-            $credit => __('This is our fault: our account with the AI service we use has run out of credit.'),
             $exception instanceof RateLimitedException => __('This is our fault: the AI service we use is turning requests away because we sent too many.'),
             $exception instanceof ProviderOverloadedException => __('This is our fault: the AI service we use is too busy right now.'),
             default => __('This is our fault: we could not reach the AI service we use.'),
         };
 
-        // When credit comes back is not known, so no wait is promised.
-        return new self($reason.' '.($credit ? __('Nothing in your app changed. Try again later.') : __('Nothing in your app changed. Try again in a few minutes.')), $credit ? StopReason::OutOfCredit : StopReason::ProvidersUnavailable, $exception);
+        return new self($reason.' '.__('Nothing in your app changed. Try again in a few minutes.'), StopReason::ProvidersUnavailable, $exception);
     }
 
     /**

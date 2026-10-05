@@ -71,7 +71,7 @@ enum StopReason: string
             self::WorkerStopped => __('This is our fault: something on our side stopped while I worked on this. Nothing in your app changed. Try again.'),
             self::BudgetExhausted => __('This is our fault: this change needed more work than I can do in one go, so I stopped. Nothing in your app changed. Try again, or ask for a smaller part first.'),
             self::ProvidersUnavailable => __('This is our fault: the AI service we use is busy right now. Nothing in your app changed. Try again in a few minutes.'),
-            self::OutOfCredit => __('This is our fault: our account with the AI service we use cannot take more work right now. Nothing in your app changed. Try again later.'),
+            self::OutOfCredit => __('This is our fault: our account with the AI service we use is out of credit. We have been told. Nothing in your app changed. Try again later.'),
             self::RequestRefused => __('This is our fault: the AI service we use could not accept how we asked it. We have been told. Nothing in your app changed. Try again later.'),
             self::Question => __('I need your answer to a question before I go on. Nothing in your app changed yet.'),
             self::FindingProposed => __('I asked you about something the checks found. Read it in how we know the change works, and answer.'),

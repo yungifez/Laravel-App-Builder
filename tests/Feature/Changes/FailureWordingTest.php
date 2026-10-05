@@ -63,7 +63,7 @@ class FailureWordingTest extends TestCase
         $this->actingAs($request->user)
             ->get(route('feature-requests.show', $request))
             ->assertInertia(fn (Assert $page) => $page
-                ->where('run.error', 'This is our fault. Our account with the AI service is out of credit. We have been told. Try again later.'));
+                ->where('run.error', 'This is our fault: our account with the AI service we use is out of credit. We have been told. Nothing in your app changed. Try again later.'));
     }
 
     public function test_a_stop_because_the_ai_service_was_busy_does_not_say_it_waits_for_the_owner()
