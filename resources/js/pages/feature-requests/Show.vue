@@ -257,7 +257,12 @@ const stateLabel = computed(() => {
 });
 
 const stateDot = computed(() => {
-    if (props.featureRequest.commit_sha && !props.featureRequest.reverted_at) {
+    // Undone is settled, not a success: it is never green like a kept change.
+    if (props.featureRequest.reverted_at) {
+        return 'bg-muted-foreground';
+    }
+
+    if (props.featureRequest.commit_sha) {
         return 'bg-green-600';
     }
 
@@ -488,6 +493,7 @@ function lineClass(line: string): string {
                 <span
                     :class="['size-2 shrink-0 rounded-full', stateDot]"
                     aria-hidden="true"
+                    data-test="state-dot"
                 />
                 <span class="text-foreground">{{ stateLabel }}</span>
                 <template
@@ -1033,7 +1039,10 @@ function lineClass(line: string): string {
                     </Form>
 
                     <section
-                        v-if="featureRequest.status === 'generated'"
+                        v-if="
+                            featureRequest.status === 'generated' &&
+                            !featureRequest.reverted_at
+                        "
                         class="space-y-3 py-5"
                         data-test="preview"
                     >
@@ -1135,7 +1144,10 @@ function lineClass(line: string): string {
                     </section>
 
                     <section
-                        v-if="featureRequest.status === 'generated'"
+                        v-if="
+                            featureRequest.status === 'generated' &&
+                            !featureRequest.reverted_at
+                        "
                         class="space-y-3 py-5"
                         data-test="verification"
                     >
