@@ -467,6 +467,13 @@ swaps `.env` during a run, which breaks other people who use the development
 server at the same time. The other tests stay PHPUnit classes; Pest runs them
 unchanged.
 
+The plugin starts a Playwright server through `sh -c` and stops only that
+shell, so the server used to outlive every run. `tests/Pest.php` loads
+`tests/Browser/exit-with-pest.cjs` into it through `NODE_OPTIONS`. The server
+then ends when its run ends, even when `timeout` kills the run. To check, count
+`pgrep -f "[p]laywright run-server"` before and after a run; the number must not
+grow.
+
 Tests always use PostgreSQL database `control_plane_test`. `tests/TestCase.php`
 stops the run if the active connection is not `pgsql` or its database name does
 not end in `_test`.
