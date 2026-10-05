@@ -13,7 +13,9 @@ import {
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
+import ProjectNotesFixController from '@/actions/App/Http/Controllers/ProjectNotesFixController';
 import ExploreAppPanel from '@/components/ExploreAppPanel.vue';
+import InputError from '@/components/InputError.vue';
 import NotesDraftPanel from '@/components/NotesDraftPanel.vue';
 import NotesPart from '@/components/NotesPart.vue';
 import PartsMap from '@/components/PartsMap.vue';
@@ -514,6 +516,51 @@ function setCompatibility(keep: boolean | null): void {
                                         </ul>
                                     </CollapsibleContent>
                                 </Collapsible>
+                                <!-- Notes that point at nothing: taking
+                                     those lines out is the whole fix. -->
+                                <Form
+                                    v-if="finding.fix && revision"
+                                    v-bind="
+                                        ProjectNotesFixController.store.form(
+                                            project.id,
+                                        )
+                                    "
+                                    :options="{ preserveScroll: true }"
+                                    v-slot="{ errors, processing }"
+                                    class="mt-1"
+                                    @success="runCheck"
+                                >
+                                    <input
+                                        type="hidden"
+                                        name="part"
+                                        :value="finding.fix.part"
+                                    />
+                                    <input
+                                        v-for="item in finding.fix.remove"
+                                        :key="item"
+                                        type="hidden"
+                                        name="remove[]"
+                                        :value="item"
+                                    />
+                                    <input
+                                        type="hidden"
+                                        name="revision"
+                                        :value="revision"
+                                    />
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        class="h-11 select-none sm:h-8"
+                                        :disabled="processing"
+                                        data-test="fix-notes"
+                                    >
+                                        Remove from the notes
+                                    </Button>
+                                    <InputError
+                                        class="mt-1"
+                                        :message="errors.fix"
+                                    />
+                                </Form>
                             </div>
                         </li>
                     </ul>

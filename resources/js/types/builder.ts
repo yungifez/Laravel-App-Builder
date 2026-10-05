@@ -830,6 +830,8 @@ export type UnderstandingArea = {
 export type CheckFinding = {
     title: string;
     details: string[];
+    /** How the notes alone can put it right: the items to take out of one part. */
+    fix?: { part: string; remove: string[] };
 };
 
 export type DeploymentSummary = {

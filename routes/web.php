@@ -75,6 +75,7 @@ use App\Http\Controllers\ProjectExperimentController;
 use App\Http\Controllers\ProjectExplorationController;
 use App\Http\Controllers\ProjectNameController;
 use App\Http\Controllers\ProjectNotesDraftController;
+use App\Http\Controllers\ProjectNotesFixController;
 use App\Http\Controllers\ProjectOwnToolController;
 use App\Http\Controllers\ProjectPreviewController;
 use App\Http\Controllers\ProjectPublishingController;
@@ -150,6 +151,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/exploration', [ProjectExplorationController::class, 'store'])->name('projects.exploration.store');
     Route::post('projects/{project}/notes-draft', [ProjectNotesDraftController::class, 'store'])->name('projects.notes-draft.store');
     Route::delete('projects/{project}/notes-draft', [ProjectNotesDraftController::class, 'destroy'])->name('projects.notes-draft.destroy');
+    Route::post('projects/{project}/notes-fixes', [ProjectNotesFixController::class, 'store'])->name('projects.notes-fixes.store');
     Route::patch('projects/{project}/name', [ProjectNameController::class, 'update'])->name('projects.name.update');
     Route::put('projects/{project}/compatibility', [ProjectCompatibilityController::class, 'update'])->name('projects.compatibility.update');
     Route::put('projects/{project}/careful-areas', [ProjectCarefulAreaController::class, 'update'])->name('projects.careful-areas.update');

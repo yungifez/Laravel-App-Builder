@@ -537,8 +537,8 @@ class ProjectUnderstandingTest extends TestCase
             ->get(route('projects.understanding.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->reloadOnly('check', fn (Assert $page) => $page
                 ->where('check', [
-                    ['title' => 'The notes on "Plans" point to files that are not in the app.', 'details' => ['app/Billing/*']],
-                    ['title' => '"Plans" says it is connected to something the notes do not describe.', 'details' => ['invoices']],
+                    ['title' => 'The notes on "Plans" point to files that are not in the app.', 'details' => ['app/Billing/*'], 'fix' => ['part' => 'paths:plans', 'remove' => ['app/Billing/*']]],
+                    ['title' => '"Plans" says it is connected to something the notes do not describe.', 'details' => ['invoices'], 'fix' => ['part' => 'effects:plans', 'remove' => ['invoices']]],
                     ['title' => 'Nothing checks "Plans" automatically.', 'details' => ['No test for it runs with the checks.']],
                     ['title' => 'Some parts of the app are not described in any notes.', 'details' => ['app/Http/Controllers/PlanController.php']],
                 ])));

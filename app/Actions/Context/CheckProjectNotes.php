@@ -18,7 +18,10 @@ class CheckProjectNotes
      * tip of its branch and list the obvious problems, in the owner's words. No model is involved: every finding
      * is a fact about the files, with the files it is about as its details.
      *
-     * @return list<array{title: string, details: list<string>}>
+     * A finding the notes alone can put right also says how: "fix" names
+     * the part of the notes and the items to take out of it.
+     *
+     * @return list<array{title: string, details: list<string>, fix?: array{part: string, remove: list<string>}}>
      */
     public function handle(Project $project): array
     {
@@ -45,13 +48,13 @@ class CheckProjectNotes
             $missing = array_values(array_filter($capability->paths, fn (string $pattern) => ! $this->matchesAny($pattern, $files)));
 
             if ($missing !== []) {
-                $findings[] = ['title' => __('The notes on ":name" point to files that are not in the app.', ['name' => $capability->name]), 'details' => $missing];
+                $findings[] = ['title' => __('The notes on ":name" point to files that are not in the app.', ['name' => $capability->name]), 'details' => $missing, 'fix' => ['part' => "paths:{$capability->key}", 'remove' => $missing]];
             }
 
             $unknown = array_values(array_filter(array_map(fn ($effect) => $effect->to, $capability->effects), fn (string $key) => ! isset($context->capabilities[$key])));
 
             if ($unknown !== []) {
-                $findings[] = ['title' => __('":name" says it is connected to something the notes do not describe.', ['name' => $capability->name]), 'details' => $unknown];
+                $findings[] = ['title' => __('":name" says it is connected to something the notes do not describe.', ['name' => $capability->name]), 'details' => $unknown, 'fix' => ['part' => "effects:{$capability->key}", 'remove' => $unknown]];
             }
 
             if ($capability->testFiles === []) {
