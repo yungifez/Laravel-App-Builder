@@ -227,7 +227,7 @@ class PreviewTest extends TestCase
         $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
 
         $error = (string) $request->previews()->sole()->error;
-        $this->assertStringStartsWith("Your app changed after this change was made, so it no longer fits. This is our fault. Ask for the change again.\nChange #{$request->id} does not apply to the project.\n", $error);
+        $this->assertStringStartsWith("Your app changed after this change was made, so it no longer fits. This is our fault. Try again to make it on your app as it is now.\nChange #{$request->id} does not apply to the project.\n", $error);
     }
 
     public function test_a_setup_step_that_runs_out_of_time_says_how_long_it_had()

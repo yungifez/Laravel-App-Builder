@@ -244,6 +244,10 @@ const stateLabel = computed(() => {
         return 'Answered';
     }
 
+    if (props.featureRequest.made_again_only) {
+        return 'Could not finish';
+    }
+
     if (props.run) {
         return runLabels[props.run.status];
     }
@@ -275,7 +279,9 @@ const stateDot = computed(() => {
         return 'bg-muted-foreground';
     }
 
-    const status = props.run?.status ?? props.featureRequest.status;
+    const status = props.featureRequest.made_again_only
+        ? 'failed'
+        : (props.run?.status ?? props.featureRequest.status);
 
     if (['failed', 'needs_user_decision'].includes(status)) {
         return 'bg-red-600';
@@ -1060,7 +1066,9 @@ function lineClass(line: string): string {
                             {{
                                 preview?.status === 'starting'
                                     ? 'Getting your app ready. This can take a few minutes…'
-                                    : 'Open your app with this change, without changing the real one.'
+                                    : featureRequest.made_again_only
+                                      ? 'Try again first, to make the change afresh. Then you can open it.'
+                                      : 'Open your app with this change, without changing the real one.'
                             }}
                         </p>
 
@@ -1094,13 +1102,13 @@ function lineClass(line: string): string {
                                 /></a>
                             </Button>
 
-                            <!-- A change that no longer fits fails the
+                            <!-- A change that must be made again fails the
                                  same way each time: the retry row above
                                  makes it again instead. -->
                             <Form
                                 v-if="
                                     preview?.status !== 'starting' &&
-                                    !preview?.no_longer_fits
+                                    !featureRequest.made_again_only
                                 "
                                 v-bind="
                                     FeatureRequestPreviewController.store.form(
@@ -1207,7 +1215,10 @@ function lineClass(line: string): string {
                         <ChangeProof :proof="proof" />
 
                         <Form
-                            v-if="!verificationInProgress"
+                            v-if="
+                                !verificationInProgress &&
+                                !featureRequest.made_again_only
+                            "
                             v-bind="
                                 FeatureRequestVerificationController.store.form(
                                     featureRequest.id,

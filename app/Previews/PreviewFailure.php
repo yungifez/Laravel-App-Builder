@@ -82,7 +82,7 @@ class PreviewFailure
      */
     public static function changeNoLongerFits(): string
     {
-        return __('Your app changed after this change was made, so it no longer fits. This is our fault. Ask for the change again.');
+        return __('Your app changed after this change was made, so it no longer fits. This is our fault. Try again to make it on your app as it is now.');
     }
 
     /**

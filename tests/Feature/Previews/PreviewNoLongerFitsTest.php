@@ -101,6 +101,7 @@ class PreviewNoLongerFitsTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('preview.no_longer_fits', $noLongerFits)
                 ->where('featureRequest.can_retry', $canRetry)
+                ->where('featureRequest.made_again_only', $canRetry)
                 ->etc());
     }
 }

@@ -57,6 +57,20 @@ class RetryFeatureRequest
     }
 
     /**
+     * Determine if the change itself stopped its checks, or no longer fits
+     * the app to be tried: checking or trying it again cannot help, so
+     * only making it again does.
+     */
+    public static function mustBeMadeAgain(FeatureRequest $featureRequest): bool
+    {
+        return $featureRequest->status === FeatureRequestStatus::Generated
+            && $featureRequest->commit_sha === null
+            && $featureRequest->reverted_at === null
+            && ($featureRequest->verifications()->latest('id')->first()?->stopped_because?->retryable() === true
+                || $featureRequest->previews()->latest('id')->first()?->no_longer_fits === true);
+    }
+
+    /**
      * Determine if a made change was never kept and its run stopped, or the
      * owner stopped it, before the checks and review were done. A change
      * whose own files stopped the checks before any check ran counts too,
@@ -71,11 +85,7 @@ class RetryFeatureRequest
             return false;
         }
 
-        // The change itself stopped its checks, or no longer fits the app
-        // to be tried: checking or trying it again cannot help, so it is
-        // made again.
-        if ($featureRequest->verifications()->latest('id')->first()?->stopped_because?->retryable() === true
-            || $featureRequest->previews()->latest('id')->first()?->no_longer_fits === true) {
+        if (self::mustBeMadeAgain($featureRequest)) {
             return true;
         }
 

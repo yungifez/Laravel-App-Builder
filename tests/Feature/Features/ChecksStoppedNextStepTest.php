@@ -3,9 +3,11 @@
 namespace Tests\Feature\Features;
 
 use App\Enums\ChecksStoppedBecause;
+use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Jobs\ExecuteRun;
 use App\Models\FeatureRequest;
+use App\Models\Run;
 use App\Models\Verification;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -48,12 +50,14 @@ class ChecksStoppedNextStepTest extends TestCase
     {
         $this->failInstall();
         $change = FeatureRequest::factory()->generated()->create(['patch' => self::COMPOSER_PATCH]);
+        Run::factory()->for($change)->create(['status' => RunStatus::Completed]);
 
         $verification = $this->check($change);
 
         $this->assertSame(ChecksStoppedBecause::ChangeInstall, $verification->stopped_because);
         $this->assertSame(ChecksStoppedBecause::ChangeInstall->message(), $verification->error);
         $this->assertCanRetry($change, true);
+        $this->assertCanAccept($change, false);
 
         $this->post(route('feature-requests.retries.store', $change))->assertSessionHasNoErrors();
         $this->assertSame(1, FeatureRequest::query()->where('retry_of_id', $change->id)->count());
@@ -63,10 +67,12 @@ class ChecksStoppedNextStepTest extends TestCase
     {
         $this->failInstall();
         $change = FeatureRequest::factory()->generated()->create();
+        Run::factory()->for($change)->create(['status' => RunStatus::Completed]);
 
         $verification = $this->check($change);
 
         $this->assertSame(ChecksStoppedBecause::Setup, $verification->stopped_because);
+        $this->assertCanAccept($change, true);
         $this->assertStringContainsString('This is our fault. Check again in a few minutes.', (string) $verification->error);
         $this->assertCanRetry($change, false);
 
@@ -116,11 +122,22 @@ class ChecksStoppedNextStepTest extends TestCase
         return $change->verifications()->sole();
     }
 
+    protected function assertCanAccept(FeatureRequest $change, bool $expected): void
+    {
+        $this->actingAs($change->project->owner)
+            ->get(route('feature-requests.show', $change))
+            ->assertInertia(fn (Assert $page) => $page->where('featureRequest.can_accept', $expected)->etc());
+    }
+
     protected function assertCanRetry(FeatureRequest $change, bool $expected): void
     {
         $this->actingAs($change->project->owner)
             ->get(route('feature-requests.show', $change))
             ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->where('featureRequest.can_retry', $expected)->etc());
+            // Only a change that is made again offers nothing else to do.
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('featureRequest.can_retry', $expected)
+                ->where('featureRequest.made_again_only', $expected)
+                ->etc());
     }
 }

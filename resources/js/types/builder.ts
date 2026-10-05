@@ -182,6 +182,8 @@ export type FeatureRequestDetail = {
     still_online: { head: string | null; others: number } | null;
     can_accept: boolean;
     can_retry: boolean;
+    /** Checking or trying it again fails the same way: it can only be made again. */
+    made_again_only: boolean;
     /** It stopped without a change to keep, so asking in other words is offered. */
     stopped: boolean;
     /** The newer try of this change, when it was tried again. */
