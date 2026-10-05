@@ -384,14 +384,14 @@ class TestImpactTest extends TestCase
     {
         $change = FeatureRequest::factory()->generated()->create();
         Run::factory()->for($change)->create([
-            'review' => ['approved' => true, 'summary' => '', 'coverage' => [], 'findings' => [], 'changes' => [], 'classification' => [
+            'review' => ['approved' => true, 'summary' => '', 'preserved' => [], 'verified' => [], 'coverage' => [], 'findings' => [], 'changes' => [], 'classification' => [
                 'requested' => ['teams' => ['app/Policies/TeamPolicy.php']],
                 'may_also_affect' => [],
                 'unexpected' => ['settings' => ['config/teams.php']],
                 'unclaimed' => [],
                 'context_updates' => [],
                 'targets' => ['teams'],
-                'observed' => ['areas' => ['billing' => 2, 'teams' => 1], 'tests' => 3, 'unmapped' => ['app/Support/Money.php']],
+                'observed' => ['areas' => ['billing' => 2, 'teams' => 1], 'tests' => 3, 'unmapped' => ['app/Support/Money.php'], 'foundation' => [], 'by_line' => []],
             ]],
         ]);
 
@@ -449,13 +449,14 @@ class TestImpactTest extends TestCase
         $project = Project::factory()->create();
         $change = function (array $touched, array $state) use ($project) {
             $featureRequest = FeatureRequest::factory()->for($project)->create($state);
-            Run::factory()->for($featureRequest)->create(['review' => ['approved' => true, 'summary' => '', 'coverage' => [], 'findings' => [], 'changes' => [], 'classification' => [
+            Run::factory()->for($featureRequest)->create(['review' => ['approved' => true, 'summary' => '', 'preserved' => [], 'verified' => [], 'coverage' => [], 'findings' => [], 'changes' => [], 'classification' => [
                 'requested' => ['teams' => ['app/Policies/TeamPolicy.php']],
                 'may_also_affect' => [],
                 'unexpected' => array_fill_keys($touched, ['app/Models/Invoice.php']),
                 'unclaimed' => [],
                 'context_updates' => [],
                 'targets' => ['teams'],
+                'observed' => null,
             ]]]);
         };
 

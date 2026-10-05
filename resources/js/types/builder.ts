@@ -348,6 +348,8 @@ export type RunReview = {
         criterion: string;
         /** The case it checks. */
         kind: PlanCase['kind'];
+        /** The case in the plan's words. */
+        case: string;
         test_file: string | null;
         test_name: string | null;
         evidence:

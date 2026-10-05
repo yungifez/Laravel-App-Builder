@@ -1050,11 +1050,11 @@ class DescribeProof
             return [];
         }
 
-        $observed = $review['classification']['observed'] ?? null;
+        $observed = $review['classification']['observed'];
         $names = array_column($run->context['outline'] ?? [], 'name', 'key');
         $lines = [];
 
-        if ($observed !== null && ($observed['foundation'] ?? []) !== []) {
+        if ($observed !== null && $observed['foundation'] !== []) {
             $lines[] = ['kind' => 'reach', 'text' => __('It changed code the whole app shares, so every part of the app was tested.'), 'evidence' => true];
         } elseif ($observed !== null && $observed['tests'] > 0) {
             $areas = array_map(fn (string $key) => $names[$key] ?? $key, array_keys($observed['areas']));

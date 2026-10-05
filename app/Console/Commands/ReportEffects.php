@@ -55,8 +55,8 @@ class ReportEffects extends Command
                 implode(', ', $touched) ?: '-',
                 implode(', ', array_diff($touched, $reached)) ?: '-',
                 count($classification->observed['unmapped']),
-                count($classification->observed['foundation'] ?? []),
-                count($classification->observed['by_line'] ?? []),
+                count($classification->observed['foundation']),
+                count($classification->observed['by_line']),
             ];
         }
 

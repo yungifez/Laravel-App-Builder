@@ -4,6 +4,7 @@ namespace Tests\Feature\Runs;
 
 use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Runs\KeepTryingRun;
+use App\Context\ChangeClassification;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Enums\WorkspaceStatus;
@@ -72,10 +73,10 @@ class KeepTryingTest extends TestCase
             'stop_reason' => 'review_findings',
             // From an earlier repair: it says nothing about why it stopped.
             'feedback' => ['reason' => 'verification_failed', 'details' => ['An old failure.']],
-            'review' => ['approved' => false, 'summary' => 'Not yet.', 'coverage' => [], 'findings' => [
+            'review' => ['approved' => false, 'summary' => 'Not yet.', 'preserved' => [], 'verified' => [], 'coverage' => [], 'findings' => [
                 ['severity' => 'blocking', 'file' => 'app/Models/Booking.php', 'summary' => 'A full class still takes bookings.'],
                 ['severity' => 'minor', 'file' => null, 'summary' => 'The label could be bolder.'],
-            ], 'changes' => []],
+            ], 'changes' => [], 'classification' => (new ChangeClassification)->toArray()],
         ]);
 
         $this->actingAs($run->featureRequest->user)

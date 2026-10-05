@@ -42,7 +42,7 @@ class DescribeAskedFor
                 continue;
             }
 
-            foreach ($review['verified'] ?? [] as $item) {
+            foreach ($review['verified'] as $item) {
                 if ($item['evidence'] === 'tested' && ($item['test_name'] ?? null) !== null) {
                     $items[$part][$item['criterion']] = $item['test_name'];
                 }

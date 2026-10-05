@@ -4,6 +4,7 @@ namespace Tests\Feature\Features;
 
 use App\Actions\Features\AcceptFindings;
 use App\Actions\Features\DescribeProof;
+use App\Context\ChangeClassification;
 use App\Context\ProjectNotes;
 use App\Enums\VerificationStatus;
 use App\Features\MigrationChecks;
@@ -64,14 +65,14 @@ class ChangeProofTest extends TestCase
                 ['key' => 'teams', 'name' => 'Teams', 'summary' => null, 'file' => null, 'paths' => [], 'behaviors' => [], 'effects' => []],
                 ['key' => 'billing', 'name' => 'Billing', 'summary' => null, 'file' => null, 'paths' => [], 'behaviors' => [], 'effects' => []],
             ]],
-            'review' => ['approved' => true, 'summary' => '', 'coverage' => [], 'findings' => [], 'changes' => [], 'classification' => [
+            'review' => ['approved' => true, 'summary' => '', 'preserved' => [], 'verified' => [], 'coverage' => [], 'findings' => [], 'changes' => [], 'classification' => [
                 'requested' => ['teams' => ['app/Policies/TeamPolicy.php']],
                 'may_also_affect' => [],
                 'unexpected' => [],
                 'unclaimed' => [],
                 'context_updates' => [],
                 'targets' => ['teams'],
-                'observed' => $observed,
+                'observed' => $observed === null ? null : [...$observed, 'foundation' => $observed['foundation'] ?? [], 'by_line' => $observed['by_line'] ?? []],
             ]],
         ]);
     }
@@ -899,7 +900,7 @@ class ChangeProofTest extends TestCase
 
     public function test_a_change_whose_own_tests_prove_every_part_of_the_ask_has_no_gap()
     {
-        $item = fn (string $criterion, string $test, string $evidence = 'tested') => ['criterion' => $criterion, 'test_file' => 'tests/Feature/ArchiveTest.php', 'test_name' => $test, 'evidence' => $evidence, 'named_in_diff' => true];
+        $item = fn (string $criterion, string $test, string $evidence = 'tested') => ['criterion' => $criterion, 'kind' => 'base', 'case' => $criterion, 'test_file' => 'tests/Feature/ArchiveTest.php', 'test_name' => $test, 'evidence' => $evidence, 'named_in_diff' => true];
         $newTests = [
             ['file' => 'tests/Feature/ArchiveTest.php', 'name' => 'test_owners_can_archive_teams', 'without_change' => 'failed'],
             ['file' => 'tests/Feature/ArchiveTest.php', 'name' => 'test_members_still_see_their_teams', 'without_change' => 'passed'],
@@ -907,7 +908,7 @@ class ChangeProofTest extends TestCase
         $proof = function (array $verified, array $newTests) {
             $request = FeatureRequest::factory()->generated()->create(['patch' => "diff --git a/tests/Feature/ArchiveTest.php b/tests/Feature/ArchiveTest.php\nnew file mode 100644\n--- /dev/null\n+++ b/tests/Feature/ArchiveTest.php\n@@ -0,0 +1 @@\n+<?php\n"]);
             $this->checked($request, VerificationStatus::Unverified, ['new_tests' => $newTests]);
-            Run::factory()->for($request)->create(['review' => ['approved' => true, 'summary' => '', 'coverage' => [], 'findings' => [], 'verified' => $verified]]);
+            Run::factory()->for($request)->create(['review' => ['approved' => true, 'summary' => '', 'preserved' => [], 'verified' => $verified, 'coverage' => [], 'findings' => [], 'changes' => [], 'classification' => (new ChangeClassification)->toArray()]]);
 
             return collect(app(DescribeProof::class)->handle($request->refresh()));
         };

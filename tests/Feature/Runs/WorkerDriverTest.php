@@ -400,10 +400,10 @@ class WorkerDriverTest extends TestCase
         Run::factory()->for($stopped)->create([
             'status' => RunStatus::Failed,
             'feedback' => ['reason' => 'verification_failed', 'details' => ['Tests failed: the team page shows no description.']],
-            'review' => ['approved' => false, 'summary' => '', 'coverage' => [], 'findings' => [
+            'review' => ['approved' => false, 'summary' => '', 'preserved' => [], 'verified' => [], 'coverage' => [], 'findings' => [
                 ['severity' => 'blocking', 'summary' => 'The description is never saved.', 'file' => 'app/Models/Team.php'],
                 ['severity' => 'minor', 'summary' => 'A comment is long.', 'file' => null],
-            ], 'changes' => [], 'classification' => ['requested' => [], 'may_also_affect' => [], 'unexpected' => [], 'unclaimed' => [], 'context_updates' => [], 'targets' => []]],
+            ], 'changes' => [], 'classification' => ['requested' => [], 'may_also_affect' => [], 'unexpected' => [], 'unclaimed' => [], 'context_updates' => [], 'targets' => [], 'observed' => null]],
         ]);
 
         $run = $this->startRun(retryOf: $stopped);
