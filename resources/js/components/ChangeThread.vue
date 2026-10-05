@@ -23,6 +23,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import FeatureRequestAcceptanceController from '@/actions/App/Http/Controllers/FeatureRequestAcceptanceController';
 import FeatureRequestAnswerController from '@/actions/App/Http/Controllers/FeatureRequestAnswerController';
 import FeatureRequestAssumptionController from '@/actions/App/Http/Controllers/FeatureRequestAssumptionController';
+import FeatureRequestCaseCorrectionController from '@/actions/App/Http/Controllers/FeatureRequestCaseCorrectionController';
 import FeatureRequestFollowUpController from '@/actions/App/Http/Controllers/FeatureRequestFollowUpController';
 import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
 import FeatureRequestKeepTryingController from '@/actions/App/Http/Controllers/FeatureRequestKeepTryingController';
@@ -225,6 +226,18 @@ const caseNames = {
     alternate: 'Another way',
     exception: 'Saying no',
 } as const;
+
+// A test written before the build that tries the wrong thing makes the
+// change again from the owner's note, while the change is not kept.
+const correcting = ref<string | null>(null);
+
+function writtenFor(criterion: number) {
+    return request.value.can_correct_cases
+        ? request.value.written_cases.filter(
+              (item) => item.criterion === criterion,
+          )
+        : [];
+}
 
 const doneWhen = computed(() => {
     const review = run.value?.review;
@@ -1595,7 +1608,7 @@ const checks = computed(() => {
                                     >
                                         Done when
                                     </h3>
-                                    <p
+                                    <div
                                         v-for="(item, index) in doneWhen"
                                         :key="index"
                                         class="flex items-start gap-2"
@@ -1661,8 +1674,118 @@ const checks = computed(() => {
                                                     }}</span>
                                                 </span>
                                             </span>
+                                            <ul
+                                                v-if="
+                                                    writtenFor(index + 1)
+                                                        .length > 0
+                                                "
+                                                class="mt-2 space-y-2 text-sm"
+                                                data-test="written-cases"
+                                            >
+                                                <li
+                                                    v-for="written in writtenFor(
+                                                        index + 1,
+                                                    )"
+                                                    :key="written.kind"
+                                                    class="space-y-2"
+                                                >
+                                                    <p>
+                                                        <span
+                                                            class="text-muted-foreground"
+                                                            >{{
+                                                                caseNames[
+                                                                    written.kind
+                                                                ]
+                                                            }}:</span
+                                                        >
+                                                        {{ written.says }}
+                                                        <button
+                                                            v-if="
+                                                                correcting !==
+                                                                `${index + 1}-${written.kind}`
+                                                            "
+                                                            type="button"
+                                                            class="ml-1 min-h-11 text-muted-foreground underline underline-offset-4 select-none hover:text-foreground sm:min-h-0"
+                                                            data-test="not-meant"
+                                                            @click="
+                                                                correcting = `${index + 1}-${written.kind}`
+                                                            "
+                                                        >
+                                                            That's not what I
+                                                            meant
+                                                        </button>
+                                                    </p>
+                                                    <Form
+                                                        v-if="
+                                                            correcting ===
+                                                            `${index + 1}-${written.kind}`
+                                                        "
+                                                        v-bind="
+                                                            FeatureRequestCaseCorrectionController.store.form(
+                                                                request.id,
+                                                            )
+                                                        "
+                                                        class="space-y-3"
+                                                        v-slot="{
+                                                            errors,
+                                                            processing,
+                                                        }"
+                                                    >
+                                                        <input
+                                                            type="hidden"
+                                                            name="criterion"
+                                                            :value="index + 1"
+                                                        />
+                                                        <input
+                                                            type="hidden"
+                                                            name="kind"
+                                                            :value="
+                                                                written.kind
+                                                            "
+                                                        />
+                                                        <textarea
+                                                            name="note"
+                                                            rows="2"
+                                                            required
+                                                            aria-label="What did you mean?"
+                                                            class="w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                                                            placeholder="What did you mean?"
+                                                        />
+                                                        <InputError
+                                                            :message="
+                                                                errors.note ??
+                                                                errors.criterion ??
+                                                                errors.kind
+                                                            "
+                                                        />
+                                                        <div class="flex gap-2">
+                                                            <Button
+                                                                :disabled="
+                                                                    processing
+                                                                "
+                                                                class="h-11 select-none sm:h-9"
+                                                                data-test="not-meant-submit"
+                                                            >
+                                                                Try again with
+                                                                this
+                                                            </Button>
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                class="h-11 select-none sm:h-9"
+                                                                @click="
+                                                                    correcting =
+                                                                        null
+                                                                "
+                                                            >
+                                                                Cancel
+                                                            </Button>
+                                                        </div>
+                                                    </Form>
+                                                </li>
+                                            </ul>
                                         </span>
-                                    </p>
+                                    </div>
                                 </section>
                                 <section
                                     v-if="alsoTouches.length > 0"
