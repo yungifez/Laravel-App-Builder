@@ -73,7 +73,7 @@ class WriteTestsFirst
                     throw new ConstructionFailed(__('Return the files and the tests as structured output.'));
                 }
 
-                $written = WrittenTests::check($response->structured, count($items), fn (string $path) => in_array($path, $existing, true));
+                $written = WrittenTests::check($response->structured, array_column($items, 'kind'), fn (string $path) => in_array($path, $existing, true));
                 $run->recordEvent('tests_written', ['files' => array_keys($written['files']), 'tests' => count($written['tests'])]);
 
                 return $plan->withWrittenTests($written['files'], $written['tests']);

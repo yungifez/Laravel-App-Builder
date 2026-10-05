@@ -43,7 +43,7 @@ class DescribeAskedFor
             }
 
             foreach ($review['verified'] as $item) {
-                if ($item['evidence'] === 'tested' && ($item['test_name'] ?? null) !== null) {
+                if (in_array($item['evidence'], ['tested', 'already_true'], true) && ($item['test_name'] ?? null) !== null) {
                     $items[$part][$item['criterion']] = $item['test_name'];
                 }
             }

@@ -81,8 +81,9 @@ class VerifyItemsTest extends TestCase
         $this->assertSame('no_request', $verified(['refusals' => ['teamtest|owners_add_a_description' => false]])[1]['evidence']);
         $this->assertSame('tested', $verified(['refusals' => ['teamtest|members_cannot_add_a_description' => true]])[1]['evidence']);
 
-        // A new test that passes with the change taken out shows nothing.
-        $this->assertSame('passes_without_change', $verified(['new_tests' => [
+        // A new test that passes with the change taken out guards what
+        // the app already did.
+        $this->assertSame('already_true', $verified(['new_tests' => [
             ['file' => 'tests/Feature/TeamTest.php', 'name' => 'test_owners_add_a_description', 'without_change' => 'passed'],
         ]])[0]['evidence']);
         $this->assertSame('tested', $verified(['new_tests' => [

@@ -44,7 +44,7 @@ class TestWriter implements Agent, HasMiddleware, HasStructuredOutput
 
         Rules:
         - Write one test for each numbered item, and a test checks one item. An item marked "base case" is the usual way, "alternate case" another way that must also work, "exception case" a way the app must refuse.
-        - An exception test sends the request, or runs the command, that the app must refuse, and asserts the refusal: a 403 or 404, validation errors, a redirect to sign in, or a failed command, and that nothing was saved.
+        - An exception test sends the request, or runs the command, that the app must refuse, and asserts the refusal: a 403 or 404, validation errors, a redirect to sign in, a thrown exception or a failed command, and that nothing was saved. An exception test that expects the app to answer as usual is refused.
         - Assert what a person can observe: the response, what is saved (assertDatabaseHas, assertDatabaseMissing) and what is sent (Mail::fake, Notification::fake, Queue::fake). Never assert on private code details.
         - Use the names the plan gives for routes, models, fields and classes. Where the plan does not name one, follow the application's existing names and Laravel's conventions (resource routes, plural table names, snake_case columns).
         - Create the records a test needs with model factories. Use RefreshDatabase as the existing tests do.

@@ -50,8 +50,8 @@ class AssessCoverageTest extends TestCase
     public function test_a_test_that_proved_nothing_or_lives_in_another_part_does_not_count()
     {
         $coverage = $this->assess([
-            // It passes with the change taken out, so it proves nothing.
-            [...$this->verified('base', 'tests/Feature/TeamInviteTest.php'), 'evidence' => 'passes_without_change'],
+            // Its test did not pass in the checks, so it proves nothing.
+            [...$this->verified('base', 'tests/Feature/TeamInviteTest.php'), 'evidence' => 'not_run'],
             // It proved a way, but in billing's tests, not in teams'.
             $this->verified('alternate', 'tests/Feature/BillingTest.php'),
         ]);

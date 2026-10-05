@@ -378,7 +378,7 @@ export type RunReview = {
             | 'not_run_by_checks'
             | 'claimed'
             | 'no_test'
-            | 'passes_without_change'
+            | 'already_true'
             | 'no_request'
             | 'not_refused';
         named_in_diff: boolean;

@@ -306,7 +306,7 @@ abstract class AgentDriver implements ConstructionDriver
         if (isset($measured['new_tests'])) {
             $passing = array_values(array_filter($measured['new_tests'], fn (array $test) => $test['without_change'] === NewTests::PASSED));
             $parts[] = sprintf('The change added %d tests. Tests that fail without its code, as a test of new behaviour must: %d.', count($measured['new_tests']), count($measured['new_tests']) - count($passing))
-                .($passing === [] ? '' : " These pass without it, so they do not check what it does:\n".$this->list(array_map(fn (array $test) => "{$test['file']}: {$test['name']}", $passing)));
+                .($passing === [] ? '' : " These pass without it too: the app already did what they check, and they now guard it. That is not a gap while at least one test fails without the change:\n".$this->list(array_map(fn (array $test) => "{$test['file']}: {$test['name']}", $passing)));
         }
 
         $routes = $measured['routes'] ?? [];

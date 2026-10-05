@@ -11,7 +11,10 @@ use ParseError;
  * The tests written from the plan before the change is built (§12), held to
  * fixed rules before any of them is used: each file is new, parses as PHP and
  * is run by the suite, and each item the tests must check has exactly one
- * test of its own that the file really holds. Nothing here asks a model.
+ * test of its own that the file really holds. An exception item's test must
+ * assert a refusal: the checks later require the app to refuse it, and the
+ * coder may not change a written test, so a test that expects success could
+ * never be met. Nothing here asks a model.
  */
 class WrittenTests
 {
@@ -19,14 +22,15 @@ class WrittenTests
      * Check the writer's output against the plan's numbered items.
      *
      * @param  array<string, mixed>  $output  The writer's structured output
-     * @param  int  $items  How many items the tests must check, numbered from 1
+     * @param  list<string>  $kinds  The case of each item the tests must check (base, alternate or exception), item 1 first
      * @param  callable(string): bool  $exists  Whether a file already exists in the app
      * @return array{files: array<string, string>, tests: list<array{item: int, file: string, name: string}>}
      *
      * @throws ConstructionFailed with every rule the output broke
      */
-    public static function check(array $output, int $items, callable $exists): array
+    public static function check(array $output, array $kinds, callable $exists): array
     {
+        $items = count($kinds);
         $problems = [];
         $files = [];
         $bytes = 0;
@@ -66,6 +70,7 @@ class WrittenTests
 
         $tests = [];
         $named = [];
+        $refused = [];
 
         foreach (is_array($output['tests'] ?? null) ? $output['tests'] : [] as $test) {
             $item = is_array($test) && is_int($test['item'] ?? null) ? $test['item'] : 0;
@@ -79,11 +84,14 @@ class WrittenTests
                 ! isset($files[$path]) => __('The test for item :item is in :path, which is not one of the files written.', ['item' => $item, 'path' => $path]),
                 $key === '' || ! in_array($key, self::names($files[$path]), true) => __('The file :path has no test named ":name" for item :item.', ['path' => $path, 'name' => $name, 'item' => $item]),
                 isset($named["{$path}|{$key}"]) => __('The test ":name" is given for more than one item: a test checks one item.', ['name' => $name]),
+                $kinds[$item - 1] === 'exception' && ! self::assertsRefusal(self::body($files[$path], $key)) => __('The test ":name" for item :item is an exception case, but it asserts no refusal. Assert that the app refuses: a 403 or 404, validation errors, a redirect to sign in, or a thrown exception or failed command.', ['name' => $name, 'item' => $item]),
                 default => null,
             };
 
             if ($problem !== null) {
                 $problems[] = $problem;
+                // Its reason is given, so it is not also said to have no test.
+                $refused[$item] = true;
 
                 continue;
             }
@@ -93,7 +101,7 @@ class WrittenTests
         }
 
         foreach (range(1, max($items, 1)) as $item) {
-            if ($items > 0 && ! isset($tests[$item])) {
+            if ($items > 0 && ! isset($tests[$item]) && ! isset($refused[$item])) {
                 $problems[] = __('Item :item has no test.', ['item' => $item]);
             }
         }
@@ -120,6 +128,47 @@ class WrittenTests
         preg_match_all('/#\[Test\]\s*(?:public\s+)?function\s+(\w+)\s*\(/', $contents, $attributed);
 
         return array_values(array_unique(array_filter(array_map(self::name(...), [...$pest[2], ...$methods[1], ...$attributed[1]]))));
+    }
+
+    /**
+     * Get the part of a file that holds one test: from where it is declared
+     * to where the next test or method is.
+     */
+    public static function body(string $contents, string $key): string
+    {
+        preg_match_all('/\b(?:test|it)\(\s*([\'"])(.+?)(?<!\\\\)\1/s', $contents, $pest, PREG_OFFSET_CAPTURE);
+        preg_match_all('/function\s+(\w+)\s*\(/i', $contents, $methods, PREG_OFFSET_CAPTURE);
+        $starts = [];
+
+        foreach ([[$pest[0], $pest[2]], [$methods[0], $methods[1]]] as [$whole, $names]) {
+            foreach ($whole as $index => [, $offset]) {
+                $starts[$offset] = self::name($names[$index][0]);
+            }
+        }
+
+        ksort($starts);
+        $offsets = array_keys($starts);
+
+        foreach ($offsets as $index => $offset) {
+            if ($starts[$offset] === $key) {
+                return substr($contents, $offset, ($offsets[$index + 1] ?? strlen($contents)) - $offset);
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Determine if a test asserts that the app refused: a 4xx answer,
+     * validation errors, a guest sent to sign in, a thrown exception or a
+     * failed command, as PHPUnit or Pest write it.
+     */
+    public static function assertsRefusal(string $test): bool
+    {
+        return preg_match('/->\s*assert(?:Forbidden|NotFound|Unauthorized|Unprocessable|BadRequest|Conflict|Gone|MethodNotAllowed|PaymentRequired|TooManyRequests|ClientError|Invalid|SessionHasErrors\w*|JsonValidationError\w*|Failed)\s*\(/', $test) === 1
+            || preg_match('/assertStatus\(\s*4\d\d\s*\)|->\s*toBe\(\s*4\d\d\s*\)|assert(?:Same|Equals)\(\s*4\d\d\s*,/', $test) === 1
+            || preg_match('/assertRedirect(?:ToRoute)?\([^;]*login/i', $test) === 1
+            || preg_match('/expectException\w*\(|->\s*toThrow\(|->\s*throws\(|assertThrows\(|assertExitCode\(\s*[1-9]/', $test) === 1;
     }
 
     /**

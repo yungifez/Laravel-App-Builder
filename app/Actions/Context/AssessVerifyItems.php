@@ -31,8 +31,11 @@ class AssessVerifyItems
      *
      * A test that passed is then held against what running it showed:
      *
-     * - "passes_without_change": it is a new test that also passes with the
-     *   change taken out, so it does not show the change works.
+     * - "already_true": it is a new test that also passes with the change
+     *   taken out. The app already did this before the change (on a first
+     *   version, the starter app sends guests to sign in), and the test now
+     *   guards it. It is not a gap by itself, but a change whose new tests
+     *   all pass without it shows nothing, and ConstructRun stops it.
      * - "no_request": an exception case whose test sent the app nothing
      *   while its requests were recorded, so no refusal could be seen.
      * - "not_refused": an exception case whose test's requests the app
@@ -79,7 +82,7 @@ class AssessVerifyItems
                     ! $suitePassed || $outcome === TestReport::FAILED => 'not_run',
                     $ran === null => 'claimed',
                     $outcome !== TestReport::PASSED => 'not_run_by_checks',
-                    $this->passesWithoutChange($newTests, (string) $file, (string) $name) => 'passes_without_change',
+                    $this->passesWithoutChange($newTests, (string) $file, (string) $name) => 'already_true',
                     $item['kind'] === 'exception' && $refusals !== null && ! isset($refusals[$key]) => 'no_request',
                     $item['kind'] === 'exception' && $refusals !== null && ! $refusals[$key] => 'not_refused',
                     default => 'tested',

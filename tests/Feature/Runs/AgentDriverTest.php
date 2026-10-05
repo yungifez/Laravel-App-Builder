@@ -626,7 +626,7 @@ class AgentDriverTest extends TestCase
 
         ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, implode("\n\n", [
             '## What running the app with and without the change showed',
-            "The change added 2 tests. Tests that fail without its code, as a test of new behaviour must: 1. These pass without it, so they do not check what it does:\n- tests/Feature/TeamDescriptionTest.php: the team page loads",
+            "The change added 2 tests. Tests that fail without its code, as a test of new behaviour must: 1. These pass without it too: the app already did what they check, and they now guard it. That is not a gap while at least one test fails without the change:\n- tests/Feature/TeamDescriptionTest.php: the team page loads",
             "Routes it added, with their middleware:\n- POST /teams/{team}/archive [web]",
             "Routes whose middleware it changed:\n- GET /teams lost auth gained throttle:6,1",
             "Routes it removed:\n- GET /old",
@@ -652,6 +652,63 @@ class AgentDriverTest extends TestCase
                 ."\n- POST /teams: when job App\Jobs\SyncSeats, queued at app/Models/Team.php:13, ran after the response, the way a queue worker runs it, with no signed-in user and an empty request and session, the job did not do the same: missing mail App\Mail\SeatsChanged (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)"
                 ."\n- POST /teams: when the listeners Laravel found for event App\Events\TeamCreated, dispatched at app/Models/Team.php:13, ran in the reverse order, the request did not do the same: missing mail App\Mail\TeamCreated (caused in Tests\Feature\TeamDescriptionTest::test_owners_create_teams)",
         ])));
+    }
+
+    public function test_a_criterion_the_app_already_met_is_guarded_and_does_not_stop_the_change()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]));
+        ChangeReviewer::fake([['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]]]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        // The criterion's test passes without the change, as a starter
+        // app's sign-in does on a first version; another new test fails.
+        $this->passVerification($run, evidence: ['new_tests' => [
+            ['file' => 'tests/Feature/TeamDescriptionTest.php', 'name' => 'teams have a nullable description', 'without_change' => 'passed'],
+            ['file' => 'tests/Feature/TeamDescriptionTest.php', 'name' => 'the description is saved', 'without_change' => 'failed'],
+        ]]);
+
+        $run->refresh();
+        $this->assertSame(RunStatus::Completed, $run->status);
+        $this->assertSame(0, $run->repairs);
+        $this->assertSame(['already_true'], array_column($run->review['verified'], 'evidence'));
+    }
+
+    public function test_a_change_whose_new_tests_all_fail_without_it_is_tested_as_before()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]));
+        ChangeReviewer::fake([['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]]]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, evidence: ['new_tests' => [
+            ['file' => 'tests/Feature/TeamDescriptionTest.php', 'name' => 'teams have a nullable description', 'without_change' => 'failed'],
+        ]]);
+
+        $run->refresh();
+        $this->assertSame(RunStatus::Completed, $run->status);
+        $this->assertSame(['tested'], array_column($run->review['verified'], 'evidence'));
+    }
+
+    public function test_a_change_whose_new_tests_all_pass_without_it_is_sent_back_even_when_the_reviewer_approves()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder(
+            $this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]),
+            $this->writes(['tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST."\n"], 'Added a test that fails without the change.'),
+        );
+        $approve = ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]];
+        ChangeReviewer::fake([$approve, $approve]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, evidence: ['new_tests' => [
+            ['file' => 'tests/Feature/TeamDescriptionTest.php', 'name' => 'teams have a nullable description', 'without_change' => 'passed'],
+        ]]);
+
+        $run->refresh();
+        $this->assertSame(1, $run->repairs);
+        $this->assertFalse($run->review['approved']);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'Every test the change added passes without it too, so nothing shows that the change works.'));
     }
 
     public function test_the_reviewer_does_not_hold_what_the_owner_wants_against_the_change()

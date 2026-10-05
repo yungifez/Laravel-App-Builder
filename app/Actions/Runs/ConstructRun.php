@@ -33,6 +33,7 @@ use App\Features\BoundaryCode;
 use App\Features\Exceptions\CannotGenerateFeature;
 use App\Features\InventedColours;
 use App\Features\MigrationChecks;
+use App\Features\NewTests;
 use App\Features\NodeInPhpTests;
 use App\Features\OwnedRecords;
 use App\Features\PackagePolicy;
@@ -442,6 +443,14 @@ class ConstructRun
                 if (is_string($finding)) {
                     $findings[] = $finding;
                 }
+            }
+
+            // A test for what was already true guards it, but at least one
+            // new test must fail without the change, or nothing shows it works.
+            $measured = $verification->evidence['new_tests'] ?? [];
+
+            if (NewTests::ending($measured, NewTests::PASSED, $featureRequest->patch) !== [] && NewTests::ending($measured, NewTests::FAILED, $featureRequest->patch) === []) {
+                $findings[] = __('Every test the change added passes without it too, so nothing shows that the change works. Add a test that fails without the change and passes with it. Tests of what was already true can stay.');
             }
 
             $review = $review->withBlockingFindings($findings);

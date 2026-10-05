@@ -1746,7 +1746,12 @@ the base, alternate and exception cases. It reads the plan, the data shape,
 the routes and up to two of the app's own feature tests, and never sees the
 coder's work. `WrittenTests` checks its answer without a model. Each file is
 new, under `tests/`, run by the suite and parses. Each item has exactly one
-named test that exists in its file. The files stay within
+named test that exists in its file. An exception item's test must assert a
+refusal: a 4xx answer, validation errors, a guest sent to sign in, a thrown
+exception or a failed command. The checks later require the app to refuse it,
+and the coder may not change the test, so a test that expects success could
+never be met. The planner plans an answer that shows something else ("sees no
+times") as an alternate, not an exception. The files stay within
 `verification.written_first.max_files` and `max_bytes`. A refused answer is
 asked for again with every rule it broke, up to `attempts` times. Then the run
 goes on without written tests (`tests_not_written`), and the coder writes them
@@ -1864,8 +1869,12 @@ These are measurements, not checks. They never change the result of the
 checks, and what cannot be measured is not kept. Nothing here sends a change
 back by itself, because what a measurement means depends on what the owner
 asked for: a route that lost `auth` can be the request or a mistake. The
-reviewer reads all three with the plan. It blocks a criterion about new
-behaviour whose test passes without the change, a route that lost a check on
+reviewer reads all three with the plan. A test that passes without the change
+guards what the app already did ("already true, now guarded"), such as a
+first version keeping the starter app's sign-in. It is not a gap by itself.
+But when every new test passes without the change, nothing shows it works, and
+`ConstructRun` sends the change back without a model. The reviewer blocks a
+route that lost a check on
 who may use it, and a new route that changes data without one, unless the
 request asks for exactly that. The owner reads them in the proof, in plain
 words: "It added 3 tests that fail without this change and pass with it",

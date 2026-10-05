@@ -217,8 +217,8 @@ function verifyLabel(item: RunReview['verified'][number]): string {
             return "a test covers it, but my checks don't run that test";
         case 'claimed':
             return "a test covers it, but I couldn't confirm it ran";
-        case 'passes_without_change':
-            return 'its test passes even without this change';
+        case 'already_true':
+            return 'this was already true, and a test now keeps it that way';
         case 'no_request':
         case 'not_refused':
             return 'its test never saw your app say no';

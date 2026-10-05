@@ -42,7 +42,7 @@ class AssessCoverage
             $own = [...$capability->testFiles, ...$areaFiles];
             $proved = array_values(array_unique(array_column(array_filter(
                 $verified,
-                fn (array $item) => $item['evidence'] === 'tested' && $item['test_file'] !== null && in_array(self::path($item['test_file']), $own, true),
+                fn (array $item) => in_array($item['evidence'], ['tested', 'already_true'], true) && $item['test_file'] !== null && in_array(self::path($item['test_file']), $own, true),
             ), 'kind')));
 
             $coverage[] = [

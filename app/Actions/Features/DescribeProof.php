@@ -216,7 +216,7 @@ class DescribeProof
     {
         $verified = $featureRequest->latestRun?->review['verified'] ?? [];
 
-        if ($verified === [] || collect($verified)->contains(fn (array $item) => $item['evidence'] !== 'tested' || $item['test_file'] === null || $item['test_name'] === null)) {
+        if ($verified === [] || collect($verified)->contains(fn (array $item) => ! in_array($item['evidence'], ['tested', 'already_true'], true) || $item['test_file'] === null || $item['test_name'] === null)) {
             return 0;
         }
 

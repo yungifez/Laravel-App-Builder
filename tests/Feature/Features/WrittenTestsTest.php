@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Features;
 
+use App\Ai\Agents\FeaturePlanner;
 use App\Features\WrittenTests;
 use App\Runs\Exceptions\ConstructionFailed;
 use Tests\TestCase;
@@ -25,7 +26,7 @@ class WrittenTestsTest extends TestCase
                 ['item' => 3, 'file' => 'tests/Feature/TeamTotalTest.php', 'name' => 'test_the_total_is_shown_in_pounds'],
                 ['item' => 4, 'file' => 'tests/Feature/TeamTotalTest.php', 'name' => 'a_free_team_shows_no_total'],
             ],
-        ], 4, fn () => false);
+        ], ['base', 'alternate', 'base', 'alternate'], fn () => false);
 
         $this->assertSame(['tests/Feature/TeamDescriptionTest.php', 'tests/Feature/TeamTotalTest.php'], array_keys($written['files']));
         $this->assertSame([1, 2, 3, 4], array_column($written['tests'], 'item'));
@@ -34,9 +35,9 @@ class WrittenTestsTest extends TestCase
 
     public function test_output_that_breaks_a_rule_is_refused_with_every_reason()
     {
-        $refused = function (array $output, int $items = 2, ?callable $exists = null): string {
+        $refused = function (array $output, array $kinds = ['base', 'alternate'], ?callable $exists = null): string {
             try {
-                WrittenTests::check($output, $items, $exists ?? fn () => false);
+                WrittenTests::check($output, $kinds, $exists ?? fn () => false);
             } catch (ConstructionFailed $exception) {
                 return $exception->getMessage();
             }
@@ -61,5 +62,72 @@ class WrittenTestsTest extends TestCase
         $this->assertStringContainsString('given for more than one item', $refused(['files' => [$file], 'tests' => [$both[0], [...$both[0], 'item' => 2]]]));
         $this->assertStringContainsString('There is no item 3.', $refused(['files' => [$file], 'tests' => [...$both, [...$both[0], 'item' => 3]]]));
         $this->assertStringContainsString('No test files were written.', $refused(['files' => [], 'tests' => []]));
+    }
+
+    public function test_an_exception_test_that_asserts_the_app_refuses_is_kept()
+    {
+        $pest = "<?php\n\nit('shows a team', function () {\n    \$this->get('/teams/1')->assertOk();\n});\n\ntest('a member cannot rename a team', function () {\n    \$this->patch('/teams/1', ['name' => 'X'])->assertForbidden();\n});\n\nit('refuses an empty name', function () {\n    \$this->post('/teams', [])->assertInvalid(['name']);\n});\n\nit('sends guests to sign in', function () {\n    \$this->get('/teams')->assertRedirect(route('login'));\n});\n\nit('refuses a missing team', function () {\n    \$this->get('/teams/99')->assertStatus(404);\n});\n\nit('stops on a bad plan', function () {\n    app(Plans::class)->pick('none');\n})->throws(InvalidArgumentException::class);\n";
+        $phpunit = "<?php\n\nclass TeamLimitTest extends TestCase\n{\n    public function test_a_full_team_takes_no_one_more(): void\n    {\n        \$this->expectException(TeamFull::class);\n        \$this->team->add(\$this->user);\n    }\n\n    public function test_the_import_command_fails_on_a_bad_file(): void\n    {\n        \$this->artisan('teams:import bad.csv')->assertFailed();\n    }\n}\n";
+
+        $written = WrittenTests::check([
+            'files' => [
+                ['path' => 'tests/Feature/TeamRulesTest.php', 'contents' => $pest],
+                ['path' => 'tests/Feature/TeamLimitTest.php', 'contents' => $phpunit],
+            ],
+            'tests' => [
+                ['item' => 1, 'file' => 'tests/Feature/TeamRulesTest.php', 'name' => 'it shows a team'],
+                ['item' => 2, 'file' => 'tests/Feature/TeamRulesTest.php', 'name' => 'a member cannot rename a team'],
+                ['item' => 3, 'file' => 'tests/Feature/TeamRulesTest.php', 'name' => 'it refuses an empty name'],
+                ['item' => 4, 'file' => 'tests/Feature/TeamRulesTest.php', 'name' => 'it sends guests to sign in'],
+                ['item' => 5, 'file' => 'tests/Feature/TeamRulesTest.php', 'name' => 'it refuses a missing team'],
+                ['item' => 6, 'file' => 'tests/Feature/TeamRulesTest.php', 'name' => 'it stops on a bad plan'],
+                ['item' => 7, 'file' => 'tests/Feature/TeamLimitTest.php', 'name' => 'test_a_full_team_takes_no_one_more'],
+                ['item' => 8, 'file' => 'tests/Feature/TeamLimitTest.php', 'name' => 'test_the_import_command_fails_on_a_bad_file'],
+            ],
+        ], ['base', 'exception', 'exception', 'exception', 'exception', 'exception', 'exception', 'exception'], fn () => false);
+
+        $this->assertCount(8, $written['tests']);
+    }
+
+    public function test_an_exception_test_that_expects_success_is_refused_with_the_reason()
+    {
+        // The refusal is asserted only by the test after it, which does
+        // not count for this one.
+        $pest = "<?php\n\nit('shows no times for a past day', function () {\n    \$this->get('/?day=2020-01-01')->assertOk()->assertSee('No times');\n});\n\nit('refuses a past day', function () {\n    \$this->post('/bookings', ['day' => '2020-01-01'])->assertInvalid(['day']);\n});\n";
+
+        try {
+            WrittenTests::check([
+                'files' => [['path' => 'tests/Feature/BookingTest.php', 'contents' => $pest]],
+                'tests' => [
+                    ['item' => 1, 'file' => 'tests/Feature/BookingTest.php', 'name' => 'it shows no times for a past day'],
+                    ['item' => 2, 'file' => 'tests/Feature/BookingTest.php', 'name' => 'it refuses a past day'],
+                ],
+            ], ['exception', 'exception'], fn () => false);
+        } catch (ConstructionFailed $exception) {
+            $this->assertSame('The test "it shows no times for a past day" for item 1 is an exception case, but it asserts no refusal. Assert that the app refuses: a 403 or 404, validation errors, a redirect to sign in, or a thrown exception or failed command.', $exception->getMessage());
+
+            return;
+        }
+
+        $this->fail('The test that expects success was kept.');
+    }
+
+    public function test_a_graceful_answer_is_planned_as_an_alternate_and_its_test_expects_success()
+    {
+        // The planner is told an answer that shows something else is not a
+        // refusal, so the case comes as an alternate.
+        $this->assertStringContainsString('sees no times", "An owner who gives a date that does not exist sees today\'s bookings"), that is an alternate, not an exception', (string) (new FeaturePlanner)->instructions());
+
+        $pest = "<?php\n\nit('shows no times for a past day', function () {\n    \$this->get('/?day=2020-01-01')->assertOk()->assertSee('No times');\n});\n\nit('refuses a past day', function () {\n    \$this->post('/bookings', ['day' => '2020-01-01'])->assertInvalid(['day']);\n});\n";
+
+        $written = WrittenTests::check([
+            'files' => [['path' => 'tests/Feature/BookingTest.php', 'contents' => $pest]],
+            'tests' => [
+                ['item' => 1, 'file' => 'tests/Feature/BookingTest.php', 'name' => 'it shows no times for a past day'],
+                ['item' => 2, 'file' => 'tests/Feature/BookingTest.php', 'name' => 'it refuses a past day'],
+            ],
+        ], ['alternate', 'exception'], fn () => false);
+
+        $this->assertSame([1, 2], array_column($written['tests'], 'item'));
     }
 }
