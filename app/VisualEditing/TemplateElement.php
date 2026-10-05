@@ -7,10 +7,11 @@ namespace App\VisualEditing;
  * line and column the preview's source locator stamped, and its classes
  * when they can be edited in place.
  *
- * Classes are editable when they are written as a static `class="…"`, or as
- * the first string of `:class="cn('…', …)"`. Any other `:class` binding,
- * a Blade `@class(…)`, or a class with `{{ }}` in it depends on the app's
- * state, so it is left to the coding agent.
+ * Classes are editable when they are written as a static `class="…"`, as
+ * the first string of `:class="cn('…', …)"`, or as the first entry of a
+ * Blade `@class(['…', …])` when it holds for every state. Any other
+ * `:class` binding or `@class`, or a class with `{{ }}` in it, depends on
+ * the app's state, so it is left to the coding agent.
  */
 class TemplateElement
 {
@@ -73,8 +74,9 @@ class TemplateElement
             }
 
             if (preg_match('/\G\s*@(\w+)\s*\(/', $contents, $directive, 0, $position) === 1) {
-                $bound = $directive[1] === 'class' ? ['offset' => $position, 'length' => 0, 'value' => ''] : $bound;
-                $position = self::balanced($contents, $position + strlen($directive[0]) - 1);
+                $after = self::balanced($contents, $position + strlen($directive[0]) - 1);
+                $bound = $directive[1] === 'class' ? ['offset' => $position, 'length' => $after - $position, 'value' => substr($contents, $position, $after - $position)] : $bound;
+                $position = $after;
 
                 continue;
             }
@@ -217,14 +219,19 @@ class TemplateElement
 
     /**
      * Get the first string passed to cn() in a class binding, when the
-     * binding is `cn('…', …)` and that string is a plain literal.
+     * binding is `cn('…', …)` and that string is a plain literal. For
+     * Blade's `@class([…])`, get the first entry when it is a plain literal
+     * with no condition, as in `@class(['p-4', 'font-bold' => $active])`.
      *
      * @param  array{offset: int, length: int, value: string}|null  $binding
      * @return array{offset: int, length: int, value: string}|null
      */
     protected static function fromClassHelper(?array $binding): ?array
     {
-        if ($binding === null || preg_match('/^\s*cn\(\s*\'([^\'\\\\]*)\'/', $binding['value'], $match, PREG_OFFSET_CAPTURE) !== 1) {
+        if ($binding === null || (
+            preg_match('/^\s*cn\(\s*\'([^\'\\\\]*)\'/', $binding['value'], $match, PREG_OFFSET_CAPTURE) !== 1
+            && preg_match('/^\s*@class\s*\(\s*\[\s*(?|\'([^\'\\\\]*)\'|"([^"\\\\$]*)")\s*(?=,|\])/', $binding['value'], $match, PREG_OFFSET_CAPTURE) !== 1
+        )) {
             return null;
         }
 

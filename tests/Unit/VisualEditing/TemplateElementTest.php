@@ -99,4 +99,29 @@ class TemplateElementTest extends TestCase
         $button = TemplateElement::at($blade, 4, 5);
         $this->assertSame(['x-button', 'w-full', true], [$button->tag, $button->classes['value'], $button->editable()]);
     }
+
+    public function test_the_first_entry_of_a_blade_class_list_is_edited_when_it_holds_in_every_state()
+    {
+        $blade = <<<'BLADE'
+            <li @class(['flex gap-2 p-4', 'font-bold' => $active, 'opacity-50' => $done])>A</li>
+            <li @class(["rounded-md", $extra])>B</li>
+            <li @class(['font-bold' => $active, 'p-4'])>C</li>
+            <li @class([$base, 'p-4'])>D</li>
+            <li @class(["p-{$size}"])>E</li>
+            BLADE;
+
+        $item = TemplateElement::at($blade, 1, 1);
+        $this->assertSame(['flex gap-2 p-4', true], [$item->classes['value'], $item->editable()]);
+        $this->assertStringStartsWith("<li @class(['flex gap-2 p-8', 'font-bold' => \$active", $item->withClasses($blade, 'flex gap-2 p-8'));
+
+        $quoted = TemplateElement::at($blade, 2, 1);
+        $this->assertSame(['rounded-md', true], [$quoted->classes['value'], $quoted->editable()]);
+        $this->assertStringContainsString('<li @class(["rounded-lg", $extra])>B</li>', $quoted->withClasses($blade, 'rounded-lg'));
+
+        // An entry with a condition, or classes the app works out, are the
+        // app's to choose.
+        foreach ([3, 4, 5] as $line) {
+            $this->assertFalse(TemplateElement::at($blade, $line, 1)->editable(), "line {$line}");
+        }
+    }
 }
