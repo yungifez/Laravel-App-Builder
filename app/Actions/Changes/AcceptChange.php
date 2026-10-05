@@ -75,6 +75,12 @@ class AcceptChange
             if (NewMessages::findings($messages, $this->acceptFindings->identities($request)) !== []) {
                 throw ValidationException::withMessages(['change' => __('This change sends something new to people. Say you want it in how we know the change works, then keep it.')]);
             }
+
+            // Its own files stopped the checks, or it no longer fits the
+            // app: only making it again helps, never keeping it.
+            if (RetryFeatureRequest::mustBeMadeAgain($request)) {
+                throw ValidationException::withMessages(['change' => __('This change cannot be kept as it is. Try again to make it afresh.')]);
+            }
         }
         $base = $accepted !== [] ? (string) end($accepted)->commit_sha : ($featureRequest->base_revision ?? $this->repository->root($project));
 
