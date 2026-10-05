@@ -12,6 +12,7 @@ use App\Context\ProjectContext;
 use App\Context\ProjectNotes;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Features\SpendPause;
 use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\Project;
@@ -240,7 +241,7 @@ class PreviewProblemsTest extends TestCase
 
         $this->actingAs($this->owner)
             ->post(route('preview-problem-fixes.store', $this->project), ['problem' => $id])
-            ->assertSessionHasErrors(['fix' => 'This is our fault: we paused new work for today to keep our costs in check. Nothing in your app changed. Try again tomorrow.']);
+            ->assertSessionHasErrors(['fix' => SpendPause::message()]);
 
         // The owner's plan for this month counts too.
         config(['builder.construction.budgets.daily_usd' => 100, 'billing.plans.free.monthly_usd' => 5]);

@@ -5,6 +5,7 @@ namespace Tests\Feature\Understanding;
 use App\Actions\Context\ReadProjectContext;
 use App\Ai\Agents\NotesDrafter;
 use App\Enums\NotesDraftStatus;
+use App\Features\SpendPause;
 use App\Jobs\DraftProjectNotes;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -108,7 +109,7 @@ class ExploreAppTest extends TestCase
 
         $this->actingAs($this->owner)
             ->post(route('projects.exploration.store', $project))
-            ->assertSessionHas('errors', fn ($errors) => str_starts_with((string) $errors->first('explore'), 'This is our fault: we paused new work for today'));
+            ->assertSessionHas('errors', fn ($errors) => $errors->first('explore') === SpendPause::message());
 
         $this->assertNull($project->refresh()->notes_draft_status);
         Queue::assertNothingPushed();

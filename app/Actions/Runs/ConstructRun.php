@@ -128,7 +128,7 @@ class ConstructRun
                 'details' => [...($run->feedback['details'] ?? []), __('You stopped before you finished. Finish the change.')],
             ]]);
         } catch (ProvidersUnavailable $exception) {
-            $this->stopForDecision($run, $lease, $exception->getMessage(), 'providers_unavailable');
+            $this->stopForDecision($run, $lease, $exception->getMessage(), $exception->outOfCredit ? 'out_of_credit' : 'providers_unavailable');
         } catch (ConstructionFailed $exception) {
             $this->failRun->handle($run, $exception->getMessage(), $lease, 'construction_failed');
         } catch (CannotGenerateFeature $exception) {

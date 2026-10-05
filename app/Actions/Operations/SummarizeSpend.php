@@ -25,6 +25,15 @@ class SummarizeSpend
     }
 
     /**
+     * Get when the daily limit lifts: the start of the next day, where
+     * today's total starts again.
+     */
+    public function dailyLimitLiftsAt(): CarbonImmutable
+    {
+        return now()->startOfDay()->addDay()->toImmutable();
+    }
+
+    /**
      * Sum the model spend recorded since a time, keeping apart what the
      * provider reported, what we estimated from our prices, and calls with
      * no known cost. The completeness label says whether the total can be

@@ -17,7 +17,7 @@ class RepeatedFailure
      *
      * @var list<string>
      */
-    protected const OWN_ADVICE = ['spend_limit', 'usage_limit', 'cancelled'];
+    protected const OWN_ADVICE = ['spend_limit', 'usage_limit', 'out_of_credit', 'cancelled'];
 
     /**
      * Determine if the change stopped for the same reason, with the same

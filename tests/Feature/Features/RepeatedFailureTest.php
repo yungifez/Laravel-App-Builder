@@ -5,6 +5,7 @@ namespace Tests\Feature\Features;
 use App\Actions\Runs\TransitionRun;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Features\SpendPause;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
@@ -86,7 +87,7 @@ class RepeatedFailureTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('featureRequest.failed_same_way', false)
                 ->where('featureRequest.can_retry', false)
-                ->where('run.error', $paused));
+                ->where('run.error', SpendPause::message()));
     }
 
     public function test_a_pause_that_is_over_no_longer_tells_the_owner_to_wait()

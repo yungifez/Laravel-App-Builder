@@ -9,6 +9,7 @@ use App\Actions\Features\RequestFollowUp;
 use App\Actions\Features\RetryFeatureRequest;
 use App\Actions\Operations\SummarizeSpend;
 use App\Enums\FeatureRequestStatus;
+use App\Features\SpendPause;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\User;
@@ -71,7 +72,7 @@ class RequestPreviewProblemFix
         // A fix asked now would only stop the same way, and leave a change
         // behind for each click: say so before asking.
         if ($this->summarizeSpend->dailyLimitReached()) {
-            throw ValidationException::withMessages(['fix' => __('This is our fault: we paused new work for today to keep our costs in check. Nothing in your app changed. Try again tomorrow.')]);
+            throw ValidationException::withMessages(['fix' => SpendPause::message()]);
         }
 
         $usage = $this->measureUsage->handle($project->owner);

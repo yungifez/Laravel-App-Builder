@@ -7,6 +7,7 @@ use App\Actions\Operations\SummarizeSpend;
 use App\Context\ProjectContext;
 use App\Context\ProjectNotes;
 use App\Enums\NotesDraftStatus;
+use App\Features\SpendPause;
 use App\Jobs\DraftProjectNotes;
 use App\Models\Project;
 use App\Projects\ProjectRepository;
@@ -31,7 +32,7 @@ class RequestNotesDraft
         }
 
         if ($this->summarizeSpend->dailyLimitReached()) {
-            throw ValidationException::withMessages(['explore' => __('This is our fault: we paused new work for today to keep our costs in check. Nothing in your app changed. Try again tomorrow.')]);
+            throw ValidationException::withMessages(['explore' => SpendPause::message()]);
         }
 
         // Exploring is AI use like any change, so it counts against the plan.

@@ -4,6 +4,7 @@ namespace Tests\Feature\Runs;
 
 use App\Actions\Runs\TransitionRun;
 use App\Enums\RunStatus;
+use App\Features\SpendPause;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
@@ -86,7 +87,7 @@ class OwnerNotificationTest extends TestCase
         app(TransitionRun::class)->handle($run, RunStatus::Failed, attributes: ['error' => $paused], details: ['reason' => 'spend_limit']);
 
         $this->actingAs($owner)->get(route('projects.index'))->assertInertia(fn (Assert $page) => $page
-            ->where('notifications.items.0.reason', $paused));
+            ->where('notifications.items.0.reason', SpendPause::message()));
 
         $this->travel(1)->days();
 

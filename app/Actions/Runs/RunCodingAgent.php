@@ -116,7 +116,7 @@ class RunCodingAgent
 
         throw new ProvidersUnavailable(__('No AI provider could take the task right now (:reason). Try again later.', [
             'reason' => $previous->error ?? $previous->errorKind ?? 'unknown',
-        ]));
+        ]), outOfCredit: ProvidersUnavailable::saysOutOfCredit($previous->errorKind, $previous->error));
     }
 
     /**

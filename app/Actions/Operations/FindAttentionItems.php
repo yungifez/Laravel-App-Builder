@@ -68,6 +68,7 @@ class FindAttentionItems
                 $this->stuckRuns($now),
                 $this->expiredLeases($now),
                 $this->exhaustedBudgets($since),
+                $this->outOfCredit($since),
                 $this->failedPreviewStarts($since),
                 $this->failedRebuilds($since),
                 $this->stuckRebuilds($now),
@@ -183,6 +184,22 @@ class FindAttentionItems
             ->where('created_at', '>=', $since));
 
         return $this->item('budgets_exhausted', 'Runs out of budget', $query, fn (Run $run) => $this->runRecord($run, Str::limit((string) $run->error, 160)), href: route('operations.changes.index', ['reason' => 'budget_exhausted']));
+    }
+
+    /**
+     * Changes stopped because our account with an AI service ran out of
+     * credit. Owners are told we know, so this is where we do.
+     *
+     * @return AttentionItem
+     */
+    protected function outOfCredit(CarbonImmutable $since): array
+    {
+        $query = Run::query()->whereHas('events', fn (Builder $events) => $events
+            ->where('type', 'status')
+            ->where('data->reason', 'out_of_credit')
+            ->where('created_at', '>=', $since));
+
+        return $this->item('ai_out_of_credit', 'AI account out of credit', $query, fn (Run $run) => $this->runRecord($run, Str::limit((string) $run->error, 160)), href: route('operations.changes.index', ['reason' => 'out_of_credit']));
     }
 
     /**

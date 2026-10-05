@@ -27,7 +27,7 @@ class OwnerWording
         '/^The review found problems/' => 'This is our fault: when I looked over the change, I found problems I could not fix, so I stopped. Nothing in your app changed. Try again, or ask in other words.',
         '/^The run finished without changing/' => 'This is our fault: I finished without changing anything in your app. Try again, or ask in other words.',
         '/^The checks could not run/' => 'This is our fault: your app\'s checks could not run because of a problem on our side. Nothing in your app changed. Try again.',
-        '/^(The run used all|The agent used up)/' => 'This is our fault: this change needed more work than I can do in one go, so I stopped. Nothing in your app changed. Try again, or ask for a smaller part first.',
+        '/^(The run used all|The agent used up|This change used all the AI work)/' => 'This is our fault: this change needed more work than I can do in one go, so I stopped. Nothing in your app changed. Try again, or ask for a smaller part first.',
         '/^No AI provider could take.*(credit balance|quota|billing)/is' => 'This is our fault: our account with the AI service we use cannot take more work right now. Nothing in your app changed. Try again later.',
         '/^No AI provider could take/' => 'This is our fault: the AI service we use is busy right now. Nothing in your app changed. Try again in a few minutes.',
     ];
@@ -144,6 +144,7 @@ class OwnerWording
                 'verification_interrupted' => __('The checks could not run because of a problem on our side. This is our fault.'),
                 // Nothing to decide: the owner only tries again.
                 'providers_unavailable' => __('Stopped because the AI service we use could not take the work. This is our fault.'),
+                'out_of_credit' => __('Stopped because our account with the AI service is out of credit. This is our fault.'),
                 default => __('Stopped to ask what you want to do'),
             };
         }
