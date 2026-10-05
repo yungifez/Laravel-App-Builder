@@ -1653,6 +1653,16 @@ A new request is refused before it is saved while our spend is paused or the
 plan is used up, so no stopped change is left behind. Every other stopped
 change offers "Try again", "Ask in other words" or a link to the newer try.
 
+**Every stop has one reason, and the reason says what to do.** Every way a
+run can stop is a case of `StopReason`. Each case gives the owner's
+sentence, says whether the fault is ours ("This is our fault"), and names
+one `NextStep`: try again, Settings, answer or contact. The page offers
+only that step, so a stop that waits for an answer shows "Answer" and no
+"Try again". A run cannot stop without a reason. `RepeatedFailure` gives
+each reason advice for when it stops the same way twice, or excludes it
+with a written reason. `StopReasonTest` fails, naming the case, when a
+reason has no wording, fault, step or advice.
+
 ## 12. Verification
 
 Runs in a fresh worker, trusting nothing from the agent's workspace. The
