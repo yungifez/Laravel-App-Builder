@@ -265,6 +265,7 @@ final readonly class Plan
             $fields = [];
 
             foreach ($record['fields'] as $field) {
+                $field['of'] = filled($field['of'] ?? null) ? $field['of'] : null;
                 $type = FieldType::from($field['type']);
                 $choices = array_values(array_unique($field['choices']));
 
@@ -445,7 +446,7 @@ final readonly class Plan
      */
     protected static function preserveItem(array $item): array
     {
-        $area = $item['area'] ?? null;
+        $area = filled($item['area'] ?? null) ? $item['area'] : null;
         $statement = $item['statement'];
 
         if (preg_match('/^(.*?)[\'"]\s*,\s*[\'"]area[\'"]\s*:\s*[\'"]?([a-z0-9][a-z0-9_-]*)[\'"]?\s*$/s', $statement, $matches) === 1) {

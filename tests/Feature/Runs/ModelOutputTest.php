@@ -81,10 +81,10 @@ class ModelOutputTest extends TestCase
             'tasks' => ['Add a description.'],
             'steps' => [['key' => 'field', 'kind' => 'data', 'label' => 'Description', 'file' => 'app/Models/Team.php', 'symbol' => 'Team', 'detail' => 'A new field.']],
             'preserve' => [
-                ['area' => null, 'statement' => "Only owners and admins can change team settings.','area':'membership"],
+                ['area' => '', 'statement' => "Only owners and admins can change team settings.','area':'membership"],
                 ['area' => 'teams', 'statement' => 'Renaming still works.", "area": "account'],
-                ['area' => null, 'statement' => "The team's name stays required."],
-                ['area' => null, 'statement' => "Switching teams works as before.','area':null"],
+                ['area' => '', 'statement' => "The team's name stays required."],
+                ['area' => '', 'statement' => "Switching teams works as before.','area':null"],
             ],
         ], []);
 
@@ -232,5 +232,22 @@ class ModelOutputTest extends TestCase
             ['path' => 'tests/Feature/GoneTest.php', 'deleted' => true, 'removed_assertions' => 0],
             ['path' => 'tests/Feature/TeamTest.php', 'deleted' => false, 'removed_assertions' => 2],
         ], TestChanges::weakened($patch));
+    }
+
+    public function test_a_blank_link_in_a_new_record_means_it_links_to_nothing()
+    {
+        $field = ['type' => 'string', 'required' => true, 'choices' => [], 'of' => '', 'label' => ''];
+        $shape = [['name' => 'Booking', 'label' => 'booking', 'access' => null, 'fields' => [
+            ['name' => 'title', ...$field],
+            ['name' => 'customer', ...$field, 'type' => 'belongs_to', 'of' => 'Customer'],
+        ]]];
+
+        $fields = Plan::dataShape($shape)[0]['fields'];
+
+        $this->assertNull($fields[0]['of']);
+        $this->assertSame('Customer', $fields[1]['of']);
+        // A link that names no record cannot be built, so nothing is.
+        $shape[0]['fields'][1]['of'] = '';
+        $this->assertSame([], Plan::dataShape($shape));
     }
 }
