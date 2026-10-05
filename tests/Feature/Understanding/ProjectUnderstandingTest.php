@@ -571,6 +571,71 @@ class ProjectUnderstandingTest extends TestCase
                 ->where('check.0', ['title' => 'Secret settings are saved in the app\'s code, where anyone with the code can read them.', 'details' => ['.env']])));
     }
 
+    /**
+     * Get the quick check's details for one finding, or null when it is not found.
+     *
+     * @return list<string>|null
+     */
+    protected function checkDetails(string $title): ?array
+    {
+        $details = null;
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(function (Assert $page) use ($title, &$details) {
+                $page->reloadOnly('check', function (Assert $page) use ($title, &$details) {
+                    $details = collect($page->toArray()['props']['check'])->firstWhere('title', $title)['details'] ?? null;
+                });
+            });
+
+        return $details;
+    }
+
+    public function test_the_quick_check_lists_what_the_tests_check_that_no_notes_describe()
+    {
+        TestObservation::create(['project_id' => $this->project->id, 'files' => [], 'tests' => [
+            // The notes list "pick-plan"; nothing lists "cancel-plan" any more.
+            ['id' => 'Tests\\Feature\\PlanTest::test_customers_pick_a_plan', 'file' => 'tests/Feature/PlanTest.php', 'groups' => ['behavior:pick-plan']],
+            ['id' => 'Tests\\Feature\\PlanTest::test_customers_cancel_a_plan', 'file' => 'tests/Feature/PlanTest.php', 'groups' => ['behavior:cancel-plan']],
+            ['id' => 'Tests\\Feature\\PlanTest::test_a_cancelled_plan_ends_at_the_month_end', 'file' => 'tests/Feature/PlanTest.php', 'groups' => ['slow', 'behavior:cancel-plan']],
+        ]]);
+
+        $this->assertSame(
+            ['A cancelled plan ends at the month end', 'Customers cancel a plan'],
+            $this->checkDetails('Your app\'s tests check things the notes do not describe. Copy each one into the rules of the part it belongs to, below.'),
+        );
+
+        // The owner does what the finding says for one of them.
+        $this->actingAs($this->owner)
+            ->put(route('projects.understanding.update', $this->project), [
+                'part' => 'rules:plans',
+                'body' => "Every customer sees the same plans.\nCustomers cancel a plan.",
+                'revision' => $this->version(),
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(
+            ['A cancelled plan ends at the month end'],
+            $this->checkDetails('Your app\'s tests check things the notes do not describe. Copy each one into the rules of the part it belongs to, below.'),
+        );
+    }
+
+    public function test_the_quick_check_says_nothing_of_tests_whose_behaviours_the_notes_list_or_that_name_none()
+    {
+        TestObservation::create(['project_id' => $this->project->id, 'files' => [], 'tests' => [
+            ['id' => 'Tests\\Feature\\PlanTest::test_customers_pick_a_plan', 'file' => 'tests/Feature/PlanTest.php', 'groups' => ['behavior:pick-plan']],
+            ['id' => 'Tests\\Feature\\TeamTest::test_teams_are_listed', 'file' => 'tests/Feature/TeamTest.php', 'groups' => []],
+        ]]);
+
+        $this->assertNull($this->checkDetails('Your app\'s tests check things the notes do not describe. Copy each one into the rules of the part it belongs to, below.'));
+    }
+
+    public function test_the_quick_check_says_nothing_of_tests_before_any_test_run_was_mapped()
+    {
+        $this->assertNull(TestObservation::latestFor($this->project));
+        $this->assertNull($this->checkDetails('Your app\'s tests check things the notes do not describe. Copy each one into the rules of the part it belongs to, below.'));
+    }
+
     public function test_the_owner_changes_what_the_app_is_for_and_it_is_saved_outside_the_app()
     {
         $head = $this->repository->head($this->project);

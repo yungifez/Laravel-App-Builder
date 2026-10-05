@@ -2,8 +2,11 @@
 
 namespace App\Actions\Context;
 
+use App\Context\ProjectContext;
+use App\Features\TestMap;
 use App\Features\UnsafeCode;
 use App\Models\Project;
+use App\Models\TestObservation;
 use App\Projects\Frontend;
 use App\Projects\ProjectRepository;
 use Illuminate\Support\Facades\Config;
@@ -62,6 +65,14 @@ class CheckProjectNotes
             }
         }
 
+        $unlisted = $this->unlistedBehaviors($context, TestObservation::latestFor($project)?->map());
+
+        // Putting it right adds to the notes rather than taking out, so no
+        // fix button: the title says where the owner writes it instead.
+        if ($unlisted !== []) {
+            $findings[] = ['title' => __('Your app\'s tests check things the notes do not describe. Copy each one into the rules of the part it belongs to, below.'), 'details' => $unlisted];
+        }
+
         // The app's own screens are described too, wherever its frontend keeps them.
         $described = array_values(array_filter([...Config::array('builder.context.described_paths'), ...Frontend::of($this->repository, $project, $head)->pages], is_string(...)));
         $undescribed = array_values(array_filter(Config::array('builder.context.undescribed'), is_string(...)));
@@ -75,6 +86,65 @@ class CheckProjectNotes
         }
 
         return $findings;
+    }
+
+    /**
+     * Get what the tests check for behaviours they name that no area's notes
+     * list, in the tests' own words. A test names the behaviour it proves
+     * with a `behavior:<key>` group; when the notes lose that key, the test
+     * still proves it but nothing describes it. A rule that says what the
+     * test checks describes it too, so copying the sentence into a part's
+     * rules clears it.
+     *
+     * @return list<string>
+     */
+    protected function unlistedBehaviors(ProjectContext $context, ?TestMap $map): array
+    {
+        if ($map === null) {
+            return [];
+        }
+
+        $listed = [];
+        $rules = [];
+
+        foreach ($context->capabilities as $capability) {
+            foreach ($capability->behaviors as $behavior) {
+                $listed[$behavior['key']] = true;
+            }
+
+            foreach ($capability->rules() as $rule) {
+                $rules[] = self::plain($rule);
+            }
+        }
+
+        $sentences = [];
+
+        foreach ($map->tests as $index => $test) {
+            foreach ($test['groups'] as $group) {
+                if (str_starts_with($group, TestMap::BEHAVIOR_GROUP) && ! isset($listed[Str::after($group, TestMap::BEHAVIOR_GROUP)])) {
+                    $sentence = $map->sentence($index);
+
+                    if (! Str::contains(implode("\n", $rules), self::plain($sentence))) {
+                        $sentences[] = $sentence;
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        $sentences = array_values(array_unique($sentences));
+        sort($sentences);
+
+        return $sentences;
+    }
+
+    /**
+     * Compare sentences as people copy them: any case, spacing or full stop.
+     */
+    protected static function plain(string $text): string
+    {
+        return rtrim(Str::lower(Str::squish($text)), '.');
     }
 
     /**
