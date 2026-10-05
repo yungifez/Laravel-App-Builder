@@ -181,10 +181,10 @@ class BudgetNextStepTest extends TestCase
         $busy = ProvidersUnavailable::because(RateLimitedException::forProvider('anthropic', 429));
         $empty = ProvidersUnavailable::because(InsufficientCreditsException::forProvider('anthropic'));
 
-        $this->assertFalse($busy->outOfCredit);
+        $this->assertSame('providers_unavailable', $busy->reason());
         $this->assertStringEndsWith('Try again in a few minutes.', $busy->getMessage());
         // When credit comes back is not known, so no wait is promised.
-        $this->assertTrue($empty->outOfCredit);
+        $this->assertSame('out_of_credit', $empty->reason());
         $this->assertStringEndsWith('Try again later.', $empty->getMessage());
         $this->assertTrue(ProvidersUnavailable::saysOutOfCredit('billing_error', null));
         $this->assertTrue(ProvidersUnavailable::saysOutOfCredit(null, 'Your credit balance is too low.'));

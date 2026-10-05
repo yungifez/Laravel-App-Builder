@@ -69,6 +69,7 @@ class FindAttentionItems
                 $this->expiredLeases($now),
                 $this->exhaustedBudgets($since),
                 $this->outOfCredit($since),
+                $this->requestsRefused($since),
                 $this->failedPreviewStarts($since),
                 $this->failedRebuilds($since),
                 $this->stuckRebuilds($now),
@@ -200,6 +201,22 @@ class FindAttentionItems
             ->where('created_at', '>=', $since));
 
         return $this->item('ai_out_of_credit', 'AI account out of credit', $query, fn (Run $run) => $this->runRecord($run, Str::limit((string) $run->error, 160)), href: route('operations.changes.index', ['reason' => 'out_of_credit']));
+    }
+
+    /**
+     * Runs the AI service refused: a bad key, or a request it cannot
+     * accept. Every try fails the same way until we put it right.
+     *
+     * @return AttentionItem
+     */
+    protected function requestsRefused(CarbonImmutable $since): array
+    {
+        $query = Run::query()->whereHas('events', fn (Builder $events) => $events
+            ->where('type', 'status')
+            ->where('data->reason', 'request_refused')
+            ->where('created_at', '>=', $since));
+
+        return $this->item('ai_request_refused', 'AI service refused our requests', $query, fn (Run $run) => $this->runRecord($run, Str::limit((string) $run->error, 160)), href: route('operations.changes.index', ['reason' => 'request_refused']));
     }
 
     /**

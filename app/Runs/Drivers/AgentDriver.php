@@ -26,6 +26,7 @@ use App\Runs\Plan;
 use App\Runs\PlanningContext;
 use App\Runs\Review;
 use App\Runs\ReviewEvidence;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
 use Laravel\Ai\Exceptions\FailoverableException;
@@ -63,7 +64,7 @@ abstract class AgentDriver implements ConstructionDriver
         $prompt = $this->planningPrompt($context);
 
         for ($attempt = 1; ; $attempt++) {
-            $response = $this->ask(fn () => FeaturePlanner::make()->prompt($prompt, $this->pictures($run->featureRequest), provider: ModelRole::Planner->providers()));
+            $response = $this->ask($run, fn () => FeaturePlanner::make()->prompt($prompt, $this->pictures($run->featureRequest), provider: ModelRole::Planner->providers()));
 
             $this->recordModelUsage->handle($run, ModelRole::Planner, $response);
 
@@ -94,7 +95,7 @@ abstract class AgentDriver implements ConstructionDriver
      */
     protected function reviewWith(Run $run, ReviewEvidence $evidence, array $providers): Review
     {
-        $response = $this->ask(fn () => ChangeReviewer::make()->prompt($this->reviewPrompt($evidence, app(AcceptFindings::class)->identities($run->featureRequest)), $this->pictures($run->featureRequest), provider: $providers));
+        $response = $this->ask($run, fn () => ChangeReviewer::make()->prompt($this->reviewPrompt($evidence, app(AcceptFindings::class)->identities($run->featureRequest)), $this->pictures($run->featureRequest), provider: $providers));
 
         $this->recordModelUsage->handle($run, ModelRole::Reviewer, $response);
 
@@ -108,20 +109,26 @@ abstract class AgentDriver implements ConstructionDriver
     }
 
     /**
-     * Ask an agent. When every AI service turns the request away, the run
-     * stops and tells the owner why, instead of being retried as if it had
-     * crashed.
+     * Ask an agent. When every AI service turns the request away, or answers
+     * with an error, the run stops and tells the owner why, instead of being
+     * retried as if it had crashed. What the service said is kept for
+     * operators.
      *
      * @param  callable(): AgentResponse  $prompt
      *
      * @throws ProvidersUnavailable
      */
-    protected function ask(callable $prompt): AgentResponse
+    protected function ask(Run $run, callable $prompt): AgentResponse
     {
         try {
             return $prompt();
         } catch (FailoverableException $exception) {
             throw ProvidersUnavailable::because($exception);
+        } catch (RequestException $exception) {
+            $stop = ProvidersUnavailable::fromResponse($exception);
+            $run->recordEvent('ai_service_error', ['reason' => $stop->reason(), ...(array) $stop->serviceError()]);
+
+            throw $stop;
         }
     }
 

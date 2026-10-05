@@ -145,6 +145,7 @@ class OwnerWording
                 // Nothing to decide: the owner only tries again.
                 'providers_unavailable' => __('Stopped because the AI service we use could not take the work. This is our fault.'),
                 'out_of_credit' => __('Stopped because our account with the AI service is out of credit. This is our fault.'),
+                'request_refused' => __('Stopped because the AI service could not accept how we asked it. This is our fault.'),
                 default => __('Stopped to ask what you want to do'),
             };
         }
