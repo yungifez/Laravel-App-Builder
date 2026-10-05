@@ -61,7 +61,7 @@ class ChangeProofTest extends TestCase
                 ['key' => 'teams', 'name' => 'Teams', 'summary' => null, 'file' => null, 'paths' => [], 'behaviors' => [], 'effects' => []],
                 ['key' => 'billing', 'name' => 'Billing', 'summary' => null, 'file' => null, 'paths' => [], 'behaviors' => [], 'effects' => []],
             ]],
-            'review' => ['approved' => true, 'summary' => '', 'findings' => [], 'changes' => [], 'classification' => [
+            'review' => ['approved' => true, 'summary' => '', 'coverage' => [], 'findings' => [], 'changes' => [], 'classification' => [
                 'requested' => ['teams' => ['app/Policies/TeamPolicy.php']],
                 'may_also_affect' => [],
                 'unexpected' => [],
@@ -833,7 +833,7 @@ class ChangeProofTest extends TestCase
         $proof = function (array $verified, array $newTests) {
             $request = FeatureRequest::factory()->generated()->create(['patch' => "diff --git a/tests/Feature/ArchiveTest.php b/tests/Feature/ArchiveTest.php\nnew file mode 100644\n--- /dev/null\n+++ b/tests/Feature/ArchiveTest.php\n@@ -0,0 +1 @@\n+<?php\n"]);
             $this->checked($request, VerificationStatus::Unverified, ['new_tests' => $newTests]);
-            Run::factory()->for($request)->create(['review' => ['approved' => true, 'summary' => '', 'findings' => [], 'verified' => $verified]]);
+            Run::factory()->for($request)->create(['review' => ['approved' => true, 'summary' => '', 'coverage' => [], 'findings' => [], 'verified' => $verified]]);
 
             return collect(app(DescribeProof::class)->handle($request->refresh()));
         };

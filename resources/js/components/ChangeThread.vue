@@ -51,7 +51,12 @@ import { edit as billing } from '@/routes/billing';
 import { show as showFeatureRequest } from '@/routes/feature-requests';
 import { show as showProject } from '@/routes/projects';
 import { index as developers } from '@/routes/projects/developers';
-import type { ChangeDetail, Run, VerificationResult } from '@/types';
+import type {
+    ChangeDetail,
+    ChangedArea,
+    Run,
+    VerificationResult,
+} from '@/types';
 
 // Roomy when the chat has the whole screen: more air between messages and
 // the owner's messages kept narrow, so they read as a conversation.
@@ -269,12 +274,23 @@ const whereChanged = computed(() => {
         folder: file.path.split('/').slice(0, -1).join('/'),
     }));
     const areas = run.value?.review?.areas;
-    const group = (
-        area: { name: string; files: string[] },
-        unasked: boolean,
-    ) => ({
+    // Only a part with a way no test tried says so; a well tested change
+    // adds no words.
+    const untested = (key: string) => {
+        const cases = run.value?.review?.coverage.find(
+            (area) => area.area === key,
+        )?.cases;
+
+        return cases
+            ? (Object.keys(caseNames) as (keyof typeof caseNames)[])
+                  .filter((kind) => cases[kind] === 'not_tested')
+                  .map((kind) => caseNames[kind])
+            : [];
+    };
+    const group = (area: ChangedArea, unasked: boolean) => ({
         name: area.name,
         unasked,
+        untested: untested(area.key),
         files: files.filter((file) => area.files.includes(file.path)),
     });
     const groups = [
@@ -298,6 +314,7 @@ const whereChanged = computed(() => {
                       ? `Not in any part of your app (${rest.length})`
                       : 'Files',
                   unasked: areas !== undefined,
+                  untested: [],
                   files: rest,
               },
           ]
@@ -1658,6 +1675,14 @@ const checks = computed(() => {
                                         />
                                         {{ group.name }}
                                     </h3>
+                                    <p
+                                        v-if="group.untested.length > 0"
+                                        class="text-xs text-muted-foreground"
+                                        data-test="area-untested"
+                                    >
+                                        No test tried:
+                                        {{ group.untested.join(', ') }}
+                                    </p>
                                     <p
                                         v-for="file in group.files"
                                         :key="file.path"

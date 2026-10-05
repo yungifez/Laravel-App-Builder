@@ -3,6 +3,7 @@
 namespace App\Actions\Runs;
 
 use App\Actions\Billing\MeasureUsage;
+use App\Actions\Context\AssessCoverage;
 use App\Actions\Context\AssessPreservation;
 use App\Actions\Context\AssessVerifyItems;
 use App\Actions\Context\ClassifyChange;
@@ -86,6 +87,7 @@ class ConstructRun
         private DestroyWorkspace $destroyWorkspace,
         private CompileContext $compileContext,
         private ClassifyChange $classifyChange,
+        private AssessCoverage $assessCoverage,
         private AssessPreservation $assessPreservation,
         private AssessVerifyItems $assessVerifyItems,
         private FormatChange $formatChange,
@@ -481,6 +483,7 @@ class ConstructRun
             ...$this->storedReview($review, $classification),
             'preserved' => $this->assessPreservation->handle($plan, $classification, $projectContext, $verification->results ?? []),
             'verified' => $verified,
+            'coverage' => $this->assessCoverage->handle($plan, $classification, $projectContext, $verified, $verification->results ?? []),
         ]];
 
         if ($review->approved) {

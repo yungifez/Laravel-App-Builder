@@ -397,6 +397,7 @@ class DescribeFeatureRequest
                 'area_name' => $item['area'] === null ? null : ($names[$item['area']] ?? $item['area']),
             ], $run->review['preserved'] ?? []),
             'verified' => $run->review['verified'] ?? [],
+            'coverage' => array_map(fn (array $area) => [...$area, 'name' => $names[$area['area']] ?? $area['area']], $run->review['coverage']),
             'unclaimed' => $classification['unclaimed'],
             'context_updates' => $classification['context_updates'],
         ];

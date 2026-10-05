@@ -118,7 +118,7 @@ class ProjectTelemetryTest extends TestCase
         return Run::factory()->for($request)->create([
             'status' => RunStatus::Completed,
             'repairs' => $repairs,
-            'review' => ['approved' => true, 'summary' => 'ok', 'findings' => [], 'changes' => [], 'classification' => [
+            'review' => ['approved' => true, 'summary' => 'ok', 'coverage' => [], 'findings' => [], 'changes' => [], 'classification' => [
                 'requested' => [], 'may_also_affect' => [], 'unexpected' => $unexpected, 'unclaimed' => [], 'context_updates' => [], 'targets' => [],
             ]],
         ]);

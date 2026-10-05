@@ -72,7 +72,7 @@ class KeepTryingTest extends TestCase
             'stop_reason' => 'review_findings',
             // From an earlier repair: it says nothing about why it stopped.
             'feedback' => ['reason' => 'verification_failed', 'details' => ['An old failure.']],
-            'review' => ['approved' => false, 'summary' => 'Not yet.', 'findings' => [
+            'review' => ['approved' => false, 'summary' => 'Not yet.', 'coverage' => [], 'findings' => [
                 ['severity' => 'blocking', 'file' => 'app/Models/Booking.php', 'summary' => 'A full class still takes bookings.'],
                 ['severity' => 'minor', 'file' => null, 'summary' => 'The label could be bolder.'],
             ], 'changes' => []],

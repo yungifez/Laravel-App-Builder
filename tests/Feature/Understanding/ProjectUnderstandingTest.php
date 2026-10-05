@@ -442,7 +442,7 @@ class ProjectUnderstandingTest extends TestCase
     {
         $kept = function (array $attributes, array $verified) {
             Run::factory()->for(FeatureRequest::factory()->generated()->for($this->project)->create($attributes))->create([
-                'review' => ['approved' => true, 'summary' => '', 'findings' => [], 'changes' => [], 'verified' => $verified, 'classification' => (new ChangeClassification(targets: ['teams']))->toArray()],
+                'review' => ['approved' => true, 'summary' => '', 'coverage' => [], 'findings' => [], 'changes' => [], 'verified' => $verified, 'classification' => (new ChangeClassification(targets: ['teams']))->toArray()],
             ]);
         };
         $kept(['accepted_at' => now()->subDay()], [

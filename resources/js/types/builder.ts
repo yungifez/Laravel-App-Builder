@@ -378,6 +378,16 @@ export type RunReview = {
         unchanged: boolean;
         tests: number;
     }[];
+    // How well each touched part's tests cover it.
+    coverage: {
+        area: string;
+        name: string;
+        tests_passed: number;
+        cases: Record<
+            'base' | 'alternate' | 'exception',
+            'tested' | 'not_tested' | 'not_needed'
+        >;
+    }[];
     unclaimed: string[];
     context_updates: string[];
 };

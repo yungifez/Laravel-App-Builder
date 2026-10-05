@@ -248,14 +248,17 @@ it('keeps what may also have changed apart from what was asked, and counts files
         ->pluck('path')->reject(fn (string $path) => str_starts_with($path, ProjectNotes::directory().'/') || str_starts_with($path, ProjectContext::LEGACY_DIRECTORY.'/'))->values()->all();
     $review = $run->review;
     $review['changes'][] = ['behavior' => 'Seats are counted when someone joins.', 'before' => 'Seats were counted monthly.', 'now' => 'Seats are counted at once.', 'area' => 'billing', 'section' => 'may_also_affect'];
-    // No part claims any file, so all of them are counted as unclaimed.
-    $review['classification'] = [...$review['classification'], 'requested' => [], 'may_also_affect' => ['billing' => []], 'unexpected' => [], 'unclaimed' => $files];
+    // Billing claims the first file; no part claims the others. No test
+    // tried billing another way.
+    $review['classification'] = [...$review['classification'], 'requested' => [], 'may_also_affect' => ['billing' => [$files[0]]], 'unexpected' => [], 'unclaimed' => array_slice($files, 1)];
+    $review['coverage'] = [['area' => 'billing', 'tests_passed' => 1, 'cases' => ['base' => 'tested', 'alternate' => 'not_tested', 'exception' => 'not_needed']]];
     $run->update(['review' => $review]);
 
     visit(route('projects.show', ['project' => $this->project, 'change' => $run->featureRequest->uuid]))
         ->assertSeeIn('@review-may-also', 'Seats are counted when someone joins.')
         ->assertDontSeeIn('@run-review', 'Seats are counted when someone joins.')
         ->click('@beside-code')
-        ->assertSeeIn('@detail-how', 'Not in any part of your app ('.count($files).')')
+        ->assertSeeIn('@detail-how', 'Not in any part of your app ('.(count($files) - 1).')')
+        ->assertSeeIn('@area-untested', 'No test tried: Another way')
         ->assertNoJavaScriptErrors();
 });

@@ -384,7 +384,7 @@ class TestImpactTest extends TestCase
     {
         $change = FeatureRequest::factory()->generated()->create();
         Run::factory()->for($change)->create([
-            'review' => ['approved' => true, 'summary' => '', 'findings' => [], 'changes' => [], 'classification' => [
+            'review' => ['approved' => true, 'summary' => '', 'coverage' => [], 'findings' => [], 'changes' => [], 'classification' => [
                 'requested' => ['teams' => ['app/Policies/TeamPolicy.php']],
                 'may_also_affect' => [],
                 'unexpected' => ['settings' => ['config/teams.php']],
@@ -449,7 +449,7 @@ class TestImpactTest extends TestCase
         $project = Project::factory()->create();
         $change = function (array $touched, array $state) use ($project) {
             $featureRequest = FeatureRequest::factory()->for($project)->create($state);
-            Run::factory()->for($featureRequest)->create(['review' => ['approved' => true, 'summary' => '', 'findings' => [], 'changes' => [], 'classification' => [
+            Run::factory()->for($featureRequest)->create(['review' => ['approved' => true, 'summary' => '', 'coverage' => [], 'findings' => [], 'changes' => [], 'classification' => [
                 'requested' => ['teams' => ['app/Policies/TeamPolicy.php']],
                 'may_also_affect' => [],
                 'unexpected' => array_fill_keys($touched, ['app/Models/Invoice.php']),
