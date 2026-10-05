@@ -37,6 +37,7 @@ import { when } from '@/lib/when';
 import { edit as billing } from '@/routes/billing';
 import { show as showFeatureRequest } from '@/routes/feature-requests';
 import { index, show as showProject } from '@/routes/projects';
+import { show as showUnderstanding } from '@/routes/projects/understanding';
 import type {
     ChangedArea,
     ChangeSection,
@@ -1562,6 +1563,38 @@ function lineClass(line: string): string {
                             data-test="review-context-updates"
                         >
                             I also updated what I know about your app.
+                        </p>
+                        <!-- Our failure says so; otherwise a small fix often
+                             needs no notes change, so it is only a pointer. -->
+                        <p
+                            v-if="run?.review?.notes_failed"
+                            class="text-sm text-muted-foreground"
+                            data-test="review-notes-failed"
+                        >
+                            I could not update the notes after this change. This
+                            is our fault.
+                            <Link
+                                :href="showUnderstanding(project.id)"
+                                class="underline underline-offset-4 hover:text-foreground"
+                                >Check them</Link
+                            >
+                        </p>
+                        <p
+                            v-else-if="run?.review?.notes_behind.length"
+                            class="text-sm text-muted-foreground"
+                            data-test="review-notes-behind"
+                        >
+                            These notes may now be out of date:
+                            {{
+                                run.review.notes_behind
+                                    .map((area) => area.name)
+                                    .join(', ')
+                            }}.
+                            <Link
+                                :href="showUnderstanding(project.id)"
+                                class="underline underline-offset-4 hover:text-foreground"
+                                >Check them</Link
+                            >
                         </p>
                     </div>
                     <CollapsibleContent class="mt-4 space-y-6 text-sm">

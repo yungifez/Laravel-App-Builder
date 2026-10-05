@@ -19,6 +19,7 @@ class ChangeEvidenceTest extends TestCase
             'unexpected' => [],
             'unclaimed' => $unclaimed,
             'context_updates' => [],
+            'notes_behind' => [],
             'targets' => ['bookings', 'members'],
             'observed' => ['areas' => ['bookings' => 3], 'tests' => 3, 'unmapped' => [], 'foundation' => [], 'by_line' => []],
         ]);

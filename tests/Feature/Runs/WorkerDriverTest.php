@@ -403,7 +403,7 @@ class WorkerDriverTest extends TestCase
             'review' => ['approved' => false, 'summary' => '', 'preserved' => [], 'verified' => [], 'coverage' => [], 'findings' => [
                 ['severity' => 'blocking', 'summary' => 'The description is never saved.', 'file' => 'app/Models/Team.php'],
                 ['severity' => 'minor', 'summary' => 'A comment is long.', 'file' => null],
-            ], 'changes' => [], 'classification' => ['requested' => [], 'may_also_affect' => [], 'unexpected' => [], 'unclaimed' => [], 'context_updates' => [], 'targets' => [], 'observed' => null]],
+            ], 'changes' => [], 'classification' => ['requested' => [], 'may_also_affect' => [], 'unexpected' => [], 'unclaimed' => [], 'context_updates' => [], 'targets' => [], 'notes_behind' => [], 'observed' => null]],
         ]);
 
         $run = $this->startRun(retryOf: $stopped);

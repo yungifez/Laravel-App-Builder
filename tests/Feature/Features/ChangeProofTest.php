@@ -72,6 +72,7 @@ class ChangeProofTest extends TestCase
                 'unexpected' => [],
                 'unclaimed' => [],
                 'context_updates' => [],
+                'notes_behind' => [],
                 'targets' => ['teams'],
                 'observed' => $observed === null ? null : [...$observed, 'foundation' => $observed['foundation'] ?? [], 'by_line' => $observed['by_line'] ?? []],
             ]],

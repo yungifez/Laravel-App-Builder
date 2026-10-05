@@ -390,6 +390,7 @@ class TestImpactTest extends TestCase
                 'unexpected' => ['settings' => ['config/teams.php']],
                 'unclaimed' => [],
                 'context_updates' => [],
+                'notes_behind' => [],
                 'targets' => ['teams'],
                 'observed' => ['areas' => ['billing' => 2, 'teams' => 1], 'tests' => 3, 'unmapped' => ['app/Support/Money.php'], 'foundation' => [], 'by_line' => []],
             ]],
@@ -455,6 +456,7 @@ class TestImpactTest extends TestCase
                 'unexpected' => array_fill_keys($touched, ['app/Models/Invoice.php']),
                 'unclaimed' => [],
                 'context_updates' => [],
+                'notes_behind' => [],
                 'targets' => ['teams'],
                 'observed' => null,
             ]]]);

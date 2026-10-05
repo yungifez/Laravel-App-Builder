@@ -119,7 +119,7 @@ class ProjectTelemetryTest extends TestCase
             'status' => RunStatus::Completed,
             'repairs' => $repairs,
             'review' => ['approved' => true, 'summary' => 'ok', 'preserved' => [], 'verified' => [], 'coverage' => [], 'findings' => [], 'changes' => [], 'classification' => [
-                'requested' => [], 'may_also_affect' => [], 'unexpected' => $unexpected, 'unclaimed' => [], 'context_updates' => [], 'targets' => [], 'observed' => null,
+                'requested' => [], 'may_also_affect' => [], 'unexpected' => $unexpected, 'unclaimed' => [], 'context_updates' => [], 'targets' => [], 'notes_behind' => [], 'observed' => null,
             ]],
         ]);
     }

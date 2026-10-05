@@ -446,6 +446,11 @@ class DescribeFeatureRequest
             'coverage' => array_map(fn (array $area) => [...$area, 'name' => $names[$area['area']] ?? $area['area']], $run->review['coverage']),
             'unclaimed' => $classification['unclaimed'],
             'context_updates' => $classification['context_updates'],
+            // Parts whose code changed but whose notes did not; a small fix
+            // often needs none, so the owner is asked to check, not warned.
+            'notes_behind' => array_map(fn (string $key) => ['key' => $key, 'name' => $names[$key] ?? $key], $classification['notes_behind']),
+            // A worker's change whose notes we failed to update: our fault.
+            'notes_failed' => $run->events()->where('type', 'notes_not_updated')->exists(),
         ];
     }
 

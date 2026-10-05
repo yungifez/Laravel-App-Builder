@@ -399,6 +399,10 @@ export type RunReview = {
     }[];
     unclaimed: string[];
     context_updates: string[];
+    // Parts whose code changed but whose notes did not.
+    notes_behind: { key: string; name: string }[];
+    // We failed to update the notes after a worker's change.
+    notes_failed: boolean;
 };
 
 export type PreviewStatus = 'starting' | 'ready' | 'failed' | 'stopped';

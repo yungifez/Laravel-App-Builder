@@ -71,7 +71,13 @@ class ClassifyChange
             }
         }
 
-        return new ChangeClassification($requested, $mayAlsoAffect, $unexpected, $unclaimed, $contextUpdates, $targets, $this->observed($context, $patch, $map, $mapIncludesChange));
+        // A small fix often needs no notes change, so this is a pointer to
+        // check them, never a fault.
+        $touched = array_unique([...array_keys($requested), ...array_keys($mayAlsoAffect), ...array_keys($unexpected)]);
+        $notesBehind = array_values(array_filter($touched, fn (string $key) => ! in_array($context->capabilities[$key]->file, $notes, true)));
+        sort($notesBehind);
+
+        return new ChangeClassification($requested, $mayAlsoAffect, $unexpected, $unclaimed, $contextUpdates, $targets, $this->observed($context, $patch, $map, $mapIncludesChange), $notesBehind);
     }
 
     /**

@@ -1228,6 +1228,8 @@ class AgentDriverTest extends TestCase
             'targets' => ['teams'],
             // No test map was made for this project.
             'observed' => null,
+            // Only the teams notes were rewritten; billing and settings changed too.
+            'notes_behind' => ['billing', 'settings'],
         ], $run->review['classification']);
         $this->assertSame(['requested', 'unexpected', 'other'], array_column($run->review['changes'], 'section'));
         // Without a test map, only the changed files back a line; a made-up area has none.
