@@ -89,6 +89,15 @@ class WrittenTestsTest extends TestCase
         $this->assertCount(8, $written['tests']);
     }
 
+    public function test_a_redirect_to_confirm_an_email_or_password_is_a_refusal()
+    {
+        $this->assertTrue(WrittenTests::assertsRefusal("\$this->actingAs(\$unconfirmed)->delete('/items/1')->assertRedirect(route('verification.notice'));"));
+        $this->assertTrue(WrittenTests::assertsRefusal("\$this->actingAs(\$user)->delete('/account')->assertRedirect('/user/confirm-password');"));
+
+        // A redirect anywhere else may be the app working as usual.
+        $this->assertFalse(WrittenTests::assertsRefusal("\$this->actingAs(\$user)->delete('/items/1')->assertRedirect(route('dashboard'));"));
+    }
+
     public function test_an_exception_test_that_expects_success_is_refused_with_the_reason()
     {
         // The refusal is asserted only by the test after it, which does
@@ -104,7 +113,7 @@ class WrittenTestsTest extends TestCase
                 ],
             ], ['exception', 'exception'], fn () => false);
         } catch (ConstructionFailed $exception) {
-            $this->assertSame('The test "it shows no times for a past day" for item 1 is an exception case, but it asserts no refusal. Assert that the app refuses: a 403 or 404, validation errors, a redirect to sign in, or a thrown exception or failed command.', $exception->getMessage());
+            $this->assertSame('The test "it shows no times for a past day" for item 1 is an exception case, but it asserts no refusal. Assert that the app refuses: a 403 or 404, validation errors, a redirect to sign in or to confirm an email or password, or a thrown exception or failed command.', $exception->getMessage());
 
             return;
         }

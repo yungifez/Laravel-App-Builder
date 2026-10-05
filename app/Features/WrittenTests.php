@@ -84,7 +84,7 @@ class WrittenTests
                 ! isset($files[$path]) => __('The test for item :item is in :path, which is not one of the files written.', ['item' => $item, 'path' => $path]),
                 $key === '' || ! in_array($key, self::names($files[$path]), true) => __('The file :path has no test named ":name" for item :item.', ['path' => $path, 'name' => $name, 'item' => $item]),
                 isset($named["{$path}|{$key}"]) => __('The test ":name" is given for more than one item: a test checks one item.', ['name' => $name]),
-                $kinds[$item - 1] === 'exception' && ! self::assertsRefusal(self::body($files[$path], $key)) => __('The test ":name" for item :item is an exception case, but it asserts no refusal. Assert that the app refuses: a 403 or 404, validation errors, a redirect to sign in, or a thrown exception or failed command.', ['name' => $name, 'item' => $item]),
+                $kinds[$item - 1] === 'exception' && ! self::assertsRefusal(self::body($files[$path], $key)) => __('The test ":name" for item :item is an exception case, but it asserts no refusal. Assert that the app refuses: a 403 or 404, validation errors, a redirect to sign in or to confirm an email or password, or a thrown exception or failed command.', ['name' => $name, 'item' => $item]),
                 default => null,
             };
 
@@ -167,7 +167,9 @@ class WrittenTests
     {
         return preg_match('/->\s*assert(?:Forbidden|NotFound|Unauthorized|Unprocessable|BadRequest|Conflict|Gone|MethodNotAllowed|PaymentRequired|TooManyRequests|ClientError|Invalid|SessionHasErrors\w*|JsonValidationError\w*|Failed)\s*\(/', $test) === 1
             || preg_match('/assertStatus\(\s*4\d\d\s*\)|->\s*toBe\(\s*4\d\d\s*\)|assert(?:Same|Equals)\(\s*4\d\d\s*,/', $test) === 1
-            || preg_match('/assertRedirect(?:ToRoute)?\([^;]*login/i', $test) === 1
+            // The starter kits send a guest to sign in, an unconfirmed
+            // email to confirm it, and a stale password to enter it again.
+            || preg_match('/assertRedirect(?:ToRoute)?\([^;]*(?:login|verification\.notice|verify-email|password\.confirm|confirm-password)/i', $test) === 1
             || preg_match('/expectException\w*\(|->\s*toThrow\(|->\s*throws\(|assertThrows\(|assertExitCode\(\s*[1-9]/', $test) === 1;
     }
 
