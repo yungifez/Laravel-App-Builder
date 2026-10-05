@@ -13,6 +13,7 @@ import { computed, ref, watch } from 'vue';
 import DeploymentController from '@/actions/App/Http/Controllers/DeploymentController';
 import FeatureRequestAcceptanceController from '@/actions/App/Http/Controllers/FeatureRequestAcceptanceController';
 import FeatureRequestAnswerController from '@/actions/App/Http/Controllers/FeatureRequestAnswerController';
+import FeatureRequestCaseCorrectionController from '@/actions/App/Http/Controllers/FeatureRequestCaseCorrectionController';
 import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
 import FeatureRequestKeepTryingController from '@/actions/App/Http/Controllers/FeatureRequestKeepTryingController';
 import FeatureRequestRetryController from '@/actions/App/Http/Controllers/FeatureRequestRetryController';
@@ -326,6 +327,9 @@ const caseNames = {
     exception: 'Saying no',
 } as const;
 
+// The case the owner is saying is not what they meant, if any.
+const correcting = ref<string | null>(null);
+
 const doneWhen = computed(() => {
     const review = props.run?.review;
 
@@ -346,8 +350,16 @@ const doneWhen = computed(() => {
                 );
 
                 return {
+                    kind: item.kind,
                     name: caseNames[item.kind],
                     says: item.says ?? item.none ?? '',
+                    // A test was written for it before the build, so the
+                    // owner can say it is not what they meant.
+                    written: props.featureRequest.written_cases.some(
+                        (entry) =>
+                            entry.criterion === index + 1 &&
+                            entry.kind === item.kind,
+                    ),
                     state:
                         item.says === null
                             ? ('none' as const)
@@ -360,6 +372,7 @@ const doneWhen = computed(() => {
 
         return {
             criterion,
+            number: index + 1,
             cases: marks,
             checked:
                 review !== null &&
@@ -1435,6 +1448,123 @@ function lineClass(line: string): string {
                                             }}</span>
                                         </span>
                                     </span>
+                                    <!-- What each test written before the
+                                         build tries, in the plan's words.
+                                         The owner confirms them here, after
+                                         the build: a wrong one makes the
+                                         change again from their note. -->
+                                    <ul
+                                        v-if="
+                                            item.cases.some(
+                                                (mark) => mark.written,
+                                            )
+                                        "
+                                        class="mt-2 space-y-2 text-sm"
+                                        data-test="written-cases"
+                                    >
+                                        <template
+                                            v-for="mark in item.cases"
+                                            :key="mark.kind"
+                                        >
+                                            <li
+                                                v-if="mark.written"
+                                                class="space-y-2"
+                                            >
+                                                <p>
+                                                    <span
+                                                        class="text-muted-foreground"
+                                                        >{{ mark.name }}:</span
+                                                    >
+                                                    {{ mark.says }}
+                                                    <button
+                                                        v-if="
+                                                            featureRequest.can_correct_cases &&
+                                                            correcting !==
+                                                                `${item.number}-${mark.kind}`
+                                                        "
+                                                        type="button"
+                                                        class="ml-1 min-h-11 text-muted-foreground underline underline-offset-4 select-none hover:text-foreground sm:min-h-0"
+                                                        data-test="not-meant"
+                                                        @click="
+                                                            correcting = `${item.number}-${mark.kind}`
+                                                        "
+                                                    >
+                                                        That's not what I meant
+                                                    </button>
+                                                </p>
+                                                <Form
+                                                    v-if="
+                                                        correcting ===
+                                                        `${item.number}-${mark.kind}`
+                                                    "
+                                                    v-bind="
+                                                        FeatureRequestCaseCorrectionController.store.form(
+                                                            featureRequest.id,
+                                                        )
+                                                    "
+                                                    class="space-y-3"
+                                                    v-slot="{
+                                                        errors,
+                                                        processing,
+                                                    }"
+                                                >
+                                                    <input
+                                                        type="hidden"
+                                                        name="criterion"
+                                                        :value="item.number"
+                                                    />
+                                                    <input
+                                                        type="hidden"
+                                                        name="kind"
+                                                        :value="mark.kind"
+                                                    />
+                                                    <Label
+                                                        :for="`not-meant-${item.number}-${mark.kind}`"
+                                                        class="sr-only"
+                                                    >
+                                                        What did you mean?
+                                                    </Label>
+                                                    <textarea
+                                                        :id="`not-meant-${item.number}-${mark.kind}`"
+                                                        name="note"
+                                                        rows="2"
+                                                        required
+                                                        class="w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                                                        placeholder="What did you mean?"
+                                                    />
+                                                    <InputError
+                                                        :message="
+                                                            errors.note ??
+                                                            errors.criterion ??
+                                                            errors.kind
+                                                        "
+                                                    />
+                                                    <div class="flex gap-2">
+                                                        <Button
+                                                            :disabled="
+                                                                processing
+                                                            "
+                                                            class="h-11 select-none sm:h-9"
+                                                            data-test="not-meant-submit"
+                                                        >
+                                                            Try again with this
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            class="h-11 select-none sm:h-9"
+                                                            @click="
+                                                                correcting =
+                                                                    null
+                                                            "
+                                                        >
+                                                            Cancel
+                                                        </Button>
+                                                    </div>
+                                                </Form>
+                                            </li>
+                                        </template>
+                                    </ul>
                                 </span>
                             </li>
                         </ul>

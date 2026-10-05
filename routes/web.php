@@ -26,6 +26,7 @@ use App\Http\Controllers\FeatureRequestAcceptanceController;
 use App\Http\Controllers\FeatureRequestAcceptedFindingController;
 use App\Http\Controllers\FeatureRequestAnswerController;
 use App\Http\Controllers\FeatureRequestAssumptionController;
+use App\Http\Controllers\FeatureRequestCaseCorrectionController;
 use App\Http\Controllers\FeatureRequestController;
 use App\Http\Controllers\FeatureRequestDismissalController;
 use App\Http\Controllers\FeatureRequestFindingProposalController;
@@ -212,6 +213,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('feature-requests/{featureRequest}/answers', [FeatureRequestAnswerController::class, 'store'])->name('feature-requests.answers.store');
     Route::post('feature-requests/{featureRequest}/assumptions', [FeatureRequestAssumptionController::class, 'store'])->name('feature-requests.assumptions.store');
     Route::post('feature-requests/{featureRequest}/retries', [FeatureRequestRetryController::class, 'store'])->name('feature-requests.retries.store');
+    Route::post('feature-requests/{featureRequest}/case-corrections', [FeatureRequestCaseCorrectionController::class, 'store'])->name('feature-requests.case-corrections.store');
     Route::post('feature-requests/{featureRequest}/keep-trying', [FeatureRequestKeepTryingController::class, 'store'])->name('feature-requests.keep-trying.store');
     Route::post('feature-requests/{featureRequest}/worker', [FeatureRequestWorkerController::class, 'store'])->name('feature-requests.worker.store');
     Route::post('feature-requests/{featureRequest}/reversion', [FeatureRequestReversionController::class, 'store'])->name('feature-requests.reversion.store');

@@ -185,6 +185,14 @@ export type FeatureRequestDetail = {
     can_retry: boolean;
     /** Checking or trying it again fails the same way: it can only be made again. */
     made_again_only: boolean;
+    /** The cases a test was written for before the build, by criterion number (from 1) and kind. */
+    written_cases: {
+        criterion: number;
+        kind: 'base' | 'alternate' | 'exception';
+        says: string;
+    }[];
+    /** The owner may still say one of them is not what they meant, which makes the change again. */
+    can_correct_cases: boolean;
     /** It stopped without a change to keep, so asking in other words is offered. */
     stopped: boolean;
     /** The newer try of this change, when it was tried again. */

@@ -1661,7 +1661,7 @@ behaviour diff decides which semantic checks apply.
     - lockfile changes: dependency policy.
 3. **Tests:** the full suite (Pest, or PHPUnit in imported apps); protected acceptance tests generated from the
    plan's criteria before coding (by a model other than the coder, confirmed by
-   the owner in plain language, frozen); Pest browser tests on touched screens.
+   the owner in plain language after the build, frozen); Pest browser tests on touched screens.
 4. **Invariants** as Pest tests, many from helpers our capability packages ship
    (for example `assertTenantIsolated(Project::class)`).
 5. **Independent review** by a different provider, when triggered.
@@ -1754,9 +1754,16 @@ as before. The coder's brief lists the tests and says not to change them.
 They are frozen by being written back as written after the coder finishes
 (`written_tests_restored`), as protected files are, not by refusing its
 writes. Each item's evidence is then its written test, not the reviewer's
-claim. `BUILDER_TESTS_WRITTEN_FIRST` turns it off. Not built: the owner does
-not confirm the tests in plain words, a written test that is itself wrong is
-repaired like any failure, and runs on a worker driver get none.
+claim. `BUILDER_TESTS_WRITTEN_FIRST` turns it off. The owner confirms the tests
+after the build, not before: asking first would stop every change. "Done
+when" shows each case a test was written for, in the plan's words. "That's
+not what I meant" on one, with a note, makes the change again the way trying
+again does (`CorrectWrittenCase`). The new run starts with the owner's answer
+("Is this what you meant: …? No. …"), so the planner plans that case again
+from their words. The answer does not count against the questions the
+planner may ask, and the run records `case_corrected`. Not built: a written
+test that is itself wrong is otherwise repaired like any failure, and runs on
+a worker driver get none.
 
 **The change is judged, not the app it started from.** Format and lint
 checks run only on the files the change added or modified

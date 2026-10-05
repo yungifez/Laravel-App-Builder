@@ -103,6 +103,10 @@ class DescribeFeatureRequest
                 // Checking or trying it again fails the same way: only
                 // trying again, which makes it afresh, is offered.
                 'made_again_only' => RetryFeatureRequest::mustBeMadeAgain($featureRequest),
+                // The cases tested before the build, which the owner may
+                // still say are not what they meant (CorrectWrittenCase).
+                'written_cases' => CorrectWrittenCase::written($featureRequest),
+                'can_correct_cases' => CorrectWrittenCase::open($featureRequest) && ! RetryFeatureRequest::mustBeMadeAgain($featureRequest),
                 // The newer try of this change, when it was tried again: the
                 // place to go on from.
                 // It stopped without a change to keep: even when it cannot be
