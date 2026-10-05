@@ -2,16 +2,17 @@
 
 namespace App\Runs;
 
-use Illuminate\Support\Facades\Cache;
+use App\Models\ModelGatewayGrant;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Str;
 
 /**
  * The one way our coding agents reach a model. A run gets a token that opens
  * the gateway for its provider only, for as long as the run may take; the
  * gateway sends each call on with the real key. The key stays in the
- * control plane, out of the workspace, where the agent has a shell.
+ * control plane, out of the workspace, where the agent has a shell. Grants
+ * are kept in the database (ModelGatewayGrant), so what each run spent
+ * stays readable after it ends.
  */
 class ModelGateway
 {
@@ -58,9 +59,11 @@ class ModelGateway
         $client = self::CLIENTS[$provider];
         $token = 'gw_'.Str::random(48);
 
-        $until = now()->addSeconds($seconds + 60);
-
-        Cache::put($this->key($token), ['provider' => $provider, 'requests' => 0, 'output_tokens' => 0, 'until' => $until->getTimestamp()], $until);
+        ModelGatewayGrant::query()->create([
+            'token_hash' => $this->hash($token),
+            'provider' => $provider,
+            'expires_at' => now()->addSeconds($seconds + 60),
+        ]);
 
         return [
             'token' => $token,
@@ -72,17 +75,19 @@ class ModelGateway
     }
 
     /**
-     * Close the gateway for a run that ended.
+     * Close the gateway for a run that ended. The grant stays, with what
+     * the run spent.
      */
     public function close(string $token): void
     {
-        Cache::forget($this->key($token));
+        ModelGatewayGrant::query()->where('token_hash', $this->hash($token))->whereNull('closed_at')->update(['closed_at' => now()]);
     }
 
     /**
-     * Get what a token opens, or null when it is unknown, closed or used up.
+     * Get what a token opens, or null when it is unknown, closed, expired or
+     * used up.
      *
-     * @return array{provider: string, requests: int, output_tokens: int, until: int}|null
+     * @return array{provider: string, requests: int, input_tokens: int, output_tokens: int, until: int}|null
      */
     public function grant(string $token): ?array
     {
@@ -90,40 +95,35 @@ class ModelGateway
             return null;
         }
 
-        /** @var array{provider: string, requests: int, output_tokens: int, until: int}|null $grant */
-        $grant = Cache::get($this->key($token));
+        $grant = ModelGatewayGrant::query()
+            ->where('token_hash', $this->hash($token))
+            ->whereNull('closed_at')
+            ->where('expires_at', '>', now())
+            ->where('requests', '<', Config::integer('builder.agents.gateway.max_requests'))
+            ->where('output_tokens', '<', Config::integer('builder.agents.gateway.max_output_tokens'))
+            ->first();
 
-        if ($grant === null
-            || $grant['requests'] >= Config::integer('builder.agents.gateway.max_requests')
-            || $grant['output_tokens'] >= Config::integer('builder.agents.gateway.max_output_tokens')) {
-            return null;
-        }
-
-        return $grant;
+        return $grant === null ? null : [
+            'provider' => $grant->provider,
+            'requests' => $grant->requests,
+            'input_tokens' => $grant->input_tokens,
+            'output_tokens' => $grant->output_tokens,
+            'until' => $grant->expires_at->getTimestamp(),
+        ];
     }
 
     /**
-     * Count one call and what the model wrote, against the run's limits.
+     * Count one call and what the model read and wrote, against the run's
+     * limits. A call that ends after its run closed still counts: it was
+     * spent.
      */
-    public function count(string $token, int $outputTokens): void
+    public function count(string $token, int $inputTokens, int $outputTokens): void
     {
-        $key = $this->key($token);
-
-        Cache::lock("{$key}:lock", 10)->block(5, function () use ($key, $outputTokens) {
-            /** @var array{provider: string, requests: int, output_tokens: int, until: int}|null $grant */
-            $grant = Cache::get($key);
-
-            if ($grant === null) {
-                return;
-            }
-
-            $grant['requests']++;
-            $grant['output_tokens'] += max(0, $outputTokens);
-
-            // The token keeps its own end: put() without one would make it
-            // last forever.
-            Cache::put($key, $grant, Date::createFromTimestamp($grant['until']));
-        });
+        ModelGatewayGrant::query()->where('token_hash', $this->hash($token))->incrementEach([
+            'requests' => 1,
+            'input_tokens' => max(0, $inputTokens),
+            'output_tokens' => max(0, $outputTokens),
+        ]);
     }
 
     /**
@@ -142,8 +142,8 @@ class ModelGateway
         return (string) Config::get("ai.providers.{$provider}.key");
     }
 
-    protected function key(string $token): string
+    protected function hash(string $token): string
     {
-        return 'gateway:grant:'.hash('sha256', $token);
+        return hash('sha256', $token);
     }
 }

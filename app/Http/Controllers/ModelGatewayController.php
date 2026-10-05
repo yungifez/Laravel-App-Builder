@@ -18,7 +18,7 @@ class ModelGatewayController extends Controller
 
     /**
      * Send an agent's model call on with the real key, and stream the
-     * answer back as it comes, counting what the model wrote.
+     * answer back as it comes, counting what the model read and wrote.
      */
     public function __invoke(Request $request, ModelGateway $gateway, string $provider, string $path = ''): StreamedResponse
     {
@@ -62,7 +62,7 @@ class ModelGatewayController extends Controller
                     flush();
                 }
             } finally {
-                $gateway->count($token, $usage->outputTokens());
+                $gateway->count($token, $usage->inputTokens(), $usage->outputTokens());
             }
         }, $response->status(), array_filter([
             'Content-Type' => $response->header('Content-Type') ?: null,

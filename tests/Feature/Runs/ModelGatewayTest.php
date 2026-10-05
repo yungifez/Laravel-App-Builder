@@ -2,8 +2,13 @@
 
 namespace Tests\Feature\Runs;
 
+use App\Models\ModelGatewayGrant;
 use App\Runs\ModelGateway;
+use App\Runs\ModelUsage;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -13,6 +18,8 @@ use Tests\TestCase;
  */
 class ModelGatewayTest extends TestCase
 {
+    use RefreshDatabase;
+
     protected const STREAM = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":12,\"output_tokens\":1}}}\n\n"
         ."event: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":250}}\n\n";
 
@@ -55,8 +62,58 @@ class ModelGatewayTest extends TestCase
             && $request->body() === '{"model":"claude","messages":[]}'
             && ! str_contains((string) json_encode($request->headers()), $opened['token']));
 
-        $this->assertSame(1, app(ModelGateway::class)->grant($opened['token'])['requests']);
-        $this->assertSame(250, app(ModelGateway::class)->grant($opened['token'])['output_tokens']);
+        $grant = app(ModelGateway::class)->grant($opened['token']);
+        $this->assertSame([1, 12, 250], [$grant['requests'] ?? null, $grant['input_tokens'] ?? null, $grant['output_tokens'] ?? null]);
+    }
+
+    public function test_a_run_keeps_its_grant_when_the_cache_is_emptied_and_what_it_spent_after_it_ends()
+    {
+        Http::fake(['api.anthropic.com/*' => Http::response(self::STREAM)]);
+        $gateway = app(ModelGateway::class);
+        $opened = $gateway->open('anthropic', 600);
+
+        Cache::flush();
+
+        $this->postJson('/api/gateway/anthropic/v1/messages', [], ['x-api-key' => $opened['token']])->assertOk()->streamedContent();
+        $gateway->close($opened['token']);
+
+        // Only the token's hash is kept.
+        $grant = ModelGatewayGrant::query()->sole();
+        $this->assertSame(hash('sha256', $opened['token']), $grant->token_hash);
+        $this->assertSame(['anthropic', 1, 12, 250], [$grant->provider, $grant->requests, $grant->input_tokens, $grant->output_tokens]);
+        $this->assertNotNull($grant->closed_at);
+        $this->assertNull($gateway->grant($opened['token']));
+    }
+
+    public function test_input_is_read_from_either_providers_answer_with_what_came_from_the_prompt_cache()
+    {
+        $anthropic = new ModelUsage;
+        $anthropic->read('{"usage":{"input_tokens":12,"cache_creation_input_tokens":300,"cache_read_input_t');
+        $anthropic->read('okens":4000,"output_tokens":1}}');
+        $anthropic->read('{"usage":{"output_tokens":250}}');
+
+        $chat = new ModelUsage;
+        $chat->read('{"usage":{"prompt_tokens":90,"completion_tokens":30}}');
+
+        $nothing = new ModelUsage;
+        $nothing->read('{"error":{"message":"overloaded"}}');
+
+        $this->assertSame([4312, 250], [$anthropic->inputTokens(), $anthropic->outputTokens()]);
+        $this->assertSame([90, 30], [$chat->inputTokens(), $chat->outputTokens()]);
+        $this->assertSame([0, 0], [$nothing->inputTokens(), $nothing->outputTokens()]);
+    }
+
+    public function test_grants_are_pruned_a_month_after_they_end()
+    {
+        $gateway = app(ModelGateway::class);
+        $gateway->open('anthropic', 600);
+        $this->travel(32)->days();
+        $recent = $gateway->open('openai', 600);
+
+        Artisan::call('model:prune', ['--model' => [ModelGatewayGrant::class]]);
+
+        $this->assertSame(['openai'], ModelGatewayGrant::query()->pluck('provider')->all());
+        $this->assertNotNull($gateway->grant($recent['token']));
     }
 
     public function test_an_openai_agent_sends_its_token_as_a_bearer_token()

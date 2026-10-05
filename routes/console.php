@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\BoxCommand;
+use App\Models\ModelGatewayGrant;
 use App\Models\WorkerHeartbeat;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -15,4 +16,4 @@ Schedule::command('runs:reconcile')->everyMinute()->withoutOverlapping();
 Schedule::command('previews:reap')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('runners:scale')->everyMinute()->withoutOverlapping()->onOneServer();
 Schedule::command('publishing:collect-errors')->everyFiveMinutes()->withoutOverlapping();
-Schedule::command('model:prune', ['--model' => [BoxCommand::class, WorkerHeartbeat::class]])->daily();
+Schedule::command('model:prune', ['--model' => [BoxCommand::class, ModelGatewayGrant::class, WorkerHeartbeat::class]])->daily();
