@@ -11,6 +11,7 @@ use App\Enums\RunStatus;
 use App\Features\AppDrift;
 use App\Features\NewMessages;
 use App\Jobs\ExecuteRun;
+use App\Jobs\StartPreview;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
@@ -18,6 +19,7 @@ use App\Models\User;
 use App\Models\Verification;
 use App\Projects\ProjectRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -52,6 +54,8 @@ class ChangeAcceptanceTest extends TestCase
     {
         parent::setUp();
 
+        // Keeping a change starts the app; KeepOpensAppTest covers that.
+        Bus::fake([StartPreview::class]);
         $this->repository = app(ProjectRepository::class);
         $this->owner = User::factory()->create(['name' => 'Ada Owner', 'email' => 'ada@example.com']);
         $this->project = app(CreateProject::class)->handle($this->owner, 'Acme', $this->makeProjectSource(['app/A.php' => "<?php\n"]), draftNotes: false);

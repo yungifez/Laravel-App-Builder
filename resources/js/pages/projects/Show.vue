@@ -178,11 +178,12 @@ const codeFull = ref(false);
 // nothing to show beside it yet. The owner can switch either way.
 // Until a first version is kept, the pane says how it is going, so it is
 // open from the start.
+// An app that could not start stays open too, so the pane says why.
 const appOpen = computed(
     () =>
         props.first_version !== null ||
         (props.preview !== null &&
-            ['starting', 'ready'].includes(props.preview.status)),
+            ['starting', 'ready', 'failed'].includes(props.preview.status)),
 );
 // Kept in the browser history, so Back returns to the chat as it was.
 const chat = useRemember(

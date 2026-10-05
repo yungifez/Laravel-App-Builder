@@ -11,6 +11,7 @@ use App\Enums\RunStatus;
 use App\Events\RunStatusChanged;
 use App\Jobs\DecideFeatureRequest;
 use App\Jobs\ExecuteRun;
+use App\Jobs\StartPreview;
 use App\Jobs\TidyShortcuts;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -18,6 +19,7 @@ use App\Models\Run;
 use App\Models\User;
 use App\Projects\ProjectRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 use Tests\Concerns\PreparesRuns;
@@ -48,6 +50,8 @@ class BackgroundTidyTest extends TestCase
     {
         parent::setUp();
 
+        // Keeping a change starts the app; KeepOpensAppTest covers that.
+        Bus::fake([StartPreview::class]);
         // The decision model is not asked here; the tidy-up is started by hand.
         config(['builder.decisions.providers' => []]);
         $this->repository = app(ProjectRepository::class);

@@ -6,6 +6,7 @@ use App\Actions\Projects\CreateProject;
 use App\Enums\ChecksStoppedBecause;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
+use App\Jobs\StartPreview;
 use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\Project;
@@ -14,6 +15,7 @@ use App\Models\User;
 use App\Models\Verification;
 use App\Projects\ProjectRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Tests\Concerns\PreparesRuns;
@@ -39,6 +41,8 @@ class KeepMadeAgainTest extends TestCase
     {
         parent::setUp();
 
+        // Keeping a change starts the app; KeepOpensAppTest covers that.
+        Bus::fake([StartPreview::class]);
         $this->repository = app(ProjectRepository::class);
         $this->owner = User::factory()->create();
         $this->project = app(CreateProject::class)->handle($this->owner, 'Acme', $this->makeProjectSource(['app/A.php' => "<?php\n"]), draftNotes: false);
