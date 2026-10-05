@@ -3,6 +3,8 @@
 namespace App\Http\Requests;
 
 use App\Models\Project;
+use App\Support\Secrets;
+use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -28,7 +30,11 @@ class ProjectNotesUpdateRequest extends FormRequest
     {
         return [
             'part' => ['required', 'string', 'regex:/^(introduction|section:[^\r\n#]{1,80}|(summary|rules):[a-z0-9][a-z0-9_-]{0,59})$/'],
-            'body' => ['nullable', 'string', 'max:20000'],
+            'body' => ['nullable', 'string', 'max:20000', function (string $attribute, mixed $value, Closure $fail) {
+                if (is_string($value) && Secrets::found($value)) {
+                    $fail(__('This looks like a secret key. Keep keys in your app\'s settings, not in its notes.'));
+                }
+            }],
             'revision' => ['required', 'string', 'regex:/^[0-9a-f]{40,64}$/'],
         ];
     }

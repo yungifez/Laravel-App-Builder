@@ -4,9 +4,11 @@ namespace App\Context;
 
 use App\Models\Project;
 use App\Models\ProjectNote;
+use App\Support\Secrets;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 /**
@@ -50,7 +52,10 @@ class ProjectNotes
     }
 
     /**
-     * Save files, removing those set to null.
+     * Save files, removing those set to null. A live key is cut out first,
+     * so it reaches neither the notes nor their history (§27.9). The owner's
+     * own edits are refused before they get here; any other write is cut
+     * and logged by note, never with the key.
      *
      * @param  array<string, string|null>  $files
      */
@@ -59,6 +64,11 @@ class ProjectNotes
         DB::transaction(function () use ($project, $branch, $files) {
             foreach ($files as $path => $contents) {
                 self::assertPath($path);
+
+                if ($contents !== null && Secrets::found($contents)) {
+                    $contents = Secrets::redact($contents);
+                    Log::warning('A secret key was cut from a note before it was saved.', ['project' => $project->id, 'branch' => $branch, 'path' => $path]);
+                }
 
                 $before = $project->notes()->where('branch', $branch)->where('path', $path)->value('contents');
 
@@ -173,7 +183,8 @@ class ProjectNotes
             $writes = [];
 
             foreach ($changes as $path => $change) {
-                if (($current[$path] ?? null) !== $change[$from]) {
+                // What was saved had any key cut out, so compare with that.
+                if (($current[$path] ?? null) !== ($change[$from] === null ? null : Secrets::redact($change[$from]))) {
                     $skipped[] = $path;
 
                     continue;
