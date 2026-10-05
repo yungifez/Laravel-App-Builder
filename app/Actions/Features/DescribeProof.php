@@ -17,6 +17,7 @@ use App\Features\CodeShortcuts;
 use App\Features\InventedColours;
 use App\Features\MigrationChecks;
 use App\Features\NewCode;
+use App\Features\NewMessages;
 use App\Features\NewTests;
 use App\Features\OwnedRecords;
 use App\Features\PackagePolicy;
@@ -65,7 +66,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('whose records'), $this->owners($featureRequest, $verification)), ...$this->about(__('packages'), $this->packages($featureRequest, $verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('whose records'), $this->owners($featureRequest, $verification)), ...$this->about(__('packages'), $this->packages($featureRequest, $verification)), ...$this->about(__('messages'), $this->messages($featureRequest, $verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return $this->asked($featureRequest, array_values(collect($lines)->unique('text')->all()));
@@ -514,6 +515,41 @@ class DescribeProof
         }
 
         return $lines !== [] ? $lines : [['kind' => 'passed', 'text' => __('The new packages are ones I trust, and they are free to use.')]];
+    }
+
+    /**
+     * Ask the owner to approve the emails and text messages the change
+     * adds, as read from its code (§12). Until they do, the change cannot
+     * be kept.
+     *
+     * @return list<array{kind: string, text: string, decision?: array{change: string, finding: string, accepted: bool}}>
+     */
+    protected function messages(FeatureRequest $featureRequest, Verification $verification): array
+    {
+        $messages = $verification->evidence['messages'] ?? null;
+
+        if ($messages === null) {
+            return [];
+        }
+
+        $open = ! $featureRequest->isAccepted();
+        $decision = fn (bool $accepted) => $open ? ['decision' => ['change' => $featureRequest->uuid, 'finding' => NewMessages::UNAPPROVED, 'accepted' => $accepted]] : [];
+        $left = NewMessages::findings($messages, $this->acceptFindings->identities($featureRequest));
+        $how = fn (array $channels) => match (true) {
+            $channels === ['mail'] => __('an email'),
+            $channels === ['sms'] => __('a text message'),
+            default => __('an email and a text message'),
+        };
+
+        if ($left !== []) {
+            $sends = collect($messages)->keyBy('class');
+
+            return [['kind' => 'gap', 'text' => __('The change sends something new to people: :names. Once you publish, it reaches real people. If you want it, say so before you keep the change.', [
+                'names' => implode(', ', array_map(fn (array $finding) => '“'.NewMessages::name($finding['subject']).'” ('.$how($sends[$finding['subject']]['channels'] ?? []).')', $left)),
+            ]), ...$decision(false)]];
+        }
+
+        return [['kind' => 'chosen', 'text' => __('You approved what the change sends to people. If a later change sends something new, I will ask again.'), ...$decision(true)]];
     }
 
     /**

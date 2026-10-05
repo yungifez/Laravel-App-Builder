@@ -7,6 +7,7 @@ use App\Actions\Features\DescribeProof;
 use App\Context\ProjectNotes;
 use App\Enums\VerificationStatus;
 use App\Features\MigrationChecks;
+use App\Features\NewMessages;
 use App\Features\OwnedRecords;
 use App\Features\PackagePolicy;
 use App\Features\QueuedWork;
@@ -478,6 +479,28 @@ class ChangeProofTest extends TestCase
         app(AcceptFindings::class)->handle($request, OwnedRecords::UNGUARDED, $request->project->owner);
         $line = collect(app(DescribeProof::class)->handle($request))->firstWhere('decision.finding', OwnedRecords::UNGUARDED);
         $this->assertSame(['chosen', true], [$line['kind'], $line['decision']['accepted']]);
+    }
+
+    public function test_new_emails_and_text_messages_are_said_until_the_owner_approves_them()
+    {
+        $request = FeatureRequest::factory()->generated()->create();
+        $this->checked($request, evidence: ['messages' => [
+            ['class' => 'App\Mail\InvoicePaid', 'channels' => ['mail'], 'at' => 'app/Mail/InvoicePaid.php:7'],
+            ['class' => 'App\Notifications\LoginCodeNotification', 'channels' => ['mail', 'sms'], 'at' => 'app/Notifications/LoginCodeNotification.php:8'],
+        ]]);
+
+        $line = collect(app(DescribeProof::class)->handle($request))->firstWhere('decision.finding', NewMessages::UNAPPROVED);
+        $this->assertSame('gap', $line['kind']);
+        $this->assertSame('The change sends something new to people: “invoice paid” (an email), “login code” (an email and a text message). Once you publish, it reaches real people. If you want it, say so before you keep the change.', $line['text']);
+
+        app(AcceptFindings::class)->handle($request, NewMessages::UNAPPROVED, $request->project->owner);
+        $line = collect(app(DescribeProof::class)->handle($request))->firstWhere('decision.finding', NewMessages::UNAPPROVED);
+        $this->assertSame(['chosen', true], [$line['kind'], $line['decision']['accepted']]);
+
+        // A change that sends nothing new says nothing about it.
+        $quiet = FeatureRequest::factory()->generated()->create();
+        $this->checked($quiet);
+        $this->assertNull(collect(app(DescribeProof::class)->handle($quiet))->firstWhere('decision.finding', NewMessages::UNAPPROVED));
     }
 
     public function test_new_packages_outside_the_dependency_policy_are_said_by_kind_until_the_owner_keeps_them()

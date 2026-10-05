@@ -5,6 +5,7 @@ use App\Features\AppDrift;
 use App\Features\AppFaults;
 use App\Features\AppRoutes;
 use App\Features\MigrationChecks;
+use App\Features\NewMessages;
 use App\Features\OwnedRecords;
 use App\Features\PackagePolicy;
 use App\Features\QueuedWork;
@@ -212,8 +213,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('feature-requests/{featureRequest}/reversion', [FeatureRequestReversionController::class, 'store'])->name('feature-requests.reversion.store');
     Route::post('feature-requests/{featureRequest}/dismissal', [FeatureRequestDismissalController::class, 'store'])->name('feature-requests.dismissal.store');
     Route::delete('feature-requests/{featureRequest}/dismissal', [FeatureRequestDismissalController::class, 'destroy'])->name('feature-requests.dismissal.destroy');
-    Route::post('feature-requests/{featureRequest}/accepted-findings/{kind}', [FeatureRequestAcceptedFindingController::class, 'store'])->whereIn('kind', [...AppBoundaries::OWNED, ...AppFaults::OWNED, ...AppRoutes::OWNED, ...MigrationChecks::OWNED, ...QueuedWork::OWNED, ...OwnedRecords::OWNED, ...PackagePolicy::OWNED, AppDrift::GREW])->name('feature-requests.accepted-findings.store');
-    Route::delete('feature-requests/{featureRequest}/accepted-findings/{kind}', [FeatureRequestAcceptedFindingController::class, 'destroy'])->whereIn('kind', [...AppBoundaries::OWNED, ...AppFaults::OWNED, ...AppRoutes::OWNED, ...MigrationChecks::OWNED, ...QueuedWork::OWNED, ...OwnedRecords::OWNED, ...PackagePolicy::OWNED, AppDrift::GREW])->name('feature-requests.accepted-findings.destroy');
+    Route::post('feature-requests/{featureRequest}/accepted-findings/{kind}', [FeatureRequestAcceptedFindingController::class, 'store'])->whereIn('kind', [...AppBoundaries::OWNED, ...AppFaults::OWNED, ...AppRoutes::OWNED, ...MigrationChecks::OWNED, ...QueuedWork::OWNED, ...OwnedRecords::OWNED, ...PackagePolicy::OWNED, ...NewMessages::OWNED, AppDrift::GREW])->name('feature-requests.accepted-findings.store');
+    Route::delete('feature-requests/{featureRequest}/accepted-findings/{kind}', [FeatureRequestAcceptedFindingController::class, 'destroy'])->whereIn('kind', [...AppBoundaries::OWNED, ...AppFaults::OWNED, ...AppRoutes::OWNED, ...MigrationChecks::OWNED, ...QueuedWork::OWNED, ...OwnedRecords::OWNED, ...PackagePolicy::OWNED, ...NewMessages::OWNED, AppDrift::GREW])->name('feature-requests.accepted-findings.destroy');
     Route::post('feature-requests/{featureRequest}/previews', [FeatureRequestPreviewController::class, 'store'])->name('feature-requests.previews.store');
     Route::get('previews/{preview}', [PreviewController::class, 'show'])->name('previews.show');
     Route::delete('previews/{preview}', [PreviewController::class, 'destroy'])->name('previews.destroy');

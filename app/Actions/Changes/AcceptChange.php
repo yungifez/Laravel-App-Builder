@@ -2,12 +2,14 @@
 
 namespace App\Actions\Changes;
 
+use App\Actions\Features\AcceptFindings;
 use App\Actions\Features\RetryFeatureRequest;
 use App\Context\ProjectNotes;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Features\AppDrift;
 use App\Features\CodeShortcuts;
+use App\Features\NewMessages;
 use App\Jobs\TriageShortcuts;
 use App\Models\FeatureRequest;
 use App\Models\User;
@@ -23,6 +25,7 @@ class AcceptChange
         private ProjectRepository $repository,
         private ProjectNotes $notes,
         private RetryFeatureRequest $retryFeatureRequest,
+        private AcceptFindings $acceptFindings,
     ) {}
 
     /**
@@ -62,6 +65,17 @@ class AcceptChange
         $lineage = $featureRequest->lineage();
         $pending = array_values(array_filter($lineage, fn (FeatureRequest $request) => $request->commit_sha === null));
         $accepted = array_values(array_filter($lineage, fn (FeatureRequest $request) => $request->commit_sha !== null));
+
+        // A new email or text message reaches real people once the app is
+        // published, so the owner approves it first (§12), in each change
+        // this one keeps.
+        foreach ($pending as $request) {
+            $messages = $request->verifications()->latest('id')->first()?->evidence['messages'] ?? null;
+
+            if (NewMessages::findings($messages, $this->acceptFindings->identities($request)) !== []) {
+                throw ValidationException::withMessages(['change' => __('This change sends something new to people. Say you want it in how we know the change works, then keep it.')]);
+            }
+        }
         $base = $accepted !== [] ? (string) end($accepted)->commit_sha : ($featureRequest->base_revision ?? $this->repository->root($project));
 
         if ($this->repository->head($project, $branch) !== $base) {

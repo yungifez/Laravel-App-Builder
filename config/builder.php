@@ -1188,6 +1188,14 @@ return [
             'columns' => ['user_id', 'owner_id', 'team_id', 'tenant_id', 'account_id', 'organization_id', 'organisation_id', 'company_id', 'workspace_id'],
         ],
 
+        // Whether the emails and text messages a change adds are read from
+        // its code: a new mailable, or a notification that sends by mail or
+        // SMS (§12). A new message reaches real people once the app is
+        // published, so the owner approves it before the change is kept.
+        'messages' => [
+            'enabled' => (bool) env('BUILDER_MESSAGE_APPROVAL', true),
+        ],
+
         // Whether the packages a change adds to the Composer or npm lockfile
         // follow the dependency policy (§12, §13 policy v0). A package the
         // change asks for by name must match a pattern on the allowlist,

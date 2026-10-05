@@ -7,6 +7,7 @@ use App\Features\AppFaults;
 use App\Features\AppRoutes;
 use App\Features\BoundaryCode;
 use App\Features\MigrationChecks;
+use App\Features\NewMessages;
 use App\Features\OwnedRecords;
 use App\Features\PackagePolicy;
 use App\Features\QueuedWork;
@@ -49,6 +50,7 @@ class AcceptFindings
             ...array_map(MigrationChecks::identity(...), array_filter(MigrationChecks::findings($evidence['migrations'] ?? null), fn (array $finding) => $finding['kind'] === $kind)),
             ...array_map(QueuedWork::identity(...), $kind === QueuedWork::UNGUARDED ? QueuedWork::findings($evidence['queued'] ?? null) : []),
             ...array_map(OwnedRecords::identity(...), $kind === OwnedRecords::UNGUARDED ? OwnedRecords::findings($evidence['owners'] ?? null) : []),
+            ...array_map(NewMessages::identity(...), $kind === NewMessages::UNAPPROVED ? NewMessages::findings($evidence['messages'] ?? null) : []),
             ...array_map(PackagePolicy::identity(...), array_filter(PackagePolicy::findings($evidence['packages'] ?? null), fn (array $finding) => $finding['kind'] === $kind)),
         ];
 

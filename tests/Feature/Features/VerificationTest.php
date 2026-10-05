@@ -1569,6 +1569,35 @@ class VerificationTest extends TestCase
         $this->assertArrayNotHasKey('owners', $off->verifications()->sole()->evidence ?? []);
     }
 
+    public function test_the_emails_and_text_messages_a_change_adds_are_read_for_the_owner_to_approve()
+    {
+        $path = 'app/Mail/InvoicePaid.php';
+        $patch = "diff --git a/{$path} b/{$path}\nnew file mode 100644\n--- /dev/null\n+++ b/{$path}\n@@ -0,0 +1 @@\n+<?php\n";
+        $this->driver->onExec = function (string $workspace) use ($path) {
+            $this->driver->files["{$workspace}:{$path}"] = "<?php\n\nnamespace App\\Mail;\n\nuse Illuminate\\Mail\\Mailable;\n\nclass InvoicePaid extends Mailable\n{\n}\n";
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        config(['builder.verification.migrations.enabled' => false]);
+        $change = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
+
+        app(RequestVerification::class)->handle($change);
+
+        $this->assertSame([
+            ['class' => 'App\\Mail\\InvoicePaid', 'channels' => ['mail'], 'at' => "{$path}:7"],
+        ], $change->verifications()->sole()->evidence['messages']);
+
+        // A change that sends nothing new keeps nothing, and the check can be turned off.
+        $plain = FeatureRequest::factory()->generated()->create(['patch' => $this->changeWithTests()]);
+        app(RequestVerification::class)->handle($plain);
+        $this->assertArrayNotHasKey('messages', $plain->verifications()->sole()->evidence ?? []);
+
+        config(['builder.verification.messages.enabled' => false]);
+        $off = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
+        app(RequestVerification::class)->handle($off);
+        $this->assertArrayNotHasKey('messages', $off->verifications()->sole()->evidence ?? []);
+    }
+
     public function test_the_packages_a_change_adds_to_a_lockfile_are_read_for_the_dependency_policy()
     {
         $lock = fn (array $names) => json_encode(['packages' => array_map(fn (string $name) => ['name' => $name, 'version' => 'v1.0.0', 'license' => ['MIT'], 'notification-url' => 'https://packagist.org/downloads/'], $names)], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";

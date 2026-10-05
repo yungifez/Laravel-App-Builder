@@ -28,6 +28,7 @@ use App\Features\CodeShortcuts;
 use App\Features\MigrationChecks;
 use App\Features\Mutants;
 use App\Features\NewCode;
+use App\Features\NewMessages;
 use App\Features\NewTests;
 use App\Features\OwnedRecords;
 use App\Features\PackagePolicy;
@@ -245,6 +246,7 @@ class VerifyFeatureRequest implements ShouldQueue
             $this->readQueuedWork($driver, $workspace, $featureRequest);
             $this->readOwnedRecords($driver, $workspace, $featureRequest);
             $this->readPackages($driver, $workspace, $featureRequest);
+            $this->readMessages($driver, $workspace, $featureRequest);
 
             if ($checksPassed && in_array($acceptance, [self::OUTCOME_PASSED, self::OUTCOME_NOT_APPLICABLE], true)) {
                 $checksPassed = $this->probeAccess($driver, $runWorkspaceCommand, $workspace, $featureRequest);
@@ -972,6 +974,25 @@ class VerifyFeatureRequest implements ShouldQueue
         ));
 
         $this->keepEvidence('packages', $packages);
+    }
+
+    /**
+     * Read the emails and text messages the change adds, while the change
+     * is still in the workspace (§12). It is kept as evidence; the owner
+     * approves each one before the change is kept.
+     */
+    protected function readMessages(WorkspaceDriver $driver, Workspace $workspace, FeatureRequest $featureRequest): void
+    {
+        if (! config('builder.verification.messages.enabled')) {
+            return;
+        }
+
+        $messages = rescue(fn () => NewMessages::inPatch(
+            $featureRequest->patch,
+            fn (string $path) => rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), null, report: false),
+        ), []);
+
+        $this->keepEvidence('messages', $messages === [] ? null : $messages);
     }
 
     /**

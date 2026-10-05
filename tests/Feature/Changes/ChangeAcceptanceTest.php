@@ -2,12 +2,14 @@
 
 namespace Tests\Feature\Changes;
 
+use App\Actions\Features\AcceptFindings;
 use App\Actions\Projects\CreateProject;
 use App\Actions\Runs\AcquireRunLease;
 use App\Actions\Runs\PrepareRunWorkspace;
 use App\Context\ProjectNotes;
 use App\Enums\RunStatus;
 use App\Features\AppDrift;
+use App\Features\NewMessages;
 use App\Jobs\ExecuteRun;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -129,6 +131,26 @@ class ChangeAcceptanceTest extends TestCase
         $this->assertSame(2, count($this->repository->log($this->project)));
         $this->assertSame($followUp->refresh()->commit_sha, $parent->refresh()->commit_sha);
         $this->assertSame("<?php\n// added\n// second\n", File::get($this->repository->path($this->project).'/app/A.php'));
+    }
+
+    public function test_a_change_that_sends_something_new_to_people_is_kept_only_once_the_owner_approves_it()
+    {
+        $messages = ['messages' => [['class' => 'App\\Mail\\InvoicePaid', 'channels' => ['mail'], 'at' => 'app/Mail/InvoicePaid.php:7']]];
+        $parent = $this->completedChange(self::ADD_COMMENT);
+        Verification::factory()->for($parent)->create(['evidence' => $messages]);
+        $followUp = $this->completedChange(self::ADD_SECOND_COMMENT, ['parent_id' => $parent->id, 'target_step' => 'permission']);
+        Verification::factory()->for($followUp)->create(['evidence' => null]);
+
+        // The follow-up keeps its parent too, so the parent's email holds it.
+        $this->actingAs($this->owner)
+            ->post(route('feature-requests.acceptance.store', $followUp))
+            ->assertSessionHasErrors(['change' => 'This change sends something new to people. Say you want it in how we know the change works, then keep it.']);
+        $this->assertNull($parent->refresh()->commit_sha);
+
+        app(AcceptFindings::class)->handle($parent, NewMessages::UNAPPROVED, $this->owner);
+
+        $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $followUp))->assertSessionHasNoErrors();
+        $this->assertNotNull($parent->refresh()->commit_sha);
     }
 
     public function test_once_a_change_is_kept_each_shortcut_it_added_is_weighed_with_the_whole_file()
