@@ -5,6 +5,7 @@ namespace Tests\Feature\Runs;
 use App\Actions\Operations\FindAttentionItems;
 use App\Actions\Runs\StartRun;
 use App\Ai\Agents\FeaturePlanner;
+use App\Ai\Agents\TestWriter;
 use App\Enums\RunStatus;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\FeatureRequest;
@@ -108,6 +109,43 @@ class RequestRefusedTest extends TestCase
                 ->where('featureRequest.failed_same_way', false)
                 ->where('run.error', self::REFUSED)
                 ->etc());
+    }
+
+    public function test_the_model_writing_tests_first_is_refused_the_same_way(): void
+    {
+        config(['builder.verification.written_first.enabled' => true]);
+        $plan = [
+            'summary' => 'Teams get an optional description.',
+            'acceptance_criteria' => ['Teams have a description.'],
+            'cases' => [['base' => 'A team saved with a description keeps it.', 'alternate' => '', 'no_alternate' => 'A description is only set one way.', 'exception' => '', 'no_exception' => 'Nothing about a description is refused.']],
+            'assumptions' => [],
+            'tasks' => ['Add a description.'],
+            'steps' => [['key' => 'description', 'kind' => 'data', 'label' => 'Team description', 'file' => 'app/Models/Team.php', 'symbol' => 'Team', 'detail' => 'Holds a description.']],
+        ];
+        FeaturePlanner::fake([$plan, $plan]);
+        $answer = function (int $status, string $type) {
+            $this->asked = 0;
+            TestWriter::fake(function () use ($status, $type) {
+                $this->asked++;
+
+                throw new RequestException(new Response(new Psr7Response($status, ['Content-Type' => 'application/json'], (string) json_encode(['error' => ['type' => $type]]))));
+            });
+
+            return app(StartRun::class)->handle($this->change())->refresh();
+        };
+
+        $refused = $answer(400, 'invalid_request_error');
+
+        $this->assertSame(1, $this->asked);
+        $this->assertSame('request_refused', $refused->stop_reason);
+        $this->assertSame(self::REFUSED, $refused->error);
+        $this->assertSame(['reason' => 'request_refused', 'status' => 400, 'type' => 'invalid_request_error'], $refused->events()->where('type', 'ai_service_error')->sole()->data);
+
+        $failing = $answer(503, 'overloaded_error');
+
+        $this->assertSame(1, $this->asked);
+        $this->assertSame('providers_unavailable', $failing->stop_reason);
+        $this->assertSame(self::UNREACHABLE, $failing->error);
     }
 
     /**

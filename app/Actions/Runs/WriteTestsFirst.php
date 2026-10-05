@@ -14,6 +14,7 @@ use App\Runs\Exceptions\ProvidersUnavailable;
 use App\Runs\Plan;
 use App\Runs\PlanningContext;
 use App\Workspaces\WorkspaceManager;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Str;
 use Laravel\Ai\Exceptions\FailoverableException;
 use Laravel\Ai\Responses\StructuredAgentResponse;
@@ -58,6 +59,11 @@ class WriteTestsFirst
                 $response = TestWriter::make()->prompt($prompt, provider: ModelRole::Reviewer->providers());
             } catch (FailoverableException $exception) {
                 throw ProvidersUnavailable::because($exception);
+            } catch (RequestException $exception) {
+                $stop = ProvidersUnavailable::fromResponse($exception);
+                $run->recordEvent('ai_service_error', ['reason' => $stop->reason(), ...(array) $stop->serviceError()]);
+
+                throw $stop;
             }
 
             $this->recordModelUsage->handle($run, ModelRole::Reviewer, $response);
