@@ -3,6 +3,7 @@
 namespace App\Actions\Runs;
 
 use App\Actions\Workspaces\CheckStepNeeds;
+use App\Actions\Workspaces\DescribeEnvironment;
 use App\Actions\Workspaces\DestroyWorkspace;
 use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
@@ -33,14 +34,15 @@ class PrepareRunWorkspace
         private ProjectRepository $repository,
         private WorkspaceFiles $workspaceFiles,
         private CheckStepNeeds $checkStepNeeds,
+        private DescribeEnvironment $describeEnvironment,
     ) {}
 
     /**
      * Get the run's workspace, preparing one if it has none: copy the project
      * in as of the request's base revision, apply the changes the request
      * follows up on, add the notes, commit that as the baseline the run's
-     * change is measured against, run the setup, then add the saved
-     * workspace files.
+     * change is measured against, run the setup, add the saved workspace
+     * files, then note what the workspace builds with.
      *
      * @throws ConstructionFailed when the project cannot be prepared.
      */
@@ -100,13 +102,16 @@ class PrepareRunWorkspace
             }
 
             $this->workspaceFiles->sync($project, $workspace);
+            // After the setup, so the lockfiles are the ones the run builds with.
+            $environment = $this->describeEnvironment->handle($workspace);
 
-            DB::transaction(function () use ($run, $lease, $workspace) {
+            DB::transaction(function () use ($run, $lease, $workspace, $environment) {
                 $locked = Run::query()->lockForUpdate()->findOrFail($run->id);
 
                 $lease->assertHeldOn($locked);
 
                 $locked->workspace_id = $workspace->id;
+                $locked->environment = $environment;
                 $locked->lease_expires_at = now()->addSeconds((int) config('builder.construction.lease_seconds'));
                 $locked->save();
                 $locked->recordEvent('workspace_ready', ['workspace_id' => $workspace->id]);

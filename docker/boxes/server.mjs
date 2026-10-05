@@ -111,6 +111,15 @@ async function create(request, response) {
         });
     }
 
+    // The box learns the image it runs, so each run can record it. A
+    // pulled image has a registry digest; one built here has only its id.
+    const inspected = await docker(
+        'GET',
+        `/images/${encodeURIComponent(image)}/json`,
+    );
+    const digest =
+        inspected.json?.RepoDigests?.[0] ?? inspected.json?.Id ?? null;
+
     const container = `box-${box.name}`;
     const memory = Math.max(64, Number(box.memory_mb) || 2048) * 1024 * 1024;
     const created = await docker(
@@ -119,7 +128,12 @@ async function create(request, response) {
         {
             Image: image,
             Hostname: container,
-            Env: env.map(([name, value]) => `${name}=${value}`),
+            Env: [
+                ...env
+                    .filter(([name]) => name !== 'BOX_IMAGE_DIGEST')
+                    .map(([name, value]) => `${name}=${value}`),
+                ...(digest === null ? [] : [`BOX_IMAGE_DIGEST=${digest}`]),
+            ],
             Labels: { [LABEL]: box.name },
             HostConfig: {
                 NetworkMode: network,

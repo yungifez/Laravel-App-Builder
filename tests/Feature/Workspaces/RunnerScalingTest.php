@@ -355,6 +355,10 @@ class RunnerScalingTest extends TestCase
         $this->assertStringContainsString('--cap-add NET_ADMIN', $script);
         $this->assertStringContainsString('systemctl enable --now builder-runner', $script);
         $this->assertStringNotContainsString('RUNNER_PREVIEW_DOOR_PORT', $script);
+        // The box is told the digest of the image it pulled, so runs can record it.
+        $digest = "echo \"BOX_IMAGE_DIGEST=\$(docker image inspect --format '{{index .RepoDigests 0}}' registry.example.test/builder-box:1)\" >> /etc/builder-runner.env";
+        $this->assertStringContainsString($digest, $script);
+        $this->assertGreaterThan(strpos($script, 'docker pull registry.example.test/builder-box:1'), strpos($script, $digest));
 
         // Without a private network, the runner opens its preview door.
         $door = (new RunnerBootScript)->make('https://builder.example.test', 'token', 'image', 'hostname -I', 8443);

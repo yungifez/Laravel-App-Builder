@@ -80,6 +80,8 @@ class RunnerBootScript
             UNIT
 
             docker pull {$boxImage}
+            # The box learns the image it runs, so each run can record it.
+            echo "BOX_IMAGE_DIGEST=\$(docker image inspect --format '{{index .RepoDigests 0}}' {$boxImage})" >> /etc/builder-runner.env
             systemctl daemon-reload
             systemctl enable --now builder-runner
             SH;

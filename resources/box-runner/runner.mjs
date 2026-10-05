@@ -111,6 +111,9 @@ const PASSTHROUGH = [
     'SSL_CERT_FILE',
     'NODE_EXTRA_CA_CERTS',
     'REQUESTS_CA_BUNDLE',
+    // The image the box started from, set by whoever started it, so a run
+    // can record what it built with.
+    'BOX_IMAGE_DIGEST',
 ];
 
 const KILL_AFTER_MS = 5000;

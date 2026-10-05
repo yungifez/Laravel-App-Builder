@@ -39,6 +39,7 @@ use Laravel\Sanctum\HasApiTokens;
  * @property int $repairs Repair attempts made after failed verification or review
  * @property array{reason: string, details: list<string>, gate?: list<array{key: string|null, kind: string, identity: string, text: string}>}|null $feedback What the next implementing pass must address; "gate" holds what the gate found, keyed so the agent can ask the owner to keep one
  * @property array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array{area: string|null, section: string, evidence: 'tested'|'in_change'|'not_in_change', behavior: string, before: string, now: string}>, classification: array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>, observed: array{areas: array<string, int>, tests: int, unmapped: list<string>, foundation: list<string>, by_line: list<string>}|null, notes_behind: list<string>}, preserved: list<array{area: string|null, statement: string, evidence: string, unchanged: bool, tests: int}>, verified: list<array{criterion: string, kind: string, case: string, test_file: string|null, test_name: string|null, evidence: string, named_in_diff: bool}>, coverage: list<array{area: string, tests_passed: int, cases: array{base: string, alternate: string, exception: string}}>}|null $review The latest review of the run's change
+ * @property array{image: string|null, image_digest: string|null, tools: array{php: string|null, composer: string|null, node: string|null, npm: string|null, postgres: string|null}, lockfiles: array<string, string>}|null $environment What the run's workspace built with: its box image, tool versions and lockfile hashes
  * @property string|null $error
  * @property string|null $stop_reason Why the run failed or waits on its owner, such as "budget_exhausted"
  * @property array{text: string, why: string, options: list<string>, recommended: string|null}|null $question What the run waits for the owner to answer before it plans again
@@ -50,7 +51,7 @@ use Laravel\Sanctum\HasApiTokens;
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['workspace_id', 'driver', 'config_version', 'stop_reason', 'status', 'fencing_token', 'lease_owner', 'lease_expires_at', 'workspace_revision', 'plan', 'context', 'repairs', 'feedback', 'review', 'error', 'question', 'answers', 'kept_assumptions', 'question_limit', 'started_at', 'finished_at'])]
+#[Fillable(['workspace_id', 'driver', 'config_version', 'stop_reason', 'status', 'fencing_token', 'lease_owner', 'lease_expires_at', 'workspace_revision', 'plan', 'context', 'repairs', 'feedback', 'review', 'environment', 'error', 'question', 'answers', 'kept_assumptions', 'question_limit', 'started_at', 'finished_at'])]
 class Run extends Model
 {
     // A worker's token opens this one change (GrantWorkerAccess).
@@ -81,6 +82,7 @@ class Run extends Model
             'question_limit' => 'integer',
             'context' => 'array',
             'review' => 'array',
+            'environment' => 'array',
             'lease_expires_at' => 'datetime',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
