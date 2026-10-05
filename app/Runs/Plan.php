@@ -37,6 +37,8 @@ final readonly class Plan
      * @param  string|null  $goal  How the change serves the goal the owner wrote in the notes, if it does
      * @param  list<Record>  $dataShape  The records the change stores, stated once so every part agrees (§9)
      * @param  list<array{criterion: int, kind: string, says: string|null, none: string|null}>  $cases  How each criterion is tried: the main way, another way and a refusal, or why one cannot apply. Criteria are numbered from 1.
+     * @param  list<array{item: int, file: string, name: string}>  $writtenTests  The test written before the change for each item of verifyItems(), numbered from 1
+     * @param  array<string, string>  $writtenFiles  The files those tests are in, by path: written into the workspace before the coder starts and put back after it
      */
     public function __construct(
         public string $summary,
@@ -57,6 +59,8 @@ final readonly class Plan
         public ?string $goal = null,
         public array $dataShape = [],
         public array $cases = [],
+        public array $writtenTests = [],
+        public array $writtenFiles = [],
     ) {}
 
     /**
@@ -391,6 +395,17 @@ final readonly class Plan
     }
 
     /**
+     * Keep the tests written for the plan before the change is built.
+     *
+     * @param  array<string, string>  $files
+     * @param  list<array{item: int, file: string, name: string}>  $tests
+     */
+    public function withWrittenTests(array $files, array $tests): self
+    {
+        return new self(...[...get_object_vars($this), 'writtenFiles' => $files, 'writtenTests' => $tests]);
+    }
+
+    /**
      * Build on the recommended option instead of asking, and list the choice
      * with the other decisions, where the owner reviews it with the change.
      */
@@ -444,7 +459,7 @@ final readonly class Plan
     /**
      * Restore a plan saved on a run.
      *
-     * @param  array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>, understood_as?: string|null, current_behavior?: string|null, preserve?: list<array{area: string|null, statement: string}>, commit_subject?: string|null, answer?: string|null, next?: list<string>, goal?: string|null, data_shape?: list<Record>, cases: list<array{criterion: int, kind: string, says: string|null, none: string|null}>}  $data
+     * @param  array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>, understood_as?: string|null, current_behavior?: string|null, preserve?: list<array{area: string|null, statement: string}>, commit_subject?: string|null, answer?: string|null, next?: list<string>, goal?: string|null, data_shape?: list<Record>, cases: list<array{criterion: int, kind: string, says: string|null, none: string|null}>, written_tests: list<array{item: int, file: string, name: string}>, written_files: array<string, string>}  $data
      */
     public static function fromArray(array $data): self
     {
@@ -466,13 +481,15 @@ final readonly class Plan
             goal: $data['goal'] ?? null,
             dataShape: $data['data_shape'] ?? [],
             cases: $data['cases'],
+            writtenTests: $data['written_tests'],
+            writtenFiles: $data['written_files'],
         );
     }
 
     /**
      * Get the plan as stored on the run.
      *
-     * @return array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities: list<string>, understood_as: string|null, current_behavior: string|null, preserve: list<array{area: string|null, statement: string}>, commit_subject: string|null, answer: string|null, next: list<string>, goal: string|null, data_shape: list<Record>, cases: list<array{criterion: int, kind: string, says: string|null, none: string|null}>}
+     * @return array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities: list<string>, understood_as: string|null, current_behavior: string|null, preserve: list<array{area: string|null, statement: string}>, commit_subject: string|null, answer: string|null, next: list<string>, goal: string|null, data_shape: list<Record>, cases: list<array{criterion: int, kind: string, says: string|null, none: string|null}>, written_tests: list<array{item: int, file: string, name: string}>, written_files: array<string, string>}
      */
     public function toArray(): array
     {
@@ -494,6 +511,8 @@ final readonly class Plan
             'goal' => $this->goal,
             'data_shape' => $this->dataShape,
             'cases' => $this->cases,
+            'written_tests' => $this->writtenTests,
+            'written_files' => $this->writtenFiles,
         ];
     }
 }

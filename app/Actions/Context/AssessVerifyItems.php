@@ -14,8 +14,10 @@ class AssessVerifyItems
 {
     /**
      * Say how we know each of the brief's verify items holds: each case
-     * (base, alternate, exception) of each acceptance criterion. The
-     * reviewer names a test for each; that claim is held against what the test suite actually ran:
+     * (base, alternate, exception) of each acceptance criterion. When the
+     * tests were written from the plan before the change, each item's test
+     * is the one written for it; otherwise the reviewer names one. Either
+     * way, it is held against what the test suite actually ran:
      *
      * - "tested": the named test is in a file the change adds or changes,
      *   and the suite's report shows it ran and passed.
@@ -47,7 +49,11 @@ class AssessVerifyItems
         $suitePassed = ($suite['outcome'] ?? null) === 'passed';
         $ran = $suite['tests'] ?? null;
         $diffs = array_column(PatchSummary::files($patch), 'diff', 'path');
-        $claims = collect($review->verify)->keyBy('criterion');
+        // Written before the change, the test for each item is known; the
+        // reviewer's word is needed only when the coder wrote the tests.
+        $claims = $plan->writtenTests !== []
+            ? collect($plan->writtenTests)->mapWithKeys(fn (array $test) => [$test['item'] => ['test_file' => $test['file'], 'test_name' => $test['name']]])
+            : collect($review->verify)->keyBy('criterion');
         /** @var list<array{file: string, name: string, without_change: string}> $newTests */
         $newTests = is_array($evidence['new_tests'] ?? null) ? $evidence['new_tests'] : [];
         /** @var array<string, bool>|null $refusals */

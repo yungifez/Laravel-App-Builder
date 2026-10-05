@@ -77,6 +77,8 @@ class AccessProbeVerificationTest extends TestCase
             'summary' => 'Members book rooms.',
             'acceptance_criteria' => ['A member can book a room.'],
             'cases' => [['criterion' => 1, 'kind' => 'base', 'says' => 'A member books a free room.', 'none' => null], ['criterion' => 1, 'kind' => 'alternate', 'says' => 'A member books a second room the same day.', 'none' => null], ['criterion' => 1, 'kind' => 'exception', 'says' => 'A guest is sent to sign in.', 'none' => null]],
+            'written_tests' => [],
+            'written_files' => [],
             'assumptions' => [],
             'tasks' => ['Let members book rooms.'],
             'steps' => [],

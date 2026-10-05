@@ -101,6 +101,7 @@ class ConstructRun
         private ReadProjectContext $readProjectContext,
         private ScaffoldDataShape $scaffoldDataShape,
         private KeepAssumptions $keepAssumptions,
+        private WriteTestsFirst $writeTestsFirst,
     ) {}
 
     /**
@@ -225,6 +226,8 @@ class ConstructRun
             return;
         }
 
+        $plan = $this->writeTestsFirst->handle($run, $plan, $workspace, $planningContext);
+
         // The areas come from evidence first; the planner's guess only adds.
         $chosen = $planningContext->areas + array_fill_keys($planningContext->projectContext->known($plan->capabilities), SelectAreas::PLANNER);
         $pack = $this->compileContext->handle($planningContext->projectContext, array_map(strval(...), array_keys($chosen)), files: $planningContext->files);
@@ -279,7 +282,15 @@ class ConstructRun
             $this->recordEvent($run, $lease, 'scaffolded', ['files' => $scaffolded]);
         }
 
+        // The tests written from the plan are there before the coder
+        // starts, and put back after it: the change must pass them as written.
+        $this->writeTestsFirst->place($workspace, $plan);
+
         $account = $driver->build($run, $plan, new ToolSession($this->toolExecutor, $run, $lease));
+
+        if (($restored = $this->writeTestsFirst->place($workspace, $plan)) !== []) {
+            $this->recordEvent($run, $lease, 'written_tests_restored', ['paths' => $restored]);
+        }
 
         $this->recordEvent($run, $lease, 'build_finished', ['attempt' => $run->repairs, 'account' => Str::limit($account, 2000)]);
 

@@ -90,6 +90,23 @@ class VerifyItemsTest extends TestCase
         ]])[0]['evidence']);
     }
 
+    public function test_tests_written_before_the_change_name_each_items_test_and_the_reviewer_does_not()
+    {
+        $plan = (new Plan('Describe teams.', ['Teams have a description.'], cases: $this->usualWayOnly(1)))
+            ->withWrittenTests(['tests/Feature/TeamTest.php' => "<?php\n"], [['item' => 1, 'file' => 'tests/Feature/TeamTest.php', 'name' => 'teams have a description']]);
+        // The reviewer points at a test of its own choosing.
+        $review = new Review(true, 'Fine.', verify: [
+            ['criterion' => 1, 'test_file' => 'resources/js/pages/Team.test.ts', 'test_name' => 'shows the description field'],
+        ]);
+
+        $verified = app(AssessVerifyItems::class)->handle($plan, $review, self::PATCH, [
+            $this->suite('passed', [['file' => 'tests/Feature/TeamTest.php', 'name' => 'teams have a description', 'outcome' => 'passed']]),
+        ]);
+
+        $this->assertSame('tests/Feature/TeamTest.php', $verified[0]['test_file']);
+        $this->assertSame('tested', $verified[0]['evidence']);
+    }
+
     public function test_the_suite_paths_are_configurable()
     {
         config(['builder.verification.suite_paths' => ['tests/', 'resources/js/'], 'builder.verification.suite_suffixes' => ['Test.php', '.test.ts']]);

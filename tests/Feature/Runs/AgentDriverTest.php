@@ -10,6 +10,7 @@ use App\Actions\Runs\StartRun;
 use App\Actions\Runs\WriteBrief;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
+use App\Ai\Agents\TestWriter;
 use App\Enums\AgentOutcomeStatus;
 use App\Enums\DeploymentStatus;
 use App\Enums\FeatureRequestStatus;
@@ -1330,6 +1331,39 @@ class AgentDriverTest extends TestCase
             collect($this->coder->tasks)->contains(fn (AgentTask $task) => $matches($task->prompt)),
             'No task given to the coding agent matches.',
         );
+    }
+
+    public function test_tests_another_model_writes_from_the_plan_are_there_before_the_coder_and_put_back_after_it()
+    {
+        config(['builder.verification.written_first.enabled' => true]);
+        FeaturePlanner::fake([$this->plan()]);
+        $written = "<?php\n\ntest('a team keeps its description', fn () => expect(true)->toBeTrue());\n";
+        TestWriter::fake([[
+            'files' => [['path' => 'tests/Feature/TeamDescriptionTest.php', 'contents' => $written]],
+            'tests' => [['item' => 1, 'file' => 'tests/Feature/TeamDescriptionTest.php', 'name' => 'a team keeps its description']],
+        ]]);
+        $seen = null;
+        $this->coder(function (Workspace $workspace) use (&$seen) {
+            $root = config('workspaces.drivers.local.root').DIRECTORY_SEPARATOR.$workspace->driver_id;
+            $seen = File::get("{$root}/tests/Feature/TeamDescriptionTest.php");
+            // The coder bends the test to fit its code.
+            File::put("{$root}/tests/Feature/TeamDescriptionTest.php", "<?php\n\ntest('a team keeps its description', fn () => expect(true)->toBeTrue())->skip();\n");
+            File::put("{$root}/app/Models/Team.php", self::TEAM_WITH_DESCRIPTION);
+
+            return 'Done.';
+        });
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame($written, $seen, 'The test is there before the coder starts.');
+        $this->assertSame([['item' => 1, 'file' => 'tests/Feature/TeamDescriptionTest.php', 'name' => 'a team keeps its description']], $run->plan['written_tests']);
+        $this->assertSame(['tests/Feature/TeamDescriptionTest.php'], $run->events()->where('type', 'written_tests_restored')->sole()->data['paths']);
+        $this->assertStringContainsString("+test('a team keeps its description', fn () => expect(true)->toBeTrue());", (string) $run->featureRequest->patch);
+        $this->assertStringNotContainsString('->skip()', (string) $run->featureRequest->patch);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, '## Tests already written')
+            && str_contains($prompt, '1. tests/Feature/TeamDescriptionTest.php: a team keeps its description'));
+        TestWriter::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, "## What the tests must check\n\n1. Teams have a nullable description. (base case:")
+            && $prompt->provider->name() === 'openai');
     }
 
     /**

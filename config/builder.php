@@ -781,6 +781,21 @@ return [
         // blocking finding, so the coder is sent back to add it.
         'require_verify_tests' => (bool) env('BUILDER_REQUIRE_VERIFY_TESTS', true),
 
+        // Tests written from the plan before the change is built, by the
+        // reviewer's model, never the coder's (§12). They are written into
+        // the workspace before the coder starts and put back after it, so
+        // the change must pass them as written. Output that breaks the
+        // rules is asked for "attempts" times in all, then the coder writes
+        // the tests itself. "sample_bytes" is how much of each of two of the
+        // app's own tests the writer sees, to follow their style.
+        'written_first' => [
+            'enabled' => (bool) env('BUILDER_TESTS_WRITTEN_FIRST', true),
+            'attempts' => 2,
+            'max_files' => 3,
+            'max_bytes' => 60000,
+            'sample_bytes' => 6000,
+        ],
+
         // Whether the lines a change adds are scanned for common safety
         // mistakes (unescaped output, raw HTML, queries built from values,
         // records open to any field, committed .env files). Each one found

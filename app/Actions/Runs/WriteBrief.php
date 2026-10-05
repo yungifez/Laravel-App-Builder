@@ -64,15 +64,23 @@ class WriteBrief
      */
     protected function restored(Run $run): string
     {
-        $restored = $run->events()->where('type', 'protected_paths_restored')->reorder('sequence', 'desc')->first();
-
         // Only from the attempt just before this one: that attempt's build
         // finished after its files were put back, and no other did.
-        if ($restored === null || $run->events()->where('type', 'build_finished')->where('sequence', '>', $restored->sequence)->count() > 1) {
+        $paths = [];
+
+        foreach ($run->events()->whereIn('type', ['protected_paths_restored', 'written_tests_restored'])->get() as $restored) {
+            if ($run->events()->where('type', 'build_finished')->where('sequence', '>', $restored->sequence)->count() <= 1) {
+                array_push($paths, ...array_map(strval(...), $restored->data['paths']));
+            }
+        }
+
+        $paths = array_values(array_unique($paths));
+
+        if ($paths === []) {
             return '';
         }
 
-        return "\n\n## Files that were put back\n\nYour earlier attempt changed these files. They decide how the app is checked, so they were put back as they were. Do not change them again: fix the app instead.\n\n".$this->list($restored->data['paths']);
+        return "\n\n## Files that were put back\n\nYour earlier attempt changed these files. They decide how the app is checked, so they were put back as they were. Do not change them again: fix the app instead.\n\n".$this->list($paths);
     }
 
     /**
@@ -112,6 +120,10 @@ class WriteBrief
             "## Tasks\n\n".$this->list($plan->tasks),
             "## Acceptance criteria\n\nEach criterion is tried the usual way (base), another way that should also work (alternate) and a way the app must refuse (exception). Add or update one test for each item below, and a test checks one item: the change is only accepted when every item is checked by its own test in the change. A new test must fail without the change. An exception test must send the request, or run the command, that the app refuses, and assert the refusal: the checks record what the app did while it ran. Only tests under ".Capability::suiteLocation()." are run by the checks, so put them there.\n\n".$this->list(array_column($plan->verifyItems(), 'text')),
         );
+
+        if ($plan->writtenTests !== []) {
+            $sections[] = "## Tests already written\n\nThese tests were written from the plan before you started, one for each item above, and they are already in the app. Build the change so they pass. Do not change them: they are put back as written when you finish, and the change is only accepted when they pass. You need not write other tests for these items.\n\n".$this->list(array_map(fn (array $test) => "{$test['item']}. {$test['file']}: {$test['name']}", $plan->writtenTests));
+        }
 
         if (($scaffolded = $this->scaffolded($run)) !== []) {
             $sections[] = "## Files already written from the data shape\n\nThese hold the new records the plan stores: the migration, model, factory and form request, and where the plan says who may do what, the policy and the tests that guard it. Names, rules and access come from one shape, so they agree. Build on them rather than writing them again, and change them where the request needs it. Each form request asks the model's policy: where no policy was written, write one. Where only the person who added a record may use it, its form request does not take that person: set it from the signed-in user.\n\n".$this->list($scaffolded);

@@ -25,6 +25,11 @@ abstract class TestCase extends BaseTestCase
         $repositories = sys_get_temp_dir().DIRECTORY_SEPARATOR.'builder-test-projects-'.Str::random(12);
         config(['builder.projects.root' => $repositories]);
         $this->beforeApplicationDestroyed(fn () => File::deleteDirectory($repositories));
+
+        // Writing tests before a change asks one more model. Tests of that
+        // step turn it on and fake the writer; the rest fake only the
+        // planner, coder and reviewer.
+        config(['builder.verification.written_first.enabled' => false]);
     }
 
     /**

@@ -25,6 +25,8 @@ it('shows an answer as answered, without a change to keep', function () {
             'current_behavior' => 'Owners invite members.',
             'acceptance_criteria' => [],
             'cases' => [],
+            'written_tests' => [],
+            'written_files' => [],
             'assumptions' => [],
             'tasks' => [],
             'steps' => [],
