@@ -41,13 +41,16 @@ class SummarizeProjectTelemetry
     {
         $requests = $project->featureRequests()->get();
         $runIds = Run::query()->whereIn('feature_request_id', $requests->modelKeys())->pluck('id');
-        $calls = RunEvent::query()->whereIn('run_id', $runIds)->where('type', 'model_call')->get();
+        // The decision model's calls about a request are part of what the
+        // change cost too, though they are kept on the request, not a run.
+        $calls = RunEvent::query()->whereIn('run_id', $runIds)->where('type', 'model_call')->pluck('data')
+            ->merge($requests->flatMap(fn (FeatureRequest $request) => $request->decision_model_calls ?? []));
 
         $cost = 0.0;
         $unpriced = 0;
 
         foreach ($calls as $call) {
-            $price = $call->data['cost_usd'] ?? null;
+            $price = $call['cost_usd'] ?? null;
 
             if (is_numeric($price)) {
                 $cost += (float) $price;
@@ -92,8 +95,8 @@ class SummarizeProjectTelemetry
             // Changes that moved a part's code without rewriting its notes:
             // how fast the notes drift from the app.
             'with_notes_behind' => $reviewed->filter(fn (Run $run) => $run->review['classification']['notes_behind'] !== [])->count(),
-            'input_tokens' => (int) $calls->sum(fn (RunEvent $call) => (int) ($call->data['input_tokens'] ?? 0)),
-            'output_tokens' => (int) $calls->sum(fn (RunEvent $call) => (int) ($call->data['output_tokens'] ?? 0)),
+            'input_tokens' => (int) $calls->sum(fn (array $call) => (int) ($call['input_tokens'] ?? 0)),
+            'output_tokens' => (int) $calls->sum(fn (array $call) => (int) ($call['output_tokens'] ?? 0)),
             'visual_edits' => $project->visualEdits()->count(),
             'setup_cost_usd' => round((float) collect($project->setup_model_calls ?? [])->sum(fn (array $call) => $call['cost_usd'] ?? 0), 4),
             'owner_actions' => $ownerActions,

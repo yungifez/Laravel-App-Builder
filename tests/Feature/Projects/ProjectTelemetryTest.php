@@ -102,6 +102,26 @@ class ProjectTelemetryTest extends TestCase
         $this->assertSame(0, $telemetry['with_notes_behind']);
     }
 
+    public function test_the_decision_models_calls_count_toward_what_a_kept_change_cost()
+    {
+        $project = Project::factory()->create();
+        $call = fn (?float $cost) => ['provider' => 'anthropic', 'model' => 'm', 'input_tokens' => 100, 'output_tokens' => 10, 'cost_usd' => $cost, 'cost_source' => $cost === null ? null : 'estimated', 'at' => now()->toIso8601String()];
+
+        $kept = $this->request($project, ['commit_sha' => 'abc', 'accepted_at' => now(), 'decision_model_calls' => [$call(0.5), $call(null)]]);
+        $this->completedRun($kept, repairs: 0, unexpected: [])->recordEvent('model_call', ['role' => 'planner', 'input_tokens' => 1000, 'output_tokens' => 100, 'cost_usd' => 1.0]);
+        // A request with no decisions, and another app's decision.
+        $this->request($project);
+        $this->request(Project::factory()->create(), ['decision_model_calls' => [$call(9.0)]]);
+
+        $telemetry = app(SummarizeProjectTelemetry::class)->handle($project);
+
+        $this->assertSame(1.5, $telemetry['cost_usd']);
+        $this->assertSame(1.5, $telemetry['cost_per_accepted_change_usd']);
+        // A call with no known price is counted, never guessed.
+        $this->assertSame(1, $telemetry['unpriced_calls']);
+        $this->assertSame(1200, $telemetry['input_tokens']);
+    }
+
     public function test_it_counts_each_time_the_owner_acted_per_kept_change()
     {
         $project = Project::factory()->create();
