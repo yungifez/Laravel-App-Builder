@@ -319,13 +319,13 @@ class ChangeAcceptanceTest extends TestCase
         // The owner is told which change to undo first, not just that it failed.
         $this->actingAs($this->owner)
             ->post(route('feature-requests.reversion.store', $parent))
-            ->assertSessionHasErrors(['change' => 'A change you kept after this one builds on it, so it cannot be undone by itself. Undo “'.$followUp->prompt.'” first, then undo this one.']);
+            ->assertSessionHasErrors(['change' => 'A later change may rely on this one, so it cannot be undone by itself. Undo “'.$followUp->prompt.'” first, then undo this one.']);
 
         $this->assertNull($parent->refresh()->reverted_at);
         $this->assertSame('', trim($this->repository->git($this->project, ['status', '--porcelain'])->output()));
     }
 
-    public function test_a_blocked_undo_names_only_the_later_changes_that_touch_the_same_files_newest_first()
+    public function test_a_blocked_undo_names_every_later_kept_change_newest_first()
     {
         $parent = $this->completedChange(self::ADD_COMMENT);
         $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $parent));
@@ -333,6 +333,7 @@ class ChangeAcceptanceTest extends TestCase
         $first = $this->completedChange(self::ADD_SECOND_COMMENT, ['prompt' => 'Add a second note', 'parent_id' => $parent->id, 'target_step' => 'permission', 'base_revision' => $parent->refresh()->commit_sha]);
         $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $first))->assertSessionHasNoErrors();
         $this->travel(1)->minute();
+        // A change in other files may still call code this one added.
         $unrelated = $this->completedChange("diff --git a/app/B.php b/app/B.php\nnew file mode 100644\n--- /dev/null\n+++ b/app/B.php\n@@ -0,0 +1 @@\n+<?php\n", ['prompt' => 'Add another page']);
         $this->actingAs($this->owner)->post(route('feature-requests.acceptance.store', $unrelated))->assertSessionHasNoErrors();
         $this->travel(1)->minute();
@@ -341,7 +342,7 @@ class ChangeAcceptanceTest extends TestCase
 
         $this->actingAs($this->owner)
             ->post(route('feature-requests.reversion.store', $parent))
-            ->assertSessionHasErrors(['change' => 'Changes you kept after this one build on it, so it cannot be undone by itself. Undo these first, newest first, then undo this one: “Add a third note”, “Add a second note”.']);
+            ->assertSessionHasErrors(['change' => 'Later changes may rely on this one, so it cannot be undone by itself. Undo these first, newest first: “Add a third note”, “Add another page”, “Add a second note”. Then undo this one.']);
     }
 
     public function test_accepting_a_change_saves_what_it_did_to_the_notes_outside_the_repository()

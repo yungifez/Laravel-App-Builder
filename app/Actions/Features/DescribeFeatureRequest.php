@@ -92,6 +92,9 @@ class DescribeFeatureRequest
                 // Undoing a change does not take it off the live app: the
                 // owner is told, and can put the app online again.
                 'still_online' => $this->stillOnline($featureRequest),
+                // Undoing never runs a migration's down(): what the app
+                // stored stays, and the owner is told so.
+                'kept_data' => $featureRequest->reverted_at !== null && $this->addsMigration($featureRequest->patch),
                 'can_accept' => $featureRequest->status === FeatureRequestStatus::Generated
                     && $featureRequest->commit_sha === null
                     && $featureRequest->latestRun?->status === RunStatus::Completed
@@ -165,6 +168,17 @@ class DescribeFeatureRequest
             'head' => $head,
             'others' => $waiting === null ? 0 : count($waiting['added']) + min($waiting['edits'], 1),
         ];
+    }
+
+    /**
+     * Determine if a patch adds a database migration. A migration is known
+     * by what it is, not where it lives.
+     */
+    protected function addsMigration(?string $patch): bool
+    {
+        return collect(PatchSummary::files($patch))->contains(fn (array $file) => str_contains($file['diff'], "\nnew file mode ")
+            && str_ends_with($file['path'], '.php')
+            && str_contains($file['diff'], 'extends Migration'));
     }
 
     /**

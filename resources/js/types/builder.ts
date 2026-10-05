@@ -180,6 +180,7 @@ export type FeatureRequestDetail = {
     reverted_at: string | null;
     /** Undone, but the live app still has it: the version to put online, and how many other kept changes go with it. */
     still_online: { head: string | null; others: number } | null;
+    kept_data: boolean;
     can_accept: boolean;
     can_retry: boolean;
     /** Checking or trying it again fails the same way: it can only be made again. */

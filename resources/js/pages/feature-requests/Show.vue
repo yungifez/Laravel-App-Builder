@@ -1025,6 +1025,15 @@ function lineClass(line: string): string {
                             </p>
                             <InputError :message="errors.change" />
                         </Form>
+                        <p
+                            v-if="featureRequest.kept_data"
+                            class="text-muted-foreground"
+                            data-test="kept-data"
+                        >
+                            Anything your app stored because of this change is
+                            still there. Undoing a change never deletes stored
+                            information.
+                        </p>
                     </div>
 
                     <Form
