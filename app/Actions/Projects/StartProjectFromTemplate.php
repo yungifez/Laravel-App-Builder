@@ -14,6 +14,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 
 class StartProjectFromTemplate
 {
@@ -55,7 +56,10 @@ class StartProjectFromTemplate
         $template = self::template();
 
         if ($template === null) {
-            throw ValidationException::withMessages(['name' => __('Starting a new app is not set up here.')]);
+            // Ours to fix: the operator learns of it, the owner is told so.
+            report(new RuntimeException('A new app was asked for, but builder.projects.template is not a folder.'));
+
+            throw ValidationException::withMessages(['name' => __('This is our fault: starting a new app is switched off here right now. Nothing was saved. Please try again later, or tell us on the Contact page.')]);
         }
 
         return DB::transaction(function () use ($owner, $name, $purpose, $template, $design, $images, $includes) {

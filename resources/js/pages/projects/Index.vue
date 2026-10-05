@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { useAttachedImages } from '@/composables/useAttachedImages';
 import { takeIdea } from '@/lib/startIdea';
 import { when } from '@/lib/when';
+import { contact } from '@/routes';
 import { index, show } from '@/routes/projects';
 import type { DesignOption, ProjectListItem, Starter } from '@/types';
 
@@ -129,6 +130,22 @@ function submitOnShortcut(event: KeyboardEvent): void {
     <Head title="Your apps" />
 
     <div class="flex h-full flex-1 flex-col">
+        <!-- Without the template nothing new can start. Say so, and that it
+             is ours to fix, so the owner is not left at an empty page. -->
+        <p
+            v-if="!canStartNew"
+            class="mx-auto w-full max-w-5xl px-4 pt-12 text-muted-foreground"
+            data-test="start-new-off"
+        >
+            This is our fault: starting a new app is switched off here right
+            now. Please try again later, or
+            <Link
+                :href="contact()"
+                class="text-foreground underline underline-offset-4"
+                >tell us</Link
+            >.
+        </p>
+
         <!-- Making a new app comes first: say what it is for, and go. -->
         <section
             v-if="canStartNew"

@@ -11,10 +11,12 @@ use App\Projects\ProjectRepository;
 use App\Projects\Starter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
+use RuntimeException;
 use Tests\Concerns\PreparesRuns;
 use Tests\TestCase;
 
@@ -212,14 +214,17 @@ class NewProjectTest extends TestCase
     {
         $owner = User::factory()->create();
         config(['builder.projects.template' => null]);
+        Exceptions::fake();
 
         $this->actingAs($owner)
             ->get(route('projects.index'))
             ->assertInertia(fn (Assert $page) => $page->where('canStartNew', false));
 
         $this->post(route('projects.new.store'), ['name' => 'Acme', 'purpose' => 'Plan the week.'])
-            ->assertSessionHasErrors(['name' => 'Starting a new app is not set up here.']);
+            ->assertSessionHasErrors(['name' => 'This is our fault: starting a new app is switched off here right now. Nothing was saved. Please try again later, or tell us on the Contact page.']);
         $this->assertSame(0, $owner->projects()->count());
+        // It is ours to fix, so we hear of it.
+        Exceptions::assertReported(fn (RuntimeException $exception) => str_contains($exception->getMessage(), 'builder.projects.template'));
 
         // A template that was never put in place is not offered either.
         config(['builder.projects.template' => '/srv/no-template-here']);
