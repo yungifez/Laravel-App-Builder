@@ -2893,18 +2893,28 @@ path.
   control plane. The gateway passes each call on with the real key and streams
   the answer back. It counts calls and output tokens per run, and it refuses a
   run past `max_requests` or `max_output_tokens`. The token works for one
-  provider and closes when the run ends. It is plain Laravel and HTTP, so it
+  provider and closes when the run ends. Grants live in the database
+  (`model_gateway_grants`, the token's hash only), so an emptied cache stops
+  no run; each keeps the calls and the input and output tokens its run spent,
+  and is pruned a month after it ends. It is plain Laravel and HTTP, so it
   does not depend on a cloud vendor. Not built yet: budgets per account in the
   gateway. The plan's monthly AI use is enforced before each step instead
   ([§11](#11-execution-agents-runtimes-and-routing)).
 - The gateway also adds our instructions on its side (how to work, the
   discretion and observability rules), so the box holds only the task: the
   plan, its acceptance criteria and the owner's own request for their own app
-  ([§19](#19-learning-and-privacy)). Not built yet: today the SDK driver sends
-  our working rules inside the task. This protects the rules only in our own
-  boxes; a worker on the owner's machine sees whatever it is sent. So the
-  working rules are written to be read: plain engineering guidance, with
-  nothing in them that would do harm when read
+  ([§19](#19-learning-and-privacy)). Built: the SDK driver gives the agent
+  `WriteBrief::task()` and hands `WriteBrief::rules()` (how to work, keeping
+  the app easy to see, what must hold when something fails, and discretion)
+  to the run's grant, stored encrypted. `GatewayInstructions` adds them to each call: one more
+  Anthropic `system` block after the agent's own, more OpenAI
+  `instructions`, or a first system message for chat calls. An error from
+  the provider has them taken out before the box reads it. An agent that
+  reaches its model without the gateway (signed in its own way, in a trusted
+  local folder) reads the rules with the task. This protects the rules only
+  in our own boxes; a worker on the owner's machine sees whatever it is sent.
+  So the working rules are written to be read: plain engineering guidance,
+  with nothing in them that would do harm when read
   ([§11](#workers-one-boundary-for-ours-and-theirs)).
 - **Credentials vault** per account, encrypted, masked, revocable, each checked
   by a test call before saving: `api_key`, `claude_subscription_token`,
@@ -3112,7 +3122,9 @@ shows it honestly; normalization improves it over time.
       coder is told to write as the app's own developer. Files the runner puts in
       a workspace go inside `.git/` and have neutral names.
     - The workspace box holds nothing of ours either: no control-plane code,
-      keys or prompts ([§11](#adapters)).
+      keys or prompts ([§11](#adapters)). Our working rules reach the model
+      through the gateway, never through the box
+      ([§16](#16-model-gateway-and-credentials)).
     - The project notes are never committed to the repository (§26.3).
 - **The code is the owner's to take.** "Download your app" in the app menu
   sends the main branch's files as a zip (`git archive`), in a folder named
@@ -4560,7 +4572,8 @@ Telemetry (1–6) and the owner sessions run alongside.
 
 - **Secrets, cost and budgets.** Live keys are cut from everything sent to a
   model (`RedactSecrets`) and from the notes. The coding agent in a box
-  reaches its model through the gateway, never with the real key. Every model
+  reaches its model through the gateway, never with the real key, and the
+  gateway adds our working rules, so the box holds only the task. Every model
   call is priced on its change, or counted as unpriced. Each change, each day
   and each plan has a limit that stops the work ([§11](#11-execution-agents-runtimes-and-routing)).
 - **Verification is independent of the agent.** The checks run after the
