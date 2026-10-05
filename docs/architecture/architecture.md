@@ -1665,7 +1665,11 @@ only that step, so a stop that waits for an answer shows "Answer" and no
 "Try again". A run cannot stop without a reason. `RepeatedFailure` gives
 each reason advice for when it stops the same way twice, or excludes it
 with a written reason. `StopReasonTest` fails, naming the case, when a
-reason has no wording, fault, step or advice.
+reason has no wording, fault, step or advice. A request with no change made
+yet follows its run's stop (`TransitionRun`): it fails, unless the stop waits
+for an answer, and goes back to being made when the same run goes on. An AI
+service that answers "too many requests" but says the account is out of
+credit stops as out of credit.
 
 ## 12. Verification
 

@@ -2,6 +2,8 @@
 
 namespace App\Actions\Runs;
 
+use App\Enums\FeatureRequestStatus;
+use App\Enums\NextStep;
 use App\Enums\RunStatus;
 use App\Enums\StopReason;
 use App\Events\RunStatusChanged;
@@ -16,7 +18,8 @@ use InvalidArgumentException;
 class TransitionRun
 {
     /**
-     * Move the run to a new state, log it and announce it.
+     * Move the run to a new state, log it and announce it. A request with
+     * no change made yet follows its run's stop.
      *
      * A worker passes its lease, and the move only happens while the lease
      * still holds the run. Once the owner has asked to cancel, the only move
@@ -78,6 +81,7 @@ class TransitionRun
             }
 
             $locked->save();
+            $this->followOnTheRequest($locked, $from, $to);
             $locked->recordEvent('status', ['from' => $from->value, 'to' => $to->value, ...$details]);
 
             $run->setRawAttributes($locked->getAttributes(), sync: true);
@@ -87,5 +91,28 @@ class TransitionRun
 
             return $run;
         });
+    }
+
+    /**
+     * Keep the request's status with its run while no change is made yet: a
+     * stop fails it, and the same run going on again makes it again. A stop
+     * that waits for the owner's answer leaves it making the change.
+     */
+    protected function followOnTheRequest(Run $run, RunStatus $from, RunStatus $to): void
+    {
+        $featureRequest = $run->featureRequest;
+
+        if ($featureRequest === null) {
+            return;
+        }
+
+        if ($run->stop_reason !== null && $run->stop_reason !== StopReason::Cancelled
+            && $run->stop_reason->nextStep() !== NextStep::Answer
+            && $featureRequest->status === FeatureRequestStatus::Generating) {
+            $featureRequest->update(['status' => FeatureRequestStatus::Failed, 'error' => $run->error]);
+        } elseif ($from === RunStatus::NeedsUserDecision && ! $to->finished() && $to !== RunStatus::Cancelling
+            && $featureRequest->status === FeatureRequestStatus::Failed) {
+            $featureRequest->update(['status' => FeatureRequestStatus::Generating, 'error' => null]);
+        }
     }
 }
