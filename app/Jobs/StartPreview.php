@@ -94,7 +94,15 @@ class StartPreview implements ShouldQueue
                 $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);
                 $driver->writeFile((string) $workspace->driver_id, $patch, (string) $request->patch);
 
-                $this->run($runWorkspaceCommand, $workspace, ['git', 'apply', '--whitespace=nowarn', ...CopyExclusions::applyFlags(), $patch], 120, PreviewFailure::changeNoLongerFits()."\n".__('Change #:id does not apply to the project.', ['id' => $request->id]));
+                try {
+                    $this->run($runWorkspaceCommand, $workspace, ['git', 'apply', '--whitespace=nowarn', ...CopyExclusions::applyFlags(), $patch], 120, PreviewFailure::changeNoLongerFits()."\n".__('Change #:id does not apply to the project.', ['id' => $request->id]));
+                } catch (PreviewCouldNotStart $exception) {
+                    // Starting again cannot help: the change is made again
+                    // on the app as it is now.
+                    $this->preview->update(['no_longer_fits' => true]);
+
+                    throw $exception;
+                }
             }
 
             $this->run($runWorkspaceCommand, $workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], 30, PreviewFailure::ours()."\n".__('The workspace could not be prepared.'));

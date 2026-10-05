@@ -416,6 +416,9 @@ export type Preview = {
     expires_at: string | null;
     // A copy of a change the owner can design on, as they do the app.
     editable: boolean;
+    // The app changed after the change was made, so it could not be put
+    // onto it: only making the change again helps.
+    no_longer_fits: boolean;
     origin: string;
     revision: string | null;
     updating: boolean;

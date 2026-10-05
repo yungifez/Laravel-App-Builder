@@ -38,6 +38,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $session_hash
  * @property CarbonImmutable|null $session_expires_at
  * @property string|null $error
+ * @property bool $no_longer_fits The app changed after the change was made, so the change could not be put onto it
  * @property CarbonImmutable|null $ready_at
  * @property CarbonImmutable|null $rebuilt_at
  * @property CarbonImmutable|null $last_seen_at
@@ -46,7 +47,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['project_id', 'feature_request_id', 'revision', 'editable', 'watching', 'rebuilt_at', 'workspace_id', 'host', 'status', 'port', 'upstream_url', 'grant_hash', 'grant_expires_at', 'session_hash', 'session_expires_at', 'error', 'ready_at', 'last_seen_at', 'expires_at', 'stopped_at'])]
+#[Fillable(['project_id', 'feature_request_id', 'revision', 'editable', 'watching', 'rebuilt_at', 'workspace_id', 'host', 'status', 'port', 'upstream_url', 'grant_hash', 'grant_expires_at', 'session_hash', 'session_expires_at', 'error', 'no_longer_fits', 'ready_at', 'last_seen_at', 'expires_at', 'stopped_at'])]
 class Preview extends Model
 {
     /** @use HasFactory<PreviewFactory> */
@@ -68,6 +69,7 @@ class Preview extends Model
             'session_expires_at' => 'datetime',
             'editable' => 'boolean',
             'watching' => 'boolean',
+            'no_longer_fits' => 'boolean',
             'ready_at' => 'datetime',
             'rebuilt_at' => 'datetime',
             'last_seen_at' => 'datetime',

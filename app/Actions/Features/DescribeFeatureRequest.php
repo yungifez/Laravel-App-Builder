@@ -473,6 +473,7 @@ class DescribeFeatureRequest
             'url' => $preview->url(),
             'expires_at' => $preview->expires_at?->toIso8601String(),
             'editable' => $preview->editable,
+            'no_longer_fits' => $preview->no_longer_fits,
             'origin' => rtrim($preview->url(), '/'),
             'revision' => $preview->revision,
             'updating' => $preview->editable && $preview->status === PreviewStatus::Ready && $preview->error === null

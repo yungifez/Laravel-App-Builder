@@ -59,7 +59,8 @@ class RetryFeatureRequest
     /**
      * Determine if a made change was never kept and its run stopped, or the
      * owner stopped it, before the checks and review were done. A change
-     * whose own files stopped the checks before any check ran counts too.
+     * whose own files stopped the checks before any check ran counts too,
+     * as does one that no longer fits the app to be tried.
      */
     public static function stoppedWhileChecking(FeatureRequest $featureRequest): bool
     {
@@ -70,9 +71,11 @@ class RetryFeatureRequest
             return false;
         }
 
-        // The change itself stopped its checks: checking it again cannot
-        // help, so it is made again.
-        if ($featureRequest->verifications()->latest('id')->first()?->stopped_because?->retryable() === true) {
+        // The change itself stopped its checks, or no longer fits the app
+        // to be tried: checking or trying it again cannot help, so it is
+        // made again.
+        if ($featureRequest->verifications()->latest('id')->first()?->stopped_because?->retryable() === true
+            || $featureRequest->previews()->latest('id')->first()?->no_longer_fits === true) {
             return true;
         }
 

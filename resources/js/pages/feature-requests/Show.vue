@@ -1094,8 +1094,14 @@ function lineClass(line: string): string {
                                 /></a>
                             </Button>
 
+                            <!-- A change that no longer fits fails the
+                                 same way each time: the retry row above
+                                 makes it again instead. -->
                             <Form
-                                v-if="preview?.status !== 'starting'"
+                                v-if="
+                                    preview?.status !== 'starting' &&
+                                    !preview?.no_longer_fits
+                                "
                                 v-bind="
                                     FeatureRequestPreviewController.store.form(
                                         featureRequest.id,
