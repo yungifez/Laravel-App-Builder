@@ -1,8 +1,11 @@
 <?php
 
 use App\Features\MigrationChecks;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -76,6 +79,7 @@ it('reads each step of the report, and the output of the first that failed', fun
         'again' => null,
         'failed' => 'down',
         'output' => "Rolling back\nSQLSTATE[42S02]: Base table or view not found",
+        'risks' => [],
     ])->and(MigrationChecks::evidence($added, [], '{"up":0,"down":0,"again":0}', fn () => ''))->toMatchArray(['up' => true, 'down' => true, 'again' => true, 'failed' => null, 'output' => null]);
 });
 
@@ -157,16 +161,18 @@ it('migrates, undoes the added migrations, then seeds and runs them again', func
         ->and($run['calls'])->toBe([
             'artisan migrate --force --no-interaction',
             'artisan migrate:rollback --step=1000000 --path=database/migrations/a.php --path=database/migrations/b.php --force --no-interaction',
+            'artisan migrate --pretend --path=database/migrations/a.php --path=database/migrations/b.php --force --no-interaction',
+            'artisan db:show --json --no-interaction',
             'artisan db:seed --force --no-interaction',
             'artisan migrate --force --no-interaction',
         ]);
 });
 
-it('runs on when seeding fails, and stops at the first step that fails', function () {
-    expect(runMigrationScript([3])['report'])->toBe(['up' => 0, 'down' => 0, 'again' => 0])
+it('runs on when printing the SQL or seeding fails, and stops at the first step that fails', function () {
+    expect(runMigrationScript([3, 4, 5])['report'])->toBe(['up' => 0, 'down' => 0, 'again' => 0])
         ->and(runMigrationScript([1])['report'])->toBe(['up' => 1, 'down' => -1, 'again' => -1])
         ->and(runMigrationScript([2])['report'])->toBe(['up' => 0, 'down' => 1, 'again' => -1])
-        ->and(runMigrationScript([4])['report'])->toBe(['up' => 0, 'down' => 0, 'again' => 1]);
+        ->and(runMigrationScript([6])['report'])->toBe(['up' => 0, 'down' => 0, 'again' => 1]);
 });
 
 it('says a migration did not run when the undo does not name it', function () {
@@ -174,4 +180,120 @@ it('says a migration did not run when the undo does not name it', function () {
 
     expect($run['report'])->toBe(['up' => 1, 'down' => -1, 'again' => -1])
         ->and($run['calls'])->toHaveCount(2);
+});
+
+/**
+ * What `migrate --pretend` prints for the given migrations' statements.
+ *
+ * @param  array<string, list<string>>  $migrations
+ */
+function pretended(array $migrations): string
+{
+    $lines = ['', '   INFO  Running migrations.', ''];
+
+    foreach ($migrations as $name => $statements) {
+        $lines[] = "  {$name} ".str_repeat('.', 40).'  ';
+        array_push($lines, ...array_map(fn (string $sql) => "  ⇂ {$sql}  ", $statements));
+        $lines[] = '';
+    }
+
+    return implode("\n", $lines);
+}
+
+it('finds statements that lose or lock the live data', function () {
+    $pretend = pretended([
+        '2026_10_05_000000_change_teams' => [
+            'alter table "teams" drop column "notes", add column "owner_id" bigint not null, add column "size" integer not null default \'0\', add column "label" varchar(255) null',
+            'alter table "teams" rename column "title" to "name"',
+            'alter table "teams" alter column "budget" type numeric(8, 2)',
+            'create index "teams_name_index" on "teams" ("name")',
+            'drop table "plans"',
+            'alter table "seats" rename to "places"',
+        ],
+        '2026_10_05_000001_create_invoices' => [
+            'create table "invoices" ("id" bigserial not null primary key, "total" integer not null)',
+            'alter table "invoices" add column "paid" boolean not null',
+            'create index "invoices_total_index" on "invoices" ("total")',
+            'alter table "teams" add constraint "teams_slug_unique" unique ("slug")',
+            'create index concurrently "teams_slug_index" on "teams" ("slug")',
+        ],
+    ]);
+
+    $rules = array_map(fn (array $risk) => [$risk['rule'], MigrationChecks::place($risk)], MigrationChecks::risks($pretend, postgres: true));
+
+    expect($rules)->toBe([
+        ['drops', 'teams.notes'],
+        ['requires', 'teams.owner_id'],
+        ['renames', 'teams.title'],
+        ['changes', 'teams.budget'],
+        ['locks', 'teams'],
+        ['drops', 'plans'],
+        ['renames', 'seats'],
+    ])->and(MigrationChecks::risks($pretend, postgres: true)[4])->toMatchArray([
+        'migration' => '2026_10_05_000000_change_teams',
+        'sql' => 'create index "teams_name_index" on "teams" ("name")',
+    ]);
+});
+
+it('holds an index against the change only on Postgres, and reads a statement printed over several lines', function () {
+    $pretend = pretended(['2026_10_05_000000_index_teams' => ['create index "teams_name_index" on "teams" ("name")']])
+        ."\n  2026_10_05_000001_require_names ....\n  ⇂ alter table `teams` modify `name` varchar(255)\n    not null\n";
+
+    expect(array_column(MigrationChecks::risks($pretend, postgres: false), 'rule'))->toBe(['changes'])
+        ->and(MigrationChecks::risks($pretend, postgres: false)[0]['sql'])->toBe('alter table `teams` modify `name` varchar(255) not null')
+        ->and(array_column(MigrationChecks::risks($pretend, postgres: true), 'rule'))->toBe(['locks', 'changes']);
+});
+
+it('leaves out a table SQLite builds again to change it', function () {
+    expect(MigrationChecks::risks(pretended(['2026_10_05_000000_link_posts' => [
+        'create table "__temp__posts" ("id" integer primary key autoincrement not null, "team_id" integer not null, foreign key("team_id") references "teams"("id"))',
+        'insert into "__temp__posts" ("id", "team_id") select "id", "team_id" from "posts"',
+        'drop table "posts"',
+        'alter table "__temp__posts" rename to "posts"',
+    ]]), postgres: false))->toBe([]);
+});
+
+it('reads the risks only once the migrations were undone, on the database db:show names', function () {
+    $logs = [
+        'pretend' => pretended(['2026_10_05_000000_index_teams' => ['create index "teams_name_index" on "teams" ("name")']]),
+        'driver' => "Warning\n".json_encode(['platform' => ['config' => ['driver' => 'pgsql']]]),
+    ];
+    $evidence = MigrationChecks::evidence(['database/migrations/a.php'], [], '{"up":0,"down":0,"again":0}', fn (string $step) => $logs[$step] ?? '');
+
+    expect($evidence['risks'])->toHaveCount(1)
+        ->and(MigrationChecks::findings($evidence))->toBe([['kind' => MigrationChecks::RISKY, 'subject' => 'locks teams']])
+        ->and(MigrationChecks::finding(MigrationChecks::findings($evidence)[0]))->toContain('->online()')
+        ->and(MigrationChecks::evidence(['database/migrations/a.php'], [], '{"up":0,"down":1,"again":-1}', fn (string $step) => $logs[$step] ?? '')['risks'])->toBe([])
+        ->and(MigrationChecks::evidence(['database/migrations/a.php'], [], '{"up":0,"down":0,"again":0}', fn (string $step) => $step === 'driver' ? '{"platform":{"config":{"driver":"sqlite"}}}' : ($logs[$step] ?? ''))['risks'])->toBe([]);
+});
+
+it('reads what Laravel writes for Postgres', function () {
+    $queries = DB::connection('pgsql')->pretend(function () {
+        Schema::connection('pgsql')->table('users', function (Blueprint $table) {
+            $table->dropColumn('remember_token');
+            $table->foreignId('team_id')->constrained();
+            $table->string('nickname')->nullable();
+            $table->integer('seats')->default(1);
+            $table->renameColumn('name', 'full_name');
+            $table->text('email')->change();
+            $table->index('created_at');
+            $table->unique('nickname')->online();
+        });
+        Schema::connection('pgsql')->dropIfExists('sessions');
+        Schema::connection('pgsql')->create('invoices', function (Blueprint $table) {
+            $table->id();
+            $table->string('number')->index();
+        });
+    });
+
+    $rules = array_map(fn (array $risk) => [$risk['rule'], MigrationChecks::place($risk)], MigrationChecks::risks(pretended(['2026_10_05_000000_change_users' => array_column($queries, 'query')]), postgres: true));
+
+    expect($rules)->toEqualCanonicalizing([
+        ['drops', 'users.remember_token'],
+        ['requires', 'users.team_id'],
+        ['renames', 'users.name'],
+        ['changes', 'users.email'],
+        ['locks', 'users'],
+        ['drops', 'sessions'],
+    ]);
 });

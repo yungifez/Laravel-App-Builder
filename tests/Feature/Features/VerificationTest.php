@@ -1491,6 +1491,7 @@ class VerificationTest extends TestCase
             'again' => null,
             'failed' => 'down',
             'output' => 'SQLSTATE[42P01]: Undefined table: notes',
+            'risks' => [],
         ], $change->verifications()->sole()->evidence['migrations']);
 
         // A change with no migrations runs nothing, and the check can be turned off.

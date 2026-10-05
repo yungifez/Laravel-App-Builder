@@ -431,6 +431,24 @@ class ChangeProofTest extends TestCase
         $this->assertSame('gap', $rewritten->firstWhere('text', 'The change rewrites an earlier change to how your information is stored. Your live app already made that earlier change, so the rewrite would never reach it.')['kind']);
     }
 
+    public function test_a_change_whose_stored_information_changes_can_lose_data_says_where_until_the_owner_keeps_it()
+    {
+        $risk = fn (string $rule, string $table, ?string $column) => ['rule' => $rule, 'migration' => '2026_10_05_000000_change_teams', 'table' => $table, 'column' => $column, 'sql' => ''];
+        $request = FeatureRequest::factory()->generated()->create();
+        $this->checked($request, evidence: ['migrations' => [
+            'added' => ['database/migrations/2026_10_05_000000_change_teams.php'], 'edited' => [], 'up' => true, 'down' => true, 'again' => true, 'failed' => null, 'output' => null,
+            'risks' => [$risk('locks', 'teams', null), $risk('drops', 'teams', 'notes'), $risk('drops', 'plans', null)],
+        ]]);
+
+        $line = collect(app(DescribeProof::class)->handle($request))->firstWhere('decision.finding', MigrationChecks::RISKY);
+        $this->assertSame('gap', $line['kind']);
+        $this->assertSame('The change deletes stored information: teams.notes, plans. Once you publish, it is gone from your live app. The change sorts teams for faster lookups in a way that stops saving while it runs. With many records, your live app may wait a while to save. If that is what you want, say so.', $line['text']);
+
+        app(AcceptFindings::class)->handle($request, MigrationChecks::RISKY, $request->project->owner);
+        $line = collect(app(DescribeProof::class)->handle($request))->firstWhere('decision.finding', MigrationChecks::RISKY);
+        $this->assertSame(['chosen', true], [$line['kind'], $line['decision']['accepted']]);
+    }
+
     public function test_how_many_of_the_new_lines_of_code_a_test_ran_is_said()
     {
         $proof = function (array $code, ?array $observed = null) {

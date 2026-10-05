@@ -373,6 +373,7 @@ class DescribeProof
         $chosen = [
             MigrationChecks::FAILS => 'You said you want this: the change to how your information is stored stays, though it did not pass every try. If a later change does the same, I will ask again.',
             MigrationChecks::EDITED => 'You said you want this: the change rewrites an earlier change to how your information is stored. If a later change does the same, I will ask again.',
+            MigrationChecks::RISKY => 'You said you want this: the change to how your information is stored may lose information, or hold up saving, on your live app. If a later change does the same, I will ask again.',
         ];
         // A kept change is part of the app: there is nothing left to decide.
         $open = ! $featureRequest->isAccepted();
@@ -385,7 +386,12 @@ class DescribeProof
             $kindLeft = array_values(array_filter($left, fn (array $finding) => $finding['kind'] === $kind));
 
             if ($kindLeft !== []) {
-                $lines[] = ['kind' => 'gap', 'text' => __($gaps[$kind === MigrationChecks::FAILS ? $kindLeft[0]['subject'] : $kind]), ...($open ? ['decision' => ['change' => $featureRequest->uuid, 'finding' => $kind, 'accepted' => false]] : [])];
+                $text = match ($kind) {
+                    MigrationChecks::FAILS => __($gaps[$kindLeft[0]['subject']]),
+                    MigrationChecks::RISKY => $this->risky($kindLeft),
+                    default => __($gaps[$kind]),
+                };
+                $lines[] = ['kind' => 'gap', 'text' => $text, ...($open ? ['decision' => ['change' => $featureRequest->uuid, 'finding' => $kind, 'accepted' => false]] : [])];
             } elseif ($kindFound !== []) {
                 $lines[] = ['kind' => 'chosen', 'text' => __($chosen[$kind]), ...($open ? ['decision' => ['change' => $featureRequest->uuid, 'finding' => $kind, 'accepted' => true]] : [])];
             }
@@ -396,6 +402,32 @@ class DescribeProof
         }
 
         return [['kind' => 'passed', 'text' => __('The change to how your information is stored was undone and made again on sample information, and it worked both times.')]];
+    }
+
+    /**
+     * Say what the change's stored information changes can do to the live
+     * app, one sentence for each kind, naming where.
+     *
+     * @param  list<array{kind: string, subject: string}>  $findings
+     */
+    protected function risky(array $findings): string
+    {
+        $places = [];
+
+        foreach ($findings as $finding) {
+            [$rule, $place] = explode(' ', $finding['subject'], 2);
+            $places[$rule][] = $place;
+        }
+
+        $said = array_map(fn (string $rule) => __(match ($rule) {
+            'drops' => 'The change deletes stored information: :places. Once you publish, it is gone from your live app.',
+            'renames' => 'The change renames stored information: :places. Your live app may show errors while it is published.',
+            'changes' => 'The change changes what kind of information :places holds. Information that does not fit may be lost.',
+            'requires' => 'The change makes :places required, but the information you already have leaves it empty. Publishing may break your live app.',
+            default => 'The change sorts :places for faster lookups in a way that stops saving while it runs. With many records, your live app may wait a while to save.',
+        }, ['places' => implode(', ', $places[$rule])]), array_values(array_intersect(MigrationChecks::RULES, array_keys($places))));
+
+        return implode(' ', [...$said, __('If that is what you want, say so.')]);
     }
 
     /**
