@@ -44,6 +44,9 @@ const firstTry = computed(() =>
 const unasked = computed(() =>
     share(props.telemetry.with_unexpected_changes, props.telemetry.reviewed),
 );
+const notesBehind = computed(() =>
+    share(props.telemetry.with_notes_behind, props.telemetry.reviewed),
+);
 
 const actions = computed(() => {
     const done = props.telemetry.owner_actions;
@@ -114,6 +117,22 @@ const actions = computed(() => {
                             v-if="unasked"
                             class="ml-1.5 text-muted-foreground"
                             >{{ unasked.percent }}</span
+                        >
+                    </dd>
+                </div>
+                <div
+                    class="flex items-baseline justify-between gap-4 py-2"
+                    data-test="notes-behind"
+                >
+                    <dt class="text-muted-foreground">
+                        Changes that left notes out of date
+                    </dt>
+                    <dd class="tabular-nums">
+                        {{ notesBehind?.count ?? '–' }}
+                        <span
+                            v-if="notesBehind"
+                            class="ml-1.5 text-muted-foreground"
+                            >{{ notesBehind.percent }}</span
                         >
                     </dd>
                 </div>

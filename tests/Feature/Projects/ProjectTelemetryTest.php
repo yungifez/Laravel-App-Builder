@@ -84,6 +84,10 @@ class ProjectTelemetryTest extends TestCase
 
         $this->assertSame(3, $telemetry['reviewed']);
         $this->assertSame(2, $telemetry['with_notes_behind']);
+
+        $this->actingAs($project->owner)
+            ->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page->where('telemetry.with_notes_behind', 2)->where('telemetry.reviewed', 3));
     }
 
     public function test_a_change_that_was_never_reviewed_has_no_notes_to_leave_behind()
