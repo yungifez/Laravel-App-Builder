@@ -213,6 +213,16 @@ class SdkDriver extends AgentDriver
 
         $baseline = $this->extractCandidateChange->baseline($workspace);
 
+        // Noted, so the repair brief can tell the agent to leave them alone.
+        $changed = array_values(array_unique(array_filter(explode("\n", trim(
+            $this->runWorkspaceCommand->handle($workspace, ['git', 'diff', '--name-only', $baseline, '--', ...$protected], 60)->output."\n"
+            .$this->runWorkspaceCommand->handle($workspace, ['git', 'ls-files', '--others', '--exclude-standard', '--', ...$protected], 60)->output,
+        )))));
+
+        if ($changed !== []) {
+            $run->recordEvent('protected_paths_restored', ['paths' => $changed]);
+        }
+
         // Against the recorded baseline, so commits the agent made do not
         // count as the original: remove what is there, put the baseline back.
         foreach ($protected as $path) {

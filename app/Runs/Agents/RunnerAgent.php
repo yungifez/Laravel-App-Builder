@@ -7,8 +7,10 @@ use App\Models\Workspace;
 use App\Runs\Contracts\CodingAgent;
 use App\Runs\Exceptions\LeaseLost;
 use App\Runs\ModelGateway;
+use App\Support\Secrets;
 use App\Workspaces\WorkspaceManager;
 use Closure;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -62,14 +64,16 @@ class RunnerAgent implements CodingAgent
 
         $this->workspaces->driver($workspace->driver)->writeFile((string) $workspace->driver_id, $taskFile, (string) json_encode([
             'adapter' => $this->adapter,
-            'prompt' => $task->prompt,
+            // A key the owner pasted into a request or a note stays here.
+            'prompt' => Secrets::redact($task->prompt),
             'model' => $task->light ? ($this->lightModel ?? $this->model) : $this->model,
             'effort' => $task->light ? ($this->lightEffort ?? $this->effort) : $this->effort,
             'session' => $resume['session'] ?? null,
-            'follow_up' => $resume['prompt'] ?? null,
+            'follow_up' => isset($resume['prompt']) ? Secrets::redact($resume['prompt']) : null,
             'max_turns' => $task->maxTurns,
             'max_budget_usd' => $task->maxBudgetUsd,
             'sandbox' => $this->sandbox,
+            'protected_paths' => config('builder.construction.protected_paths', []),
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
 
         $credentials = array_filter($this->credentials, fn (string $value) => $value !== '');
@@ -83,6 +87,12 @@ class RunnerAgent implements CodingAgent
         if ($this->gateway?->enabled() && $keyVariable !== null && isset($credentials[$keyVariable])) {
             $opened = $this->gateway->open($this->provider, $task->timeoutSeconds);
             $credentials = [...$credentials, ...$opened['environment']];
+        } elseif ($keyVariable !== null && isset($credentials[$keyVariable]) && $workspace->driver !== 'local') {
+            // A box runs the owner's code with a shell, so a real key must
+            // not go in. Only a plain folder on this host may have one.
+            $this->removeTaskFiles($workspace);
+
+            throw new RuntimeException('The model gateway is off, so the agent would get the real key inside the workspace. Turn on BUILDER_MODEL_GATEWAY.');
         }
 
         try {

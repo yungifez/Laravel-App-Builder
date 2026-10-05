@@ -2,9 +2,11 @@
 
 namespace App\Ai\Agents;
 
+use App\Ai\Middleware\RedactSecrets;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Attributes\Timeout;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\HasMiddleware;
 use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Promptable;
 use Stringable;
@@ -16,9 +18,19 @@ use Stringable;
  * treated as decided until then.
  */
 #[Timeout(300)]
-class NotesDrafter implements Agent, HasStructuredOutput
+class NotesDrafter implements Agent, HasMiddleware, HasStructuredOutput
 {
     use Promptable;
+
+    /**
+     * Keep live keys out of what goes to the model.
+     *
+     * @return list<RedactSecrets>
+     */
+    public function middleware(): array
+    {
+        return [new RedactSecrets];
+    }
 
     /**
      * Get the instructions that the agent should follow.

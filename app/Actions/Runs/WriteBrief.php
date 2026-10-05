@@ -54,8 +54,25 @@ class WriteBrief
             return null;
         }
 
-        return $this->problems($run->feedback)
+        return $this->problems($run->feedback).$this->restored($run)
             ."\n\n".trim($this->selfChecks().'When you are done, reply with a short summary of what you changed.');
+    }
+
+    /**
+     * Name the protected files the earlier attempt changed and that were put
+     * back, so the agent fixes the app instead of trying them again.
+     */
+    protected function restored(Run $run): string
+    {
+        $restored = $run->events()->where('type', 'protected_paths_restored')->reorder('sequence', 'desc')->first();
+
+        // Only from the attempt just before this one: that attempt's build
+        // finished after its files were put back, and no other did.
+        if ($restored === null || $run->events()->where('type', 'build_finished')->where('sequence', '>', $restored->sequence)->count() > 1) {
+            return '';
+        }
+
+        return "\n\n## Files that were put back\n\nYour earlier attempt changed these files. They decide how the app is checked, so they were put back as they were. Do not change them again: fix the app instead.\n\n".$this->list($restored->data['paths']);
     }
 
     /**

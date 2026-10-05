@@ -14,6 +14,7 @@ use App\Enums\PreviewStatus;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Enums\WorkspaceStatus;
+use App\Events\RunStatusChanged;
 use App\Jobs\ExecuteRun;
 use App\Jobs\StartPreview;
 use App\Jobs\VerifyFeatureRequest;
@@ -35,6 +36,7 @@ use App\Runs\ReviewEvidence;
 use App\Runs\ToolSession;
 use Closure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\PreparesRuns;
@@ -252,6 +254,24 @@ class RunLifecycleTest extends TestCase
         $this->assertSame('The run used all 1 of its tool operations.', $run->error);
         $this->assertSame(['revise_request', 'use_stronger_model', 'involve_a_person'], $run->events()->get()->last()->data['choices']);
         $this->assertSame(FeatureRequestStatus::Generating, $featureRequest->refresh()->status);
+    }
+
+    public function test_a_change_that_spent_what_one_try_may_spend_stops_for_the_owners_decision()
+    {
+        config(['builder.construction.budgets.run_usd' => 0.5]);
+        // The planner's call costs more than one try may spend, but less
+        // than the owner's plan allows.
+        Event::listen(RunStatusChanged::class, function (RunStatusChanged $event) {
+            if ($event->to === RunStatus::Planning) {
+                $event->run->recordEvent('model_call', ['role' => 'planner', 'cost_usd' => 0.6]);
+            }
+        });
+
+        $run = app(StartRun::class)->handle($this->invitationRequest())->refresh();
+
+        $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
+        $this->assertSame('budget_exhausted', $run->stop_reason);
+        $this->assertSame('This change used all the AI work one try may take. Your app is as it was. You can ask it to keep trying.', $run->error);
     }
 
     public function test_the_change_is_read_back_from_the_workspace_not_taken_from_the_driver()

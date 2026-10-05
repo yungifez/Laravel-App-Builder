@@ -10,10 +10,11 @@
 //
 // Usage: node run.mjs <task.json>
 // The task file: {adapter, prompt, model?, effort?, max_turns?, max_budget_usd?,
-// session?, follow_up?}. With "session", the agent continues that earlier
+// session?, follow_up?, protected_paths?}. With "session", the agent continues that earlier
 // session and is sent "follow_up" instead of the whole prompt. The result
 // line names the session ("session"), and whether the earlier one was
-// continued ("resumed").
+// continued ("resumed"). The Claude agent may not write or edit a file in
+// "protected_paths"; the control plane puts them back afterwards anyway.
 //
 // While the agent works, progress.json next to the task file says what it
 // is doing, so the owner can follow along:
@@ -25,7 +26,7 @@
 // and optionally ANTHROPIC_BASE_URL / OPENAI_BASE_URL for a gateway).
 
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 /** Assistant message errors from the Claude Agent SDK that mean the provider could not serve the task. */
 const CLAUDE_PROVIDER_ERRORS = new Set([
@@ -161,6 +162,43 @@ function lostSession(session, started, error) {
     return session !== null && !started && !PROVIDER_ERROR.test(error ?? '');
 }
 
+/** Whether a path is, or is inside, one the agent may not change. */
+function isProtected(path, protectedPaths) {
+    const file = relative(
+        process.cwd(),
+        resolve(process.cwd(), path),
+    ).toLowerCase();
+
+    return protectedPaths.some((protectedPath) => {
+        const root = protectedPath.replace(/^\/+|\/+$/g, '').toLowerCase();
+
+        return file === root || file.startsWith(`${root}/`);
+    });
+}
+
+/**
+ * Refuse a write or edit to a protected file before it happens, and say
+ * why, so the agent does not spend turns on a change that is put back.
+ */
+function guardProtectedPaths(protectedPaths) {
+    return async (input) => {
+        const path =
+            input.tool_input?.file_path ?? input.tool_input?.notebook_path;
+
+        if (typeof path !== 'string' || !isProtected(path, protectedPaths)) {
+            return {};
+        }
+
+        return {
+            hookSpecificOutput: {
+                hookEventName: 'PreToolUse',
+                permissionDecision: 'deny',
+                permissionDecisionReason: `${path} is protected: it decides how the app is checked, so a person changes it, not this task. Leave it as it is.`,
+            },
+        };
+    };
+}
+
 async function runClaude(task, session, prompt) {
     const { query } = await import('@anthropic-ai/claude-agent-sdk');
     let providerError = null;
@@ -181,6 +219,16 @@ async function runClaude(task, session, prompt) {
                 permissionMode: 'acceptEdits',
                 allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'],
                 disallowedTools: ['WebFetch', 'WebSearch'],
+                hooks: {
+                    PreToolUse: [
+                        {
+                            matcher: 'Write|Edit|MultiEdit|NotebookEdit',
+                            hooks: [
+                                guardProtectedPaths(task.protected_paths ?? []),
+                            ],
+                        },
+                    ],
+                },
                 settingSources: ['project'],
                 systemPrompt: { type: 'preset', preset: 'claude_code' },
                 // Without this the CLI leaves its thinking out of SDK

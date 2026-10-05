@@ -2,6 +2,8 @@
 
 namespace App\Features;
 
+use App\Support\Secrets;
+
 /**
  * Common safety mistakes on the lines a change adds, found by pattern alone:
  * text shown on a page without escaping it, database queries built from
@@ -61,7 +63,7 @@ class UnsafeCode
         // line says about it.
         'secret_in_code' => [
             'files' => '/^(?!(.*\/)?\.env(\.|$))/',
-            'pattern' => '/\b(?:sk_live_[0-9A-Za-z]{16,}|rk_live_[0-9A-Za-z]{16,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,}|xox[abprs]-[A-Za-z0-9-]{20,}|sk-ant-[A-Za-z0-9_-]{32,}|sk-(?:proj-)?[A-Za-z0-9_-]{40,}|AIza[0-9A-Za-z_-]{35}|SG\.[\w-]{22}\.[\w-]{43})|-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/',
+            'pattern' => Secrets::PATTERN,
             'problem' => 'writes a secret key into the code, where anyone with the code can read it and use it',
             'fix' => 'Read it from a setting instead: config() in the code, env() in a file under config/, and the setting name with no value in .env.example.',
             'always' => true,

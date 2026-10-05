@@ -391,6 +391,11 @@ return [
             // dollars; a run stops once today's spend reaches it. 0 turns
             // the limit off.
             'daily_usd' => (float) env('BUILDER_DAILY_SPEND_USD', 10),
+            // What one change may spend on AI, in US dollars, before it
+            // stops and asks the owner whether to keep trying. Repairs and
+            // a second agent all count. Keeping trying gives it as much
+            // again. 0 turns the limit off.
+            'run_usd' => (float) env('BUILDER_RUN_MAX_USD', 25),
         ],
 
         // What the planner sees besides the request: the file list (up to
@@ -586,9 +591,11 @@ return [
         // never goes into a workspace, where the agent has a shell. "url" is
         // where the agent runner reaches the control plane. A run's token
         // stops working after "max_requests" calls or "max_output_tokens"
-        // written, whatever the agent was told.
+        // written, whatever the agent was told. It is on unless turned off,
+        // and with it off a key goes only to a "local" workspace: a box
+        // refuses to start with one.
         'gateway' => [
-            'enabled' => (bool) env('BUILDER_MODEL_GATEWAY', false),
+            'enabled' => (bool) env('BUILDER_MODEL_GATEWAY', true),
             'url' => env('BUILDER_MODEL_GATEWAY_URL', 'http://laravel.test'),
             'max_requests' => (int) env('BUILDER_MODEL_GATEWAY_MAX_REQUESTS', 2000),
             'max_output_tokens' => (int) env('BUILDER_MODEL_GATEWAY_MAX_OUTPUT_TOKENS', 2_000_000),

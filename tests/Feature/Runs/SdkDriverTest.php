@@ -8,6 +8,7 @@ use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Runs\KeepTryingRun;
 use App\Actions\Runs\StartRun;
 use App\Actions\Runs\WriteBrief;
+use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
 use App\Context\ProjectNotes;
@@ -24,7 +25,10 @@ use App\Models\WorkspaceCommand;
 use App\Runs\Agents\AgentOutcome;
 use App\Runs\Agents\AgentTask;
 use App\Runs\Agents\CodingAgentManager;
+use App\Runs\Agents\RunnerAgent;
 use App\Runs\ModelGateway;
+use App\Workspaces\Contracts\WorkspaceDriver;
+use App\Workspaces\WorkspaceManager;
 use Closure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -34,6 +38,8 @@ use Illuminate\Support\Facades\Queue;
 use Laravel\Ai\Exceptions\InsufficientCreditsException;
 use Laravel\Ai\Prompts\AgentPrompt;
 use Laravel\Ai\Providers\Provider;
+use Mockery;
+use RuntimeException;
 use Tests\Concerns\PreparesRuns;
 use Tests\Fakes\FakeCodingAgent;
 use Tests\TestCase;
@@ -295,12 +301,21 @@ class SdkDriverTest extends TestCase
             return $this->outcome('claude', 'anthropic', AgentOutcomeStatus::Completed, summary: 'Done.');
         });
 
-        app(StartRun::class)->handle($featureRequest = $this->request());
+        $run = app(StartRun::class)->handle($featureRequest = $this->request())->refresh();
 
         $patch = (string) $featureRequest->refresh()->patch;
         $this->assertStringContainsString('app/Real.php', $patch);
         $this->assertStringNotContainsString('tests/Acceptance', $patch);
         $this->assertStringNotContainsString('phpstan.neon', $patch);
+
+        // The repair is told which files were put back, so it leaves them alone.
+        $restored = ['phpstan.neon', 'tests/Acceptance/Contract.php', 'tests/Acceptance/New.php'];
+        $this->assertEqualsCanonicalizing($restored, $run->events()->where('type', 'protected_paths_restored')->sole()->data['paths']);
+        $followUp = (string) app(WriteBrief::class)->followUp($run->forceFill(['feedback' => ['reason' => 'verification_failed', 'details' => ['A problem.']]]));
+        $this->assertStringContainsString("## Files that were put back\n\n", $followUp);
+        foreach ($restored as $path) {
+            $this->assertStringContainsString("- {$path}", $followUp);
+        }
     }
 
     public function test_work_the_agent_commits_itself_is_still_part_of_the_change()
@@ -419,6 +434,7 @@ class SdkDriverTest extends TestCase
     public function test_the_runner_agent_passes_the_task_and_credentials_and_reads_the_result_line()
     {
         config([
+            'builder.agents.gateway.enabled' => false,
             'ai.providers.anthropic.key' => 'test-anthropic-key',
             'builder.agents.runner.path' => base_path('tests/Fixtures/fake-agent-runner.mjs'),
             'builder.agents.adapters.claude.model' => 'claude-opus-5',
@@ -439,6 +455,36 @@ class SdkDriverTest extends TestCase
             ['kind' => 'changed', 'file' => 'agent-output.txt'],
         ], $run->events()->where('type', 'agent_story')->sole()->data['story'], 'Entries of an unknown kind are dropped.');
         $this->assertFalse(WorkspaceCommand::query()->get()->contains(fn (WorkspaceCommand $command) => str_contains((string) json_encode($command->command), 'test-anthropic-key')));
+    }
+
+    public function test_with_the_model_gateway_off_a_box_refuses_to_start_an_agent_with_the_real_key()
+    {
+        config(['ai.providers.anthropic.key' => 'test-anthropic-key', 'builder.agents.gateway.enabled' => false]);
+        $workspace = Workspace::factory()->create(['driver' => 'docker']);
+        $driver = Mockery::mock(WorkspaceDriver::class);
+        $driver->shouldReceive('writeFile')->once()->withArgs(function (string $id, string $path, string $contents) use (&$task) {
+            $task = json_decode($contents, true);
+
+            return true;
+        });
+        $workspaces = Mockery::mock(WorkspaceManager::class);
+        $workspaces->shouldReceive('driver')->with('docker')->andReturn($driver);
+        $commands = Mockery::mock(RunWorkspaceCommand::class);
+        $commands->shouldReceive('handle')->once()->withArgs(fn (Workspace $box, array $command) => $command === ['rm', '-rf', RunnerAgent::TASK_DIRECTORY]);
+        $this->app->instance(WorkspaceManager::class, $workspaces);
+        $this->app->instance(RunWorkspaceCommand::class, $commands);
+
+        try {
+            app(CodingAgentManager::class)->driver('claude')->run($workspace, new AgentTask('Add teams. Use sk_live_'.str_repeat('x', 24).' for payments.'));
+            $this->fail('The agent started with the real key.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringStartsWith('The model gateway is off', $exception->getMessage());
+        }
+
+        // The agent is also told which files it may not change, and never
+        // sees a key the owner pasted.
+        $this->assertContains('tests/Acceptance', $task['protected_paths']);
+        $this->assertSame('Add teams. Use [secret removed] for payments.', $task['prompt']);
     }
 
     public function test_with_the_model_gateway_on_the_agent_gets_a_run_token_and_never_the_key()

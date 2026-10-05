@@ -38,6 +38,7 @@ use App\Features\UndescribedImages;
 use App\Features\UnsafeCode;
 use App\Models\FeatureRequest;
 use App\Models\Run;
+use App\Models\RunEvent;
 use App\Models\TestObservation;
 use App\Models\Verification;
 use App\Models\Workspace;
@@ -149,6 +150,7 @@ class ConstructRun
             if (in_array($run->status, [RunStatus::Planning, RunStatus::Implementing], true)) {
                 $this->ensureWithinDailySpend();
                 $this->ensureWithinPlan($run);
+                $this->ensureWithinRunSpend($run);
             }
 
             switch ($run->status) {
@@ -642,6 +644,33 @@ class ConstructRun
             throw new UsageLimitReached(__('You have used all the AI use your plan includes this month. It starts again on :date, or you can move to a bigger plan in Settings. Nothing in your app changed.', [
                 'date' => $usage['resets_at']->isoFormat('D MMMM'),
             ]));
+        }
+    }
+
+    /**
+     * Stop before more planning or building once this change spent what one
+     * try may spend on AI, so a change that keeps failing cannot run on
+     * unseen. Counted since it started, or since the owner last asked it to
+     * keep trying.
+     *
+     * @throws BudgetExhausted
+     */
+    protected function ensureWithinRunSpend(Run $run): void
+    {
+        $limit = (float) config('builder.construction.budgets.run_usd');
+
+        if ($limit <= 0) {
+            return;
+        }
+
+        $since = $run->budgetSince();
+        $spent = $run->events()->where('type', 'model_call')
+            ->when($since !== null, fn ($query) => $query->where('created_at', '>=', $since))
+            ->get()
+            ->sum(fn (RunEvent $call) => is_numeric($call->data['cost_usd'] ?? null) ? (float) $call->data['cost_usd'] : 0.0);
+
+        if ($spent >= $limit) {
+            throw new BudgetExhausted(__('This change used all the AI work one try may take. Your app is as it was. You can ask it to keep trying.'));
         }
     }
 
