@@ -6,6 +6,7 @@ import {
     ChevronRight,
     CircleDashed,
     ExternalLink,
+    Minus,
     Target,
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
@@ -276,6 +277,9 @@ const keptSame = computed(() => {
         return review.preserved.map((item) => ({
             statement: item.statement,
             checked: item.evidence !== 'not_checked',
+            // Only a test earns the green mark; code left alone is a
+            // weaker kind of evidence and must not look the same.
+            tested: item.evidence === 'verified',
             label: evidenceLabel(item),
         }));
     }
@@ -283,6 +287,7 @@ const keptSame = computed(() => {
     return (props.run?.plan?.preserve ?? []).map((statement) => ({
         statement,
         checked: false,
+        tested: false,
         label: null,
     }));
 });
@@ -1165,9 +1170,14 @@ function lineClass(line: string): string {
                             class="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2"
                         >
                             <Check
-                                v-if="item.checked"
+                                v-if="item.tested"
                                 class="mt-1 size-4 text-green-700 dark:text-green-400"
-                                aria-label="Checked"
+                                aria-label="Checked by a test"
+                            />
+                            <Minus
+                                v-else-if="item.checked"
+                                class="mt-1 size-4 text-muted-foreground"
+                                aria-label="Not touched by this change"
                             />
                             <CircleDashed
                                 v-else

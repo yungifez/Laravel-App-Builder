@@ -68,6 +68,16 @@ final readonly class ChangeClassification
     }
 
     /**
+     * Get every file the change touched, claimed by an area or not.
+     *
+     * @return list<string>
+     */
+    public function changedFiles(): array
+    {
+        return array_values(array_unique([...array_merge(...array_values($this->requested), ...array_values($this->mayAlsoAffect), ...array_values($this->unexpected)), ...$this->unclaimed]));
+    }
+
+    /**
      * Get which section an area's changes belong to: an area the change is
      * about is requested even when no file it claims changed.
      */

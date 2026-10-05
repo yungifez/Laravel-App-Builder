@@ -82,6 +82,25 @@ class TestReport
     }
 
     /**
+     * Whether a test file ran and passed: at least one of its tests passed
+     * and none failed.
+     *
+     * @param  list<array{file: string, name: string, outcome: string}>  $tests
+     */
+    public static function filePassed(array $tests, string $file): bool
+    {
+        $outcomes = collect($tests)
+            ->filter(function (array $test) use ($file) {
+                $path = str_replace('\\', '/', $test['file']);
+
+                return $path === $file || str_ends_with($path, '/'.$file);
+            })
+            ->pluck('outcome');
+
+        return $outcomes->contains(self::PASSED) && ! $outcomes->contains(self::FAILED);
+    }
+
+    /**
      * Reduce a test name to its words: no "test" or "it" prefix, no data
      * set, underscores as spaces.
      */

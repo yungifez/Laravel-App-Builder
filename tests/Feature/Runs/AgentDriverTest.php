@@ -178,6 +178,8 @@ class AgentDriverTest extends TestCase
         $this->assertSame(RunStatus::Completed, $run->status);
         $this->assertSame([[
             'criterion' => 'Teams have a nullable description.',
+            'kind' => null,
+            'case' => 'Teams have a nullable description.',
             'test_file' => 'tests/Feature/TeamDescriptionTest.php',
             'test_name' => 'teams have a nullable description',
             'evidence' => 'tested',
@@ -1087,12 +1089,15 @@ class AgentDriverTest extends TestCase
 
         $run = app(StartRun::class)->handle($featureRequest = $this->request([
             '.builder/project.md' => "# Sparkle Cleaning\n\nWe call customers clients.\n",
-            '.builder/capabilities/teams.md' => "---\ncapability: teams\nsummary: Clients belong to teams.\npaths: [app/Models/Team.php, tests/Feature/TeamTest.php]\neffects:\n    - to: billing\n      strength: possible\n      reason: Each team is billed separately.\n      source: owner\n---\n# Teams\n\nA team always has a name.\n",
+            '.builder/capabilities/teams.md' => "---\ncapability: teams\nsummary: Clients belong to teams.\npaths: [app/Models/Team.php, tests/Feature/TeamTest.php, tests/Feature/TeamNameTest.php]\neffects:\n    - to: billing\n      strength: possible\n      reason: Each team is billed separately.\n      source: owner\n---\n# Teams\n\nA team always has a name.\n",
             '.builder/capabilities/billing.md' => "---\ncapability: billing\nsummary: Invoices for teams.\npaths: [config/billing.php]\n---\n# Billing\n\nOnly owners see invoices.\n",
             '.builder/capabilities/settings.md' => "---\ncapability: settings\npaths: [config/teams.php]\n---\n# Settings\n",
             '.builder/capabilities/account.md' => "---\ncapability: account\npaths: [app/Account.php]\n---\n# Account\n",
             'app/Account.php' => "<?php\n",
             'tests/Feature/TeamTest.php' => "<?php\n",
+            // The change leaves this test alone, so it still speaks for teams;
+            // the TeamTest the change rewrote does not.
+            'tests/Feature/TeamNameTest.php' => "<?php\n",
         ]))->refresh();
 
         $this->assertSame(RunStatus::Verifying, $run->status);
@@ -1112,7 +1117,10 @@ class AgentDriverTest extends TestCase
             && str_contains($prompt, '(capabilities/billing.md)')
             && ! str_contains($prompt, 'Only owners see invoices.'));
 
-        $this->passVerification($run, [['file' => 'tests/Feature/TeamTest.php', 'name' => 'teams have a nullable description', 'outcome' => 'passed']]);
+        $this->passVerification($run, [
+            ['file' => 'tests/Feature/TeamTest.php', 'name' => 'teams have a nullable description', 'outcome' => 'passed'],
+            ['file' => 'tests/Feature/TeamNameTest.php', 'name' => 'a team always has a name', 'outcome' => 'passed'],
+        ]);
 
         $run->refresh();
         $this->assertSame(RunStatus::Completed, $run->status);
