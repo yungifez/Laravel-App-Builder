@@ -11,6 +11,7 @@ use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Context\Capability;
 use App\Context\ProjectNotes;
+use App\Enums\ChecksStoppedBecause;
 use App\Enums\ExperimentStatus;
 use App\Enums\VerificationStatus;
 use App\Features\AcceptanceSuite;
@@ -205,7 +206,7 @@ class VerifyFeatureRequest implements ShouldQueue
 
                 if (! $this->record("Apply change #{$request->id}", 'apply', $command)) {
                     $this->skipRemaining(['setup', 'checks'], $featureRequest);
-                    $this->finish(VerificationStatus::Errored, __('The change does not apply to the project.'));
+                    $this->finish(VerificationStatus::Errored, stoppedBecause: ChecksStoppedBecause::DoesNotApply);
 
                     return;
                 }
@@ -215,14 +216,14 @@ class VerifyFeatureRequest implements ShouldQueue
 
             if (! $this->guardProtectedInputs($driver, $workspace, $manifests)) {
                 $this->skipRemaining(['setup', 'checks'], $featureRequest);
-                $this->finish(VerificationStatus::Failed, __('The change edits files the checks depend on, so the checks did not run.'));
+                $this->finish(VerificationStatus::Failed, stoppedBecause: ChecksStoppedBecause::ProtectedInputs);
 
                 return;
             }
 
             if (! $this->runSteps($driver, $runWorkspaceCommand, $workspace, 'setup')) {
                 $this->skipRemaining(['checks'], $featureRequest);
-                $this->finish(VerificationStatus::Errored, __('A setup step failed, so the checks did not run.'));
+                $this->finish(VerificationStatus::Errored, stoppedBecause: array_intersect(array_keys($this->touched), self::PACKAGE_FILES) !== [] ? ChecksStoppedBecause::ChangeInstall : ChecksStoppedBecause::Setup);
 
                 return;
             }
@@ -1803,12 +1804,13 @@ class VerifyFeatureRequest implements ShouldQueue
     /**
      * Store the final status.
      */
-    protected function finish(VerificationStatus $status, ?string $error = null, bool $interrupted = false): void
+    protected function finish(VerificationStatus $status, ?string $error = null, bool $interrupted = false, ?ChecksStoppedBecause $stoppedBecause = null): void
     {
         $this->verification->update([
             'status' => $status,
             'results' => $this->results,
-            'error' => $error,
+            'error' => $error ?? $stoppedBecause?->message(),
+            'stopped_because' => $stoppedBecause,
             'interrupted' => $interrupted,
             'finished_at' => now(),
         ]);

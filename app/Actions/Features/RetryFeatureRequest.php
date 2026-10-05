@@ -58,15 +58,25 @@ class RetryFeatureRequest
 
     /**
      * Determine if a made change was never kept and its run stopped, or the
-     * owner stopped it, before the checks and review were done.
+     * owner stopped it, before the checks and review were done. A change
+     * whose own files stopped the checks before any check ran counts too.
      */
     public static function stoppedWhileChecking(FeatureRequest $featureRequest): bool
     {
-        return $featureRequest->status === FeatureRequestStatus::Generated
-            && $featureRequest->commit_sha === null
-            && $featureRequest->reverted_at === null
-            && $featureRequest->latestRun?->question === null
-            && in_array($featureRequest->latestRun?->status, [RunStatus::Failed, RunStatus::NeedsUserDecision, RunStatus::Cancelled], true);
+        if ($featureRequest->status !== FeatureRequestStatus::Generated
+            || $featureRequest->commit_sha !== null
+            || $featureRequest->reverted_at !== null
+            || $featureRequest->latestRun?->question !== null) {
+            return false;
+        }
+
+        // The change itself stopped its checks: checking it again cannot
+        // help, so it is made again.
+        if ($featureRequest->verifications()->latest('id')->first()?->stopped_because?->retryable() === true) {
+            return true;
+        }
+
+        return in_array($featureRequest->latestRun?->status, [RunStatus::Failed, RunStatus::NeedsUserDecision, RunStatus::Cancelled], true);
     }
 
     /**

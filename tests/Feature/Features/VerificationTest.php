@@ -6,6 +6,7 @@ use App\Actions\Context\ReadProjectContext;
 use App\Actions\Features\RequestVerification;
 use App\Context\Capability;
 use App\Context\ProjectContext;
+use App\Enums\ChecksStoppedBecause;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Features\ArchPresets;
@@ -352,7 +353,9 @@ class VerificationTest extends TestCase
 
         $verification = $request->verifications()->sole();
         $this->assertSame(VerificationStatus::Errored, $verification->status);
-        $this->assertSame('A setup step failed, so the checks did not run.', $verification->error);
+        // The change did not touch what the app installs: making it again cannot help.
+        $this->assertSame(ChecksStoppedBecause::Setup, $verification->stopped_because);
+        $this->assertSame(ChecksStoppedBecause::Setup->message(), $verification->error);
         $this->assertSame(
             ['Install' => 'failed', 'Key' => 'skipped', 'Tests' => 'skipped', 'Lint' => 'skipped', 'Protected acceptance tests' => 'skipped'],
             collect($verification->results)->slice(1)->pluck('outcome', 'name')->all(),
@@ -430,7 +433,8 @@ class VerificationTest extends TestCase
 
         $verification = $request->verifications()->sole();
         $this->assertSame(VerificationStatus::Errored, $verification->status);
-        $this->assertSame('The change does not apply to the project.', $verification->error);
+        $this->assertSame(ChecksStoppedBecause::DoesNotApply, $verification->stopped_because);
+        $this->assertSame(ChecksStoppedBecause::DoesNotApply->message(), $verification->error);
         $this->assertSame('patch does not apply', $verification->results[0]['output']);
     }
 
