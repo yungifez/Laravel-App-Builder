@@ -1717,7 +1717,14 @@ finding (`AcceptFindings`). Each is on by default and has its own switch.
 - **Laravel structure** (`ArchPresets`): a check that runs Pest's `laravel`
   and `security` architecture presets from a temporary test outside the app's
   tests, when the app has Pest 3 or later. Only problems the change adds go
-  back. Not built: presets for our own conventions.
+  back. Our own conventions get no preset, because the engine follows
+  Laravel's conventions for any app and assumes no style (direction 33).
+  The `laravel` preset already refuses `env()` in the app's classes.
+  `AppConventions` measures where each app keeps its saves and sends, so a
+  controller that saves is fine in an app that does that. `OwnedRecords`
+  checks authorization on records that belong to someone. Not covered:
+  authorization on routes that touch no owned table, and the size of a
+  controller.
 
 **Scope by risk, never by diff size.** "Small" is a property of meaning: a
 three-line authorization change is riskier than a 200-line isolated component.
