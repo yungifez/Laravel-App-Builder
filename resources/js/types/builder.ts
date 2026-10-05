@@ -447,7 +447,8 @@ export type ProofLine = {
         | 'gap'
         | 'rule'
         | 'approach'
-        | 'chosen';
+        | 'chosen'
+        | 'packages';
     text: string;
     /** Pictures of a changed screen as a phone, a tablet and a computer show it. */
     pictures?: { url: string; label: string }[];

@@ -4,6 +4,7 @@ import {
     CircleDashed,
     History,
     Lock,
+    Package,
     ScanSearch,
     ShieldCheck,
     UserCheck,
@@ -153,6 +154,8 @@ const icons = {
     rule: { icon: Lock, tone: 'text-muted-foreground' },
     // Whether the old way was kept working, and why.
     approach: { icon: History, tone: 'text-muted-foreground' },
+    // What the app relies on that it did not before.
+    packages: { icon: Package, tone: 'text-muted-foreground' },
 };
 </script>
 

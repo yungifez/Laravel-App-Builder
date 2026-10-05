@@ -42,32 +42,35 @@ class PackagePolicy
     ];
 
     /**
-     * Find the packages a patch adds, given a reader of each file as the
-     * change leaves it, with the rules each one breaks. Null when no
-     * lockfile in the patch adds a package. A lockfile anywhere in the app
-     * counts, with the manifest in the same folder. A changed lockfile
-     * whose earlier text cannot be rebuilt is not guessed at.
+     * Find the packages a patch adds, updates and removes, given a reader
+     * of each file as the change leaves it, with the rules each one breaks.
+     * Null when no lockfile in the patch changes a package. A lockfile
+     * anywhere in the app counts, with the manifest in the same folder. A
+     * changed lockfile whose earlier text cannot be rebuilt is not guessed
+     * at. An updated package is checked again only where its license or
+     * where it comes from changed: what the app already had stays as the
+     * owner kept it.
      *
      * @param  array{composer: list<string>, npm: list<string>}  $allowed  Package name patterns, by manager
      * @param  list<string>  $licenses  SPDX license names
      * @param  array{composer: string, npm: string}  $registries  What marks a package from the public registry, by manager
      * @param  callable(string): ?string  $contents
-     * @return array{added: int, problems: list<array{name: string, manager: string, version: string, at: string, direct: bool, license: list<string>, source: string|null, rules: list<string>}>}|null
+     * @return array{changes: list<array{name: string, manager: string, from: string|null, to: string|null, direct: bool}>, problems: list<array{name: string, manager: string, version: string, at: string, direct: bool, license: list<string>, source: string|null, rules: list<string>}>}|null
      */
     public static function inPatch(?string $patch, array $allowed, array $licenses, array $registries, callable $contents): ?array
     {
-        $added = 0;
+        $changes = [];
         $problems = [];
-        $read = false;
 
         foreach (PatchSummary::files($patch) as $file) {
             $lockfile = self::LOCKFILES[basename($file['path'])] ?? null;
 
-            if ($lockfile === null || str_contains($file['diff'], "\ndeleted file mode ")) {
+            if ($lockfile === null) {
                 continue;
             }
 
-            $after = $contents($file['path']);
+            $deleted = str_contains($file['diff'], "\ndeleted file mode ");
+            $after = $deleted ? '' : $contents($file['path']);
 
             if (! is_string($after)) {
                 continue;
@@ -76,27 +79,42 @@ class PackagePolicy
             $isNew = str_contains($file['diff'], "\nnew file mode ") || str_contains($file['diff'], "\n--- /dev/null");
             $before = $isNew ? '' : PatchSummary::before($after, $file['diff']);
 
-            if ($before === null) {
+            // A lockfile that does not read as one is not taken to mean every
+            // package went.
+            if ($before === null || ! self::readable($after) || ! self::readable($before)) {
                 continue;
             }
 
             $manager = $lockfile['manager'];
             $folder = dirname($file['path']) === '.' ? '' : dirname($file['path']).'/';
-            $known = array_column(self::packages($manager, $before), 'name');
-            $direct = self::direct($manager, $after, $contents($folder.$lockfile['manifest']));
-            $read = true;
+            $known = collect(self::packages($manager, $before))->keyBy('name');
+            $now = collect(self::packages($manager, $after))->keyBy('name');
+            $direct = [
+                ...self::direct($manager, $before, $deleted ? null : $contents($folder.$lockfile['manifest'])),
+                ...self::direct($manager, $after, $deleted ? null : $contents($folder.$lockfile['manifest'])),
+            ];
 
-            foreach (self::packages($manager, $after) as $package) {
-                if (in_array($package['name'], $known, true)) {
+            foreach ($known->diffKeys($now) as $name => $package) {
+                $changes[] = ['name' => $name, 'manager' => $manager, 'from' => $package['version'], 'to' => null, 'direct' => in_array($name, $direct, true)];
+            }
+
+            foreach ($now as $name => $package) {
+                $was = $known->get($name);
+
+                if ($was !== null && $was['version'] === $package['version'] && $was['license'] === $package['license'] && $was['source'] === $package['source']) {
                     continue;
                 }
 
-                $added++;
-                $asked = in_array($package['name'], $direct, true);
+                $asked = in_array($name, $direct, true);
+
+                if ($was === null || $was['version'] !== $package['version']) {
+                    $changes[] = ['name' => $name, 'manager' => $manager, 'from' => $was['version'] ?? null, 'to' => $package['version'], 'direct' => $asked];
+                }
+
                 $rules = array_values(array_filter([
-                    $asked && ! Str::is($allowed[$manager], $package['name']) ? self::UNLISTED : null,
-                    ! self::licensed($package['license'], $licenses) ? self::LICENSE : null,
-                    $package['source'] !== null && ! str_starts_with($package['source'], $registries[$manager]) ? self::SOURCE : null,
+                    $was === null && $asked && ! Str::is($allowed[$manager], $name) ? self::UNLISTED : null,
+                    ($was === null || $was['license'] !== $package['license']) && ! self::licensed($package['license'], $licenses) ? self::LICENSE : null,
+                    ($was === null || $was['source'] !== $package['source']) && ! self::registered($package['source'], $registries[$manager]) ? self::SOURCE : null,
                 ]));
 
                 if ($rules !== []) {
@@ -105,7 +123,26 @@ class PackagePolicy
             }
         }
 
-        return $read && $added > 0 ? ['added' => $added, 'problems' => $problems] : null;
+        return $changes !== [] || $problems !== [] ? ['changes' => $changes, 'problems' => $problems] : null;
+    }
+
+    /**
+     * Whether lockfile text reads as a lockfile. Empty text is a lockfile
+     * that is not there.
+     */
+    protected static function readable(string $lockfile): bool
+    {
+        return $lockfile === '' || is_array(json_decode($lockfile, true));
+    }
+
+    /**
+     * Whether a package comes from the public registry. A package with no
+     * address of its own, such as one npm links, is not installed from
+     * anywhere.
+     */
+    protected static function registered(?string $source, string $registry): bool
+    {
+        return $source === null || str_starts_with($source, $registry);
     }
 
     /**

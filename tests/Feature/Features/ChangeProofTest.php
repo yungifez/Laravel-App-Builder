@@ -527,7 +527,7 @@ class ChangeProofTest extends TestCase
         $package = fn (string $name, array $rules) => ['name' => $name, 'manager' => 'composer', 'version' => 'v1.0.0', 'at' => 'composer.lock', 'direct' => true, 'license' => ['MIT'], 'source' => 'https://packagist.org/downloads/', 'rules' => $rules];
         $proof = function (array $problems) {
             $request = FeatureRequest::factory()->generated()->create();
-            $this->checked($request, evidence: ['packages' => ['added' => 3, 'problems' => $problems]]);
+            $this->checked($request, evidence: ['packages' => ['changes' => [['name' => 'acme/pdf', 'manager' => 'composer', 'from' => null, 'to' => 'v1.0.0', 'direct' => true]], 'problems' => $problems]]);
 
             return [$request, collect(app(DescribeProof::class)->handle($request))];
         };
@@ -546,6 +546,34 @@ class ChangeProofTest extends TestCase
         $proved = collect(app(DescribeProof::class)->handle($request));
         $this->assertSame(['chosen', true], [$proved->firstWhere('decision.finding', PackagePolicy::UNLISTED)['kind'], $proved->firstWhere('decision.finding', PackagePolicy::UNLISTED)['decision']['accepted']]);
         $this->assertSame('gap', $proved->firstWhere('decision.finding', PackagePolicy::LICENSE)['kind']);
+    }
+
+    public function test_the_owner_sees_which_packages_a_change_adds_updates_and_removes()
+    {
+        $change = fn (string $name, ?string $from, ?string $to, bool $direct = true) => ['name' => $name, 'manager' => 'composer', 'from' => $from, 'to' => $to, 'direct' => $direct];
+        $proof = function (array $changes) {
+            $request = FeatureRequest::factory()->generated()->create();
+            $this->checked($request, evidence: ['packages' => ['changes' => $changes, 'problems' => []]]);
+
+            return collect(app(DescribeProof::class)->handle($request));
+        };
+
+        // The packages the app asks for are named; the ones they need are counted.
+        $lines = $proof([$change('spatie/laravel-pdf', null, '1.5.0'), $change('laravel/framework', 'v13.1.0', 'v13.2.0'), $change('acme/old', 'v1.0.0', null), $change('dompdf/dompdf', null, 'v3.0.0', false), $change('masterminds/html5', null, '2.9.0', false)]);
+        $list = $lines->firstWhere('kind', 'packages');
+        $this->assertSame('The packages your app uses change:', $list['text']);
+        $this->assertSame(['Adds spatie/laravel-pdf 1.5.0', 'Updates laravel/framework from v13.1.0 to v13.2.0', 'Removes acme/old', 'Changes 2 packages those need'], $list['items']);
+        $this->assertTrue($lines->contains('text', 'The new packages are ones I trust, and they are free to use.'));
+
+        // Only updates: the list shows, and nothing claims new packages.
+        $updated = $proof([$change('laravel/framework', 'v13.1.0', 'v13.2.0'), $change('symfony/console', 'v7.1.0', 'v7.2.0', false)]);
+        $this->assertSame(['Updates laravel/framework from v13.1.0 to v13.2.0', 'Changes 1 package those need'], $updated->firstWhere('kind', 'packages')['items']);
+        $this->assertFalse($updated->contains('text', 'The new packages are ones I trust, and they are free to use.'));
+
+        // A change that touches no package says nothing about packages.
+        $request = FeatureRequest::factory()->generated()->create();
+        $this->checked($request);
+        $this->assertNull(collect(app(DescribeProof::class)->handle($request))->firstWhere('kind', 'packages'));
     }
 
     public function test_a_change_whose_stored_information_changes_can_lose_data_says_where_until_the_owner_keeps_it()

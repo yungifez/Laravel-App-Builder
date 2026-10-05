@@ -1669,7 +1669,10 @@ class VerificationTest extends TestCase
 
         app(RequestVerification::class)->handle($change);
 
-        $this->assertSame(['added' => 2, 'problems' => [
+        $this->assertSame(['changes' => [
+            ['name' => 'laravel/framework', 'manager' => 'composer', 'from' => null, 'to' => 'v1.0.0', 'direct' => true],
+            ['name' => 'acme/pdf', 'manager' => 'composer', 'from' => null, 'to' => 'v1.0.0', 'direct' => true],
+        ], 'problems' => [
             ['name' => 'acme/pdf', 'version' => 'v1.0.0', 'license' => ['MIT'], 'source' => 'https://packagist.org/downloads/', 'manager' => 'composer', 'at' => 'composer.lock', 'direct' => true, 'rules' => ['package_unlisted']],
         ]], $change->verifications()->sole()->evidence['packages']);
 

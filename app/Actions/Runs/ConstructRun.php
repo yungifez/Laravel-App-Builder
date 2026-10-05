@@ -602,7 +602,7 @@ class ConstructRun
 
         // New packages outside the dependency policy (§12, §13). The owner
         // may keep a package they chose.
-        $packages = $evidence['packages'] ?? ['added' => 0, 'problems' => []];
+        $packages = $evidence['packages'] ?? ['changes' => [], 'problems' => []];
 
         foreach (PackagePolicy::findings($packages, $accepted) as $finding) {
             $gate[] = ['kind' => $finding['kind'], 'identity' => PackagePolicy::identity($finding), 'text' => PackagePolicy::finding($finding, $packages)];

@@ -479,7 +479,7 @@ class DescribeProof
      * policy, as read from its lockfiles (§12, §13). Each kind of break
      * holds the change until the owner says they want it.
      *
-     * @return list<array{kind: string, text: string, decision?: array{change: string, finding: string, accepted: bool}}>
+     * @return list<array{kind: string, text: string, items?: list<string>, decision?: array{change: string, finding: string, accepted: bool}}>
      */
     protected function packages(FeatureRequest $featureRequest, Verification $verification): array
     {
@@ -515,7 +515,43 @@ class DescribeProof
             }
         }
 
-        return $lines !== [] ? $lines : [['kind' => 'passed', 'text' => __('The new packages are ones I trust, and they are free to use.')]];
+        $added = array_filter($packages['changes'], fn (array $change) => $change['from'] === null);
+
+        if ($lines === [] && $added !== []) {
+            $lines[] = ['kind' => 'passed', 'text' => __('The new packages are ones I trust, and they are free to use.')];
+        }
+
+        return [...$this->packageChanges($packages['changes']), ...$lines];
+    }
+
+    /**
+     * List the packages the change adds, updates and removes, so the owner
+     * sees what their app now relies on before keeping it. The packages
+     * the app asks for by name are named; those they bring with them are
+     * counted.
+     *
+     * @param  list<array{name: string, manager: string, from: string|null, to: string|null, direct: bool}>  $changes
+     * @return list<array{kind: string, text: string, items: list<string>}>
+     */
+    protected function packageChanges(array $changes): array
+    {
+        if ($changes === []) {
+            return [];
+        }
+
+        $items = array_map(fn (array $change) => match (true) {
+            $change['from'] === null => __('Adds :name :version', ['name' => $change['name'], 'version' => $change['to']]),
+            $change['to'] === null => __('Removes :name', ['name' => $change['name']]),
+            default => __('Updates :name from :from to :to', ['name' => $change['name'], 'from' => $change['from'], 'to' => $change['to']]),
+        }, array_values(array_filter($changes, fn (array $change) => $change['direct'])));
+
+        $others = count($changes) - count($items);
+
+        if ($others > 0) {
+            $items[] = trans_choice('{1} Changes 1 package those need|[2,*] Changes :count packages those need', $others);
+        }
+
+        return [['kind' => 'packages', 'text' => __('The packages your app uses change:'), 'items' => $items]];
     }
 
     /**

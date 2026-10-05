@@ -805,7 +805,7 @@ class AgentDriverTest extends TestCase
         $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]));
         $approve = ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]];
         ChangeReviewer::fake([$approve, $approve]);
-        $packages = ['packages' => ['added' => 1, 'problems' => [['name' => 'acme/pdf', 'manager' => 'composer', 'version' => 'v1.0.0', 'at' => 'composer.lock', 'direct' => true, 'license' => ['MIT'], 'source' => 'https://packagist.org/downloads/', 'rules' => ['package_unlisted']]]]];
+        $packages = ['packages' => ['changes' => [['name' => 'acme/pdf', 'manager' => 'composer', 'from' => null, 'to' => 'v1.0.0', 'direct' => true]], 'problems' => [['name' => 'acme/pdf', 'manager' => 'composer', 'version' => 'v1.0.0', 'at' => 'composer.lock', 'direct' => true, 'license' => ['MIT'], 'source' => 'https://packagist.org/downloads/', 'rules' => ['package_unlisted']]]]];
 
         $run = app(StartRun::class)->handle($this->request())->refresh();
         $this->passVerification($run, evidence: $packages);

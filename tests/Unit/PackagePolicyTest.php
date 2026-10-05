@@ -15,11 +15,11 @@ const PACKAGE_REGISTRIES = ['composer' => 'https://packagist.org/', 'npm' => 'ht
  * @param  list<string>  $license
  * @return array<string, mixed>
  */
-function composerPackage(string $name, array $license = ['MIT'], bool $packagist = true): array
+function composerPackage(string $name, array $license = ['MIT'], bool $packagist = true, string $version = 'v1.0.0'): array
 {
     return [
         'name' => $name,
-        'version' => 'v1.0.0',
+        'version' => $version,
         'dist' => ['type' => 'zip', 'url' => $packagist ? "https://api.github.com/repos/{$name}/zipball/abc" : 'https://git.example.com/'.$name.'.zip'],
         'license' => $license,
         ...($packagist ? ['notification-url' => 'https://packagist.org/downloads/'] : []),
@@ -71,7 +71,12 @@ it('finds the Composer packages a change adds that its manifest asks for off the
 
     $packages = PackagePolicy::inPatch(rewritePatch('composer.lock', $before, $after), PACKAGE_ALLOWED, PACKAGE_LICENSES, PACKAGE_REGISTRIES, fn (string $path) => $files[$path] ?? null);
 
-    expect($packages['added'])->toBe(4)
+    expect(array_map(fn (array $change) => [$change['name'], $change['from'], $change['to'], $change['direct']], $packages['changes']))->toBe([
+        ['laravel/cashier', null, 'v1.0.0', true],
+        ['acme/pdf', null, 'v1.0.0', true],
+        ['acme/helpers', null, 'v1.0.0', false],
+        ['acme/private', null, 'v1.0.0', false],
+    ])
         ->and(array_map(fn (array $package) => [$package['name'], $package['direct'], $package['rules']], $packages['problems']))->toBe([
             ['acme/pdf', true, [PackagePolicy::UNLISTED, PackagePolicy::LICENSE]],
             ['acme/private', false, [PackagePolicy::SOURCE]],
@@ -97,7 +102,7 @@ it('reads an npm lockfile anywhere in the app: what it asks for from its root en
 
     $packages = PackagePolicy::inPatch(rewritePatch('frontend/package-lock.json', $before, $after), PACKAGE_ALLOWED, PACKAGE_LICENSES, PACKAGE_REGISTRIES, fn (string $path) => $files[$path] ?? null);
 
-    expect($packages['added'])->toBe(5)
+    expect(count($packages['changes']))->toBe(5)
         ->and(array_map(fn (array $package) => [$package['name'], $package['at'], $package['rules']], $packages['problems']))->toBe([
             ['left-pad', 'frontend/package-lock.json', [PackagePolicy::UNLISTED, PackagePolicy::LICENSE]],
             ['sketchy', 'frontend/package-lock.json', [PackagePolicy::UNLISTED, PackagePolicy::LICENSE, PackagePolicy::SOURCE]],
@@ -105,12 +110,53 @@ it('reads an npm lockfile anywhere in the app: what it asks for from its root en
         ]);
 });
 
-it('says nothing when no lockfile adds a package, or a lockfile cannot be read or rebuilt', function () {
+it('lists the packages a change updates and removes, and checks an updated one again only where its license or source changed', function () {
+    $before = lockText(['packages' => [
+        composerPackage('laravel/framework'),
+        composerPackage('acme/old'),
+        composerPackage('acme/forked'),
+        composerPackage('acme/relicensed'),
+        composerPackage('acme/unlicensed', []),
+    ]]);
+    $after = lockText(['packages' => [
+        composerPackage('laravel/framework', version: 'v1.1.0'),
+        composerPackage('acme/forked', packagist: false, version: 'v1.0.1'),
+        composerPackage('acme/relicensed', ['proprietary']),
+        composerPackage('acme/unlicensed', [], version: 'v1.2.0'),
+    ]]);
+    $files = ['composer.lock' => $after, 'composer.json' => (string) json_encode(['require' => ['laravel/framework' => '^13.0', 'acme/old' => '^1.0']])];
+
+    $packages = PackagePolicy::inPatch(rewritePatch('composer.lock', $before, $after), PACKAGE_ALLOWED, PACKAGE_LICENSES, PACKAGE_REGISTRIES, fn (string $path) => $files[$path] ?? null);
+
+    // acme/old is asked for only before the change, and still counts as
+    // the app's own when it goes. A package already outside the rules is
+    // not raised again by an update that leaves its license and source.
+    expect(array_map(fn (array $change) => [$change['name'], $change['from'], $change['to'], $change['direct']], $packages['changes']))->toBe([
+        ['acme/old', 'v1.0.0', null, true],
+        ['laravel/framework', 'v1.0.0', 'v1.1.0', true],
+        ['acme/forked', 'v1.0.0', 'v1.0.1', false],
+        ['acme/unlicensed', 'v1.0.0', 'v1.2.0', false],
+    ])->and(array_map(fn (array $package) => [$package['name'], $package['rules']], $packages['problems']))->toBe([
+        ['acme/forked', [PackagePolicy::SOURCE]],
+        ['acme/relicensed', [PackagePolicy::LICENSE]],
+    ]);
+});
+
+it('lists every package as removed when the change deletes a lockfile', function () {
     $lock = lockText(['packages' => [composerPackage('laravel/framework')]]);
-    $bumped = str_replace('v1.0.0', 'v1.1.0', $lock);
+    $patch = "diff --git a/composer.lock b/composer.lock\ndeleted file mode 100644\n--- a/composer.lock\n+++ /dev/null\n@@ -1,".count(explode("\n", rtrim($lock, "\n"))).' +0,0 @@'."\n".implode("\n", array_map(fn (string $line) => "-{$line}", explode("\n", rtrim($lock, "\n"))))."\n";
+
+    $packages = PackagePolicy::inPatch($patch, PACKAGE_ALLOWED, PACKAGE_LICENSES, PACKAGE_REGISTRIES, fn (string $path) => null);
+
+    expect($packages)->toBe(['changes' => [['name' => 'laravel/framework', 'manager' => 'composer', 'from' => 'v1.0.0', 'to' => null, 'direct' => false]], 'problems' => []]);
+});
+
+it('says nothing when no package changes, or a lockfile cannot be read or rebuilt', function () {
+    $lock = lockText(['packages' => [composerPackage('laravel/framework')], 'content-hash' => 'a']);
+    $rehashed = str_replace('"a"', '"b"', $lock);
     $read = fn (string $text) => fn (string $path) => $path === 'composer.lock' ? $text : null;
 
-    expect(PackagePolicy::inPatch(rewritePatch('composer.lock', $lock, $bumped), PACKAGE_ALLOWED, PACKAGE_LICENSES, PACKAGE_REGISTRIES, $read($bumped)))->toBeNull()
+    expect(PackagePolicy::inPatch(rewritePatch('composer.lock', $lock, $rehashed), PACKAGE_ALLOWED, PACKAGE_LICENSES, PACKAGE_REGISTRIES, $read($rehashed)))->toBeNull()
         ->and(PackagePolicy::inPatch(rewritePatch('composer.lock', $lock, '{'), PACKAGE_ALLOWED, PACKAGE_LICENSES, PACKAGE_REGISTRIES, $read('{')))->toBeNull()
         // Hunks out of order: the earlier text cannot be rebuilt.
         ->and(PackagePolicy::inPatch("diff --git a/composer.lock b/composer.lock\n--- a/composer.lock\n+++ b/composer.lock\n@@ -5,1 +5,1 @@\n-a\n+b\n@@ -1,1 +1,1 @@\n-c\n+d\n", PACKAGE_ALLOWED, PACKAGE_LICENSES, PACKAGE_REGISTRIES, $read(lockText(['packages' => [composerPackage('acme/pdf', [])]]))))->toBeNull()
@@ -118,7 +164,7 @@ it('says nothing when no lockfile adds a package, or a lockfile cannot be read o
 });
 
 it('finds each rule each package breaks, less what the owner accepted, and tells the coder what to do', function () {
-    $packages = ['added' => 3, 'problems' => [
+    $packages = ['changes' => [], 'problems' => [
         ['name' => 'acme/pdf', 'manager' => 'composer', 'version' => 'v1.0.0', 'at' => 'composer.lock', 'direct' => true, 'license' => [], 'source' => 'https://packagist.org/downloads/', 'rules' => [PackagePolicy::UNLISTED, PackagePolicy::LICENSE]],
         ['name' => 'sketchy', 'manager' => 'npm', 'version' => '1.0.0', 'at' => 'package-lock.json', 'direct' => false, 'license' => ['MIT'], 'source' => 'https://npm.example.com/sketchy.tgz', 'rules' => [PackagePolicy::SOURCE]],
     ]];
