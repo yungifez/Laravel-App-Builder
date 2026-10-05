@@ -3560,6 +3560,10 @@ affect: Billing".
   `tests` from test impact analysis, `history` from kept changes, §6)
   and when it was last observed; an Effect whose reason no longer holds is removed or
   downgraded, by the agent or the owner.
+  As built, the owner removes a wrong connection on the Understanding page.
+  This writes `not_connected: [key]` into the area's frontmatter. That area
+  then gets no Effect to the key from any source, so tests and history
+  cannot bring it back. "Connected after all" removes the key again.
 - **Context:** Effects are listed as hints; the agent decides whether they
   matter. "Change the Invite button text" does not look at billing; "invited
   users become members immediately" probably does.

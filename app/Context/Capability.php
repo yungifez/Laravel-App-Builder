@@ -33,6 +33,7 @@ final readonly class Capability
      * @param  list<Effect>  $effects
      * @param  list<string>  $testFiles  The project's test files the area claims
      * @param  list<string>  $reachedBy  The test files whose tests ran the area's code when last observed, most tests first
+     * @param  list<string>  $notConnected  Areas the owner says this one does not affect, whatever the evidence
      */
     public function __construct(
         public string $key,
@@ -45,6 +46,7 @@ final readonly class Capability
         public string $notes = '',
         public array $testFiles = [],
         public array $reachedBy = [],
+        public array $notConnected = [],
     ) {}
 
     /**
@@ -95,18 +97,24 @@ final readonly class Capability
             'effects.*.reason' => ['required', 'string', 'max:500'],
             'effects.*.source' => ['required', Rule::in(self::EFFECT_SOURCES)],
             'effects.*.observed' => ['nullable', 'string', 'max:40'],
+            'not_connected' => ['sometimes', 'array', 'max:50'],
+            'not_connected.*' => ['required', 'string', 'regex:/^[a-z0-9][a-z0-9_-]*$/', 'max:60', 'distinct'],
         ]);
 
         if ($validator->fails()) {
             throw InvalidContextFile::at($file, implode(' ', $validator->errors()->all()));
         }
 
-        /** @var array{capability: string, summary?: string|null, paths?: array<int, string>, behaviors?: array<int, array{key: string, name: string}>, effects?: array<int, array{to: string, strength: string, reason: string, source: string, observed?: string|null}>, test_files?: list<string>} $valid */
+        /** @var array{capability: string, summary?: string|null, paths?: array<int, string>, behaviors?: array<int, array{key: string, name: string}>, effects?: array<int, array{to: string, strength: string, reason: string, source: string, observed?: string|null}>, test_files?: list<string>, not_connected?: array<int, string>} $valid */
         $valid = $validator->validated();
 
         $name = preg_match('/^#\s+(.+)$/m', $notes, $heading) === 1
             ? trim($heading[1])
             : Str::headline($valid['capability']);
+
+        // Text the owner and agents write: no list means the owner has
+        // ruled out no connection.
+        $notConnected = array_values($valid['not_connected'] ?? []);
 
         return new self(
             key: $valid['capability'],
@@ -114,9 +122,10 @@ final readonly class Capability
             summary: $valid['summary'] ?? null,
             paths: array_values($valid['paths'] ?? []),
             behaviors: array_values(array_map(fn (array $behavior) => ['key' => $behavior['key'], 'name' => $behavior['name']], $valid['behaviors'] ?? [])),
-            effects: array_values(array_map(fn (array $effect) => Effect::fromArray($effect), $valid['effects'] ?? [])),
+            effects: self::connected(array_map(fn (array $effect) => Effect::fromArray($effect), $valid['effects'] ?? []), $notConnected),
             file: $file,
             notes: trim($notes),
+            notConnected: $notConnected,
         );
     }
 
@@ -212,17 +221,30 @@ final readonly class Capability
     {
         $tests = array_values(array_filter($files, fn (string $path) => self::runBySuite($path) && $this->claims($path)));
 
-        return new self($this->key, $this->name, $this->summary, $this->paths, $this->behaviors, $this->effects, $this->file, $this->notes, $tests, $this->reachedBy);
+        return new self($this->key, $this->name, $this->summary, $this->paths, $this->behaviors, $this->effects, $this->file, $this->notes, $tests, $this->reachedBy, $this->notConnected);
     }
 
     /**
-     * Get a copy with more Effects, such as those observed from tests.
+     * Keep only the Effects on areas the owner has not ruled out.
+     *
+     * @param  array<int, Effect>  $effects
+     * @param  list<string>  $notConnected
+     * @return list<Effect>
+     */
+    protected static function connected(array $effects, array $notConnected): array
+    {
+        return array_values(array_filter($effects, fn (Effect $effect) => ! in_array($effect->to, $notConnected, true)));
+    }
+
+    /**
+     * Get a copy with more Effects, such as those observed from tests. The
+     * owner's "not connected" holds over any evidence.
      *
      * @param  list<Effect>  $effects
      */
     public function withEffects(array $effects): self
     {
-        return new self($this->key, $this->name, $this->summary, $this->paths, $this->behaviors, [...$this->effects, ...$effects], $this->file, $this->notes, $this->testFiles, $this->reachedBy);
+        return new self($this->key, $this->name, $this->summary, $this->paths, $this->behaviors, [...$this->effects, ...self::connected($effects, $this->notConnected)], $this->file, $this->notes, $this->testFiles, $this->reachedBy, $this->notConnected);
     }
 
     /**
@@ -232,7 +254,7 @@ final readonly class Capability
      */
     public function withReachedBy(array $files): self
     {
-        return new self($this->key, $this->name, $this->summary, $this->paths, $this->behaviors, $this->effects, $this->file, $this->notes, $this->testFiles, $files);
+        return new self($this->key, $this->name, $this->summary, $this->paths, $this->behaviors, $this->effects, $this->file, $this->notes, $this->testFiles, $files, $this->notConnected);
     }
 
     /**

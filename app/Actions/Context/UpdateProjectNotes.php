@@ -28,8 +28,11 @@ class UpdateProjectNotes
     /**
      * Replace one part of the notes of a line of work (by default the one
      * the owner works in) with their text. A part is "introduction" or "section:<heading>" in the
-     * project notes, or "summary:<area>" or "rules:<area>" in an area's
-     * notes. Every other part of the file stays as it was.
+     * project notes, or "summary:<area>", "rules:<area>" or
+     * "not_connected:<area>" in an area's notes. For "not_connected" the
+     * text lists the keys of the areas this one does not affect, one per
+     * line; an empty text connects them all again. Every other part of the
+     * file stays as it was.
      *
      * The owner edits the notes as they were at "version". When they
      * changed since, the edit is refused so nothing is overwritten.
@@ -49,9 +52,10 @@ class UpdateProjectNotes
             throw ValidationException::withMessages(['body' => __('The notes changed while you were editing. Try again on the updated version.')]);
         }
 
+        $capabilities = in_array($kind, ['summary', 'rules', 'not_connected'], true) ? $this->readProjectContext->current($project, $branch)->capabilities : [];
         $file = match ($kind) {
             'introduction', 'section' => ProjectContext::PROJECT_FILE,
-            'summary', 'rules' => $this->readProjectContext->current($project, $branch)->capabilities[$name]->file ?? null,
+            'summary', 'rules', 'not_connected' => $capabilities[$name]->file ?? null,
             default => null,
         };
 
@@ -66,6 +70,7 @@ class UpdateProjectNotes
             'introduction' => $notes->withIntroduction($text),
             'section' => $notes->withSection($name, $text),
             'summary' => $notes->withSummary($text),
+            'not_connected' => $notes->withNotConnected($this->otherAreas($text, $name)),
             default => $notes->withSection('Rules', self::bullets($text)),
         };
 
@@ -86,6 +91,28 @@ class UpdateProjectNotes
         $this->notes->put($project, $branch, [$file => $after]);
 
         return $this->notes->version($project, $branch);
+    }
+
+    /**
+     * Read the keys of the areas an area is not connected to, one per line.
+     * A connection may name an area the notes do not describe yet, so any
+     * key the notes accept will do, except the area itself.
+     *
+     * @return list<string>
+     *
+     * @throws ValidationException
+     */
+    protected function otherAreas(string $text, string $area): array
+    {
+        $keys = array_values(array_unique(array_filter(array_map(trim(...), preg_split('/\R/', $text) ?: []), fn (string $key) => $key !== '')));
+
+        if (in_array($area, $keys, true)) {
+            throw ValidationException::withMessages(['body' => __('A part is always connected to itself.')]);
+        }
+
+        sort($keys);
+
+        return $keys;
     }
 
     /**

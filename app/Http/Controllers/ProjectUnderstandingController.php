@@ -95,6 +95,8 @@ class ProjectUnderstandingController extends Controller
                 'behaviors' => array_column($capability->behaviors, 'name'),
                 'rules' => $capability->rules(),
                 'connections' => $this->connections($capability, $names),
+                // Connections the owner ruled out, so a wrong click can be undone.
+                'not_connected' => array_map(fn (string $key) => ['to' => $key, 'name' => $names[$key] ?? Str::headline($key)], $capability->notConnected),
                 'tested' => $capability->testFiles !== [],
                 'checked_by' => $map === null ? null : count($map->testsForArea($capability)),
                 // What those tests check, in their authors' words.

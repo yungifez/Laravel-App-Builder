@@ -10,6 +10,7 @@ import {
     LoaderCircle,
     SearchCheck,
     ShieldCheck,
+    X,
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
@@ -31,7 +32,10 @@ import { index, show } from '@/routes/projects';
 import { update as updateCareful } from '@/routes/projects/careful-areas';
 import { update as updateCompatibility } from '@/routes/projects/compatibility';
 import { index as developers } from '@/routes/projects/developers';
-import { show as showUnderstanding } from '@/routes/projects/understanding';
+import {
+    show as showUnderstanding,
+    update as updateUnderstanding,
+} from '@/routes/projects/understanding';
 import type {
     CheckFinding,
     Exploration,
@@ -287,6 +291,31 @@ function visit(key: string): void {
         ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     marked.value = key;
     window.setTimeout(() => (marked.value = null), 1600);
+}
+
+// The owner rules out a wrong connection, or puts one back. Either way the
+// part keeps the full list, so a wrong click is one click to undo.
+function setNotConnected(area: UnderstandingArea, keys: string[]): void {
+    router.put(
+        updateUnderstanding(props.project.id).url,
+        {
+            part: `not_connected:${area.key}`,
+            body: keys.join('\n'),
+            revision: props.revision,
+        },
+        { preserveScroll: true },
+    );
+}
+
+function ruleOut(area: UnderstandingArea, key: string): void {
+    setNotConnected(area, [...area.not_connected.map((c) => c.to), key]);
+}
+
+function putBack(area: UnderstandingArea, key: string): void {
+    setNotConnected(
+        area,
+        area.not_connected.map((c) => c.to).filter((to) => to !== key),
+    );
 }
 
 function runCheck(): void {
@@ -748,21 +777,62 @@ function setCompatibility(keep: boolean | null): void {
                                     class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground"
                                 >
                                     <Link2 class="size-3.5" />
-                                    <button
+                                    <span
                                         v-for="connection in area.connections"
                                         :key="connection.to"
-                                        type="button"
-                                        :class="[
-                                            'min-h-11 underline-offset-4 select-none hover:text-foreground sm:min-h-6',
-                                            connection.strength === 'strong'
-                                                ? 'underline'
-                                                : 'underline decoration-dashed',
-                                        ]"
-                                        :title="connection.reason"
-                                        @click="visit(connection.to)"
+                                        class="inline-flex items-center"
                                     >
-                                        {{ connection.name }}
-                                    </button>
+                                        <button
+                                            type="button"
+                                            :class="[
+                                                'min-h-11 underline-offset-4 select-none hover:text-foreground sm:min-h-6',
+                                                connection.strength === 'strong'
+                                                    ? 'underline'
+                                                    : 'underline decoration-dashed',
+                                            ]"
+                                            :title="connection.reason"
+                                            @click="visit(connection.to)"
+                                        >
+                                            {{ connection.name }}
+                                        </button>
+                                        <button
+                                            v-if="revision !== null"
+                                            type="button"
+                                            class="inline-flex size-11 items-center justify-center rounded-sm hover:text-foreground sm:size-6"
+                                            :aria-label="`${area.name} is not connected to ${connection.name}`"
+                                            title="Not connected"
+                                            data-test="not-connected"
+                                            @click="
+                                                ruleOut(area, connection.to)
+                                            "
+                                        >
+                                            <X class="size-3" />
+                                        </button>
+                                    </span>
+                                </p>
+                                <p
+                                    v-if="area.not_connected.length"
+                                    class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground"
+                                >
+                                    <span
+                                        v-for="connection in area.not_connected"
+                                        :key="connection.to"
+                                    >
+                                        <span class="line-through">{{
+                                            connection.name
+                                        }}</span>
+                                        <button
+                                            v-if="revision !== null"
+                                            type="button"
+                                            class="ml-1.5 min-h-11 underline underline-offset-4 hover:text-foreground sm:min-h-6"
+                                            data-test="connected-after-all"
+                                            @click="
+                                                putBack(area, connection.to)
+                                            "
+                                        >
+                                            Connected after all
+                                        </button>
+                                    </span>
                                 </p>
                                 <!-- The proof behind the count, in the tests' own words -->
                                 <details

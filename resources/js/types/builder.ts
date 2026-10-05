@@ -815,6 +815,8 @@ export type UnderstandingArea = {
         reason: string;
         strength: 'strong' | 'possible' | 'historical';
     }[];
+    // Connections the owner ruled out; each can be put back.
+    not_connected: { to: string; name: string }[];
     tested: boolean;
     // How many of the app's tests run this part's own code; null before any test run was mapped.
     checked_by: number | null;

@@ -118,9 +118,30 @@ class NotesDocument
     public function withSummary(string $summary): self
     {
         $summary = trim((string) preg_replace('/\s+/', ' ', $summary));
-        $line = $summary === '' ? '' : 'summary: '.self::yamlString($summary)."\n";
+
+        return $this->withField('summary', $summary === '' ? '' : 'summary: '.self::yamlString($summary)."\n");
+    }
+
+    /**
+     * Get a copy whose frontmatter lists the areas the owner says this one
+     * is not connected to, or drops the list when it is empty.
+     *
+     * @param  list<string>  $keys
+     */
+    public function withNotConnected(array $keys): self
+    {
+        return $this->withField('not_connected', $keys === [] ? '' : 'not_connected: ['.implode(', ', $keys)."]\n");
+    }
+
+    /**
+     * Replace one frontmatter field with the given line, add it after the
+     * area's key, or remove it when the line is empty. The other fields keep
+     * their formatting.
+     */
+    protected function withField(string $name, string $line): self
+    {
         $fields = $this->frontmatter === '' ? '' : substr($this->frontmatter, 4, -4);
-        $pattern = '/^summary:.*\n(?:[ \t]+.*\n)*/m';
+        $pattern = '/^'.$name.':.*\n(?:[ \t]+.*\n)*/m';
 
         if (preg_match($pattern, $fields) === 1) {
             $fields = (string) preg_replace($pattern, addcslashes($line, '\\$'), $fields, 1);
