@@ -99,6 +99,11 @@ class WorkerAccessTest extends TestCase
                 summary: $summary,
                 acceptanceCriteria: ['A member can book a class with room left.'],
                 tasks: ['Add booking.'],
+                cases: [
+                    ['criterion' => 1, 'kind' => 'base', 'says' => 'A member books a class with two places left.', 'none' => null],
+                    ['criterion' => 1, 'kind' => 'alternate', 'says' => 'A member books the last place.', 'none' => null],
+                    ['criterion' => 1, 'kind' => 'exception', 'says' => 'A member cannot book a full class.', 'none' => null],
+                ],
             ))->toArray(),
         ]);
     }

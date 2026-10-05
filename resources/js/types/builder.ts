@@ -281,6 +281,8 @@ export type Run = {
         /** The reply when the owner only asked about the app. */
         answer: string | null;
         acceptance_criteria: string[];
+        /** How each criterion is tried, numbered from 1. */
+        cases: PlanCase[];
         assumptions: string[];
         understood_as: string | null;
         current_behavior: string | null;
@@ -331,10 +333,21 @@ export type ChangeSection =
 
 export type ChangedArea = { key: string; name: string; files: string[] };
 
+export type PlanCase = {
+    criterion: number;
+    kind: 'base' | 'alternate' | 'exception';
+    /** What the test tries, or null when the case does not apply. */
+    says: string | null;
+    /** Why the case does not apply. */
+    none: string | null;
+};
+
 export type RunReview = {
     summary: string;
     verified: {
         criterion: string;
+        /** The case it checks. */
+        kind: PlanCase['kind'];
         test_file: string | null;
         test_name: string | null;
         evidence:
@@ -342,7 +355,10 @@ export type RunReview = {
             | 'not_run'
             | 'not_run_by_checks'
             | 'claimed'
-            | 'no_test';
+            | 'no_test'
+            | 'passes_without_change'
+            | 'no_request'
+            | 'not_refused';
         named_in_diff: boolean;
     }[];
     changes: {

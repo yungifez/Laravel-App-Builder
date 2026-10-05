@@ -207,6 +207,7 @@ class RunQuestionTest extends TestCase
         return [
             'summary' => 'Customers book at a location.',
             'acceptance_criteria' => ['A booking belongs to a location.'],
+            'cases' => [['base' => 'A booking made at a location shows that location.', 'alternate' => null, 'no_alternate' => 'There is one way to make a booking.', 'exception' => 'A booking for a location that does not exist is refused.', 'no_exception' => null]],
             'assumptions' => [],
             'tasks' => ['Add a Location model.'],
             'steps' => [[

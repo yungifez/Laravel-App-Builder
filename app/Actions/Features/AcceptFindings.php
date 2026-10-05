@@ -4,6 +4,7 @@ namespace App\Actions\Features;
 
 use App\Features\AppDrift;
 use App\Features\AppFaults;
+use App\Features\AppRoutes;
 use App\Features\BoundaryCode;
 use App\Models\FeatureRequest;
 use App\Models\User;
@@ -40,6 +41,7 @@ class AcceptFindings
             ...array_map(BoundaryCode::identity(...), array_filter([...$boundaries['findings'] ?? [], ...$boundaries['read'] ?? []], fn (array $finding) => $finding['kind'] === $kind)),
             ...array_map(AppFaults::identity(...), AppFaults::findings($evidence['faults'] ?? null, $kind)),
             ...array_map(AppDrift::identity(...), $kind === AppDrift::GREW ? $evidence['drift']['findings'] ?? [] : []),
+            ...array_map(AppRoutes::identity(...), array_filter(AppRoutes::findings($evidence['routes'] ?? null), fn (array $finding) => $finding['kind'] === $kind)),
         ];
 
         if ($found === []) {

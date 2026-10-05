@@ -300,6 +300,9 @@ class DescribeFeatureRequest
                 'summary' => $run->plan['summary'],
                 'answer' => $run->plan['answer'] ?? null,
                 'acceptance_criteria' => $run->plan['acceptance_criteria'],
+                // How each criterion is tried: the usual way, another way
+                // and a refusal, or why one does not apply.
+                'cases' => $run->plan['cases'],
                 // What a new record keeps and who may use it is decided
                 // for the owner like any assumption, so it is shown first.
                 'assumptions' => [...app(ShapeWording::class)->describe(Plan::fromArray($run->plan)->dataShape), ...$run->plan['assumptions']],

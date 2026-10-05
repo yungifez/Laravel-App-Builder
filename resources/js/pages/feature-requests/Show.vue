@@ -203,6 +203,11 @@ function verifyLabel(item: RunReview['verified'][number]): string {
             return "a test covers it, but my checks don't run that test";
         case 'claimed':
             return "a test covers it, but I couldn't confirm it ran";
+        case 'passes_without_change':
+            return 'its test passes even without this change';
+        case 'no_request':
+        case 'not_refused':
+            return 'its test never saw your app say no';
         default:
             return 'not checked yet';
     }
@@ -293,22 +298,53 @@ const keptSame = computed(() => {
     }));
 });
 
+const caseNames = {
+    base: 'The usual way',
+    alternate: 'Another way',
+    exception: 'Saying no',
+} as const;
+
 const doneWhen = computed(() => {
     const review = props.run?.review;
 
-    if (review && review.verified.length > 0) {
-        return review.verified.map((item) => ({
-            criterion: item.criterion,
-            checked: item.evidence === 'tested',
-            label: verifyLabel(item),
-        }));
-    }
+    const criteria = props.run?.plan?.acceptance_criteria ?? [];
+    const cases = props.run?.plan?.cases ?? [];
 
-    return (props.run?.plan?.acceptance_criteria ?? []).map((criterion) => ({
-        criterion,
-        checked: false,
-        label: null,
-    }));
+    // Each criterion is tried the usual way, another way and by being
+    // refused, with one mark for each, so a change tested only on its
+    // easiest path shows it.
+    return criteria.map((criterion, index) => {
+        const marks = cases
+            .filter((item) => item.criterion === index + 1)
+            .map((item) => {
+                const verified = review?.verified.find(
+                    (entry) =>
+                        entry.criterion === criterion &&
+                        entry.kind === item.kind,
+                );
+
+                return {
+                    name: caseNames[item.kind],
+                    says: item.says ?? item.none ?? '',
+                    state:
+                        item.says === null
+                            ? ('none' as const)
+                            : verified?.evidence === 'tested'
+                              ? ('checked' as const)
+                              : ('open' as const),
+                    label: verified ? verifyLabel(verified) : null,
+                };
+            });
+
+        return {
+            criterion,
+            cases: marks,
+            checked:
+                review !== null &&
+                review !== undefined &&
+                marks.every((mark) => mark.state !== 'open'),
+        };
+    });
 });
 
 // When nothing in a list has been checked yet, say so once under the
@@ -1249,10 +1285,44 @@ function lineClass(line: string): string {
                                 <span>
                                     {{ item.criterion }}
                                     <span
-                                        v-if="item.label && doneWhenChecked"
-                                        class="text-sm text-muted-foreground"
-                                        >· {{ item.label }}</span
+                                        v-if="item.cases.length > 0"
+                                        class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground"
+                                        data-test="done-when-cases"
                                     >
+                                        <span
+                                            v-for="mark in item.cases"
+                                            :key="mark.name"
+                                            class="inline-flex items-center gap-1"
+                                            :class="
+                                                mark.state === 'none' &&
+                                                'opacity-60'
+                                            "
+                                            :title="
+                                                mark.label
+                                                    ? `${mark.says} (${mark.label})`
+                                                    : mark.says
+                                            "
+                                        >
+                                            <Check
+                                                v-if="mark.state === 'checked'"
+                                                class="size-3.5 text-green-700 dark:text-green-400"
+                                                aria-hidden="true"
+                                            />
+                                            <CircleDashed
+                                                v-else
+                                                class="size-3.5"
+                                                aria-hidden="true"
+                                            />
+                                            {{ mark.name }}
+                                            <span class="sr-only">{{
+                                                mark.state === 'checked'
+                                                    ? ': checked by a test'
+                                                    : mark.state === 'none'
+                                                      ? `: not needed. ${mark.says}`
+                                                      : `: ${mark.label ?? 'not checked yet'}`
+                                            }}</span>
+                                        </span>
+                                    </span>
                                 </span>
                             </li>
                         </ul>

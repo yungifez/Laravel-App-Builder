@@ -212,20 +212,48 @@ const keptSame = computed(() => {
     }));
 });
 
+// Each criterion is tried the usual way, another way and by being
+// refused. The owner sees one mark for each, so a change tested only on
+// its easiest path shows it.
+const caseNames = {
+    base: 'The usual way',
+    alternate: 'Another way',
+    exception: 'Saying no',
+} as const;
+
 const doneWhen = computed(() => {
     const review = run.value?.review;
+    const criteria = run.value?.plan?.acceptance_criteria ?? [];
+    const cases = run.value?.plan?.cases ?? [];
+    const tested = (criterion: string, kind: string) =>
+        (review?.verified ?? []).some(
+            (item) =>
+                item.criterion === criterion &&
+                item.kind === kind &&
+                item.evidence === 'tested',
+        );
 
-    if (review && review.verified.length > 0) {
-        return review.verified.map((item) => ({
-            text: item.criterion,
-            ...(item.evidence === 'tested' ? evidence.checked : evidence.open),
-        }));
-    }
+    return criteria.map((text, index) => {
+        const marks = cases
+            .filter((item) => item.criterion === index + 1)
+            .map((item) => ({
+                name: caseNames[item.kind],
+                says: item.says ?? item.none ?? '',
+                state:
+                    item.says === null
+                        ? ('none' as const)
+                        : tested(text, item.kind)
+                          ? ('checked' as const)
+                          : ('open' as const),
+            }));
+        const done = marks.every((mark) => mark.state !== 'open');
 
-    return (run.value?.plan?.acceptance_criteria ?? []).map((text) => ({
-        text,
-        ...evidence.open,
-    }));
+        return {
+            text,
+            cases: marks,
+            ...(review && done ? evidence.checked : evidence.open),
+        };
+    });
 });
 
 const alsoTouches = computed(() =>
@@ -1485,9 +1513,59 @@ const checks = computed(() => {
                                             ]"
                                             :aria-label="item.label"
                                         />
-                                        <span class="min-w-0">{{
-                                            item.text
-                                        }}</span>
+                                        <span class="min-w-0">
+                                            {{ item.text }}
+                                            <span
+                                                v-if="item.cases.length > 0"
+                                                class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground"
+                                                data-test="done-when-cases"
+                                            >
+                                                <span
+                                                    v-for="mark in item.cases"
+                                                    :key="mark.name"
+                                                    class="inline-flex items-center gap-1"
+                                                    :title="mark.says"
+                                                >
+                                                    <component
+                                                        :is="
+                                                            mark.state ===
+                                                            'checked'
+                                                                ? evidence
+                                                                      .checked
+                                                                      .icon
+                                                                : evidence.open
+                                                                      .icon
+                                                        "
+                                                        :class="[
+                                                            'size-3.5 shrink-0',
+                                                            mark.state ===
+                                                            'checked'
+                                                                ? evidence
+                                                                      .checked
+                                                                      .tone
+                                                                : 'text-muted-foreground',
+                                                        ]"
+                                                        aria-hidden="true"
+                                                    />
+                                                    <span
+                                                        :class="
+                                                            mark.state ===
+                                                                'none' &&
+                                                            'opacity-60'
+                                                        "
+                                                        >{{ mark.name }}</span
+                                                    >
+                                                    <span class="sr-only">{{
+                                                        mark.state === 'checked'
+                                                            ? ': checked by a test'
+                                                            : mark.state ===
+                                                                'none'
+                                                              ? `: not needed. ${mark.says}`
+                                                              : ': not checked yet'
+                                                    }}</span>
+                                                </span>
+                                            </span>
+                                        </span>
                                     </p>
                                 </section>
                                 <section

@@ -25,12 +25,15 @@ use App\Features\AppRoutes;
 use App\Features\AppTraces;
 use App\Features\BoundaryCode;
 use App\Features\CodeShortcuts;
+use App\Features\Mutants;
 use App\Features\NewCode;
 use App\Features\NewTests;
 use App\Features\PatchSummary;
+use App\Features\ProtectedInputs;
 use App\Features\ReplayProbes;
 use App\Features\ScreenCheck;
 use App\Features\TestMap;
+use App\Features\TestRefusals;
 use App\Features\TestReport;
 use App\Features\TimeShifts;
 use App\Models\FeatureRequest;
@@ -137,6 +140,11 @@ class VerifyFeatureRequest implements ShouldQueue
     protected bool $mapped = false;
 
     /**
+     * Which tests ran which lines, once the suite has run with coverage.
+     */
+    protected ?TestMap $testMap = null;
+
+    /**
      * Files whose change alters what setup installs. A check cannot be run
      * on the starting commit with the change's packages, so a change to one
      * of these is judged on its own result.
@@ -182,6 +190,7 @@ class VerifyFeatureRequest implements ShouldQueue
 
             $driver = $workspaces->driver($workspace->driver);
             $repository->withCheckout($project, $featureRequest->base_revision, fn (string $source) => $driver->copyDirectory((string) $workspace->driver_id, $source));
+            $manifests = $this->readManifests($driver, $workspace);
 
             foreach ($featureRequest->lineage() as $position => $request) {
                 $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);
@@ -198,6 +207,13 @@ class VerifyFeatureRequest implements ShouldQueue
             }
 
             $runWorkspaceCommand->handle($workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], 30);
+
+            if (! $this->guardProtectedInputs($driver, $workspace, $manifests)) {
+                $this->skipRemaining(['setup', 'checks'], $featureRequest);
+                $this->finish(VerificationStatus::Failed, __('The change edits files the checks depend on, so the checks did not run.'));
+
+                return;
+            }
 
             if (! $this->runSteps($driver, $runWorkspaceCommand, $workspace, 'setup')) {
                 $this->skipRemaining(['checks'], $featureRequest);
@@ -228,6 +244,7 @@ class VerifyFeatureRequest implements ShouldQueue
                 $checksPassed = $this->replayForms($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
                 $this->observeScreens($driver, $runWorkspaceCommand, $workspace, $featureRequest);
                 $this->observeFaults($driver, $runWorkspaceCommand, $workspace, $featureRequest);
+                $this->observeMutants($driver, $runWorkspaceCommand, $workspace, $featureRequest);
 
                 // Last: it takes the change out of the workspace and does
                 // not put all of it back.
@@ -645,6 +662,7 @@ class VerifyFeatureRequest implements ShouldQueue
             // The suite check already ran with coverage when it could.
             $read = fn (string $path) => rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), null, report: false);
             $map = $this->mapped ? TestMap::parse((string) $read($config['report']), $read($config['listing'])) : null;
+            $this->testMap = $map;
             $lines = $map !== null && isset($config['lines']) ? $read($config['lines']) : null;
 
             // Read now and measured last, once the routes the change
@@ -852,6 +870,82 @@ class VerifyFeatureRequest implements ShouldQueue
     }
 
     /**
+     * Make small mistakes on purpose in the change's new code, one at a
+     * time, and run the tests that run each changed line. A mistake no test
+     * notices marks behaviour no test pins down, even when the tests fail
+     * without the change. Like the other measurements this never changes
+     * the checks' result; the reviewer and the owner read it. Each file is
+     * put back as it was, and a mistake that does not parse is not tried.
+     */
+    protected function observeMutants(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): void
+    {
+        /** @var array{enabled: bool, max: int, budget_seconds: int, command: list<string>, timeout: int, report: string} $config */
+        $config = config('builder.verification.mutants');
+        $map = $this->testMap;
+
+        if (! $config['enabled'] || $map === null || $map->isEmpty() || array_intersect(array_keys($this->touched), self::PACKAGE_FILES) !== []) {
+            return;
+        }
+
+        rescue(function () use ($driver, $runWorkspaceCommand, $workspace, $featureRequest, $config, $map) {
+            $id = (string) $workspace->driver_id;
+            $mutants = Mutants::choose($featureRequest->patch, fn (string $file, int $line) => $map->testsRunningLines($file, [$line]) !== null, $config['max']);
+            $until = microtime(true) + $config['budget_seconds'];
+            $tried = 0;
+            $survived = [];
+
+            foreach ($mutants as $mutant) {
+                if (microtime(true) > $until) {
+                    break;
+                }
+
+                $original = $driver->readFile($id, $mutant['file']);
+                $lines = explode("\n", $original);
+
+                if (($lines[$mutant['line'] - 1] ?? null) !== $mutant['was']) {
+                    continue;
+                }
+
+                $lines[$mutant['line'] - 1] = $mutant['now'];
+                $driver->writeFile($id, $mutant['file'], implode("\n", $lines));
+
+                try {
+                    if ($this->outcome($runWorkspaceCommand->handle($workspace, ['php', '-l', $mutant['file']], 30)) !== self::OUTCOME_PASSED) {
+                        continue;
+                    }
+
+                    $files = array_values(array_unique(array_map(fn (int $test) => (string) ($map->tests[$test]['file'] ?? ''), $map->testsRunningLines($mutant['file'], [$mutant['line']]) ?? [])));
+                    $runWorkspaceCommand->handle($workspace, ['rm', '-f', $config['report']], 30);
+                    $command = $runWorkspaceCommand->handle($workspace, [...$config['command'], ...array_filter($files)], $config['timeout']);
+
+                    if ($command->lost) {
+                        throw new CommandLost($command->error_output);
+                    }
+
+                    $report = TestReport::fromJunit((string) rescue(fn () => $driver->readFile($id, $config['report']), '', report: false));
+
+                    // Nothing ran, or it ran out of time: it says nothing.
+                    if ($report === [] || $command->timed_out) {
+                        continue;
+                    }
+
+                    $tried++;
+
+                    if ($this->outcome($command) === self::OUTCOME_PASSED && ! in_array(TestReport::FAILED, array_column($report, 'outcome'), true)) {
+                        $survived[] = [...$mutant, 'was' => Str::limit(trim($mutant['was']), 200), 'now' => Str::limit(trim($mutant['now']), 200)];
+                    }
+                } finally {
+                    $driver->writeFile($id, $mutant['file'], $original);
+                }
+            }
+
+            if ($tried > 0) {
+                $this->keepEvidence('mutants', ['tried' => $tried, 'caught' => $tried - count($survived), 'survived' => $survived]);
+            }
+        }, report: false);
+    }
+
+    /**
      * Measure what the app did while its tests used it against the change:
      * what the change's own lines saved, kept and sent that the shape of a
      * trace shows to be a problem (direction 32). The requests were
@@ -862,6 +956,10 @@ class VerifyFeatureRequest implements ShouldQueue
     protected function observeTraces(FeatureRequest $featureRequest): void
     {
         rescue(function () use ($featureRequest) {
+            // An exception case counts as tested only when its test saw
+            // the app refuse, so each new test's refusals are kept.
+            $this->keepEvidence('refusals', TestRefusals::measure($this->requests, $featureRequest->patch));
+
             $measured = AppTraces::measure(
                 $this->requests,
                 $featureRequest->patch,
@@ -1446,6 +1544,48 @@ class VerifyFeatureRequest implements ShouldQueue
         if (($featureRequest->acceptance ?? []) !== []) {
             $this->addResult(__('Protected acceptance tests'), 'acceptance', self::OUTCOME_SKIPPED, output: __('Not run because an earlier step failed.'));
         }
+    }
+
+    /**
+     * Read the package manifests as they are in the workspace now.
+     *
+     * @return array<string, string|null>
+     */
+    protected function readManifests(WorkspaceDriver $driver, Workspace $workspace): array
+    {
+        $manifests = [];
+
+        foreach (ProtectedInputs::MANIFESTS as $manifest) {
+            $manifests[$manifest] = rescue(fn () => $driver->readFile((string) $workspace->driver_id, $manifest), null, report: false);
+        }
+
+        return $manifests;
+    }
+
+    /**
+     * Refuse a change that edits a protected file or a manifest's scripts,
+     * before anything runs: the checks would no longer be ours. The result
+     * names each file, so the next attempt knows what to leave alone.
+     *
+     * @param  array<string, string|null>  $before
+     */
+    protected function guardProtectedInputs(WorkspaceDriver $driver, Workspace $workspace, array $before): bool
+    {
+        $files = ProtectedInputs::touched(array_keys($this->touched), config('builder.construction.protected_paths', []));
+
+        foreach ($this->readManifests($driver, $workspace) as $manifest => $after) {
+            if (ProtectedInputs::scriptsChanged($before[$manifest] ?? null, $after)) {
+                $files[] = __('the scripts in :file', ['file' => $manifest]);
+            }
+        }
+
+        if ($files === []) {
+            return true;
+        }
+
+        $this->addResult(__('Files the checks depend on'), 'apply', self::OUTCOME_FAILED, output: __('The change edits files that decide how the checks run: :files. Leave them as they were; changing them is a decision for a person.', ['files' => implode(', ', $files)]));
+
+        return false;
     }
 
     /**

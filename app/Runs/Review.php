@@ -15,7 +15,7 @@ final readonly class Review
     /**
      * @param  list<array{severity: string, summary: string, file: string|null}>  $findings
      * @param  list<array{area: string|null, behavior: string, before: string, now: string}>  $changes
-     * @param  list<array{criterion: int, test_file: string|null, test_name: string|null}>  $verify  The test the reviewer says checks each acceptance criterion, by number from 1
+     * @param  list<array{criterion: int, test_file: string|null, test_name: string|null}>  $verify  The test the reviewer says checks each of the plan's verify items, by number from 1
      */
     public function __construct(
         public bool $approved,
@@ -48,8 +48,8 @@ final readonly class Review
             'changes.*.behavior' => ['required', 'string', 'max:200'],
             'changes.*.before' => ['required', 'string', 'max:1000'],
             'changes.*.now' => ['required', 'string', 'max:1000'],
-            'verify' => ['sometimes', 'array', 'max:30'],
-            'verify.*.criterion' => ['required', 'integer', 'min:1', 'max:30'],
+            'verify' => ['sometimes', 'array', 'max:90'],
+            'verify.*.criterion' => ['required', 'integer', 'min:1', 'max:90'],
             'verify.*.test_file' => ['nullable', 'string', 'max:500'],
             'verify.*.test_name' => ['nullable', 'string', 'max:300'],
         ]);

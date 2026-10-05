@@ -105,4 +105,26 @@ class AppRoutesTest extends TestCase
 
         $this->assertSame(['POST /contact'], AppRoutes::unguarded($changes));
     }
+
+    public function test_open_and_opened_routes_are_findings_until_the_owner_keeps_them()
+    {
+        $changes = AppRoutes::changes(
+            ['GET /teams/{team}' => ['web', 'auth']],
+            [
+                'GET /teams/{team}' => ['web'],
+                'POST /contact' => ['web'],
+                'POST /teams' => ['web', 'auth'],
+            ],
+        );
+        $findings = AppRoutes::findings($changes);
+
+        $this->assertSame([
+            ['kind' => AppRoutes::OPEN_TO_ANYONE, 'route' => 'POST /contact'],
+            ['kind' => AppRoutes::NO_LONGER_CHECKED, 'route' => 'GET /teams/{team}'],
+        ], $findings);
+        $this->assertSame([$findings[1]], AppRoutes::findings($changes, [AppRoutes::identity($findings[0])]));
+        $this->assertStringContainsString('ask the owner to keep it', AppRoutes::finding($findings[0]));
+        $this->assertStringContainsString('Put the check back', AppRoutes::finding($findings[1]));
+        $this->assertSame([], AppRoutes::findings(null));
+    }
 }

@@ -24,6 +24,7 @@ it('shows an answer as answered, without a change to keep', function () {
             'understood_as' => 'Question',
             'current_behavior' => 'Owners invite members.',
             'acceptance_criteria' => [],
+            'cases' => [],
             'assumptions' => [],
             'tasks' => [],
             'steps' => [],

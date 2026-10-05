@@ -21,6 +21,7 @@ it('shows how a change serves the owner\'s goal', function () {
         'plan' => Plan::fromArray([
             'summary' => 'Customers pick a free time and book it themselves.',
             'acceptance_criteria' => ['Customers can book a free time.'],
+            'cases' => [['criterion' => 1, 'kind' => 'base', 'says' => 'A customer books a free time.', 'none' => null], ['criterion' => 1, 'kind' => 'alternate', 'says' => 'A customer books the last free time of the day.', 'none' => null], ['criterion' => 1, 'kind' => 'exception', 'says' => 'A time already taken cannot be booked.', 'none' => null]],
             'assumptions' => [],
             'tasks' => ['Add a booking form.'],
             'steps' => [],

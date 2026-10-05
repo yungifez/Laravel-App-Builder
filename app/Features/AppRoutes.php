@@ -29,6 +29,23 @@ class AppRoutes
     protected const KEPT = 40;
 
     /**
+     * A new address that changes something with no check on who may use
+     * it (§12: a new mutating surface needs authentication).
+     */
+    public const OPEN_TO_ANYONE = 'open_to_anyone';
+
+    /**
+     * An address that lost a check on who may use it.
+     */
+    public const NO_LONGER_CHECKED = 'no_longer_checked';
+
+    /**
+     * The kinds the owner may say they want, such as a contact form anyone
+     * can send.
+     */
+    public const OWNED = [self::OPEN_TO_ANYONE, self::NO_LONGER_CHECKED];
+
+    /**
      * Read the framework's route list into each route's middleware, by
      * method and address, or null when it is not a route list.
      *
@@ -140,6 +157,48 @@ class AppRoutes
             $changes['added'] ?? [],
             fn (array $route) => ! str_starts_with($route['route'], 'GET ') && self::guards($route['middleware']) === [],
         ), 'route');
+    }
+
+    /**
+     * Get the findings about who may use the change's addresses: each new
+     * one that changes something with no check, and each one that lost a
+     * check. Only Laravel's own checks are read, so an app that guards
+     * with its own middleware is asked too, and the owner's yes keeps it.
+     *
+     * @param  array{added?: list<array{route: string, middleware: list<string>}>, changed?: list<array{route: string, lost: list<string>, gained: list<string>}>}|null  $changes
+     * @param  list<string>  $accepted  Identities the owner said they want
+     * @return list<array{kind: string, route: string}>
+     */
+    public static function findings(?array $changes, array $accepted = []): array
+    {
+        $findings = [
+            ...array_map(fn (string $route) => ['kind' => self::OPEN_TO_ANYONE, 'route' => $route], self::unguarded($changes)),
+            ...array_map(fn (array $route) => ['kind' => self::NO_LONGER_CHECKED, 'route' => $route['route']], self::opened($changes)),
+        ];
+
+        return array_values(array_filter($findings, fn (array $finding) => ! in_array(self::identity($finding), $accepted, true)));
+    }
+
+    /**
+     * Name a finding the same way each time the checks run.
+     *
+     * @param  array{kind: string, route: string}  $finding
+     */
+    public static function identity(array $finding): string
+    {
+        return "{$finding['kind']}|{$finding['route']}";
+    }
+
+    /**
+     * Say what a finding is, for the agent that sends the change back.
+     *
+     * @param  array{kind: string, route: string}  $finding
+     */
+    public static function finding(array $finding): string
+    {
+        return $finding['kind'] === self::OPEN_TO_ANYONE
+            ? __('The new route :route changes data, but nothing checks who may use it. Put it behind the auth middleware with a policy or a form request that authorizes, as the app does for its other routes. If anyone must be able to use it, such as a contact form, ask the owner to keep it.', ['route' => $finding['route']])
+            : __('The route :route no longer checks who may use it. Put the check back. If the request asks for exactly this, ask the owner to keep it.', ['route' => $finding['route']]);
     }
 
     /**

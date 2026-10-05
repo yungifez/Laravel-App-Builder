@@ -110,7 +110,7 @@ class WriteBrief
             $sections,
             "## Plan\n\n{$plan->summary}",
             "## Tasks\n\n".$this->list($plan->tasks),
-            "## Acceptance criteria\n\nAdd or update a test for each one: the change is only accepted when every criterion is checked by a test in the change. Only tests under ".Capability::suiteLocation()." are run by the checks, so put them there.\n\n".$this->list($plan->acceptanceCriteria),
+            "## Acceptance criteria\n\nEach criterion is tried the usual way (base), another way that should also work (alternate) and a way the app must refuse (exception). Add or update one test for each item below, and a test checks one item: the change is only accepted when every item is checked by its own test in the change. A new test must fail without the change. An exception test must send the request, or run the command, that the app refuses, and assert the refusal: the checks record what the app did while it ran. Only tests under ".Capability::suiteLocation()." are run by the checks, so put them there.\n\n".$this->list(array_column($plan->verifyItems(), 'text')),
         );
 
         if (($scaffolded = $this->scaffolded($run)) !== []) {

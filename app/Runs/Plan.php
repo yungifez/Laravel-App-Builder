@@ -36,6 +36,7 @@ final readonly class Plan
      * @param  list<string>  $next  What the owner might ask for next, in their words, offered as one-tap follow-ups
      * @param  string|null  $goal  How the change serves the goal the owner wrote in the notes, if it does
      * @param  list<Record>  $dataShape  The records the change stores, stated once so every part agrees (§9)
+     * @param  list<array{criterion: int, kind: string, says: string|null, none: string|null}>  $cases  How each criterion is tried: the main way, another way and a refusal, or why one cannot apply. Criteria are numbered from 1.
      */
     public function __construct(
         public string $summary,
@@ -55,7 +56,35 @@ final readonly class Plan
         public array $next = [],
         public ?string $goal = null,
         public array $dataShape = [],
+        public array $cases = [],
     ) {}
+
+    /**
+     * The ways each criterion is tried, in order. A test for each one that
+     * applies shows the criterion holds on more than its easiest path.
+     */
+    public const CASES = ['base', 'alternate', 'exception'];
+
+    /**
+     * Get what the change's tests must check, numbered from 1: one item for
+     * each case of each criterion that applies.
+     *
+     * @return list<array{criterion: string, kind: string, text: string}>
+     */
+    public function verifyItems(): array
+    {
+        $items = [];
+
+        foreach ($this->cases as $case) {
+            $criterion = $this->acceptanceCriteria[$case['criterion'] - 1] ?? null;
+
+            if ($criterion !== null && $case['says'] !== null) {
+                $items[] = ['criterion' => $criterion, 'kind' => $case['kind'], 'text' => "{$criterion} ({$case['kind']} case: {$case['says']})"];
+            }
+        }
+
+        return $items;
+    }
 
     /**
      * Build a plan from model output, refusing output that does not match the plan's shape.
@@ -143,7 +172,53 @@ final readonly class Plan
             next: self::next($valid['next'] ?? []),
             goal: filled($valid['goal'] ?? null) ? trim($valid['goal']) : null,
             dataShape: self::dataShape($data['data_shape'] ?? []),
+            cases: self::cases($data['cases'] ?? null, count($valid['acceptance_criteria'])),
         );
+    }
+
+    /**
+     * Read how each criterion is tried. Every criterion has a main way;
+     * another way and a refusal each say what is tried or why it cannot
+     * apply, so a missing case is a decision someone can read, never a
+     * silence.
+     *
+     * @return list<array{criterion: int, kind: string, says: string|null, none: string|null}>
+     *
+     * @throws ConstructionFailed
+     */
+    public static function cases(mixed $cases, int $criteria): array
+    {
+        $validator = Validator::make(['cases' => $cases], [
+            'cases' => ['present', 'array', "size:{$criteria}"],
+            'cases.*.base' => ['required', 'string', 'max:500'],
+            ...collect(['alternate', 'exception'])->flatMap(fn (string $kind) => [
+                "cases.*.{$kind}" => ['nullable', 'string', 'max:500', "required_without:cases.*.no_{$kind}"],
+                "cases.*.no_{$kind}" => ['nullable', 'string', 'max:500'],
+            ])->all(),
+        ], [
+            'cases.size' => 'Give the cases of each acceptance criterion, in the same order.',
+        ]);
+
+        if ($validator->fails()) {
+            throw new ConstructionFailed(__('The planner returned an invalid plan: :errors', ['errors' => implode(' ', $validator->errors()->all())]));
+        }
+
+        $read = [];
+
+        foreach (array_values($validator->validated()['cases']) as $index => $case) {
+            foreach (self::CASES as $kind) {
+                $says = filled($case[$kind] ?? null) ? trim($case[$kind]) : null;
+
+                $read[] = [
+                    'criterion' => $index + 1,
+                    'kind' => $kind,
+                    'says' => $says,
+                    'none' => $says === null ? trim((string) $case["no_{$kind}"]) : null,
+                ];
+            }
+        }
+
+        return $read;
     }
 
     /**
@@ -369,7 +444,7 @@ final readonly class Plan
     /**
      * Restore a plan saved on a run.
      *
-     * @param  array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>, understood_as?: string|null, current_behavior?: string|null, preserve?: list<array{area: string|null, statement: string}>, commit_subject?: string|null, answer?: string|null, next?: list<string>, goal?: string|null, data_shape?: list<Record>}  $data
+     * @param  array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>, understood_as?: string|null, current_behavior?: string|null, preserve?: list<array{area: string|null, statement: string}>, commit_subject?: string|null, answer?: string|null, next?: list<string>, goal?: string|null, data_shape?: list<Record>, cases: list<array{criterion: int, kind: string, says: string|null, none: string|null}>}  $data
      */
     public static function fromArray(array $data): self
     {
@@ -390,13 +465,14 @@ final readonly class Plan
             next: $data['next'] ?? [],
             goal: $data['goal'] ?? null,
             dataShape: $data['data_shape'] ?? [],
+            cases: $data['cases'],
         );
     }
 
     /**
      * Get the plan as stored on the run.
      *
-     * @return array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities: list<string>, understood_as: string|null, current_behavior: string|null, preserve: list<array{area: string|null, statement: string}>, commit_subject: string|null, answer: string|null, next: list<string>, goal: string|null, data_shape: list<Record>}
+     * @return array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities: list<string>, understood_as: string|null, current_behavior: string|null, preserve: list<array{area: string|null, statement: string}>, commit_subject: string|null, answer: string|null, next: list<string>, goal: string|null, data_shape: list<Record>, cases: list<array{criterion: int, kind: string, says: string|null, none: string|null}>}
      */
     public function toArray(): array
     {
@@ -417,6 +493,7 @@ final readonly class Plan
             'next' => $this->next,
             'goal' => $this->goal,
             'data_shape' => $this->dataShape,
+            'cases' => $this->cases,
         ];
     }
 }

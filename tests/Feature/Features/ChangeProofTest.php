@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Features;
 
+use App\Actions\Features\AcceptFindings;
 use App\Actions\Features\DescribeProof;
 use App\Context\ProjectNotes;
 use App\Enums\VerificationStatus;
@@ -10,6 +11,7 @@ use App\Models\Run;
 use App\Models\Verification;
 use App\Runs\Plan;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Arr;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -368,10 +370,23 @@ class ChangeProofTest extends TestCase
             'changed' => [['route' => 'GET /teams', 'lost' => [], 'gained' => ['verified']]],
         ])->all());
 
-        // Nothing that ran can tell whether the owner wanted this, so it is a gap they see.
+        // Nothing that ran can tell whether the owner wanted this, so it is a gap they decide.
         $opened = $texts(['added' => [], 'removed' => [], 'changed' => [['route' => 'GET /teams/{team}', 'lost' => ['auth', 'verified'], 'gained' => []]]]);
-        $this->assertContains(['kind' => 'gap', 'text' => 'A part of your app no longer checks who may use it: /teams/{team}. Make sure you wanted that.'], $opened->all());
+        $line = $opened->firstWhere('text', 'A part of your app no longer checks who may use it: /teams/{team}. If that is what you want, say so.');
+        $this->assertSame('gap', $line['kind']);
+        $this->assertSame(['finding' => 'no_longer_checked', 'accepted' => false], Arr::only($line['decision'], ['finding', 'accepted']));
         $this->assertFalse($opened->contains('text', $kept));
+
+        // A new address anyone can send to, until the owner says they want it.
+        $routes = ['added' => [['route' => 'POST /contact', 'middleware' => ['web', 'throttle:6,1']]], 'removed' => [], 'changed' => []];
+        $request = FeatureRequest::factory()->generated()->create();
+        $this->checked($request, evidence: ['routes' => $routes]);
+        $this->assertContains('Anyone, even without signing in, can now send information to /contact. If that is what you want, such as a contact form, say so.', array_column(app(DescribeProof::class)->handle($request), 'text'));
+
+        app(AcceptFindings::class)->handle($request, 'open_to_anyone', $request->project->owner);
+        $line = collect(app(DescribeProof::class)->handle($request))->firstWhere('kind', 'chosen');
+        $this->assertSame('You said you want this: anyone can send information to /contact without signing in. If a later change opens more, I will ask again.', $line['text']);
+        $this->assertTrue($line['decision']['accepted']);
 
         // An address that lost middleware of the app's own is not guessed at, either way.
         $unknown = $texts(['added' => [], 'removed' => [], 'changed' => [['route' => 'GET /teams', 'lost' => ['App\\Http\\Middleware\\EnsureAdmin'], 'gained' => []]]]);

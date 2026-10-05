@@ -15,7 +15,7 @@ class VerifyItemsTest extends TestCase
 
     public function test_only_a_test_the_suite_ran_and_passed_counts_as_evidence()
     {
-        $plan = new Plan('Describe teams.', ['Teams have a description.', 'The page shows the field.', 'Members cannot edit it.']);
+        $plan = new Plan('Describe teams.', ['Teams have a description.', 'The page shows the field.', 'Members cannot edit it.'], cases: $this->usualWayOnly(3));
         $review = new Review(true, 'Fine.', verify: [
             ['criterion' => 1, 'test_file' => 'tests/Feature/TeamTest.php', 'test_name' => 'teams have a description'],
             ['criterion' => 2, 'test_file' => 'resources/js/pages/Team.test.ts', 'test_name' => 'shows the description field'],
@@ -32,7 +32,7 @@ class VerifyItemsTest extends TestCase
 
     public function test_a_named_test_that_did_not_run_is_not_evidence()
     {
-        $plan = new Plan('Describe teams.', ['Teams have a description.']);
+        $plan = new Plan('Describe teams.', ['Teams have a description.'], cases: $this->usualWayOnly(1));
         $review = new Review(true, 'Fine.', verify: [
             ['criterion' => 1, 'test_file' => 'tests/Feature/TeamTest.php', 'test_name' => 'teams have a description'],
         ]);
@@ -54,10 +54,46 @@ class VerifyItemsTest extends TestCase
         ])]));
     }
 
+    public function test_each_case_needs_its_own_test_that_shows_the_change_and_a_refusal_for_the_exception()
+    {
+        $plan = new Plan('Describe teams.', ['Teams have a description.'], cases: [
+            ['criterion' => 1, 'kind' => 'base', 'says' => 'An owner adds one.', 'none' => null],
+            ['criterion' => 1, 'kind' => 'alternate', 'says' => null, 'none' => 'There is no other way.'],
+            ['criterion' => 1, 'kind' => 'exception', 'says' => 'A member is turned away.', 'none' => null],
+        ]);
+        $review = new Review(true, 'Fine.', verify: [
+            ['criterion' => 1, 'test_file' => 'tests/Feature/TeamTest.php', 'test_name' => 'owners add a description'],
+            ['criterion' => 2, 'test_file' => 'tests/Feature/TeamTest.php', 'test_name' => 'members cannot add a description'],
+        ]);
+        $suite = $this->suite('passed', [
+            ['file' => 'tests/Feature/TeamTest.php', 'name' => 'test_owners_add_a_description', 'outcome' => 'passed'],
+            ['file' => 'tests/Feature/TeamTest.php', 'name' => 'test_members_cannot_add_a_description', 'outcome' => 'passed'],
+        ]);
+        $verified = fn (array $evidence) => app(AssessVerifyItems::class)->handle($plan, $review, self::PATCH, [$suite], $evidence);
+
+        $items = $verified([]);
+        $this->assertSame(['base', 'exception'], array_column($items, 'kind'));
+        $this->assertSame(['Teams have a description.', 'Teams have a description.'], array_column($items, 'criterion'));
+        $this->assertSame(['tested', 'tested'], array_column($items, 'evidence'), 'Without measurements, a passing test is all there is.');
+
+        // The member's request was let through, or never made.
+        $this->assertSame('not_refused', $verified(['refusals' => ['teamtest|members_cannot_add_a_description' => false]])[1]['evidence']);
+        $this->assertSame('no_request', $verified(['refusals' => ['teamtest|owners_add_a_description' => false]])[1]['evidence']);
+        $this->assertSame('tested', $verified(['refusals' => ['teamtest|members_cannot_add_a_description' => true]])[1]['evidence']);
+
+        // A new test that passes with the change taken out shows nothing.
+        $this->assertSame('passes_without_change', $verified(['new_tests' => [
+            ['file' => 'tests/Feature/TeamTest.php', 'name' => 'test_owners_add_a_description', 'without_change' => 'passed'],
+        ]])[0]['evidence']);
+        $this->assertSame('tested', $verified(['new_tests' => [
+            ['file' => 'tests/Feature/TeamTest.php', 'name' => 'test_owners_add_a_description', 'without_change' => 'failed'],
+        ]])[0]['evidence']);
+    }
+
     public function test_the_suite_paths_are_configurable()
     {
         config(['builder.verification.suite_paths' => ['tests/', 'resources/js/'], 'builder.verification.suite_suffixes' => ['Test.php', '.test.ts']]);
-        $plan = new Plan('Describe teams.', ['The page shows the field.']);
+        $plan = new Plan('Describe teams.', ['The page shows the field.'], cases: $this->usualWayOnly(1));
         $review = new Review(true, 'Fine.', verify: [
             ['criterion' => 1, 'test_file' => 'resources/js/pages/Team.test.ts', 'test_name' => 'shows the description field'],
         ]);
@@ -101,5 +137,26 @@ class VerifyItemsTest extends TestCase
     protected function suite(string $outcome, array $tests): array
     {
         return ['name' => 'Tests', 'stage' => 'checks', 'outcome' => $outcome, 'tests' => $tests];
+    }
+
+    /**
+     * Cases where only the usual way applies, so each criterion is one item.
+     *
+     * @return list<array{criterion: int, kind: string, says: string|null, none: string|null}>
+     */
+    protected function usualWayOnly(int $criteria): array
+    {
+        $cases = [];
+
+        foreach (range(1, $criteria) as $criterion) {
+            array_push(
+                $cases,
+                ['criterion' => $criterion, 'kind' => 'base', 'says' => "The usual way of {$criterion}.", 'none' => null],
+                ['criterion' => $criterion, 'kind' => 'alternate', 'says' => null, 'none' => 'There is no other way.'],
+                ['criterion' => $criterion, 'kind' => 'exception', 'says' => null, 'none' => 'Nothing is refused.'],
+            );
+        }
+
+        return $cases;
     }
 }

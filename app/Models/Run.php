@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\RunStatus;
 use App\Models\Concerns\HasPublicId;
+use App\Scaffolding\Scaffold;
 use Carbon\CarbonImmutable;
 use Database\Factories\RunFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -20,6 +21,8 @@ use Laravel\Sanctum\HasApiTokens;
  * the fencing token; taking over an expired lease increments the token, so
  * the previous holder's late writes are refused.
  *
+ * @phpstan-import-type Record from Scaffold
+ *
  * @property int $id
  * @property string $uuid Names the row in links and requests
  * @property int $feature_request_id
@@ -31,7 +34,7 @@ use Laravel\Sanctum\HasApiTokens;
  * @property string|null $lease_owner
  * @property CarbonImmutable|null $lease_expires_at
  * @property int $workspace_revision
- * @property array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>, understood_as?: string|null, current_behavior?: string|null, preserve?: list<array{area: string|null, statement: string}>, commit_subject?: string|null, answer?: string|null, next?: list<string>, goal?: string|null}|null $plan The saved plan the run builds against
+ * @property array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities: list<string>, understood_as: string|null, current_behavior: string|null, preserve: list<array{area: string|null, statement: string}>, commit_subject: string|null, answer: string|null, next: list<string>, goal: string|null, data_shape: list<Record>, cases: list<array{criterion: int, kind: string, says: string|null, none: string|null}>}|null $plan The saved plan the run builds against
  * @property array{mode: string, targets: list<string>, text: string, included: list<array{file: string, tokens: int}>, outline: list<array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed: string|null}>, test_files?: list<string>}>, problems: list<string>}|null $context The project context compiled for the run's agents
  * @property int $repairs Repair attempts made after failed verification or review
  * @property array{reason: string, details: list<string>, gate?: list<array{key: string|null, kind: string, identity: string, text: string}>}|null $feedback What the next implementing pass must address; "gate" holds what the gate found, keyed so the agent can ask the owner to keep one

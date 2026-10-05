@@ -61,7 +61,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return $this->asked($featureRequest, array_values(collect($lines)->unique('text')->all()));
@@ -296,15 +296,17 @@ class DescribeProof
      * changed which addresses the app answers. The list comes from the
      * running framework, before and after the change.
      *
-     * An address that lost a check on who may use it is a gap: nothing
-     * that ran can tell whether the owner wanted that. When every changed
-     * address kept its checks, that is said, but only for the checks
-     * Laravel names itself; an address that lost other middleware is left
-     * unsaid.
+     * A new address that changes something with no check on who may use
+     * it, and an address that lost its check, are gaps: nothing that ran
+     * can tell whether the owner wanted that. They hold the change until
+     * the owner says they want them, such as a contact form anyone may
+     * send. When every changed address kept its checks, that is said, but
+     * only for the checks Laravel names itself; an address that lost
+     * other middleware is left unsaid.
      *
-     * @return list<array{kind: string, text: string}>
+     * @return list<array{kind: string, text: string, decision?: array{change: string, finding: string, accepted: bool}}>
      */
-    protected function access(Verification $verification): array
+    protected function access(FeatureRequest $featureRequest, Verification $verification): array
     {
         $routes = $verification->evidence['routes'] ?? [];
 
@@ -312,14 +314,33 @@ class DescribeProof
             return [];
         }
 
-        $opened = AppRoutes::opened($routes);
+        $gaps = [
+            AppRoutes::OPEN_TO_ANYONE => 'Anyone, even without signing in, can now send information to :address. If that is what you want, such as a contact form, say so.',
+            AppRoutes::NO_LONGER_CHECKED => 'A part of your app no longer checks who may use it: :address. If that is what you want, say so.',
+        ];
+        $chosen = [
+            AppRoutes::OPEN_TO_ANYONE => 'You said you want this: anyone can send information to :address without signing in. If a later change opens more, I will ask again.',
+            AppRoutes::NO_LONGER_CHECKED => 'You said you want this: :address no longer checks who may use it. If a later change opens more, I will ask again.',
+        ];
+        // A kept change is part of the app: there is nothing left to decide.
+        $open = ! $featureRequest->isAccepted();
+        $found = AppRoutes::findings($routes);
+        $left = AppRoutes::findings($routes, $this->acceptFindings->identities($featureRequest));
+        $lines = [];
 
-        if ($opened !== []) {
-            return [['kind' => 'gap', 'text' => trans_choice('A part of your app no longer checks who may use it: :address. Make sure you wanted that.|:count parts of your app no longer check who may use them, such as :address. Make sure you wanted that.', count($opened), ['address' => AppRoutes::address($opened[0]['route'])])]];
+        foreach ($gaps as $kind => $text) {
+            $kindFound = array_values(array_filter($found, fn (array $finding) => $finding['kind'] === $kind));
+            $kindLeft = array_values(array_filter($left, fn (array $finding) => $finding['kind'] === $kind));
+
+            if ($kindLeft !== []) {
+                $lines[] = ['kind' => 'gap', 'text' => __($text, ['address' => AppRoutes::address($kindLeft[0]['route'])]), ...($open ? ['decision' => ['change' => $featureRequest->uuid, 'finding' => $kind, 'accepted' => false]] : [])];
+            } elseif ($kindFound !== []) {
+                $lines[] = ['kind' => 'chosen', 'text' => __($chosen[$kind], ['address' => AppRoutes::address($kindFound[0]['route'])]), ...($open ? ['decision' => ['change' => $featureRequest->uuid, 'finding' => $kind, 'accepted' => true]] : [])];
+            }
         }
 
-        if (array_any($routes['changed'] ?? [], fn (array $route) => $route['lost'] !== [])) {
-            return [];
+        if ($lines !== [] || array_any($routes['changed'] ?? [], fn (array $route) => $route['lost'] !== [])) {
+            return $lines;
         }
 
         return [['kind' => 'passed', 'text' => __('Every part of your app that asks people to sign in still does.')]];
@@ -345,7 +366,30 @@ class DescribeProof
                 ? trans_choice('Tests ran its one new line of code.|Tests ran every one of its :count new lines of code.', $code['lines'])
                 : __('Tests ran :run of its :lines new lines of code.', ['run' => $code['run'], 'lines' => $code['lines']]), 'evidence' => true] : null,
             NewCode::gap($code) ? ['kind' => 'gap', 'text' => __('Some of the new code is not run by any test yet.')] : null,
+            ...$this->mutants($verification),
         ]));
+    }
+
+    /**
+     * Say whether the tests noticed small mistakes made on purpose in the
+     * new code. One they missed is a gap: the tests run that code but do
+     * not pin down what it does.
+     *
+     * @return list<array{kind: string, text: string, evidence?: bool}>
+     */
+    protected function mutants(Verification $verification): array
+    {
+        $mutants = $verification->evidence['mutants'] ?? null;
+
+        if ($mutants === null || $mutants['tried'] === 0) {
+            return [];
+        }
+
+        if ($mutants['caught'] === $mutants['tried']) {
+            return [['kind' => 'caught', 'text' => trans_choice('Its tests noticed the small mistake I made in its new code on purpose.|Its tests noticed all :count small mistakes I made in its new code on purpose.', $mutants['tried']), 'evidence' => true]];
+        }
+
+        return [['kind' => 'gap', 'text' => __('Its tests missed :missed of :tried small mistakes I made in its new code on purpose, so some of what it does is not pinned down by a test yet.', ['missed' => $mutants['tried'] - $mutants['caught'], 'tried' => $mutants['tried']])]];
     }
 
     /**

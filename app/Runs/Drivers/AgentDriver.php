@@ -270,7 +270,8 @@ abstract class AgentDriver implements ConstructionDriver
             $evidence->projectContext !== '' ? "## Project context\n\n{$evidence->projectContext}" : null,
             $this->areasTouched($evidence),
             "## Plan\n\n{$evidence->plan->summary}",
-            "## Acceptance criteria\n\n".$this->numbered($evidence->plan->acceptanceCriteria),
+            "## Acceptance criteria\n\n".$this->list($evidence->plan->acceptanceCriteria),
+            "## What the tests must check\n\n".$this->numbered(array_column($evidence->plan->verifyItems(), 'text')),
             $evidence->plan->preserve !== [] ? "## Must stay as it is\n\n".$this->list(array_column($evidence->plan->preserve, 'statement')) : null,
             "## Verification: {$evidence->verificationStatus}\n\n".implode("\n", $results),
             "## Tests deleted or weakened by the diff\n\n".($evidence->weakenedTests === [] ? 'None.' : $this->json($evidence->weakenedTests)),
@@ -319,6 +320,14 @@ abstract class AgentDriver implements ConstructionDriver
             $code = $measured['new_code'];
             $parts[] = sprintf('Of its %d new lines of PHP that can run, tests ran %d; %d of those only its own tests ran.', $code['lines'], $code['run'], $code['own_tests_only'])
                 .($code['unrun'] === [] ? '' : " No test ran:\n".$this->list(array_map(fn (string $path, array $lines) => $path.': line '.implode(', ', $lines), array_keys($code['unrun']), $code['unrun'])));
+        }
+
+        if (isset($measured['mutants'])) {
+            $mutants = $measured['mutants'];
+            $parts[] = sprintf('Small mistakes were made in its new code on purpose, one at a time, and the tests that run each line ran again. They noticed %d of %d.', $mutants['caught'], $mutants['tried'])
+                .($mutants['survived'] === [] ? '' : " Not noticed, so no test pins this behaviour down:\n".$this->list(array_map(fn (array $mutant) => $mutant['now'] === ''
+                    ? "{$mutant['file']}: line {$mutant['line']} `{$mutant['was']}` was left out"
+                    : "{$mutant['file']}: line {$mutant['line']} `{$mutant['was']}` became `{$mutant['now']}`", $mutants['survived'])));
         }
 
         if (isset($measured['traces'])) {

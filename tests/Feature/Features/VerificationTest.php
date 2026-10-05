@@ -360,6 +360,61 @@ class VerificationTest extends TestCase
         $this->assertCount(1, $this->driver->destroyed);
     }
 
+    public function test_a_change_that_edits_a_file_the_checks_depend_on_is_sent_back_before_anything_runs()
+    {
+        $request = FeatureRequest::factory()->generated()->create(['patch' => implode("\n", [
+            'diff --git a/phpunit.xml b/phpunit.xml',
+            '--- a/phpunit.xml',
+            '+++ b/phpunit.xml',
+            '@@ -1 +1 @@',
+            '-<phpunit>',
+            '+<phpunit stopOnFailure="false">',
+            '',
+        ])]);
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.verifications.store', $request));
+
+        $verification = $request->verifications()->sole();
+        $this->assertSame(VerificationStatus::Failed, $verification->status);
+        $guard = collect($verification->results)->firstWhere('name', 'Files the checks depend on');
+        $this->assertSame('failed', $guard['outcome']);
+        $this->assertStringContainsString('phpunit.xml', $guard['output']);
+        // Nothing the change could have bent was run.
+        $this->assertFalse(collect($this->driver->executed)->contains(fn (array $run) => $run['command'][0] === 'composer'));
+        $this->assertSame(['skipped'], collect($verification->results)->where('stage', 'checks')->pluck('outcome')->unique()->values()->all());
+    }
+
+    public function test_a_change_to_the_scripts_in_a_package_manifest_is_sent_back_but_other_manifest_changes_are_not()
+    {
+        // The app had no package.json; the change adds one, with or
+        // without scripts.
+        $writes = [
+            'scripts' => json_encode(['scripts' => ['build' => 'true']]),
+            'require' => json_encode(['devDependencies' => ['vite' => '^7.0']]),
+        ];
+
+        foreach ($writes as $case => $after) {
+            $this->driver->onExec = function (string $id, array $command) use ($after) {
+                if ($command[0] === 'git' && $command[1] === 'apply') {
+                    $this->driver->files["{$id}:package.json"] = $after;
+                }
+
+                return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+            };
+            $request = FeatureRequest::factory()->generated()->create();
+
+            $this->actingAs($request->project->owner)->post(route('feature-requests.verifications.store', $request));
+
+            $guard = collect($request->verifications()->sole()->results)->firstWhere('name', 'Files the checks depend on');
+
+            if ($case === 'scripts') {
+                $this->assertStringContainsString('the scripts in package.json', $guard['output']);
+            } else {
+                $this->assertNull($guard);
+            }
+        }
+    }
+
     public function test_a_change_that_does_not_apply_is_reported()
     {
         $this->driver->onExec = fn (string $id, array $command) => new CommandResult(
@@ -1057,6 +1112,69 @@ class VerificationTest extends TestCase
             ['lines' => 2, 'run' => 1, 'own_tests_only' => 1, 'unrun' => ['app/Models/Team.php' => [4]]],
             $request->verifications()->sole()->evidence['new_code'],
         );
+    }
+
+    public function test_small_mistakes_in_the_new_code_show_which_behaviour_the_tests_pin_down()
+    {
+        $map = ['sh', '-c', 'make the test map'];
+        config([
+            'builder.verification.test_map' => [...config('builder.verification.test_map'), 'command' => $map, 'report' => 'covered.txt', 'listing' => 'tests.xml'],
+            'builder.verification.mutants.max' => 5,
+            'builder.verification.checks.0.report' => 'storage/logs/junit.xml',
+        ]);
+        $patch = implode("\n", [
+            'diff --git a/app/Models/Team.php b/app/Models/Team.php',
+            '--- a/app/Models/Team.php',
+            '+++ b/app/Models/Team.php',
+            '@@ -1,2 +1,5 @@',
+            ' <?php',
+            ' // Team',
+            '+if ($user->id === $team->owner_id) {',
+            '+    $team->save();',
+            '+}',
+            '',
+        ]);
+        $source = "<?php\n// Team\nif (\$user->id === \$team->owner_id) {\n    \$team->save();\n}\n";
+        $mutated = null;
+        $this->driver->onExec = function (string $workspace, array $command) use ($map, $source, &$mutated) {
+            $mutated = $workspace;
+
+            if ($command === $map) {
+                $this->driver->files["{$workspace}:storage/logs/junit.xml"] = '<testsuites><testcase name="test_owners_save_teams" file="/workspace/tests/Feature/TeamTest.php"/></testsuites>';
+                $this->driver->files["{$workspace}:app/Models/Team.php"] = $source;
+                $this->driver->files["{$workspace}:covered.txt"] = implode("\n", [
+                    '/workspace',
+                    '<project source="/workspace/app"',
+                    '<file name="Team.php" path="/Models"',
+                    '<line nr="3"',
+                    'covered by="Tests\Feature\TeamTest::test_owners_save_teams"',
+                    '<line nr="4"',
+                    'covered by="Tests\Feature\TeamTest::test_owners_save_teams"',
+                ]);
+                $this->driver->files["{$workspace}:tests.xml"] = '<?xml version="1.0"?><testSuite xmlns="https://xml.phpunit.de/testSuite"><tests><testClass name="Tests\Feature\TeamTest" file="/workspace/tests/Feature/TeamTest.php"><testMethod id="Tests\Feature\TeamTest::test_owners_save_teams" name="test_owners_save_teams"/></testClass></tests></testSuite>';
+            }
+
+            if (array_slice($command, 0, 4) === config('builder.verification.mutants.command')) {
+                // The test notices the comparison turned around, but not the save left out.
+                $failed = str_contains($this->driver->files["{$workspace}:app/Models/Team.php"], '!==');
+                $this->driver->files["{$workspace}:storage/logs/mutants.xml"] = '<testsuites><testcase name="test_owners_save_teams" file="/workspace/tests/Feature/TeamTest.php">'.($failed ? '<failure>no</failure>' : '').'</testcase></testsuites>';
+
+                return new CommandResult(exitCode: $failed ? 1 : 0, output: '', errorOutput: '', durationMs: 5);
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+        $request = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
+
+        app(RequestVerification::class)->handle($request);
+
+        $this->assertSame([
+            'tried' => 2,
+            'caught' => 1,
+            'survived' => [['file' => 'app/Models/Team.php', 'line' => 4, 'was' => '$team->save();', 'now' => '']],
+        ], $request->verifications()->sole()->evidence['mutants']);
+        $this->assertSame($source, $this->driver->files["{$mutated}:app/Models/Team.php"], 'Each file is put back as it was.');
+        $this->assertContains(['php', 'artisan', 'test', '--log-junit=storage/logs/mutants.xml', 'tests/Feature/TeamTest.php'], array_column($this->driver->executed, 'command'));
     }
 
     public function test_what_the_changes_code_did_in_the_requests_of_the_tests_is_measured_from_the_recording()

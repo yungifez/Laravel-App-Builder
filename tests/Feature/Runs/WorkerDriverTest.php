@@ -61,6 +61,7 @@ class WorkerDriverTest extends TestCase
         FeaturePlanner::fake([[
             'summary' => 'Teams get an optional description.',
             'acceptance_criteria' => ['Teams have a nullable description.'],
+            'cases' => [['base' => 'A team saved with a description keeps it.', 'alternate' => null, 'no_alternate' => 'A description is only set one way.', 'exception' => null, 'no_exception' => 'Nothing about a description is refused.']],
             'assumptions' => [],
             'tasks' => ['Add a nullable description property.'],
             'capabilities' => [],

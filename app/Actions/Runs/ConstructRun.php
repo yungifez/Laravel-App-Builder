@@ -27,6 +27,7 @@ use App\Features\AppBoundaries;
 use App\Features\AppContainment;
 use App\Features\AppDrift;
 use App\Features\AppFaults;
+use App\Features\AppRoutes;
 use App\Features\BoundaryCode;
 use App\Features\Exceptions\CannotGenerateFeature;
 use App\Features\InventedColours;
@@ -395,22 +396,26 @@ class ConstructRun
             changeEvidence: $verification->evidence ?? [],
         ));
 
-        $verified = $this->assessVerifyItems->handle($plan, $review, (string) $featureRequest->patch, $verification->results ?? []);
+        $verified = $this->assessVerifyItems->handle($plan, $review, (string) $featureRequest->patch, $verification->results ?? [], $verification->evidence ?? []);
 
         if ($driver->canRepair() && config('builder.verification.require_verify_tests')) {
             $findings = [];
 
             foreach ($verified as $item) {
                 $finding = match ($item['evidence']) {
-                    'no_test' => __('No test in the change checks: :criterion', ['criterion' => $item['criterion']]),
+                    'no_test' => __('No test in the change checks: :criterion', ['criterion' => $item['case']]),
+                    // What the recording saw, not what the test says: an
+                    // exception case is checked by a request the app refused.
+                    'no_request' => __('The test ":name" for ":case" sends your app nothing, so no refusal could be seen. Make it send the request, or run the command, that the app must refuse, and assert the refusal.', ['name' => $item['test_name'] ?? '', 'case' => $item['case']]),
+                    'not_refused' => __('The app let every request of the test ":name" through, but ":case" says it must refuse. Make the app refuse it, or make the test try that case.', ['name' => $item['test_name'] ?? '', 'case' => $item['case']]),
                     'not_run_by_checks' => Capability::runBySuite((string) $item['test_file'])
                         ? __('The test ":name" for ":criterion" did not run in the test suite (:file). It is missing, skipped or named differently. Name a test that exists and runs.', [
                             'name' => $item['test_name'] ?? '',
-                            'criterion' => $item['criterion'],
+                            'criterion' => $item['case'],
                             'file' => $item['test_file'],
                         ])
                         : __('The test for ":criterion" (:file) is not run by the test suite. Check it in a test under :paths.', [
-                            'criterion' => $item['criterion'],
+                            'criterion' => $item['case'],
                             'file' => $item['test_file'],
                             'paths' => Capability::suiteLocation(),
                         ]),
@@ -537,6 +542,15 @@ class ConstructRun
         if (config('builder.verification.boundaries.send_back')) {
             foreach ($boundaries['findings'] ?? [] as $finding) {
                 $gate[] = ['kind' => $finding['kind'], 'identity' => BoundaryCode::identity($finding), 'text' => AppBoundaries::finding($finding)];
+            }
+        }
+
+        // A new address that changes data with no check on who may use
+        // it, or one that lost its check (§12). The owner may want it, such
+        // as a contact form, and says so in the proof.
+        if (config('builder.verification.routes_send_back')) {
+            foreach (AppRoutes::findings($evidence['routes'] ?? null, $accepted) as $finding) {
+                $gate[] = ['kind' => $finding['kind'], 'identity' => AppRoutes::identity($finding), 'text' => AppRoutes::finding($finding)];
             }
         }
 

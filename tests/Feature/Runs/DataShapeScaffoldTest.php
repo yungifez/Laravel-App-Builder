@@ -121,6 +121,7 @@ class DataShapeScaffoldTest extends TestCase
         return [
             'summary' => 'Teams take bookings.',
             'acceptance_criteria' => ['A team can be booked.'],
+            'cases' => [['base' => 'A team is booked for a free time.', 'alternate' => null, 'no_alternate' => 'There is one way to book a team.', 'exception' => 'Booking a team you cannot see is refused.', 'no_exception' => null]],
             'assumptions' => [],
             'tasks' => ['Let people book a team.'],
             'capabilities' => [],

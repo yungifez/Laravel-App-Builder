@@ -129,7 +129,7 @@ class KeepTryingTest extends TestCase
             'driver' => 'worker',
             'repairs' => 1,
             'started_at' => now()->subHour(),
-            'plan' => ['summary' => 'Each class shows how many places are left.', 'acceptance_criteria' => ['Each class shows its places left.'], 'assumptions' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null],
+            'plan' => ['summary' => 'Each class shows how many places are left.', 'acceptance_criteria' => ['Each class shows its places left.'], 'cases' => [['criterion' => 1, 'kind' => 'base', 'says' => 'A class with two of ten places taken shows eight left.', 'none' => null], ['criterion' => 1, 'kind' => 'alternate', 'says' => 'A full class shows that it is full.', 'none' => null], ['criterion' => 1, 'kind' => 'exception', 'says' => 'A class that does not exist is not found.', 'none' => null]], 'assumptions' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null],
             'workspace_id' => Workspace::factory()->create()->id,
         ]);
 

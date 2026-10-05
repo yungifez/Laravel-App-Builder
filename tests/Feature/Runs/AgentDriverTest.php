@@ -178,8 +178,8 @@ class AgentDriverTest extends TestCase
         $this->assertSame(RunStatus::Completed, $run->status);
         $this->assertSame([[
             'criterion' => 'Teams have a nullable description.',
-            'kind' => null,
-            'case' => 'Teams have a nullable description.',
+            'kind' => 'base',
+            'case' => 'Teams have a nullable description. (base case: A team saved with a description keeps it.)',
             'test_file' => 'tests/Feature/TeamDescriptionTest.php',
             'test_name' => 'teams have a nullable description',
             'evidence' => 'tested',
@@ -231,6 +231,7 @@ class AgentDriverTest extends TestCase
             'current_behavior' => 'Owners invite members.',
             'commit_subject' => '',
             'acceptance_criteria' => [],
+            'cases' => [],
             'assumptions' => [],
             'tasks' => [],
             'steps' => [],
@@ -273,6 +274,7 @@ class AgentDriverTest extends TestCase
             'current_behavior' => 'Teams have a name.',
             'commit_subject' => '',
             'acceptance_criteria' => [],
+            'cases' => [],
             'assumptions' => [],
             'tasks' => [],
             'steps' => [],
@@ -911,7 +913,7 @@ class AgentDriverTest extends TestCase
         $this->assertSame(1, $run->repairs);
         $this->assertSame('not_run_by_checks', $run->review['verified'][0]['evidence']);
         $this->assertFalse($run->review['approved']);
-        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'The test "teams keep their colour" for "Teams have a nullable description." did not run in the test suite'));
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'The test "teams keep their colour" for "Teams have a nullable description. (base case: A team saved with a description keeps it.)" did not run in the test suite'));
 
         $this->passVerification($run);
 
@@ -1244,6 +1246,7 @@ class AgentDriverTest extends TestCase
         return [
             'summary' => 'Teams get an optional description.',
             'acceptance_criteria' => ['Teams have a nullable description.'],
+            'cases' => [['base' => 'A team saved with a description keeps it.', 'alternate' => null, 'no_alternate' => 'A description is only set one way.', 'exception' => null, 'no_exception' => 'Nothing about a description is refused.']],
             'assumptions' => ['The description is optional.'],
             'tasks' => ['Add a nullable description property.'],
             'steps' => [[

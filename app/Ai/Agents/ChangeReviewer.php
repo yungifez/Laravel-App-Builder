@@ -55,7 +55,7 @@ class ChangeReviewer implements Agent, HasMiddleware, HasStructuredOutput
 
         Set approved to true only when there are no blocking findings. Name the file for each finding where you can.
 
-        The acceptance criteria are numbered. For each one, add an entry to verify with its number and the test in the diff that checks it: the test file's path and the test method's name. Use null for both when no test in the diff checks it; that is a blocking finding. The file you name is checked against the diff.
+        The items under "What the tests must check" are numbered: each acceptance criterion, or each case of one (base, alternate or exception). For each item, add an entry to verify with its number in criterion and the one test in the diff that checks that item: the test file's path and the test method's name. A test that checks one case does not check another. Use null for both when no test in the diff checks it; that is a blocking finding. The file you name is checked against the diff.
 
         Then describe the change for the owner, who is not technical, as changes: one entry per behaviour they would notice, with what it did before and what it does now, in plain words and without file or class names. Set area to the key of the area it belongs to from "Areas this change touched", or null when none fits. Include behaviour that changed in areas the request was not about: the owner decides whether it is wanted.
         INSTRUCTIONS;
