@@ -108,8 +108,8 @@ class ModelOutputTest extends TestCase
             'summary' => 'Show invoices.',
             'acceptance_criteria' => ['Owners see their invoices.', 'The total is shown in pounds.'],
             'cases' => [
-                ['base' => 'An owner with two invoices sees both.', 'alternate' => 'An owner with none sees that there are none yet.', 'no_alternate' => 'ignored', 'exception' => 'Someone else is turned away.', 'no_exception' => null],
-                ['base' => 'A total of 1250 shows as £12.50.', 'alternate' => null, 'no_alternate' => 'There is only one currency.', 'exception' => null, 'no_exception' => 'Nothing here can be refused.'],
+                ['base' => 'An owner with two invoices sees both.', 'alternate' => 'An owner with none sees that there are none yet.', 'no_alternate' => 'ignored', 'exception' => 'Someone else is turned away.', 'no_exception' => ''],
+                ['base' => 'A total of 1250 shows as £12.50.', 'alternate' => '', 'no_alternate' => 'There is only one currency.', 'exception' => '', 'no_exception' => 'Nothing here can be refused.'],
             ],
             'assumptions' => [],
             'tasks' => ['Add an invoices page.'],
@@ -140,7 +140,7 @@ class ModelOutputTest extends TestCase
 
         foreach ([
             null,
-            [['base' => 'Both show.', 'alternate' => null, 'no_alternate' => null, 'exception' => 'Others are turned away.', 'no_exception' => null]],
+            [['base' => 'Both show.', 'alternate' => '', 'no_alternate' => '', 'exception' => 'Others are turned away.', 'no_exception' => '']],
             [],
             [['base' => '', 'alternate' => 'x', 'no_alternate' => null, 'exception' => 'y', 'no_exception' => null]],
         ] as $cases) {

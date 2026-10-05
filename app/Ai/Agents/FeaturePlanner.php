@@ -47,7 +47,7 @@ class FeaturePlanner implements Agent, HasMiddleware, HasStructuredOutput
         - summary: one or two plain sentences the owner can understand.
         - commit_subject: the git commit subject the application's own developer would write for this change: imperative, under 60 characters, about the code, for example "Add a phone number to the contact form". Do not quote the request.
         - acceptance_criteria: observable behaviour that must hold when the change is done, including who may and may not do things. The owner reads them, so write what a person sees or can do, without code words: "A team with no description shows only its name", not "A team with a null description".
-        - cases: one entry for each acceptance criterion, in the same order, saying how a test tries it. base: the main way it happens ("An owner with two invoices sees both"). alternate: another valid way that should also work ("An owner with no invoices sees that there are none yet"). exception: a way the app must refuse: bad input, the wrong person or a record that is not there ("A signed-in person who is not the owner is turned away"). Each is one plain sentence with the people and values a test would use. When alternate or exception truly cannot apply, set it to null and say why in no_alternate or no_exception ("It only changes a colour, so nothing can be refused"); otherwise set those to null. Failing outside services are tried by other checks, so an exception is always a refusal.
+        - cases: one entry for each acceptance criterion, in the same order, saying how a test tries it. base: the main way it happens ("An owner with two invoices sees both"). alternate: another valid way that should also work ("An owner with no invoices sees that there are none yet"). exception: a way the app must refuse: bad input, the wrong person or a record that is not there ("A signed-in person who is not the owner is turned away"). Each is one plain sentence with the people and values a test would use. When alternate or exception truly cannot apply, set it to "" and say why in no_alternate or no_exception ("It only changes a colour, so nothing can be refused"); otherwise set those to "". Failing outside services are tried by other checks, so an exception is always a refusal.
         - assumptions: decisions you made where the request was silent. Prefer the conventional Laravel choice.
         - tasks: concrete, ordered instructions for a developer who will make the change with file tools. Name the files and Laravel features to use (migrations, models, policies, form requests, actions, notifications, screens made the way the app makes its others, tests).
         - preserve: what must stay as it is, each with the key of the area it belongs to (or null). Take them from the rules and behaviours in the project notes for the areas the change is about and the areas they may also affect, for example "Owners can still refund any amount". List only what a careless change could plausibly break.
@@ -75,12 +75,15 @@ class FeaturePlanner implements Agent, HasMiddleware, HasStructuredOutput
             'answer' => $schema->string()->nullable()->required(),
             'commit_subject' => $schema->string()->required(),
             'acceptance_criteria' => $schema->array()->items($schema->string())->required(),
+            // "" rather than null for a case that is not given: each nullable
+            // field adds to the grammar the provider compiles from this schema,
+            // and too many make it refuse the request.
             'cases' => $schema->array()->items($schema->object([
                 'base' => $schema->string()->required(),
-                'alternate' => $schema->string()->nullable()->required(),
-                'no_alternate' => $schema->string()->nullable()->required(),
-                'exception' => $schema->string()->nullable()->required(),
-                'no_exception' => $schema->string()->nullable()->required(),
+                'alternate' => $schema->string()->required(),
+                'no_alternate' => $schema->string()->required(),
+                'exception' => $schema->string()->required(),
+                'no_exception' => $schema->string()->required(),
             ])->withoutAdditionalProperties())->required(),
             'assumptions' => $schema->array()->items($schema->string())->required(),
             'tasks' => $schema->array()->items($schema->string())->required(),
