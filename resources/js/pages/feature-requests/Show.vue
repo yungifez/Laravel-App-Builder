@@ -16,6 +16,7 @@ import FeatureRequestAnswerController from '@/actions/App/Http/Controllers/Featu
 import FeatureRequestCaseCorrectionController from '@/actions/App/Http/Controllers/FeatureRequestCaseCorrectionController';
 import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
 import FeatureRequestKeepTryingController from '@/actions/App/Http/Controllers/FeatureRequestKeepTryingController';
+import FeatureRequestNotesUpdateController from '@/actions/App/Http/Controllers/FeatureRequestNotesUpdateController';
 import FeatureRequestRetryController from '@/actions/App/Http/Controllers/FeatureRequestRetryController';
 import FeatureRequestReversionController from '@/actions/App/Http/Controllers/FeatureRequestReversionController';
 import FeatureRequestStepChangeController from '@/actions/App/Http/Controllers/FeatureRequestStepChangeController';
@@ -138,7 +139,8 @@ watch(
         runInProgress.value ||
         props.preview?.status === 'starting' ||
         props.featureRequest.status === 'generating' ||
-        verificationInProgress.value,
+        verificationInProgress.value ||
+        props.run?.review?.notes_update.state === 'working',
     (busy) => (busy ? start() : stop()),
     { immediate: true },
 );
@@ -1740,18 +1742,76 @@ function lineClass(line: string): string {
                             class="text-sm text-muted-foreground"
                             data-test="review-notes-behind"
                         >
-                            These notes may now be out of date:
-                            {{
-                                run.review.notes_behind
-                                    .map((area) => area.name)
-                                    .join(', ')
-                            }}.
+                            <template
+                                v-if="run.review.notes_update.state === 'done'"
+                            >
+                                {{
+                                    run.review.notes_update.updated.length > 0
+                                        ? `I updated the notes on ${run.review.notes_update.updated.join(', ')}.`
+                                        : 'I read the notes again. Nothing in them needed to change.'
+                                }}
+                            </template>
+                            <template
+                                v-else-if="
+                                    run.review.notes_update.state === 'working'
+                                "
+                            >
+                                Updating the notes on
+                                {{
+                                    run.review.notes_behind
+                                        .map((area) => area.name)
+                                        .join(', ')
+                                }}…
+                            </template>
+                            <template v-else>
+                                These notes may now be out of date:
+                                {{
+                                    run.review.notes_behind
+                                        .map((area) => area.name)
+                                        .join(', ')
+                                }}.
+                            </template>
                             <Link
+                                v-if="
+                                    run.review.notes_update.state !== 'working'
+                                "
                                 :href="showUnderstanding(project.id)"
                                 class="underline underline-offset-4 hover:text-foreground"
                                 >Check them</Link
                             >
                         </p>
+                        <!-- Kept changes only: the notes describe the app as
+                             it is. The reason shows when it did not work. -->
+                        <p
+                            v-if="
+                                run?.review?.notes_update.state === 'failed' &&
+                                run.review.notes_update.message
+                            "
+                            class="text-sm text-muted-foreground"
+                            data-test="notes-update-failed"
+                        >
+                            {{ run.review.notes_update.message }}
+                        </p>
+                        <Form
+                            v-if="run?.review?.notes_update.can"
+                            v-bind="
+                                FeatureRequestNotesUpdateController.store.form(
+                                    featureRequest.id,
+                                )
+                            "
+                            :options="{ preserveScroll: true }"
+                            v-slot="{ errors, processing }"
+                        >
+                            <Button
+                                variant="outline"
+                                :disabled="processing"
+                                class="h-11 select-none sm:h-9"
+                                data-test="notes-update"
+                            >
+                                Update these notes
+                            </Button>
+                            <InputError :message="errors.notes" />
+                        </Form>
                     </div>
                     <CollapsibleContent class="mt-4 space-y-6 text-sm">
                         <div

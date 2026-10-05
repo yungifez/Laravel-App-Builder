@@ -3,6 +3,7 @@
 namespace App\Actions\Features;
 
 use App\Actions\Billing\MeasureUsage;
+use App\Actions\Context\RequestNotesUpdate;
 use App\Actions\Projects\ConnectOwnTool;
 use App\Actions\Publishing\DescribeUnpublished;
 use App\Actions\Runs\DescribeRunProgress;
@@ -473,6 +474,15 @@ class DescribeFeatureRequest
             'notes_behind' => array_map(fn (string $key) => ['key' => $key, 'name' => $names[$key] ?? $key], $classification['notes_behind']),
             // A worker's change whose notes we failed to update: our fault.
             'notes_failed' => $run->events()->where('type', 'notes_not_updated')->exists(),
+            // Bringing those notes up to date, once the change is kept
+            // (RequestNotesUpdate): whether the owner may ask, how it went,
+            // and why it failed when it did.
+            'notes_update' => [
+                'can' => $run->featureRequest->latestRun?->is($run) === true && RequestNotesUpdate::behind($run->featureRequest) !== [],
+                'state' => RequestNotesUpdate::state($run),
+                'updated' => array_map(fn (string $key) => $names[$key] ?? $key, $run->events()->where('type', 'notes_updated')->reorder('sequence', 'desc')->first()?->data['areas'] ?? []),
+                'message' => $run->events()->where('type', 'notes_update_failed')->reorder('sequence', 'desc')->first()?->data['message'] ?? null,
+            ],
         ];
     }
 

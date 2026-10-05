@@ -417,6 +417,13 @@ export type RunReview = {
     notes_behind: { key: string; name: string }[];
     // We failed to update the notes after a worker's change.
     notes_failed: boolean;
+    /** Bringing those notes up to date once the change is kept: whether it may be asked for, how it went, the parts updated and why it failed. */
+    notes_update: {
+        can: boolean;
+        state: 'working' | 'done' | 'failed' | null;
+        updated: string[];
+        message: string | null;
+    };
 };
 
 export type PreviewStatus = 'starting' | 'ready' | 'failed' | 'stopped';

@@ -29,11 +29,15 @@ class UpdateProjectNotes
      * Replace one part of the notes of a line of work (by default the one
      * the owner works in) with their text. A part is "introduction" or "section:<heading>" in the
      * project notes, or "summary:<area>", "rules:<area>",
-     * "not_connected:<area>" or "checked:<area>" in an area's notes. For
+     * "not_connected:<area>" or "checked:<area>" in an area's notes, or
+     * "notes:<area>" for an area's whole notes file. For
      * "not_connected" the text lists the keys of the areas this one does
      * not affect, one per line; an empty text connects them all again.
      * "checked" ignores the text and records that the owner found the
-     * notes still right. Every other part of the file stays as it was.
+     * notes still right. "notes" replaces the whole file, keeping its key
+     * and what it is connected to; only we write it, from the model that
+     * brings notes up to date (UpdateBehindNotes), never the owner's form.
+     * Every other part of the file stays as it was.
      *
      * The owner edits the notes as they were at "version". When they
      * changed since, the edit is refused so nothing is overwritten.
@@ -53,10 +57,10 @@ class UpdateProjectNotes
             throw ValidationException::withMessages(['body' => __('The notes changed while you were editing. Try again on the updated version.')]);
         }
 
-        $capabilities = in_array($kind, ['summary', 'rules', 'not_connected', 'checked'], true) ? $this->readProjectContext->current($project, $branch)->capabilities : [];
+        $capabilities = in_array($kind, ['summary', 'rules', 'not_connected', 'checked', 'notes'], true) ? $this->readProjectContext->current($project, $branch)->capabilities : [];
         $file = match ($kind) {
             'introduction', 'section' => ProjectContext::PROJECT_FILE,
-            'summary', 'rules', 'not_connected', 'checked' => $capabilities[$name]->file ?? null,
+            'summary', 'rules', 'not_connected', 'checked', 'notes' => $capabilities[$name]->file ?? null,
             default => null,
         };
 
@@ -68,6 +72,7 @@ class UpdateProjectNotes
         $notes = NotesDocument::parse($before ?? '# '.$project->name."\n");
 
         $notes = match ($kind) {
+            'notes' => NotesDocument::parse($text),
             'introduction' => $notes->withIntroduction($text),
             'section' => $notes->withSection($name, $text),
             'summary' => $notes->withSummary($text),
@@ -84,9 +89,17 @@ class UpdateProjectNotes
 
         if ($file !== ProjectContext::PROJECT_FILE) {
             try {
-                Capability::fromMarkdown($file, $after);
+                $read = Capability::fromMarkdown($file, $after);
             } catch (InvalidContextFile $exception) {
                 throw ValidationException::withMessages(['body' => $exception->getMessage()]);
+            }
+
+            // A whole file must stay the same part, connected the same way:
+            // what it affects is the owner's and the analysis's to say.
+            $was = $kind === 'notes' && $before !== null ? Capability::fromMarkdown($file, $before) : null;
+
+            if ($kind === 'notes' && ($read->key !== $name || $read->effects !== $was?->effects || $read->notConnected !== $was->notConnected)) {
+                throw ValidationException::withMessages(['body' => __('The new notes changed what this part is or what it is connected to.')]);
             }
         }
 

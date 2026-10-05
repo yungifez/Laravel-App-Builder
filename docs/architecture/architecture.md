@@ -3585,6 +3585,16 @@ the code, so drift is found without a model and the owner fixes it in place:
   page points to them ("These notes may now be out of date"). When the notes
   update failed, it says it is our fault. The project's numbers count the
   changes that left notes behind.
+- **Updating them on request.** On a kept change that is not undone, the
+  owner can click "Update these notes". This is the only time the model is
+  called for it. A queued job (`UpdateBehindNotes`) gives `NotesKeeper` the
+  change, its summary and the notes of those parts. The reviewer tier runs
+  it, and the call is gated like a notes draft. Each file is saved through
+  `UpdateProjectNotes`, so an edit the owner made meanwhile wins. A file that
+  would change a part's name, effects or links is not saved. The state lives
+  on run events (`notes_update_requested`, `notes_updated`,
+  `notes_update_failed`), and the page polls while it works. A refused or
+  failed call leaves every note as it was and gives the reason.
 
 The layout of the files:
 
