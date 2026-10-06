@@ -42,7 +42,10 @@ const variable = 'APP_CHANGE_TOKEN';
 
 const command = computed(() =>
     tool.value === 'claude'
-        ? `claude mcp remove ${props.name} 2>/dev/null; claude mcp add --transport http ${props.name} ${props.address} --header "Authorization: Bearer ${token.value}"`
+        ? // Scoped to this folder: the same name may be connected to the
+          // whole app too, and then an unscoped remove fails and the add
+          // keeps the old token.
+          `claude mcp remove --scope local ${props.name} 2>/dev/null; claude mcp add --scope local --transport http ${props.name} ${props.address} --header "Authorization: Bearer ${token.value}"`
         : // Quoted: the token holds a "|", which the shell reads as a pipe.
           `export ${variable}='${token.value}'; codex mcp remove ${props.name} 2>/dev/null; codex mcp add ${props.name} --url ${props.address} --bearer-token-env-var ${variable}`,
 );
@@ -52,11 +55,29 @@ const ask = computed(
         `Use the ${props.name} tools: call get_task, make the change in this copy of the app, then hand it back with submit_change.`,
 );
 
-const copied = ref<'command' | 'ask' | null>(null);
+// Or the whole change in one go, with no session to keep open: a new
+// temporary folder, where get_task gives it the code, and the connection
+// given on the command line, so nothing is saved in the tool's settings.
+// Only these servers, so one connected to the whole app under the same
+// name never answers in its place.
+const alone = computed(
+    () =>
+        `Use the ${props.name} tools: call get_task and do what it says, in this empty folder. Hand the change back with submit_change, then call check_status until it is checked. If the checks send it back, call get_task and fix it the same way.`,
+);
 
-async function copy(what: 'command' | 'ask'): Promise<void> {
+const headless = computed(() =>
+    tool.value === 'claude'
+        ? `(cd "$(mktemp -d)" && claude -p "${alone.value}" --permission-mode acceptEdits --allowedTools "mcp__${props.name},Bash(curl:*),Bash(unzip:*),Bash(git:*),Bash(php:*),Bash(composer:*),Bash(npm:*)" --strict-mcp-config --mcp-config '{"mcpServers":{"${props.name}":{"type":"http","url":"${props.address}","headers":{"Authorization":"Bearer ${token.value}"}}}}')`
+        : `${variable}='${token.value}' codex exec --cd "$(mktemp -d)" --skip-git-repo-check --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c 'mcp_servers.${props.name}.url="${props.address}"' -c 'mcp_servers.${props.name}.bearer_token_env_var="${variable}"' -c 'mcp_servers.${props.name}.default_tools_approval_mode="approve"' "${alone.value}"`,
+);
+
+const copied = ref<'command' | 'ask' | 'headless' | null>(null);
+
+async function copy(what: 'command' | 'ask' | 'headless'): Promise<void> {
     await navigator.clipboard.writeText(
-        what === 'command' ? command.value : ask.value,
+        { command: command.value, ask: ask.value, headless: headless.value }[
+            what
+        ],
     );
     copied.value = what;
     setTimeout(() => (copied.value = null), 1500);
@@ -139,6 +160,35 @@ async function copy(what: 'command' | 'ask'): Promise<void> {
                         @click="copy('ask')"
                     >
                         <Check v-if="copied === 'ask'" class="size-4" />
+                        <Copy v-else class="size-4" />
+                    </Button>
+                </div>
+            </div>
+
+            <div class="space-y-1.5">
+                <p class="text-xs text-muted-foreground">
+                    Or, in place of both, run this. It makes the change on its
+                    own, in a new temporary folder.
+                </p>
+                <div class="flex items-start gap-1 rounded-md border">
+                    <code
+                        class="min-w-0 flex-1 p-2 font-mono text-xs break-all"
+                        data-test="work-yourself-headless"
+                        >{{ headless }}</code
+                    >
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        class="size-9 shrink-0"
+                        :aria-label="
+                            copied === 'headless'
+                                ? 'Copied'
+                                : 'Copy the command that runs it on its own'
+                        "
+                        data-test="work-yourself-headless-copy"
+                        @click="copy('headless')"
+                    >
+                        <Check v-if="copied === 'headless'" class="size-4" />
                         <Copy v-else class="size-4" />
                     </Button>
                 </div>

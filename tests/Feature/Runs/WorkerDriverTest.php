@@ -107,6 +107,44 @@ class WorkerDriverTest extends TestCase
         $this->tool('check_status', $token)->assertSee('Waiting for your change.');
     }
 
+    public function test_a_tool_started_in_an_empty_folder_gets_the_code_and_one_in_a_copy_starts_from_its_commit()
+    {
+        $run = $this->startRun();
+        $run->featureRequest->update(['base_revision' => 'a1b2c3d']);
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $text = (string) $this->tool('get_task', $token)->json('result.content.0.text');
+
+        // Run headless in a new temporary folder, it has no copy of the app.
+        $this->assertStringContainsString('If the folder you were started in is empty, get the code at', $text);
+        $this->assertStringContainsString('/worker-code/'.$run->uuid.'?', $text);
+        $this->assertStringContainsString('diff against HEAD', $text);
+        // In the owner's copy it starts from the change's commit, as before.
+        $this->assertStringContainsString('Otherwise you are in a copy of the app', $text);
+        $this->assertStringContainsString('Start from commit a1b2c3d', $text);
+    }
+
+    public function test_a_fix_started_in_an_empty_folder_makes_the_whole_change_again()
+    {
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.'])->assertSee('Received.');
+        $this->verify($run, VerificationStatus::Failed);
+
+        $this->tool('get_task', $token)
+            ->assertSee('make the whole change again with the fixes below')
+            ->assertSee('Fix these problems');
+    }
+
+    public function test_a_tool_writing_every_change_is_never_told_to_work_in_the_folder_it_started_in()
+    {
+        $run = $this->startRun();
+        $token = app(ConnectOwnTool::class)->handle($run->featureRequest->project);
+        $text = (string) $this->tool('get_task', $token)->json('result.content.0.text');
+
+        $this->assertStringNotContainsString('copy of the app: do as follows', $text);
+        $this->assertStringContainsString('never into the folder you were started in', $text);
+    }
+
     public function test_a_change_handed_over_while_we_plan_it_is_written_by_the_owners_tool()
     {
         config(['builder.construction.driver' => 'sdk']);

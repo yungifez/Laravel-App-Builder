@@ -71,11 +71,19 @@ class GetTask extends Tool
         $code = match (true) {
             ! $this->task->wholeApp => null,
             $run->feedback !== null => __('Keep working in the folder you made for this change, which holds your earlier attempt. Only if you lost it, get the code again at :url and make the whole change again.', ['url' => $link()]),
-            default => __('Get the code to start from at :url (a zip, for the next hour). Unpack it into a new empty folder in your system\'s temporary folder, such as one `mktemp -d` makes, never into the folder you were started in, which may hold other code. Run `git init && git add -A && git commit -qm start` inside it and change files only there.', ['url' => $link()]),
+            default => __('Get the code to start from at :url (a zip, for the next hour). Unpack it into a new empty folder in your system\'s temporary folder, such as one `mktemp -d` makes, never into the folder you were started in, which may hold other code. Run `git init -q && git add -A && git -c user.name=start -c user.email=start@localhost -c commit.gpgsign=false commit -qm start` inside it and change files only there.', ['url' => $link()]),
         };
+
+        // One change may be run in the owner's copy of the app, or headless
+        // in an empty temporary folder: the folder it starts in says which.
+        $where = $this->task->wholeApp ? null : __('If the folder you were started in is empty, get the code at :url (a zip, for the next hour), unpack it there, and run `git init -q && git add -A && git -c user.name=start -c user.email=start@localhost -c commit.gpgsign=false commit -qm start`. It already holds any earlier changes that are not kept yet, so change only what this task asks:attempt and diff against HEAD when you hand it back. Otherwise you are in a copy of the app: do as follows.', [
+            'url' => $link(),
+            'attempt' => $run->feedback === null ? ',' : __(', make the whole change again with the fixes below,'),
+        ]);
 
         return implode("\n\n", array_filter([
             '## Hand the change back',
+            $where,
             $code ?? ($base === null ? null : __('Start from commit :base of the app.', ['base' => $base])),
             $unkept ? ($code !== null
                 ? __('The code already holds earlier changes that are not kept yet. Change only what this task asks.')

@@ -54,3 +54,32 @@ it('quotes the token in the Codex command, so its "|" is not read as a pipe', fu
     expect($page->script("/^export APP_CHANGE_TOKEN='\\d+\\|[^']+'; codex /.test(document.querySelector('[data-test=work-yourself-command]').textContent.trim())"))->toBeTrue();
     $page->assertNoJavaScriptErrors();
 });
+
+it('replaces only this folder\'s connection in the Claude Code command', function () {
+    $change = plannedChange();
+
+    $page = visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))
+        ->click('[data-test="work-yourself-button"]');
+
+    // A connection to the whole app under the same name stays, and the old
+    // token in this folder is replaced rather than kept.
+    expect($page->script("/^claude mcp remove --scope local \\S+ 2>\\/dev\\/null; claude mcp add --scope local --transport http /.test(document.querySelector('[data-test=work-yourself-command]').textContent.trim())"))->toBeTrue();
+    $page->assertNoJavaScriptErrors();
+});
+
+it('offers one command that makes the change on its own in a new temporary folder', function () {
+    $change = plannedChange();
+
+    $page = visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))
+        ->click('[data-test="work-yourself-button"]');
+    $shaped = fn (string $pattern) => $page->script("{$pattern}.test(document.querySelector('[data-test=work-yourself-headless]').textContent.trim())");
+
+    // Only whether each is shaped right leaves the page, never the token.
+    // Claude Code takes the connection on its command line, and only it.
+    expect($shaped('/^\\(cd "\\$\\(mktemp -d\\)" && claude -p "Use the \\S+ tools: call get_task[^"]*" .* --strict-mcp-config --mcp-config \'\\{"mcpServers":\\{"[^"]+":\\{"type":"http","url":"http[^"]+","headers":\\{"Authorization":"Bearer \\d+\\|[^"\']+"\\}\\}\\}\\}\'\\)$/'))->toBeTrue();
+
+    $page->click('[data-test="work-yourself-codex"]');
+    // Codex has the token for this command alone.
+    expect($shaped('/^APP_CHANGE_TOKEN=\'\\d+\\|[^\']+\' codex exec --cd "\\$\\(mktemp -d\\)" .*-c \'mcp_servers\\.\\S+\\.bearer_token_env_var="APP_CHANGE_TOKEN"\' .*"Use the \\S+ tools: call get_task[^"]*"$/'))->toBeTrue();
+    $page->assertNoJavaScriptErrors();
+});
