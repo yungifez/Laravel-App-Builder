@@ -6,6 +6,7 @@ use App\Enums\RunStatus;
 use App\Jobs\ExecuteRun;
 use App\Models\Run;
 use App\Runs\Drivers\WorkerDriver;
+use App\Runs\WorkerClaims;
 use App\Runs\WorkerTask;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -22,6 +23,7 @@ class SubmitChange extends Tool
 {
     public function __construct(
         protected WorkerTask $task,
+        protected WorkerClaims $claims,
         protected WorkerDriver $workers,
     ) {}
 
@@ -37,7 +39,11 @@ class SubmitChange extends Tool
             'patch.max' => __('The change is too large to hand back in one patch.'),
         ]);
 
-        $task = $this->task->run;
+        [$task, $stop] = $this->claims->named($this->task, $request->get('task'));
+
+        if ($stop !== null) {
+            return Response::error($stop);
+        }
 
         if ($task === null) {
             return Response::error(__('No change waits for you now. Call get_task first.'));
@@ -87,6 +93,7 @@ class SubmitChange extends Tool
     public function schema(JsonSchema $schema): array
     {
         return [
+            'task' => $schema->string()->description('The task code get_task gave you, when your tool writes every change of the app.'),
             'patch' => $schema->string()->description('The whole change as a unified diff against the starting commit, with new files included.')->required(),
             'summary' => $schema->string()->description('What you changed and why, in a few sentences.')->required(),
         ];

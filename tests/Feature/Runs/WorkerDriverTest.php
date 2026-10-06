@@ -204,9 +204,67 @@ class WorkerDriverTest extends TestCase
         $this->assertFalse($describe()['featureRequest']['can_work_yourself']);
         $this->assertFalse($describe()['run']['yours']['wrote']);
 
-        $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.']);
+        $this->tool('submit_change', $token, ['task' => $this->taskCode($token), 'patch' => $this->workersChange(), 'summary' => 'Added a description.']);
 
         $this->assertTrue($describe()['run']['yours']['wrote']);
+    }
+
+    public function test_a_tool_writing_every_change_names_its_change_with_the_code_it_was_given()
+    {
+        $run = $this->startRun();
+        $token = app(ConnectOwnTool::class)->handle($run->featureRequest->project);
+        $code = $this->taskCode($token);
+
+        $this->tool('share_progress', $token, ['task' => $code, 'doing' => 'Adding a description.'])->assertSee('Shared.');
+        $this->tool('submit_change', $token, ['task' => $code, 'patch' => $this->workersChange(), 'summary' => 'Added a description.'])->assertSee('Received.');
+        $this->tool('check_status', $token, ['task' => $code])->assertSee('being checked');
+    }
+
+    public function test_a_second_session_takes_the_change_over_and_the_first_is_told_to_stop()
+    {
+        $run = $this->startRun();
+        $token = app(ConnectOwnTool::class)->handle($run->featureRequest->project);
+        $first = $this->taskCode($token);
+        $second = $this->taskCode($token);
+
+        $this->tool('submit_change', $token, ['task' => $first, 'patch' => $this->workersChange(), 'summary' => 'Old work.'])
+            ->assertSee('took this change over')
+            ->assertSee('hand nothing back');
+        $this->tool('check_status', $token, ['task' => $first])->assertSee('Stop working on it now');
+        $this->assertFalse($run->events()->where('type', 'worker_submitted')->exists());
+
+        // Without a code, the change that waits asks for one.
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'No code.'])->assertSee('Pass the task code');
+        $this->tool('submit_change', $token, ['task' => $second, 'patch' => $this->workersChange(), 'summary' => 'New work.'])->assertSee('Received.');
+    }
+
+    public function test_work_on_a_stopped_change_is_never_handed_in_to_the_next_one()
+    {
+        $old = $this->startRun();
+        $token = app(ConnectOwnTool::class)->handle($old->featureRequest->project);
+        $code = $this->taskCode($token);
+
+        // The owner stops it; the next change waits for the same tool.
+        $old->update(['status' => RunStatus::Cancelled]);
+        $next = app(StartRun::class)->handle(FeatureRequest::factory()->for($old->featureRequest->project)->create(['prompt' => 'Give teams a colour.']))->refresh();
+
+        $this->tool('submit_change', $token, ['task' => $code, 'patch' => $this->workersChange(), 'summary' => 'Old work.'])
+            ->assertSee('The owner stopped this change')
+            ->assertSee('hand nothing back');
+        $this->tool('try_change', $token, ['task' => $code, 'patch' => '', 'command' => ['php', 'artisan', 'about']])->assertSee('The owner stopped this change');
+        $this->assertFalse($next->events()->where('type', 'worker_submitted')->exists());
+
+        // A code from nowhere is not known.
+        $this->tool('submit_change', $token, ['task' => 'nosuchcode', 'patch' => $this->workersChange(), 'summary' => 'Guess.'])->assertSee('not known here');
+        $this->assertFalse($next->events()->where('type', 'worker_submitted')->exists());
+    }
+
+    protected function taskCode(string $token): string
+    {
+        $text = (string) $this->tool('get_task', $token)->json('result.content.0.text');
+        $this->assertSame(1, preg_match('/Your task code is (\w+)\./', $text, $match));
+
+        return $match[1];
     }
 
     public function test_the_worker_opens_the_app_with_its_change_in_a_browser_apart_from_the_owner()

@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools;
 
 use App\Enums\RunStatus;
+use App\Runs\WorkerClaims;
 use App\Runs\WorkerTask;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -16,7 +17,10 @@ use Laravel\Mcp\Server\Tool;
 #[Description('Tell the app\'s owner what you are doing now, in one plain sentence they understand, such as "Adding a page that lists each member\'s upcoming classes". They watch your work live. Call it when you start a new part of the change, alongside your next command; try_change takes the same sentence as `doing`.')]
 class ShareProgress extends Tool
 {
-    public function __construct(protected WorkerTask $task) {}
+    public function __construct(
+        protected WorkerTask $task,
+        protected WorkerClaims $claims,
+    ) {}
 
     /**
      * Handle the tool request.
@@ -27,7 +31,11 @@ class ShareProgress extends Tool
             'doing' => ['required', 'string', 'max:300'],
         ]);
 
-        $run = $this->task->run?->refresh();
+        [$run, $stop] = $this->claims->named($this->task, $request->get('task'));
+
+        if ($stop !== null) {
+            return Response::error($stop);
+        }
 
         if ($run === null || $run->status !== RunStatus::Implementing) {
             return Response::error(__('No change waits for you now. Call get_task first.'));
@@ -47,6 +55,7 @@ class ShareProgress extends Tool
     public function schema(JsonSchema $schema): array
     {
         return [
+            'task' => $schema->string()->description('The task code get_task gave you, when your tool writes every change of the app.'),
             'doing' => $schema->string()->description('What you are doing now, in one plain sentence, in the owner\'s words: no file, class or code names.')->required(),
         ];
     }

@@ -65,11 +65,13 @@ const ask = computed(
 );
 
 // Asks again every minute, so changes are written without the owner there.
+// Each try starts in its own new temporary folder, so the tool can only
+// write there, never in whatever folder the terminal was opened in.
 const keepGoing = computed(() =>
     tool.value === 'claude'
-        ? `while true; do claude -p "${ask.value}" --permission-mode acceptEdits --allowedTools "mcp__${props.name},Bash(curl:*),Bash(unzip:*),Bash(git:*),Bash(php:*),Bash(composer:*),Bash(npm:*)"; sleep 60; done`
+        ? `while true; do (cd "$(mktemp -d)" && claude -p "${ask.value}" --permission-mode acceptEdits --allowedTools "mcp__${props.name},Bash(curl:*),Bash(unzip:*),Bash(git:*),Bash(php:*),Bash(composer:*),Bash(npm:*)"); sleep 60; done`
         : // Codex quietly drops a server whose token variable is missing, so say so.
-          `if [ -z "$${variable}" ]; then echo "Run the connect command in this terminal first."; else while true; do codex exec --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c 'mcp_servers.${props.name}.default_tools_approval_mode="approve"' "${ask.value}"; sleep 60; done; fi`,
+          `if [ -z "$${variable}" ]; then echo "Run the connect command in this terminal first."; else while true; do codex exec --cd "$(mktemp -d)" --skip-git-repo-check --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c 'mcp_servers.${props.name}.default_tools_approval_mode="approve"' "${ask.value}"; sleep 60; done; fi`,
 );
 
 const copied = ref<'connect' | 'ask' | 'keep' | null>(null);
@@ -141,7 +143,7 @@ async function copy(what: 'connect' | 'ask' | 'keep'): Promise<void> {
                             },
                             {
                                 key: 'keep' as const,
-                                label: 'Or let it work by itself: run this in an empty folder. It asks every minute and works without asking you.',
+                                label: 'Or let it work by itself. It asks for work every minute and keeps running until you press Ctrl+C.',
                                 text: keepGoing,
                             },
                         ]"

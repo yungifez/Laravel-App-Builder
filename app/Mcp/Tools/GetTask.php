@@ -5,6 +5,7 @@ namespace App\Mcp\Tools;
 use App\Actions\Runs\WriteBrief;
 use App\Models\Run;
 use App\Runs\Plan;
+use App\Runs\WorkerClaims;
 use App\Runs\WorkerTask;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -22,6 +23,7 @@ class GetTask extends Tool
     public function __construct(
         protected WorkerTask $task,
         protected WriteBrief $writeBrief,
+        protected WorkerClaims $claims,
     ) {}
 
     /**
@@ -41,7 +43,13 @@ class GetTask extends Tool
             return Response::text(__('The task is still being planned. Ask again in a minute.'));
         }
 
-        return Response::text($this->writeBrief->handle($run, Plan::fromArray($run->plan))."\n\n".$this->handBack($run));
+        return Response::text(implode("\n\n", array_filter([
+            $this->writeBrief->handle($run, Plan::fromArray($run->plan)),
+            $this->handBack($run),
+            // Names this change for the rest of the session, so work on a
+            // change the owner stopped is never handed in to the next one.
+            $this->task->wholeApp ? (string) __('Your task code is :code. Pass it as `task` to share_progress, try_change, submit_change and check_status.', ['code' => $this->claims->claim($run)]) : null,
+        ])));
     }
 
     /**
@@ -63,7 +71,7 @@ class GetTask extends Tool
         $code = match (true) {
             ! $this->task->wholeApp => null,
             $run->feedback !== null => __('Keep working in the folder you made for this change, which holds your earlier attempt. Only if you lost it, get the code again at :url and make the whole change again.', ['url' => $link()]),
-            default => __('Get the code to start from at :url (a zip, for the next hour). It unpacks into one folder: run `git init && git add -A && git commit -qm start` inside that folder and make the change there.', ['url' => $link()]),
+            default => __('Get the code to start from at :url (a zip, for the next hour). Unpack it into a new empty folder in your system\'s temporary folder, such as one `mktemp -d` makes, never into the folder you were started in, which may hold other code. Run `git init && git add -A && git commit -qm start` inside it and change files only there.', ['url' => $link()]),
         };
 
         return implode("\n\n", array_filter([

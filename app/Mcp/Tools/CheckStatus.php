@@ -6,6 +6,7 @@ use App\Enums\RunStatus;
 use App\Enums\StopReason;
 use App\Models\Run;
 use App\Runs\Drivers\WorkerDriver;
+use App\Runs\WorkerClaims;
 use App\Runs\WorkerTask;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -22,6 +23,7 @@ class CheckStatus extends Tool
 {
     public function __construct(
         protected WorkerTask $task,
+        protected WorkerClaims $claims,
         protected WorkerDriver $workers,
     ) {}
 
@@ -30,10 +32,14 @@ class CheckStatus extends Tool
      */
     public function handle(Request $request): Response
     {
-        $run = $this->task->run?->refresh();
+        [$run, $stop] = $this->claims->named($this->task, $request->get('task'));
 
-        if ($run === null) {
-            $ended = $this->lastEnded();
+        if ($stop !== null) {
+            return Response::text($stop);
+        }
+
+        if ($run === null || ($this->task->wholeApp && $run->status->finished())) {
+            $ended = $run ?? $this->lastEnded();
 
             return Response::text($ended === null
                 ? __('No change waits for you now. Call get_task in a minute for the next one.')
@@ -152,6 +158,8 @@ class CheckStatus extends Tool
      */
     public function schema(JsonSchema $schema): array
     {
-        return [];
+        return [
+            'task' => $schema->string()->description('The task code get_task gave you, when your tool writes every change of the app.'),
+        ];
     }
 }
