@@ -45,12 +45,15 @@ class DescribeFirstVersion
             // Made, then stopped in the checks or the review, as the chat
             // shows it.
             $described['featureRequest']['stopped'], RetryFeatureRequest::stoppedWhileChecking($change) => 'stopped',
+            // Handed to the owner's own tool, which has not asked for it yet:
+            // nothing is being made until it does. A made version sent back
+            // to be fixed waits the same way.
+            $this->waitingForTheirTool($change) => 'waiting',
+            // Being fixed after the checks sent it back: not ready yet.
+            $change->latestRun?->status === RunStatus::Implementing => 'making',
             // Ready to try once made, as the list of changes offers it; the
             // checks may still run, and the pane says so.
             $change->status === FeatureRequestStatus::Generated => 'ready',
-            // Handed to the owner's own tool, which has not asked for it yet:
-            // nothing is being made until it does.
-            $this->waitingForTheirTool($change) => 'waiting',
             default => 'making',
         };
 

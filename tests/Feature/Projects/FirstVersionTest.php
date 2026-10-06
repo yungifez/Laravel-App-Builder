@@ -141,6 +141,26 @@ class FirstVersionTest extends TestCase
         $this->assertSame('waiting', $this->firstVersionShown()['state']);
     }
 
+    public function test_a_made_first_version_sent_back_to_be_fixed_is_not_ready(): void
+    {
+        $change = $this->firstVersion(['status' => FeatureRequestStatus::Generated]);
+        $run = Run::factory()->for($change)->create(['status' => RunStatus::Implementing, 'driver' => 'worker']);
+        $run->recordEvent('status', ['from' => 'verifying', 'to' => 'implementing']);
+
+        // Their tool has not asked for it again yet.
+        $this->assertSame('waiting', $this->firstVersionShown()['state']);
+
+        // Being fixed, by their tool or ours.
+        $run->recordEvent('worker_query', ['tool' => 'get_task']);
+        $this->assertSame('making', $this->firstVersionShown()['state']);
+        $run->update(['driver' => 'sdk']);
+        $this->assertSame('making', $this->firstVersionShown()['state']);
+
+        // Checked again: ready to try once more.
+        $run->update(['status' => RunStatus::Verifying]);
+        $this->assertSame('ready', $this->firstVersionShown()['state']);
+    }
+
     public function test_a_first_version_made_then_stopped_in_the_review_or_asking_says_so(): void
     {
         $change = $this->firstVersion(['status' => FeatureRequestStatus::Generated]);
