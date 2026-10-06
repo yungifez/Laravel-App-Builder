@@ -13,6 +13,7 @@ use App\Models\Workspace;
 use App\Runs\AiAttempts;
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\ProvidersUnavailable;
+use App\Runs\Exceptions\RunCancelled;
 use App\Runs\Plan;
 use App\Runs\PlanningContext;
 use App\Support\Secrets;
@@ -59,6 +60,8 @@ class WriteTestsFirst
         $attempts = max(1, (int) config('builder.verification.written_first.attempts'));
 
         for ($attempt = 1; ; $attempt++) {
+            RunCancelled::throwIfCancelling($run);
+
             try {
                 $response = app(AiAttempts::class)->for($run, fn () => TestWriter::make()->prompt($prompt, provider: ModelRole::Reviewer->providers()));
             } catch (FailoverableException $exception) {
@@ -156,6 +159,7 @@ class WriteTestsFirst
      * @param  array{item: int, file: string, name: string, message: string}  $test
      *
      * @throws ProvidersUnavailable
+     * @throws RunCancelled
      */
     public function rewrite(Run $run, Plan $plan, Workspace $workspace, array $test): ?Plan
     {
@@ -182,6 +186,8 @@ class WriteTestsFirst
         $attempts = max(1, (int) config('builder.verification.written_first.attempts'));
 
         for ($attempt = 1; ; $attempt++) {
+            RunCancelled::throwIfCancelling($run);
+
             try {
                 $response = app(AiAttempts::class)->for($run, fn () => TestWriter::make()->prompt($prompt, provider: ModelRole::Reviewer->providers()));
             } catch (FailoverableException $exception) {

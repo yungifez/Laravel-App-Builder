@@ -199,7 +199,11 @@ class ConstructRun
      */
     protected function planned(Run $run, RunLease $lease, ConstructionDriver $driver, PlanningContext $planningContext, Workspace $workspace): ?Plan
     {
+        // Each AI call waits for the one before it, so the owner may have
+        // cancelled in the meantime: no paid call starts after that.
+        RunCancelled::throwIfCancelling($run);
         $plan = $driver->plan($run, $planningContext);
+        RunCancelled::throwIfCancelling($run);
 
         // One product question before building (§7): the run waits for the
         // owner and plans again with their answer. The gate is the run's
@@ -234,6 +238,8 @@ class ConstructRun
         // After the questions, so a run that stops for the owner or only
         // answers asks for no shape; before the shape question, which
         // asks about it.
+        RunCancelled::throwIfCancelling($run);
+
         return $driver->shape($run, $plan, $planningContext);
     }
 
@@ -314,6 +320,7 @@ class ConstructRun
             return;
         }
 
+        RunCancelled::throwIfCancelling($run);
         $plan = $this->writeTestsFirst->handle($run, $plan, $workspace, $planningContext);
 
         // The areas come from evidence first; the planner's guess only adds.
