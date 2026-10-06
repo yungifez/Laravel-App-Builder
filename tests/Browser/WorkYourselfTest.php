@@ -42,3 +42,15 @@ it('connects again once the shown connection is gone', function () {
         ->assertSeeIn('[data-test="work-yourself-command"]', 'Authorization: Bearer ')
         ->assertNoJavaScriptErrors();
 });
+
+it('quotes the token in the Codex command, so its "|" is not read as a pipe', function () {
+    $change = plannedChange();
+
+    $page = visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))
+        ->click('[data-test="work-yourself-button"]')
+        ->click('[data-test="work-yourself-codex"]');
+
+    // Only whether it is quoted leaves the page, never the token.
+    expect($page->script("/^export APP_CHANGE_TOKEN='\\d+\\|[^']+'; codex /.test(document.querySelector('[data-test=work-yourself-command]').textContent.trim())"))->toBeTrue();
+    $page->assertNoJavaScriptErrors();
+});

@@ -43,7 +43,8 @@ const variable = 'APP_CHANGE_TOKEN';
 const command = computed(() =>
     tool.value === 'claude'
         ? `claude mcp remove ${props.name} 2>/dev/null; claude mcp add --transport http ${props.name} ${props.address} --header "Authorization: Bearer ${token.value}"`
-        : `export ${variable}=${token.value}; codex mcp remove ${props.name} 2>/dev/null; codex mcp add ${props.name} --url ${props.address} --bearer-token-env-var ${variable}`,
+        : // Quoted: the token holds a "|", which the shell reads as a pipe.
+          `export ${variable}='${token.value}'; codex mcp remove ${props.name} 2>/dev/null; codex mcp add ${props.name} --url ${props.address} --bearer-token-env-var ${variable}`,
 );
 
 const ask = computed(
