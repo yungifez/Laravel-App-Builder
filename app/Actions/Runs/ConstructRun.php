@@ -37,6 +37,7 @@ use App\Features\MigrationChecks;
 use App\Features\NewTests;
 use App\Features\NodeInPhpTests;
 use App\Features\OwnedRecords;
+use App\Features\OwnFormatChecks;
 use App\Features\PackagePolicy;
 use App\Features\PatchSummary;
 use App\Features\QueuedWork;
@@ -660,6 +661,12 @@ class ConstructRun
         if ($driver->canRepair() && config('builder.verification.design_scan')) {
             $review = $review->withBlockingFindings(array_map(InventedColours::finding(...), InventedColours::found($featureRequest->patch)));
             $review = $review->withBlockingFindings(array_map(UndescribedImages::finding(...), UndescribedImages::found($featureRequest->patch)));
+        }
+
+        // A format is decided once (§9): a check of its own on a formatted
+        // field sends the change back.
+        if ($driver->canRepair()) {
+            $review = $review->withBlockingFindings(array_map(OwnFormatChecks::finding(...), OwnFormatChecks::found($featureRequest->patch, $plan->dataShape)));
         }
 
         if ($driver->canRepair() && config('builder.verification.test_scan')) {
