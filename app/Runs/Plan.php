@@ -431,6 +431,16 @@ final readonly class Plan
     }
 
     /**
+     * Add what was decided for the owner while settling the plan.
+     *
+     * @param  list<Assumption>  $assumptions
+     */
+    public function withAssumptions(array $assumptions): self
+    {
+        return $assumptions === [] ? $this : new self(...[...get_object_vars($this), 'assumptions' => [...$this->assumptions, ...$assumptions]]);
+    }
+
+    /**
      * Get what was decided for the owner, as text.
      *
      * @return list<string>

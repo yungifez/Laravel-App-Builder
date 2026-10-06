@@ -58,6 +58,7 @@ use App\Runs\Exceptions\LeaseLost;
 use App\Runs\Exceptions\ProvidersUnavailable;
 use App\Runs\Exceptions\RunCancelled;
 use App\Runs\Exceptions\SpendLimitReached;
+use App\Runs\FieldFormats;
 use App\Runs\Exceptions\UsageLimitReached;
 use App\Runs\Exceptions\WaitingForWorker;
 use App\Runs\Plan;
@@ -107,6 +108,7 @@ class ConstructRun
         private KeepAssumptions $keepAssumptions,
         private WriteTestsFirst $writeTestsFirst,
         private ShapeQuestion $shapeQuestion,
+        private FieldFormats $fieldFormats,
     ) {}
 
     /**
@@ -250,7 +252,7 @@ class ConstructRun
      */
     protected function planShapeAskedAbout(Run $run): ?Plan
     {
-        $asked = $run->events()->where('type', 'shape_asked')->reorder('sequence', 'desc')->first();
+        $asked = $run->events()->whereIn('type', ['shape_asked', 'format_asked'])->reorder('sequence', 'desc')->first();
         $stopped = (int) $run->events()->where('type', 'status')->where('data->to', RunStatus::NeedsUserDecision->value)->max('sequence');
 
         if ($asked === null || $asked->sequence !== $stopped - 1) {
@@ -259,7 +261,9 @@ class ConstructRun
 
         $plan = Plan::fromArray($asked->data['plan']);
 
-        return $this->shapeQuestion->answered($plan, $run->answers ?? []) === null ? null : $plan;
+        $answered = $asked->type === 'format_asked' ? $this->fieldFormats->answered($run->answers ?? []) : $this->shapeQuestion->answered($plan, $run->answers ?? []);
+
+        return $answered === null ? null : $plan;
     }
 
     /**
@@ -298,6 +302,37 @@ class ConstructRun
     }
 
     /**
+     * Settle each new field's format from the owner's answers and the
+     * notes (§9 Formats). An amount whose currency nobody named is asked
+     * about through the same pause as a question, when the owner can be
+     * asked. Null when the run now waits for the owner.
+     */
+    protected function formatted(Run $run, RunLease $lease, Plan $plan, PlanningContext $planningContext): ?Plan
+    {
+        $areas = $planningContext->areas + array_fill_keys($planningContext->projectContext->known($plan->capabilities), SelectAreas::PLANNER);
+        $settled = $this->fieldFormats->settle($plan, $planningContext->projectContext, array_map(strval(...), array_keys($areas)), $run->answers ?? []);
+        $question = $this->fieldFormats->question($settled);
+
+        if ($question === null) {
+            return $settled;
+        }
+
+        if (! $planningContext->mayAsk || ! in_array(Consequence::Money->value, config('builder.construction.questions.ask_about'), true)) {
+            return $this->fieldFormats->unasked($settled);
+        }
+
+        // The plan before settling is kept, so the answer settles it once.
+        $this->recordEvent($run, $lease, 'format_asked', ['plan' => $plan->toArray()]);
+
+        $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['question' => $question, 'error' => null], [
+            'reason' => StopReason::Question,
+            'question' => $question['text'],
+        ]);
+
+        return null;
+    }
+
+    /**
      * Prepare the workspace, have the driver plan the change, compile the
      * project context for the areas the change is about, and save both.
      */
@@ -315,6 +350,12 @@ class ConstructRun
         }
 
         $plan = $this->shaped($run, $lease, $plan, $planningContext->mayAsk);
+
+        if ($plan === null) {
+            return;
+        }
+
+        $plan = $this->formatted($run, $lease, $plan, $planningContext);
 
         if ($plan === null) {
             return;

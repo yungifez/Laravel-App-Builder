@@ -6,6 +6,8 @@ use App\Actions\Features\DescribeFeatureRequest;
 use App\Actions\Runs\StartRun;
 use App\Ai\Agents\FeaturePlanner;
 use App\Ai\Agents\ShapePlanner;
+use App\Context\ProjectContext;
+use App\Context\ProjectNotes;
 use App\Enums\AgentOutcomeStatus;
 use App\Enums\RunStatus;
 use App\Jobs\VerifyFeatureRequest;
@@ -15,6 +17,7 @@ use App\Models\Run;
 use App\Models\Workspace;
 use App\Runs\Agents\AgentOutcome;
 use App\Runs\Agents\CodingAgentManager;
+use App\Runs\FieldFormats;
 use App\Runs\ShapeQuestion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
@@ -193,6 +196,43 @@ class ShapeQuestionTest extends TestCase
             ->post(route('feature-requests.answers.store', $featureRequest), ['answer' => ShapeQuestion::YES]);
 
         $this->assertSame($answered, $describe());
+    }
+
+    public function test_an_amount_with_no_currency_named_waits_for_the_owner_and_their_answer_is_kept_in_the_notes()
+    {
+        $price = ['name' => 'price', 'type' => 'money', 'required' => false, 'choices' => [], 'of' => '', 'label' => 'the price', 'format' => ['regions' => [], 'schemes' => [], 'variants' => [], 'currency' => '', 'pattern' => '', 'examples' => []]];
+        $this->plans([$price]);
+
+        $featureRequest = $this->request();
+        $run = app(StartRun::class)->handle($featureRequest)->refresh();
+
+        $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
+        $this->assertSame('Which currency is the price in?', $run->question['text']);
+        $this->assertSame(FieldFormats::OWN_CURRENCY, last($run->question['options']));
+
+        $this->actingAs($featureRequest->project->owner)
+            ->post(route('feature-requests.answers.store', $featureRequest), ['answer' => 'Euros (EUR)'])
+            ->assertRedirect();
+
+        $run->refresh();
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(['currency' => 'EUR', 'from' => 'owner'], $run->plan['data_shape'][0]['fields'][0]['format']);
+        // Settled on the plan it asked about, and written down so the next
+        // change reads it instead of asking.
+        $this->assertSame(2, $this->plannerCalls($run));
+        $this->assertStringContainsString('- Money: Euros (EUR)', app(ProjectNotes::class)->files($featureRequest->project, $featureRequest->branch())[ProjectContext::PROJECT_FILE]);
+    }
+
+    public function test_an_amount_with_no_currency_is_kept_on_each_record_when_the_owner_cannot_be_asked()
+    {
+        config(['builder.construction.questions.ask_about' => ['access']]);
+        $this->plans([['name' => 'price', 'type' => 'money', 'required' => false, 'choices' => [], 'of' => '', 'label' => 'the price']]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(['currency' => 'per_record', 'from' => 'assumed'], $run->plan['data_shape'][0]['fields'][0]['format']);
+        $this->assertContains('Each record keeps its own currency, as no currency was named.', array_column($run->plan['assumptions'], 'text'));
     }
 
     protected function plannerCalls(Run $run): int
