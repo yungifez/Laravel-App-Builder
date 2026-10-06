@@ -125,6 +125,15 @@ const checkFailed = computed(
         latest.value.checks.some((check) => !check.passed),
 );
 
+// The new version went online but its address or sign-in failed. Sending
+// the same version again ends the same way, so fixing it is the step. A
+// host still starting it has no failed check: waiting is the step then.
+const unhealthy = computed(
+    () =>
+        latest.value?.status === 'needs_attention' &&
+        latest.value.health.some((check) => !check.passed),
+);
+
 const times = (count: number) => (count === 1 ? 'once' : `${count} times`);
 
 // The app's own tests run before any version goes online. Saying how many
@@ -361,7 +370,7 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
             </Form>
 
             <Form
-                v-else-if="checkFailed && !active"
+                v-else-if="(checkFailed || unhealthy) && !active"
                 v-bind="CheckFixController.store.form(projectId)"
                 v-slot="{ errors, processing }"
             >
@@ -376,7 +385,12 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
             </Form>
 
             <Form
-                v-if="!active && !upToDate && !sentCurrent"
+                v-if="
+                    !active &&
+                    !upToDate &&
+                    !sentCurrent &&
+                    !(unhealthy && latest?.commit === publishing.head)
+                "
                 v-bind="DeploymentController.store.form(projectId)"
                 :options="{ preserveScroll: true }"
                 v-slot="{ errors, processing }"

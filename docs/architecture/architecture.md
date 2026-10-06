@@ -4631,6 +4631,12 @@ these components prove that claim, so only these are **required**:
     carries, take in basic errors from the published app, and show one plain
     state: "Published", "Checks passed" or "Needs attention". Runtime is light
     in V1: no analytics, tracing or anomaly detection.
+    A version that went online but fails the smoke checks offers "Fix it",
+    also on a first publish and on hosts that report no errors. What the
+    address answered goes to the builder as evidence (`RequestCheckFix`), and
+    the owner sees only "Fix what stops my app working online". Sending the
+    same version again is not offered, because it would fail the same way. A
+    host that is still starting the version keeps "Try again".
 11. Telemetry per change request (§25.3), including cost per accepted change.
 
 ### 27.2 Postponed to V1.1

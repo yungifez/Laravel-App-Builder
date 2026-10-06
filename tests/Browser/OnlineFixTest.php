@@ -1,0 +1,66 @@
+<?php
+
+use App\Actions\Projects\CreateProject;
+use App\Enums\DeploymentStatus;
+use App\Models\Deployment;
+use App\Models\Experiment;
+use App\Models\Project;
+use App\Models\User;
+use App\Projects\ProjectRepository;
+use Tests\Concerns\PreparesRuns;
+
+uses(PreparesRuns::class);
+
+/*
+| A new version that went online but does not work, in a real browser: the
+| owner's step is to fix it, not to send the same version again. A host
+| still starting it keeps "Try again", since waiting may be all it needs.
+*/
+
+/**
+ * @param  list<array{path: string, status: int|null, passed: bool, key?: string}>  $health
+ */
+function publishedNeedingAttention(Project $project, array $health): void
+{
+    $project->update(['deploy_remote' => 'https://git.example.com/acme.git', 'deploy_branch' => 'main']);
+
+    Deployment::factory()->for($project)->create([
+        'user_id' => $project->user_id,
+        'commit_sha' => app(ProjectRepository::class)->head($project, Experiment::mainBranch()),
+        'status' => DeploymentStatus::NeedsAttention,
+        'checks' => [['name' => 'Tests', 'passed' => true]],
+        'health' => $health,
+        'error' => 'Your app is online at https://shop.example.com, but people cannot sign in.',
+    ]);
+}
+
+it('offers a fix and no same-version retry when the app online does not work', function () {
+    $owner = User::factory()->create();
+    $project = app(CreateProject::class)->handle($owner, 'Acme', $this->makeProjectSource([]), draftNotes: false);
+    app(ProjectRepository::class)->import($project);
+    publishedNeedingAttention($project, [['path' => 'login', 'status' => 500, 'passed' => false, 'key' => 'auth.sign-in']]);
+
+    $this->actingAs($owner);
+
+    visit(route('projects.show', $project))
+        ->click('@publish-open')
+        ->assertSee('people cannot sign in')
+        ->assertVisible('@fix-failed-checks')
+        ->assertMissing('@publish-button')
+        ->assertNoJavaScriptErrors();
+});
+
+it('keeps try again when the host is still starting the new version', function () {
+    $owner = User::factory()->create();
+    $project = app(CreateProject::class)->handle($owner, 'Acme', $this->makeProjectSource([]), draftNotes: false);
+    app(ProjectRepository::class)->import($project);
+    publishedNeedingAttention($project, []);
+
+    $this->actingAs($owner);
+
+    visit(route('projects.show', $project))
+        ->click('@publish-open')
+        ->assertSeeIn('@publish-button', 'Try again')
+        ->assertMissing('@fix-failed-checks')
+        ->assertNoJavaScriptErrors();
+});
