@@ -111,11 +111,7 @@ final readonly class Plan
             'acceptance_criteria' => [...$build, 'max:30'],
             'acceptance_criteria.*' => ['required', 'string', 'max:1000'],
             'assumptions' => ['present', 'array', 'max:30'],
-            'assumptions.*' => ['array'],
-            'assumptions.*.text' => ['required', 'string', 'max:1000'],
-            'assumptions.*.touches' => ['present', 'array', 'max:10'],
-            'assumptions.*.reversible' => ['required', 'boolean'],
-            'assumptions.*.easier_after_seeing' => ['required', 'boolean'],
+            'assumptions.*' => ['required', 'string', 'max:1000'],
             'tasks' => [...$build, 'max:30'],
             'tasks.*' => ['required', 'string', 'max:2000'],
             'steps' => [...$build, 'max:20'],
@@ -152,13 +148,15 @@ final readonly class Plan
             throw new ConstructionFailed(__('The planner returned an invalid plan: :errors', ['errors' => implode(' ', $validator->errors()->all())]));
         }
 
-        /** @var array{summary: string, acceptance_criteria: array<int, string>, assumptions: array<int, array{text: string, touches: array<int, mixed>, reversible: bool, easier_after_seeing: bool}>, tasks: array<int, string>, steps: array<int, array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, capabilities?: array<int, string>, understood_as?: string|null, current_behavior?: string|null, preserve?: array<int, array{area?: string|null, statement: string}>, question?: array{text: string, why?: string|null, options: array<int, string>, recommended?: string|null, touches?: array<int, string>, reversible?: bool, easier_after_seeing?: bool}|null, commit_subject?: string|null, answer?: string|null, next?: array<int, string>, goal?: string|null} $valid */
+        /** @var array{summary: string, acceptance_criteria: array<int, string>, assumptions: array<int, string>, tasks: array<int, string>, steps: array<int, array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, capabilities?: array<int, string>, understood_as?: string|null, current_behavior?: string|null, preserve?: array<int, array{area?: string|null, statement: string}>, question?: array{text: string, why?: string|null, options: array<int, string>, recommended?: string|null, touches?: array<int, string>, reversible?: bool, easier_after_seeing?: bool}|null, commit_subject?: string|null, answer?: string|null, next?: array<int, string>, goal?: string|null} $valid */
         $valid = $validator->validated();
 
         return new self(
             summary: $valid['summary'],
             acceptanceCriteria: array_values($valid['acceptance_criteria']),
-            assumptions: array_values(array_map(Assumption::fromArray(...), $valid['assumptions'])),
+            // The planner says nothing about what a guess touches, so each
+            // is worth a glance until code can tell.
+            assumptions: array_values(array_map(fn (string $text) => new Assumption(trim($text), reversible: false), $valid['assumptions'])),
             tasks: array_values($valid['tasks']),
             steps: array_values(array_map(fn (array $step) => [
                 'key' => $step['key'],

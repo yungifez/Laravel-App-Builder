@@ -1575,7 +1575,7 @@ class AgentDriverTest extends TestCase
             'summary' => 'Teams get an optional description.',
             'acceptance_criteria' => ['Teams have a nullable description.'],
             'cases' => [['base' => 'A team saved with a description keeps it.', 'alternate' => null, 'no_alternate' => 'A description is only set one way.', 'exception' => null, 'no_exception' => 'Nothing about a description is refused.']],
-            'assumptions' => [['text' => 'The description is optional.', 'touches' => [], 'reversible' => true, 'easier_after_seeing' => false]],
+            'assumptions' => ['The description is optional.'],
             'tasks' => ['Add a nullable description property.'],
             'steps' => [[
                 'key' => 'description-field',

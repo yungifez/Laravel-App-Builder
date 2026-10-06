@@ -7,6 +7,7 @@ use App\Enums\Consequence;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Runs\Assumption;
+use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Plan;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -67,16 +68,47 @@ class AssumptionLevelTest extends TestCase
         $this->assertSame(AssumptionLevel::Quiet, $plan->assumptions[0]->level());
 
         // A question built on its recommendation keeps what it touches.
-        $decided = $this->plan([], ['text' => 'Can rooms be paid for?', 'why' => '', 'options' => ['Yes', 'No'], 'recommended' => 'No', 'touches' => ['money', 'nope'], 'reversible' => true, 'easier_after_seeing' => true])->decidedOnRecommendation();
+        $decided = $this->planned([], ['text' => 'Can rooms be paid for?', 'why' => '', 'options' => ['Yes', 'No'], 'recommended' => 'No', 'touches' => ['money', 'nope'], 'reversible' => true, 'easier_after_seeing' => true])->decidedOnRecommendation();
         $this->assertSame([Consequence::Money], $decided->assumptions[0]->touches);
         $this->assertSame(AssumptionLevel::Glance, $decided->assumptions[0]->level());
     }
 
+    public function test_a_decision_the_planner_gives_as_plain_text_is_worth_a_glance()
+    {
+        $plan = $this->planned(['  Phone numbers are optional  ']);
+
+        $this->assertEquals([new Assumption('Phone numbers are optional', [], reversible: false)], $plan->assumptions);
+        $this->assertSame(AssumptionLevel::Glance, $plan->assumptions[0]->level());
+        $this->assertEquals($plan, Plan::fromArray($plan->toArray()));
+    }
+
+    public function test_a_decision_that_is_not_plain_text_is_refused()
+    {
+        $this->expectException(ConstructionFailed::class);
+
+        $this->planned([['text' => 'Phone numbers are optional', 'touches' => [], 'reversible' => true]]);
+    }
+
     /**
+     * A plan as saved, with the decisions already tagged.
+     *
      * @param  list<array<string, mixed>>  $assumptions
      * @param  array<string, mixed>|null  $question
      */
     protected function plan(array $assumptions, ?array $question = null): Plan
+    {
+        $saved = $this->planned([], $question)->toArray();
+
+        return Plan::fromArray([...$saved, 'assumptions' => $assumptions]);
+    }
+
+    /**
+     * A plan as the planner returns it.
+     *
+     * @param  list<mixed>  $assumptions
+     * @param  array<string, mixed>|null  $question
+     */
+    protected function planned(array $assumptions, ?array $question = null): Plan
     {
         return Plan::fromModelOutput([
             'summary' => 'Book rooms.',
