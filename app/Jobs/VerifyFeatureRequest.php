@@ -748,7 +748,10 @@ class VerifyFeatureRequest implements ShouldQueue
 
         rescue(function () use ($driver, $runWorkspaceCommand, $workspace, $config, $featureRequest) {
             $shoot = ScreenCheck::shootable($featureRequest->patch, $config['shots_max']);
-            $command = $runWorkspaceCommand->handle($workspace, $config['command'], $config['timeout'], ['SCREEN_CHECK_SHOOT' => implode(',', $shoot)]);
+            $command = $runWorkspaceCommand->handle($workspace, $config['command'], $config['timeout'], [
+                'SCREEN_CHECK_SHOOT' => implode(',', $shoot),
+                ...($this->screensBuilt() ? ['SCREEN_CHECK_BUILT' => '1'] : []),
+            ]);
 
             if ($this->outcome($command) !== self::OUTCOME_PASSED) {
                 return;
@@ -762,6 +765,18 @@ class VerifyFeatureRequest implements ShouldQueue
 
             $this->verification->update(['screens' => $screens]);
         }, report: false);
+    }
+
+    /**
+     * Determine if setup built the screens for this change, so the screen
+     * check need not build them again. Nothing after setup changes them:
+     * the checks that take the change out put it back as it was.
+     */
+    protected function screensBuilt(): bool
+    {
+        $builds = array_column(array_filter($this->configuredSteps('setup'), fn (array $step) => $step['command'] === ['npm', 'run', 'build']), 'name');
+
+        return collect($this->results)->contains(fn (array $result) => $result['stage'] === 'setup' && in_array($result['name'], $builds, true) && $result['outcome'] === self::OUTCOME_PASSED);
     }
 
     /**

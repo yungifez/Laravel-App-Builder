@@ -913,7 +913,8 @@ return [
                 'rm -rf storage/logs/screens',
                 'mkdir -p storage/logs/screens',
                 'test -f '.env('BUILDER_SCREEN_CHECK_TOOL', '/opt/screen-check/check.mjs'),
-                'npm run build > storage/logs/screens/build.log 2>&1',
+                // Setup has just built the screens unless it says otherwise.
+                '([ -n "$SCREEN_CHECK_BUILT" ] || npm run build > storage/logs/screens/build.log 2>&1)',
                 'touch database/database.sqlite',
                 'php artisan migrate --force > storage/logs/screens/migrate.log 2>&1',
                 // Records to show, from the app's own seeder, when it has one.
