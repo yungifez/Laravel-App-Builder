@@ -27,6 +27,10 @@ class RetryFeatureRequest
      */
     public static function retryable(FeatureRequest $featureRequest): bool
     {
+        if (self::stillWorking($featureRequest)) {
+            return false;
+        }
+
         // A change that waits for the owner's answer has not stopped.
         if ($featureRequest->latestRun?->question !== null) {
             return false;
@@ -69,6 +73,18 @@ class RetryFeatureRequest
      * the app to be tried: checking or trying it again cannot help, so
      * only making it again does.
      */
+    /**
+     * Whether its run is still on it. Checks that fail send the change back
+     * to be fixed, so a failed check alone is not a stop, and another try
+     * would build a second change beside the one still being written.
+     */
+    protected static function stillWorking(FeatureRequest $featureRequest): bool
+    {
+        $status = $featureRequest->latestRun?->status;
+
+        return $status !== null && ! $status->finished() && $status !== RunStatus::NeedsUserDecision;
+    }
+
     public static function mustBeMadeAgain(FeatureRequest $featureRequest): bool
     {
         return $featureRequest->status === FeatureRequestStatus::Generated
@@ -86,13 +102,16 @@ class RetryFeatureRequest
      */
     public static function stoppedWhileChecking(FeatureRequest $featureRequest): bool
     {
+        if (self::stillWorking($featureRequest)) {
+            return false;
+        }
+
         // A proposal from the checks waits for the owner's answer, just as a
         // question does: nothing stopped.
         if ($featureRequest->status !== FeatureRequestStatus::Generated
             || $featureRequest->commit_sha !== null
             || $featureRequest->reverted_at !== null
-            || $featureRequest->latestRun?->question !== null
-            || $featureRequest->latestRun?->stop_reason?->nextStep() === NextStep::Answer) {
+            || self::waitsOnTheOwner($featureRequest)) {
             return false;
         }
 
@@ -101,6 +120,19 @@ class RetryFeatureRequest
         }
 
         return in_array($featureRequest->latestRun?->status, [RunStatus::Failed, RunStatus::NeedsUserDecision, RunStatus::Cancelled], true);
+    }
+
+    /**
+     * Determine if the change waits on the owner's answer: to a question,
+     * or to something the checks found that is not answered yet. Once it is
+     * answered, the run's own stop stands again.
+     */
+    public static function waitsOnTheOwner(FeatureRequest $featureRequest): bool
+    {
+        $run = $featureRequest->latestRun;
+
+        return $run?->question !== null
+            || ($run?->stop_reason === StopReason::FindingProposed && app(ProposeFindings::class)->pending($featureRequest) !== []);
     }
 
     /**

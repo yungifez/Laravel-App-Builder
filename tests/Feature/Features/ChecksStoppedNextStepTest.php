@@ -63,6 +63,31 @@ class ChecksStoppedNextStepTest extends TestCase
         $this->assertSame(1, FeatureRequest::query()->where('retry_of_id', $change->id)->count());
     }
 
+    public function test_a_change_sent_back_to_be_fixed_is_not_tried_again_beside_itself(): void
+    {
+        $this->failInstall();
+        $change = FeatureRequest::factory()->generated()->create(['patch' => self::COMPOSER_PATCH]);
+        $run = Run::factory()->for($change)->create(['status' => RunStatus::Completed, 'driver' => 'worker']);
+        $this->check($change);
+
+        // The checks sent it back: the owner's tool is fixing it now.
+        $run->update(['status' => RunStatus::Implementing]);
+
+        $this->assertOffersRetry($change, false);
+        $this->post(route('feature-requests.retries.store', $change))->assertSessionHasErrors('retry');
+        $this->assertSame(0, FeatureRequest::query()->where('retry_of_id', $change->id)->count());
+
+        // Still being checked again is still working too.
+        $run->update(['status' => RunStatus::Verifying]);
+        $this->assertOffersRetry($change, false);
+
+        // Once its run gives up, another try is the way on.
+        $run->update(['status' => RunStatus::Failed]);
+        $this->assertOffersRetry($change, true);
+        $this->post(route('feature-requests.retries.store', $change))->assertSessionHasNoErrors();
+        $this->assertSame(1, FeatureRequest::query()->where('retry_of_id', $change->id)->count());
+    }
+
     public function test_a_copy_that_could_not_be_set_up_is_checked_again_not_made_again(): void
     {
         $this->failInstall();
@@ -120,6 +145,13 @@ class ChecksStoppedNextStepTest extends TestCase
         $this->actingAs($change->project->owner)->post(route('feature-requests.verifications.store', $change));
 
         return $change->verifications()->sole();
+    }
+
+    protected function assertOffersRetry(FeatureRequest $change, bool $expected): void
+    {
+        $this->actingAs($change->project->owner)
+            ->get(route('feature-requests.show', $change))
+            ->assertInertia(fn (Assert $page) => $page->where('featureRequest.can_retry', $expected)->etc());
     }
 
     protected function assertCanAccept(FeatureRequest $change, bool $expected): void
