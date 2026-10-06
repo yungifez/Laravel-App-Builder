@@ -1217,6 +1217,28 @@ class AgentDriverTest extends TestCase
         $this->assertSame(RunStatus::NeedsUserDecision, $run->refresh()->status);
     }
 
+    public function test_the_reviewer_is_told_which_files_of_a_long_change_it_does_not_see(): void
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder($this->writes([
+            'app/Models/Book.php' => "<?php\n\nclass Book {}\n",
+            'package-lock.json' => str_repeat("{\"lockfileVersion\": 3}\n", 200),
+            'resources/js/pages/Long.vue' => str_repeat("<p>A long page.</p>\n", 400),
+        ], 'Added books.'));
+        ChangeReviewer::fake([['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => []]]);
+        config(['builder.construction.limits.review_diff_characters' => 3000]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run);
+
+        ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, "+++ b/app/Models/Book.php\n@@ -0,0 +1,3 @@\n+<?php\n+\n+class Book {}\n```")
+            && str_contains($prompt->prompt, "## Files of the change not shown in the diff\n\n- package-lock.json: the package manager’s lock file (+200 −0 lines), not shown.")
+            && str_contains($prompt->prompt, '- resources/js/pages/Long.vue (+400 −0 lines): left out for length.')
+            && str_contains($prompt->prompt, 'A file not shown is never by itself a reason to refuse the change')
+            && ! str_contains($prompt->prompt, 'A long page.')
+            && ! str_contains($prompt->prompt, 'unreviewed'));
+    }
+
     public function test_the_agents_get_the_selected_project_context_and_the_review_sorts_changes_by_area()
     {
         $config = "<?php\n\nreturn [\n    'owner' => ['members:invite'],\n];\n";

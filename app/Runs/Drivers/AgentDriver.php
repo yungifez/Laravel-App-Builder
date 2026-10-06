@@ -27,6 +27,7 @@ use App\Runs\Exceptions\ProvidersUnavailable;
 use App\Runs\Plan;
 use App\Runs\PlanningContext;
 use App\Runs\Review;
+use App\Runs\ReviewDiff;
 use App\Runs\ReviewEvidence;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Config;
@@ -335,7 +336,7 @@ abstract class AgentDriver implements ConstructionDriver
             "## Verification: {$evidence->verificationStatus}\n\n".implode("\n", $results),
             "## Tests deleted or weakened by the diff\n\n".($evidence->weakenedTests === [] ? 'None.' : $this->json($evidence->weakenedTests)),
             $this->changeEvidence($evidence, $accepted),
-            "## Diff\n\n```diff\n".$this->bounded($evidence->patch)."\n```",
+            $this->diff($evidence->patch),
         ]));
     }
 
@@ -558,15 +559,16 @@ abstract class AgentDriver implements ConstructionDriver
     }
 
     /**
-     * Cut a diff to the configured size for the reviewer, saying so when cut.
+     * Lay out the diff for the reviewer within the configured size, naming
+     * each file of the change it does not show (ReviewDiff).
      */
-    protected function bounded(string $patch): string
+    protected function diff(string $patch): string
     {
-        $limit = (int) config('builder.construction.limits.review_diff_characters');
+        $laid = ReviewDiff::lay($patch, (int) config('builder.construction.limits.review_diff_characters'));
 
-        return mb_strlen($patch) > $limit
-            ? mb_substr($patch, 0, $limit)."\n… (diff cut at {$limit} characters; judge the remainder as unreviewed)"
-            : $patch;
+        return "## Diff\n\n```diff\n{$laid['diff']}\n```"
+            .($laid['left_out'] === [] ? '' : "\n\n## Files of the change not shown in the diff\n\n".$this->list($laid['left_out'])
+                ."\n\nThe verification ran the whole change, these files too. Judge the change on the diff and the verification. A file not shown is never by itself a reason to refuse the change or to say an item has no test: name a test in a file not shown when you know it from the verification. If you could not judge something only because its file is not shown, say so in the summary, not as a finding.");
     }
 
     /**

@@ -41,7 +41,7 @@ class ChangeReviewer implements Agent, HasMiddleware, HasStructuredOutput
         return <<<'INSTRUCTIONS'
         You review a change to a Laravel application before it is offered to the application's owner.
 
-        You get the owner's request, the saved plan and its acceptance criteria, the full diff, any tests the diff deletes or weakens, the results of an independent verification run, and what running the app with and without the change, recording its requests while the tests ran, and causing one failure at a time in them, showed. Judge only from this evidence.
+        You get the owner's request, the saved plan and its acceptance criteria, the diff (any file of the change it does not show, such as a lock file, is named below it), any tests the diff deletes or weakens, the results of an independent verification run, and what running the app with and without the change, recording its requests while the tests ran, and causing one failure at a time in them, showed. Judge only from this evidence.
 
         Report a blocking finding for:
         - an acceptance criterion the diff does not satisfy, or satisfies only partly;
