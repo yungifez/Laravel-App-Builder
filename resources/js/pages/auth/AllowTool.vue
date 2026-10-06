@@ -24,6 +24,9 @@ defineProps<{
     csrfToken: string;
 }>();
 
+// The spinner covers the pressed label rather than sitting beside it, so
+// the buttons keep their width and do not move under the finger. It sits
+// in a span: a button with an icon as a direct child gets less padding.
 const sending = ref<'allow' | 'deny' | null>(null);
 </script>
 
@@ -31,7 +34,7 @@ const sending = ref<'allow' | 'deny' | null>(null);
     <Head title="Connect your own tool" />
 
     <div class="space-y-6 text-sm">
-        <p data-test="allow-tool-ask">
+        <p class="break-words" data-test="allow-tool-ask">
             Let <span class="font-medium">{{ tool }}</span> work on your apps?
             <template v-if="returnsTo">
                 Then you go back to {{ returnsTo }}.</template
@@ -49,11 +52,18 @@ const sending = ref<'allow' | 'deny' | null>(null);
                 <Button
                     type="submit"
                     :disabled="sending !== null"
-                    class="h-11 select-none sm:h-9"
+                    class="relative h-11 select-none sm:h-9"
                     data-test="allow-tool"
                 >
-                    <Spinner v-if="sending === 'allow'" />
-                    Allow
+                    <span :class="{ invisible: sending === 'allow' }"
+                        >Allow</span
+                    >
+                    <span
+                        v-if="sending === 'allow'"
+                        class="absolute inset-0 flex items-center justify-center"
+                    >
+                        <Spinner />
+                    </span>
                 </Button>
             </form>
             <form :action="deny.url()" method="post" @submit="sending = 'deny'">
@@ -64,17 +74,24 @@ const sending = ref<'allow' | 'deny' | null>(null);
                     type="submit"
                     variant="outline"
                     :disabled="sending !== null"
-                    class="h-11 select-none sm:h-9"
+                    class="relative h-11 select-none sm:h-9"
                     data-test="deny-tool"
                 >
-                    <Spinner v-if="sending === 'deny'" />
-                    Not now
+                    <span :class="{ invisible: sending === 'deny' }"
+                        >Not now</span
+                    >
+                    <span
+                        v-if="sending === 'deny'"
+                        class="absolute inset-0 flex items-center justify-center"
+                    >
+                        <Spinner />
+                    </span>
                 </Button>
             </form>
         </div>
 
         <p class="text-xs text-muted-foreground">
-            You can stop using it in each app at any time.
+            You can sign it out at any time in Settings, under Tools.
         </p>
     </div>
 </template>
