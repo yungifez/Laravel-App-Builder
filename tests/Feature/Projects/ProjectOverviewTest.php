@@ -163,12 +163,21 @@ class ProjectOverviewTest extends TestCase
         $project = Project::factory()->create();
         $proposing = FeatureRequest::factory()->for($project)->create(['status' => FeatureRequestStatus::Generated]);
         Run::factory()->for($proposing)->create(['status' => RunStatus::NeedsUserDecision, 'stop_reason' => StopReason::FindingProposed]);
+        $proposal = $proposing->findingProposals()->create(['kind' => 'owner_unchecked', 'identity' => 'owner_unchecked|App\Models\Item', 'reason' => 'Items are shared by the household.']);
 
         $this->actingAs($project->owner)
             ->get(route('projects.show', $project))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('changes.0.state', 'waiting')
                 ->where('changes.0.asks', true));
+
+        // Once answered, the run's own stop stands again.
+        $proposal->update(['agreed' => true]);
+
+        $this->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('changes.0.state', 'stopped')
+                ->where('changes.0.asks', false));
     }
 
     public function test_a_proposal_while_the_change_is_still_being_made_asks_for_an_answer()
@@ -176,6 +185,7 @@ class ProjectOverviewTest extends TestCase
         $project = Project::factory()->create();
         $proposing = FeatureRequest::factory()->for($project)->create();
         Run::factory()->for($proposing)->create(['status' => RunStatus::NeedsUserDecision, 'stop_reason' => StopReason::FindingProposed]);
+        $proposing->findingProposals()->create(['kind' => 'owner_unchecked', 'identity' => 'owner_unchecked|App\Models\Item', 'reason' => 'Items are shared by the household.']);
 
         $this->actingAs($project->owner)
             ->get(route('projects.show', $project))
