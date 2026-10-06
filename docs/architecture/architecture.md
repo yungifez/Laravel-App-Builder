@@ -1248,16 +1248,16 @@ object or language. `FieldType` gains `phone`, `postal_code`, `url`, `isbn`,
 `datetime`. A field in the data shape gains `format`: a short map of the
 settings its type needs, and nothing more:
 
-| Type | Settings | Stored as | Checked by |
-|---|---|---|---|
-| `phone` | `regions` (ISO codes, or `any`) | E.164 string | the phone library's rule and cast |
-| `postal_code` | `regions` | uppercase, one inner space | our table per region, with a loose `any` rule |
-| `url` | `schemes` (`https`, or `http,https`) | the string as typed | Laravel's `url:` rule |
-| `isbn` | `variants` (`10`, `13` or both) | digits and `X`, no hyphens | our checksum rule |
-| `country` | none | ISO 3166 alpha-2 | `in:` our code list |
-| `money` | `currency` (ISO 4217, or `per_record`) | integer minor units, and a currency column when per record | `integer`, `min:0` unless negatives are asked for |
-| `percentage` | none | `decimal(5,2)` | `between:0,100` |
-| `pattern` | `pattern`, `examples` | the string as typed | `regex:`, and every example must pass it |
+| Type          | Settings                               | Stored as                                                  | Checked by                                        |
+| ------------- | -------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------- |
+| `phone`       | `regions` (ISO codes, or `any`)        | E.164 string                                               | the phone library's rule and cast                 |
+| `postal_code` | `regions`                              | uppercase, one inner space                                 | our table per region, with a loose `any` rule     |
+| `url`         | `schemes` (`https`, or `http,https`)   | the string as typed                                        | Laravel's `url:` rule                             |
+| `isbn`        | `variants` (`10`, `13` or both)        | digits and `X`, no hyphens                                 | our checksum rule                                 |
+| `country`     | none                                   | ISO 3166 alpha-2                                           | `in:` our code list                               |
+| `money`       | `currency` (ISO 4217, or `per_record`) | integer minor units, and a currency column when per record | `integer`, `min:0` unless negatives are asked for |
+| `percentage`  | none                                   | `decimal(5,2)`                                             | `between:0,100`                                   |
+| `pattern`     | `pattern`, `examples`                  | the string as typed                                        | `regex:`, and every example must pass it          |
 
 `pattern` is the escape hatch for the app's own codes ("ABC-2026-00123").
 The planner must give two examples that the pattern accepts. The scaffold
