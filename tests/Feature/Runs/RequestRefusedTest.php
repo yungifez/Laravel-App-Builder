@@ -89,7 +89,7 @@ class RequestRefusedTest extends TestCase
         $this->assertNotNull($this->attention('ai_request_refused'));
     }
 
-    public function test_too_many_requests_stay_a_wait_and_a_repeated_refusal_keeps_its_own_advice(): void
+    public function test_too_many_requests_stay_a_wait_and_a_repeated_refusal_steps_down(): void
     {
         $limited = $this->runAnswered(429, 'rate_limit_error');
 
@@ -97,8 +97,8 @@ class RequestRefusedTest extends TestCase
         $this->assertSame(1, $this->asked);
         $this->assertStringEndsWith('Try again in a few minutes.', (string) $limited->error);
 
-        // Tried again after the same refusal: still our fault, so the owner
-        // is not sent to our developers as if the change were the problem.
+        // Tried again after the same refusal: a third try would stop the
+        // same way, so the owner reads that we are fixing it and the ask stays.
         $first = $this->runAnswered(400, 'invalid_request_error');
         $again = FeatureRequest::factory()->for($first->featureRequest->project)->for($this->owner, 'user')->create(['retry_of_id' => $first->feature_request_id]);
         $this->refusePlans(400, 'invalid_request_error');
@@ -107,8 +107,8 @@ class RequestRefusedTest extends TestCase
         $this->actingAs($this->owner)
             ->get(route('feature-requests.show', $retry->featureRequest))
             ->assertInertia(fn (Assert $page) => $page
-                ->where('featureRequest.failed_same_way', false)
-                ->where('run.error', self::REFUSED)
+                ->where('featureRequest.failed_same_way', true)
+                ->where('run.error', 'This is our fault: the AI service we use could not accept how we asked it. We have been told. Nothing in your app changed. It stopped the same way last time, so trying again will likely stop the same way. We are fixing it on our side. What you asked for stays here, so you can try it again later, or ask one of our developers.')
                 ->etc());
     }
 

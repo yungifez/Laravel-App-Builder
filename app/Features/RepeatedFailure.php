@@ -29,6 +29,10 @@ class RepeatedFailure
         StopReason::VerificationFailed->value => 'Ask for a smaller part of it in the chat, or ask one of our developers.',
         StopReason::VerificationInterrupted->value => 'Ask one of our developers to look at it.',
         StopReason::WrittenTestStillFails->value => 'Say more about what you asked for in the chat, or ask one of our developers.',
+        // Ours to put right: one more try may find it fixed, a third will
+        // not. What the owner asked for stays here meanwhile.
+        StopReason::OutOfCredit->value => 'We are fixing it on our side. What you asked for stays here, so you can try it again later, or ask one of our developers.',
+        StopReason::RequestRefused->value => 'We are fixing it on our side. What you asked for stays here, so you can try it again later, or ask one of our developers.',
     ];
 
     /**
@@ -41,8 +45,6 @@ class RepeatedFailure
         StopReason::UsageLimit->value => 'It says when the plan starts again, and how to get more.',
         StopReason::WorkerLapsed->value => 'The owner\'s own coding tool ran out of time; the change itself did not fail.',
         StopReason::ProvidersUnavailable->value => 'A busy AI service passes on its own, so trying again later is right.',
-        StopReason::OutOfCredit->value => 'Ours to fix, and we were told; trying again later is right.',
-        StopReason::RequestRefused->value => 'Ours to fix, and we were told; trying again later is right.',
         StopReason::Question->value => 'Nothing failed; the owner answers.',
         StopReason::FindingProposed->value => 'Nothing failed; the owner answers.',
         StopReason::Cancelled->value => 'The owner asked for it.',

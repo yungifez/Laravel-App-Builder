@@ -1809,7 +1809,11 @@ reason has no wording, fault, step or advice. A request with no change made
 yet follows its run's stop (`TransitionRun`): it fails, unless the stop waits
 for an answer, and goes back to being made when the same run goes on. An AI
 service that answers "too many requests" but says the account is out of
-credit stops as out of credit.
+credit stops as out of credit. Our account running out of credit, or the
+AI service refusing how we asked, is ours to fix: one more try may find it
+fixed, so the first stop still offers "Try again". When the next try stops
+the same way, the owner reads that we are fixing it and that what they
+asked for stays, and "Ask one of our developers" comes first.
 
 ## 12. Verification
 

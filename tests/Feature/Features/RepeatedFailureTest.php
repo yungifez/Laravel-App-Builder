@@ -34,13 +34,13 @@ class RepeatedFailureTest extends TestCase
     /**
      * Make a change that stopped, optionally as a try of an earlier one.
      */
-    protected function stopped(string $stopReason, string $error, ?FeatureRequest $tries = null): FeatureRequest
+    protected function stopped(string $stopReason, string $error, ?FeatureRequest $tries = null, RunStatus $status = RunStatus::Failed): FeatureRequest
     {
         $featureRequest = FeatureRequest::factory()->for($this->project)->for($this->owner)->create([
             'status' => FeatureRequestStatus::Failed,
             'retry_of_id' => $tries?->id,
         ]);
-        Run::factory()->for($featureRequest)->create(['status' => RunStatus::Failed, 'stop_reason' => $stopReason, 'error' => $error]);
+        Run::factory()->for($featureRequest)->create(['status' => $status, 'stop_reason' => $stopReason, 'error' => $error]);
 
         return $featureRequest;
     }
@@ -72,6 +72,50 @@ class RepeatedFailureTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('featureRequest.failed_same_way', false)
                 ->where('run.error', 'This is our fault: something went wrong on our side while I worked on this. Nothing in your app changed. Try again.'));
+    }
+
+    public function test_our_ai_account_out_of_credit_twice_steps_down_from_trying_again()
+    {
+        $first = $this->stopped('out_of_credit', StopReason::OutOfCredit->said(), status: RunStatus::NeedsUserDecision);
+        $again = $this->stopped('out_of_credit', StopReason::OutOfCredit->said(), $first, RunStatus::NeedsUserDecision);
+
+        $this->actingAs($this->owner)
+            ->get(route('feature-requests.show', $again))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('featureRequest.failed_same_way', true)
+                // Still there, but no longer the first thing offered.
+                ->where('featureRequest.can_retry', true)
+                ->where('run.error', 'This is our fault: our account with the AI service we use is out of credit. We have been told. Nothing in your app changed. It stopped the same way last time, so trying again will likely stop the same way. We are fixing it on our side. What you asked for stays here, so you can try it again later, or ask one of our developers.'));
+
+        // One more try after the first stop is still the step: it may find it fixed.
+        $this->get(route('feature-requests.show', $first))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('featureRequest.failed_same_way', false)
+                ->where('run.error', StopReason::OutOfCredit->said()));
+    }
+
+    public function test_a_refused_request_after_running_out_of_credit_is_not_a_repeat()
+    {
+        $first = $this->stopped('out_of_credit', StopReason::OutOfCredit->said(), status: RunStatus::NeedsUserDecision);
+        $again = $this->stopped('request_refused', StopReason::RequestRefused->said(), $first, RunStatus::NeedsUserDecision);
+
+        $this->actingAs($this->owner)
+            ->get(route('feature-requests.show', $again))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('featureRequest.failed_same_way', false)
+                ->where('run.error', StopReason::RequestRefused->said()));
+    }
+
+    public function test_a_request_refused_twice_says_we_are_fixing_it_and_the_ask_stays()
+    {
+        $first = $this->stopped('request_refused', StopReason::RequestRefused->said(), status: RunStatus::NeedsUserDecision);
+        $again = $this->stopped('request_refused', StopReason::RequestRefused->said(), $first, RunStatus::NeedsUserDecision);
+
+        $this->actingAs($this->owner)
+            ->get(route('feature-requests.show', $again))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('featureRequest.failed_same_way', true)
+                ->where('run.error', 'This is our fault: the AI service we use could not accept how we asked it. We have been told. Nothing in your app changed. It stopped the same way last time, so trying again will likely stop the same way. We are fixing it on our side. What you asked for stays here, so you can try it again later, or ask one of our developers.'));
     }
 
     public function test_a_stop_that_says_when_to_try_again_keeps_its_own_advice()
