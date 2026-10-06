@@ -136,6 +136,15 @@ const unhealthy = computed(
         latest.value.health.some((check) => !check.passed),
 );
 
+// The host was still starting the new version when the wait ran out. More
+// time may be all it needs, so checking again comes first; sending it
+// again stays as the second step.
+const starting = computed(
+    () =>
+        latest.value?.status === 'needs_attention' &&
+        latest.value.error_cause === 'starting',
+);
+
 // Sent before the owner gave the web address, or our own check broke: the
 // app may be fine, so checking again is the step, not sending it again.
 const recheck = computed(
@@ -143,7 +152,8 @@ const recheck = computed(
         (latest.value?.status === 'sent' &&
             props.publishing.address !== null) ||
         (latest.value?.status === 'needs_attention' &&
-            latest.value.error_cause === 'ours'),
+            latest.value.error_cause === 'ours') ||
+        starting.value,
 );
 
 // Publishing could not reach the repository the owner gave. Sending again
@@ -437,7 +447,7 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                     !upToDate &&
                     !sentCurrent &&
                     !(
-                        (unhealthy || recheck) &&
+                        (unhealthy || (recheck && !starting)) &&
                         latest?.commit === publishing.head
                     )
                 "
@@ -470,7 +480,7 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                 <Button
                     :disabled="processing || (losesData && !loseData)"
                     :variant="
-                        troubled || checkFailed || settingsFault
+                        troubled || checkFailed || settingsFault || starting
                             ? 'outline'
                             : 'default'
                     "

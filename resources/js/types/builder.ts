@@ -925,7 +925,7 @@ export type DeploymentSummary = {
     doing: string | null;
     error: string | null;
     /** Who puts a failure right: the owner's publishing settings, or us. */
-    error_cause: 'settings' | 'ours' | null;
+    error_cause: 'settings' | 'ours' | 'starting' | null;
     /** What the host or Git said behind a failure, for Details only. */
     error_details: string | null;
     health: {

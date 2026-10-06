@@ -254,6 +254,11 @@ class PublishingTest extends TestCase
         $this->assertNotNull($deployment->pushed_at);
         $this->assertNull($deployment->confirmed_at);
         $this->assertSame('Your hosting has the new version, but the app is not answering properly at https://shop.example.com.', $deployment->error);
+        // The host is done, so checking the same version again tells nothing new.
+        $this->assertNull($deployment->error_cause);
+        $this->actingAs($this->owner)
+            ->post(route('deployment-checks.store', $this->project))
+            ->assertSessionHasErrors(['check' => 'There is nothing to check right now.']);
         $this->actingAs($this->owner)
             ->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->where('project.published_at', null));

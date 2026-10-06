@@ -13,8 +13,9 @@ use Illuminate\Validation\ValidationException;
 /**
  * Check again that the newest version sent is online, without sending it
  * again. A version sent before the owner gave the app's web address had
- * nothing to check, and a check that broke on our side said nothing about
- * the app; sending the same version again would change neither.
+ * nothing to check, a check that broke on our side said nothing about the
+ * app, and a host still starting it may only have needed more time;
+ * sending the same version again would change none of these.
  */
 class CheckDeployment
 {
@@ -68,11 +69,12 @@ class CheckDeployment
 
     /**
      * Determine if checking again can tell the owner something: the version
-     * was sent with no address to check, or our own check broke.
+     * was sent with no address to check, our own check broke, or the host
+     * was still starting it when the wait ran out.
      */
     public static function checkable(Deployment $deployment): bool
     {
         return $deployment->status === DeploymentStatus::Sent
-            || ($deployment->status === DeploymentStatus::NeedsAttention && $deployment->error_cause === 'ours');
+            || ($deployment->status === DeploymentStatus::NeedsAttention && in_array($deployment->error_cause, ['ours', 'starting'], true));
     }
 }

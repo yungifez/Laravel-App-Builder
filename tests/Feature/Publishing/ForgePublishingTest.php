@@ -304,6 +304,42 @@ class ForgePublishingTest extends TestCase
         Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'on-forge.com'));
     }
 
+    public function test_a_version_forge_is_slow_to_start_is_checked_again_without_sending_it_again()
+    {
+        config(['builder.publishing.confirm.confirm_seconds' => 0]);
+        $this->releaseStatuses = ['deploying'];
+
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+
+        $deployment = Deployment::sole();
+        $this->assertSame(DeploymentStatus::NeedsAttention, $deployment->status);
+        $this->assertSame('Your hosting is taking longer than usual to start the new version.', $deployment->error);
+        $this->assertSame('starting', $deployment->error_cause);
+
+        // Forge has finished meanwhile: checking again finds the app online.
+        $this->actingAs($this->owner)->post(route('deployment-checks.store', $this->project))->assertSessionHasNoErrors();
+
+        $deployment->refresh();
+        $this->assertSame(DeploymentStatus::Published, $deployment->status);
+        $this->assertNull($deployment->error_cause);
+        $this->assertCount(1, array_filter($this->forgeRequests, fn (array $request) => $request[0] === 'POST' && str_ends_with($request[1], '/deployments')));
+    }
+
+    public function test_a_version_forge_is_still_starting_on_the_second_check_still_waits_on_forge()
+    {
+        config(['builder.publishing.confirm.confirm_seconds' => 0]);
+        $this->releaseStatuses = ['deploying', 'deploying'];
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+
+        $this->actingAs($this->owner)->post(route('deployment-checks.store', $this->project))->assertSessionHasNoErrors();
+
+        $deployment = Deployment::sole();
+        $this->assertSame(DeploymentStatus::NeedsAttention, $deployment->status);
+        $this->assertSame('starting', $deployment->error_cause);
+        // Still one release: the check sent nothing.
+        $this->assertCount(1, array_filter($this->forgeRequests, fn (array $request) => $request[0] === 'POST' && str_ends_with($request[1], '/deployments')));
+    }
+
     public function test_without_forge_settings_the_owner_is_asked_where_to_publish()
     {
         config(['builder.publishing.forge.organization' => null]);

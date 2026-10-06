@@ -90,6 +90,9 @@ class ConfirmDeployment implements ShouldQueue
                 collect($health)->contains(fn (array $check) => ($check['key'] ?? null) === 'auth.sign-in' && ! $check['passed']) => __('Your app is online at :address, but people cannot sign in.', ['address' => $address]),
                 default => __('Your hosting has the new version, but the app is not answering properly at :address.', ['address' => $address]),
             },
+            // A host still starting it may only need more time: checking
+            // again then needs no new push.
+            'error_cause' => $progress === ReleaseProgress::Pending ? 'starting' : null,
             'finished_at' => now(),
         ]);
     }
