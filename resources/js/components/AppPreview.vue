@@ -165,6 +165,31 @@ watch(scale, (value) => (props.state.zoom = value), { immediate: true });
                 </p>
             </template>
 
+            <template v-else-if="firstVersion?.state === 'waiting'">
+                <p
+                    class="text-lg font-medium"
+                    data-test="first-version-waiting"
+                >
+                    Waiting for your Claude Code or Codex
+                </p>
+                <p class="max-w-sm text-sm text-muted-foreground">
+                    It starts when your tool asks for work.
+                </p>
+                <Button as-child variant="outline" class="h-11 select-none">
+                    <Link
+                        :href="
+                            showProject(projectId, {
+                                query: { change: firstVersion.change },
+                            })
+                        "
+                        :only="['change']"
+                        preserve-state
+                        preserve-scroll
+                        >See how to connect</Link
+                    >
+                </Button>
+            </template>
+
             <template v-else-if="firstVersion?.state === 'asking'">
                 <p class="text-lg font-medium" data-test="first-version-asking">
                     Your first version needs an answer from you

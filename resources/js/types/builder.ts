@@ -564,7 +564,7 @@ export type VisualValue = number | string;
 /** How the first version of an app started here is going, until one is kept. */
 export type FirstVersion = {
     change: string;
-    state: 'making' | 'asking' | 'ready' | 'stopped';
+    state: 'making' | 'waiting' | 'asking' | 'ready' | 'stopped';
     error: string | null;
     can_retry: boolean;
     /** Stopped because the month's AI use ran out. */

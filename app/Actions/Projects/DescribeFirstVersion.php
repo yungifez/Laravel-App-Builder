@@ -24,7 +24,7 @@ class DescribeFirstVersion
     ) {}
 
     /**
-     * @return array{change: string, state: 'making'|'asking'|'ready'|'stopped', error: string|null, can_retry: bool, plan_ran_out: bool, checking: bool}|null
+     * @return array{change: string, state: 'making'|'waiting'|'asking'|'ready'|'stopped', error: string|null, can_retry: bool, plan_ran_out: bool, checking: bool}|null
      */
     public function handle(Project $project): ?array
     {
@@ -48,6 +48,9 @@ class DescribeFirstVersion
             // Ready to try once made, as the list of changes offers it; the
             // checks may still run, and the pane says so.
             $change->status === FeatureRequestStatus::Generated => 'ready',
+            // Handed to the owner's own tool, which has not asked for it yet:
+            // nothing is being made until it does.
+            $this->waitingForTheirTool($change) => 'waiting',
             default => 'making',
         };
 
@@ -63,6 +66,19 @@ class DescribeFirstVersion
             'plan_ran_out' => $state === 'stopped' && ($described['run']['plan_ran_out'] ?? false),
             'checking' => $state === 'ready' && ! $described['featureRequest']['can_accept'],
         ];
+    }
+
+    protected function waitingForTheirTool(FeatureRequest $change): bool
+    {
+        $run = $change->latestRun;
+
+        if ($run?->driver !== 'worker' || $run->status !== RunStatus::Implementing) {
+            return false;
+        }
+
+        $since = (int) $run->events()->where('type', 'status')->where('data->to', RunStatus::Implementing->value)->max('sequence');
+
+        return ! $run->events()->whereIn('type', ['worker_query', 'worker_progress', 'worker_tried', 'worker_submitted'])->where('sequence', '>', $since)->exists();
     }
 
     /**

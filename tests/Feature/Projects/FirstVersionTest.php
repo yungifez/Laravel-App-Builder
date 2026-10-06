@@ -107,6 +107,40 @@ class FirstVersionTest extends TestCase
         $this->assertFirstVersion(null);
     }
 
+    public function test_a_first_version_handed_to_the_owners_tool_waits_until_the_tool_asks_for_it(): void
+    {
+        $change = $this->firstVersion(['status' => FeatureRequestStatus::Generating]);
+        $run = Run::factory()->for($change)->create(['status' => RunStatus::Implementing, 'driver' => 'worker']);
+        $run->recordEvent('status', ['from' => 'planning', 'to' => 'implementing']);
+
+        // Nothing is made until their tool asks, so no spinner says it is.
+        $this->assertSame('waiting', $this->firstVersionShown()['state']);
+
+        $run->recordEvent('worker_query', ['tool' => 'get_task']);
+
+        $this->assertSame('making', $this->firstVersionShown()['state']);
+    }
+
+    public function test_a_first_version_we_write_is_being_made_without_waiting_for_a_tool(): void
+    {
+        $change = $this->firstVersion(['status' => FeatureRequestStatus::Generating]);
+        $run = Run::factory()->for($change)->create(['status' => RunStatus::Implementing, 'driver' => 'sdk']);
+        $run->recordEvent('status', ['from' => 'planning', 'to' => 'implementing']);
+
+        $this->assertSame('making', $this->firstVersionShown()['state']);
+    }
+
+    public function test_a_first_version_sent_back_to_the_owners_tool_waits_again_whatever_it_asked_before(): void
+    {
+        $change = $this->firstVersion(['status' => FeatureRequestStatus::Generating]);
+        $run = Run::factory()->for($change)->create(['status' => RunStatus::Implementing, 'driver' => 'worker']);
+        $run->recordEvent('status', ['from' => 'planning', 'to' => 'implementing']);
+        $run->recordEvent('worker_submitted', ['patch' => '', 'summary' => '']);
+        $run->recordEvent('status', ['from' => 'verifying', 'to' => 'implementing']);
+
+        $this->assertSame('waiting', $this->firstVersionShown()['state']);
+    }
+
     public function test_a_first_version_made_then_stopped_in_the_review_or_asking_says_so(): void
     {
         $change = $this->firstVersion(['status' => FeatureRequestStatus::Generated]);
