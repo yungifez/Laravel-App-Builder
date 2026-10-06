@@ -2,6 +2,8 @@
 
 namespace App\Features;
 
+use Illuminate\Support\Arr;
+
 /**
  * Send wrong values to the app's forms (§26.11, "rules are generators").
  * For each route that takes input on a controller the change touched, a
@@ -20,7 +22,7 @@ namespace App\Features;
  *
  * @phpstan-type Route array{method: string, uri: string, action: string}
  * @phpstan-type Rules array{id: int, status: int, source: string, fields: array<string, list<string>>, reason: string|null}
- * @phpstan-type Probe array{route: int, field: string, expect: string, payload: array<string, mixed>, says: string}
+ * @phpstan-type Probe array{route: int, field: string, key: string, expect: string, payload: array<string, mixed>, says: string}
  * @phpstan-type Coverage array{route: int, field: string, reason: string}
  * @phpstan-type Planned array{baselines: array<int, array<string, mixed>>, probes: list<Probe>, coverage: list<Coverage>}
  * @phpstan-type Observed array{status: int, errors: list<string>, exception: string|null, reason: string|null}
@@ -250,7 +252,7 @@ PHP);
         // The most telling classes first, across every form, so a small
         // limit still tries each field once.
         usort($candidates, fn (array $a, array $b) => [$a['rank'], $a['route']] <=> [$b['rank'], $b['route']]);
-        $probes = array_map(fn (array $probe) => ['route' => $probe['route'], 'field' => $probe['field'], 'expect' => $probe['expect'], 'payload' => $probe['payload'], 'says' => $probe['says']], array_slice($candidates, 0, max(0, $limit)));
+        $probes = array_map(fn (array $probe) => ['route' => $probe['route'], 'field' => $probe['field'], 'key' => $probe['key'], 'expect' => $probe['expect'], 'payload' => $probe['payload'], 'says' => $probe['says']], array_slice($candidates, 0, max(0, $limit)));
         $tried = array_fill_keys(array_map(fn (array $probe) => $probe['route'], $probes), true);
 
         return ['baselines' => array_intersect_key($baselines, $tried), 'probes' => $probes, 'coverage' => $coverage];
@@ -315,13 +317,17 @@ PHP);
     }
 
     /**
-     * Fill in the values only the app can make: a row that exists, and a
-     * date counted from today.
+     * Fill in the values only the app can make: a row that exists, a date
+     * counted from today, and a fake upload.
      */
     private function fill(mixed $value): mixed
     {
         if (is_array($value) && isset($value['@date'])) {
             return now()->addDays($value['@date'])->format($value['format']);
+        }
+
+        if (is_array($value) && isset($value['@file'])) {
+            return UploadedFile::fake()->create('probe.'.$value['@file'], $value['kb'], $value['mime']);
         }
 
         if (is_array($value) && isset($value['@exists'])) {
@@ -438,7 +444,7 @@ PHP);
             $route = $routes[$probe['route']];
             $finding = ['route' => "{$route['method']} /".ltrim($route['uri'], '/'), 'field' => $probe['field'], 'says' => $probe['says'], 'outcome' => $outcome, 'exception' => $outcome === 'broke' ? ($seen['exception'] ?? null) : null];
             $source = $changed[$rules[$probe['route']]['source'] ?? ''] ?? null;
-            $added = $source !== null && ($source['new'] || array_any($source['lines'], fn (string $line) => preg_match('/[\'"]'.preg_quote($probe['field'], '/').'[\'"]/', $line) === 1));
+            $added = $source !== null && ($source['new'] || array_any($source['lines'], fn (string $line) => preg_match('/[\'"]'.preg_quote($probe['key'], '/').'[\'"]/', $line) === 1));
 
             if ($added) {
                 $findings[] = $finding;
@@ -487,30 +493,28 @@ PHP);
 
     /**
      * Build one form a route should accept whole, and the probes on it, or
-     * say why it cannot be filled in.
+     * say why it cannot be filled in. A field inside a list is reached by
+     * its first item ("rooms.*.name" is sent as "rooms.0.name"); the list
+     * itself is tried empty, as the wrong type, and left out.
      *
      * @param  array<string, list<string>>  $fields
-     * @return array{payload: array<string, mixed>, probes: list<array{field: string, expect: string, payload: array<string, mixed>, says: string, rank: int}>, coverage: list<array{field: string, reason: string}>}|string
+     * @return array{payload: array<string, mixed>, probes: list<array{field: string, key: string, expect: string, payload: array<string, mixed>, says: string, rank: int}>, coverage: list<array{field: string, reason: string}>}|string
      */
     protected static function form(array $fields): array|string
     {
         $payload = [];
         $coverage = [];
         $plain = [];
+        $lists = [];
 
         foreach ($fields as $field => $rules) {
-            if (str_contains($field, '.') || str_contains($field, '*')) {
-                $coverage[] = ['field' => $field, 'reason' => 'in_a_list'];
-
-                continue;
-            }
-
             if (array_any(self::LEFT_OUT, fn (string $rule) => InputValues::rule($rules, $rule) !== null)) {
                 continue;
             }
 
-            if (InputValues::kind($rules) === 'file') {
-                $coverage[] = ['field' => $field, 'reason' => 'file'];
+            // A list, or anything that holds other fields, is filled by them.
+            if (array_any(array_keys($fields), fn (string $other) => str_starts_with($other, "{$field}.")) || InputValues::kind($rules) === 'array') {
+                $lists[$field] = $rules;
 
                 continue;
             }
@@ -527,24 +531,76 @@ PHP);
                 continue;
             }
 
-            $payload[$field] = $value;
+            Arr::set($payload, self::path($field), $value);
             $plain[$field] = $rules;
         }
 
-        $payload = self::dates($payload, $plain);
+        foreach ($lists as $field => $rules) {
+            $path = self::path($field);
+            $items = (int) (InputValues::rule($rules, 'size')[0] ?? InputValues::rule($rules, 'min')[0] ?? 1);
+
+            if (! Arr::has($payload, $path)) {
+                // A list with nothing inside it gets one plain item, unless
+                // its rule names the keys an item must have.
+                if (InputValues::rule($rules, 'array') !== []) {
+                    if (self::required($rules)) {
+                        return "cannot_fill:{$field}";
+                    }
+
+                    continue;
+                }
+
+                Arr::set($payload, $path, ['Probe']);
+            }
+
+            // Enough items for the list's own size rules, all like the first.
+            if (array_is_list($list = (array) Arr::get($payload, $path)) && $items > 1) {
+                Arr::set($payload, $path, array_fill(0, $items, $list[0] ?? 'Probe'));
+            }
+        }
+
+        $payload = self::dates($payload, array_filter($plain, fn (string $field) => ! str_contains($field, '.'), ARRAY_FILTER_USE_KEY));
 
         foreach ($plain as $field => $rules) {
-            if (InputValues::rule($rules, 'confirmed') !== null) {
+            if (InputValues::rule($rules, 'confirmed') !== null && ! str_contains($field, '.')) {
                 $payload["{$field}_confirmation"] = $payload[$field];
             }
         }
 
         $probes = [];
+        $with = function (string $path, mixed $value) use ($payload): array {
+            Arr::set($payload, $path, $value);
+
+            return $payload;
+        };
+        $without = function (string $path) use ($payload): array {
+            Arr::forget($payload, $path);
+
+            return $payload;
+        };
+
+        foreach ($lists as $field => $rules) {
+            $path = self::path($field);
+
+            if (! Arr::has($payload, $path)) {
+                continue;
+            }
+
+            // "present" lets an empty list through; "required" does not.
+            $limits = InputValues::rule($rules, 'required') !== null || (int) (InputValues::rule($rules, 'min')[0] ?? InputValues::rule($rules, 'size')[0] ?? 0) >= 1;
+            $probes[] = ['field' => $path, 'key' => $field, 'expect' => self::required($rules) ? 'refuse' : 'accept', 'payload' => $without($path), 'says' => "{$field} left out", 'rank' => 0];
+            $probes[] = ['field' => $path, 'key' => $field, 'expect' => $limits ? 'refuse' : 'accept', 'payload' => $with($path, []), 'says' => "{$field} as an empty list", 'rank' => 1];
+
+            if (InputValues::rule($rules, 'array') !== null || InputValues::rule($rules, 'list') !== null) {
+                $probes[] = ['field' => $path, 'key' => $field, 'expect' => 'refuse', 'payload' => $with($path, 'not-a-list'), 'says' => "{$field} as text instead of a list", 'rank' => 1];
+            }
+        }
 
         foreach ($plain as $field => $rules) {
+            $path = self::path($field);
             $custom = array_any($rules, fn (string $rule) => $rule === 'closure' || str_starts_with($rule, 'custom:'));
             $conditional = in_array('conditional', $rules, true) || array_any(self::CONDITIONS, fn (string $rule) => InputValues::rule($rules, $rule) !== null);
-            $change = fn (mixed $value, string $expect, string $says, int $rank) => ['field' => $field, 'expect' => $expect, 'payload' => [...$payload, $field => $value], 'says' => "{$field} {$says}", 'rank' => $rank];
+            $change = fn (mixed $value, string $expect, string $says, int $rank) => ['field' => $path, 'key' => $field, 'expect' => $expect, 'payload' => $with($path, $value), 'says' => "{$field} {$says}", 'rank' => $rank];
 
             if ($custom) {
                 $coverage[] = ['field' => $field, 'reason' => 'custom'];
@@ -552,12 +608,19 @@ PHP);
 
             if ($conditional) {
                 $coverage[] = ['field' => $field, 'reason' => 'conditional'];
-                array_push($probes, ...self::conditions($field, $rules, $payload));
+
+                // Only fields beside each other are linked, not inside lists.
+                if (! str_contains($field, '.')) {
+                    array_push($probes, ...self::conditions($field, $rules, $payload));
+                }
 
                 continue;
             }
 
-            $probes[] = ['field' => $field, 'expect' => self::required($rules) ? 'refuse' : 'accept', 'payload' => array_diff_key($payload, [$field => true]), 'says' => "{$field} left out", 'rank' => 0];
+            // A list item left out is the list made shorter: tried above.
+            if (! str_ends_with($field, '*')) {
+                $probes[] = ['field' => $path, 'key' => $field, 'expect' => self::required($rules) ? 'refuse' : 'accept', 'payload' => $without($path), 'says' => "{$field} left out", 'rank' => 0];
+            }
 
             if ($custom) {
                 continue;
@@ -571,20 +634,32 @@ PHP);
                 $probes[] = $change(InputValues::outsideChoices($rules), 'refuse', 'outside its choices', 1);
             }
 
+            if (InputValues::kind($rules) === 'file' && ($file = InputValues::wrongFile($rules)) !== null) {
+                $probes[] = $change($file, 'refuse', "as a file of the wrong type (.{$file['@file']})", 1);
+            }
+
             if (InputValues::rule($rules, 'exists') !== null) {
                 $probes[] = $change(InputValues::missingRow($rules), 'refuse', 'naming a row that does not exist', 1);
             }
 
-            if (InputValues::rule($rules, 'confirmed') !== null) {
-                $probes[] = ['field' => $field, 'expect' => 'refuse', 'payload' => [...$payload, "{$field}_confirmation" => 'something-else'], 'says' => "{$field} not matching its confirmation", 'rank' => 1];
+            if (InputValues::rule($rules, 'confirmed') !== null && ! str_contains($field, '.')) {
+                $probes[] = ['field' => $path, 'key' => $field, 'expect' => 'refuse', 'payload' => [...$payload, "{$field}_confirmation" => 'something-else'], 'says' => "{$field} not matching its confirmation", 'rank' => 1];
             }
 
-            foreach (self::edges($field, $rules, $payload) as [$value, $expect, $says]) {
+            foreach (self::edges($path, $rules, $payload) as [$value, $expect, $says]) {
                 $probes[] = $change($value, $expect, $says, $expect === 'refuse' ? 2 : 3);
             }
         }
 
         return ['payload' => $payload, 'probes' => $probes, 'coverage' => $coverage];
+    }
+
+    /**
+     * Get where a field sits in the form: each "*" is the list's first item.
+     */
+    protected static function path(string $field): string
+    {
+        return str_replace('*', '0', $field);
     }
 
     /**
@@ -605,7 +680,7 @@ PHP);
         }
 
         if ($kind === 'date') {
-            return self::dateEdges($rules, $payload, $payload[$field]);
+            return self::dateEdges($rules, $payload, Arr::get($payload, $field));
         }
 
         $bounds = [
@@ -659,6 +734,11 @@ PHP);
      */
     protected static function edge(string $field, array $rules, ?string $kind, float $at, string $expect, string $rule): ?array
     {
+        // A file's size rules count kilobytes.
+        if ($kind === 'file') {
+            return $at < 1 || floor($at) !== $at ? null : [InputValues::file($rules, (int) $at), $expect, sprintf('of %d KB (%s)', $at, $rule)];
+        }
+
         if (in_array($kind, ['integer', 'numeric'], true)) {
             if ($kind === 'integer' && floor($at) !== $at) {
                 return null;
@@ -758,7 +838,7 @@ PHP);
      *
      * @param  list<string>  $rules
      * @param  array<string, mixed>  $payload
-     * @return list<array{field: string, expect: string, payload: array<string, mixed>, says: string, rank: int}>
+     * @return list<array{field: string, key: string, expect: string, payload: array<string, mixed>, says: string, rank: int}>
      */
     protected static function conditions(string $field, array $rules, array $payload): array
     {
@@ -785,7 +865,7 @@ PHP);
             }
         }
 
-        return array_map(fn (array $probe) => ['field' => $field, 'expect' => 'refuse', ...$probe, 'rank' => 1], $probes);
+        return array_map(fn (array $probe) => ['field' => $field, 'key' => $field, 'expect' => 'refuse', ...$probe, 'rank' => 1], $probes);
     }
 
     /**
@@ -820,8 +900,6 @@ PHP);
         return match ($code) {
             'custom' => 'a rule written as code; tried only by leaving the field out',
             'conditional' => 'a rule that depends on other fields; tried only for when it asks for the field',
-            'in_a_list' => 'fields inside lists are not tried',
-            'file' => 'files are not tried',
             'cannot_fill' => $detail === '' ? 'no value could be made for it' : "no value could be made for {$detail}",
             'no_user_factory' => 'the app has no user factory, so nobody could sign in',
             'needs_record' => "it needs a {$detail} that could not be added",
@@ -861,6 +939,7 @@ use BackedEnum;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\MessageBag;
 use Illuminate\Support\Str;
 use Illuminate\Support\ViewErrorBag;

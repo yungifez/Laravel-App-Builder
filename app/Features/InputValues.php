@@ -2,6 +2,8 @@
 
 namespace App\Features;
 
+use Symfony\Component\Mime\MimeTypes;
+
 /**
  * The values the form-input probes send (§26.11), kept in one place: one
  * value each field's rules allow, and one of the wrong kind. Formats
@@ -16,7 +18,7 @@ class InputValues
     /**
      * Rules that say what kind of value a field takes, most telling first.
      */
-    public const KINDS = ['file', 'image', 'mimes', 'mimetypes', 'array', 'boolean', 'accepted', 'declined', 'integer', 'numeric', 'decimal', 'digits', 'digits_between', 'date', 'date_format', 'email', 'url', 'uuid', 'ulid', 'ip', 'json', 'timezone', 'string'];
+    public const KINDS = ['file', 'image', 'mimes', 'mimetypes', 'array', 'list', 'boolean', 'accepted', 'declined', 'integer', 'numeric', 'decimal', 'digits', 'digits_between', 'date', 'date_format', 'email', 'url', 'uuid', 'ulid', 'ip', 'json', 'timezone', 'string'];
 
     /**
      * Get the parameters of a rule, or null when the field does not have
@@ -49,6 +51,7 @@ class InputValues
             if (self::rule($rules, $kind) !== null) {
                 return match ($kind) {
                     'image', 'mimes', 'mimetypes' => 'file',
+                    'list' => 'array',
                     'accepted', 'declined' => 'boolean',
                     'decimal' => 'numeric',
                     'digits_between' => 'digits',
@@ -63,8 +66,9 @@ class InputValues
 
     /**
      * Get one value the field's rules allow, or null when the rules ask
-     * for something the probes cannot make (a pattern, a file, a list).
-     * A date is a placeholder the probe test fills in, days from today.
+     * for something the probes cannot make (a pattern, a list, an image of
+     * ruled size). A date or a file is a placeholder the probe test fills
+     * in: a date in days from today, a file as a fake upload.
      *
      * @param  list<string>  $rules
      */
@@ -83,7 +87,8 @@ class InputValues
         }
 
         return match (self::kind($rules)) {
-            'file', 'array' => null,
+            'file' => self::file($rules),
+            'array' => null,
             'json' => '{}',
             'boolean' => self::rule($rules, 'declined') !== null ? false : true,
             'integer', 'numeric' => self::number($rules),
@@ -117,6 +122,7 @@ class InputValues
             'ip' => 'not-an-ip',
             'timezone' => 'Not/AZone',
             'array' => 'not-a-list',
+            'file' => 'not-a-file',
             'string' => ['not', 'text'],
             default => null,
         };
@@ -144,6 +150,49 @@ class InputValues
         $choices = self::rule($rules, 'in') ?? [];
 
         return $choices !== [] && array_filter($choices, is_numeric(...)) === $choices ? 987_654_321 : 'not-a-choice';
+    }
+
+    /**
+     * A placeholder the probe test fills with a fake upload: a file of a
+     * type the rules allow, as large as their minimum, or null when its
+     * pixel sizes are ruled too.
+     *
+     * @param  list<string>  $rules
+     * @return array{'@file': string, mime: string, kb: int}|null
+     */
+    public static function file(array $rules, ?int $kb = null): ?array
+    {
+        if (self::rule($rules, 'dimensions') !== null) {
+            return null;
+        }
+
+        $types = new MimeTypes;
+        $extension = self::rule($rules, 'extensions')[0]
+            ?? self::rule($rules, 'mimes')[0]
+            ?? (isset(self::rule($rules, 'mimetypes')[0]) ? $types->getExtensions(self::rule($rules, 'mimetypes')[0])[0] ?? null : null)
+            ?? (self::rule($rules, 'image') !== null ? 'png' : 'txt');
+        $mime = self::rule($rules, 'mimetypes')[0] ?? $types->getMimeTypes($extension)[0] ?? 'application/octet-stream';
+
+        return ['@file' => $extension, 'mime' => $mime, 'kb' => $kb ?? max(1, (int) (self::rule($rules, 'size')[0] ?? self::rule($rules, 'min')[0] ?? self::rule($rules, 'between')[0] ?? 1))];
+    }
+
+    /**
+     * A file of a type the rules do not allow, or null when they allow any.
+     *
+     * @param  list<string>  $rules
+     * @return array{'@file': string, mime: string, kb: int}|null
+     */
+    public static function wrongFile(array $rules): ?array
+    {
+        $allowed = [...self::rule($rules, 'extensions') ?? [], ...self::rule($rules, 'mimes') ?? []];
+
+        if ($allowed === [] && self::rule($rules, 'mimetypes') === null && self::rule($rules, 'image') === null) {
+            return null;
+        }
+
+        return in_array('exe', $allowed, true)
+            ? ['@file' => 'zip', 'mime' => 'application/zip', 'kb' => 1]
+            : ['@file' => 'exe', 'mime' => 'application/x-msdownload', 'kb' => 1];
     }
 
     /**

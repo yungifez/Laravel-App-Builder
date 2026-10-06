@@ -116,7 +116,6 @@ class InputProbesTest extends TestCase
         $planned = InputProbes::plan($this->routes(), $this->rules([
             'note' => ['nullable', 'string', 'required_if:kind,double'],
             'code' => ['required', 'custom:Uppercase'],
-            'rooms.*' => ['integer'],
         ]), 40);
 
         $note = array_values(array_filter($planned['probes'], fn (array $probe) => $probe['field'] === 'note'));
@@ -127,10 +126,116 @@ class InputProbesTest extends TestCase
 
         $this->assertSame(['code left out'], array_column(array_filter($planned['probes'], fn (array $probe) => $probe['field'] === 'code'), 'says'), 'a rule written as code is tried only for presence');
         $this->assertSame([
-            ['route' => 0, 'field' => 'rooms.*', 'reason' => 'in_a_list'],
             ['route' => 0, 'field' => 'note', 'reason' => 'conditional'],
             ['route' => 0, 'field' => 'code', 'reason' => 'custom'],
         ], $planned['coverage']);
+    }
+
+    /**
+     * Get the probes of a plan by what each says.
+     *
+     * @param  array{probes: list<array{route: int, field: string, key: string, expect: string, payload: array<string, mixed>, says: string}>}  $planned
+     * @return array<string, array{route: int, field: string, key: string, expect: string, payload: array<string, mixed>, says: string}>
+     */
+    protected function bySays(array $planned): array
+    {
+        return array_column($planned['probes'], null, 'says');
+    }
+
+    public function test_each_item_field_of_a_list_is_tried_on_the_first_item(): void
+    {
+        $planned = InputProbes::plan($this->routes(), $this->rules([
+            'rooms' => ['required', 'array', 'min:1'],
+            'rooms.*.name' => ['required', 'string', 'max:10'],
+            'rooms.*.beds' => ['required', 'integer', 'between:1,4'],
+            'tags.*' => ['string', 'max:5'],
+        ]), 80);
+        $probes = $this->bySays($planned);
+
+        $this->assertSame([['name' => $planned['baselines'][0]['rooms'][0]['name'], 'beds' => 1]], $planned['baselines'][0]['rooms']);
+        $this->assertSame(['Probe'], $planned['baselines'][0]['tags'], 'a list with only item rules gets one item');
+
+        $this->assertSame(['rooms.0.beds', 'rooms.*.beds', 'refuse'], [$probes['rooms.*.beds of 5 (between:1,4)']['field'], $probes['rooms.*.beds of 5 (between:1,4)']['key'], $probes['rooms.*.beds of 5 (between:1,4)']['expect']]);
+        $this->assertSame(5, $probes['rooms.*.beds of 5 (between:1,4)']['payload']['rooms'][0]['beds']);
+        $this->assertSame([[]], array_map(fn (array $room) => array_diff_key($room, ['name' => true, 'beds' => true]), $probes['rooms.*.name left out']['payload']['rooms']));
+        $this->assertArrayNotHasKey('name', $probes['rooms.*.name left out']['payload']['rooms'][0]);
+        $this->assertSame([[], 'refuse'], [$probes['rooms as an empty list']['payload']['rooms'], $probes['rooms as an empty list']['expect']]);
+        $this->assertSame(['not-a-list', 'refuse'], [$probes['rooms as text instead of a list']['payload']['rooms'], $probes['rooms as text instead of a list']['expect']]);
+        $this->assertSame('tags.0', $probes['tags.* 6 characters long (max:5)']['field']);
+        $this->assertArrayNotHasKey('tags.* left out', $probes, 'an item left out is the list made shorter');
+        $this->assertArrayNotHasKey('tags as an empty list', $probes, 'a list with no rules of its own is not judged');
+    }
+
+    public function test_a_list_that_may_be_empty_is_expected_to_take_an_empty_list(): void
+    {
+        $probes = $this->bySays(InputProbes::plan($this->routes(), $this->rules([
+            'tags' => ['present', 'array'],
+            'labels' => ['nullable', 'array'],
+            'seats' => ['required', 'array', 'min:2'],
+            'seats.*' => ['integer'],
+        ]), 80));
+        $planned = InputProbes::plan($this->routes(), $this->rules(['seats' => ['required', 'array', 'min:2'], 'seats.*' => ['integer']]), 80);
+
+        $this->assertSame('accept', $probes['tags as an empty list']['expect'], 'present lets an empty list through');
+        $this->assertSame('refuse', $probes['tags left out']['expect']);
+        $this->assertSame(['accept', 'accept'], [$probes['labels as an empty list']['expect'], $probes['labels left out']['expect']]);
+        $this->assertSame('refuse', $probes['seats as an empty list']['expect']);
+        $this->assertSame([1, 1], $planned['baselines'][0]['seats'], 'enough items for the list to pass');
+
+        // The change named the item field on an added line, so it blocks.
+        $plan = InputProbes::plan($this->routes(), $this->rules(['rooms.*.name' => ['required', 'string', 'max:10']]), 80);
+        $id = array_search('rooms.*.name 11 characters long (max:10)', array_column($plan['probes'], 'says'), true);
+        $lines = [json_encode(['kind' => 'form', 'id' => 0, 'status' => 302, 'errors' => [], 'exception' => null, 'reason' => null])];
+
+        foreach ($plan['probes'] as $index => $probe) {
+            $lines[] = json_encode(['kind' => 'probe', 'id' => $index, 'status' => 302, 'errors' => $index === $id || $probe['expect'] === 'accept' ? [] : [$probe['field']], 'exception' => null, 'reason' => null]);
+        }
+
+        $measured = InputProbes::measure($this->routes(), $this->rules(['rooms.*.name' => ['required', 'string', 'max:10']]), $plan, InputProbes::parse(implode("\n", $lines)), [self::SOURCE => ['new' => false, 'lines' => ["            'rooms.*.name' => ['required', 'string', 'max:10'],"]]]);
+        $this->assertSame(['rooms.0.name'], array_column($measured['findings'], 'field'));
+        $this->assertSame([], $measured['existing']);
+    }
+
+    public function test_a_list_that_cannot_be_filled_in_stops_or_is_left_out(): void
+    {
+        $keyed = InputProbes::plan($this->routes(), $this->rules(['guest' => ['required', 'array:name,email']]), 40);
+        $optional = InputProbes::plan($this->routes(), $this->rules(['guest' => ['nullable', 'array:name,email'], 'rooms.*.code' => ['nullable', 'regex:/^[A-Z]+$/'], 'rooms.*.size' => ['required_with:rooms.*.code', 'integer']]), 40);
+
+        $this->assertSame([['route' => 0, 'field' => '', 'reason' => 'cannot_fill:guest']], $keyed['coverage']);
+        $this->assertArrayNotHasKey('guest', $optional['baselines'][0]);
+        $this->assertSame([
+            ['route' => 0, 'field' => 'rooms.*.code', 'reason' => 'cannot_fill'],
+            ['route' => 0, 'field' => 'rooms.*.size', 'reason' => 'conditional'],
+        ], $optional['coverage']);
+        $this->assertSame([], array_filter($optional['probes'], fn (array $probe) => str_starts_with($probe['field'], 'rooms')), 'a linked field inside a list is not combined');
+    }
+
+    public function test_a_file_is_tried_missing_of_the_wrong_type_and_past_its_size(): void
+    {
+        $planned = InputProbes::plan($this->routes(), $this->rules(['plan' => ['required', 'file', 'mimes:pdf', 'max:100'], 'photo' => ['nullable', 'image']]), 80);
+        $probes = $this->bySays($planned);
+
+        $this->assertSame(['@file' => 'pdf', 'mime' => 'application/pdf', 'kb' => 1], $planned['baselines'][0]['plan']);
+        $this->assertSame('refuse', $probes['plan left out']['expect']);
+        $this->assertSame(['exe', 'refuse'], [$probes['plan as a file of the wrong type (.exe)']['payload']['plan']['@file'], $probes['plan as a file of the wrong type (.exe)']['expect']]);
+        $this->assertSame([101, 'refuse'], [$probes['plan of 101 KB (max:100)']['payload']['plan']['kb'], $probes['plan of 101 KB (max:100)']['expect']]);
+        $this->assertSame([100, 'accept'], [$probes['plan of 100 KB (max:100)']['payload']['plan']['kb'], $probes['plan of 100 KB (max:100)']['expect']]);
+        $this->assertSame('accept', $probes['photo left out']['expect']);
+        $this->assertArrayHasKey('photo as a file of the wrong type (.exe)', $probes);
+
+        $test = InputProbes::test($this->routes(), $planned, 'inputs.jsonl');
+        $this->assertStringContainsString("UploadedFile::fake()->create('probe.'.\$value['@file'], \$value['kb'], \$value['mime'])", $test);
+        $this->assertNotFalse(token_get_all($test, TOKEN_PARSE));
+    }
+
+    public function test_a_file_with_any_type_allowed_gets_no_wrong_type_and_an_unfakeable_one_stops(): void
+    {
+        $any = $this->bySays(InputProbes::plan($this->routes(), $this->rules(['notes' => ['nullable', 'file']]), 80));
+        $sized = InputProbes::plan($this->routes(), $this->rules(['photo' => ['required', 'image', 'dimensions:min_width=100']]), 80);
+
+        $this->assertArrayHasKey('notes as the wrong kind of value ("not-a-file")', $any);
+        $this->assertSame([], array_filter(array_keys($any), fn (string $says) => str_contains($says, 'wrong type')));
+        $this->assertSame([['route' => 0, 'field' => '', 'reason' => 'cannot_fill:photo']], $sized['coverage']);
     }
 
     public function test_a_form_that_cannot_be_filled_in_or_reached_is_coverage_only(): void

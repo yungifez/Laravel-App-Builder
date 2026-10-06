@@ -4472,7 +4472,14 @@ holding them is new, or an added line names the field. Other findings are
 listed as already so and not sent back. If the whole form is not accepted,
 or a form cannot be reached or filled in (no user factory, a route record
 without a factory, a pattern rule), its probes are listed as not fully tried,
-never as findings. Fields inside lists and files are not tried yet.
+never as findings. A field inside a list is tried on the list's first item
+(`rooms.*.name` as `rooms.0.name`), and a list with rules of its own is also
+sent empty, as text, and left out. An empty list is expected to pass unless it
+is `required` or has a `min` or `size`. A file is a fake upload
+(`UploadedFile::fake()->create`) of the first type its `mimes`, `mimetypes`,
+`extensions` or `image` rule allows. It is also tried left out, as text, as a
+file of another type, and on both sides of its size rules in kilobytes. An
+image with `dimensions` cannot be faked this way, so it is not tried.
 
 **Out of V0:** the rest, including the introspection this relies on, beyond
 what V0's own verification already uses.

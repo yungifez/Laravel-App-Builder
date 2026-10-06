@@ -48,10 +48,22 @@ class InputValuesTest extends TestCase
         $this->assertSame('no-such-value', InputValues::missingRow(['exists:teams,slug']));
     }
 
+    public function test_a_file_is_a_fake_upload_of_a_type_the_rules_allow(): void
+    {
+        $this->assertSame(['@file' => 'pdf', 'mime' => 'application/pdf', 'kb' => 1], InputValues::valid(['required', 'file', 'mimes:pdf,docx', 'max:100'], 'plan'));
+        $this->assertSame(['@file' => 'png', 'mime' => 'image/png', 'kb' => 1], InputValues::valid(['image'], 'photo'));
+        $this->assertSame(['@file' => 'txt', 'mime' => 'text/plain', 'kb' => 20], InputValues::valid(['file', 'min:20'], 'notes'));
+        $this->assertSame('application/pdf', InputValues::valid(['file', 'mimetypes:application/pdf'], 'plan')['mime']);
+        $this->assertSame(['@file' => 'exe', 'mime' => 'application/x-msdownload', 'kb' => 1], InputValues::wrongFile(['image']));
+        $this->assertSame('zip', InputValues::wrongFile(['mimes:exe,msi'])['@file'], 'a wrong type is never an allowed one');
+        $this->assertSame('not-a-file', InputValues::wrongKind(['file']));
+    }
+
     public function test_rules_the_probes_cannot_meet_give_no_value(): void
     {
         $this->assertNull(InputValues::valid(['required', 'regex:/^[A-Z]{3}$/'], 'code'));
-        $this->assertNull(InputValues::valid(['required', 'image'], 'photo'));
+        $this->assertNull(InputValues::valid(['required', 'image', 'dimensions:min_width=100'], 'photo'), 'an image of ruled size cannot be faked');
+        $this->assertNull(InputValues::wrongFile(['file', 'max:100']), 'any type is allowed');
         $this->assertNull(InputValues::valid(['array'], 'tags'));
         $this->assertNull(InputValues::wrongKind(['required']), 'no kind to get wrong');
         $this->assertSame('file', InputValues::kind(['mimes:pdf']));
