@@ -7,14 +7,17 @@ use App\Actions\Features\RequestVerification;
 use App\Context\Capability;
 use App\Context\ProjectContext;
 use App\Enums\ChecksStoppedBecause;
+use App\Enums\PreviewStatus;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Features\ArchPresets;
 use App\Jobs\ExecuteRun;
 use App\Models\FeatureRequest;
+use App\Models\Preview;
 use App\Models\Run;
 use App\Models\User;
 use App\Models\Verification;
+use App\Models\Workspace;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -1572,6 +1575,39 @@ class VerificationTest extends TestCase
         $off = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
         app(RequestVerification::class)->handle($off);
         $this->assertArrayNotHasKey('owners', $off->verifications()->sole()->evidence ?? []);
+    }
+
+    public function test_a_format_made_stricter_has_the_saved_values_it_refuses_counted_in_the_app_on_show()
+    {
+        $path = 'app/Http/Requests/StoreBranchRequest.php';
+        $patch = "diff --git a/{$path} b/{$path}\n--- a/{$path}\n+++ b/{$path}\n@@ -1,2 +1,2 @@\n <?php\n-            'phone' => ['required', 'string', 'phone:INTERNATIONAL'],\n+            'phone' => ['required', 'string', 'phone:CA'],\n";
+        $counting = fn (array $counted) => fn (string $workspace, array $command) => new CommandResult(exitCode: 0, output: ($command[1] ?? null) === '-r' && ($command[4] ?? null) === 'branches' ? (string) json_encode($counted) : 'ok', errorOutput: '', durationMs: 5);
+        $this->driver->onExec = $counting(['rows' => 30, 'failing' => 12]);
+        $change = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
+        $preview = Preview::factory()->editable()->ready()->create(['project_id' => $change->project_id, 'workspace_id' => Workspace::factory()->create(['user_id' => $change->project->user_id])->id]);
+
+        app(RequestVerification::class)->handle($change);
+
+        $this->assertSame([
+            ['path' => $path, 'table' => 'branches', 'column' => 'phone', 'kind' => 'phone', 'before' => ['any'], 'after' => ['CA'], 'rows' => 30, 'failing' => 12],
+        ], $change->verifications()->sole()->evidence['narrowed']);
+
+        // An app with nothing saved has nothing to lose, and says so.
+        $this->driver->onExec = $counting(['rows' => 0, 'failing' => 0]);
+        $empty = FeatureRequest::factory()->generated()->create(['patch' => $patch, 'project_id' => $change->project_id]);
+        app(RequestVerification::class)->handle($empty);
+        $this->assertSame('There are no saved phone numbers to check.', $empty->verifications()->sole()->evidence['narrowed'][0]['reason']);
+
+        // An app that is not running is not counted, and the proof says why.
+        $preview->update(['status' => PreviewStatus::Stopped]);
+        $stopped = FeatureRequest::factory()->generated()->create(['patch' => $patch, 'project_id' => $change->project_id]);
+        app(RequestVerification::class)->handle($stopped);
+        $this->assertSame(['rows' => null, 'failing' => null, 'reason' => 'Your app was not running, so saved phone numbers were not checked against the stricter rule.'], array_slice($stopped->verifications()->sole()->evidence['narrowed'][0], 6));
+
+        // A change that makes no format stricter keeps nothing.
+        $plain = FeatureRequest::factory()->generated()->create(['patch' => $this->changeWithTests()]);
+        app(RequestVerification::class)->handle($plain);
+        $this->assertArrayNotHasKey('narrowed', $plain->verifications()->sole()->evidence ?? []);
     }
 
     public function test_the_emails_and_text_messages_a_change_adds_are_read_for_the_owner_to_approve()

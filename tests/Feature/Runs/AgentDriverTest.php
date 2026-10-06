@@ -19,6 +19,7 @@ use App\Enums\StopReason;
 use App\Enums\VerificationStatus;
 use App\Enums\WorkspaceStatus;
 use App\Features\MigrationChecks;
+use App\Features\NarrowedFormats;
 use App\Jobs\StartPreview;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\AcceptedFinding;
@@ -858,6 +859,27 @@ class AgentDriverTest extends TestCase
         // Bookings anyone may see, such as a public timetable.
         AcceptedFinding::factory()->for($run->featureRequest)->create(['kind' => 'owner_unchecked', 'identity' => 'owner_unchecked|App\\Models\\Booking']);
         $this->passVerification($run, evidence: $owners);
+
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+    }
+
+    public function test_a_format_made_stricter_that_saved_values_fail_sends_the_change_back_until_the_owner_wants_it()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]));
+        $approve = ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]];
+        ChangeReviewer::fake([$approve, $approve]);
+        $narrowed = ['narrowed' => [['path' => 'app/Http/Requests/StoreBranchRequest.php', 'table' => 'branches', 'column' => 'phone', 'kind' => 'phone', 'before' => ['any'], 'after' => ['CA'], 'rows' => 30, 'failing' => 12]]];
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, evidence: $narrowed);
+
+        $this->assertSame(1, $run->refresh()->repairs);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'branches.phone: the change makes the phone rule stricter, and 12 saved rows fail it.'));
+
+        // The owner wants numbers from outside Canada turned away from now on.
+        AcceptedFinding::factory()->for($run->featureRequest)->create(['kind' => NarrowedFormats::NARROWED, 'identity' => 'format_narrowed|branches.phone']);
+        $this->passVerification($run, evidence: $narrowed);
 
         $this->assertSame(RunStatus::Completed, $run->refresh()->status);
     }

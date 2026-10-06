@@ -3,6 +3,7 @@
 namespace App\Actions\Previews;
 
 use App\Enums\PreviewStatus;
+use App\Models\Preview;
 use App\Models\Project;
 
 class CountRowsFailingFormat
@@ -48,9 +49,9 @@ class CountRowsFailingFormat
      */
     public function handle(Project $project, string $table, string $column, string $kind, array $accepts): ?array
     {
-        $preview = $project->previews()->whereNull('feature_request_id')->where('editable', true)->latest('id')->first();
+        $preview = $this->running($project);
 
-        if ($preview?->status !== PreviewStatus::Ready || $preview->workspace === null) {
+        if ($preview === null) {
             return null;
         }
 
@@ -64,5 +65,16 @@ class CountRowsFailingFormat
         return is_array($data) && is_int($data['rows'] ?? null) && is_int($data['failing'] ?? null)
             ? ['rows' => $data['rows'], 'failing' => $data['failing']]
             : null;
+    }
+
+    /**
+     * Get the owner's app on show when it is running, where the saved rows
+     * are.
+     */
+    public function running(Project $project): ?Preview
+    {
+        $preview = $project->previews()->whereNull('feature_request_id')->where('editable', true)->latest('id')->first();
+
+        return $preview?->status === PreviewStatus::Ready && $preview->workspace !== null ? $preview : null;
     }
 }

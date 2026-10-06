@@ -1278,6 +1278,15 @@ return [
         // below) must have a model that keeps each owner's records apart:
         // a policy that reads the owner, or a global scope (§12). A model
         // without one is sent back to the coder. The owner may keep it.
+        // Whether a change that makes a field's format stricter, such as a
+        // phone number from any country becoming Canadian only, has the
+        // saved values the new rule refuses counted in the app on show (§9).
+        // A count above zero sends the change back to keep the old rule. The
+        // owner may keep the stricter one; saved values stay either way.
+        'narrowed' => [
+            'enabled' => (bool) env('BUILDER_NARROWED_FORMAT_CHECK', true),
+        ],
+
         'owners' => [
             'enabled' => (bool) env('BUILDER_OWNER_CHECK', true),
             'columns' => ['user_id', 'owner_id', 'team_id', 'tenant_id', 'account_id', 'organization_id', 'organisation_id', 'company_id', 'workspace_id'],

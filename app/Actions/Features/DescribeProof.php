@@ -17,6 +17,7 @@ use App\Features\ArchPresets;
 use App\Features\CodeShortcuts;
 use App\Features\InventedColours;
 use App\Features\MigrationChecks;
+use App\Features\NarrowedFormats;
 use App\Features\NewCode;
 use App\Features\NewMessages;
 use App\Features\NewTests;
@@ -67,7 +68,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('whose records'), $this->owners($featureRequest, $verification)), ...$this->about(__('packages'), $this->packages($featureRequest, $verification)), ...$this->about(__('messages'), $this->messages($featureRequest, $verification)), ...$this->about(__('structure'), $this->structure($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->corrected($featureRequest->latestRun), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('saved values'), $this->narrowed($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('whose records'), $this->owners($featureRequest, $verification)), ...$this->about(__('packages'), $this->packages($featureRequest, $verification)), ...$this->about(__('messages'), $this->messages($featureRequest, $verification)), ...$this->about(__('structure'), $this->structure($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->corrected($featureRequest->latestRun), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return $this->asked($featureRequest, array_values(collect($lines)->unique('text')->all()));
@@ -440,6 +441,44 @@ class DescribeProof
         }
 
         return [['kind' => 'passed', 'text' => __('The new work your app does in the background is tried again when it fails, and says what to do when it gives up.')]];
+    }
+
+    /**
+     * Say what a stricter format does to the values people already saved,
+     * as counted in the app on show (§9). Saved values it would turn away
+     * hold the change, with the old rule kept, until the owner says to turn
+     * them away from now on.
+     *
+     * @return list<array{kind: string, text: string, decision?: array{change: string, finding: string, accepted: bool}}>
+     */
+    protected function narrowed(FeatureRequest $featureRequest, Verification $verification): array
+    {
+        $narrowed = $verification->evidence['narrowed'] ?? null;
+
+        if ($narrowed === null) {
+            return [];
+        }
+
+        $open = ! $featureRequest->isAccepted();
+        $decision = fn (bool $accepted) => $open ? ['decision' => ['change' => $featureRequest->uuid, 'finding' => NarrowedFormats::NARROWED, 'accepted' => $accepted]] : [];
+        $left = NarrowedFormats::findings($narrowed, $this->acceptFindings->identities($featureRequest));
+        $lines = [];
+
+        if ($left !== []) {
+            $lines[] = ['kind' => 'gap', 'text' => implode(' ', array_map(NarrowedFormats::question(...), $left)), ...$decision(false)];
+        } elseif (($kept = NarrowedFormats::findings($narrowed)) !== []) {
+            $lines[] = ['kind' => 'chosen', 'text' => implode(' ', array_map(NarrowedFormats::chosen(...), $kept)), ...$decision(true)];
+        }
+
+        foreach ($narrowed as $format) {
+            $lines[] = match (true) {
+                isset($format['reason']) => ['kind' => ($format['rows'] ?? null) === 0 ? 'passed' : 'gap', 'text' => $format['reason']],
+                ($format['failing'] ?? null) === 0 => ['kind' => 'passed', 'text' => NarrowedFormats::fits($format)],
+                default => null,
+            };
+        }
+
+        return array_values(array_filter($lines));
     }
 
     /**

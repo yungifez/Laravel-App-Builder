@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Actions\Context\ReadProjectContext;
+use App\Actions\Previews\CountRowsFailingFormat;
 use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\VisualEditing\CommitDesignEdits;
 use App\Actions\Workspaces\CheckStepNeeds;
@@ -29,6 +30,7 @@ use App\Features\CodeShortcuts;
 use App\Features\InputProbes;
 use App\Features\MigrationChecks;
 use App\Features\Mutants;
+use App\Features\NarrowedFormats;
 use App\Features\NewCode;
 use App\Features\NewMessages;
 use App\Features\NewTests;
@@ -247,6 +249,7 @@ class VerifyFeatureRequest implements ShouldQueue
             $this->checkMigrations($driver, $runWorkspaceCommand, $workspace, $featureRequest);
             $this->readQueuedWork($driver, $workspace, $featureRequest);
             $this->readOwnedRecords($driver, $workspace, $featureRequest);
+            $this->countNarrowedFormats($featureRequest);
             $this->readPackages($driver, $workspace, $featureRequest);
             $this->readMessages($driver, $workspace, $featureRequest);
 
@@ -967,6 +970,38 @@ class VerifyFeatureRequest implements ShouldQueue
         ), []);
 
         $this->keepEvidence('owners', $owned === [] ? null : $owned);
+    }
+
+    /**
+     * Count the saved values a stricter format would turn away, in the
+     * owner's app on show, where people's records are (§9). Only the
+     * counts come back. A format that could not be counted says why, for
+     * the proof's coverage. It is kept as evidence; the gate sends a
+     * finding back to the coder.
+     */
+    protected function countNarrowedFormats(FeatureRequest $featureRequest): void
+    {
+        if (! config('builder.verification.narrowed.enabled')) {
+            return;
+        }
+
+        $narrowed = rescue(fn () => NarrowedFormats::inPatch($featureRequest->patch), [], report: false);
+
+        if ($narrowed === []) {
+            return;
+        }
+
+        $count = app(CountRowsFailingFormat::class);
+        $running = $count->running($featureRequest->project) !== null;
+        $counted = [];
+
+        foreach ($narrowed as $format) {
+            $rows = $running ? $count->handle($featureRequest->project, $format['table'], $format['column'], $format['kind'], $format['after']) : null;
+            $format = [...$format, 'rows' => $rows['rows'] ?? null, 'failing' => $rows['failing'] ?? null];
+            $counted[] = $rows !== null && $rows['rows'] > 0 ? $format : [...$format, 'reason' => NarrowedFormats::unchecked($format, $running)];
+        }
+
+        $this->keepEvidence('narrowed', $counted);
     }
 
     /**

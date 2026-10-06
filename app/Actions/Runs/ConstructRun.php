@@ -34,6 +34,7 @@ use App\Features\BoundaryCode;
 use App\Features\Exceptions\CannotGenerateFeature;
 use App\Features\InventedColours;
 use App\Features\MigrationChecks;
+use App\Features\NarrowedFormats;
 use App\Features\NewTests;
 use App\Features\NodeInPhpTests;
 use App\Features\OwnedRecords;
@@ -811,6 +812,12 @@ class ConstructRun
 
         foreach (OwnedRecords::findings($owners, $accepted) as $finding) {
             $gate[] = ['kind' => $finding['kind'], 'identity' => OwnedRecords::identity($finding), 'text' => OwnedRecords::finding($finding, $owners)];
+        }
+
+        // A format made stricter that people's saved values fail (§9). The
+        // old rule is kept until the owner says to turn them away.
+        foreach (NarrowedFormats::findings($evidence['narrowed'] ?? null, $accepted) as $finding) {
+            $gate[] = ['kind' => $finding['kind'], 'identity' => NarrowedFormats::identity($finding), 'text' => NarrowedFormats::finding($finding)];
         }
 
         // New packages outside the dependency policy (§12, §13). The owner

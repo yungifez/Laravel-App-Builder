@@ -9,6 +9,7 @@ use App\Context\ProjectNotes;
 use App\Enums\VerificationStatus;
 use App\Features\ArchPresets;
 use App\Features\MigrationChecks;
+use App\Features\NarrowedFormats;
 use App\Features\NewMessages;
 use App\Features\OwnedRecords;
 use App\Features\PackagePolicy;
@@ -482,6 +483,34 @@ class ChangeProofTest extends TestCase
         app(AcceptFindings::class)->handle($request, OwnedRecords::UNGUARDED, $request->project->owner);
         $line = collect(app(DescribeProof::class)->handle($request))->firstWhere('decision.finding', OwnedRecords::UNGUARDED);
         $this->assertSame(['chosen', true], [$line['kind'], $line['decision']['accepted']]);
+    }
+
+    public function test_saved_values_a_stricter_format_turns_away_are_said_until_the_owner_wants_them_turned_away()
+    {
+        $format = fn (string $column, array $counted) => ['path' => 'app/Http/Requests/StoreBranchRequest.php', 'table' => 'branches', 'column' => $column, 'kind' => 'phone', 'before' => ['any'], 'after' => ['CA'], ...$counted];
+        $proof = function (array $narrowed) {
+            $request = FeatureRequest::factory()->generated()->create();
+            $this->checked($request, evidence: ['narrowed' => $narrowed]);
+
+            return [$request, collect(app(DescribeProof::class)->handle($request))];
+        };
+
+        [, $fits] = $proof([$format('phone', ['rows' => 9, 'failing' => 0])]);
+        $this->assertTrue($fits->contains(fn (array $line) => $line === ['kind' => 'passed', 'text' => 'Every saved phone number fits the stricter rule.', 'topic' => 'saved values']));
+
+        [, $unchecked] = $proof([$format('phone', ['rows' => null, 'failing' => null, 'reason' => 'Your app was not running, so saved phone numbers were not checked against the stricter rule.'])]);
+        $this->assertSame('gap', $unchecked->firstWhere('text', 'Your app was not running, so saved phone numbers were not checked against the stricter rule.')['kind']);
+
+        [$request, $open] = $proof([$format('phone', ['rows' => 30, 'failing' => 12]), $format('fax', ['rows' => 0, 'failing' => 0, 'reason' => 'There are no saved phone numbers to check.'])]);
+        $line = $open->firstWhere('decision.finding', NarrowedFormats::NARROWED);
+        $this->assertSame('gap', $line['kind']);
+        $this->assertSame('12 saved phone numbers are not from Canada, and the stricter rule would turn them away from now on. I kept the old rule. If you want them turned away, say so.', $line['text']);
+        $this->assertSame('passed', $open->firstWhere('text', 'There are no saved phone numbers to check.')['kind']);
+
+        app(AcceptFindings::class)->handle($request, NarrowedFormats::NARROWED, $request->project->owner);
+        $line = collect(app(DescribeProof::class)->handle($request))->firstWhere('decision.finding', NarrowedFormats::NARROWED);
+        $this->assertSame(['chosen', true], [$line['kind'], $line['decision']['accepted']]);
+        $this->assertSame('You chose to turn away phone numbers that are not from Canada from now on. Saved ones stay as they are.', $line['text']);
     }
 
     public function test_the_check_of_laravels_structure_rules_says_what_it_checked_and_what_it_cannot_see()

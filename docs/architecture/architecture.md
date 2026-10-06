@@ -1320,11 +1320,13 @@ is noted, then "Each record has its own currency". The answer is written to
 
 **Tightening is a data change.** Widening a format (Canada to any country)
 is safe. Narrowing it, on a column that has rows, can make saved records
-invalid. Before such a change is built, verification runs the new rule over
-the preview database's rows and counts the ones that fail. With a count
-above zero, the owner is asked, with the count in plain words ("12 saved
-phone numbers are not Canadian. Keep them, or turn them away from now
-on?"). This uses the existing `data_loss` consequence.
+invalid. When the change is checked, before the owner keeps it,
+verification runs the new rule over the running preview's rows and counts
+the ones that fail. Only the count leaves the app. With a count above zero,
+the change keeps the old rule until the owner says otherwise, in plain
+words ("12 saved phone numbers are not from Canada, and the stricter rule
+would turn them away from now on"). With no running preview or no saved
+values, the proof says why nothing was counted.
 
 **Tests come from the table.** Each type has fixed examples: valid,
 invalid, and typed-to-stored pairs ("(250) 555-1234" stores as

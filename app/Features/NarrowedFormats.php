@@ -138,9 +138,11 @@ class NarrowedFormats
     }
 
     /**
-     * Ask the owner, with the count in plain words: "12 saved phone
-     * numbers are not from Canada. Keep them, or turn them away from now
-     * on?"
+     * Tell the owner, with the count in plain words, what the stricter rule
+     * would turn away and that the old one was kept until they say: "12
+     * saved phone numbers are not from Canada, and the stricter rule would
+     * turn them away from now on. I kept the old rule. If you want them
+     * turned away, say so."
      *
      * @param  array{things: string, failing: int, after: list<string>}  $finding
      */
@@ -150,12 +152,35 @@ class NarrowedFormats
         $things = self::things($finding['things'], $count);
         $not = $count === 1 ? __('is not') : __('are not');
 
-        return __(':count saved :things :not :where. Keep them, or turn them away from now on?', [
+        return __(':count saved :things :not :where, and the stricter rule would turn them away from now on. I kept the old rule. If you want them turned away, say so.', [
             'count' => $count,
             'things' => $things,
             'not' => $not,
             'where' => self::where($finding['things'], $finding['after'], $count),
         ]);
+    }
+
+    /**
+     * Say what the owner chose, once they want the stricter rule.
+     *
+     * @param  array{things: string, after: list<string>}  $finding
+     */
+    public static function chosen(array $finding): string
+    {
+        return __('You chose to turn away :things that are not :where from now on. Saved ones stay as they are.', [
+            'things' => self::things($finding['things']),
+            'where' => self::where($finding['things'], $finding['after'], 2),
+        ]);
+    }
+
+    /**
+     * Say that every saved value fits the stricter rule.
+     *
+     * @param  array{kind: string}  $format
+     */
+    public static function fits(array $format): string
+    {
+        return __('Every saved :thing fits the stricter rule.', ['thing' => self::things($format['kind'], 1)]);
     }
 
     /**

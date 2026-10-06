@@ -60,10 +60,12 @@ class NarrowedFormatsTest extends TestCase
         $findings = NarrowedFormats::findings($checked);
 
         $this->assertSame(['format_narrowed|branches.phone', 'format_narrowed|branches.book'], array_map(NarrowedFormats::identity(...), $findings));
-        $this->assertSame('12 saved phone numbers are not from Canada. Keep them, or turn them away from now on?', NarrowedFormats::question($findings[0]));
-        $this->assertSame('1 saved ISBN is not a 13-digit ISBN. Keep them, or turn them away from now on?', NarrowedFormats::question($findings[1]));
+        $this->assertSame('12 saved phone numbers are not from Canada, and the stricter rule would turn them away from now on. I kept the old rule. If you want them turned away, say so.', NarrowedFormats::question($findings[0]));
+        $this->assertSame('1 saved ISBN is not a 13-digit ISBN, and the stricter rule would turn them away from now on. I kept the old rule. If you want them turned away, say so.', NarrowedFormats::question($findings[1]));
         $this->assertStringContainsString('branches.phone: the change makes the phone rule stricter, and 12 saved rows fail it.', NarrowedFormats::finding($findings[0]));
-        $this->assertSame('9 saved postal codes are not from Canada or United States. Keep them, or turn them away from now on?', NarrowedFormats::question([...$findings[0], 'things' => 'postal_code', 'failing' => 9, 'after' => ['CA', 'US']]));
+        $this->assertSame('9 saved postal codes are not from Canada or United States, and the stricter rule would turn them away from now on. I kept the old rule. If you want them turned away, say so.', NarrowedFormats::question([...$findings[0], 'things' => 'postal_code', 'failing' => 9, 'after' => ['CA', 'US']]));
+
+        $this->assertSame('You chose to turn away phone numbers that are not from Canada from now on. Saved ones stay as they are.', NarrowedFormats::chosen($findings[0]));
 
         // Once the owner keeps it, it no longer holds the change.
         $this->assertSame(['format_narrowed|branches.book'], array_map(NarrowedFormats::identity(...), NarrowedFormats::findings($checked, ['format_narrowed|branches.phone'])));
