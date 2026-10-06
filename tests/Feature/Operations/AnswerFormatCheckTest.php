@@ -102,7 +102,7 @@ class AnswerFormatCheckTest extends TestCase
         $check = AnswerFormatCheck::query()->where('agent', ChangeReviewer::class)->sole();
         $this->assertFalse($check->accepted);
         $this->assertSame('request_refused', $check->reason);
-        $this->assertSame(['status' => 400, 'type' => 'invalid_request_error'], $check->service_error);
+        $this->assertSame(['status' => 400, 'type' => 'invalid_request_error', 'message' => 'The compiled grammar is too large.'], $check->service_error);
         $this->assertSame(4, AnswerFormatCheck::query()->where('accepted', true)->count());
         TestWriter::assertPrompted(fn (AgentPrompt $prompt) => $prompt->prompt === CheckAnswerFormats::PROMPT);
 

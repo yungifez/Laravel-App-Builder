@@ -3,8 +3,11 @@
 namespace App\Runs\Exceptions;
 
 use App\Enums\StopReason;
+use App\Runs\AiAttempts;
+use App\Support\Secrets;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Str;
 use Laravel\Ai\Exceptions\FailoverableException;
 use Laravel\Ai\Exceptions\InsufficientCreditsException;
 use Laravel\Ai\Exceptions\ProviderOverloadedException;
@@ -72,6 +75,23 @@ class ProvidersUnavailable extends RuntimeException
     }
 
     /**
+     * Stop after the last provider turned the request away. When an
+     * earlier provider in the same call said our account is out of credit,
+     * that is the reason: a busy service after it would only send the
+     * owner to wait for something waiting will not fix.
+     */
+    public static function afterFailover(FailoverableException $exception): self
+    {
+        $stop = self::because($exception);
+
+        if ($stop->reason === StopReason::ProvidersUnavailable && app(AiAttempts::class)->saidOutOfCredit()) {
+            return new self(StopReason::OutOfCredit->said(), StopReason::OutOfCredit, $exception);
+        }
+
+        return $stop;
+    }
+
+    /**
      * Determine if the answer behind an SDK exception says our account is
      * out of credit. An answer that is missing or not JSON says nothing.
      */
@@ -122,21 +142,33 @@ class ProvidersUnavailable extends RuntimeException
     }
 
     /**
-     * Get what the AI service said, for operators: its status and error
-     * type only, never our prompt or the request it echoes back.
+     * Get what the AI service said, for operators only: its status, error
+     * type and message. The message tells apart refusals with the same
+     * status, such as an empty account and an answer format too large to
+     * use. It may echo part of our request, so keys are scrubbed from it
+     * and it is cut short. It never reaches the owner.
      *
-     * @return array{status: int, type: string|null}|null
+     * @return array{status: int, type: string|null, message: string|null}|null
      */
     public function serviceError(): ?array
     {
         $previous = $this->getPrevious();
+
+        if ($previous instanceof FailoverableException) {
+            $previous = $previous->getPrevious();
+        }
 
         if (! $previous instanceof RequestException) {
             return null;
         }
 
         $type = $previous->response->json('error.type');
+        $message = $previous->response->json('error.message');
 
-        return ['status' => $previous->response->status(), 'type' => is_string($type) ? $type : null];
+        return [
+            'status' => $previous->response->status(),
+            'type' => is_string($type) ? $type : null,
+            'message' => is_string($message) ? Str::limit(Secrets::redact($message), 300) : null,
+        ];
     }
 }

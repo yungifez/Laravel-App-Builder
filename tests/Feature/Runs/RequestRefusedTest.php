@@ -63,8 +63,8 @@ class RequestRefusedTest extends TestCase
         $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
         $this->assertSame(StopReason::RequestRefused, $run->stop_reason);
         $this->assertSame(self::REFUSED, $run->error);
-        // Operators see what the service said, and never what we asked.
-        $this->assertSame(['reason' => 'request_refused', 'status' => 400, 'type' => 'invalid_request_error'], $run->events()->where('type', 'ai_service_error')->sole()->data);
+        // Operators see what the service said, scrubbed and cut short.
+        $this->assertSame(['reason' => 'request_refused', 'status' => 400, 'type' => 'invalid_request_error', 'message' => 'The request echoed back.'], $run->events()->where('type', 'ai_service_error')->sole()->data);
         $this->assertSame(["Run {$run->id}"], array_column($this->attention('ai_request_refused')['records'] ?? [], 'label'));
         $this->assertNextStep($run, self::REFUSED);
     }
@@ -172,7 +172,7 @@ class RequestRefusedTest extends TestCase
         $this->assertSame(1, $this->asked);
         $this->assertSame(StopReason::RequestRefused, $refused->stop_reason);
         $this->assertSame(self::REFUSED, $refused->error);
-        $this->assertSame(['reason' => 'request_refused', 'status' => 400, 'type' => 'invalid_request_error'], $refused->events()->where('type', 'ai_service_error')->sole()->data);
+        $this->assertSame(['reason' => 'request_refused', 'status' => 400, 'type' => 'invalid_request_error', 'message' => null], $refused->events()->where('type', 'ai_service_error')->sole()->data);
 
         $failing = $answer(503, 'overloaded_error');
 

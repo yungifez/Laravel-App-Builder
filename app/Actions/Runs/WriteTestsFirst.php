@@ -10,6 +10,7 @@ use App\Features\PatchSummary;
 use App\Features\WrittenTests;
 use App\Models\Run;
 use App\Models\Workspace;
+use App\Runs\AiAttempts;
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\ProvidersUnavailable;
 use App\Runs\Plan;
@@ -59,9 +60,9 @@ class WriteTestsFirst
 
         for ($attempt = 1; ; $attempt++) {
             try {
-                $response = TestWriter::make()->prompt($prompt, provider: ModelRole::Reviewer->providers());
+                $response = app(AiAttempts::class)->for($run, fn () => TestWriter::make()->prompt($prompt, provider: ModelRole::Reviewer->providers()));
             } catch (FailoverableException $exception) {
-                throw ProvidersUnavailable::because($exception);
+                throw ProvidersUnavailable::afterFailover($exception);
             } catch (RequestException $exception) {
                 $stop = ProvidersUnavailable::fromResponse($exception);
                 $run->recordEvent('ai_service_error', ['reason' => $stop->reason()->value, ...(array) $stop->serviceError()]);
@@ -182,9 +183,9 @@ class WriteTestsFirst
 
         for ($attempt = 1; ; $attempt++) {
             try {
-                $response = TestWriter::make()->prompt($prompt, provider: ModelRole::Reviewer->providers());
+                $response = app(AiAttempts::class)->for($run, fn () => TestWriter::make()->prompt($prompt, provider: ModelRole::Reviewer->providers()));
             } catch (FailoverableException $exception) {
-                throw ProvidersUnavailable::because($exception);
+                throw ProvidersUnavailable::afterFailover($exception);
             } catch (RequestException $exception) {
                 $stop = ProvidersUnavailable::fromResponse($exception);
                 $run->recordEvent('ai_service_error', ['reason' => $stop->reason()->value, ...(array) $stop->serviceError()]);

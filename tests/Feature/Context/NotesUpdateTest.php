@@ -129,7 +129,7 @@ class NotesUpdateTest extends TestCase
 
         $this->assertSame($before, $this->notes());
         $run = $change->latestRun;
-        $this->assertSame(['reason' => 'request_refused', 'status' => 400, 'type' => 'invalid_request_error'], $run->events()->where('type', 'ai_service_error')->sole()->data);
+        $this->assertSame(['reason' => 'request_refused', 'status' => 400, 'type' => 'invalid_request_error', 'message' => 'The request echoed back.'], $run->events()->where('type', 'ai_service_error')->sole()->data);
         $this->page($change)->assertInertia(fn (Assert $page) => $page
             ->where('run.review.notes_update.state', 'failed')
             ->where('run.review.notes_update.can', true)

@@ -80,7 +80,7 @@ class CheckAnswerFormats extends Command
 
             return $failed($stop->reason()->value, $stop->getMessage(), $stop->serviceError());
         } catch (FailoverableException $exception) {
-            $stop = ProvidersUnavailable::because($exception);
+            $stop = ProvidersUnavailable::afterFailover($exception);
 
             return $failed($stop->reason()->value, $stop->getMessage());
         } catch (Throwable $exception) {

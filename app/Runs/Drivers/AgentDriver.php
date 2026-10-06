@@ -19,6 +19,7 @@ use App\Features\AppTraces;
 use App\Features\NewTests;
 use App\Models\FeatureRequest;
 use App\Models\Run;
+use App\Runs\AiAttempts;
 use App\Runs\Contracts\ConstructionDriver;
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\ProvidersUnavailable;
@@ -121,9 +122,9 @@ abstract class AgentDriver implements ConstructionDriver
     protected function ask(Run $run, callable $prompt): AgentResponse
     {
         try {
-            return $prompt();
+            return app(AiAttempts::class)->for($run, $prompt);
         } catch (FailoverableException $exception) {
-            throw ProvidersUnavailable::because($exception);
+            throw ProvidersUnavailable::afterFailover($exception);
         } catch (RequestException $exception) {
             $stop = ProvidersUnavailable::fromResponse($exception);
             $run->recordEvent('ai_service_error', ['reason' => $stop->reason()->value, ...(array) $stop->serviceError()]);

@@ -9,6 +9,7 @@ use App\Ai\Agents\NotesKeeper;
 use App\Context\ProjectNotes;
 use App\Enums\ModelRole;
 use App\Models\Run;
+use App\Runs\AiAttempts;
 use App\Runs\Exceptions\ProvidersUnavailable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -80,14 +81,14 @@ class UpdateBehindNotes implements ShouldQueue
         }
 
         try {
-            $response = NotesKeeper::make()->prompt($this->prompt($notes), provider: ModelRole::Reviewer->providers());
+            $response = app(AiAttempts::class)->for($this->run, fn () => NotesKeeper::make()->prompt($this->prompt($notes), provider: ModelRole::Reviewer->providers()));
             $recordModelUsage->handle($this->run, ModelRole::Reviewer, $response);
 
             if (! $response instanceof StructuredAgentResponse) {
                 throw new RuntimeException('The notes came back without a shape.');
             }
         } catch (FailoverableException $exception) {
-            $this->stop(ProvidersUnavailable::because($exception));
+            $this->stop(ProvidersUnavailable::afterFailover($exception));
 
             return;
         } catch (RequestException $exception) {
