@@ -58,7 +58,9 @@ class CancelRun
 
         $featureRequest = $run->featureRequest;
 
-        if ($featureRequest->status === FeatureRequestStatus::Generating) {
+        // Unless a newer run already took the change over, such as the
+        // owner's own tool (HandChangeToOwner).
+        if ($featureRequest->status === FeatureRequestStatus::Generating && (int) $featureRequest->runs()->max('id') === $run->id) {
             $featureRequest->update(['status' => FeatureRequestStatus::Cancelled, 'error' => __('The run was cancelled.')]);
         }
 

@@ -142,6 +142,31 @@ class WorkYourselfTest extends TestCase
         $this->assertSame('worker', $this->project->featureRequests()->latest('id')->firstOrFail()->latestRun()->firstOrFail()->driver);
     }
 
+    public function test_a_planned_change_goes_to_the_owners_tool_from_its_plan_without_planning_again()
+    {
+        $plan = ['summary' => 'Teams have a description.', 'acceptance_criteria' => [], 'cases' => [], 'written_tests' => [], 'written_files' => [], 'assumptions' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null];
+        $answers = [['question' => 'Who can see it?', 'answer' => 'Members']];
+
+        foreach ([[RunStatus::Failed, FeatureRequestStatus::Failed], [RunStatus::Implementing, FeatureRequestStatus::Generating]] as [$status, $requestStatus]) {
+            $change = $this->change($status, $requestStatus, attributes: ['plan' => $plan, 'answers' => $answers]);
+            $ours = $change->latestRun()->firstOrFail();
+
+            $this->actingAs($this->owner)
+                ->post(route('feature-requests.worker.store', $change))
+                ->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $change->uuid]));
+
+            $run = $change->refresh()->latestRun()->firstOrFail();
+            $this->assertNotSame($ours->id, $run->id);
+            $this->assertSame(['worker', RunStatus::Implementing, $plan, $answers], [$run->driver, $run->status, $run->plan, $run->answers]);
+            $this->assertSame(0, FeatureRequest::query()->where('retry_of_id', $change->id)->count());
+            // Their tool writes the whole change, so no code is laid on for it.
+            $this->assertFalse($run->events()->where('type', 'resumed')->firstOrFail()->data['made_so_far']);
+            $this->assertSame(FeatureRequestStatus::Generating, $change->status);
+            $this->assertTrue($ours->refresh()->status->finished());
+            Queue::assertPushed(ExecuteRun::class, fn (ExecuteRun $job) => $job->run->is($run));
+        }
+    }
+
     public function test_a_made_change_or_one_waiting_for_an_answer_is_not_handed_over()
     {
         $made = $this->change(RunStatus::Completed, FeatureRequestStatus::Generated);

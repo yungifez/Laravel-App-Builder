@@ -2,6 +2,7 @@
 
 namespace App\Actions\Runs;
 
+use App\Actions\Features\RequestVerification;
 use App\Actions\Features\RetryFeatureRequest;
 use App\Actions\Projects\ConnectOwnTool;
 use App\Enums\FeatureRequestStatus;
@@ -21,9 +22,19 @@ class KeepTryingRun
     /**
      * Stops the owner can ask the change to keep working past: it ran out
      * of attempts to fix what the checks or the second look found, or of
-     * turns or time while it built the change.
+     * turns or time while it built the change, or it changed the tests
+     * written for it, or changed nothing.
      */
-    public const STOPS = [StopReason::VerificationFailed, StopReason::ReviewFindings, StopReason::BudgetExhausted];
+    public const STOPS = [StopReason::VerificationFailed, StopReason::ReviewFindings, StopReason::BudgetExhausted, StopReason::WrittenTestsChanged, StopReason::NoChanges];
+
+    /**
+     * Why the checks stopped on the change's own files, where it can go on
+     * from its plan and its code: what the coder must do differently.
+     */
+    protected const CHECKS_STOPPED = [
+        'protected_inputs' => 'Your change edited the files that check the app, so the checks could not be trusted. Put those files back as they were, and make the change without them.',
+        'change_install' => 'The app could not install what your change added to what it installs. Add only packages that install, or make the change without them.',
+    ];
 
     /**
      * Stops where the AI service, not the change, was the trouble: the run
@@ -34,6 +45,7 @@ class KeepTryingRun
     public function __construct(
         private TransitionRun $transitionRun,
         private ConstructionDriverManager $drivers,
+        private RequestVerification $requestVerification,
     ) {}
 
     /**
@@ -52,7 +64,59 @@ class KeepTryingRun
      */
     public static function goesOn(FeatureRequest $featureRequest): bool
     {
-        return self::resumable($featureRequest) || self::serviceStopped($featureRequest);
+        return self::resumable($featureRequest) || self::serviceStopped($featureRequest) || self::checkable($featureRequest) || self::remakeable($featureRequest);
+    }
+
+    /**
+     * Determine if the change's checks were cut off on our side too often:
+     * its code is as it was, so it is only checked again, with no new work.
+     */
+    protected static function checkable(FeatureRequest $featureRequest): bool
+    {
+        $run = $featureRequest->latestRun;
+
+        return $run !== null
+            && $run->status === RunStatus::NeedsUserDecision
+            && $run->question === null
+            && $run->stop_reason === StopReason::VerificationInterrupted
+            && $featureRequest->status === FeatureRequestStatus::Generated
+            && RetryFeatureRequest::retryable($featureRequest);
+    }
+
+    /**
+     * Determine if the checks stopped on the change's own files, which it
+     * can fix from its plan and its code so far: it edited the files that
+     * check the app, or added something the app could not install. A
+     * change that no longer applies to the app is made again instead,
+     * from the app as it is now.
+     */
+    public static function remakeable(FeatureRequest $featureRequest): bool
+    {
+        $run = $featureRequest->latestRun;
+
+        return $run !== null
+            && $run->plan !== null
+            && ($run->plan['answer'] ?? null) === null
+            && self::checksStopped($featureRequest) !== null
+            && RetryFeatureRequest::mustBeMadeAgain($featureRequest)
+            && RetryFeatureRequest::retryable($featureRequest)
+            // A run with its work still there keeps trying in place.
+            && ! self::outOfTries($featureRequest);
+    }
+
+    /**
+     * Get what the coder must do differently when the checks stopped on
+     * the change's own files, if they did.
+     */
+    protected static function checksStopped(FeatureRequest $featureRequest): ?string
+    {
+        if ($featureRequest->previews()->latest('id')->first()?->no_longer_fits === true) {
+            return null;
+        }
+
+        $because = $featureRequest->verifications()->latest('id')->first()?->stopped_because?->value;
+
+        return isset(self::CHECKS_STOPPED[$because]) ? (string) __(self::CHECKS_STOPPED[$because]) : null;
     }
 
     /**
@@ -157,6 +221,8 @@ class KeepTryingRun
                 array_filter($run->review['findings'] ?? [], fn (array $finding) => $finding['severity'] === 'blocking'),
             )),
             StopReason::BudgetExhausted => [__('You stopped before you finished. Finish the change.')],
+            StopReason::WrittenTestsChanged => [__('You changed the tests written before the work began. Put them back as they were, and make the change pass them.')],
+            StopReason::NoChanges => [__('You finished without changing anything. Make the change the plan describes.')],
             default => [],
         };
 
@@ -180,7 +246,19 @@ class KeepTryingRun
             return $this->resume($featureRequest);
         }
 
+        if (self::remakeable($featureRequest)) {
+            return $this->resume($featureRequest, because: self::checksStopped($featureRequest));
+        }
+
         $run = $featureRequest->latestRun;
+
+        // Owner-pressed, so a change is never checked again behind their back.
+        if (self::checkable($featureRequest)) {
+            $this->transitionRun->handle($run, RunStatus::Verifying, attributes: ['error' => null], details: ['reason' => 'went_on', 'stopped' => $run->stop_reason?->value]);
+            $this->requestVerification->handle($featureRequest, $run);
+
+            return $run;
+        }
 
         if (self::serviceStopped($featureRequest)) {
             $this->transitionRun->handle($run, self::stoppedIn($run), attributes: ['error' => null], details: ['reason' => 'went_on', 'stopped' => $run->stop_reason?->value]);
@@ -202,20 +280,35 @@ class KeepTryingRun
     }
 
     /**
+     * Hand a change to the owner's own tool from its plan and their
+     * answers, so it is not planned or asked again (HandChangeToOwner).
+     */
+    public function toOwner(FeatureRequest $featureRequest): Run
+    {
+        return $this->resume($featureRequest, driver: 'worker');
+    }
+
+    /**
      * Start a new run on the same change from its plan, the owner's answers
      * and what they agreed to, straight at building: nothing is planned or
      * asked again. Code made before the stop is laid on the new workspace
-     * first, so the build goes on from it.
+     * first, so the build goes on from it; not for the owner's own tool,
+     * which writes the whole change from the app as it was.
      */
-    protected function resume(FeatureRequest $featureRequest): Run
+    protected function resume(FeatureRequest $featureRequest, ?string $driver = null, ?string $because = null): Run
     {
-        return DB::transaction(function () use ($featureRequest) {
+        return DB::transaction(function () use ($featureRequest, $driver, $because) {
             $stopped = $featureRequest->latestRun;
-            $theirs = ConnectOwnTool::connected($featureRequest->project);
-            $madeSoFar = trim((string) $featureRequest->patch) !== '';
+            $driver ??= ConnectOwnTool::connected($featureRequest->project) ? 'worker' : $this->drivers->getDefaultDriver();
+            $theirs = $driver === 'worker';
+            $madeSoFar = ! $theirs && trim((string) $featureRequest->patch) !== '';
+            $details = array_values(array_filter([
+                $madeSoFar ? __('Your earlier attempt stopped before it finished. The code made so far is already in place. Go on from it and finish the change.') : null,
+                $because,
+            ]));
 
             $run = $featureRequest->runs()->create([
-                'driver' => $theirs ? 'worker' : $this->drivers->getDefaultDriver(),
+                'driver' => $driver,
                 'config_version' => ExecutionSettings::record(),
                 'status' => RunStatus::Implementing,
                 'plan' => $stopped->plan,
@@ -223,10 +316,7 @@ class KeepTryingRun
                 'answers' => $stopped->answers,
                 'kept_assumptions' => $stopped->kept_assumptions,
                 'question_limit' => $stopped->question_limit,
-                'feedback' => $madeSoFar ? [
-                    'reason' => 'resumed',
-                    'details' => [__('Your earlier attempt stopped before it finished. The code made so far is already in place. Go on from it and finish the change.')],
-                ] : null,
+                'feedback' => $details === [] ? null : ['reason' => 'resumed', 'details' => $details],
             ]);
 
             $run->recordEvent('created', ['driver' => $run->driver, 'config_version' => $run->config_version]);

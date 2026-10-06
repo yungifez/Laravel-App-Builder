@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\Runs;
 
+use App\Actions\Features\RetryFeatureRequest;
 use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Runs\KeepTryingRun;
 use App\Context\ChangeClassification;
+use App\Enums\ChecksStoppedBecause;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Enums\StopReason;
@@ -13,6 +15,7 @@ use App\Enums\WorkspaceStatus;
 use App\Jobs\ExecuteRun;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\FeatureRequest;
+use App\Models\Preview;
 use App\Models\Run;
 use App\Models\User;
 use App\Models\Verification;
@@ -92,7 +95,8 @@ class KeepTryingTest extends TestCase
     public function test_only_a_change_that_ran_out_of_tries_can_keep_trying()
     {
         $run = $this->outOfTries();
-        $run->update(['stop_reason' => 'no_changes']);
+        // A written test that still fails is the owner's to correct.
+        $run->update(['stop_reason' => 'written_test_still_fails']);
         $request = $run->featureRequest;
 
         $this->actingAs($request->user)
@@ -192,6 +196,91 @@ class KeepTryingTest extends TestCase
         $this->assertSame(1, $answered->featureRequest->runs()->count());
     }
 
+    public function test_checks_cut_off_on_our_side_are_run_again_on_the_same_code_when_the_owner_goes_on()
+    {
+        $request = FeatureRequest::factory()->generated()->create();
+        $run = Run::factory()->for($request)->create(['status' => RunStatus::NeedsUserDecision, 'stop_reason' => StopReason::VerificationInterrupted, 'error' => 'The checks could not run because of a problem on our side. This is our fault.']);
+        $patch = $request->patch;
+
+        $this->actingAs($request->user)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page->where('featureRequest.can_go_on', true)->where('featureRequest.can_retry', true));
+
+        $this->actingAs($request->user)->post(route('feature-requests.keep-trying.store', $request))->assertRedirect();
+
+        // Only checked again: no new run and no new work.
+        $this->assertSame(RunStatus::Verifying, $run->refresh()->status);
+        $this->assertNull($run->error);
+        $this->assertSame(1, $request->runs()->count());
+        $this->assertSame($patch, $request->refresh()->patch);
+        $this->assertSame(VerificationStatus::Queued, $run->verifications()->sole()->status);
+        Queue::assertPushed(VerifyFeatureRequest::class);
+        Queue::assertNotPushed(ExecuteRun::class);
+    }
+
+    public function test_a_change_that_changed_its_written_tests_or_nothing_keeps_trying_in_its_workspace()
+    {
+        foreach ([[StopReason::WrittenTestsChanged, 'You changed the tests written before the work began.'], [StopReason::NoChanges, 'You finished without changing anything.']] as [$reason, $told]) {
+            $request = FeatureRequest::factory()->create(['status' => FeatureRequestStatus::Generating]);
+            $run = Run::factory()->for($request)->create([
+                'status' => RunStatus::NeedsUserDecision,
+                'stop_reason' => $reason,
+                'plan' => ['summary' => 'Each class shows how many places are left.', 'acceptance_criteria' => [], 'cases' => [], 'written_tests' => [], 'written_files' => [], 'assumptions' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null],
+                'workspace_id' => Workspace::factory()->create()->id,
+            ]);
+
+            // A pass that went wrong, so "Keep trying", not "Go on".
+            $this->assertTrue(KeepTryingRun::possible($request));
+            $this->assertFalse(KeepTryingRun::goesOn($request));
+
+            app(KeepTryingRun::class)->handle($request);
+
+            $this->assertSame(RunStatus::Implementing, $run->refresh()->status);
+            $this->assertStringStartsWith($told, $run->feedback['details'][0]);
+            $this->assertSame(1, $request->runs()->count());
+        }
+    }
+
+    public function test_a_change_whose_own_files_stopped_the_checks_goes_on_from_its_plan_and_code()
+    {
+        foreach ([[ChecksStoppedBecause::ProtectedInputs, 'Your change edited the files that check the app'], [ChecksStoppedBecause::ChangeInstall, 'The app could not install what your change added']] as [$because, $told]) {
+            $made = $this->made($because);
+            $request = $made->featureRequest;
+
+            $this->actingAs($request->user)
+                ->get(route('feature-requests.show', $request))
+                ->assertInertia(fn (Assert $page) => $page->where('featureRequest.made_again_only', true)->where('featureRequest.can_go_on', true));
+
+            $run = app(KeepTryingRun::class)->handle($request);
+
+            $this->assertNotSame($made->id, $run->id);
+            $this->assertSame($made->plan, $run->plan);
+            $this->assertSame(RunStatus::Implementing, $run->status);
+            // The code so far is laid on first, and the coder hears why the checks stopped.
+            $this->assertTrue($run->events()->where('type', 'resumed')->firstOrFail()->data['made_so_far']);
+            $this->assertStringStartsWith('Your earlier attempt stopped before it finished.', $run->feedback['details'][0]);
+            $this->assertStringStartsWith($told, $run->feedback['details'][1]);
+            $this->assertSame(0, FeatureRequest::query()->where('retry_of_id', $request->id)->count());
+        }
+    }
+
+    public function test_a_change_that_no_longer_applies_to_the_app_can_only_start_over()
+    {
+        $stale = $this->made(ChecksStoppedBecause::DoesNotApply);
+        $this->assertFalse(KeepTryingRun::possible($stale->featureRequest));
+        $this->assertTrue(RetryFeatureRequest::retryable($stale->featureRequest));
+
+        // Nor one the app moved past, whatever stopped its checks.
+        $moved = $this->made(ChecksStoppedBecause::ProtectedInputs);
+        Preview::factory()->create(['project_id' => $moved->featureRequest->project_id, 'feature_request_id' => $moved->feature_request_id, 'no_longer_fits' => true]);
+        $this->assertFalse(KeepTryingRun::possible($moved->featureRequest->refresh()));
+
+        $this->actingAs($stale->featureRequest->user)
+            ->post(route('feature-requests.keep-trying.store', $stale->featureRequest))
+            ->assertSessionHasErrors('keep_trying');
+        $this->assertSame(1, $stale->featureRequest->runs()->count());
+    }
+
     public function test_a_change_the_ai_service_stopped_in_its_review_picks_up_the_review_on_the_same_run()
     {
         $run = $this->serviceStopped(RunStatus::Reviewing);
@@ -270,6 +359,21 @@ class KeepTryingTest extends TestCase
      *
      * @param  array<string, mixed>  $request
      */
+    /**
+     * A change that was made, whose later checks stopped on its own files.
+     */
+    protected function made(ChecksStoppedBecause $because): Run
+    {
+        $request = FeatureRequest::factory()->generated()->create();
+        $run = Run::factory()->for($request)->create([
+            'status' => RunStatus::Completed,
+            'plan' => ['summary' => 'Each class shows how many places are left.', 'acceptance_criteria' => [], 'cases' => [], 'written_tests' => [], 'written_files' => [], 'assumptions' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null],
+        ]);
+        Verification::factory()->for($request)->create(['status' => VerificationStatus::Errored, 'stopped_because' => $because]);
+
+        return $run;
+    }
+
     protected function stopped(array $request = []): Run
     {
         $featureRequest = FeatureRequest::factory()->create(['status' => FeatureRequestStatus::Cancelled, ...$request]);

@@ -4,6 +4,7 @@ namespace App\Actions\Features;
 
 use App\Actions\Runs\CancelRun;
 use App\Actions\Runs\GrantWorkerAccess;
+use App\Actions\Runs\KeepTryingRun;
 use App\Enums\RunStatus;
 use App\Models\FeatureRequest;
 use App\Models\Run;
@@ -22,6 +23,7 @@ class HandChangeToOwner
         private CancelRun $cancelRun,
         private RetryFeatureRequest $retryFeatureRequest,
         private GrantWorkerAccess $grantWorkerAccess,
+        private KeepTryingRun $keepTryingRun,
     ) {}
 
     /**
@@ -48,10 +50,26 @@ class HandChangeToOwner
     }
 
     /**
+     * Determine if the change has a plan their tool can write from, on the
+     * app as it was when it was planned.
+     */
+    protected static function planned(FeatureRequest $featureRequest): bool
+    {
+        $plan = $featureRequest->latestRun?->plan;
+
+        return $plan !== null
+            && ($plan['answer'] ?? null) === null
+            && $featureRequest->commit_sha === null
+            && $featureRequest->reverted_at === null
+            && ! RetryFeatureRequest::mustBeMadeAgain($featureRequest);
+    }
+
+    /**
      * Give the change to the owner's worker, and make a new connection for
      * it. A change still being planned keeps its plan and the owner's
-     * answers, and their worker writes it; a change we are writing stops
-     * and starts again for their worker. A new connection closes the
+     * answers, and their worker writes it; a planned change we are writing,
+     * or one that stopped, goes to their worker from its plan. Only a
+     * change with no plan to go on from starts again for their worker. A new connection closes the
      * earlier one, so only one worker writes.
      *
      * @return array{change: FeatureRequest, run: Run, token: string}
@@ -74,6 +92,18 @@ class HandChangeToOwner
             ->whereIn('status', [RunStatus::Queued, RunStatus::Planning])
             ->update(['driver' => 'worker']) === 1) {
             $run->refresh()->recordEvent('handed_to_owner', ['driver' => 'worker']);
+        }
+
+        if (! self::theirs($run) && self::planned($featureRequest)) {
+            if (! $run->status->finished()) {
+                $this->cancelRun->handle($run);
+                // Stopping it may have marked the change stopped.
+                $featureRequest->refresh();
+            }
+
+            // Their tool writes it from the plan and the owner's answers, so
+            // nothing is planned or asked again.
+            $run = $this->keepTryingRun->toOwner($featureRequest);
         }
 
         if (! self::theirs($run)) {
