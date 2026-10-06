@@ -7,6 +7,7 @@ use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
 use App\Ai\Agents\NotesDrafter;
 use App\Ai\Agents\NotesKeeper;
+use App\Ai\Agents\ShapePlanner;
 use App\Ai\Agents\TestWriter;
 use App\Console\Commands\CheckAnswerFormats;
 use App\Models\AnswerFormatCheck;
@@ -23,7 +24,7 @@ class AnswerFormatCheckTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected const AGENTS = [ChangeReviewer::class, FeaturePlanner::class, NotesDrafter::class, NotesKeeper::class, TestWriter::class];
+    protected const AGENTS = [ChangeReviewer::class, FeaturePlanner::class, NotesDrafter::class, NotesKeeper::class, ShapePlanner::class, TestWriter::class];
 
     protected function setUp(): void
     {
@@ -65,6 +66,7 @@ class AnswerFormatCheckTest extends TestCase
             'FeaturePlanner' => ['accepted' => true, 'role' => 'planner', 'reason' => null],
             'NotesDrafter' => ['accepted' => true, 'role' => 'planner', 'reason' => null],
             'NotesKeeper' => ['accepted' => true, 'role' => 'reviewer', 'reason' => null],
+            'ShapePlanner' => ['accepted' => true, 'role' => 'planner', 'reason' => null],
             'TestWriter' => ['accepted' => true, 'role' => 'reviewer', 'reason' => null],
         ], $this->results());
         // No project data goes with it.
@@ -86,7 +88,7 @@ class AnswerFormatCheckTest extends TestCase
         $this->assertSame(['accepted' => false, 'role' => null, 'reason' => 'no_tier'], $results['UntieredWriter']);
         GreetingWriter::assertPrompted(fn (AgentPrompt $prompt) => $prompt->prompt === CheckAnswerFormats::PROMPT);
         UntieredWriter::assertNeverPrompted();
-        $this->assertCount(7, $results);
+        $this->assertCount(8, $results);
     }
 
     public function test_a_refused_format_is_reported_with_the_service_error_the_others_still_run_and_it_needs_attention()
@@ -103,7 +105,7 @@ class AnswerFormatCheckTest extends TestCase
         $this->assertFalse($check->accepted);
         $this->assertSame('request_refused', $check->reason);
         $this->assertSame(['status' => 400, 'type' => 'invalid_request_error', 'message' => 'The compiled grammar is too large.'], $check->service_error);
-        $this->assertSame(4, AnswerFormatCheck::query()->where('accepted', true)->count());
+        $this->assertSame(count(self::AGENTS) - 1, AnswerFormatCheck::query()->where('accepted', true)->count());
         TestWriter::assertPrompted(fn (AgentPrompt $prompt) => $prompt->prompt === CheckAnswerFormats::PROMPT);
 
         $item = $this->attention();
