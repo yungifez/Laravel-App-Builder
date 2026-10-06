@@ -349,6 +349,8 @@ class PublishingTest extends TestCase
         $deployment = $this->project->deployments()->sole();
         $this->assertSame(DeploymentStatus::Failed, $deployment->status);
         $this->assertStringStartsWith('The published app has changes that are not in this project', (string) $deployment->error);
+        // Sending again is refused the same way, so a developer is the step, not the settings.
+        $this->assertSame('conflict', $deployment->error_cause);
         $this->assertSame($theirs, trim(Process::run(['git', '--git-dir', $this->remote, 'rev-parse', 'refs/heads/main'])->output()));
     }
 

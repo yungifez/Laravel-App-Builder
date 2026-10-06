@@ -110,8 +110,12 @@ class PublishDeployment implements ShouldQueue
             $this->deployment->update(['status' => DeploymentStatus::Confirming, 'pushed_at' => now()]);
 
             ConfirmDeployment::dispatch($this->deployment)->delay((int) config('builder.publishing.confirm.settle_seconds'));
-        } catch (RepositoryConflict|PublishingFailed $exception) {
-            $this->finish(DeploymentStatus::Failed, $exception->getMessage(), $exception instanceof PublishingFailed && $exception->settings ? 'settings' : null, $exception->getPrevious());
+        } catch (RepositoryConflict $exception) {
+            // The branch has work this project does not: sending again is
+            // refused the same way until a developer brings it in.
+            $this->finish(DeploymentStatus::Failed, $exception->getMessage(), 'conflict');
+        } catch (PublishingFailed $exception) {
+            $this->finish(DeploymentStatus::Failed, $exception->getMessage(), $exception->settings ? 'settings' : null, $exception->getPrevious());
         } catch (Throwable $exception) {
             report($exception);
 
@@ -266,7 +270,7 @@ class PublishDeployment implements ShouldQueue
      * owner's words, whose to put right, and what was said behind it. That
      * text is for Details only, without credentials or secrets.
      *
-     * @param  'settings'|'ours'|null  $cause
+     * @param  'settings'|'ours'|'conflict'|null  $cause
      */
     protected function finish(DeploymentStatus $status, ?string $error = null, ?string $cause = null, ?Throwable $behind = null): void
     {

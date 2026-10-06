@@ -30,7 +30,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property DeploymentStatus $status
  * @property list<array{name: string, passed: bool, output?: string}>|null $checks What a failed check said is for the builder, never the owner
  * @property string|null $error
- * @property 'settings'|'ours'|'starting'|null $error_cause Who can put the failure right: the owner's publishing settings, us, or the host given more time
+ * @property 'settings'|'ours'|'starting'|'conflict'|null $error_cause Who can put the failure right: the owner's publishing settings, us, the host given more time, or a developer bringing in work the branch has
  * @property string|null $error_details What the host or Git said behind the failure, for Details only
  * @property CarbonImmutable|null $pushed_at
  * @property CarbonImmutable|null $confirmed_at When the app answered its checks at its address

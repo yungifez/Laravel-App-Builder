@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Form, usePoll } from '@inertiajs/vue3';
+import { Form, Link, usePoll } from '@inertiajs/vue3';
 import {
     CircleAlert,
     CircleCheck,
@@ -26,6 +26,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { when } from '@/lib/when';
+import { index as developers } from '@/routes/projects/developers';
 import type { ProjectPublishing } from '@/types';
 
 const props = defineProps<{
@@ -162,6 +163,14 @@ const settingsFault = computed(
     () =>
         latest.value?.status === 'failed' &&
         latest.value.error_cause === 'settings',
+);
+
+// The branch has work this app does not. Sending the same version again is
+// refused the same way, so a developer bringing that work in is the step.
+const conflict = computed(
+    () =>
+        latest.value?.status === 'failed' &&
+        latest.value.error_cause === 'conflict',
 );
 
 const times = (count: number) => (count === 1 ? 'once' : `${count} times`);
@@ -433,6 +442,19 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
             </Form>
 
             <Button
+                v-if="conflict && !active"
+                as-child
+                class="h-11 w-full select-none sm:h-9"
+            >
+                <Link
+                    :href="developers(projectId)"
+                    data-test="publish-ask-developer"
+                >
+                    Ask one of our developers
+                </Link>
+            </Button>
+
+            <Button
                 v-if="settingsFault && !active"
                 class="h-11 w-full select-none sm:h-9"
                 data-test="publish-settings"
@@ -447,7 +469,7 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                     !upToDate &&
                     !sentCurrent &&
                     !(
-                        (unhealthy || (recheck && !starting)) &&
+                        (unhealthy || conflict || (recheck && !starting)) &&
                         latest?.commit === publishing.head
                     )
                 "
