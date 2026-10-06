@@ -4,6 +4,7 @@ namespace Tests\Feature\Features;
 
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Features\WorkerConnection;
 use App\Jobs\DecideFeatureRequest;
 use App\Jobs\ExecuteRun;
 use App\Models\FeatureRequest;
@@ -57,17 +58,23 @@ class WorkYourselfTest extends TestCase
         $this->assertTrue($run->events()->where('type', 'handed_to_owner')->exists());
         Queue::assertNothingPushed();
 
-        $token = session('inertia.flash_data.worker.token');
-        $response->assertInertiaFlash('worker.run', $run->uuid);
+        // The next page shows the connection once.
+        $page = $this->actingAs($this->owner)
+            ->get(route('projects.show', ['project' => $this->project, 'change' => $ours->uuid]))
+            ->assertInertia(fn (Assert $page) => $page->where('worker.run', $run->uuid));
+        $token = $page->inertiaProps('worker.token');
         $this->assertIsString($token);
         $this->assertSame(1, $run->tokens()->count());
         $this->tool('check_status', $token)->assertOk();
 
         // The connection shows from the hand-over, while the change is
-        // still planned, so it is never lost to a reload.
+        // still planned, so it is never lost to a reload; the token itself
+        // shows only the once.
         $this->flushHeaders()->actingAs($this->owner)
             ->get(route('projects.show', ['project' => $this->project, 'change' => $ours->uuid]))
-            ->assertInertia(fn (Assert $page) => $page->where('change.run.yours.waiting', true));
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('change.run.yours.waiting', true)
+                ->where('worker', null));
     }
 
     public function test_a_change_we_are_writing_starts_again_for_the_owners_tool()
@@ -84,7 +91,13 @@ class WorkYourselfTest extends TestCase
         $this->assertSame('worker', $run->driver);
         $this->assertSame(RunStatus::Cancelled, $ours->latestRun()->firstOrFail()->status);
         Queue::assertPushed(ExecuteRun::class, fn (ExecuteRun $job) => $job->run->is($run));
-        $response->assertInertiaFlash('worker.run', $run->uuid);
+
+        // Kept apart from the session, so a poll that ends during the
+        // hand-over cannot lose it, and only for the owner.
+        $this->assertNull(app(WorkerConnection::class)->take(User::factory()->create()));
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', ['project' => $this->project, 'change' => $theirs->uuid]))
+            ->assertInertia(fn (Assert $page) => $page->where('worker.run', $run->uuid));
     }
 
     public function test_the_thread_says_how_to_connect_while_it_waits_for_their_change()
@@ -105,11 +118,11 @@ class WorkYourselfTest extends TestCase
         $run = $theirs->latestRun()->firstOrFail();
 
         $this->actingAs($this->owner)->post(route('feature-requests.worker.store', $theirs));
-        $first = session('inertia.flash_data.worker.token');
+        $first = app(WorkerConnection::class)->take($this->owner)['token'] ?? null;
 
         $this->post(route('feature-requests.worker.store', $theirs))
             ->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $theirs->uuid]));
-        $second = session('inertia.flash_data.worker.token');
+        $second = app(WorkerConnection::class)->take($this->owner)['token'] ?? null;
 
         $this->assertSame(1, $this->project->featureRequests()->count());
         $this->assertSame(1, $run->tokens()->count());

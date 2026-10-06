@@ -30,6 +30,7 @@ use App\Actions\VisualEditing\ReadAppColors;
 use App\Enums\DeploymentStatus;
 use App\Enums\ExperimentStatus;
 use App\Enums\FeatureRequestStatus;
+use App\Features\WorkerConnection;
 use App\Http\Requests\ProjectStoreRequest;
 use App\Models\Deployment;
 use App\Models\Experiment;
@@ -189,6 +190,8 @@ class ProjectController extends Controller
 
         return Inertia::render('projects/Show', [
             'design' => $request->boolean('design'),
+            // The owner's new tool connection, once, after they hand a change over.
+            'worker' => fn () => app(WorkerConnection::class)->take($request->user()),
             'element' => Inertia::optional(fn () => $inspectSelection->handle($project, $request->query('target'), $request->boolean('instance'))),
             // The email the app on show has sent, read while the owner looks.
             // While they try a change, the page names its copy, and this and

@@ -859,7 +859,11 @@ const checks = computed(() => {
                                 class="min-h-11 text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-6"
                                 data-test="work-yourself-button"
                             >
-                                Use my own Claude Code or Codex
+                                {{
+                                    processing
+                                        ? 'Handing it to your tool…'
+                                        : 'Use my own Claude Code or Codex'
+                                }}
                             </button>
                             <InputError :message="errors.worker" />
                         </Form>

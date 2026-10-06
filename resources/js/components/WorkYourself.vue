@@ -5,6 +5,7 @@ import { computed, ref, watch } from 'vue';
 import FeatureRequestWorkerController from '@/actions/App/Http/Controllers/FeatureRequestWorkerController';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 
 // How the owner connects their own Claude Code or Codex to one change
 // (architecture §11, "Workers"). The connection is shown once, right after
@@ -18,12 +19,15 @@ const props = defineProps<{
 
 const page = usePage();
 
-// The page reloads while the change is open, and a reload drops what was
-// flashed, so the connection is kept here once it arrives.
+// The page reloads while the change is open, and the server gives the
+// connection once, so it is kept here once it arrives. It comes as a page
+// prop, not a flash: a poll that ends during the hand-over would write the
+// session back without the flash, and the first connection was lost.
 const token = ref<string | null>(null);
 
 watch(
-    () => page.flash?.worker as { run: string; token: string } | undefined,
+    () =>
+        page.props.worker as { run: string; token: string } | null | undefined,
     (worker) => {
         if (worker?.run === props.runId) {
             token.value = worker.token;
@@ -161,7 +165,8 @@ async function copy(what: 'command' | 'ask'): Promise<void> {
                 class="h-11 select-none sm:h-8"
                 data-test="work-yourself-reconnect"
             >
-                Connect again
+                <Spinner v-if="processing" />
+                {{ processing ? 'Connecting…' : 'Connect again' }}
             </Button>
             <InputError :message="errors.worker" />
         </Form>
