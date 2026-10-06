@@ -167,6 +167,27 @@ it('sends a suggested next step with one tap', function () {
     expect($followUp->prompt)->toBe('Remind people who have not answered their invitation.');
 });
 
+it('keeps the next steps, and a stage it has left, back while the change is made', function () {
+    $this->actingAs($this->owner);
+
+    askForInvitations($this->project);
+
+    $plan = $this->project->featureRequests()->sole()->latestRun->plan;
+    $making = Run::factory()->implementing()->for(
+        FeatureRequest::factory()->for($this->project)->state(['prompt' => 'Show who was active last week.']),
+    )->create(['plan' => [...$plan, 'next' => ['Remind people who have not answered their invitation.']]]);
+    $making->recordEvent('status', ['from' => RunStatus::Queued->value, 'to' => RunStatus::Planning->value]);
+    $making->recordEvent('status', ['from' => RunStatus::Planning->value, 'to' => RunStatus::Implementing->value]);
+
+    // The plan was worked out with no step under it, and the line with the
+    // spinner says what happens now.
+    visit(route('projects.show', ['project' => $this->project, 'change' => $making->featureRequest->uuid]))
+        ->assertSeeIn('@thread-progress', 'Making the change')
+        ->assertMissing('@thread-work')
+        ->assertMissing('@thread-next')
+        ->assertNoJavaScriptErrors();
+});
+
 it('puts the plan and the code beside a full-screen chat on a desktop, and the other chats too when wider', function () {
     $this->actingAs($this->owner);
 

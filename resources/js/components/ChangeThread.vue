@@ -112,22 +112,33 @@ const moreQuestions = ref(false);
 const work = computed(() => run.value?.work ?? []);
 
 // While it works, the line with the spinner already names the stage it is
-// in, so the story leaves that stage out rather than say it twice.
-const liveWork = computed(() => {
-    const latest = work.value.slice(-3);
-    const last = latest.at(-1);
-
-    return last?.kind === 'stage' && Object.values(steps).includes(last.text)
-        ? latest.slice(0, -1)
-        : latest;
-});
+// in. A stage with nothing under it is that one, or one the run left
+// without a step, so the story leaves it out rather than say it twice or
+// wrongly.
+const liveWork = computed(() =>
+    work.value
+        .map((step, at) => ({ step, at }))
+        .filter(
+            ({ step, at }) =>
+                step.kind !== 'stage' ||
+                (work.value[at + 1] ?? step).kind !== 'stage',
+        )
+        .slice(-3),
+);
 
 // What the owner might ask for next, one tap each, as in any chat. Offered
-// only while the chat can go on and nothing has been asked after this yet,
-// and not after a stop: they build on a change that was not made.
+// only once the change is made and checked, while the chat can go on and
+// nothing has been asked after this yet. Not after a stop: they build on a
+// change that was not made. Not while a question waits: one at a time.
 const nextIdeas = computed(() =>
     request.value.can_continue &&
+    !working.value &&
+    !checking.value &&
+    !theirs.value &&
     !failed.value &&
+    !asks.value &&
+    (run.value?.question ?? null) === null &&
+    choice.value === null &&
     props.change.followUps.length === 0
         ? (run.value?.plan?.next ?? [])
         : [],
@@ -843,10 +854,7 @@ const checks = computed(() => {
                             enter-from-class="opacity-0 translate-y-1"
                             data-test="thread-work"
                         >
-                            <li
-                                v-for="(step, index) in liveWork"
-                                :key="work.length - liveWork.length + index"
-                            >
+                            <li v-for="{ step, at } in liveWork" :key="at">
                                 <WorkStepLine :step="step" />
                             </li>
                         </TransitionGroup>
@@ -1339,7 +1347,7 @@ const checks = computed(() => {
 
                         <div
                             v-if="run?.status === 'cancelled'"
-                            class="space-y-2"
+                            class="order-last space-y-2"
                         >
                             <p class="text-muted-foreground">
                                 You stopped this. Nothing in your app changed.
@@ -1377,7 +1385,11 @@ const checks = computed(() => {
                                 >
                                     <Button
                                         size="sm"
-                                        variant="outline"
+                                        :variant="
+                                            request.can_keep_trying
+                                                ? 'outline'
+                                                : 'default'
+                                        "
                                         :disabled="processing"
                                         class="h-11 select-none sm:h-8"
                                         data-test="retry-button"
