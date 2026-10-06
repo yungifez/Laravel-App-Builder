@@ -114,6 +114,11 @@ OPERATIONS_OPERATORS=<your email address>
   `BUILDER_*_MODEL` values (see `config/builder.php`).
 - Set the `REVERB_*` values that Forge gives when you turn on Reverb (step
   5).
+- The Claude app, VS Code and Cursor sign in with keys on the server's disk.
+  Make them once, in the site's **Commands**: `php artisan passport:keys`.
+  New keys sign out every tool, so do not make them again. To keep them out
+  of the disk, set `PASSPORT_PRIVATE_KEY` and `PASSPORT_PUBLIC_KEY` instead
+  (see [Laravel Cloud](deploying-laravel-cloud.md#4-set-the-environment)).
 
 ## 4. Start the queue workers
 

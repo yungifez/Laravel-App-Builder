@@ -132,6 +132,22 @@ OPERATIONS_OPERATORS=<your email address>
   `BUILDER_*_MODEL` values (see `config/builder.php`).
 - To publish owners' apps to Forge, also set the values in
   [Publish owners' apps to Forge](deploying.md#publish-owners-apps-to-forge).
+- Set `PASSPORT_PRIVATE_KEY` and `PASSPORT_PUBLIC_KEY`. The Claude app, VS
+  Code and Cursor sign in with them. The disk is new at each deploy, so the
+  keys cannot live in `storage/`. Make them once, on your own computer:
+
+    ```sh
+    openssl genrsa -out oauth-private.key 4096
+    openssl rsa -in oauth-private.key -pubout -out oauth-public.key
+    ```
+
+    Paste each file's whole text, with its `BEGIN` and `END` lines, into its
+    value. Then delete the files. New keys sign out every tool, so keep them
+    the same across deploys.
+
+- `MCP_REDIRECT_DOMAINS` lists the addresses a tool may return to after it
+  signs in. The default allows the Claude app, VS Code, Cursor and tools on
+  the owner's own computer. Add a tool's address there to allow it too.
 
 ## 5. Start the queue workers
 
