@@ -3,8 +3,10 @@
 namespace Tests\Feature\Publishing;
 
 use App\Actions\Projects\CreateProject;
+use App\Actions\Runs\StartRun;
 use App\Enums\DeploymentStatus;
 use App\Models\Deployment;
+use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\User;
 use App\Projects\ProjectRepository;
@@ -24,6 +26,7 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Forge\ForgeManager;
+use Mockery\MockInterface;
 use Psr\Http\Message\RequestInterface;
 use Tests\Concerns\FakesWorkspaces;
 use Tests\Concerns\PreparesRuns;
@@ -57,6 +60,12 @@ class ForgePublishingTest extends TestCase
      * @var list<string>
      */
     protected array $releaseStatuses = ['deploying', 'finished'];
+
+    /**
+     * What Forge's log of the release says, or null when Forge fails to
+     * give it.
+     */
+    protected ?string $releaseLog = "Installing dependencies\nIn Connection.php line 825:\n  SQLSTATE[42P01]: relation \"plans\" does not exist";
 
     /**
      * How many times Forge refuses to make the site before it does.
@@ -302,6 +311,43 @@ class ForgePublishingTest extends TestCase
         $this->assertSame('failed-build', $deployment->host_status);
         $this->assertSame('Your hosting could not start the new version, so your app online has not changed.', $deployment->error);
         Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'on-forge.com'));
+        // Sending the same version again would break the same way, so what
+        // Forge said goes to a fix.
+        $this->assertSame('release', $deployment->error_cause);
+        $this->assertStringContainsString('relation "plans" does not exist', (string) $deployment->error_details);
+
+        $this->mock(StartRun::class, fn (MockInterface $mock) => $mock->shouldReceive('handle'));
+        $this->actingAs($this->owner)->post(route('check-fixes.store', $this->project))->assertSessionHasNoErrors();
+
+        $this->assertSame([['name' => 'Starting it on the hosting', 'output' => $deployment->error_details]], FeatureRequest::sole()->failed_checks['checks'] ?? null);
+    }
+
+    public function test_a_release_cancelled_on_forge_is_sent_again_rather_than_fixed()
+    {
+        $this->releaseStatuses = ['cancelled'];
+
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+
+        $deployment = Deployment::sole();
+        $this->assertSame(DeploymentStatus::Failed, $deployment->status);
+        $this->assertNull($deployment->error_cause);
+        $this->assertFalse(collect($this->forgeRequests)->contains(fn (array $request) => str_ends_with($request[1], '/log')));
+        $this->actingAs($this->owner)
+            ->post(route('check-fixes.store', $this->project))
+            ->assertSessionHasErrors(['fix' => 'No check stopped your app going online.']);
+    }
+
+    public function test_a_release_whose_log_forge_cannot_give_still_fails_plainly()
+    {
+        $this->releaseStatuses = ['failed'];
+        $this->releaseLog = null;
+
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+
+        $deployment = Deployment::sole();
+        $this->assertSame(DeploymentStatus::Failed, $deployment->status);
+        $this->assertSame('Your hosting could not start the new version, so your app online has not changed.', $deployment->error);
+        $this->assertNull($deployment->error_cause);
     }
 
     public function test_a_version_forge_is_slow_to_start_is_checked_again_without_sending_it_again()
@@ -463,6 +509,9 @@ class ForgePublishingTest extends TestCase
             $method === 'GET' && str_ends_with($path, '/sites/41/environment') => ['data' => ['id' => '41', 'type' => 'environments', 'attributes' => ['content' => $this->environment]]],
             $method === 'PUT' && str_ends_with($path, '/sites/41/environment') => [202, $this->environment = $body['environment']],
             $method === 'POST' && str_ends_with($path, '/sites/41/deployments') => [202, ['data' => ['id' => '51', 'type' => 'deployments', 'attributes' => ['status' => 'queued']]]],
+            $method === 'GET' && str_ends_with($path, '/sites/41/deployments/51/log') => $this->releaseLog === null
+                ? [500, ['message' => 'Server Error']]
+                : ['data' => ['id' => '51', 'type' => 'deploymentLogs', 'attributes' => ['output' => $this->releaseLog]]],
             $method === 'GET' && str_ends_with($path, '/sites/41/deployments/51') => ['data' => ['id' => '51', 'type' => 'deployments', 'attributes' => ['status' => array_shift($this->releaseStatuses) ?? 'finished']]],
             $method === 'GET' && $path === 'orgs/acme/servers/7/database/backups' => ['data' => $this->backupConfigurations, 'meta' => ['next_cursor' => null]],
             $method === 'POST' && $path === 'orgs/acme/servers/7/database/backups' => [202, $this->backupConfigurations[] = ['id' => '61', 'type' => 'backupConfigurations', 'attributes' => ['name' => $body['name']]]],

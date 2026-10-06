@@ -119,12 +119,14 @@ const goingOnline = computed(() => {
 // Problems online: fixing them comes before anything else here.
 const troubled = computed(() => (live.value?.problems ?? 0) > 0);
 
-// A check stopped the newest version going online. Trying again would fail
-// the same way, so fixing it comes first.
+// A check stopped the newest version going online, or the host could not
+// build or start it. Trying again would most likely fail the same way, so
+// fixing it comes first.
 const checkFailed = computed(
     () =>
         latest.value?.status === 'failed' &&
-        latest.value.checks.some((check) => !check.passed),
+        (latest.value.checks.some((check) => !check.passed) ||
+            latest.value.error_cause === 'release'),
 );
 
 // The new version went online but its address or sign-in failed. Sending

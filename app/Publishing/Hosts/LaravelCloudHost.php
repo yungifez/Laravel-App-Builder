@@ -122,6 +122,17 @@ class LaravelCloudHost implements PublishingHost
         };
     }
 
+    public function failure(Deployment $deployment): ?string
+    {
+        // For these, Cloud gives the output of the step that failed. A
+        // cancelled release says nothing about the version itself.
+        if (! in_array($deployment->host_status, ['build.failed', 'deployment.failed'], true)) {
+            return null;
+        }
+
+        return (string) $this->cloud()->get("/deployments/{$deployment->host_release_id}")->throw()->json('data.attributes.failure_reason') ?: null;
+    }
+
     public function errors(Deployment $deployment, CarbonImmutable $from, CarbonImmutable $to): ?array
     {
         $environment = $deployment->project->host_state['environment'] ?? null;

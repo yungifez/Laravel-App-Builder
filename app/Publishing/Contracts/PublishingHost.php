@@ -50,6 +50,14 @@ interface PublishingHost
     public function progress(Deployment $deployment): ReleaseProgress;
 
     /**
+     * Get what the host said when it could not build or start the
+     * deployment's version, or null when it gave up for another reason,
+     * such as the release being cancelled. Sending the same version again
+     * fails the same way then, so its words are what a fix needs.
+     */
+    public function failure(Deployment $deployment): ?string;
+
+    /**
      * Get the errors the app raised online between two moments, oldest
      * first, or null when the host cannot tell.
      *

@@ -12,7 +12,8 @@ use App\Models\User;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Turn the checks that kept the app from going online, or that found it
+ * Turn the checks that kept the app from going online, the host's words
+ * when it could not start the new version, or the checks that found it
  * not working once it was, into an ask to fix them, with one click. The
  * owner's words stay plain; the builder gets what each check said.
  */
@@ -35,7 +36,11 @@ class RequestCheckFix
     {
         $latest = $project->deployments()->latest('id')->first();
         $failed = match ($latest instanceof Deployment ? $latest->status : null) {
-            DeploymentStatus::Failed => array_map(fn (array $check) => ['name' => $check['name'], 'output' => $check['output'] ?? ''], array_values(array_filter($latest->checks ?? [], fn (array $check) => ! $check['passed']))),
+            DeploymentStatus::Failed => [
+                ...array_map(fn (array $check) => ['name' => $check['name'], 'output' => $check['output'] ?? ''], array_values(array_filter($latest->checks ?? [], fn (array $check) => ! $check['passed']))),
+                // Every check passed, but the host could not build or start it.
+                ...($latest->error_cause === 'release' ? [['name' => 'Starting it on the hosting', 'output' => (string) $latest->error_details]] : []),
+            ],
             DeploymentStatus::NeedsAttention => $this->unhealthy($latest),
             default => [],
         };

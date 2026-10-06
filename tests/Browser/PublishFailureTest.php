@@ -102,3 +102,30 @@ it('sends the owner to a developer, not to try again, when the branch has work t
         ->assertVisible('@publish-button')
         ->assertNoJavaScriptErrors();
 });
+
+it('offers a fix first when the hosting could not start the new version', function () {
+    $owner = User::factory()->create();
+    $project = app(CreateProject::class)->handle($owner, 'Acme', $this->makeProjectSource([]), draftNotes: false);
+    app(ProjectRepository::class)->import($project);
+    $project->update(['deploy_remote' => 'https://git.example.com/acme.git', 'deploy_branch' => 'main']);
+    Deployment::factory()->for($project)->create([
+        'user_id' => $owner->id,
+        'commit_sha' => app(ProjectRepository::class)->head($project, Experiment::mainBranch()),
+        'status' => DeploymentStatus::Failed,
+        'checks' => [['name' => 'Tests', 'passed' => true]],
+        'error' => 'Your hosting could not start the new version, so your app online has not changed.',
+        'error_cause' => 'release',
+        'error_details' => 'SQLSTATE[42P01]: relation "plans" does not exist',
+    ]);
+
+    $this->actingAs($owner);
+
+    // Sending it again stays, as the second step: a build can fail once.
+    visit(route('projects.show', $project))
+        ->click('@publish-open')
+        ->assertVisible('@fix-failed-checks')
+        ->assertSeeIn('@publish-button', 'Try again')
+        ->assertMissing('@publish-ask-developer')
+        ->assertDontSee('relation "plans"')
+        ->assertNoJavaScriptErrors();
+});

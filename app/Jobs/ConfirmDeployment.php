@@ -45,12 +45,20 @@ class ConfirmDeployment implements ShouldQueue
             return;
         }
 
-        $progress = $hosts->driver($deployment->host ?? $deployment->project->publishingHost())->progress($deployment);
+        $host = $hosts->driver($deployment->host ?? $deployment->project->publishingHost());
+        $progress = $host->progress($deployment);
 
         if ($progress === ReleaseProgress::Failed) {
+            // A build or start the version itself broke fails again the
+            // same way, so the host's words go to a fix. Without them,
+            // sending it again is still the step.
+            $said = rescue(fn () => $host->failure($deployment));
+
             $deployment->update([
                 'status' => DeploymentStatus::Failed,
                 'error' => __('Your hosting could not start the new version, so your app online has not changed.'),
+                'error_cause' => $said === null ? null : 'release',
+                'error_details' => $said === null ? null : Secrets::redact(trim(Str::substr(trim($said), -2000))),
                 'finished_at' => now(),
             ]);
 

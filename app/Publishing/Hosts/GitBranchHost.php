@@ -51,6 +51,11 @@ class GitBranchHost implements PublishingHost
         return null;
     }
 
+    public function failure(Deployment $deployment): ?string
+    {
+        return null;
+    }
+
     public function progress(Deployment $deployment): ReleaseProgress
     {
         return ReleaseProgress::Unknown;

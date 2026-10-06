@@ -158,6 +158,18 @@ class ForgeHost implements PublishingHost
         };
     }
 
+    public function failure(Deployment $deployment): ?string
+    {
+        $state = $deployment->project->host_state ?? [];
+
+        // A cancelled release says nothing about the version itself.
+        if (! in_array($deployment->host_status, ['failed', 'failed-build'], true) || ! isset($state['server'], $state['site'])) {
+            return null;
+        }
+
+        return $this->forge()->deploymentLog($this->organization(), (int) $state['server'], (int) $state['site'], (int) $deployment->host_release_id) ?: null;
+    }
+
     public function errors(Deployment $deployment, CarbonImmutable $from, CarbonImmutable $to): ?array
     {
         $state = $deployment->project->host_state ?? [];

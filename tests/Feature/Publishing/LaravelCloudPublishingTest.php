@@ -38,6 +38,11 @@ class LaravelCloudPublishingTest extends TestCase
     protected array $releaseStatuses = ['build.running', 'deployment.succeeded'];
 
     /**
+     * Why Cloud says a release did not finish.
+     */
+    protected ?string $failureReason = null;
+
+    /**
      * Whether Cloud saves a copy of the database when asked.
      */
     protected bool $snapshots = true;
@@ -98,7 +103,7 @@ class LaravelCloudPublishingTest extends TestCase
                 $path === '/api/environments/env-1' => Http::response(['data' => ['id' => 'env-1', 'attributes' => ['vanity_domain' => 'acme-shop.laravel.cloud']]]),
                 $path === '/api/environments/env-1/variables' => Http::response(['data' => ['id' => 'env-1']]),
                 $path === '/api/environments/env-1/deployments' => Http::response(['data' => ['id' => 'release-'.Deployment::query()->count(), 'attributes' => ['status' => 'pending']]], 201),
-                str_starts_with($path, '/api/deployments/') => Http::response(['data' => ['attributes' => ['status' => array_shift($this->releaseStatuses) ?? 'deployment.succeeded']]]),
+                str_starts_with($path, '/api/deployments/') => Http::response(['data' => ['attributes' => ['status' => array_shift($this->releaseStatuses) ?? 'deployment.succeeded', 'failure_reason' => $this->failureReason]]]),
                 $request->url() === 'https://acme-shop.laravel.cloud/up', $request->url() === 'https://acme-shop.laravel.cloud/' => Http::response('', 200),
                 $request->url() === 'https://acme-shop.laravel.cloud/login' => Http::response('', $request->method() === 'POST' ? 422 : 200),
                 default => Http::response('Unexpected request', 500),
@@ -217,6 +222,7 @@ class LaravelCloudPublishingTest extends TestCase
     public function test_a_version_cloud_cannot_start_leaves_the_app_online_unchanged()
     {
         $this->releaseStatuses = ['build.failed'];
+        $this->failureReason = "npm run build\nCould not resolve \"./Pages/Plans.vue\"";
         $this->fakeHosts();
 
         $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
@@ -226,6 +232,9 @@ class LaravelCloudPublishingTest extends TestCase
         $this->assertSame('build.failed', $deployment->host_status);
         $this->assertSame('Your hosting could not start the new version, so your app online has not changed.', $deployment->error);
         Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'acme-shop.laravel.cloud'));
+        // What the failed step said is kept for a fix.
+        $this->assertSame('release', $deployment->error_cause);
+        $this->assertStringContainsString('Could not resolve "./Pages/Plans.vue"', (string) $deployment->error_details);
     }
 
     public function test_when_cloud_refuses_the_owner_is_told_plainly_and_nothing_leaks()
