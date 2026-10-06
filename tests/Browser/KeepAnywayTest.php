@@ -47,11 +47,11 @@ it('keeps a change only the review doubted once the owner says yes', function ()
     $change = doubtedChange(VerificationStatus::Passed);
 
     visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))
-        ->assertSeeIn('[data-test="keep-anyway"]', "Your app's checks passed.")
+        ->assertSeeIn('[data-test="keep-anyway"]', "Your app's checks passed, but I found problems when I looked it over.")
         ->click('[data-test="keep-anyway"] summary')
         ->assertSeeIn('[data-test="keep-anyway-doubts"]', 'The comment says nothing.')
         ->click('[data-test="keep-anyway-button"]')
-        ->assertSee('Keep it in your app with these problems?')
+        ->assertSeeIn('[data-test="keep-anyway-confirm"]', 'Keep it with these problems')
         ->click('[data-test="keep-anyway-confirm"]')
         ->assertMissing('[data-test="thread-failed"]')
         ->assertNoJavaScriptErrors();
@@ -64,7 +64,7 @@ it('keeps nothing until the owner says yes', function () {
 
     visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))
         ->resize(390, 844)
-        ->assertSeeIn('[data-test="keep-anyway"]', "Your app's checks could not run.")
+        ->assertSeeIn('[data-test="keep-anyway"]', "Your app's checks could not run, and I found problems when I looked it over.")
         ->click('[data-test="keep-anyway-button"]')
         ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
         ->click('Not now')
@@ -80,5 +80,45 @@ it('never offers to keep a change whose checks failed', function () {
     visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))
         ->assertVisible('[data-test="thread-failed"]')
         ->assertMissing('[data-test="keep-anyway"]')
+        ->assertNoJavaScriptErrors();
+});
+
+// Where the keep button, or the confirm that takes its place, sits in its
+// block. Pressing may scroll the page, which moves the block along with it.
+const KEEP_ANYWAY_PLACE = "(() => { const block = document.querySelector('[data-test=keep-anyway]').getBoundingClientRect(); const box = document.querySelector('[data-test=keep-anyway-button], [data-test=keep-anyway-confirm]').getBoundingClientRect(); return [box.left - block.left, box.top - block.top, box.height].map(Math.round).join(); })()";
+
+it('puts the confirm where the owner pressed and back again', function () {
+    $change = doubtedChange(VerificationStatus::Passed);
+
+    $page = visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))
+        ->assertVisible('[data-test="keep-anyway-button"]');
+    $pressed = $page->script(KEEP_ANYWAY_PLACE);
+
+    $page->click('[data-test="keep-anyway-button"]')
+        ->assertScript(KEEP_ANYWAY_PLACE, $pressed)
+        ->click('Not now')
+        ->assertScript(KEEP_ANYWAY_PLACE, $pressed)
+        ->assertNoJavaScriptErrors();
+});
+
+it('keeps the confirm in place on a phone while it is sent', function () {
+    $change = doubtedChange(VerificationStatus::Unverified);
+
+    $page = visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))
+        ->resize(390, 844)
+        ->assertVisible('[data-test="keep-anyway-button"]');
+    $pressed = $page->script(KEEP_ANYWAY_PLACE);
+
+    $page->click('[data-test="keep-anyway-button"]')
+        ->assertScript(KEEP_ANYWAY_PLACE, $pressed);
+    $size = "(() => { const block = document.querySelector('[data-test=keep-anyway]').getBoundingClientRect(); const box = document.querySelector('[data-test=keep-anyway-confirm]').getBoundingClientRect(); return [box.left - block.left, box.top - block.top, box.width, box.height].map(Math.round).join(); })()";
+    $before = $page->script($size);
+
+    // The request never leaves, so the button stays as it is while sending.
+    $page->script('XMLHttpRequest.prototype.send = () => {}');
+    $page->click('[data-test="keep-anyway-confirm"]')
+        ->assertDisabled('[data-test="keep-anyway-confirm"]')
+        ->assertScript($size, $before)
+        ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
         ->assertNoJavaScriptErrors();
 });

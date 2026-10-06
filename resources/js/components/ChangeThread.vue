@@ -1158,7 +1158,7 @@ const checks = computed(() => {
                                     class="text-xs text-muted-foreground"
                                 >
                                     <summary
-                                        class="min-h-11 cursor-pointer select-none sm:min-h-0"
+                                        class="min-h-11 cursor-pointer content-center select-none sm:min-h-0"
                                     >
                                         What I checked
                                     </summary>
@@ -1327,8 +1327,8 @@ const checks = computed(() => {
                                 <p class="text-xs text-muted-foreground">
                                     {{
                                         request.keep_anyway.checks === 'passed'
-                                            ? "Your app's checks passed. Only my last look over it found problems."
-                                            : "Your app's checks could not run. My last look over it found problems."
+                                            ? "Your app's checks passed, but I found problems when I looked it over."
+                                            : "Your app's checks could not run, and I found problems when I looked it over."
                                     }}
                                 </p>
                                 <details
@@ -1336,7 +1336,7 @@ const checks = computed(() => {
                                     class="text-xs text-muted-foreground"
                                 >
                                     <summary
-                                        class="min-h-11 cursor-pointer select-none sm:min-h-0"
+                                        class="min-h-11 cursor-pointer content-center select-none sm:min-h-0"
                                     >
                                         What I found
                                     </summary>
@@ -1379,22 +1379,31 @@ const checks = computed(() => {
                                         name="despite_review"
                                         value="1"
                                     />
-                                    <p class="text-xs">
-                                        Keep it in your app with these problems?
-                                    </p>
+                                    <!-- The confirm takes the place of the
+                                         button just pressed and says what it
+                                         does, so nothing moves under the
+                                         finger. The spinner covers its label
+                                         for the same reason. -->
                                     <div class="flex flex-wrap gap-2">
                                         <Button
                                             size="sm"
                                             :disabled="processing"
-                                            class="h-11 select-none sm:h-8"
+                                            class="relative h-11 select-none sm:h-8"
                                             data-test="keep-anyway-confirm"
                                         >
-                                            <Spinner v-if="processing" />
-                                            {{
-                                                processing
-                                                    ? 'Keeping it'
-                                                    : 'Yes, keep it'
-                                            }}
+                                            <span
+                                                :class="{
+                                                    invisible: processing,
+                                                }"
+                                                >Keep it with these
+                                                problems</span
+                                            >
+                                            <span
+                                                v-if="processing"
+                                                class="absolute inset-0 flex items-center justify-center"
+                                            >
+                                                <Spinner />
+                                            </span>
                                         </Button>
                                         <Button
                                             type="button"
