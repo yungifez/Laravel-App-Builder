@@ -72,10 +72,10 @@ class RunLifecycleTest extends TestCase
             $run->operations()->orderBy('id')->get()->map(fn ($operation) => [$operation->operation_key, $operation->tool, $operation->status->value])->all(),
         );
         $this->assertSame(
-            ['created', 'lease_acquired', 'status', 'workspace_ready', 'compatibility', 'context_compiled', 'status', 'operation', 'operation', 'build_finished', 'status'],
+            ['created', 'lease_acquired', 'status', 'workspace_ready', 'compatibility', 'planned', 'context_compiled', 'status', 'operation', 'operation', 'build_finished', 'status'],
             $run->events()->pluck('type')->all(),
         );
-        $this->assertSame(range(1, 11), $run->events()->pluck('sequence')->all());
+        $this->assertSame(range(1, 12), $run->events()->pluck('sequence')->all());
         $this->assertSame('team-invitations', $run->plan['solution_key']);
 
         $featureRequest->refresh();
@@ -448,7 +448,7 @@ class RunLifecycleTest extends TestCase
         $run->refresh();
         $this->assertSame(RunStatus::Completed, $run->status);
         $this->assertNotNull($run->finished_at);
-        $this->assertSame(['status', 'lease_acquired', 'review', 'status'], $run->events()->pluck('type')->all());
+        $this->assertSame(['status', 'lease_acquired', 'model_review', 'review', 'status'], $run->events()->pluck('type')->all());
         $this->assertTrue($run->events()->where('type', 'review')->sole()->data['approved']);
     }
 

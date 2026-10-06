@@ -1054,6 +1054,75 @@ class AgentDriverTest extends TestCase
         $this->assertSame(RunStatus::Completed, $run->refresh()->status);
     }
 
+    public function test_a_review_of_the_same_evidence_is_paid_for_once_and_the_gate_still_holds()
+    {
+        $run = $this->askedToKeepWhatTheGateFound();
+        ChangeReviewer::assertPromptedTimes(2);
+
+        // The owner says no: the same patch, verification and accepted findings.
+        $this->actingAs($run->featureRequest->project->owner)
+            ->put(route('feature-requests.finding-proposals.update', [$run->featureRequest, 'changed_while_authorizing']), ['agreed' => false])
+            ->assertRedirect();
+
+        ChangeReviewer::assertPromptedTimes(2);
+        $this->assertSame(1, $run->events()->where('type', 'model_review_reused')->count());
+        // The saved review approved, but the gate ran again and sends it back.
+        $this->assertSame([RunStatus::Verifying, 2], [$run->refresh()->status, $run->repairs]);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'You asked to keep this before, and the owner said it must be fixed.'));
+    }
+
+    public function test_a_finding_the_owner_accepts_gets_a_fresh_review()
+    {
+        $run = $this->askedToKeepWhatTheGateFound();
+
+        $this->actingAs($run->featureRequest->project->owner)
+            ->put(route('feature-requests.finding-proposals.update', [$run->featureRequest, 'changed_while_authorizing']), ['agreed' => true])
+            ->assertRedirect();
+
+        // The reviewer is told what the owner accepted, so it reads it again.
+        ChangeReviewer::assertPromptedTimes(3);
+        $this->assertFalse($run->events()->where('type', 'model_review_reused')->exists());
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+    }
+
+    public function test_the_same_patch_checked_again_gets_a_fresh_review()
+    {
+        // The second pass changed no file, but its verification is new.
+        $run = $this->askedToKeepWhatTheGateFound();
+
+        $reviews = $run->events()->where('type', 'model_review')->get();
+        $this->assertCount(2, $reviews);
+        $this->assertCount(1, $run->events()->where('type', 'status')->where('data->to', RunStatus::Verifying->value)->get()->pluck('data.patch_sha256')->unique());
+        $this->assertNotSame($reviews[0]->data['key'], $reviews[1]->data['key']);
+        $this->assertFalse($run->events()->where('type', 'model_review_reused')->exists());
+    }
+
+    /**
+     * Have the agent keep a gate finding and ask the owner about it, over two
+     * passes of the same patch, each reviewed by the model.
+     */
+    protected function askedToKeepWhatTheGateFound(): Run
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder(
+            $this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'tests/Feature/TeamDescriptionTest.php' => self::DESCRIPTION_TEST]),
+            $this->writes([], 'KEEP B1: It is only a log.'),
+            $this->writes([], 'Moved the save out of the policy.'),
+        );
+        $approve = ['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => [['criterion' => 1, 'test_file' => 'tests/Feature/TeamDescriptionTest.php', 'test_name' => 'teams have a nullable description']]];
+        ChangeReviewer::fake([$approve, $approve, $approve, $approve]);
+        $evidence = ['boundaries' => ['phased' => 30, 'unknown' => 0, 'existing' => 0, 'findings' => [
+            ['kind' => 'changed_while_authorizing', 'route' => 'GET /teams', 'what' => 'insert refusals', 'at' => 'app/Policies/TeamPolicy.php:9', 'in' => 'App\Policies\TeamPolicy::view', 'test' => null],
+        ]]];
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+        $this->passVerification($run, evidence: $evidence);
+        $this->passVerification($run, evidence: $evidence);
+        $this->assertSame(StopReason::FindingProposed, $run->refresh()->stop_reason);
+
+        return $run;
+    }
+
     public function test_the_reviewer_reads_calls_to_an_outside_service_from_outside_its_area()
     {
         FeaturePlanner::fake([$this->plan()]);

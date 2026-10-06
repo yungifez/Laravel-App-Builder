@@ -71,6 +71,7 @@ use App\Runs\RunLease;
 use App\Runs\ShapeQuestion;
 use App\Runs\ToolExecutor;
 use App\Runs\ToolSession;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -335,29 +336,11 @@ class ConstructRun
     {
         $workspace = $this->prepareRunWorkspace->handle($run, $lease);
         $planningContext = $this->gatherPlanningContext->handle($run, $workspace);
-
-        // An answer to the shape question changes only the shape, so the
-        // plan it asked about is built on without planning again.
-        $plan = $this->planShapeAskedAbout($run) ?? $this->planned($run, $lease, $driver, $planningContext, $workspace);
+        $plan = $this->plannedBefore($run, $lease) ?? $this->planAnew($run, $lease, $driver, $planningContext, $workspace);
 
         if ($plan === null) {
             return;
         }
-
-        $plan = $this->shaped($run, $lease, $plan, $planningContext->mayAsk);
-
-        if ($plan === null) {
-            return;
-        }
-
-        $plan = $this->formatted($run, $lease, $plan, $planningContext);
-
-        if ($plan === null) {
-            return;
-        }
-
-        RunCancelled::throwIfCancelling($run);
-        $plan = $this->writeTestsFirst->handle($run, $plan, $workspace, $planningContext);
 
         // The areas come from evidence first; the planner's guess only adds.
         $chosen = $planningContext->areas + array_fill_keys($planningContext->projectContext->known($plan->capabilities), SelectAreas::PLANNER);
@@ -377,6 +360,71 @@ class ConstructRun
             'acceptance_criteria' => count($plan->acceptanceCriteria),
             'protected_suites' => count($plan->acceptance),
         ]);
+    }
+
+    /**
+     * Plan the change with the paid calls: the plan, the shape of new
+     * records and the tests written first. The finished plan is saved
+     * with what it was made from, so a run that stops on our side before
+     * it builds does not pay for it again. Null when the run now waits for
+     * the owner or was only a question.
+     */
+    protected function planAnew(Run $run, RunLease $lease, ConstructionDriver $driver, PlanningContext $planningContext, Workspace $workspace): ?Plan
+    {
+        // An answer to the shape question changes only the shape, so the
+        // plan it asked about is built on without planning again.
+        $plan = $this->planShapeAskedAbout($run) ?? $this->planned($run, $lease, $driver, $planningContext, $workspace);
+
+        if ($plan === null) {
+            return null;
+        }
+
+        $plan = $this->shaped($run, $lease, $plan, $planningContext->mayAsk);
+
+        if ($plan === null) {
+            return null;
+        }
+
+        $plan = $this->formatted($run, $lease, $plan, $planningContext);
+
+        if ($plan === null) {
+            return null;
+        }
+
+        RunCancelled::throwIfCancelling($run);
+        $plan = $this->writeTestsFirst->handle($run, $plan, $workspace, $planningContext);
+
+        $this->recordEvent($run, $lease, 'planned', ['key' => $this->planningKey($run), 'plan' => $plan->toArray()]);
+
+        return $plan;
+    }
+
+    /**
+     * Get the plan this run already finished from the same code and the
+     * same answers, when it stopped on our side (a worker restart, a lost
+     * lease) before it started to build. Null when there is none: a new
+     * answer from the owner plans again.
+     */
+    protected function plannedBefore(Run $run, RunLease $lease): ?Plan
+    {
+        $planned = $run->events()->where('type', 'planned')->where('data->key', $this->planningKey($run))->latest('sequence')->first();
+
+        if ($planned === null) {
+            return null;
+        }
+
+        $this->recordEvent($run, $lease, 'plan_reused', ['planned' => $planned->sequence]);
+
+        return Plan::fromArray($planned->data['plan']);
+    }
+
+    /**
+     * Get what a plan is made from that can change between two tries: the
+     * code the change starts from and the owner's answers.
+     */
+    protected function planningKey(Run $run): string
+    {
+        return hash('sha256', (string) json_encode([$run->featureRequest->base_revision, $run->answers ?? [], $run->question_limit]));
     }
 
     /**
@@ -593,7 +641,7 @@ class ConstructRun
             mapIncludesChange: $observation?->verification_id === $verification->id,
         );
 
-        $review = $driver->review($run, new ReviewEvidence(
+        $review = $this->reviewOnce($run, $lease, $verification, fn () => $driver->review($run, new ReviewEvidence(
             request: $featureRequest->instructions(),
             plan: $plan,
             patch: (string) $featureRequest->patch,
@@ -604,7 +652,7 @@ class ConstructRun
             classification: $classification,
             areaNames: array_map(fn ($capability) => $capability->name, $projectContext->capabilities),
             changeEvidence: $verification->evidence ?? [],
-        ));
+        )));
 
         $verified = $this->assessVerifyItems->handle($plan, $review, (string) $featureRequest->patch, $verification->results ?? [], $verification->evidence ?? []);
 
@@ -745,6 +793,42 @@ class ConstructRun
             ...$stored,
             'feedback' => $feedback,
         ]);
+    }
+
+    /**
+     * Have the model review the change once for the same evidence. A second
+     * review of the same patch, checked by the same verification, with the
+     * same findings accepted, is paid for again but cannot know more: a
+     * job retried after a stop, or a proposal the owner turned down, reuses
+     * the saved one. The free checks and the gate still run each time.
+     *
+     * @param  Closure(): Review  $review
+     */
+    protected function reviewOnce(Run $run, RunLease $lease, Verification $verification, Closure $review): Review
+    {
+        $accepted = $this->acceptFindings->identities($run->featureRequest);
+        sort($accepted);
+        $key = hash('sha256', (string) json_encode([hash('sha256', (string) $run->featureRequest->patch), $verification->id, $accepted]));
+
+        $saved = $run->events()->where('type', 'model_review')->where('data->key', $key)->latest('sequence')->first()?->data['review'] ?? null;
+
+        if (is_array($saved)) {
+            $this->recordEvent($run, $lease, 'model_review_reused', ['verification_id' => $verification->id]);
+
+            return new Review($saved['approved'], $saved['summary'], $saved['findings'], $saved['changes'], $saved['verify']);
+        }
+
+        $fresh = $review();
+
+        $this->recordEvent($run, $lease, 'model_review', ['key' => $key, 'review' => [
+            'approved' => $fresh->approved,
+            'summary' => $fresh->summary,
+            'findings' => $fresh->findings,
+            'changes' => $fresh->changes,
+            'verify' => $fresh->verify,
+        ]]);
+
+        return $fresh;
     }
 
     /**
