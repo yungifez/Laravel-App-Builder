@@ -1689,11 +1689,17 @@ function sendOnEnter(event: KeyboardEvent): void {
                         <MousePointerClick class="size-4" /> Design
                     </button>
                 </div>
+                <!-- Hidden, not removed, so the tabs keep their width
+                     when the owner switches to Design. -->
                 <Button
-                    v-if="!designing && !codeOnScreen"
                     variant="ghost"
                     size="icon"
-                    class="size-9 shrink-0 text-muted-foreground"
+                    :class="[
+                        'size-9 shrink-0 text-muted-foreground',
+                        (designing || codeOnScreen) && 'invisible',
+                    ]"
+                    :tabindex="designing || codeOnScreen ? -1 : undefined"
+                    :aria-hidden="designing || codeOnScreen ? true : undefined"
                     :aria-pressed="chatFull"
                     :aria-label="
                         chatFull

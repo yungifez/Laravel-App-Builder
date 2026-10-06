@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+    ChevronRight,
     CircleCheck,
     CircleDashed,
     History,
@@ -19,7 +20,12 @@ import type { ProofLine } from '@/types';
 // far the app's own tests reached into the change, what was caught and
 // fixed before the owner saw it, and what nothing checks yet. A preview
 // shows a change looks right; this shows why to trust it.
-const props = defineProps<{ proof: ProofLine[] }>();
+// Closed, only the verdict, the pictures and what the owner must decide
+// show; the owner opens the rest, or reads a level deeper.
+const props = defineProps<{ proof: ProofLine[]; open?: boolean }>();
+
+const opened = ref(false);
+const expanded = computed(() => props.open || opened.value);
 
 // Gaps lead, right under the verdict that counts them, so what is not
 // checked never hides between passes. Then the passes: the first one
@@ -28,6 +34,9 @@ const props = defineProps<{ proof: ProofLine[] }>();
 // as it says more than "the old tests still pass". The rest (problems
 // caught, how far the tests reached) always shows last.
 const gaps = computed(() => props.proof.filter((line) => line.kind === 'gap'));
+const gapsShown = computed(() =>
+    expanded.value ? gaps.value : gaps.value.filter((line) => line.decision),
+);
 const passes = computed(() => {
     const passed = props.proof.filter((line) => line.kind === 'passed');
 
@@ -166,21 +175,40 @@ const icons = {
         data-test="change-proof"
     >
         <h3 class="text-xs font-medium">
-            How I know it works:
-            <span :class="verdict.tone" data-test="change-proof-verdict">{{
-                verdict.title
-            }}</span>
+            <button
+                type="button"
+                :disabled="open"
+                :aria-expanded="expanded"
+                class="group flex min-h-11 items-center gap-1 select-none disabled:cursor-default sm:min-h-6"
+                data-test="change-proof-toggle"
+                @click="opened = !opened"
+            >
+                How I know it works:
+                <span :class="verdict.tone" data-test="change-proof-verdict">{{
+                    verdict.title
+                }}</span>
+                <ChevronRight
+                    v-if="!open"
+                    :class="[
+                        'size-3.5 text-muted-foreground transition-transform',
+                        expanded && 'rotate-90',
+                    ]"
+                />
+            </button>
         </h3>
-        <p v-if="verdict.detail" class="text-xs text-muted-foreground">
+        <p
+            v-if="expanded && verdict.detail"
+            class="text-xs text-muted-foreground"
+        >
             {{ verdict.detail }}
         </p>
         <ul
-            v-if="gaps.length > 0"
+            v-if="gapsShown.length > 0"
             class="space-y-1"
             data-test="change-proof-gaps"
         >
             <li
-                v-for="line in gaps"
+                v-for="line in gapsShown"
                 :key="line.text"
                 class="flex items-start gap-2 text-xs text-muted-foreground"
             >
@@ -266,7 +294,7 @@ const icons = {
             </li>
         </ul>
         <p
-            v-if="passes.length > 0"
+            v-if="expanded && passes.length > 0"
             class="flex items-start gap-2 text-xs text-muted-foreground"
         >
             <CircleCheck class="mt-px size-3.5 shrink-0 text-green-600" />
@@ -301,7 +329,7 @@ const icons = {
             </li>
         </ul>
         <details
-            v-if="passes.length > 1"
+            v-if="expanded && passes.length > 1"
             class="group text-xs text-muted-foreground"
             data-test="change-proof-more"
         >
@@ -323,7 +351,7 @@ const icons = {
                 </li>
             </ul>
         </details>
-        <ul v-if="others.length > 0" class="space-y-1">
+        <ul v-if="expanded && others.length > 0" class="space-y-1">
             <li
                 v-for="line in others"
                 :key="line.text"

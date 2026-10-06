@@ -1,3 +1,9 @@
+<script lang="ts">
+// Where each chat was read to, kept while the page lives, so switching to
+// Design and back does not throw the owner to the top.
+const readTo = new Map<string, number>();
+</script>
+
 <script setup lang="ts">
 import { Form, Link, router, usePage, usePoll } from '@inertiajs/vue3';
 import {
@@ -19,10 +25,18 @@ import {
     Undo2,
 } from '@lucide/vue';
 import { useScreen } from '@/composables/useScreen';
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import {
+    computed,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+    watch,
+} from 'vue';
 import FeatureRequestAcceptanceController from '@/actions/App/Http/Controllers/FeatureRequestAcceptanceController';
 import FeatureRequestAnswerController from '@/actions/App/Http/Controllers/FeatureRequestAnswerController';
 import FeatureRequestCaseCorrectionController from '@/actions/App/Http/Controllers/FeatureRequestCaseCorrectionController';
+import FeatureRequestAssumptionController from '@/actions/App/Http/Controllers/FeatureRequestAssumptionController';
 import FeatureRequestFollowUpController from '@/actions/App/Http/Controllers/FeatureRequestFollowUpController';
 import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
 import FeatureRequestKeepTryingController from '@/actions/App/Http/Controllers/FeatureRequestKeepTryingController';
@@ -63,6 +77,23 @@ import type {
 // the owner's messages kept narrow, so they read as a conversation.
 const props = defineProps<{ change: ChangeDetail; roomy?: boolean }>();
 
+const scroller = ref<HTMLElement | null>(null);
+
+onMounted(() =>
+    nextTick(() => {
+        const top = readTo.get(props.change.featureRequest.id);
+
+        if (scroller.value && top !== undefined) {
+            scroller.value.scrollTop = top;
+        }
+    }),
+);
+onBeforeUnmount(() => {
+    if (scroller.value) {
+        readTo.set(props.change.featureRequest.id, scroller.value.scrollTop);
+    }
+});
+
 const emit = defineEmits<{
     // Whether the change's code wants the whole screen.
     full: [on: boolean];
@@ -83,7 +114,7 @@ const work = computed(() => run.value?.work ?? []);
 // While it works, the line with the spinner already names the stage it is
 // in, so the story leaves that stage out rather than say it twice.
 const liveWork = computed(() => {
-    const latest = work.value.slice(-6);
+    const latest = work.value.slice(-3);
     const last = latest.at(-1);
 
     return last?.kind === 'stage' && Object.values(steps).includes(last.text)
@@ -239,12 +270,13 @@ function writtenFor(criterion: number) {
         : [];
 }
 
-// With nothing to decide, the chat stays quiet: what matters most shows
-// a line each, and the rest of the plan waits behind "The plan". The
-// server puts the decisions in reading order.
-const GLANCE_SHOWN = 3;
+// With nothing to decide, the chat stays quiet: what matters most is
+// asked one at a time, as an engineer would check a choice with the
+// owner, and the rest of the plan waits behind "The plan". The server
+// puts the decisions in reading order.
 const detailsOpen = ref(false);
-const allGlance = ref(false);
+// Choices the owner moved past without agreeing, in this visit only.
+const passed = ref<string[]>([]);
 const glance = computed(() =>
     (run.value?.plan?.assumptions ?? []).filter(
         (assumption) => assumption.level === 'glance',
@@ -255,8 +287,22 @@ const quiet = computed(() =>
         (assumption) => assumption.level === 'quiet',
     ),
 );
-const glanceShown = computed(() =>
-    allGlance.value ? glance.value : glance.value.slice(0, GLANCE_SHOWN),
+// The choices still to look at: agreed or passed ones drop out.
+const toCheck = computed(() =>
+    glance.value.filter(
+        (assumption) =>
+            !run.value?.kept_assumptions.includes(assumption.text) &&
+            !passed.value.includes(assumption.text),
+    ),
+);
+// Every choice no longer asked about stays in reach under "The plan".
+const planned = computed(() => [
+    ...glance.value.filter((assumption) => !toCheck.value.includes(assumption)),
+    ...quiet.value,
+]);
+const choice = computed(() => toCheck.value[0] ?? null);
+const checkedSoFar = computed(
+    () => glance.value.length - toCheck.value.length + 1,
 );
 // The whole plan shows when the owner opens it, or reads at the "Why"
 // level; once made, what it is done when shows as results.
@@ -265,13 +311,27 @@ const planOpen = computed(() => detailsOpen.value || depth.value === 2);
 // behind its own "The plan", since no plan is made while it waits.
 const questionPlanOpen = ref(false);
 const built = computed(() => !!run.value?.review);
-const resultsShown = computed(() => built.value && doneWhen.value.length > 0);
+// At the "What" level the results fold to one line, so a made change does
+// not open as screens of ticks; beside the chat there is room for them.
+const resultsOpen = ref(false);
+const resultsShown = computed(
+    () =>
+        built.value &&
+        doneWhen.value.length > 0 &&
+        (sides.value || planOpen.value || resultsOpen.value),
+);
+const resultsDone = computed(
+    () =>
+        doneWhen.value.filter((item) => item.tone === evidence.checked.tone)
+            .length,
+);
 
 watch(
     () => request.value.id,
     () => {
         detailsOpen.value = false;
-        allGlance.value = false;
+        resultsOpen.value = false;
+        passed.value = [];
         questionPlanOpen.value = false;
     },
 );
@@ -653,6 +713,7 @@ const checks = computed(() => {
             ]"
         >
             <div
+                ref="scroller"
                 :class="[
                     'min-h-0 flex-1 overflow-y-auto p-4',
                     spread && 'px-[max(1rem,calc(50%-21rem))]',
@@ -728,7 +789,12 @@ const checks = computed(() => {
                     >
                         <Sparkles class="size-3.5" />
                     </span>
-                    <div class="min-w-0 flex-1 space-y-3 pt-0.5 text-sm">
+                    <!-- What is happening now, and what waits on the owner, sit last
+                         (order-last), beside the reply box, however much
+                         the change says above it. -->
+                    <div
+                        class="flex min-w-0 flex-1 flex-col gap-3 pt-0.5 text-sm"
+                    >
                         <p
                             v-if="run?.plan?.answer"
                             class="leading-relaxed whitespace-pre-line"
@@ -770,7 +836,7 @@ const checks = computed(() => {
                         <TransitionGroup
                             v-if="working && liveWork.length > 0"
                             tag="ol"
-                            class="space-y-1.5"
+                            class="order-last space-y-1.5"
                             enter-active-class="transition duration-base ease-settle"
                             enter-from-class="opacity-0 translate-y-1"
                             data-test="thread-work"
@@ -785,7 +851,7 @@ const checks = computed(() => {
 
                         <p
                             v-if="theirs && run?.yours?.whole_app"
-                            class="text-muted-foreground"
+                            class="order-last text-muted-foreground"
                             data-test="own-tool-writes"
                         >
                             Your Claude Code or Codex writes this. It takes it
@@ -793,6 +859,7 @@ const checks = computed(() => {
                         </p>
                         <WorkYourself
                             v-else-if="theirs && run?.yours"
+                            class="order-last"
                             :request-id="request.id"
                             :run-id="run.id"
                             :address="run.yours.address"
@@ -801,7 +868,7 @@ const checks = computed(() => {
 
                         <div
                             v-if="working"
-                            class="flex items-center gap-2 text-muted-foreground"
+                            class="order-last flex items-center gap-2 text-muted-foreground"
                             data-test="thread-working"
                         >
                             <LoaderCircle class="size-4 animate-spin" />
@@ -846,6 +913,7 @@ const checks = computed(() => {
                              it, and we still check what it hands back. -->
                         <Form
                             v-if="takeOver"
+                            class="order-last"
                             v-bind="
                                 FeatureRequestWorkerController.store.form(
                                     request.id,
@@ -871,7 +939,7 @@ const checks = computed(() => {
                         <!-- A question to answer before going on -->
                         <div
                             v-if="run?.question"
-                            class="space-y-3 border-t pt-3"
+                            class="order-last space-y-3 border-t pt-3"
                             data-test="question"
                         >
                             <div>
@@ -1024,7 +1092,7 @@ const checks = computed(() => {
                         <!-- Waits for the owner's answer -->
                         <div
                             v-if="asks"
-                            class="space-y-2 rounded-md border bg-muted/40 p-3"
+                            class="order-last space-y-2 rounded-md border bg-muted/40 p-3"
                             data-test="thread-asks"
                         >
                             <p class="text-sm">{{ reason }}</p>
@@ -1042,7 +1110,7 @@ const checks = computed(() => {
                         <div
                             v-if="failed"
                             :class="[
-                                'space-y-2 rounded-md border p-3',
+                                'order-last space-y-2 rounded-md border p-3',
                                 foundNothing
                                     ? 'bg-muted/40'
                                     : 'border-red-500/30 bg-red-500/5',
@@ -1318,7 +1386,10 @@ const checks = computed(() => {
                                     />
                                     {{ item.behavior }}
                                 </p>
+                                <!-- The names say what changed; how each
+                                     works now is a level deeper. -->
                                 <p
+                                    v-if="depth > 1"
                                     class="line-clamp-2 pl-6 text-xs text-muted-foreground"
                                     :title="`Before: ${item.before}`"
                                 >
@@ -1372,45 +1443,103 @@ const checks = computed(() => {
                             </ul>
                         </div>
 
-                        <!-- What matters most of what I decided, a line
-                             each. Each is the owner's to agree with, so
-                             later changes follow it, or to change in this
-                             chat. Not "Keep": that is the button for the
-                             whole change below. -->
-                        <ul
-                            v-if="glance.length > 0"
-                            class="space-y-1 text-xs text-muted-foreground"
+                        <!-- What matters most of what I decided, asked
+                             one at a time, so ten choices never land as a
+                             wall. Agreeing means later changes follow it;
+                             changing it asks in this chat. "Next" moves on
+                             without saying either. Not "Keep": that is
+                             the button for the whole change below. -->
+                        <div
+                            v-if="choice && !failed"
+                            class="order-last space-y-2 rounded-lg border p-3"
                             data-test="decisions"
                         >
-                            <li
-                                v-for="assumption in glanceShown"
-                                :key="assumption.text"
-                                data-test="decision"
+                            <p
+                                class="flex items-center text-xs text-muted-foreground"
                             >
-                                {{ assumption.text }}
-                                <DecisionLinks
-                                    :project-id="change.project.id"
-                                    :change-id="request.id"
-                                    :text="assumption.text"
-                                    :kept="
-                                        run!.kept_assumptions.includes(
-                                            assumption.text,
+                                A choice I made for you
+                                <span
+                                    v-if="glance.length > 1"
+                                    class="ml-auto tabular-nums"
+                                    data-test="decisions-count"
+                                    >{{ checkedSoFar }} of
+                                    {{ glance.length }}</span
+                                >
+                            </p>
+                            <Transition
+                                mode="out-in"
+                                enter-active-class="transition duration-base ease-settle"
+                                enter-from-class="opacity-0 translate-x-1"
+                                leave-active-class="transition duration-quick"
+                                leave-to-class="opacity-0"
+                            >
+                                <p
+                                    :key="choice.text"
+                                    class="text-sm"
+                                    data-test="decision"
+                                >
+                                    {{ choice.text }}
+                                </p>
+                            </Transition>
+                            <div class="flex items-center gap-1">
+                                <Form
+                                    v-bind="
+                                        FeatureRequestAssumptionController.store.form(
+                                            request.id,
                                         )
                                     "
-                                />
-                            </li>
-                            <li v-if="glance.length > glanceShown.length">
-                                <button
-                                    type="button"
-                                    class="min-h-11 underline-offset-4 select-none hover:text-foreground hover:underline sm:min-h-6"
-                                    data-test="decisions-more"
-                                    @click="allGlance = true"
+                                    :options="{
+                                        preserveScroll: true,
+                                        preserveState: true,
+                                    }"
+                                    v-slot="{ processing }"
                                 >
-                                    {{ glance.length - glanceShown.length }}
-                                    more
+                                    <input
+                                        type="hidden"
+                                        name="assumption"
+                                        :value="choice.text"
+                                    />
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        :disabled="processing"
+                                        class="h-11 select-none sm:h-8"
+                                        data-test="decision-keep"
+                                    >
+                                        Sounds right
+                                    </Button>
+                                </Form>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    class="h-11 select-none sm:h-8"
+                                    as-child
+                                >
+                                    <Link
+                                        :href="
+                                            showProject(change.project.id, {
+                                                query: {
+                                                    change: request.id,
+                                                    ask: `Change this: “${choice.text}”\n\nInstead, `,
+                                                },
+                                            })
+                                        "
+                                        data-test="decision-change"
+                                    >
+                                        Change it
+                                    </Link>
+                                </Button>
+                                <button
+                                    v-if="toCheck.length > 1"
+                                    type="button"
+                                    class="ml-auto flex min-h-11 items-center gap-0.5 text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-8"
+                                    data-test="decisions-next"
+                                    @click="passed.push(choice.text)"
+                                >
+                                    Next <ChevronRight class="size-3.5" />
                                 </button>
-                            </li>
-                        </ul>
+                            </div>
+                        </div>
 
                         <!-- The rest of the plan, closed: smaller
                              decisions here, and the plan beside the chat
@@ -1431,11 +1560,11 @@ const checks = computed(() => {
                             </CollapsibleTrigger>
                             <CollapsibleContent>
                                 <ul
-                                    v-if="quiet.length > 0"
+                                    v-if="planned.length > 0"
                                     class="mt-1 list-disc space-y-1 pl-9 text-xs text-muted-foreground"
                                 >
                                     <li
-                                        v-for="assumption in quiet"
+                                        v-for="assumption in planned"
                                         :key="assumption.text"
                                         data-test="decision"
                                     >
@@ -1455,166 +1584,32 @@ const checks = computed(() => {
                             </CollapsibleContent>
                         </Collapsible>
 
-                        <!-- How it was made, once it is made: kept
-                             after what it made, for those who ask. -->
-                        <Collapsible v-if="!working && work.length > 0">
-                            <CollapsibleTrigger
-                                class="group flex min-h-11 items-center gap-1 text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-6"
-                                data-test="thread-work-toggle"
-                            >
-                                <ChevronRight
-                                    class="size-3.5 transition-transform group-data-[state=open]:rotate-90"
-                                />
-                                How I did it
-                            </CollapsibleTrigger>
-                            <CollapsibleContent>
-                                <ol
-                                    class="mt-1.5 space-y-1.5"
-                                    data-test="thread-work"
-                                >
-                                    <li
-                                        v-for="(step, index) in work"
-                                        :key="index"
-                                    >
-                                        <WorkStepLine :step="step" />
-                                    </li>
-                                </ol>
-                            </CollapsibleContent>
-                        </Collapsible>
-
-                        <div
-                            v-if="
-                                request.status === 'generated' &&
-                                (checking || checks)
-                            "
-                            class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
+                        <!-- What it is done when, folded to its count -->
+                        <button
+                            v-if="built && doneWhen.length > 0 && !resultsShown"
+                            type="button"
+                            class="flex min-h-11 items-center gap-1.5 text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-6"
+                            data-test="done-when-open"
+                            @click="resultsOpen = true"
                         >
-                            <span
-                                v-if="checking"
-                                class="flex items-center gap-1.5"
-                                data-test="verification-status"
-                            >
-                                <LoaderCircle class="size-3.5 animate-spin" />
-                                Running the checks…
-                            </span>
-                            <span
-                                v-else-if="checks"
-                                class="flex items-center gap-1.5"
-                                data-test="verification-status"
-                            >
-                                <component
-                                    :is="checks.icon"
-                                    :class="['size-3.5', checks.tone]"
-                                />
-                                {{ checks.label }}
-                            </span>
-                        </div>
-                        <!-- Say why, or "Check again" looks like it does nothing. -->
-                        <p
-                            v-if="
-                                !checking &&
-                                change.verification?.status === 'errored' &&
-                                change.verification.error
-                            "
-                            class="text-xs text-muted-foreground"
-                            data-test="verification-error"
-                        >
-                            {{ change.verification.error }}
-                        </p>
-                        <ChangeProof
-                            v-if="request.status === 'generated'"
-                            :proof="change.proof"
-                        />
-                        <!-- The action comes after what it acts on, so it never
-                             sits above the proof's heading on its own. -->
-                        <div
-                            v-if="request.status === 'generated'"
-                            class="text-xs text-muted-foreground"
-                        >
-                            <Form
-                                v-if="!checking && !request.commit_sha"
-                                v-bind="
-                                    FeatureRequestVerificationController.store.form(
-                                        request.id,
-                                    )
+                            <component
+                                :is="
+                                    resultsDone === doneWhen.length
+                                        ? evidence.checked.icon
+                                        : evidence.open.icon
                                 "
-                                :options="{ preserveScroll: true }"
-                                v-slot="{ processing }"
-                            >
-                                <button
-                                    :disabled="processing"
-                                    class="min-h-11 underline-offset-2 select-none hover:text-foreground hover:underline sm:min-h-6"
-                                    data-test="run-verification-button"
-                                >
-                                    {{
-                                        change.verification
-                                            ? 'Check again'
-                                            : 'Run the checks'
-                                    }}
-                                </button>
-                            </Form>
-                        </div>
-
-                        <!-- Deeper answers, for whoever wants them. A change
-                             I could not finish has none to give. -->
-                        <div
-                            v-if="
-                                run?.plan &&
-                                !run.plan.answer &&
-                                !sides &&
-                                !failed
-                            "
-                            class="flex items-center gap-1"
-                        >
-                            <div
-                                class="flex flex-1 rounded-md bg-muted p-0.5"
-                                role="group"
-                                aria-label="How much detail"
-                                data-test="detail-level"
-                            >
-                                <button
-                                    v-for="option in depths"
-                                    :key="option.level"
-                                    type="button"
-                                    :aria-pressed="depth === option.level"
-                                    :class="[
-                                        'min-h-11 flex-1 rounded text-xs select-none sm:min-h-7',
-                                        depth === option.level
-                                            ? 'bg-background font-medium shadow-sm'
-                                            : 'text-muted-foreground hover:text-foreground',
-                                    ]"
-                                    :data-test="`detail-${option.level}`"
-                                    @click="setDepth(option.level)"
-                                >
-                                    {{ option.label }}
-                                </button>
-                            </div>
-                            <Button
-                                v-if="depth === 4 && request.files.length > 0"
-                                variant="ghost"
-                                size="icon"
-                                class="hidden size-8 shrink-0 text-muted-foreground lg:inline-flex"
-                                :aria-pressed="wantsFull"
-                                :aria-label="
-                                    wantsFull
-                                        ? 'Leave full screen'
-                                        : 'Full screen'
-                                "
-                                :title="
-                                    wantsFull
-                                        ? 'Leave full screen'
-                                        : 'Full screen'
-                                "
-                                data-test="code-full"
-                                @click="toggleFull"
-                            >
-                                <component
-                                    :is="wantsFull ? Minimize2 : Maximize2"
-                                    class="size-4"
-                                />
-                            </Button>
-                        </div>
-
+                                :class="[
+                                    'size-3.5',
+                                    resultsDone === doneWhen.length &&
+                                        evidence.checked.tone,
+                                ]"
+                            />
+                            {{ resultsDone }} of {{ doneWhen.length }} things
+                            you asked for are checked by a test
+                            <ChevronRight class="size-3.5" />
+                        </button>
+                        <!-- The plan opens right under its toggle, not below the
+                             detail switch. -->
                         <Teleport defer :to="'#beside-plan'" :disabled="!sides">
                             <div
                                 v-if="
@@ -1913,6 +1908,169 @@ const checks = computed(() => {
                                 </section>
                             </div>
                         </Teleport>
+
+                        <!-- How it was made, once it is made: kept
+                             after what it made, for those who ask. -->
+                        <Collapsible v-if="!working && work.length > 0">
+                            <CollapsibleTrigger
+                                class="group flex min-h-11 items-center gap-1 text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-6"
+                                data-test="thread-work-toggle"
+                            >
+                                <ChevronRight
+                                    class="size-3.5 transition-transform group-data-[state=open]:rotate-90"
+                                />
+                                How I did it
+                            </CollapsibleTrigger>
+                            <CollapsibleContent>
+                                <ol
+                                    class="mt-1.5 space-y-1.5"
+                                    data-test="thread-work"
+                                >
+                                    <li
+                                        v-for="(step, index) in work"
+                                        :key="index"
+                                    >
+                                        <WorkStepLine :step="step" />
+                                    </li>
+                                </ol>
+                            </CollapsibleContent>
+                        </Collapsible>
+
+                        <div
+                            v-if="
+                                request.status === 'generated' &&
+                                (checking || checks)
+                            "
+                            class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
+                        >
+                            <span
+                                v-if="checking"
+                                class="flex items-center gap-1.5"
+                                data-test="verification-status"
+                            >
+                                <LoaderCircle class="size-3.5 animate-spin" />
+                                Running the checks…
+                            </span>
+                            <span
+                                v-else-if="checks"
+                                class="flex items-center gap-1.5"
+                                data-test="verification-status"
+                            >
+                                <component
+                                    :is="checks.icon"
+                                    :class="['size-3.5', checks.tone]"
+                                />
+                                {{ checks.label }}
+                            </span>
+                        </div>
+                        <!-- Say why, or "Check again" looks like it does nothing. -->
+                        <p
+                            v-if="
+                                !checking &&
+                                change.verification?.status === 'errored' &&
+                                change.verification.error
+                            "
+                            class="text-xs text-muted-foreground"
+                            data-test="verification-error"
+                        >
+                            {{ change.verification.error }}
+                        </p>
+                        <ChangeProof
+                            v-if="request.status === 'generated'"
+                            :proof="change.proof"
+                            :open="depth > 1"
+                        />
+                        <!-- The action comes after what it acts on, so it never
+                             sits above the proof's heading on its own. -->
+                        <div
+                            v-if="request.status === 'generated'"
+                            class="text-xs text-muted-foreground"
+                        >
+                            <Form
+                                v-if="!checking && !request.commit_sha"
+                                v-bind="
+                                    FeatureRequestVerificationController.store.form(
+                                        request.id,
+                                    )
+                                "
+                                :options="{ preserveScroll: true }"
+                                v-slot="{ processing }"
+                            >
+                                <button
+                                    :disabled="processing"
+                                    class="min-h-11 underline-offset-2 select-none hover:text-foreground hover:underline sm:min-h-6"
+                                    data-test="run-verification-button"
+                                >
+                                    {{
+                                        change.verification
+                                            ? 'Check again'
+                                            : 'Run the checks'
+                                    }}
+                                </button>
+                            </Form>
+                        </div>
+
+                        <!-- Deeper answers, for whoever wants them. A change
+                             I could not finish has none to give, unless it
+                             was made first: then the switch stays, or a
+                             deep level would show with no way back. -->
+                        <div
+                            v-if="
+                                run?.plan &&
+                                !run.plan.answer &&
+                                !sides &&
+                                (!failed || built)
+                            "
+                            class="flex items-center gap-1"
+                        >
+                            <div
+                                class="flex flex-1 rounded-md bg-muted p-0.5"
+                                role="group"
+                                aria-label="How much detail"
+                                data-test="detail-level"
+                            >
+                                <button
+                                    v-for="option in depths"
+                                    :key="option.level"
+                                    type="button"
+                                    :aria-pressed="depth === option.level"
+                                    :class="[
+                                        'min-h-11 flex-1 rounded text-xs select-none sm:min-h-7',
+                                        depth === option.level
+                                            ? 'bg-background font-medium shadow-sm'
+                                            : 'text-muted-foreground hover:text-foreground',
+                                    ]"
+                                    :data-test="`detail-${option.level}`"
+                                    @click="setDepth(option.level)"
+                                >
+                                    {{ option.label }}
+                                </button>
+                            </div>
+                            <Button
+                                v-if="depth === 4 && request.files.length > 0"
+                                variant="ghost"
+                                size="icon"
+                                class="hidden size-8 shrink-0 text-muted-foreground lg:inline-flex"
+                                :aria-pressed="wantsFull"
+                                :aria-label="
+                                    wantsFull
+                                        ? 'Leave full screen'
+                                        : 'Full screen'
+                                "
+                                :title="
+                                    wantsFull
+                                        ? 'Leave full screen'
+                                        : 'Full screen'
+                                "
+                                data-test="code-full"
+                                @click="toggleFull"
+                            >
+                                <component
+                                    :is="wantsFull ? Minimize2 : Maximize2"
+                                    class="size-4"
+                                />
+                            </Button>
+                        </div>
 
                         <Teleport defer :to="'#beside-code'" :disabled="!sides">
                             <div

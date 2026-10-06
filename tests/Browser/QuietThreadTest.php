@@ -7,8 +7,8 @@ use App\Runs\Plan;
 
 /*
 | With nothing to decide, a change's chat stays almost silent: the
-| decisions worth a glance show one line each, and the rest of the plan
-| waits behind one quiet link.
+| decisions worth a glance are asked one at a time, and the rest of the
+| plan waits behind one quiet link.
 */
 
 /**
@@ -59,7 +59,8 @@ it('shows one line for a decision worth a glance and keeps the rest behind the p
         ->assertSee('Bookings are kept after a class is deleted.')
         ->assertVisible('[data-test="decision-keep"]')
         ->assertVisible('[data-test="decision-change"]')
-        ->assertMissing('[data-test="decisions-more"]')
+        ->assertMissing('[data-test="decisions-count"]')
+        ->assertMissing('[data-test="decisions-next"]')
         ->assertDontSee('Times show in the gym’s time zone.')
         ->assertDontSee('A member books a place in a class with places left.')
         ->assertSeeIn('[data-test="plan-details-toggle"]', 'The plan')
@@ -70,18 +71,43 @@ it('shows one line for a decision worth a glance and keeps the rest behind the p
         ->assertNoJavaScriptErrors();
 });
 
-it('shows three decisions worth a glance and says how many more there are', function () {
-    $change = decidedChange(['First.', 'Second.', 'Third.', 'Fourth.', 'Fifth.'], []);
+it('asks about one decision at a time and moves on with Next', function () {
+    $change = decidedChange(['First.', 'Second.', 'Third.'], []);
 
     quietChat($change)
-        ->assertCount('[data-test="decision"]', 3)
-        ->assertDontSee('Fourth.')
-        ->assertSeeIn('[data-test="decisions-more"]', '2 more')
-        ->click('[data-test="decisions-more"]')
-        ->assertCount('[data-test="decision"]', 5)
-        ->assertSee('Fifth.')
-        ->assertMissing('[data-test="decisions-more"]')
+        ->assertCount('[data-test="decision"]', 1)
+        ->assertSeeIn('[data-test="decision"]', 'First.')
+        ->assertDontSee('Second.')
+        ->assertSeeIn('[data-test="decisions-count"]', '1 of 3')
+        ->click('[data-test="decisions-next"]')
+        ->assertSeeIn('[data-test="decision"]', 'Second.')
+        ->assertSeeIn('[data-test="decisions-count"]', '2 of 3')
+        ->click('[data-test="decisions-next"]')
+        ->assertSeeIn('[data-test="decision"]', 'Third.')
+        // The last one has nothing to move on to.
+        ->assertMissing('[data-test="decisions-next"]')
+        // What was moved past stays under the plan.
+        ->click('[data-test="plan-details-toggle"]')
+        ->assertSee('First.')
         ->assertNoJavaScriptErrors();
+});
+
+it('moves to the next decision once the owner agrees, and keeps the agreed one under the plan', function () {
+    $change = decidedChange(['First.', 'Second.'], []);
+
+    quietChat($change)
+        ->click('[data-test="decision-keep"]')
+        ->assertSeeIn('[data-test="decision"]', 'Second.')
+        ->assertSeeIn('[data-test="decisions-count"]', '2 of 2')
+        ->click('[data-test="decision-keep"]')
+        ->assertMissing('[data-test="decisions"]')
+        ->click('[data-test="plan-details-toggle"]')
+        ->assertSee('First.')
+        ->assertSee('Second.')
+        ->assertCount('[data-test="decision-kept"]', 2)
+        ->assertNoJavaScriptErrors();
+
+    expect($change->latestRun->fresh()->kept_assumptions)->toBe(['First.', 'Second.']);
 });
 
 it('shows no decisions at all when nothing was decided for the owner', function () {
