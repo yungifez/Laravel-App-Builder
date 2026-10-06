@@ -203,6 +203,8 @@ export type FeatureRequestDetail = {
     failed_same_way: boolean;
     /** It stopped only for want of tries, and can go on from its work so far. */
     can_keep_trying: boolean;
+    /** It was stopped or failed after it was planned, and can go on from the plan and the code so far. */
+    can_go_on: boolean;
     can_continue: boolean;
     /** Whether the owner can write it with their own Claude Code or Codex. */
     can_work_yourself: boolean;
@@ -567,6 +569,8 @@ export type FirstVersion = {
     state: 'making' | 'waiting' | 'asking' | 'ready' | 'stopped';
     error: string | null;
     can_retry: boolean;
+    /** It can go on from what was planned and made before it stopped. */
+    can_go_on: boolean;
     /** Stopped because the month's AI use ran out. */
     plan_ran_out: boolean;
     /** Made, but the checks still run. */

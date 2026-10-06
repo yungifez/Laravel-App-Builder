@@ -24,7 +24,7 @@ class DescribeFirstVersion
     ) {}
 
     /**
-     * @return array{change: string, state: 'making'|'waiting'|'asking'|'ready'|'stopped', error: string|null, can_retry: bool, plan_ran_out: bool, checking: bool}|null
+     * @return array{change: string, state: 'making'|'waiting'|'asking'|'ready'|'stopped', error: string|null, can_retry: bool, can_go_on: bool, plan_ran_out: bool, checking: bool}|null
      */
     public function handle(Project $project): ?array
     {
@@ -64,6 +64,8 @@ class DescribeFirstVersion
             // whose fault it is, not what was done to the run inside.
             'error' => $state === 'stopped' ? ($described['run']['error'] ?? $change->latestRun?->stop_reason?->said() ?? $described['featureRequest']['error'] ?? null) : null,
             'can_retry' => $state === 'stopped' && $described['featureRequest']['can_retry'],
+            // Going on keeps what was planned and made; trying again starts over.
+            'can_go_on' => $state === 'stopped' && $described['featureRequest']['can_keep_trying'],
             // Stopped because the month's AI use ran out: the next step is
             // the owner's plan, as in the chat.
             'plan_ran_out' => $state === 'stopped' && ($described['run']['plan_ran_out'] ?? false),

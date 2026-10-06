@@ -4,10 +4,12 @@ use App\Enums\FeatureRequestStatus;
 use App\Enums\NextStep;
 use App\Enums\RunStatus;
 use App\Enums\StopReason;
+use App\Jobs\ExecuteRun;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
 use App\Models\User;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\AssertionFailedError;
 
@@ -152,4 +154,26 @@ it('withholds trying again where it would only stop the same way', function () {
         ->assertSee('The newer try')
         ->assertMissing('[data-test="tried-again"]')
         ->assertNoJavaScriptErrors();
+});
+
+it('offers to go on from a planned change the owner stopped, with starting over beside it', function () {
+    Queue::fake([ExecuteRun::class]);
+    $change = stoppedFor($this->project, StopReason::Cancelled);
+    $change->latestRun->update(['plan' => ['summary' => 'Each class shows how many places are left.', 'acceptance_criteria' => [], 'cases' => [], 'written_tests' => [], 'written_files' => [], 'assumptions' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null]]);
+
+    $page = visit(chatUrl($change))
+        ->assertSee('You stopped this')
+        ->assertSeeIn('[data-test="go-on-button"]', 'Go on')
+        ->assertSeeIn('[data-test="retry-button"]', 'Start over');
+
+    // Side by side, Go on first.
+    $tops = $page->script("(() => ['go-on-button', 'retry-button'].map((test) => Math.round(document.querySelector('[data-test=' + test + ']').getBoundingClientRect().top)))()");
+    expect($tops[0])->toBe($tops[1]);
+
+    $page->click('[data-test="go-on-button"]')
+        ->assertMissing('[data-test="go-on-button"]')
+        ->assertNoJavaScriptErrors();
+
+    expect($change->runs()->count())->toBe(2)
+        ->and(FeatureRequest::query()->where('retry_of_id', $change->id)->exists())->toBeFalse();
 });

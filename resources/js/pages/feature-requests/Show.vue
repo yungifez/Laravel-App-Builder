@@ -630,7 +630,7 @@ function lineClass(line: string): string {
                     title="Go on from the work so far and keep fixing it"
                     data-test="keep-trying-button"
                 >
-                    Keep trying
+                    {{ featureRequest.can_go_on ? 'Go on' : 'Keep trying' }}
                 </Button>
                 <InputError class="mt-2" :message="errors.keep_trying" />
             </Form>

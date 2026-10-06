@@ -2,6 +2,7 @@
 import { Form, Link, router } from '@inertiajs/vue3';
 import { useResizeObserver } from '@vueuse/core';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import FeatureRequestKeepTryingController from '@/actions/App/Http/Controllers/FeatureRequestKeepTryingController';
 import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
 import FeatureRequestRetryController from '@/actions/App/Http/Controllers/FeatureRequestRetryController';
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
@@ -261,25 +262,55 @@ watch(scale, (value) => (props.state.zoom = value), { immediate: true });
                     data-test="first-version-see-plan"
                     >See your plan</Link
                 >
-                <Form
-                    v-else-if="firstVersion.can_retry"
-                    v-bind="
-                        FeatureRequestRetryController.store.form(
-                            firstVersion.change,
-                        )
-                    "
-                    v-slot="{ errors, processing }"
-                    class="space-y-2"
-                >
-                    <Button
-                        :disabled="processing"
-                        class="h-11 select-none"
-                        data-test="first-version-retry"
+                <div v-else class="flex flex-wrap justify-center gap-2">
+                    <!-- Going on keeps what was planned and made so far;
+                         only starting over throws it away. -->
+                    <Form
+                        v-if="firstVersion.can_go_on"
+                        v-bind="
+                            FeatureRequestKeepTryingController.store.form(
+                                firstVersion.change,
+                            )
+                        "
+                        v-slot="{ errors, processing }"
+                        class="space-y-2"
                     >
-                        Try again
-                    </Button>
-                    <InputError :message="errors.retry" />
-                </Form>
+                        <Button
+                            :disabled="processing"
+                            class="h-11 select-none"
+                            data-test="first-version-go-on"
+                        >
+                            Go on
+                        </Button>
+                        <InputError :message="errors.keep_trying" />
+                    </Form>
+                    <Form
+                        v-if="firstVersion.can_retry"
+                        v-bind="
+                            FeatureRequestRetryController.store.form(
+                                firstVersion.change,
+                            )
+                        "
+                        v-slot="{ errors, processing }"
+                        class="space-y-2"
+                    >
+                        <Button
+                            :variant="
+                                firstVersion.can_go_on ? 'outline' : 'default'
+                            "
+                            :disabled="processing"
+                            class="h-11 select-none"
+                            data-test="first-version-retry"
+                        >
+                            {{
+                                firstVersion.can_go_on
+                                    ? 'Start over'
+                                    : 'Try again'
+                            }}
+                        </Button>
+                        <InputError :message="errors.retry" />
+                    </Form>
+                </div>
             </template>
 
             <template v-else-if="preview?.status === 'starting'">

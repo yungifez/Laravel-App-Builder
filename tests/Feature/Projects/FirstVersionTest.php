@@ -42,7 +42,7 @@ class FirstVersionTest extends TestCase
             ->viewData('page')['props']['featureRequest']['error'];
 
         $this->assertNotEmpty($error);
-        $this->assertFirstVersion(['change' => $stopped->uuid, 'state' => 'stopped', 'error' => $error, 'can_retry' => true, 'plan_ran_out' => false, 'checking' => false]);
+        $this->assertFirstVersion(['change' => $stopped->uuid, 'state' => 'stopped', 'error' => $error, 'can_retry' => true, 'can_go_on' => false, 'plan_ran_out' => false, 'checking' => false]);
     }
 
     public function test_a_first_version_stopped_for_credit_says_why_and_whose_fault_like_a_change(): void
@@ -89,19 +89,19 @@ class FirstVersionTest extends TestCase
     public function test_a_first_version_being_made_and_then_ready_are_shown_until_it_is_kept(): void
     {
         $change = $this->firstVersion(['status' => FeatureRequestStatus::Generating]);
-        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'making', 'error' => null, 'can_retry' => false, 'plan_ran_out' => false, 'checking' => false]);
+        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'making', 'error' => null, 'can_retry' => false, 'can_go_on' => false, 'plan_ran_out' => false, 'checking' => false]);
 
         // Made, while the checks still run: to try, as the list offers it,
         // but not yet to keep.
         $change->update(['status' => FeatureRequestStatus::Generated]);
         $run = Run::factory()->for($change)->create(['status' => RunStatus::Verifying]);
-        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'ready', 'error' => null, 'can_retry' => false, 'plan_ran_out' => false, 'checking' => true]);
+        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'ready', 'error' => null, 'can_retry' => false, 'can_go_on' => false, 'plan_ran_out' => false, 'checking' => true]);
         $this->actingAs($this->project->owner)
             ->get(route('projects.show', ['project' => $this->project, 'change' => $change->uuid]))
             ->assertInertia(fn (Assert $page) => $page->where('change.featureRequest.can_accept', false)->etc());
 
         $run->update(['status' => RunStatus::Completed]);
-        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'ready', 'error' => null, 'can_retry' => false, 'plan_ran_out' => false, 'checking' => false]);
+        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'ready', 'error' => null, 'can_retry' => false, 'can_go_on' => false, 'plan_ran_out' => false, 'checking' => false]);
 
         $change->update(['commit_sha' => 'a', 'accepted_at' => now()]);
         $this->assertFirstVersion(null);

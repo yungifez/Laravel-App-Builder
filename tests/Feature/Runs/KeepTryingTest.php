@@ -5,6 +5,7 @@ namespace Tests\Feature\Runs;
 use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Runs\KeepTryingRun;
 use App\Context\ChangeClassification;
+use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Enums\WorkspaceStatus;
@@ -117,6 +118,95 @@ class KeepTryingTest extends TestCase
             ->assertForbidden();
 
         $this->assertSame(RunStatus::NeedsUserDecision, $run->refresh()->status);
+    }
+
+    public function test_a_stopped_change_offers_to_go_on_and_keeps_its_plan_answers_and_choices()
+    {
+        $stopped = $this->stopped(['patch' => "diff --git a/app/A.php b/app/A.php\n"]);
+        $request = $stopped->featureRequest;
+
+        $this->actingAs($request->user)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page->where('featureRequest.can_keep_trying', true)->where('featureRequest.can_go_on', true));
+
+        $this->actingAs($request->user)
+            ->post(route('feature-requests.keep-trying.store', $request))
+            ->assertRedirect(route('projects.show', ['project' => $request->project, 'change' => $request->uuid]));
+
+        $run = $request->refresh()->latestRun;
+        $this->assertNotSame($stopped->id, $run->id);
+        $this->assertSame(RunStatus::Implementing, $run->status);
+        $this->assertSame($stopped->plan, $run->plan);
+        $this->assertSame(['Members pay at the door.'], $run->kept_assumptions);
+        $this->assertSame($stopped->answers, $run->answers);
+        $this->assertSame('resumed', $run->feedback['reason']);
+        $this->assertSame(FeatureRequestStatus::Generating, $request->status);
+        $this->assertSame(0, FeatureRequest::query()->where('retry_of_id', $request->id)->count());
+        Queue::assertPushed(ExecuteRun::class, fn (ExecuteRun $job) => $job->run->is($run));
+    }
+
+    public function test_a_change_that_failed_on_our_side_goes_on_too()
+    {
+        $stopped = $this->stopped();
+        $stopped->update(['status' => RunStatus::Failed, 'stop_reason' => null]);
+
+        $this->assertTrue(KeepTryingRun::possible($stopped->featureRequest->refresh()));
+
+        $run = app(KeepTryingRun::class)->handle($stopped->featureRequest);
+
+        // Nothing was made yet, so there is nothing to say about it.
+        $this->assertNull($run->feedback);
+        $this->assertSame(RunStatus::Implementing, $run->status);
+    }
+
+    public function test_a_stopped_change_cannot_go_on_once_kept_started_over_or_without_a_plan_to_build()
+    {
+        $kept = $this->stopped();
+        $kept->featureRequest->update(['commit_sha' => 'abc']);
+        $this->assertFalse(KeepTryingRun::possible($kept->featureRequest->refresh()));
+
+        $startedOver = $this->stopped();
+        FeatureRequest::factory()->for($startedOver->featureRequest->project)->create(['retry_of_id' => $startedOver->feature_request_id]);
+        $this->assertFalse(KeepTryingRun::possible($startedOver->featureRequest->refresh()));
+
+        $unplanned = $this->stopped();
+        $unplanned->update(['plan' => null]);
+        $this->assertFalse(KeepTryingRun::possible($unplanned->featureRequest->refresh()));
+
+        // A limit would stop it the same way: the owner's plan comes first.
+        $limited = $this->stopped();
+        $limited->update(['status' => RunStatus::Failed, 'stop_reason' => 'usage_limit']);
+        config(['billing.plans.free.monthly_usd' => 5]);
+        $limited->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 6]);
+        $this->assertFalse(KeepTryingRun::possible($limited->featureRequest->refresh()));
+
+        // Its plan only answered a question: there is nothing to build.
+        $answered = $this->stopped();
+        $answered->update(['plan' => [...$answered->plan, 'answer' => 'Yes, they can.']]);
+        $this->assertFalse(KeepTryingRun::possible($answered->featureRequest->refresh()));
+
+        $this->actingAs($answered->featureRequest->user)
+            ->post(route('feature-requests.keep-trying.store', $answered->featureRequest))
+            ->assertSessionHasErrors('keep_trying');
+        $this->assertSame(1, $answered->featureRequest->runs()->count());
+    }
+
+    /**
+     * A planned change the owner stopped while it was being built.
+     *
+     * @param  array<string, mixed>  $request
+     */
+    protected function stopped(array $request = []): Run
+    {
+        $featureRequest = FeatureRequest::factory()->create(['status' => FeatureRequestStatus::Cancelled, ...$request]);
+
+        return Run::factory()->for($featureRequest)->create([
+            'status' => RunStatus::Cancelled,
+            'stop_reason' => 'cancelled',
+            'plan' => ['summary' => 'Each class shows how many places are left.', 'acceptance_criteria' => ['Each class shows its places left.'], 'cases' => [], 'written_tests' => [], 'written_files' => [], 'assumptions' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null],
+            'answers' => [['question' => 'Who pays?', 'answer' => 'Members, at the door.', 'decided_by' => 'owner']],
+            'kept_assumptions' => ['Members pay at the door.'],
+        ]);
     }
 
     /**

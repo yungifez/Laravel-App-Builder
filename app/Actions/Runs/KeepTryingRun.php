@@ -2,12 +2,18 @@
 
 namespace App\Actions\Runs;
 
+use App\Actions\Features\RetryFeatureRequest;
+use App\Actions\Projects\ConnectOwnTool;
+use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Enums\StopReason;
 use App\Enums\WorkspaceStatus;
 use App\Jobs\ExecuteRun;
 use App\Models\FeatureRequest;
 use App\Models\Run;
+use App\Operations\ExecutionSettings;
+use App\Runs\ConstructionDriverManager;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class KeepTryingRun
@@ -19,13 +25,50 @@ class KeepTryingRun
      */
     public const STOPS = [StopReason::VerificationFailed, StopReason::ReviewFindings, StopReason::BudgetExhausted];
 
-    public function __construct(private TransitionRun $transitionRun) {}
+    public function __construct(
+        private TransitionRun $transitionRun,
+        private ConstructionDriverManager $drivers,
+    ) {}
+
+    /**
+     * Determine if the change can go on from where it stopped: it ran out
+     * of attempts with its work still there, or the owner stopped it once
+     * it had a plan.
+     */
+    public static function possible(FeatureRequest $featureRequest): bool
+    {
+        return self::outOfTries($featureRequest) || self::resumable($featureRequest);
+    }
+
+    /**
+     * Determine if the change ended after it was planned and before it was
+     * kept: the owner stopped it, or it failed on our side. Its workspace
+     * is gone, but the plan, the owner's answers and the code made so far
+     * are kept, so a new run can go on from them. Only Start over throws
+     * that work away, and only when the owner asks.
+     */
+    public static function resumable(FeatureRequest $featureRequest): bool
+    {
+        $run = $featureRequest->latestRun;
+
+        return $run !== null
+            && in_array($run->status, [RunStatus::Cancelled, RunStatus::Failed], true)
+            && $run->plan !== null
+            && ($run->plan['answer'] ?? null) === null
+            && $featureRequest->commit_sha === null
+            && $featureRequest->reverted_at === null
+            // Offered only where trying again is: not once it was tried
+            // again, nor while a limit would stop it the same way. Nor when
+            // the code so far is what broke the checks.
+            && RetryFeatureRequest::retryable($featureRequest)
+            && ! RetryFeatureRequest::mustBeMadeAgain($featureRequest);
+    }
 
     /**
      * Determine if the change stopped only because it ran out of attempts,
      * with its work so far still there to go on from.
      */
-    public static function possible(FeatureRequest $featureRequest): bool
+    protected static function outOfTries(FeatureRequest $featureRequest): bool
     {
         $run = $featureRequest->latestRun;
 
@@ -82,6 +125,10 @@ class KeepTryingRun
             throw ValidationException::withMessages(['keep_trying' => __('This change did not stop for want of tries, so there is nothing to keep trying.')]);
         }
 
+        if (self::resumable($featureRequest)) {
+            return $this->resume($featureRequest);
+        }
+
         $run = $featureRequest->latestRun;
 
         $this->transitionRun->handle($run, RunStatus::Implementing, attributes: [
@@ -93,5 +140,48 @@ class KeepTryingRun
         ExecuteRun::dispatch($run);
 
         return $run;
+    }
+
+    /**
+     * Start a new run on the same change from its plan, the owner's answers
+     * and what they agreed to, straight at building: nothing is planned or
+     * asked again. Code made before the stop is laid on the new workspace
+     * first, so the build goes on from it.
+     */
+    protected function resume(FeatureRequest $featureRequest): Run
+    {
+        return DB::transaction(function () use ($featureRequest) {
+            $stopped = $featureRequest->latestRun;
+            $theirs = ConnectOwnTool::connected($featureRequest->project);
+            $madeSoFar = trim((string) $featureRequest->patch) !== '';
+
+            $run = $featureRequest->runs()->create([
+                'driver' => $theirs ? 'worker' : $this->drivers->getDefaultDriver(),
+                'config_version' => ExecutionSettings::record(),
+                'status' => RunStatus::Implementing,
+                'plan' => $stopped->plan,
+                'context' => $stopped->context,
+                'answers' => $stopped->answers,
+                'kept_assumptions' => $stopped->kept_assumptions,
+                'question_limit' => $stopped->question_limit,
+                'feedback' => $madeSoFar ? [
+                    'reason' => 'resumed',
+                    'details' => [__('Your earlier attempt stopped before it finished. The code made so far is already in place. Go on from it and finish the change.')],
+                ] : null,
+            ]);
+
+            $run->recordEvent('created', ['driver' => $run->driver, 'config_version' => $run->config_version]);
+            $run->recordEvent('resumed', ['from' => $stopped->id, 'made_so_far' => $madeSoFar]);
+
+            if ($theirs) {
+                $run->recordEvent('handed_to_owner', ['driver' => 'worker']);
+            }
+
+            $featureRequest->update(['status' => FeatureRequestStatus::Generating, 'error' => null]);
+
+            ExecuteRun::dispatch($run)->afterCommit();
+
+            return $run;
+        });
     }
 }

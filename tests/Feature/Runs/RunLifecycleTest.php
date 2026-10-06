@@ -6,6 +6,7 @@ use App\Actions\Features\RetryFeatureRequest;
 use App\Actions\Runs\AcquireRunLease;
 use App\Actions\Runs\CancelRun;
 use App\Actions\Runs\CompleteRunVerification;
+use App\Actions\Runs\KeepTryingRun;
 use App\Actions\Runs\PrepareRunWorkspace;
 use App\Actions\Runs\StartRun;
 use App\Actions\Runs\TransitionRun;
@@ -211,6 +212,73 @@ class RunLifecycleTest extends TestCase
         $this->assertSame(FeatureRequestStatus::Cancelled, $featureRequest->refresh()->status);
         $this->assertSame(WorkspaceStatus::Destroyed, $run->workspace->status);
         $this->assertSame(0, $run->verifications()->count());
+    }
+
+    public function test_a_change_stopped_while_it_was_built_goes_on_from_its_code_when_the_owner_asks()
+    {
+        $featureRequest = $this->invitationRequest();
+        $seen = null;
+        $this->useDriver(function (Run $run, ToolSession $tools) use (&$seen) {
+            if ($run->events()->where('type', 'resumed')->doesntExist()) {
+                $tools->call('write', 'write_file', ['path' => 'app/Invitation.php', 'contents' => "<?php\n", 'expected_sha256' => null], $tools->revision());
+                app(CancelRun::class)->handle($run);
+                $tools->call('look', 'list_files');
+
+                return 'Never reached.';
+            }
+
+            $seen = file_exists($this->workspaceFile($run->fresh(), 'app/Invitation.php'));
+            $tools->call('write', 'write_file', ['path' => 'app/AcceptInvitation.php', 'contents' => "<?php\n", 'expected_sha256' => null], $tools->revision());
+
+            return 'Finished the invitations.';
+        });
+
+        $stopped = app(StartRun::class)->handle($featureRequest)->refresh();
+
+        // Stopping removes the workspace, but keeps the code made so far.
+        $this->assertSame(RunStatus::Cancelled, $stopped->status);
+        $this->assertSame(WorkspaceStatus::Destroyed, $stopped->workspace->status);
+        $this->assertStringContainsString('app/Invitation.php', (string) $featureRequest->refresh()->patch);
+        $this->assertTrue(KeepTryingRun::resumable($featureRequest));
+
+        $run = app(KeepTryingRun::class)->handle($featureRequest)->refresh();
+
+        // The same change, built on from the code so far, not planned again.
+        $this->assertNotSame($stopped->id, $run->id);
+        $this->assertSame($featureRequest->id, $run->feature_request_id);
+        $this->assertSame(0, FeatureRequest::query()->where('retry_of_id', $featureRequest->id)->count());
+        $this->assertSame($stopped->plan, $run->plan);
+        $this->assertTrue($seen);
+        $patch = (string) $featureRequest->refresh()->patch;
+        $this->assertStringContainsString('app/Invitation.php', $patch);
+        $this->assertStringContainsString('app/AcceptInvitation.php', $patch);
+        $this->assertFalse(KeepTryingRun::possible($featureRequest));
+    }
+
+    public function test_a_change_stopped_before_it_wrote_any_code_goes_on_from_its_plan()
+    {
+        $featureRequest = $this->invitationRequest();
+        $this->useDriver(function (Run $run, ToolSession $tools) {
+            if ($run->events()->where('type', 'resumed')->doesntExist()) {
+                app(CancelRun::class)->handle($run);
+                $tools->call('look', 'list_files');
+
+                return 'Never reached.';
+            }
+
+            $tools->call('write', 'write_file', ['path' => 'app/Invitation.php', 'contents' => "<?php\n", 'expected_sha256' => null], $tools->revision());
+
+            return 'Made the invitations.';
+        });
+
+        app(StartRun::class)->handle($featureRequest);
+        $this->assertNull($featureRequest->refresh()->patch);
+
+        $run = app(KeepTryingRun::class)->handle($featureRequest)->refresh();
+
+        // Nothing to go on from but the plan, so nothing to say about earlier code.
+        $this->assertFalse($run->events()->where('type', 'resumed')->firstOrFail()->data['made_so_far']);
+        $this->assertStringContainsString('app/Invitation.php', (string) $featureRequest->refresh()->patch);
     }
 
     public function test_a_run_waiting_for_a_machine_keeps_its_lease_and_stops_when_cancelled()

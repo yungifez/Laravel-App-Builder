@@ -78,6 +78,14 @@ class PrepareRunWorkspace
             $this->run($workspace, ['git', 'add', '--all'], SetupFailure::ours(), __('The workspace could not be prepared.'));
             $this->run($workspace, ['git', ...$identity, 'commit', '--quiet', '--allow-empty', '--no-verify', '-m', 'Baseline'], SetupFailure::ours(), __('The workspace could not be prepared.'));
             $workspace->update(['baseline_commit' => trim($this->run($workspace, ['git', 'rev-parse', 'HEAD'], SetupFailure::ours(), __('The workspace could not be prepared.')))]);
+
+            // A change the owner stopped and asked to go on keeps the code it
+            // made: laid on after the baseline, so it is part of the change.
+            if (($run->feedback['reason'] ?? null) === 'resumed' && trim((string) $featureRequest->patch) !== '') {
+                $driver->writeFile((string) $workspace->driver_id, FeatureRequest::LINEAGE_DIRECTORY.'/resumed.patch', (string) $featureRequest->patch);
+                $this->run($workspace, ['git', 'apply', '--whitespace=nowarn', ...CopyExclusions::applyFlags(), FeatureRequest::LINEAGE_DIRECTORY.'/resumed.patch'], SetupFailure::changeNoLongerFits(), __('The code made before the stop no longer applies to the project.'));
+                $this->run($workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], SetupFailure::ours(), __('The workspace could not be prepared.'));
+            }
             // Inside .git, so the pictures are there to look at but never part of the change.
             $this->workspaceFiles->placeImages($featureRequest, $workspace);
 
