@@ -57,7 +57,7 @@ class ShapeQuestionTest extends TestCase
 
     public function test_a_shape_that_is_hard_to_change_later_waits_for_the_owner_and_is_built_as_they_answer()
     {
-        $this->plans($this->fields(), $this->fields());
+        $this->plans($this->fields());
 
         $featureRequest = $this->request();
         $run = app(StartRun::class)->handle($featureRequest)->refresh();
@@ -83,6 +83,9 @@ class ShapeQuestionTest extends TestCase
         $run->refresh();
         $this->assertSame(RunStatus::Verifying, $run->status);
         $this->assertSame(['room' => false, 'starts_at' => false, 'note' => false, 'outcome' => false, 'user' => true], $this->required($run));
+        // The answer is applied to the plan it was about: one plan and one
+        // shape, not planned again.
+        $this->assertSame(2, $this->plannerCalls($run));
     }
 
     public function test_choices_can_be_typed_instead_and_you_decide_builds_the_shape_as_planned()
@@ -146,23 +149,35 @@ class ShapeQuestionTest extends TestCase
         $this->assertSame(RunStatus::Verifying, app(StartRun::class)->handle($this->request())->refresh()->status);
     }
 
-    public function test_a_shape_the_planner_changed_after_the_answer_is_built_as_planned_once_no_more_questions_may_be_asked()
+    public function test_an_answer_to_the_planners_own_question_plans_again_and_the_shape_answer_after_it_does_not()
     {
-        $changed = $this->fields();
-        $changed[1]['label'] = 'when it begins';
-        $this->plans($this->fields(), $changed);
+        config(['builder.construction.questions.before_building' => 2]);
+        $this->plans($this->fields());
+        FeaturePlanner::fake([
+            [...$this->plan(), 'question' => ['text' => 'Can members book for a guest?', 'why' => 'It decides who a booking is for.', 'options' => ['Yes', 'No'], 'recommended' => 'No', 'touches' => ['access'], 'reversible' => false, 'easier_after_seeing' => false]],
+            $this->plan(),
+        ]);
 
         $featureRequest = $this->request();
-        $run = app(StartRun::class)->handle($featureRequest);
+        $run = app(StartRun::class)->handle($featureRequest)->refresh();
+        $this->assertSame('Can members book for a guest?', $run->question['text']);
 
         $this->actingAs($featureRequest->project->owner)
-            ->post(route('feature-requests.answers.store', $featureRequest), ['answer' => ShapeQuestion::OPTIONAL]);
+            ->post(route('feature-requests.answers.store', $featureRequest), ['answer' => 'No']);
+        $this->assertSame('Shall I set up bookings like this?', $run->refresh()->question['text']);
 
-        // The answer was about another shape, so it is not carried out on
-        // this one, and the run does not wait again past its limit.
+        $this->post(route('feature-requests.answers.store', $featureRequest), ['answer' => ShapeQuestion::OPTIONAL]);
+
         $run->refresh();
         $this->assertSame(RunStatus::Verifying, $run->status);
-        $this->assertSame(['room' => true, 'starts_at' => true, 'note' => false, 'outcome' => true, 'user' => true], $this->required($run));
+        $this->assertSame(['room' => false, 'starts_at' => false, 'note' => false, 'outcome' => false, 'user' => true], $this->required($run));
+        // Two plans, as the first answer changes the plan, and one shape.
+        $this->assertSame(3, $this->plannerCalls($run));
+    }
+
+    protected function plannerCalls(Run $run): int
+    {
+        return $run->events()->where('type', 'model_call')->where('data->role', 'planner')->count();
     }
 
     /**

@@ -61,6 +61,7 @@ use App\Runs\Exceptions\SpendLimitReached;
 use App\Runs\Exceptions\UsageLimitReached;
 use App\Runs\Exceptions\WaitingForWorker;
 use App\Runs\Plan;
+use App\Runs\PlanningContext;
 use App\Runs\Review;
 use App\Runs\ReviewEvidence;
 use App\Runs\RunLease;
@@ -193,6 +194,69 @@ class ConstructRun
     }
 
     /**
+     * Ask the planner for the plan and, for new records, their shape. Null
+     * when the run now waits for the owner or was only a question.
+     */
+    protected function planned(Run $run, RunLease $lease, ConstructionDriver $driver, PlanningContext $planningContext, Workspace $workspace): ?Plan
+    {
+        $plan = $driver->plan($run, $planningContext);
+
+        // One product question before building (§7): the run waits for the
+        // owner and plans again with their answer. The gate is the run's
+        // question limit and what a wrong guess would cost, not the model's
+        // wish to ask. Anything cheaper is built on the recommended option
+        // and shown with the change for the owner to review.
+        if ($plan->question !== null && $planningContext->mayAsk) {
+            if ($plan->asksOwner(config('builder.construction.questions.ask_about'))) {
+                $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['question' => $plan->question, 'error' => null], [
+                    'reason' => StopReason::Question,
+                    'question' => $plan->question['text'],
+                ]);
+
+                return null;
+            }
+
+            $this->recordEvent($run, $lease, 'question_decided', [
+                'question' => $plan->question['text'],
+                'option' => $plan->question['recommended'],
+                'touches' => $plan->question['touches'] ?? [],
+            ]);
+
+            $plan = $plan->decidedOnRecommendation();
+        }
+
+        if ($plan->answer !== null) {
+            $this->answer($run, $lease, $plan, $workspace);
+
+            return null;
+        }
+
+        // After the questions, so a run that stops for the owner or only
+        // answers asks for no shape; before the shape question, which
+        // asks about it.
+        return $driver->shape($run, $plan, $planningContext);
+    }
+
+    /**
+     * Get the plan the run last stopped to ask about the shape of, once
+     * that question is answered. Null when the run stopped for anything
+     * else, as an answer to the planner's own question changes the plan.
+     */
+    protected function planShapeAskedAbout(Run $run): ?Plan
+    {
+        $asked = $run->events()->where('type', 'shape_asked')->reorder('sequence', 'desc')->first();
+        $stopped = (int) $run->events()->where('type', 'status')->where('data->to', RunStatus::NeedsUserDecision->value)->max('sequence');
+
+        if ($asked === null || $asked->sequence !== $stopped - 1) {
+            return null;
+        }
+
+        $plan = Plan::fromArray($asked->data['plan']);
+
+        return $this->shapeQuestion->answered($plan, $run->answers ?? []) === null ? null : $plan;
+    }
+
+    /**
      * Show the owner a new record's shape that is hard to change later
      * before it is built (§8), through the same pause as a question. A
      * shape the owner answered about is built as they said. Null when the
@@ -216,6 +280,9 @@ class ConstructRun
             return $plan;
         }
 
+        // Kept so the answer is applied to this plan, not to a new one.
+        $this->recordEvent($run, $lease, 'shape_asked', ['plan' => $plan->toArray()]);
+
         $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['question' => $question, 'error' => null], [
             'reason' => StopReason::Question,
             'question' => $question['text'],
@@ -232,42 +299,16 @@ class ConstructRun
     {
         $workspace = $this->prepareRunWorkspace->handle($run, $lease);
         $planningContext = $this->gatherPlanningContext->handle($run, $workspace);
-        $plan = $driver->plan($run, $planningContext);
 
-        // One product question before building (§7): the run waits for the
-        // owner and plans again with their answer. The gate is the run's
-        // question limit and what a wrong guess would cost, not the model's
-        // wish to ask. Anything cheaper is built on the recommended option
-        // and shown with the change for the owner to review.
-        if ($plan->question !== null && $planningContext->mayAsk) {
-            if ($plan->asksOwner(config('builder.construction.questions.ask_about'))) {
-                $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['question' => $plan->question, 'error' => null], [
-                    'reason' => StopReason::Question,
-                    'question' => $plan->question['text'],
-                ]);
+        // An answer to the shape question changes only the shape, so the
+        // plan it asked about is built on without planning again.
+        $plan = $this->planShapeAskedAbout($run) ?? $this->planned($run, $lease, $driver, $planningContext, $workspace);
 
-                return;
-            }
-
-            $this->recordEvent($run, $lease, 'question_decided', [
-                'question' => $plan->question['text'],
-                'option' => $plan->question['recommended'],
-                'touches' => $plan->question['touches'] ?? [],
-            ]);
-
-            $plan = $plan->decidedOnRecommendation();
-        }
-
-        if ($plan->answer !== null) {
-            $this->answer($run, $lease, $plan, $workspace);
-
+        if ($plan === null) {
             return;
         }
 
-        // After the questions, so a run that stops for the owner or only
-        // answers asks for no shape; before the shape question, which
-        // asks about it.
-        $plan = $this->shaped($run, $lease, $driver->shape($run, $plan, $planningContext), $planningContext->mayAsk);
+        $plan = $this->shaped($run, $lease, $plan, $planningContext->mayAsk);
 
         if ($plan === null) {
             return;
