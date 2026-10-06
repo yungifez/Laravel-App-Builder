@@ -143,6 +143,65 @@ class Scaffold
     }
 
     /**
+     * Get the rules, casts and lists the new records' formats use, by path,
+     * from the copies kept in resources/formats. A file the app already has
+     * is never written over: the same file needs nothing, and the app's own
+     * version is noted, so the coding agent knows the generated code uses it.
+     *
+     * @param  list<Record>  $records
+     * @param  list<string>  $existing  The paths the app has now
+     * @param  array<string, string>  $contents  The app's own copies of these files, by path
+     * @return array{files: array<string, string>, notes: list<string>}
+     */
+    public function support(array $records, array $existing, array $contents = []): array
+    {
+        $files = [];
+        $notes = [];
+
+        foreach ($this->supportPaths($records, $existing) as $path) {
+            $ours = (string) file_get_contents(resource_path('formats/'.substr($path, strlen('app/'))));
+
+            if (! in_array($path, $existing, true)) {
+                $files[$path] = $ours;
+            } elseif (($contents[$path] ?? null) !== $ours) {
+                $notes[] = "{$path}: the app already has its own file here, so ours was not written. The generated rules and casts use it; check it does what they expect.";
+            }
+        }
+
+        return ['files' => $files, 'notes' => $notes];
+    }
+
+    /**
+     * Get the paths of the support files the new records' formats use.
+     *
+     * @param  list<Record>  $records
+     * @param  list<string>  $existing
+     * @return list<string>
+     */
+    public function supportPaths(array $records, array $existing): array
+    {
+        $paths = [];
+
+        foreach ($records as $record) {
+            if (! $this->isNew($record, $existing)) {
+                continue;
+            }
+
+            foreach ($record['fields'] as $field) {
+                $paths = [...$paths, ...match (FieldType::from($field['type'])) {
+                    FieldType::Isbn => ['app/Rules/ValidIsbn.php', 'app/Casts/Isbn.php'],
+                    FieldType::PostalCode => ['app/Rules/ValidPostalCode.php', 'app/Casts/PostalCode.php'],
+                    FieldType::Money => ['app/Casts/Money.php'],
+                    FieldType::Country => ['app/Support/Countries.php'],
+                    default => [],
+                }];
+            }
+        }
+
+        return array_values(array_unique($paths));
+    }
+
+    /**
      * Determine if the record is new to the app: neither its model nor a
      * migration that creates its table exists.
      *
