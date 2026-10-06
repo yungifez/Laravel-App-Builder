@@ -864,7 +864,7 @@ const checks = computed(() => {
                             class="order-last text-muted-foreground"
                             data-test="own-tool-writes"
                         >
-                            Your Claude Code or Codex writes this. It takes it
+                            Your own Claude or Codex writes this. It takes it
                             the next time it asks for work.
                         </p>
                         <WorkYourself
@@ -873,6 +873,7 @@ const checks = computed(() => {
                             :request-id="request.id"
                             :run-id="run.id"
                             :address="run.yours.address"
+                            :app-address="run.yours.app_address"
                             :name="run.yours.name"
                         />
 

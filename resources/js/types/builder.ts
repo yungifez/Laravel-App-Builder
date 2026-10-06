@@ -303,6 +303,8 @@ export type Run = {
     yours: {
         waiting: boolean;
         address: string;
+        /** The app's own address, for a tool signed in through OAuth. */
+        app_address: string;
         name: string;
         /** Their tool is connected to the whole app and picks it up. */
         whole_app: boolean;

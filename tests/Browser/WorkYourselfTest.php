@@ -83,3 +83,20 @@ it('offers one command that makes the change on its own in a new temporary folde
     expect($shaped('/^APP_CHANGE_TOKEN=\'\\d+\\|[^\']+\' codex exec --cd "\\$\\(mktemp -d\\)" .*-c \'mcp_servers\\.\\S+\\.bearer_token_env_var="APP_CHANGE_TOKEN"\' .*"Use the \\S+ tools: call get_task[^"]*"$/'))->toBeTrue();
     $page->assertNoJavaScriptErrors();
 });
+
+it('gives the app\'s address for the Claude app, even when the connection showed already', function () {
+    $change = plannedChange('worker');
+
+    visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))
+        ->assertVisible('[data-test="work-yourself-reconnect"]')
+        ->resize(390, 844)
+        ->click('[data-test="work-yourself-app"]')
+        ->assertSeeIn('[data-test="work-yourself-address"]', route('mcp.app', ['project' => $change->project->uuid]))
+        ->assertSeeIn('[data-test="work-yourself-ask-app"]', 'call get_task')
+        ->assertMissing('[data-test="work-yourself-reconnect"]')
+        // The long address breaks, so the phone page never scrolls sideways.
+        ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
+        ->click('[data-test="work-yourself-claude"]')
+        ->assertVisible('[data-test="work-yourself-reconnect"]')
+        ->assertNoJavaScriptErrors();
+});

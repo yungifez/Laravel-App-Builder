@@ -11,10 +11,13 @@ use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
 use App\Models\User;
+use App\Runs\Plan;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
+use Laravel\Mcp\Server\Registrar;
+use Laravel\Passport\Passport;
 use Tests\TestCase;
 
 class WorkYourselfTest extends TestCase
@@ -109,7 +112,38 @@ class WorkYourselfTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('change.run.yours.waiting', true)
                 ->where('change.run.yours.address', route('mcp.task'))
+                ->where('change.run.yours.app_address', route('mcp.app', ['project' => $this->project->uuid]))
                 ->where('change.run.yours.name', 'bright-cleaning'));
+    }
+
+    public function test_the_claude_app_signed_in_at_the_apps_address_gets_the_change_handed_over()
+    {
+        $theirs = $this->change(RunStatus::Implementing, FeatureRequestStatus::Generating, 'worker', ['plan' => $this->plan('Teams have a description.')]);
+
+        $brief = $this->appTool($this->owner, 'get_task')->assertOk()->json('result.content.0.text');
+
+        $this->assertStringContainsString('Teams have a description.', (string) $brief);
+        $this->assertSame($theirs->latestRun()->firstOrFail()->id, Run::query()->where('driver', 'worker')->sole()->id);
+    }
+
+    public function test_the_claude_app_waits_until_the_change_handed_over_is_planned()
+    {
+        // While we still plan it, there is nothing to build yet.
+        $this->change(RunStatus::Planning, FeatureRequestStatus::Generating, 'worker');
+
+        $this->appTool($this->owner, 'get_task')->assertOk()->assertSee('No change waits for you now.');
+    }
+
+    public function test_the_claude_app_takes_the_oldest_change_first_and_only_its_persons()
+    {
+        $this->change(RunStatus::Implementing, FeatureRequestStatus::Generating, 'worker', ['plan' => $this->plan('Teams have a description.')]);
+        $this->change(RunStatus::Implementing, FeatureRequestStatus::Generating, 'worker', ['plan' => $this->plan('Teams have a colour.')]);
+
+        $brief = (string) $this->appTool($this->owner, 'get_task')->json('result.content.0.text');
+        $this->assertStringContainsString('Teams have a description.', $brief);
+        $this->assertStringNotContainsString('Teams have a colour.', $brief);
+
+        $this->appTool(User::factory()->create(), 'get_task')->assertForbidden();
     }
 
     public function test_connecting_again_closes_the_earlier_connection_and_keeps_the_change()
@@ -202,6 +236,26 @@ class WorkYourselfTest extends TestCase
         Run::factory()->for($featureRequest)->create(['status' => $status, 'driver' => $driver] + $attributes);
 
         return $featureRequest;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function plan(string $summary): array
+    {
+        return (new Plan(summary: $summary, acceptanceCriteria: ['It works.'], tasks: ['Do it.']))->toArray();
+    }
+
+    /**
+     * Call one of the app's tools as the Claude app would, signed in as
+     * the person.
+     */
+    protected function appTool(User $user, string $tool): TestResponse
+    {
+        auth()->forgetGuards();
+        Passport::actingAs($user, [Registrar::OAUTH_SCOPE]);
+
+        return $this->postJson(route('mcp.app', ['project' => $this->project->uuid]), ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => ['name' => $tool, 'arguments' => []]]);
     }
 
     /**

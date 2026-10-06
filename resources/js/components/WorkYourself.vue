@@ -9,11 +9,14 @@ import { Spinner } from '@/components/ui/spinner';
 
 // How the owner connects their own Claude Code or Codex to one change
 // (architecture §11, "Workers"). The connection is shown once, right after
-// it is made; it opens this change and nothing else.
+// it is made; it opens this change and nothing else. The Claude app, VS
+// Code and Cursor take the app's own address instead, which shows at any
+// time: they sign in, and get the app's oldest change that waits.
 const props = defineProps<{
     requestId: string;
     runId: string;
     address: string;
+    appAddress: string;
     name: string;
 }>();
 
@@ -36,7 +39,7 @@ watch(
     { immediate: true },
 );
 
-const tool = ref<'claude' | 'codex'>('claude');
+const tool = ref<'claude' | 'codex' | 'app'>('claude');
 
 const variable = 'APP_CHANGE_TOKEN';
 
@@ -71,13 +74,25 @@ const headless = computed(() =>
         : `${variable}='${token.value}' codex exec --cd "$(mktemp -d)" --skip-git-repo-check --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c 'mcp_servers.${props.name}.url="${props.address}"' -c 'mcp_servers.${props.name}.bearer_token_env_var="${variable}"' -c 'mcp_servers.${props.name}.default_tools_approval_mode="approve"' "${alone.value}"`,
 );
 
-const copied = ref<'command' | 'ask' | 'headless' | null>(null);
+// A chat has no folder: get_task tells it to work through the file tools.
+const askApp = computed(
+    () =>
+        `Use the ${props.name} tools: call get_task and do what it says. Hand the change back with submit_change, then call check_status until it is checked.`,
+);
 
-async function copy(what: 'command' | 'ask' | 'headless'): Promise<void> {
+type Copyable = 'command' | 'ask' | 'headless' | 'address' | 'ask-app';
+
+const copied = ref<Copyable | null>(null);
+
+async function copy(what: Copyable): Promise<void> {
     await navigator.clipboard.writeText(
-        { command: command.value, ask: ask.value, headless: headless.value }[
-            what
-        ],
+        {
+            command: command.value,
+            ask: ask.value,
+            headless: headless.value,
+            address: props.appAddress,
+            'ask-app': askApp.value,
+        }[what],
     );
     copied.value = what;
     setTimeout(() => (copied.value = null), 1500);
@@ -87,37 +102,104 @@ async function copy(what: 'command' | 'ask' | 'headless'): Promise<void> {
 <template>
     <section class="space-y-3" data-test="work-yourself">
         <div>
-            <p class="font-medium">Your Claude Code or Codex writes this</p>
+            <p class="font-medium">Your own Claude or Codex writes this</p>
             <p class="mt-0.5 text-muted-foreground">
-                In your copy of the app, connect it, then ask it to do the
-                change. I check what it hands back, like any change.
+                Connect it, then ask it to do the change. I check what it hands
+                back, like any change.
             </p>
         </div>
 
-        <template v-if="token">
-            <div
-                class="inline-flex rounded-md bg-muted p-0.5 text-xs"
-                role="group"
-                aria-label="Your tool"
+        <div
+            class="inline-flex rounded-md bg-muted p-0.5 text-xs"
+            role="group"
+            aria-label="Your tool"
+        >
+            <button
+                v-for="option in ['claude', 'codex', 'app'] as const"
+                :key="option"
+                type="button"
+                :aria-pressed="tool === option"
+                :class="[
+                    'min-h-9 rounded px-3 select-none sm:min-h-7',
+                    tool === option
+                        ? 'bg-background shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground',
+                ]"
+                :data-test="`work-yourself-${option}`"
+                @click="tool = option"
             >
-                <button
-                    v-for="option in ['claude', 'codex'] as const"
-                    :key="option"
-                    type="button"
-                    :aria-pressed="tool === option"
-                    :class="[
-                        'min-h-9 rounded px-3 select-none sm:min-h-7',
-                        tool === option
-                            ? 'bg-background shadow-sm'
-                            : 'text-muted-foreground hover:text-foreground',
-                    ]"
-                    :data-test="`work-yourself-${option}`"
-                    @click="tool = option"
-                >
-                    {{ option === 'claude' ? 'Claude Code' : 'Codex' }}
-                </button>
+                {{
+                    {
+                        claude: 'Claude Code',
+                        codex: 'Codex',
+                        app: 'Claude app',
+                    }[option]
+                }}
+            </button>
+        </div>
+
+        <!-- The app's address needs no token, so it shows at any time. -->
+        <template v-if="tool === 'app'">
+            <div class="space-y-1.5">
+                <p class="text-xs text-muted-foreground">
+                    1. In the Claude app, open Settings, then Connectors, and
+                    add a custom connector with this address. VS Code and Cursor
+                    take it too.
+                </p>
+                <div class="flex items-start gap-1 rounded-md border">
+                    <code
+                        class="min-w-0 flex-1 p-2 font-mono text-xs break-all"
+                        data-test="work-yourself-address"
+                        >{{ appAddress }}</code
+                    >
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        class="size-9 shrink-0"
+                        :aria-label="
+                            copied === 'address' ? 'Copied' : 'Copy the address'
+                        "
+                        @click="copy('address')"
+                    >
+                        <Check v-if="copied === 'address'" class="size-4" />
+                        <Copy v-else class="size-4" />
+                    </Button>
+                </div>
             </div>
 
+            <div class="space-y-1.5">
+                <p class="text-xs text-muted-foreground">
+                    2. Press Allow when it asks. Then ask it
+                </p>
+                <div class="flex items-start gap-1 rounded-md border">
+                    <p
+                        class="min-w-0 flex-1 p-2 text-xs"
+                        data-test="work-yourself-ask-app"
+                    >
+                        {{ askApp }}
+                    </p>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        class="size-9 shrink-0"
+                        :aria-label="
+                            copied === 'ask-app' ? 'Copied' : 'Copy what to ask'
+                        "
+                        @click="copy('ask-app')"
+                    >
+                        <Check v-if="copied === 'ask-app'" class="size-4" />
+                        <Copy v-else class="size-4" />
+                    </Button>
+                </div>
+            </div>
+
+            <p class="text-xs text-muted-foreground">
+                It can take the change once I have planned it. When more than
+                one change waits for your tool, it takes the oldest first.
+            </p>
+        </template>
+
+        <template v-else-if="token">
             <div class="space-y-1.5">
                 <p class="text-xs text-muted-foreground">
                     1. Run this in your copy of the app<template

@@ -370,6 +370,10 @@ class DescribeFeatureRequest
                 // wrote it.
                 'wrote' => app(WorkerDriver::class)->submission($run) !== null,
                 'address' => route('mcp.task'),
+                // The app's own address, for the Claude app, VS Code or
+                // Cursor: it signs in and takes the app's oldest waiting
+                // change. It shows at any time, unlike the token.
+                'app_address' => route('mcp.app', ['project' => $featureRequest->project->uuid]),
                 // What their tool calls the connection: the app's own name.
                 'name' => Str::slug($featureRequest->project->name) ?: 'app',
                 // Their tool is connected to the whole app and picks the
