@@ -16,6 +16,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Inertia\Inertia;
+use Laravel\Passport\Passport;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -55,6 +57,20 @@ class AppServiceProvider extends ServiceProvider
         // shares with others.
         RateLimiter::for('worker', fn (Request $request) => Limit::perMinute((int) config('builder.agents.workers.per_minute'))
             ->by('worker:'.($request->attributes->get('worker_token') ?? $request->ip())));
+
+        // The owner's tool signed in through OAuth holds a short pass, which
+        // it renews on its own for as long as an app stays connected.
+        Passport::tokensExpireIn(now()->addMinutes((int) config('builder.agents.workers.sign_in_minutes')));
+        Passport::refreshTokensExpireIn(now()->addDays((int) config('builder.agents.workers.project_days')));
+
+        // Where the owner lets their tool in. Whoever registered the tool
+        // named it, so the page also says where it sends the owner back.
+        Passport::authorizationView(fn (array $parameters) => Inertia::render('auth/AllowTool', [
+            'tool' => $parameters['client']->name,
+            'returnsTo' => parse_url((string) $parameters['request']->query('redirect_uri'), PHP_URL_HOST),
+            'authToken' => $parameters['authToken'],
+            'csrfToken' => csrf_token(),
+        ])->toResponse($parameters['request']));
 
         // Checks and previews on their own queues need their own workers
         // under `composer dev` too, or they would never start.

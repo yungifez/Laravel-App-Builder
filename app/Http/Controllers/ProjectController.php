@@ -292,6 +292,8 @@ class ProjectController extends Controller
                 'own_tool' => [
                     'connected' => ConnectOwnTool::connected($project),
                     'address' => route('mcp.task'),
+                    // For a tool that signs in instead, such as the Claude app.
+                    'app_address' => route('mcp.app', ['project' => $project->uuid]),
                     'name' => Str::slug($project->name) ?: 'app',
                 ],
             ],

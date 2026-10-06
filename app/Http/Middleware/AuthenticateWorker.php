@@ -5,17 +5,22 @@ namespace App\Http\Middleware;
 use App\Enums\RunStatus;
 use App\Models\Project;
 use App\Models\Run;
+use App\Models\User;
 use App\Runs\WorkerTask;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
+use Laravel\Mcp\Server\Registrar;
 use Laravel\Sanctum\PersonalAccessToken;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Let in only a worker with a live token for a change that has not ended,
- * or for an app whose changes the owner's own tool writes, and bind that
- * change as the request's whole scope. Nothing else here accepts these
- * tokens, and the owner's session opens nothing here.
+ * or for an app whose changes the owner's own tool writes, or the owner's
+ * tool signed in to one of their apps, and bind that change as the
+ * request's whole scope. Nothing else here accepts these tokens, and the
+ * owner's session opens nothing here.
  */
 class AuthenticateWorker
 {
@@ -25,6 +30,19 @@ class AuthenticateWorker
      * @param  Closure(Request): (Response)  $next
      */
     public function handle(Request $request, Closure $next): Response
+    {
+        $project = $request->route('project');
+
+        app()->instance(WorkerTask::class, is_string($project) ? $this->signedIn($request, $project) : $this->byToken($request));
+
+        return $next($request);
+    }
+
+    /**
+     * Let in a tool by the token we made for it: one change's, or one
+     * app's.
+     */
+    protected function byToken(Request $request): WorkerTask
     {
         $token = PersonalAccessToken::findToken((string) $request->bearerToken());
         $owner = $token?->tokenable;
@@ -39,9 +57,36 @@ class AuthenticateWorker
 
         $token->forceFill(['last_used_at' => now()])->save();
         $request->attributes->set('worker_token', $token->getKey());
-        app()->instance(WorkerTask::class, $task);
 
-        return $next($request);
+        return $task;
+    }
+
+    /**
+     * Let in a tool the owner signed in through OAuth, as a connector in
+     * the Claude app, VS Code or Cursor, at the address of one of their
+     * apps. Such a tool has no folder of its own to start from, so the
+     * address names the app; the sign-in names only the person.
+     */
+    protected function signedIn(Request $request, string $project): WorkerTask
+    {
+        $user = Auth::guard('api')->user();
+
+        // A 401 sends the tool to sign in, which a 403 would not help.
+        abort_unless($user instanceof User && $user->tokenCan(Registrar::OAUTH_SCOPE) && ! $user->suspended(), 401);
+
+        $project = Str::isUuid($project) ? Project::query()->where('uuid', $project)->first() : null;
+
+        abort_unless($project !== null && $user->can('requestFeatures', $project), 403);
+
+        // While the tool keeps working, the app stays connected to it, as
+        // its sign-in renews itself.
+        $project->tokens()
+            ->where('expires_at', '>', now())
+            ->update(['expires_at' => now()->addDays((int) config('builder.agents.workers.project_days'))]);
+
+        $request->attributes->set('worker_token', 'user:'.$user->getKey());
+
+        return new WorkerTask(self::waiting($project), wholeApp: true, project: $project);
     }
 
     /**

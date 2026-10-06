@@ -20,6 +20,8 @@ const props = defineProps<{
     projectId: string;
     connected: boolean;
     address: string;
+    // The app's own address, for a tool signed in through OAuth.
+    appAddress: string;
     name: string;
 }>();
 
@@ -49,7 +51,9 @@ watch(
     },
 );
 
-const tool = ref<'claude' | 'codex'>('claude');
+// The Claude app, VS Code and Cursor need nothing installed and no token
+// copied: they take the app's address and sign in.
+const tool = ref<'claude' | 'codex' | 'app'>('claude');
 
 const variable = 'APP_TOOL_TOKEN';
 
@@ -74,13 +78,63 @@ const keepGoing = computed(() =>
           `if [ -z "$${variable}" ]; then echo "Run the connect command in this terminal first."; else while true; do codex exec --cd "$(mktemp -d)" --skip-git-repo-check --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c 'mcp_servers.${props.name}.default_tools_approval_mode="approve"' "${ask.value}"; sleep 60; done; fi`,
 );
 
-const copied = ref<'connect' | 'ask' | 'keep' | null>(null);
+type Step = {
+    key: 'connect' | 'ask' | 'keep' | 'address';
+    label: string;
+    text: string;
+};
 
-async function copy(what: 'connect' | 'ask' | 'keep'): Promise<void> {
+// The connection for a terminal shows only once; the app's address always.
+const steps = computed<Step[]>(() => {
+    if (tool.value === 'app') {
+        return [
+            {
+                key: 'address',
+                label: '1. In the Claude app, open Settings, then Connectors, and add a custom connector with this address. VS Code and Cursor take it too.',
+                text: props.appAddress,
+            },
+            {
+                key: 'ask',
+                label: '2. Press Allow when it asks. Then ask it, whenever you want it to work',
+                text: ask.value,
+            },
+        ];
+    }
+
+    if (!token.value) {
+        return [];
+    }
+
+    return [
+        {
+            key: 'connect',
+            label:
+                tool.value === 'codex'
+                    ? '1. Run this in a terminal, and start Codex from the same one'
+                    : '1. Run this once in a terminal',
+            text: connect.value,
+        },
+        {
+            key: 'ask',
+            label: '2. Then ask it, whenever you want it to work',
+            text: ask.value,
+        },
+        {
+            key: 'keep',
+            label: 'Or let it work by itself. It asks for work every minute and keeps running until you press Ctrl+C.',
+            text: keepGoing.value,
+        },
+    ];
+});
+
+const copied = ref<Step['key'] | null>(null);
+
+async function copy(what: Step['key']): Promise<void> {
     const text = {
         connect: connect.value,
         ask: ask.value,
         keep: keepGoing.value,
+        address: props.appAddress,
     }[what];
 
     await navigator.clipboard.writeText(text);
@@ -93,7 +147,7 @@ async function copy(what: 'connect' | 'ask' | 'keep'): Promise<void> {
     <Dialog v-model:open="open">
         <DialogContent class="sm:max-w-lg">
             <DialogHeader>
-                <DialogTitle>Use your own Claude Code or Codex</DialogTitle>
+                <DialogTitle>Use your own Claude or Codex</DialogTitle>
                 <DialogDescription>
                     Your own tool writes every change, on your computer and on
                     your own plan. I still plan each change, then check and
@@ -102,51 +156,39 @@ async function copy(what: 'connect' | 'ask' | 'keep'): Promise<void> {
             </DialogHeader>
 
             <div class="space-y-4 text-sm" data-test="own-tool">
-                <template v-if="connected && token">
-                    <div
-                        class="inline-flex rounded-md bg-muted p-0.5 text-xs"
-                        role="group"
-                        aria-label="Your tool"
-                    >
-                        <button
-                            v-for="option in ['claude', 'codex'] as const"
-                            :key="option"
-                            type="button"
-                            :aria-pressed="tool === option"
-                            :class="[
-                                'min-h-9 rounded px-3 select-none sm:min-h-7',
-                                tool === option
-                                    ? 'bg-background shadow-sm'
-                                    : 'text-muted-foreground hover:text-foreground',
-                            ]"
-                            :data-test="`own-tool-${option}`"
-                            @click="tool = option"
-                        >
-                            {{ option === 'claude' ? 'Claude Code' : 'Codex' }}
-                        </button>
-                    </div>
-
-                    <div
-                        v-for="step in [
-                            {
-                                key: 'connect' as const,
-                                label:
-                                    tool === 'codex'
-                                        ? '1. Run this in a terminal, and start Codex from the same one'
-                                        : '1. Run this once in a terminal',
-                                text: connect,
-                            },
-                            {
-                                key: 'ask' as const,
-                                label: '2. Then ask it, whenever you want it to work',
-                                text: ask,
-                            },
-                            {
-                                key: 'keep' as const,
-                                label: 'Or let it work by itself. It asks for work every minute and keeps running until you press Ctrl+C.',
-                                text: keepGoing,
-                            },
+                <div
+                    v-if="connected"
+                    class="inline-flex rounded-md bg-muted p-0.5 text-xs"
+                    role="group"
+                    aria-label="Your tool"
+                >
+                    <button
+                        v-for="option in ['claude', 'codex', 'app'] as const"
+                        :key="option"
+                        type="button"
+                        :aria-pressed="tool === option"
+                        :class="[
+                            'min-h-9 rounded px-3 select-none sm:min-h-7',
+                            tool === option
+                                ? 'bg-background shadow-sm'
+                                : 'text-muted-foreground hover:text-foreground',
                         ]"
+                        :data-test="`own-tool-${option}`"
+                        @click="tool = option"
+                    >
+                        {{
+                            {
+                                claude: 'Claude Code',
+                                codex: 'Codex',
+                                app: 'Claude app',
+                            }[option]
+                        }}
+                    </button>
+                </div>
+
+                <template v-if="connected && steps.length > 0">
+                    <div
+                        v-for="step in steps"
                         :key="step.key"
                         class="space-y-1.5"
                     >
@@ -178,8 +220,11 @@ async function copy(what: 'connect' | 'ask' | 'keep'): Promise<void> {
                     </div>
 
                     <p class="text-xs text-muted-foreground">
-                        The connection opens only this app's changes, and shows
-                        only now.
+                        {{
+                            tool === 'app'
+                                ? 'It works only on your own apps, and only on their changes.'
+                                : "The connection opens only this app's changes, and shows only now."
+                        }}
                     </p>
                 </template>
 

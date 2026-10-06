@@ -1383,7 +1383,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                     data-test="own-tool-open"
                     @select="usingOwnTool = true"
                 >
-                    Use my own Claude Code or Codex…
+                    Use my own Claude or Codex…
                 </DropdownMenuItem>
                 <!-- The code is the owner's to take to any developer. -->
                 <DropdownMenuItem as-child>
@@ -1538,6 +1538,7 @@ function sendOnEnter(event: KeyboardEvent): void {
         :project-id="project.id"
         :connected="project.own_tool.connected"
         :address="project.own_tool.address"
+        :app-address="project.own_tool.app_address"
         :name="project.own_tool.name"
     />
     <ShareAppDialog

@@ -18,7 +18,12 @@ export type ProjectSummary = {
     /** How many days a new link works. */
     share_days: number;
     /** The owner's own Claude Code or Codex, when it writes the changes. */
-    own_tool: { connected: boolean; address: string; name: string };
+    own_tool: {
+        connected: boolean;
+        address: string;
+        app_address: string;
+        name: string;
+    };
 };
 
 /** Someone who can sign in to the app on show, as the app keeps them. */
