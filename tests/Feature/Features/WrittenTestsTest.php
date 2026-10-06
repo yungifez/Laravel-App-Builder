@@ -98,6 +98,16 @@ class WrittenTestsTest extends TestCase
         $this->assertFalse(WrittenTests::assertsRefusal("\$this->actingAs(\$user)->delete('/items/1')->assertRedirect(route('dashboard'));"));
     }
 
+    public function test_a_record_still_there_after_a_delete_is_a_refusal()
+    {
+        $this->assertTrue(WrittenTests::assertsRefusal("\$this->actingAs(\$user)->delete(route('books.destroy', \$book))->assertRedirect();\n\$this->assertModelExists(\$book);"));
+        $this->assertTrue(WrittenTests::assertsRefusal("\$this->deleteJson('/api/members/1');\n\$this->assertDatabaseHas('members', ['id' => 1]);"));
+
+        // Still there without trying to delete it, or gone after it, is no refusal.
+        $this->assertFalse(WrittenTests::assertsRefusal("\$this->get('/books')->assertOk();\n\$this->assertModelExists(\$book);"));
+        $this->assertFalse(WrittenTests::assertsRefusal("\$this->delete(route('books.destroy', \$book));\n\$this->assertModelMissing(\$book);"));
+    }
+
     public function test_an_exception_test_that_expects_success_is_refused_with_the_reason()
     {
         // The refusal is asserted only by the test after it, which does
@@ -113,7 +123,7 @@ class WrittenTestsTest extends TestCase
                 ],
             ], ['exception', 'exception'], fn () => false);
         } catch (ConstructionFailed $exception) {
-            $this->assertSame('The test "it shows no times for a past day" for item 1 is an exception case, but it asserts no refusal. Assert that the app refuses: a 403 or 404, validation errors, a redirect to sign in or to confirm an email or password, or a thrown exception or failed command.', $exception->getMessage());
+            $this->assertSame('The test "it shows no times for a past day" for item 1 is an exception case, but it asserts no refusal. Assert that the app refuses: a 403 or 404, validation errors, a redirect to sign in or to confirm an email or password, a thrown exception or failed command, or a record still there after it was deleted.', $exception->getMessage());
 
             return;
         }

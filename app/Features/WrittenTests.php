@@ -84,7 +84,7 @@ class WrittenTests
                 ! isset($files[$path]) => __('The test for item :item is in :path, which is not one of the files written.', ['item' => $item, 'path' => $path]),
                 $key === '' || ! in_array($key, self::names($files[$path]), true) => __('The file :path has no test named ":name" for item :item.', ['path' => $path, 'name' => $name, 'item' => $item]),
                 isset($named["{$path}|{$key}"]) => __('The test ":name" is given for more than one item: a test checks one item.', ['name' => $name]),
-                $kinds[$item - 1] === 'exception' && ! self::assertsRefusal(self::body($files[$path], $key)) => __('The test ":name" for item :item is an exception case, but it asserts no refusal. Assert that the app refuses: a 403 or 404, validation errors, a redirect to sign in or to confirm an email or password, or a thrown exception or failed command.', ['name' => $name, 'item' => $item]),
+                $kinds[$item - 1] === 'exception' && ! self::assertsRefusal(self::body($files[$path], $key)) => __('The test ":name" for item :item is an exception case, but it asserts no refusal. Assert that the app refuses: a 403 or 404, validation errors, a redirect to sign in or to confirm an email or password, a thrown exception or failed command, or a record still there after it was deleted.', ['name' => $name, 'item' => $item]),
                 default => null,
             };
 
@@ -160,8 +160,9 @@ class WrittenTests
 
     /**
      * Determine if a test asserts that the app refused: a 4xx answer,
-     * validation errors, a guest sent to sign in, a thrown exception or a
-     * failed command, as PHPUnit or Pest write it.
+     * validation errors, a guest sent to sign in, a thrown exception, a
+     * failed command, or a record still there after it was deleted, as
+     * PHPUnit or Pest write it.
      */
     public static function assertsRefusal(string $test): bool
     {
@@ -170,7 +171,10 @@ class WrittenTests
             // The starter kits send a guest to sign in, an unconfirmed
             // email to confirm it, and a stale password to enter it again.
             || preg_match('/assertRedirect(?:ToRoute)?\([^;]*(?:login|verification\.notice|verify-email|password\.confirm|confirm-password)/i', $test) === 1
-            || preg_match('/expectException\w*\(|->\s*toThrow\(|->\s*throws\(|assertThrows\(|assertExitCode\(\s*[1-9]/', $test) === 1;
+            || preg_match('/expectException\w*\(|->\s*toThrow\(|->\s*throws\(|assertThrows\(|assertExitCode\(\s*[1-9]/', $test) === 1
+            // A record in use that cannot be removed: the test tries to
+            // delete it, and it is still there.
+            || (preg_match('/->\s*delete(?:Json)?\s*\(/', $test) === 1 && preg_match('/assert(?:ModelExists|DatabaseHas|NotSoftDeleted)\s*\(/', $test) === 1);
     }
 
     /**
