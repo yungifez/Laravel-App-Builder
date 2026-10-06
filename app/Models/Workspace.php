@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\RunStatus;
 use App\Enums\WorkspaceStatus;
 use Database\Factories\WorkspaceFactory;
 use DateTimeInterface;
@@ -84,7 +85,16 @@ class Workspace extends Model
     {
         $query->where('status', WorkspaceStatus::Ready)
             ->where(fn (Builder $query) => $query
-                ->where('last_activity_at', '<', $idleSince)
+                ->where(fn (Builder $query) => $query
+                    ->where('last_activity_at', '<', $idleSince)
+                    // The owner's own tool may work on a change in its own
+                    // folder for longer than that, and its tries, preview
+                    // and file tools need this copy. Its connection running
+                    // out stops the change and lets the copy go.
+                    ->whereNotExists(fn ($runs) => $runs->from('runs')
+                        ->whereColumn('runs.workspace_id', 'workspaces.id')
+                        ->where('runs.driver', 'worker')
+                        ->where('runs.status', RunStatus::Implementing)))
                 ->orWhere('expires_at', '<', $now));
     }
 }
