@@ -4,10 +4,14 @@ namespace App\Mcp\Servers;
 
 use App\Mcp\Tools\CheckStatus;
 use App\Mcp\Tools\GetTask;
+use App\Mcp\Tools\ListFiles;
 use App\Mcp\Tools\OpenPreview;
+use App\Mcp\Tools\ReadFile;
+use App\Mcp\Tools\SearchFiles;
 use App\Mcp\Tools\ShareProgress;
 use App\Mcp\Tools\SubmitChange;
 use App\Mcp\Tools\TryChange;
+use App\Mcp\Tools\WriteFile;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\Name;
@@ -30,5 +34,10 @@ class TaskServer extends Server
         SubmitChange::class,
         CheckStatus::class,
         OpenPreview::class,
+        // For a tool with no folder of its own, as in a chat.
+        ListFiles::class,
+        SearchFiles::class,
+        ReadFile::class,
+        WriteFile::class,
     ];
 }

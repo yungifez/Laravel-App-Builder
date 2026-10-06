@@ -85,6 +85,8 @@ class GetTask extends Tool
             '## Hand the change back',
             $where,
             $code ?? ($base === null ? null : __('Start from commit :base of the app.', ['base' => $base])),
+            // A chat, as in the Claude app, has no folder and runs nothing.
+            __('If you cannot run commands or keep files on a computer, as in a chat, change the app here instead. list_files, search_files and read_file show its code with your change so far, and write_file makes or replaces a file. try_change and submit_change then use that change when you send them no patch.'),
             $unkept ? ($code !== null
                 ? __('The code already holds earlier changes that are not kept yet. Change only what this task asks.')
                 : __('Earlier changes that are not kept yet are applied under yours. Change only what this task asks.')) : null,

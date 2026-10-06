@@ -7,6 +7,7 @@ use App\Jobs\ExecuteRun;
 use App\Models\Run;
 use App\Runs\Drivers\WorkerDriver;
 use App\Runs\WorkerClaims;
+use App\Runs\WorkerDraft;
 use App\Runs\WorkerTask;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -25,6 +26,7 @@ class SubmitChange extends Tool
         protected WorkerTask $task,
         protected WorkerClaims $claims,
         protected WorkerDriver $workers,
+        protected WorkerDraft $draft,
     ) {}
 
     /**
@@ -33,7 +35,7 @@ class SubmitChange extends Tool
     public function handle(Request $request): Response
     {
         $input = $request->validate([
-            'patch' => ['required', 'string', 'max:'.((int) config('builder.agents.workers.max_patch_kb') * 1024)],
+            'patch' => ['nullable', 'string', 'max:'.((int) config('builder.agents.workers.max_patch_kb') * 1024)],
             'summary' => ['required', 'string', 'max:2000'],
         ], [
             'patch.max' => __('The change is too large to hand back in one patch.'),
@@ -47,6 +49,13 @@ class SubmitChange extends Tool
 
         if ($task === null) {
             return Response::error(__('No change waits for you now. Call get_task first.'));
+        }
+
+        // Without a patch, the change made here with write_file.
+        $input['patch'] = blank($input['patch'] ?? null) ? $this->draft->patch($task) : $input['patch'];
+
+        if (trim($input['patch']) === '') {
+            return Response::error(__('Your change is empty. Send it as `patch`, or make it here with write_file first.'));
         }
 
         $refused = DB::transaction(function () use ($input, $task) {
@@ -94,7 +103,7 @@ class SubmitChange extends Tool
     {
         return [
             'task' => $schema->string()->description('The task code get_task gave you, when your tool writes every change of the app.'),
-            'patch' => $schema->string()->description('The whole change as a unified diff against the starting commit, with new files included.')->required(),
+            'patch' => $schema->string()->description('The whole change as a unified diff against the starting commit, with new files included. Leave it out to hand back the change you made here with write_file.'),
             'summary' => $schema->string()->description('What you changed and why, in a few sentences.')->required(),
         ];
     }

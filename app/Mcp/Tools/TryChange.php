@@ -7,6 +7,7 @@ use App\Enums\RunStatus;
 use App\Features\PatchSummary;
 use App\Runs\Drivers\WorkerDriver;
 use App\Runs\WorkerClaims;
+use App\Runs\WorkerDraft;
 use App\Runs\WorkerTask;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -26,6 +27,7 @@ class TryChange extends Tool
         protected WorkerClaims $claims,
         protected WorkerDriver $workers,
         protected TryWorkerChange $tryWorkerChange,
+        protected WorkerDraft $draft,
     ) {}
 
     /**
@@ -34,7 +36,7 @@ class TryChange extends Tool
     public function handle(Request $request): Response
     {
         $input = $request->validate([
-            'patch' => ['present', 'nullable', 'string', 'max:'.((int) config('builder.agents.workers.max_patch_kb') * 1024)],
+            'patch' => ['nullable', 'string', 'max:'.((int) config('builder.agents.workers.max_patch_kb') * 1024)],
             'command' => ['required', 'array', 'min:1', 'max:50'],
             'command.*' => ['required', 'string', 'max:1000'],
             'doing' => ['nullable', 'string', 'max:300'],
@@ -66,11 +68,12 @@ class TryChange extends Tool
 
         $run->recordEvent('worker_tried', [
             'command' => implode(' ', $command),
-            'files' => array_column(PatchSummary::files((string) ($input['patch'] ?? '')), 'path'),
+            'files' => array_column(PatchSummary::files($input['patch'] ?? $this->draft->patch($run)), 'path'),
         ]);
 
         try {
-            $result = $this->tryWorkerChange->handle($run, (string) ($input['patch'] ?? ''), $command);
+            // Without a patch, on the change made here with write_file.
+            $result = $this->tryWorkerChange->handle($run, $input['patch'] ?? null, $command);
         } catch (ValidationException $exception) {
             return Response::error(implode("\n", $exception->validator->errors()->all()));
         }
@@ -80,7 +83,11 @@ class TryChange extends Tool
                 ? __('The command ran out of time after :seconds seconds.', ['seconds' => config('builder.agents.workers.try_seconds')])
                 : __('Exit code :code.', ['code' => $result['exit_code']]),
             $result['output'] === '' ? null : $result['output'],
-            $result['written'] === '' ? null : __("The command wrote these files. Apply this patch in your folder to keep them:\n\n:patch", ['patch' => $result['written']]),
+            match (true) {
+                $result['written'] === '' => null,
+                ($input['patch'] ?? null) === null => __('The command wrote files, which are now part of your change here.'),
+                default => __("The command wrote these files. Apply this patch in your folder to keep them:\n\n:patch", ['patch' => $result['written']]),
+            },
         ])));
     }
 
@@ -93,7 +100,7 @@ class TryChange extends Tool
     {
         return [
             'task' => $schema->string()->description('The task code get_task gave you, when your tool writes every change of the app.'),
-            'patch' => $schema->string()->description('Your whole change so far as a unified diff against the starting commit, with new files included, such as the output of `git add -N . && git diff --binary HEAD`. Empty to run on the starting code.')->required(),
+            'patch' => $schema->string()->description('Your whole change so far as a unified diff against the starting commit, with new files included, such as the output of `git add -N . && git diff --binary HEAD`. Empty to run on the starting code. Leave it out to run on the change you made here with write_file.'),
             'command' => $schema->array()->items($schema->string())->description('The command and its arguments, one per item, such as ["php", "artisan", "test", "--filter=Waitlist"].')->required(),
             'doing' => $schema->string()->description('When you start a new part of the change: what you are doing now, in one plain sentence in the owner\'s words, as for share_progress.'),
         ];

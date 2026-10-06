@@ -37,6 +37,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Illuminate\Validation\ValidationException;
 use Laravel\Ai\Events\PromptingAgent;
@@ -417,6 +418,73 @@ class WorkerDriverTest extends TestCase
         $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.']);
         $this->tool('try_change', $token, ['patch' => '', 'command' => ['php', 'artisan', 'about']], $config)
             ->assertSee('Commands run only while the change waits for you.');
+    }
+
+    public function test_a_worker_with_no_folder_makes_its_change_here_and_hands_it_back()
+    {
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $config = ['builder.agents.workers.try_commands' => [['cat'], ['sh', '-c']]];
+
+        $this->tool('list_files', $token, ['directory' => 'app/Models'])->assertSee('Team.php');
+        $read = (string) $this->tool('read_file', $token, ['path' => 'app/Models/Team.php'])->json('result.content.0.text');
+        [$head, $contents] = explode("\n\n", $read, 2);
+        $sha = Str::after($head, 'sha256: ');
+
+        $this->tool('write_file', $token, [
+            'path' => 'app/Models/Team.php',
+            'contents' => str_replace("public string \$name = 'Team';", "public string \$name = 'Team';\n\n    public ?string \$description = null;", $contents),
+            'expected_sha256' => $sha,
+            'doing' => 'Giving each team a description.',
+        ])->assertDontSee('"isError":true', false);
+        $this->tool('write_file', $token, ['path' => 'app/Made.php', 'contents' => "<?php\n"]);
+        $this->tool('search_files', $token, ['query' => 'description'])->assertSee('Team.php');
+        $this->assertTrue($run->events()->where('type', 'worker_progress')->where('data->text', 'Giving each team a description.')->exists());
+
+        // A try runs on the change made here, and keeps what it writes.
+        $this->tool('try_change', $token, ['command' => ['cat', 'app/Models/Team.php']], $config)->assertSee('$description = null');
+        $this->tool('try_change', $token, ['command' => ['sh', '-c', 'echo made > app/Written.php']], $config)
+            ->assertSee('now part of your change here')
+            ->assertDontSee('+++ b/app/Written.php');
+
+        $this->tool('submit_change', $token, ['summary' => 'Added a description.'])->assertSee('Received.');
+
+        $patch = (string) $run->events()->where('type', 'worker_submitted')->sole()->data['patch'];
+        $this->assertStringContainsString('+    public ?string $description = null;', $patch);
+        $this->assertStringContainsString('+++ b/app/Made.php', $patch);
+        $this->assertStringContainsString('+++ b/app/Written.php', $patch);
+    }
+
+    public function test_a_try_with_a_patch_leaves_the_change_made_here_as_it_was()
+    {
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $config = ['builder.agents.workers.try_commands' => [['cat']]];
+
+        $this->tool('write_file', $token, ['path' => 'app/Made.php', 'contents' => "<?php\n// made here\n"]);
+
+        // The same change tried from a folder, where nothing was made.
+        $this->tool('try_change', $token, ['patch' => $this->workersChange(), 'command' => ['cat', 'app/Made.php']], $config)
+            ->assertDontSee('made here');
+
+        $this->tool('read_file', $token, ['path' => 'app/Made.php'])->assertSee('made here');
+        $this->tool('read_file', $token, ['path' => 'app/Models/Team.php'])->assertDontSee('description');
+    }
+
+    public function test_a_worker_with_no_folder_hears_what_it_may_not_do_here()
+    {
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+
+        $this->tool('submit_change', $token, ['summary' => 'Nothing yet.'])->assertSee('Your change is empty.');
+        $this->tool('write_file', $token, ['path' => '.env', 'contents' => "APP_KEY=\n"])->assertSee('is protected and cannot be changed');
+        $this->tool('write_file', $token, ['path' => '../outside.php', 'contents' => "<?php\n"])->assertSee('must stay inside the project');
+        $this->tool('write_file', $token, ['path' => 'app/Models/Team.php', 'contents' => "<?php\n"])->assertSee('read it and pass its sha256');
+        $this->tool('read_file', $token, ['path' => 'app/Missing.php'])->assertSee('does not exist');
+
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange(), 'summary' => 'Added a description.']);
+        $this->tool('read_file', $token, ['path' => 'app/Models/Team.php'])->assertSee('The files open only while the change waits for you.');
+        $this->assertSame(0, $run->events()->where('type', 'worker_submitted')->where('data->summary', 'Nothing yet.')->count());
     }
 
     public function test_a_test_that_starts_node_itself_is_sent_back_with_the_laravel_way()

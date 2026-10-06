@@ -8,6 +8,7 @@ use App\Models\Run;
 use App\Models\Workspace;
 use App\Runs\Agents\RunnerAgent;
 use App\Runs\Exceptions\ConstructionFailed;
+use App\Runs\WorkerDraft;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Support\Facades\Cache;
@@ -23,6 +24,9 @@ use Illuminate\Validation\ValidationException;
  * with the worker's whole patch, and the workspace is put back after it.
  * Files the command writes, such as those a generator makes, come back as
  * a patch for the worker to apply in its own folder.
+ *
+ * A worker with no folder, as in a chat, makes its change here instead
+ * (WorkerDraft). Its tries run on that change, and keep what they write.
  */
 class TryWorkerChange
 {
@@ -31,15 +35,17 @@ class TryWorkerChange
     public function __construct(
         private RunWorkspaceCommand $runWorkspaceCommand,
         private ExtractCandidateChange $extractCandidateChange,
+        private WorkerDraft $draft,
     ) {}
 
     /**
+     * @param  string|null  $patch  The worker's whole change, or null for the one it made here.
      * @param  list<string>  $command
      * @return array{exit_code: int|null, timed_out: bool, output: string, written: string}
      *
      * @throws ValidationException when the command is not allowed, or the patch does not apply.
      */
-    public function handle(Run $run, string $patch, array $command): array
+    public function handle(Run $run, ?string $patch, array $command): array
     {
         if (! self::allowed($command)) {
             throw ValidationException::withMessages(['command' => __('This command cannot run here. Allowed commands start with: :list.', ['list' => implode('; ', array_map(fn (array $prefix) => implode(' ', $prefix), self::prefixes()))])]);
@@ -53,11 +59,14 @@ class TryWorkerChange
         }
 
         try {
-            $baseline = $this->extractCandidateChange->baseline($workspace);
-            $this->reset($workspace, $baseline);
+            if ($patch === null) {
+                $this->lay($run, $workspace);
+            } else {
+                $this->reset($workspace, $this->extractCandidateChange->baseline($workspace));
 
-            if (trim($patch) !== '') {
-                $this->apply($workspace, $patch);
+                if (trim($patch) !== '') {
+                    $this->apply($workspace, $patch);
+                }
             }
 
             // What the patch holds, so only what the command writes is new.
@@ -68,6 +77,12 @@ class TryWorkerChange
             $this->git($workspace, ['add', '--intent-to-add', '--all']);
             $written = $this->runWorkspaceCommand->handle($workspace, ['git', 'diff', '--binary'], 60)->output;
 
+            // Made here, the change keeps what the command wrote, as a
+            // folder would.
+            if ($patch === null) {
+                $this->draft->keep($run, $this->extractCandidateChange->handle($workspace));
+            }
+
             return [
                 'exit_code' => $result->exit_code,
                 'timed_out' => $result->timed_out,
@@ -75,8 +90,32 @@ class TryWorkerChange
                 'written' => strlen($written) > (int) config('builder.agents.workers.max_patch_kb') * 1024 ? '' : $written,
             ];
         } finally {
-            rescue(fn () => $this->reset($workspace, $this->extractCandidateChange->baseline($workspace)), report: false);
+            if ($patch !== null) {
+                rescue(fn () => $this->reset($workspace, $this->extractCandidateChange->baseline($workspace)), report: false);
+            }
+
             $lock->release();
+        }
+    }
+
+    /**
+     * Lay the change the worker made here in the workspace, unless it is
+     * there already. Hold the lock while calling this.
+     *
+     * @throws ValidationException when the change no longer applies.
+     */
+    public function lay(Run $run, Workspace $workspace): void
+    {
+        $draft = $this->draft->patch($run);
+
+        if ($this->extractCandidateChange->handle($workspace) === $draft) {
+            return;
+        }
+
+        $this->reset($workspace, $this->extractCandidateChange->baseline($workspace));
+
+        if (trim($draft) !== '') {
+            $this->apply($workspace, $draft);
         }
     }
 
