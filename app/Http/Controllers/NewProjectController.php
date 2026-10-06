@@ -15,7 +15,7 @@ class NewProjectController extends Controller
     {
         $project = $startProjectFromTemplate->handle(
             $request->user(),
-            $request->validated('name'),
+            (string) $request->validated('name'),
             $request->validated('purpose'),
             $request->design(),
             $request->file('images', []),

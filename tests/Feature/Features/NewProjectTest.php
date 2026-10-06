@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Features;
 
+use App\Actions\Projects\StartProjectFromTemplate;
 use App\Context\ProjectNotes;
 use App\Jobs\ExecuteRun;
 use App\Models\Project;
@@ -210,14 +211,48 @@ class NewProjectTest extends TestCase
             ->assertSessionHasErrors(['purpose' => 'Tell me in a sentence or two what your app is for.']);
     }
 
-    public function test_an_app_without_a_name_says_why_it_needs_one()
+    public function test_an_app_the_owner_did_not_name_is_named_from_its_idea()
     {
         config(['builder.projects.template' => $this->makeProjectSource($this->laravelApp())]);
         $owner = User::factory()->create();
 
         $this->actingAs($owner)
-            ->post(route('projects.new.store'), ['name' => '', 'purpose' => 'Plan the week.'])
-            ->assertSessionHasErrors(['name' => 'Give your app a name, so you can tell it apart from your other apps.']);
+            ->post(route('projects.new.store'), ['name' => '  ', 'purpose' => "A small bakery takes cake orders online and staff see today's orders."])
+            ->assertSessionHasNoErrors();
+
+        $project = $owner->projects()->sole();
+        $this->assertSame('Small Bakery', $project->name);
+        $this->assertSame(1, $project->featureRequests()->count());
+    }
+
+    public function test_an_idea_with_no_name_in_it_starts_as_my_app_numbered_after_the_first()
+    {
+        config(['builder.projects.template' => $this->makeProjectSource($this->laravelApp())]);
+        $owner = User::factory()->create();
+
+        $this->actingAs($owner)->post(route('projects.new.store'), ['purpose' => 'I want to sell things.'])->assertSessionHasNoErrors();
+        $this->actingAs($owner)->post(route('projects.new.store'), ['name' => '', 'purpose' => 'Please make it for us!'])->assertSessionHasNoErrors();
+
+        $this->assertSame(['My app', 'My app 2'], $owner->projects()->orderBy('id')->pluck('name')->all());
+    }
+
+    public function test_a_name_is_taken_from_the_first_words_of_an_idea_before_any_verb()
+    {
+        $this->assertSame('Cleaners', StartProjectFromTemplate::nameFor('My cleaners see their jobs for the day, and customers book a clean online.'));
+        $this->assertSame('Yoga Studio', StartProjectFromTemplate::nameFor('An app for my yoga studio where members book classes'));
+        $this->assertSame('ISBN Shelf', StartProjectFromTemplate::nameFor('ISBN shelf: scan a book and keep it'));
+        $this->assertSame('Dog Walkers Weekly Rota', StartProjectFromTemplate::nameFor('dog walkers weekly rota planner that sends reminders'));
+        $this->assertSame('My app', StartProjectFromTemplate::nameFor('Sells things.'));
+    }
+
+    public function test_a_name_too_long_is_still_refused()
+    {
+        config(['builder.projects.template' => $this->makeProjectSource($this->laravelApp())]);
+        $owner = User::factory()->create();
+
+        $this->actingAs($owner)
+            ->post(route('projects.new.store'), ['name' => str_repeat('a', 256), 'purpose' => 'Plan the week.'])
+            ->assertSessionHasErrors('name');
 
         $this->assertSame(0, $owner->projects()->count());
     }

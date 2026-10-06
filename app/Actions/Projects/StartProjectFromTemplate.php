@@ -18,6 +18,17 @@ use RuntimeException;
 
 class StartProjectFromTemplate
 {
+    /**
+     * Words an idea starts with that are not the app's name.
+     */
+    protected const LEADING = ['a', 'an', 'the', 'my', 'our', 'your', 'i', 'we', 'me', 'us', 'please', 'it', 'this', 'want', 'need', 'would', 'like', 'to', 'make', 'build', 'create', 'app', 'apps', 'website', 'site', 'tool', 'simple', 'for', 'where', 'that', 'which', 'so', 'some'];
+
+    /**
+     * Verbs and joining words that end the name, as written or without an
+     * ending "s" or "es": "cleaners see" ends at "see", "bakery takes" at "takes".
+     */
+    protected const ENDING = ['and', 'or', 'but', 'so', 'with', 'who', 'that', 'which', 'where', 'when', 'to', 'for', 'from', 'in', 'on', 'at', 'of', 'by', 'their', 'them', 'they', 'can', 'will', 'should', 'could', 'may', 'must', 'is', 'are', 'was', 'has', 'have', 'do', 'does', 'see', 'book', 'take', 'get', 'track', 'manage', 'keep', 'find', 'order', 'sell', 'list', 'show', 'let', 'help', 'run', 'share', 'send', 'pay', 'sign', 'log', 'plan', 'check', 'add', 'post', 'buy', 'rent', 'learn', 'teach', 'write', 'read', 'store', 'save', 'use', 'make', 'build', 'ask', 'answer', 'chat', 'vote', 'want', 'need'];
+
     public function __construct(
         private CreateProject $createProject,
         private UpdateProjectNotes $updateProjectNotes,
@@ -63,7 +74,7 @@ class StartProjectFromTemplate
         }
 
         return DB::transaction(function () use ($owner, $name, $purpose, $template, $design, $images, $includes) {
-            $name = $this->freeName($owner, $name);
+            $name = $this->freeName($owner, trim($name) === '' ? self::nameFor($purpose) : $name);
             $project = $this->createProject->handle($owner, $name, $template, draftNotes: false);
             $project->forceFill(['started_here' => true])->save();
 
@@ -91,6 +102,41 @@ class StartProjectFromTemplate
 
             return $project;
         });
+    }
+
+    /**
+     * Name an app the owner did not name from the first words of its idea,
+     * so starting needs only the idea: "Small Bakery" from "A small bakery
+     * takes cake orders online". The words before the first verb or joining
+     * word are the name; when none are left, it is "My app".
+     */
+    public static function nameFor(string $purpose): string
+    {
+        $clause = preg_split('/[.,;:!?\n()]| - /u', trim($purpose))[0] ?? '';
+        $words = array_values(array_filter(array_map(
+            fn (string $word) => trim((string) preg_replace("/[^\pL\pN'&-]/u", '', $word), "'-"),
+            preg_split('/\s+/u', $clause) ?: [],
+        ), fn (string $word) => $word !== ''));
+        $name = [];
+
+        foreach ($words as $word) {
+            $lower = mb_strtolower($word);
+
+            if ($name === [] && in_array($lower, self::LEADING, true)) {
+                continue;
+            }
+
+            $forms = [$lower, (string) preg_replace('/s$/u', '', $lower), (string) preg_replace('/es$/u', '', $lower)];
+
+            if (array_intersect($forms, self::ENDING) !== [] || count($name) === 4) {
+                break;
+            }
+
+            // "ISBN" stays as written; "bakery" becomes "Bakery".
+            $name[] = $word === $lower ? Str::ucfirst($word) : $word;
+        }
+
+        return $name === [] ? __('My app') : Str::limit(implode(' ', $name), 40, '');
     }
 
     /**
