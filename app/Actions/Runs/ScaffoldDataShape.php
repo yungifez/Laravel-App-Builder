@@ -64,7 +64,9 @@ class ScaffoldDataShape
         }
 
         $reached = $this->scaffold->routes($plan->dataShape, $existing, $routes);
-        $support = $this->scaffold->support($plan->dataShape, $existing, $contents);
+        $composer = json_decode(rescue(fn () => $driver->readFile((string) $workspace->driver_id, 'composer.json'), '', false), true);
+        $packages = array_keys(is_array($composer) && is_array($composer['require'] ?? null) ? $composer['require'] : []);
+        $support = $this->scaffold->support($plan->dataShape, $existing, $contents, array_map(strval(...), $packages));
         $files = [...$this->scaffold->files($plan->dataShape, $existing, Date::now(), $attributes), ...$reached['files'], ...$support['files']];
 
         foreach ($files as $path => $contents) {

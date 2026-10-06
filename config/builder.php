@@ -1273,7 +1273,7 @@ return [
         'packages' => [
             'enabled' => (bool) env('BUILDER_PACKAGE_POLICY', true),
             'allowed' => [
-                'composer' => ['laravel/*', 'illuminate/*', 'inertiajs/*', 'livewire/*', 'pestphp/*', 'phpunit/*', 'larastan/*', 'nunomaduro/*', 'symfony/*', 'league/*', 'spatie/*', 'guzzlehttp/*', 'nesbot/carbon', 'fakerphp/faker', 'mockery/mockery', 'tightenco/ziggy'],
+                'composer' => ['laravel/*', 'illuminate/*', 'inertiajs/*', 'livewire/*', 'pestphp/*', 'phpunit/*', 'larastan/*', 'nunomaduro/*', 'symfony/*', 'league/*', 'spatie/*', 'guzzlehttp/*', 'nesbot/carbon', 'fakerphp/faker', 'mockery/mockery', 'tightenco/ziggy', 'propaganistas/laravel-phone'],
                 'npm' => ['vue', '@vue/*', '@inertiajs/*', '@laravel/*', 'laravel-vite-plugin', 'laravel-echo', 'pusher-js', 'vite', '@vitejs/*', 'vue-tsc', 'typescript', '@types/*', 'tailwindcss', '@tailwindcss/*', 'tailwind-merge', 'tw-animate-css', 'class-variance-authority', 'clsx', 'reka-ui', 'lucide-vue-next', '@vueuse/*', 'axios', 'concurrently', 'eslint', '@eslint/*', 'typescript-eslint', 'eslint-*', 'prettier', 'prettier-plugin-*'],
             ],
             'licenses' => ['MIT', 'MIT-0', 'ISC', '0BSD', 'BSD-2-Clause', 'BSD-3-Clause', 'Apache-2.0', 'Unlicense', 'CC0-1.0', 'CC-BY-4.0', 'BlueOak-1.0.0', 'Python-2.0', 'Zlib'],

@@ -129,6 +129,16 @@ class FormatSupportTest extends TestCase
         $this->assertSame(['app/Rules/ValidIsbn.php: the app already has its own file here, so ours was not written. The generated rules and casts use it; check it does what they expect.'], $support['notes']);
     }
 
+    public function test_a_phone_number_asks_the_coding_agent_to_require_its_package_unless_the_app_has_it()
+    {
+        $records = [['name' => 'Member', 'fields' => [['name' => 'phone', 'type' => 'phone', 'required' => true, 'choices' => [], 'of' => null]], 'access' => null]];
+        $note = 'Phone numbers: run `composer require propaganistas/laravel-phone`. The generated phone rules and the E164PhoneNumberCast come from it.';
+
+        $this->assertSame(['files' => [], 'notes' => [$note]], (new Scaffold)->support($records, []));
+        $this->assertSame(['files' => [], 'notes' => []], (new Scaffold)->support($records, [], [], ['laravel/framework', 'propaganistas/laravel-phone']));
+        $this->assertSame(['files' => [], 'notes' => []], (new Scaffold)->support($records, ['app/Models/Member.php']), 'a record the app has');
+    }
+
     /**
      * Run a rule as the app would: a string as it is, code as written with
      * its imports.

@@ -38,6 +38,11 @@ class Scaffold
     public const WHO = ['everyone', 'signed_in', 'creator'];
 
     /**
+     * The package that checks and stores phone numbers.
+     */
+    public const PHONE_PACKAGE = 'propaganistas/laravel-phone';
+
+    /**
      * Get the files for the shape's new records, by path.
      *
      * @param  list<Record>  $records
@@ -147,16 +152,23 @@ class Scaffold
      * from the copies kept in resources/formats. A file the app already has
      * is never written over: the same file needs nothing, and the app's own
      * version is noted, so the coding agent knows the generated code uses it.
+     * A phone number is checked by a package the coding agent requires, so
+     * the lock file changes with it.
      *
      * @param  list<Record>  $records
      * @param  list<string>  $existing  The paths the app has now
      * @param  array<string, string>  $contents  The app's own copies of these files, by path
+     * @param  list<string>  $packages  The Composer packages the app requires
      * @return array{files: array<string, string>, notes: list<string>}
      */
-    public function support(array $records, array $existing, array $contents = []): array
+    public function support(array $records, array $existing, array $contents = [], array $packages = []): array
     {
         $files = [];
         $notes = [];
+
+        if (! in_array(self::PHONE_PACKAGE, $packages, true) && $this->uses($records, $existing, FieldType::Phone)) {
+            $notes[] = 'Phone numbers: run `composer require '.self::PHONE_PACKAGE.'`. The generated phone rules and the E164PhoneNumberCast come from it.';
+        }
 
         foreach ($this->supportPaths($records, $existing) as $path) {
             $ours = (string) file_get_contents(resource_path('formats/'.substr($path, strlen('app/'))));
@@ -169,6 +181,23 @@ class Scaffold
         }
 
         return ['files' => $files, 'notes' => $notes];
+    }
+
+    /**
+     * Determine if a new record has a field of the given kind.
+     *
+     * @param  list<Record>  $records
+     * @param  list<string>  $existing
+     */
+    protected function uses(array $records, array $existing, FieldType $type): bool
+    {
+        foreach ($records as $record) {
+            if ($this->isNew($record, $existing) && in_array($type->value, array_column($record['fields'], 'type'), true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
