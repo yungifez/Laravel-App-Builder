@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Runs;
 
+use App\Actions\Features\DescribeFeatureRequest;
 use App\Actions\Runs\StartRun;
 use App\Ai\Agents\FeaturePlanner;
 use App\Ai\Agents\ShapePlanner;
@@ -173,6 +174,25 @@ class ShapeQuestionTest extends TestCase
         $this->assertSame(['room' => false, 'starts_at' => false, 'note' => false, 'outcome' => false, 'user' => true], $this->required($run));
         // Two plans, as the first answer changes the plan, and one shape.
         $this->assertSame(3, $this->plannerCalls($run));
+    }
+
+    public function test_the_time_shown_counts_from_the_owners_answer_not_from_the_wait()
+    {
+        $this->plans($this->fields());
+
+        $featureRequest = $this->request();
+        $run = app(StartRun::class)->handle($featureRequest)->refresh();
+        $describe = fn () => app(DescribeFeatureRequest::class)->handle($featureRequest->refresh())['run']['started_at'];
+
+        // Before any answer, it counts from the start.
+        $this->assertSame($run->started_at->toIso8601String(), $describe());
+
+        $this->travel(10)->minutes();
+        $answered = now()->toIso8601String();
+        $this->actingAs($featureRequest->project->owner)
+            ->post(route('feature-requests.answers.store', $featureRequest), ['answer' => ShapeQuestion::YES]);
+
+        $this->assertSame($answered, $describe());
     }
 
     protected function plannerCalls(Run $run): int

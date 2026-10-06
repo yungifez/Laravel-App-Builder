@@ -32,6 +32,7 @@ use App\Runs\Assumption;
 use App\Runs\Drivers\WorkerDriver;
 use App\Runs\Plan;
 use App\Scaffolding\ShapeWording;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Str;
 
 class DescribeFeatureRequest
@@ -397,7 +398,7 @@ class DescribeFeatureRequest
             'review' => $this->review($run),
             'progress' => $this->describeRunProgress->handle($run),
             'work' => $this->narrateWork->handle($run, $this->describeRunProgress->live($run)['story'] ?? null),
-            'started_at' => $run->started_at?->toIso8601String(),
+            'started_at' => $this->workingSince($run)?->toIso8601String(),
             'finished_at' => $run->finished_at?->toIso8601String(),
             'log' => $run->events()->get()
                 ->map(fn (RunEvent $event) => [
@@ -524,5 +525,18 @@ class DescribeFeatureRequest
                 && $this->repository->hasBranch($featureRequest->project, $featureRequest->designBranch())
                 && $preview->revision !== $this->repository->head($featureRequest->project, $featureRequest->designBranch()),
         ];
+    }
+
+    /**
+     * Get when we last took the change up: when it started, or when the
+     * owner last answered it. Time spent waiting on the owner is theirs,
+     * so the time shown counts only ours.
+     */
+    protected function workingSince(Run $run): ?CarbonImmutable
+    {
+        return $run->events()->where('type', 'status')
+            ->where('data->from', RunStatus::NeedsUserDecision->value)
+            ->reorder('sequence', 'desc')
+            ->first()->created_at ?? $run->started_at;
     }
 }
