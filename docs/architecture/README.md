@@ -38,6 +38,7 @@
     31. [External workers](direction/31-external-workers.md)
     32. [Deterministic verification engines](direction/32-deterministic-verification-engines.md)
     33. [Architectural boundaries and the chaos engine](direction/33-architecture-boundaries-and-chaos.md)
+    34. [Deterministic format policy](direction/34-format-policy.md)
 - **[source/](source/)**: the original planning documents.
     - [Implementation plan v1](source/implementation-plan-v1.md): gates G0–G6,
       the invitation contract and the pilot plan.

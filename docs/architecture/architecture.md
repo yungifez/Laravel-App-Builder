@@ -96,6 +96,11 @@ Version 33 adds the boundary rules
 effect ran in, and the change's code may not save or send while Laravel
 checks who may act, checks the input or builds the answer. The files that
 decide how the app is checked are protected from coding workers.
+Version 34 decides formats once
+([direction 34](direction/34-format-policy.md),
+[§9](#formats-decided-once-then-generated)): a phone number, a postal code
+or an amount of money is a field type with a few settings, kept in the
+notes, and the scaffold generates its rule, stored form and tests.
 When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
@@ -1220,6 +1225,124 @@ data shape, and there is no `scaffold` operation yet. The first slice: the
 planner returns the shape for data steps, the change card shows it, and a
 scaffold writes only the migration and the form request before the coding
 agent starts.
+
+### Formats: decided once, then generated
+
+Direction 34 ([direction 34](direction/34-format-policy.md)) asks that the
+format of a structured value (a phone number, a postal code, an ISBN, an
+amount of money) is decided once and then generated, not written again by
+each coding agent. This extends delegation by certainty: the fixed type
+table above already turns `email` into a column, a rule, a cast and a
+factory value. A format is one more row in that table, with a few settings.
+
+**A format is a field type with settings.** We do not add a separate policy
+object or language. `FieldType` gains `phone`, `postal_code`, `url`, `isbn`,
+`country`, `money` and `percentage`, beside the existing `email`, `date` and
+`datetime`. A field in the data shape gains `format`: a short map of the
+settings its type needs, and nothing more:
+
+| Type | Settings | Stored as | Checked by |
+|---|---|---|---|
+| `phone` | `regions` (ISO codes, or `any`) | E.164 string | the phone library's rule and cast |
+| `postal_code` | `regions` | uppercase, one inner space | our table per region, with a loose `any` rule |
+| `url` | `schemes` (`https`, or `http,https`) | the string as typed | Laravel's `url:` rule |
+| `isbn` | `variants` (`10`, `13` or both) | digits and `X`, no hyphens | our checksum rule |
+| `country` | none | ISO 3166 alpha-2 | `in:` our code list |
+| `money` | `currency` (ISO 4217, or `per_record`) | integer minor units, and a currency column when per record | `integer`, `min:0` unless negatives are asked for |
+| `percentage` | none | `decimal(5,2)` | `between:0,100` |
+| `pattern` | `pattern`, `examples` | the string as typed | `regex:`, and every example must pass it |
+
+`pattern` is the escape hatch for the app's own codes ("ABC-2026-00123").
+The planner must give two examples that the pattern accepts. The scaffold
+checks them, so a pattern that refuses its own examples never reaches the
+app. A known type is never written as a `pattern`.
+
+**Libraries own the standards; we own the choice.** Phone numbers use
+`propaganistas/laravel-phone` (libphonenumber), installed in the owner's app
+the first time a phone field is made. It passes the package checks
+([§24.2](#242-recurring-concerns-and-where-they-should-come-from)) like any other
+dependency. Postal codes, ISBN checksums and the country list are small
+tables and rules we keep, because no maintained Laravel package covers them
+better. Money stays integers and Laravel's `Number::currency()` for display;
+no money package.
+
+**What the scaffold writes.** From the same row: the column, the rule in the
+form request, the cast that stores the canonical form, the factory value,
+and a rule class in `app/Rules` where Laravel has none (`ValidIsbn`,
+`ValidPostalCode`). Messages go through the translator as plain sentences
+(`$fail('The :attribute must be a valid ISBN.')->translate()`), as the
+starter kits write theirs, so an app with `lang/` files can translate them
+and an app without them reads well. Input is tolerant: the form accepts
+spaces, hyphens and brackets, and the cast normalises. The scaffold writes no
+input masks. The screens stay with the coding agent, which receives each
+field's type, settings and an example of what a person may type.
+
+**Where a decision is kept.** In the notes, so it is per branch, undone with
+the change, and readable by the owner. `project.md` holds a "Formats"
+section for the whole app ("Phone numbers: any country"). An area's
+`capabilities/*.md` may override it ("Shipping addresses: any country").
+A field's own setting is in the data shape and the code. To find a field's
+setting, we look at the field, then its area, then the project. Each line
+says where it came from: `owner` (answered), `project` or `area`
+(inherited), `app` (read from the app's existing rules) or `standard` (the
+type has one form, such as ISBN). A model guess is never stored as a
+decision. It stays an assumption until the owner keeps it. The
+`context_entries` table in §7 would hold these too, but it is not built,
+and the notes are enough.
+
+**When to ask.** Most formats need no question:
+
+- A type with one standard (`isbn`, `url`, `country`, `percentage`) is
+  decided by the standard.
+- A region type (`phone`, `postal_code`) with a region in the field, the
+  area or the project uses it.
+- A region type with no region known is built loose (`any`). This is shown
+  as one assumption, at the glance level: "Accepts phone numbers from any
+  country · Change". Loose first is safe, because tightening later is a
+  checked change (below), and loose never refuses a real customer.
+- When the area and the project disagree (the project says Canada, the
+  shipping area says the United States), the area wins, because it is more
+  specific. When two sources at the same level disagree, the field is built
+  loose and the conflict is an assumption. It is never settled by a score.
+
+The planner asks first only when the existing gate says so: `money` with
+no currency known touches `money`, so its currency is a question. The
+options come from code, not from the model: the project's currency if one
+is noted, then "Each record has its own currency". The answer is written to
+`project.md` and is not asked again.
+
+**Tightening is a data change.** Widening a format (Canada to any country)
+is safe. Narrowing it, on a column that has rows, can make saved records
+invalid. Before such a change is built, verification runs the new rule over
+the preview database's rows and counts the ones that fail. With a count
+above zero, the owner is asked, with the count in plain words ("12 saved
+phone numbers are not Canadian. Keep them, or turn them away from now
+on?"). This uses the existing `data_loss` consequence.
+
+**Tests come from the table.** Each type has fixed examples: valid,
+invalid, and typed-to-stored pairs ("(250) 555-1234" stores as
+"+12505551234"). The scaffold writes one feature test per record that posts
+them through the record's own route. The form-input probe uses the same
+examples as its valid and wrong-kind values, so a format is probed with
+values that matter, not random strings.
+
+**The agent is held to it.** The brief lists each formatted field and says
+to use the generated rule. A check reads the change's new lines: a `regex:`
+or `preg_match` on a field whose type has a format is a review finding
+("the change wrote its own check for a phone number").
+
+**Chaos and the reviewer judge context.** Code decides the mechanical part:
+the type, the settings, the rule, the stored form and the tests. The
+reviewer (a model) judges what code cannot: two related fields with
+different formats (a billing and a shipping country), a format that is too
+strict for the business described in the notes, or an override that looks
+like a mistake. A format that refuses real input shows up in the errors
+we take in from the published app, and becomes a fix request.
+
+**Not built in the first slice:** formats for fields the app already has
+(read from its rules), keeping the original input beside the canonical one,
+display formatting by locale, tax and registration numbers, and province or
+state codes. These follow when a real app needs them.
 
 ## 10. Deterministic engines
 
