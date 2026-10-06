@@ -205,4 +205,67 @@ class OwnerNotificationTest extends TestCase
         app(TransitionRun::class)->handle($run, RunStatus::Failed, details: ['reason' => StopReason::ConstructionFailed]);
         Notification::assertSentTo($owner, ChangeNeedsYou::class, fn ($notification, array $channels) => $channels === ['database', 'mail']);
     }
+
+    public function test_a_question_still_waiting_counts_on_the_bell_once_its_note_is_read()
+    {
+        $run = $this->asking();
+        $owner = $run->featureRequest->user;
+        $owner->unreadNotifications->markAsRead();
+
+        $this->actingAs($owner)
+            ->get(route('projects.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('notifications.unread', 0)
+                ->has('notifications.waiting', 1)
+                ->where('notifications.waiting.0.id', $run->featureRequest->uuid)
+                ->where('notifications.waiting.0.title', 'I have a question about your change')
+                ->where('notifications.waiting.0.body', 'Who can invite?')
+                ->where('notifications.waiting.0.href', route('projects.show', ['project' => $run->featureRequest->project, 'change' => $run->featureRequest->uuid])));
+    }
+
+    public function test_a_question_with_an_unread_note_counts_once_and_proposed_findings_count_too()
+    {
+        $run = $this->asking();
+        $owner = $run->featureRequest->user;
+        $findings = Run::factory()->implementing()->for(FeatureRequest::factory()->for($run->featureRequest->project)->for($owner))->create();
+        app(TransitionRun::class)->handle($findings, RunStatus::NeedsUserDecision, details: ['reason' => StopReason::FindingProposed]);
+
+        $this->actingAs($owner)
+            ->get(route('projects.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('notifications.unread', 2)
+                ->has('notifications.waiting', 1)
+                ->where('notifications.waiting.0.id', $findings->featureRequest->uuid));
+    }
+
+    public function test_an_answered_set_aside_or_someone_elses_question_does_not_count()
+    {
+        $answered = $this->asking();
+        $owner = $answered->featureRequest->user;
+        app(TransitionRun::class)->handle($answered, RunStatus::Planning, attributes: ['question' => null]);
+
+        $dismissed = $this->asking(FeatureRequest::factory()->for($owner)->create(['dismissed_at' => now()]));
+        $this->asking();
+        $owner->unreadNotifications->markAsRead();
+
+        $this->actingAs($owner)
+            ->get(route('projects.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('notifications.unread', 0)
+                ->has('notifications.waiting', 0));
+        $this->assertNotNull($dismissed->refresh()->question);
+    }
+
+    /**
+     * A run waiting on its owner's answer.
+     */
+    protected function asking(?FeatureRequest $change = null): Run
+    {
+        $run = Run::factory()->implementing()->for($change ?? FeatureRequest::factory())->create();
+        app(TransitionRun::class)->handle($run, RunStatus::NeedsUserDecision, attributes: [
+            'question' => ['text' => 'Who can invite?', 'why' => '', 'options' => ['Owners', 'Everyone'], 'recommended' => null],
+        ], details: ['reason' => StopReason::Question]);
+
+        return $run->refresh();
+    }
 }

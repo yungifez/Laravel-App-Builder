@@ -25,6 +25,10 @@ import type { OwnerNotification } from '@/types';
 const page = usePage();
 const unread = computed(() => page.props.notifications?.unread ?? 0);
 const items = computed(() => page.props.notifications?.items ?? []);
+// A question still waiting needs the owner even once its note is read, as
+// the chat still asks it.
+const waiting = computed(() => page.props.notifications?.waiting ?? []);
+const needs = computed(() => unread.value + waiting.value.length);
 
 // A change takes minutes, so look for news now and then wherever the
 // owner is.
@@ -88,19 +92,17 @@ async function allow(): Promise<void> {
                 size="icon"
                 class="relative size-11 shrink-0 sm:size-9"
                 :aria-label="
-                    unread > 0
-                        ? `${unread} things need you`
-                        : 'Nothing needs you'
+                    needs > 0 ? `${needs} things need you` : 'Nothing needs you'
                 "
                 data-test="notifications"
             >
-                <BellRing v-if="unread > 0" class="size-4" />
+                <BellRing v-if="needs > 0" class="size-4" />
                 <Bell v-else class="size-4" />
                 <span
-                    v-if="unread > 0"
+                    v-if="needs > 0"
                     class="absolute top-1 right-1 grid min-w-4 place-items-center rounded-full bg-foreground px-1 text-[10px] leading-4 font-medium text-background"
                     data-test="notifications-unread"
-                    >{{ unread }}</span
+                    >{{ needs }}</span
                 >
             </Button>
         </DropdownMenuTrigger>
@@ -110,11 +112,37 @@ async function allow(): Promise<void> {
             class="w-80 max-w-[calc(100vw-2rem)]"
         >
             <p
-                v-if="items.length === 0"
+                v-if="items.length === 0 && waiting.length === 0"
                 class="px-2 py-6 text-center text-sm text-muted-foreground"
             >
                 Nothing needs you
             </p>
+            <DropdownMenuItem
+                v-for="item in waiting"
+                :key="item.id"
+                as-child
+                class="items-start gap-2 py-2"
+            >
+                <Link :href="item.href" :data-test="`waiting-${item.id}`">
+                    <MessageCircleQuestion
+                        class="mt-0.5 size-4 shrink-0 text-amber-600"
+                    />
+                    <span class="min-w-0 flex-1">
+                        <span class="block text-sm font-medium">{{
+                            item.title
+                        }}</span>
+                        <span
+                            class="block truncate text-xs text-muted-foreground"
+                            >{{ item.body }}</span
+                        >
+                        <span
+                            v-if="item.app"
+                            class="mt-0.5 block truncate text-xs text-muted-foreground/70"
+                            >{{ item.app }}</span
+                        >
+                    </span>
+                </Link>
+            </DropdownMenuItem>
             <DropdownMenuItem
                 v-for="item in items"
                 :key="item.id"

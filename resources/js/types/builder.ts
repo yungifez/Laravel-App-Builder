@@ -274,6 +274,10 @@ export type Run = {
     next_step?: 'retry' | 'settings' | 'answer' | 'contact' | null;
     question: {
         text: string;
+        /** The few details that are hard to undo, shown under the question. */
+        glance?: string[];
+        /** Everything the question covers, behind "The plan". */
+        details?: string[];
         why: string;
         options: string[];
         recommended: string | null;
@@ -1001,9 +1005,21 @@ export type OwnerNotification = {
     created_at: string | null;
 };
 
+/** A change still waiting on the owner's answer, whatever its note says. */
+export type WaitingQuestion = {
+    id: string;
+    title: string;
+    body: string;
+    app: string | null;
+    href: string;
+    created_at: string | null;
+};
+
 export type Notifications = {
     unread: number;
     items: OwnerNotification[];
+    /** Waiting questions with no unread note, so not in unread. */
+    waiting: WaitingQuestion[];
 };
 
 /** An idea the owner tries apart from their app, on its own branch. */

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Actions\Features\ListWaitingQuestions;
 use App\Features\LiftedLimit;
 use App\Models\FeatureRequest;
 use App\Models\User;
@@ -70,7 +71,10 @@ class HandleInertiaRequests extends Middleware
      * Get what needs the owner, newest first, each named with the app it
      * is about, as one list holds every app's news.
      *
-     * @return array{unread: int, items: array<int, array<mixed>>}
+     * A change still waiting on the owner's answer counts too, though its
+     * note was read or never sent, as the chat still asks.
+     *
+     * @return array{unread: int, items: array<int, array<mixed>>, waiting: array<int, array<mixed>>}
      */
     protected function notifications(User $user): array
     {
@@ -78,8 +82,12 @@ class HandleInertiaRequests extends Middleware
         $apps = $user->projects()->whereIn('id', $notifications->pluck('data.project_id')->filter())->pluck('name', 'id');
         $stopped = FeatureRequest::query()->with('latestRun')->findMany($notifications->where('data.kind', 'failed')->pluck('data.feature_request_id')->filter())->keyBy('id');
 
+        // The note's data is stored as text, so it is read here, not queried.
+        $told = $user->unreadNotifications()->get()->where('data.kind', 'question')->pluck('data.feature_request_id')->filter()->map(intval(...))->values()->all();
+
         return [
             'unread' => $user->unreadNotifications()->count(),
+            'waiting' => app(ListWaitingQuestions::class)->handle($user, $told)->all(),
             'items' => $notifications->map(fn (DatabaseNotification $notification) => [
                 'id' => $notification->id,
                 // What it says only: the numbers it keeps stay here.
