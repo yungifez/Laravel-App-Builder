@@ -666,16 +666,7 @@ const checks = computed(() => {
 <template>
     <div class="flex min-h-0 flex-1 flex-col" data-test="change-thread">
         <div class="flex h-11 shrink-0 items-center gap-1 border-b px-2">
-            <h2
-                v-if="spread"
-                class="min-w-0 truncate px-2 text-sm font-medium"
-                :title="chatTitle"
-                data-test="thread-title"
-            >
-                {{ chatTitle }}
-            </h2>
             <Button
-                v-else
                 variant="ghost"
                 size="sm"
                 class="h-11 gap-1 px-2 text-muted-foreground select-none sm:h-8"
@@ -687,9 +678,20 @@ const checks = computed(() => {
                     preserve-state
                     data-test="thread-back"
                 >
-                    <ArrowLeft class="size-4" /> All changes
+                    <ArrowLeft class="size-4" />
+                    <span :class="spread && 'sr-only'">All changes</span>
                 </Link>
             </Button>
+            <!-- On the whole screen the chats are listed beside it, so the
+                 way back is an arrow and the chat's name is the title. -->
+            <h2
+                v-if="spread"
+                class="min-w-0 truncate text-sm font-medium"
+                :title="chatTitle"
+                data-test="thread-title"
+            >
+                {{ chatTitle }}
+            </h2>
             <Button
                 variant="ghost"
                 size="sm"
@@ -1362,6 +1364,77 @@ const checks = computed(() => {
                             </Form>
                         </div>
 
+                        <!-- Deeper answers, for whoever wants them. Above all
+                             that it changes, so the switch never moves under
+                             the owner's finger. A change
+                             I could not finish has none to give, unless it
+                             was made first: then the switch stays, or a
+                             deep level would show with no way back. -->
+                        <div
+                            v-if="
+                                run?.plan &&
+                                !run.plan.answer &&
+                                !sides &&
+                                (!failed || built)
+                            "
+                            class="flex items-center gap-1"
+                        >
+                            <div
+                                class="flex flex-1 rounded-md bg-muted p-0.5"
+                                role="group"
+                                aria-label="How much detail"
+                                data-test="detail-level"
+                            >
+                                <button
+                                    v-for="option in depths"
+                                    :key="option.level"
+                                    type="button"
+                                    :aria-pressed="depth === option.level"
+                                    :class="[
+                                        'min-h-11 flex-1 rounded text-xs select-none sm:min-h-7',
+                                        depth === option.level
+                                            ? 'bg-background font-medium shadow-sm'
+                                            : 'text-muted-foreground hover:text-foreground',
+                                    ]"
+                                    :data-test="`detail-${option.level}`"
+                                    @click="setDepth(option.level)"
+                                >
+                                    {{ option.label }}
+                                </button>
+                            </div>
+                            <!-- Hidden, not removed, off the Code level, so
+                                 the switch keeps its width. -->
+                            <Button
+                                v-if="request.files.length > 0"
+                                variant="ghost"
+                                size="icon"
+                                :class="[
+                                    'hidden size-8 shrink-0 text-muted-foreground lg:inline-flex',
+                                    depth !== 4 && 'invisible',
+                                ]"
+                                :tabindex="depth === 4 ? undefined : -1"
+                                :aria-hidden="depth === 4 ? undefined : true"
+                                :aria-pressed="wantsFull"
+                                :aria-label="
+                                    wantsFull
+                                        ? 'Leave full screen'
+                                        : 'Full screen'
+                                "
+                                :title="
+                                    wantsFull
+                                        ? 'Leave full screen'
+                                        : 'Full screen'
+                                "
+                                data-test="code-full"
+                                @click="toggleFull"
+                            >
+                                <component
+                                    :is="wantsFull ? Minimize2 : Maximize2"
+                                    class="size-4"
+                                />
+                            </Button>
+                        </div>
+
                         <!-- What changed, before and now -->
                         <ul
                             v-if="asked.length > 0"
@@ -2008,68 +2081,6 @@ const checks = computed(() => {
                                     }}
                                 </button>
                             </Form>
-                        </div>
-
-                        <!-- Deeper answers, for whoever wants them. A change
-                             I could not finish has none to give, unless it
-                             was made first: then the switch stays, or a
-                             deep level would show with no way back. -->
-                        <div
-                            v-if="
-                                run?.plan &&
-                                !run.plan.answer &&
-                                !sides &&
-                                (!failed || built)
-                            "
-                            class="flex items-center gap-1"
-                        >
-                            <div
-                                class="flex flex-1 rounded-md bg-muted p-0.5"
-                                role="group"
-                                aria-label="How much detail"
-                                data-test="detail-level"
-                            >
-                                <button
-                                    v-for="option in depths"
-                                    :key="option.level"
-                                    type="button"
-                                    :aria-pressed="depth === option.level"
-                                    :class="[
-                                        'min-h-11 flex-1 rounded text-xs select-none sm:min-h-7',
-                                        depth === option.level
-                                            ? 'bg-background font-medium shadow-sm'
-                                            : 'text-muted-foreground hover:text-foreground',
-                                    ]"
-                                    :data-test="`detail-${option.level}`"
-                                    @click="setDepth(option.level)"
-                                >
-                                    {{ option.label }}
-                                </button>
-                            </div>
-                            <Button
-                                v-if="depth === 4 && request.files.length > 0"
-                                variant="ghost"
-                                size="icon"
-                                class="hidden size-8 shrink-0 text-muted-foreground lg:inline-flex"
-                                :aria-pressed="wantsFull"
-                                :aria-label="
-                                    wantsFull
-                                        ? 'Leave full screen'
-                                        : 'Full screen'
-                                "
-                                :title="
-                                    wantsFull
-                                        ? 'Leave full screen'
-                                        : 'Full screen'
-                                "
-                                data-test="code-full"
-                                @click="toggleFull"
-                            >
-                                <component
-                                    :is="wantsFull ? Minimize2 : Maximize2"
-                                    class="size-4"
-                                />
-                            </Button>
                         </div>
 
                         <Teleport defer :to="'#beside-code'" :disabled="!sides">

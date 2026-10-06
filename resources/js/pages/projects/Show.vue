@@ -209,7 +209,9 @@ const chatCentred = computed(() => panelFull.value && !codeOnScreen.value);
 // put while the owner moves between chats, so nothing jumps; a chat
 // without a plan yet says so on the right. The tabs above line up with the
 // chat.
-const SIDES = { left: '16rem', right: 'clamp(22rem, 28vw, 30rem)' };
+// Both sides the same width, so the chat sits in the middle of the page.
+const SIDE = 'clamp(18rem, 24vw, 26rem)';
+const SIDES = { left: SIDE, right: SIDE };
 const desktop = useScreen('(min-width: 1024px)');
 const wide = useScreen('(min-width: 1280px)');
 const threadSides = ref(false);

@@ -204,10 +204,27 @@ it('keeps the three columns in place when the owner moves to a chat without a pl
         ->assertMissing('@beside-waiting')
         ->click('@chat-list-'.$planning->uuid)
         ->assertSeeIn('@thread-title', 'Show who was active last week.')
+        // The way back to every change stays on the whole screen too.
+        ->assertVisible('@thread-back')
         ->assertVisible('@chat-list')
         ->assertVisible('@beside-panel')
         ->assertSeeIn('@beside-waiting', 'The plan shows here once I know what to build.')
         ->assertNoJavaScriptErrors();
+});
+
+it('gives the chat list and the panel beside the chat the same width', function () {
+    $this->actingAs($this->owner);
+    $planning = Run::factory()->for(
+        FeatureRequest::factory()->for($this->project)->state(['prompt' => 'Show who was active last week.']),
+    )->create()->featureRequest;
+
+    $page = askForInvitations($this->project)
+        ->resize(1440, 900)
+        ->click('@chat-list-'.$planning->uuid)
+        ->assertVisible('@beside-panel');
+    $width = fn (string $test) => (int) round((float) $page->script("document.querySelector('[data-test={$test}]').getBoundingClientRect().width"));
+
+    expect(abs($width('chat-list') - $width('beside-panel')))->toBeLessThanOrEqual(2);
 });
 
 it('says a stopped chat will not get a plan, rather than promise one', function () {

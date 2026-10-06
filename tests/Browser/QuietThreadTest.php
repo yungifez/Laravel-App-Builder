@@ -170,3 +170,20 @@ it('asks the planner’s own question with no glance lines and no plan link', fu
         ->assertMissing('[data-test="question-plan-open"]')
         ->assertNoJavaScriptErrors();
 });
+
+it('keeps the detail switch in place whichever level the owner picks', function () {
+    $change = decidedChange(['Bookings are kept after a class is deleted.'], ['Times show in the gym’s time zone.']);
+    $page = quietChat($change);
+    // Where it sits in the chat, wherever the chat is scrolled to: a click
+    // scrolls its button into view first.
+    $at = fn () => (string) $page->script("(() => { const scroller = document.querySelector('[data-test=change-thread] .overflow-y-auto'); const box = document.querySelector('[data-test=detail-level]').getBoundingClientRect(); return Math.round(box.top - scroller.getBoundingClientRect().top + scroller.scrollTop) + ',' + Math.round(box.width); })()");
+
+    $first = $at();
+
+    foreach ([2, 3, 4, 1] as $level) {
+        $page->click("@detail-{$level}");
+        expect($at())->toBe($first);
+    }
+
+    $page->assertNoJavaScriptErrors();
+});
