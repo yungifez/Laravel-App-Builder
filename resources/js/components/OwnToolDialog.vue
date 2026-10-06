@@ -56,7 +56,7 @@ const variable = 'APP_TOOL_TOKEN';
 const connect = computed(() =>
     tool.value === 'claude'
         ? `claude mcp remove --scope user ${props.name} 2>/dev/null; claude mcp add --scope user --transport http ${props.name} ${props.address} --header "Authorization: Bearer ${token.value}"`
-        : `export ${variable}=${token.value}; codex mcp remove ${props.name} 2>/dev/null; codex mcp add ${props.name} --url ${props.address} --bearer-token-env-var ${variable}`,
+        : `export ${variable}='${token.value}'; codex mcp remove ${props.name} 2>/dev/null; codex mcp add ${props.name} --url ${props.address} --bearer-token-env-var ${variable}`,
 );
 
 const ask = computed(
