@@ -16,6 +16,7 @@ use App\Actions\Features\ProposeFindings;
 use App\Actions\Features\RequestVerification;
 use App\Actions\Operations\SummarizeSpend;
 use App\Actions\Previews\RequestPreview;
+use App\Actions\Previews\WarmChangePreview;
 use App\Actions\Workspaces\DestroyWorkspace;
 use App\Context\Capability;
 use App\Context\ChangeClassification;
@@ -95,6 +96,7 @@ class ConstructRun
         private AssessVerifyItems $assessVerifyItems,
         private FormatChange $formatChange,
         private RequestPreview $requestPreview,
+        private WarmChangePreview $warmChangePreview,
         private SummarizeSpend $summarizeSpend,
         private MeasureUsage $measureUsage,
         private AcceptFindings $acceptFindings,
@@ -505,6 +507,11 @@ class ConstructRun
         // starts, and put back after it: the change must pass them as written.
         $this->writeTestsFirst->place($workspace, $plan);
 
+        // A worker outside our boxes may take hours, so only our agents warm a preview.
+        if ($run->driver !== 'worker' && $run->repairs === 0) {
+            rescue(fn () => $this->warmChangePreview->start($run->featureRequest));
+        }
+
         $account = $driver->build($run, $plan, new ToolSession($this->toolExecutor, $run, $lease));
         // A worker made its code pass the tests in its own copy, so a written
         // test it changed cannot just be put back: the change goes back.
@@ -604,7 +611,11 @@ class ConstructRun
         // The owner can try the change while it is checked and reviewed;
         // keeping it still waits for both.
         if (config('builder.preview.automatic')) {
-            $this->requestPreview->automatically($run->featureRequest->refresh());
+            $featureRequest = $run->featureRequest->refresh();
+
+            if (! rescue(fn () => $this->warmChangePreview->land($featureRequest), false)) {
+                $this->requestPreview->automatically($featureRequest);
+            }
         }
     }
 

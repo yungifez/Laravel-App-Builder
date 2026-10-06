@@ -522,7 +522,9 @@ class DescribeFeatureRequest
      */
     protected function latestPreview(FeatureRequest $featureRequest): ?array
     {
-        $preview = $featureRequest->previews()->latest('id')->first();
+        // A first version's preview warms up before the change is made; it
+        // is shown once there is a change in it.
+        $preview = trim((string) $featureRequest->patch) === '' ? null : $featureRequest->previews()->latest('id')->first();
 
         return $preview === null ? null : [
             'id' => $preview->uuid,

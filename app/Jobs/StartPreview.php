@@ -144,6 +144,12 @@ class StartPreview implements ShouldQueue
             if ($ready === 0) {
                 throw new PreviewStopped;
             }
+
+            // A change that landed on the branch while the copy started,
+            // as a first version's does, is brought in now.
+            if ($featureRequest !== null && $this->preview->editable && $repository->head($project, $featureRequest->designBranch()) !== $this->preview->revision) {
+                RebuildPreview::dispatch($this->preview);
+            }
         } catch (Throwable $exception) {
             // The owner opened a newer copy, or closed this one, while it
             // started. Its workspace was closed under it, which can stop

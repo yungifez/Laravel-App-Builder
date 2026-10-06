@@ -2,7 +2,9 @@
 
 namespace Tests\Feature\Runs;
 
+use App\Actions\Features\OpenChangeForDesign;
 use App\Actions\Features\RetryFeatureRequest;
+use App\Actions\Projects\CreateProject;
 use App\Actions\Runs\AcquireRunLease;
 use App\Actions\Runs\CancelRun;
 use App\Actions\Runs\CompleteRunVerification;
@@ -18,6 +20,7 @@ use App\Enums\VerificationStatus;
 use App\Enums\WorkspaceStatus;
 use App\Events\RunStatusChanged;
 use App\Jobs\ExecuteRun;
+use App\Jobs\RebuildPreview;
 use App\Jobs\StartPreview;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\FeatureRequest;
@@ -25,8 +28,10 @@ use App\Models\Project;
 use App\Models\Run;
 use App\Models\User;
 use App\Models\Verification;
+use App\Projects\ProjectRepository;
 use App\Runs\ConstructionDriverManager;
 use App\Runs\Contracts\ConstructionDriver;
+use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\InvalidRunTransition;
 use App\Runs\Exceptions\LeaseLost;
 use App\Runs\Exceptions\RunCancelled;
@@ -107,6 +112,76 @@ class RunLifecycleTest extends TestCase
 
         $this->actingAs($featureRequest->project->owner)->get(route('projects.show', ['project' => $featureRequest->project, 'change' => $featureRequest->uuid]))
             ->assertInertia(fn (Assert $page) => $page->where('change.preview.status', 'starting')->where('change.featureRequest.can_accept', false));
+    }
+
+    public function test_a_first_versions_preview_warms_while_the_coder_works_and_takes_the_change_when_it_lands()
+    {
+        config(['builder.preview.automatic' => true, 'builder.preview.queue' => 'previews']);
+        Queue::fake([VerifyFeatureRequest::class, StartPreview::class, RebuildPreview::class]);
+        $this->useDriver(function (Run $run, ToolSession $tools) {
+            // The preview started on the app as it was while the coder works.
+            $preview = $run->featureRequest->previews()->sole();
+            $preview->update(['status' => PreviewStatus::Ready, 'revision' => app(OpenChangeForDesign::class)->handle($run->featureRequest->refresh())]);
+
+            $this->actingAs($run->featureRequest->project->owner)->get(route('projects.show', ['project' => $run->featureRequest->project, 'change' => $run->featureRequest->uuid]))
+                ->assertInertia(fn (Assert $page) => $page->where('change.preview', null));
+
+            $tools->call('write', 'write_file', ['path' => 'app/Invitation.php', 'contents' => "<?php\n", 'expected_sha256' => null], $tools->revision());
+
+            return 'Done.';
+        });
+
+        $run = app(StartRun::class)->handle($featureRequest = $this->firstVersionRequest())->refresh();
+
+        $preview = $featureRequest->previews()->sole();
+        $head = app(ProjectRepository::class)->head($featureRequest->project, $featureRequest->refresh()->designBranch());
+        $this->assertSame([RunStatus::Verifying, PreviewStatus::Ready], [$run->status, $preview->status]);
+        $this->assertSame("<?php\n", app(ProjectRepository::class)->show($featureRequest->project, $head, 'app/Invitation.php'));
+        Queue::assertPushedOn('previews', RebuildPreview::class, fn (RebuildPreview $job) => $job->preview->is($preview));
+        Queue::assertPushed(StartPreview::class, 1);
+
+        $this->actingAs($featureRequest->project->owner)->get(route('projects.show', ['project' => $featureRequest->project, 'change' => $featureRequest->uuid]))
+            ->assertInertia(fn (Assert $page) => $page->where('change.preview.status', 'ready')->where('change.preview.updating', true));
+    }
+
+    public function test_a_first_version_that_is_not_built_lets_its_warm_preview_go()
+    {
+        config(['builder.preview.automatic' => true]);
+        Queue::fake([VerifyFeatureRequest::class, StartPreview::class, RebuildPreview::class]);
+        $this->useDriver(function (Run $run) {
+            $run->featureRequest->previews()->sole()->update(['status' => PreviewStatus::Ready, 'revision' => app(OpenChangeForDesign::class)->handle($run->featureRequest->refresh())]);
+
+            throw new ConstructionFailed('The coder stopped.');
+        });
+
+        $run = app(StartRun::class)->handle($featureRequest = $this->firstVersionRequest())->refresh();
+
+        $this->assertSame(RunStatus::Failed, $run->status);
+        $this->assertSame(PreviewStatus::Stopped, $featureRequest->previews()->sole()->status);
+        $this->assertFalse(app(ProjectRepository::class)->hasBranch($featureRequest->project, $featureRequest->designBranch()));
+        $this->assertNull($featureRequest->refresh()->design_base);
+        Queue::assertNotPushed(RebuildPreview::class);
+    }
+
+    public function test_a_later_change_starts_its_preview_once_it_is_built()
+    {
+        config(['builder.preview.automatic' => true]);
+        Queue::fake([VerifyFeatureRequest::class, StartPreview::class, RebuildPreview::class]);
+        $first = $this->firstVersionRequest();
+        $featureRequest = FeatureRequest::factory()->for($first->project)->create(['prompt' => 'Let owners invite people again.', 'base_revision' => $first->base_revision]);
+        $this->useDriver(function (Run $run, ToolSession $tools) {
+            $this->assertSame(0, $run->featureRequest->previews()->count(), 'Nothing warms for a later change.');
+            $tools->call('write', 'write_file', ['path' => 'app/Invitation.php', 'contents' => "<?php\n", 'expected_sha256' => null], $tools->revision());
+
+            return 'Done.';
+        });
+
+        $run = app(StartRun::class)->handle($featureRequest)->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(PreviewStatus::Starting, $featureRequest->previews()->sole()->status);
+        Queue::assertPushed(StartPreview::class, 1);
+        Queue::assertNotPushed(RebuildPreview::class);
     }
 
     public function test_a_duplicate_delivery_does_not_repeat_the_work()
@@ -513,6 +588,18 @@ class RunLifecycleTest extends TestCase
         $project = Project::factory()->create(['source_path' => "{$solutions}/source"]);
 
         return FeatureRequest::factory()->for($project)->create(['prompt' => 'Let owners invite people.']);
+    }
+
+    /**
+     * The first change asked of a project whose code is kept in its own
+     * repository, as a project made in the builder is.
+     */
+    protected function firstVersionRequest(): FeatureRequest
+    {
+        $solutions = $this->useReferenceSolutions();
+        $project = app(CreateProject::class)->handle(User::factory()->create(), 'Invites', "{$solutions}/source");
+
+        return FeatureRequest::factory()->for($project)->create(['prompt' => 'Let owners invite people.', 'base_revision' => app(ProjectRepository::class)->head($project)]);
     }
 
     /**

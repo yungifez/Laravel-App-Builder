@@ -1369,6 +1369,9 @@ return [
         // is checked and reviewed. Previews go to their own queue when one
         // is named; give it its own worker so they start in parallel.
         'automatic' => (bool) env('BUILDER_PREVIEW_AUTOMATIC', true),
+        // A project's first change starts its preview while the coder works,
+        // so the built change only has to be handed to it.
+        'warm' => (bool) env('BUILDER_PREVIEW_WARM', true),
         'queue' => env('BUILDER_PREVIEW_QUEUE'),
         'workspace_driver' => env('BUILDER_PREVIEW_WORKSPACE_DRIVER', env('WORKSPACE_DRIVER', 'local')),
         'domain' => env('BUILDER_PREVIEW_DOMAIN', 'preview.localhost'),
