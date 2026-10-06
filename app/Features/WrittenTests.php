@@ -30,7 +30,32 @@ class WrittenTests
      */
     public static function check(array $output, array $kinds, callable $exists): array
     {
+        $sorted = self::sort($output, $kinds, $exists);
+
+        if ($sorted['problems'] !== []) {
+            throw new ConstructionFailed(implode("\n", $sorted['problems']));
+        }
+
+        return ['files' => $sorted['files'], 'tests' => $sorted['tests']];
+    }
+
+    /**
+     * Check the writer's output by the same rules, keeping the files that
+     * keep every rule. A file that breaks one, or holds a test that does,
+     * is refused whole: the coder may not change a written test, so a bad
+     * test in a kept file could never be met. Output over the size limits
+     * keeps nothing.
+     *
+     * @param  array<string, mixed>  $output  The writer's structured output
+     * @param  list<string>  $kinds  The case of each item the tests must check (base, alternate or exception), item 1 first
+     * @param  callable(string): bool  $exists  Whether a file already exists in the app
+     * @return array{files: array<string, string>, tests: list<array{item: int, file: string, name: string}>, refused: array<string, list<string>>, others: list<string>, problems: list<string>}
+     */
+    public static function sort(array $output, array $kinds, callable $exists): array
+    {
         $items = count($kinds);
+        $refusedFiles = [];
+        $others = [];
         $problems = [];
         $files = [];
         $bytes = 0;
@@ -49,24 +74,36 @@ class WrittenTests
                 default => null,
             };
 
-            if ($problem !== null) {
-                $problems[] = $problem;
-            } else {
+            if ($problem === null) {
                 $files[$path] = $contents;
+            } else {
+                $problems[] = $problem;
+
+                // A path given twice keeps its first file.
+                if ($path === '' || str_contains($path, '..') || isset($files[$path])) {
+                    $others[] = $problem;
+                } else {
+                    $refusedFiles[$path][] = $problem;
+                }
             }
         }
 
         if ($files === [] && $problems === []) {
-            $problems[] = __('No test files were written.');
+            $problems[] = $others[] = __('No test files were written.');
         }
 
+        $tooMuch = [];
+
         if (count($files) > (int) config('builder.verification.written_first.max_files')) {
-            $problems[] = __('Write at most :max files.', ['max' => (int) config('builder.verification.written_first.max_files')]);
+            $tooMuch[] = __('Write at most :max files.', ['max' => (int) config('builder.verification.written_first.max_files')]);
         }
 
         if ($bytes > (int) config('builder.verification.written_first.max_bytes')) {
-            $problems[] = __('The files are too long. Keep each test to what its item needs.');
+            $tooMuch[] = __('The files are too long. Keep each test to what its item needs.');
         }
+
+        array_push($problems, ...$tooMuch);
+        array_push($others, ...$tooMuch);
 
         $tests = [];
         $named = [];
@@ -93,6 +130,12 @@ class WrittenTests
                 // Its reason is given, so it is not also said to have no test.
                 $refused[$item] = true;
 
+                if (isset($files[$path])) {
+                    $refusedFiles[$path][] = $problem;
+                } else {
+                    $others[] = $problem;
+                }
+
                 continue;
             }
 
@@ -102,17 +145,21 @@ class WrittenTests
 
         foreach (range(1, max($items, 1)) as $item) {
             if ($items > 0 && ! isset($tests[$item]) && ! isset($refused[$item])) {
-                $problems[] = __('Item :item has no test.', ['item' => $item]);
+                $problems[] = $others[] = __('Item :item has no test.', ['item' => $item]);
             }
         }
 
-        if ($problems !== []) {
-            throw new ConstructionFailed(implode("\n", array_unique($problems)));
-        }
-
+        $kept = $tooMuch === [] ? array_diff_key($files, $refusedFiles) : [];
+        $tests = array_filter($tests, fn (array $test) => isset($kept[$test['file']]));
         ksort($tests);
 
-        return ['files' => $files, 'tests' => array_values($tests)];
+        return [
+            'files' => $kept,
+            'tests' => array_values($tests),
+            'refused' => array_map(fn (array $reasons) => array_values(array_unique(array_filter($reasons, is_string(...)))), $refusedFiles),
+            'others' => array_values(array_unique(array_filter($others, is_string(...)))),
+            'problems' => array_values(array_unique(array_filter($problems, is_string(...)))),
+        ];
     }
 
     /**

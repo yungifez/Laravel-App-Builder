@@ -173,6 +173,13 @@ class WriteBrief
             $sections[] = $run->driver === 'worker'
                 ? "## Tests already written\n\nThese tests were written from the plan before you started, one for each item above. Before you start, add each file below to your copy exactly as written. Build the change so they pass, and hand them back in your patch unchanged: a change that alters them is sent back, and the change is only accepted when they pass. You need not write other tests for these items.\n\n".$this->list(array_map(fn (array $test) => "{$test['item']}. {$test['file']}: {$test['name']}", $plan->writtenTests))."\n\n".$this->writtenFiles($plan)
                 : "## Tests already written\n\nThese tests were written from the plan before you started, one for each item above, and they are already in the app. Build the change so they pass. Do not change them: they are put back as written when you finish, and the change is only accepted when they pass. You need not write other tests for these items.\n\n".$this->list(array_map(fn (array $test) => "{$test['item']}. {$test['file']}: {$test['name']}", $plan->writtenTests));
+
+            $written = array_column($plan->writtenTests, 'item');
+            $unwritten = array_values(array_filter(array_keys($plan->verifyItems()), fn (int $index) => ! in_array($index + 1, $written, true)));
+
+            if ($unwritten !== []) {
+                $sections[] = "## Items with no test written yet\n\nNo test was written for these items. Write one test for each yourself, as the acceptance criteria say.\n\n".$this->list(array_map(fn (int $index) => ($index + 1).'. '.$plan->verifyItems()[$index]['text'], $unwritten));
+            }
         }
 
         if (($scaffolded = $this->scaffolded($run, 'files')) !== []) {

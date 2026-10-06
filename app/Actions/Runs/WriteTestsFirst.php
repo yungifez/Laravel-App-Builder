@@ -36,9 +36,11 @@ class WriteTestsFirst
      * Have another model write the tests for each item the plan's tests
      * must check, before the change is built (§12). The coder cannot fit
      * them to its own code: they are written into the workspace before it
-     * starts and put back after it finishes. Output that breaks the rules
-     * in WrittenTests is asked for once more; when it still breaks them,
-     * the change is built as before, with tests the coder writes.
+     * starts and put back after it finishes. Files that keep the rules in
+     * WrittenTests are kept, and only the refused ones are asked for once
+     * more. An item still without a kept test is left to the coder; when
+     * none is kept, the change is built as before, with tests the coder
+     * writes.
      */
     public function handle(Run $run, Plan $plan, Workspace $workspace, PlanningContext $context): Plan
     {
@@ -57,13 +59,16 @@ class WriteTestsFirst
         )->output)));
 
         $prompt = $this->prompt($plan, $items, $context, $workspace, $existing);
+        $ask = $prompt;
         $attempts = max(1, (int) config('builder.verification.written_first.attempts'));
+        $kinds = array_column($items, 'kind');
+        $kept = ['files' => [], 'tests' => []];
 
         for ($attempt = 1; ; $attempt++) {
             RunCancelled::throwIfCancelling($run);
 
             try {
-                $response = app(AiAttempts::class)->for($run, fn () => TestWriter::make()->prompt($prompt, provider: ModelRole::Reviewer->providers()));
+                $response = app(AiAttempts::class)->for($run, fn () => TestWriter::make()->prompt($ask, provider: ModelRole::Reviewer->providers()));
             } catch (FailoverableException $exception) {
                 throw ProvidersUnavailable::afterFailover($exception);
             } catch (RequestException $exception) {
@@ -75,25 +80,79 @@ class WriteTestsFirst
 
             $this->recordModelUsage->handle($run, ModelRole::Reviewer, $response);
 
-            try {
-                if (! $response instanceof StructuredAgentResponse) {
-                    throw new ConstructionFailed(__('Return the files and the tests as structured output.'));
-                }
+            // The files kept from the last answer come first, so a file
+            // or test given again never replaces one already kept.
+            $sorted = $response instanceof StructuredAgentResponse
+                ? WrittenTests::sort($this->withKept($kept, $response->structured), $kinds, fn (string $path) => in_array($path, $existing, true))
+                : ['files' => $kept['files'], 'tests' => $kept['tests'], 'refused' => [], 'others' => [(string) __('Return the files and the tests as structured output.')], 'problems' => [(string) __('Return the files and the tests as structured output.')]];
+            $kept = ['files' => $sorted['files'], 'tests' => $sorted['tests']];
 
-                $written = WrittenTests::check($response->structured, array_column($items, 'kind'), fn (string $path) => in_array($path, $existing, true));
-                $run->recordEvent('tests_written', ['files' => array_keys($written['files']), 'tests' => count($written['tests'])]);
+            if ($sorted['problems'] !== [] && $attempt < $attempts) {
+                $ask = $prompt."\n\n".$this->retry($sorted);
 
-                return $plan->withWrittenTests($written['files'], $written['tests']);
-            } catch (ConstructionFailed $exception) {
-                if ($attempt >= $attempts) {
-                    $run->recordEvent('tests_not_written', ['error' => Str::limit($exception->getMessage(), 2000)]);
-
-                    return $plan;
-                }
-
-                $prompt .= "\n\n## Your previous tests were refused\n\n{$exception->getMessage()}\nReturn every file and test again, with this fixed.";
+                continue;
             }
+
+            if ($kept['tests'] === []) {
+                $run->recordEvent('tests_not_written', ['error' => Str::limit(implode("\n", $sorted['problems']), 2000)]);
+
+                return $plan;
+            }
+
+            // An item whose test was refused is left to the coder, who
+            // writes its test as for any change, and the review holds it
+            // to that test.
+            $covered = array_column($kept['tests'], 'item');
+            $dropped = array_values(array_filter(array_map(fn (array $item, int $index) => in_array($index + 1, $covered, true) ? null : ['item' => $index + 1, 'case' => $item['text']], $items, array_keys($items))));
+
+            $run->recordEvent('tests_written', [
+                'files' => array_keys($kept['files']),
+                'tests' => count($kept['tests']),
+                ...($dropped === [] ? [] : ['dropped' => $dropped, 'reasons' => array_map(fn (string $reason) => Str::limit($reason, 300), $sorted['problems'])]),
+            ]);
+
+            return $plan->withWrittenTests($kept['files'], $kept['tests']);
         }
+    }
+
+    /**
+     * Put the files and tests kept so far before the writer's new answer.
+     *
+     * @param  array{files: array<string, string>, tests: list<array{item: int, file: string, name: string}>}  $kept
+     * @param  array<string, mixed>  $output
+     * @return array<string, mixed>
+     */
+    protected function withKept(array $kept, array $output): array
+    {
+        return [
+            'files' => [
+                ...array_map(fn (string $path, string $contents) => ['path' => $path, 'contents' => $contents], array_keys($kept['files']), $kept['files']),
+                ...(is_array($output['files'] ?? null) ? array_values($output['files']) : []),
+            ],
+            'tests' => [...$kept['tests'], ...(is_array($output['tests'] ?? null) ? array_values($output['tests']) : [])],
+        ];
+    }
+
+    /**
+     * Say what was refused and ask again only for that: the files kept
+     * stay as they are.
+     *
+     * @param  array{files: array<string, string>, tests: list<array{item: int, file: string, name: string}>, refused: array<string, list<string>>, others: list<string>, problems: list<string>}  $sorted
+     */
+    protected function retry(array $sorted): string
+    {
+        if ($sorted['files'] === []) {
+            return "## Your previous tests were refused\n\n".implode("\n", $sorted['problems'])."\nReturn every file and test again, with this fixed.";
+        }
+
+        $refused = array_map(fn (string $path, array $reasons) => "- {$path}: ".implode(' ', $reasons), array_keys($sorted['refused']), $sorted['refused']);
+
+        return implode("\n\n", array_filter([
+            "## Some of your previous tests were refused\n\nThese files were kept as they are. Do not return them, and do not write tests for their items again:\n\n".implode("\n", array_map(fn (array $test) => "- {$test['file']}: {$test['name']} (item {$test['item']})", $sorted['tests'])),
+            $refused === [] ? null : "These files were refused, each for the reason given:\n\n".implode("\n", $refused),
+            $sorted['others'] === [] ? null : "Also:\n\n- ".implode("\n- ", $sorted['others']),
+            'Return only the files for the items that have no kept test, each with its test, with this fixed. A refused file may keep its path.',
+        ]));
     }
 
     /**

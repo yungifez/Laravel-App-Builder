@@ -52,11 +52,13 @@ class AssessVerifyItems
         $suitePassed = ($suite['outcome'] ?? null) === 'passed';
         $ran = $suite['tests'] ?? null;
         $diffs = array_column(PatchSummary::files($patch), 'diff', 'path');
-        // Written before the change, the test for each item is known; the
-        // reviewer's word is needed only when the coder wrote the tests.
-        $claims = $plan->writtenTests !== []
-            ? collect($plan->writtenTests)->mapWithKeys(fn (array $test) => [$test['item'] => ['test_file' => $test['file'], 'test_name' => $test['name']]])
-            : collect($review->verify)->keyBy('criterion');
+        // Written before the change, the test for an item is known; the
+        // reviewer's word is needed only for an item whose test the coder
+        // wrote, as when its written test was refused.
+        $claims = collect(array_replace(
+            collect($review->verify)->keyBy('criterion')->all(),
+            collect($plan->writtenTests)->mapWithKeys(fn (array $test) => [$test['item'] => ['test_file' => $test['file'], 'test_name' => $test['name']]])->all(),
+        ));
         /** @var list<array{file: string, name: string, without_change: string}> $newTests */
         $newTests = is_array($evidence['new_tests'] ?? null) ? $evidence['new_tests'] : [];
         /** @var array<string, bool>|null $refusals */
