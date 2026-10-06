@@ -30,6 +30,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property DeploymentStatus $status
  * @property list<array{name: string, passed: bool, output?: string}>|null $checks What a failed check said is for the builder, never the owner
  * @property string|null $error
+ * @property 'settings'|'ours'|null $error_cause Who can put the failure right: the owner's publishing settings, or us
+ * @property string|null $error_details What the host or Git said behind the failure, for Details only
  * @property CarbonImmutable|null $pushed_at
  * @property CarbonImmutable|null $confirmed_at When the app answered its checks at its address
  * @property list<array{path: string, status: int|null, passed: bool, key?: string}>|null $health The latest checks of the app's address, sign-in included
@@ -40,7 +42,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['user_id', 'commit_sha', 'restores_deployment_id', 'release_sha', 'backup_id', 'data_loss_confirmed_at', 'branch', 'host', 'host_release_id', 'host_status', 'status', 'checks', 'error', 'pushed_at', 'confirmed_at', 'health', 'live_errors', 'live_errors_checked_at', 'finished_at'])]
+#[Fillable(['user_id', 'commit_sha', 'restores_deployment_id', 'release_sha', 'backup_id', 'data_loss_confirmed_at', 'branch', 'host', 'host_release_id', 'host_status', 'status', 'checks', 'error', 'error_cause', 'error_details', 'pushed_at', 'confirmed_at', 'health', 'live_errors', 'live_errors_checked_at', 'finished_at'])]
 class Deployment extends Model
 {
     /** @use HasFactory<DeploymentFactory> */

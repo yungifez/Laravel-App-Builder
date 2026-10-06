@@ -336,6 +336,10 @@ class ProjectController extends Controller
                             default => null,
                         },
                         'error' => $deployment->error,
+                        // Who puts a failure right, and what the host or
+                        // Git said behind it, for Details only.
+                        'error_cause' => $deployment->error_cause,
+                        'error_details' => $deployment->error_details,
                         // A copy of the app's information was saved first.
                         'backed_up' => $deployment->backup_id !== null,
                         // When the version it put back first came online.

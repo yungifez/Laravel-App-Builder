@@ -924,6 +924,10 @@ export type DeploymentSummary = {
     /** Which check runs now, while it is checked before going online. */
     doing: string | null;
     error: string | null;
+    /** Who puts a failure right: the owner's publishing settings, or us. */
+    error_cause: 'settings' | 'ours' | null;
+    /** What the host or Git said behind a failure, for Details only. */
+    error_details: string | null;
     health: {
         path: string;
         status: number | null;

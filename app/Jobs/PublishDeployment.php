@@ -63,6 +63,7 @@ class PublishDeployment implements ShouldQueue
 
         $project = $this->deployment->project;
         $workspace = null;
+        $sent = false;
 
         try {
             // Going back puts online a version that passed every check and
@@ -94,6 +95,7 @@ class PublishDeployment implements ShouldQueue
             }
 
             $host->release($project, $this->deployment);
+            $sent = true;
             $project->refresh();
 
             // The host takes it from here; it is online only once the host
@@ -109,11 +111,13 @@ class PublishDeployment implements ShouldQueue
 
             ConfirmDeployment::dispatch($this->deployment)->delay((int) config('builder.publishing.confirm.settle_seconds'));
         } catch (RepositoryConflict|PublishingFailed $exception) {
-            $this->finish(DeploymentStatus::Failed, $exception->getMessage());
+            $this->finish(DeploymentStatus::Failed, $exception->getMessage(), $exception instanceof PublishingFailed && $exception->settings ? 'settings' : null, $exception->getPrevious());
         } catch (Throwable $exception) {
             report($exception);
 
-            $this->finish(DeploymentStatus::Failed, ProjectRepository::withoutCredentials($exception->getMessage(), (string) $project->deploy_remote));
+            $this->finish(DeploymentStatus::Failed, $sent
+                ? __('This is our fault: something went wrong on our side after your new version was sent to your hosting. Try again.')
+                : __('This is our fault: publishing stopped on our side. Your app online has not changed. Try again.'), 'ours', $exception);
         } finally {
             if ($workspace !== null) {
                 rescue(fn () => $destroyWorkspace->handle($workspace));
@@ -187,7 +191,7 @@ class PublishDeployment implements ShouldQueue
      */
     public function failed(?Throwable $exception): void
     {
-        $this->finish(DeploymentStatus::Failed, __('Publishing stopped unexpectedly. Your app online may not have changed.'));
+        $this->finish(DeploymentStatus::Failed, __('This is our fault: publishing stopped before it finished. Your app online may not have changed. Try again.'), 'ours', $exception);
     }
 
     /**
@@ -258,10 +262,16 @@ class PublishDeployment implements ShouldQueue
     }
 
     /**
-     * Finish the deployment with a status and, when it failed, why.
+     * Finish the deployment with a status and, when it failed, why in the
+     * owner's words, whose to put right, and what was said behind it. That
+     * text is for Details only, without credentials or secrets.
+     *
+     * @param  'settings'|'ours'|null  $cause
      */
-    protected function finish(DeploymentStatus $status, ?string $error = null): void
+    protected function finish(DeploymentStatus $status, ?string $error = null, ?string $cause = null, ?Throwable $behind = null): void
     {
-        $this->deployment->update(['status' => $status, 'error' => $error, 'finished_at' => now()]);
+        $details = $behind === null ? null : Secrets::redact(Str::limit(ProjectRepository::withoutCredentials(trim($behind->getMessage()), (string) $this->deployment->project->deploy_remote), 2000));
+
+        $this->deployment->update(['status' => $status, 'error' => $error, 'error_cause' => $cause, 'error_details' => $details ?: null, 'finished_at' => now()]);
     }
 }

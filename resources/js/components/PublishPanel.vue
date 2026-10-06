@@ -134,6 +134,14 @@ const unhealthy = computed(
         latest.value.health.some((check) => !check.passed),
 );
 
+// Publishing could not reach the repository the owner gave. Sending again
+// fails the same way until the address or branch is put right.
+const settingsFault = computed(
+    () =>
+        latest.value?.status === 'failed' &&
+        latest.value.error_cause === 'settings',
+);
+
 const times = (count: number) => (count === 1 ? 'once' : `${count} times`);
 
 // The app's own tests run before any version goes online. Saying how many
@@ -384,6 +392,15 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                 <InputError class="mt-2" :message="errors.fix" />
             </Form>
 
+            <Button
+                v-if="settingsFault && !active"
+                class="h-11 w-full select-none sm:h-9"
+                data-test="publish-settings"
+                @click="changing = true"
+            >
+                Change where to publish
+            </Button>
+
             <Form
                 v-if="
                     !active &&
@@ -419,7 +436,11 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                 </Label>
                 <Button
                     :disabled="processing || (losesData && !loseData)"
-                    :variant="troubled || checkFailed ? 'outline' : 'default'"
+                    :variant="
+                        troubled || checkFailed || settingsFault
+                            ? 'outline'
+                            : 'default'
+                    "
                     class="h-11 w-full select-none sm:h-9"
                     data-test="publish-button"
                 >
@@ -576,6 +597,15 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                     <p v-if="latest?.backed_up" class="text-muted-foreground">
                         It changes how your app keeps information, so a copy of
                         that information was saved first.
+                    </p>
+                    <!-- What the host or Git said: for whoever helps the
+                         owner, never the first thing they read. -->
+                    <p
+                        v-if="latest?.error_details"
+                        class="font-mono break-words whitespace-pre-wrap text-muted-foreground"
+                        data-test="publish-error-details"
+                    >
+                        {{ latest.error_details }}
                     </p>
                     <p v-if="latest" class="font-mono text-muted-foreground">
                         {{ latest.commit.slice(0, 7) }}

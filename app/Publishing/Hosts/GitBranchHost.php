@@ -37,8 +37,11 @@ class GitBranchHost implements PublishingHost
         } catch (RepositoryConflict $exception) {
             throw $exception;
         } catch (RuntimeException $exception) {
-            // The owner set this remote up, so Git's own words help them.
-            throw new PublishingFailed(ProjectRepository::withoutCredentials($exception->getMessage(), (string) $project->deploy_remote), previous: $exception);
+            // The owner set this remote up, so what to check is theirs to
+            // change. Git's own words go behind Details.
+            throw new PublishingFailed(__('I could not send it to the repository at :address. Check the repository address and branch under "Change where to publish", then try again. Your app online has not changed.', [
+                'address' => ProjectRepository::withoutCredentials((string) $project->deploy_remote, (string) $project->deploy_remote),
+            ]), settings: true, previous: $exception);
         }
     }
 

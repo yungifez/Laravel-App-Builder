@@ -10,6 +10,8 @@ use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\User;
 use App\Projects\ProjectRepository;
+use App\Publishing\Hosts\GitBranchHost;
+use App\Publishing\PublishingHostManager;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -20,6 +22,9 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
+use LogicException;
+use Mockery;
+use RuntimeException;
 use Tests\Concerns\FakesWorkspaces;
 use Tests\Concerns\PreparesRuns;
 use Tests\Fakes\FakeWorkspaceDriver;
@@ -349,8 +354,47 @@ class PublishingTest extends TestCase
 
         $deployment = Deployment::sole();
         $this->assertSame(DeploymentStatus::Failed, $deployment->status);
-        $this->assertNotEmpty($deployment->error);
-        $this->assertStringNotContainsString('secret-token', (string) $deployment->error);
+        // The owner reads which setting to check; Git's words wait behind Details.
+        $this->assertSame('I could not send it to the repository at https://127.0.0.1:1/acme/shop.git. Check the repository address and branch under "Change where to publish", then try again. Your app online has not changed.', $deployment->error);
+        $this->assertSame('settings', $deployment->error_cause);
+        $this->assertNotEmpty($deployment->error_details);
+        $this->assertStringNotContainsString('secret-token', (string) $deployment->error_details);
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('publishing.deployments.0.error_cause', 'settings')
+                ->where('publishing.deployments.0.error_details', $deployment->error_details));
+    }
+
+    public function test_an_unexpected_failure_says_it_is_our_fault_and_keeps_what_it_said_for_details()
+    {
+        $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main']);
+        $host = Mockery::mock(GitBranchHost::class, [app(ProjectRepository::class)])->makePartial();
+        $host->shouldReceive('release')->andThrow(new LogicException('Undefined index: release_id with key sk-ant-'.str_repeat('a', 40)));
+        $hosts = app(PublishingHostManager::class)->extend('git', fn () => $host);
+        $this->app->instance(PublishingHostManager::class, $hosts);
+
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+
+        $deployment = Deployment::sole();
+        $this->assertSame(DeploymentStatus::Failed, $deployment->status);
+        $this->assertSame('This is our fault: publishing stopped on our side. Your app online has not changed. Try again.', $deployment->error);
+        $this->assertSame('ours', $deployment->error_cause);
+        $this->assertStringContainsString('Undefined index: release_id', (string) $deployment->error_details);
+        $this->assertStringNotContainsString('sk-ant-', (string) $deployment->error_details);
+    }
+
+    public function test_a_publish_that_dies_part_way_says_it_is_our_fault_and_to_try_again()
+    {
+        $deployment = Deployment::factory()->for($this->project)->create(['user_id' => $this->owner->id, 'status' => DeploymentStatus::Pushing]);
+
+        (new PublishDeployment($deployment))->failed(new RuntimeException('The worker was killed after 3600 seconds.'));
+
+        $deployment->refresh();
+        $this->assertSame(DeploymentStatus::Failed, $deployment->status);
+        $this->assertSame('This is our fault: publishing stopped before it finished. Your app online may not have changed. Try again.', $deployment->error);
+        $this->assertSame('ours', $deployment->error_cause);
+        $this->assertSame('The worker was killed after 3600 seconds.', $deployment->error_details);
     }
 
     public function test_publishing_needs_a_destination_and_runs_one_at_a_time()

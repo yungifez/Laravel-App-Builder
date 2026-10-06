@@ -4665,6 +4665,12 @@ these components prove that claim, so only these are **required**:
     the owner sees only "Fix what stops my app working online". Sending the
     same version again is not offered, because it would fail the same way. A
     host that is still starting the version keeps "Try again".
+    A publish that fails says whose it is to put right, in plain words. When
+    the repository the owner gave cannot be reached, it names the address
+    and offers "Change where to publish". Our own failures say "This is our
+    fault" and offer "Try again". What Git or the host said is kept apart
+    (`error_details`, without credentials or keys) and shows only under
+    "Where it goes".
 11. Telemetry per change request (§25.3), including cost per accepted change.
 
 ### 27.2 Postponed to V1.1
