@@ -17,6 +17,7 @@ use App\Enums\AgentTier;
 use App\Enums\RunStatus;
 use App\Enums\StopReason;
 use App\Enums\VerificationStatus;
+use App\Jobs\ExecuteRun;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\Decision;
 use App\Models\FeatureRequest;
@@ -30,6 +31,7 @@ use App\Models\WorkspaceCommand;
 use App\Runs\Agents\AgentOutcome;
 use App\Runs\Agents\AgentTask;
 use App\Runs\Agents\CodingAgentManager;
+use App\Runs\Agents\RunnerAgent;
 use App\Runs\ModelGateway;
 use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\WorkspaceManager;
@@ -55,6 +57,9 @@ class SdkDriverTest extends TestCase
 
     /** @var array<string, FakeCodingAgent> */
     protected array $agents = [];
+
+    /** Whether the half-done file was there when the agent was started again. */
+    protected ?bool $halfLeft = null;
 
     protected function setUp(): void
     {
@@ -232,7 +237,7 @@ class SdkDriverTest extends TestCase
 
         $this->assertSame(2, $tries);
         $this->assertNotSame(RunStatus::Failed, $run->status);
-        $this->assertSame(['adapter' => 'claude'], $run->events()->where('type', 'runner_lost')->sole()->data);
+        $this->assertSame(['adapter' => 'claude', 'session' => false], $run->events()->where('type', 'runner_lost')->sole()->data);
         $this->assertFalse($halfLeft, 'The second try starts from where the first began.');
         $this->assertSame(0, $run->events()->where('type', 'failover')->count());
     }
@@ -254,6 +259,84 @@ class SdkDriverTest extends TestCase
         $this->assertSame(AgentOutcome::RUNNER_LOST, $run->events()->where('type', 'agent_failed')->sole()->data['kind']);
     }
 
+    public function test_a_lost_runner_with_a_session_goes_on_in_that_session_on_the_files_it_left()
+    {
+        $tries = 0;
+        $halfLeft = null;
+        $this->agent('claude', 'anthropic', function (Workspace $workspace, AgentTask $task) use (&$tries, &$halfLeft) {
+            if (++$tries === 1) {
+                File::put($this->path($workspace, 'Half.php'), "<?php\n");
+
+                return new AgentOutcome('claude', 'anthropic', null, AgentOutcomeStatus::Failed, errorKind: AgentOutcome::RUNNER_LOST, error: 'Lost.', session: 'session-1');
+            }
+
+            $halfLeft = File::exists($this->path($workspace, 'Half.php'));
+
+            return ($this->writes('claude', 'anthropic', 'app/Claude.php', "<?php\n"))($workspace, $task);
+        });
+
+        $run = app(StartRun::class)->handle($featureRequest = $this->request())->refresh();
+
+        $continued = $this->agents['claude']->tasks[1]->resume;
+        $this->assertSame([2, true], [$tries, $halfLeft]);
+        $this->assertSame(['claude', 'session-1', true], [$continued['adapter'] ?? null, $continued['session'] ?? null, $continued['continue'] ?? null]);
+        $this->assertSame(['adapter' => 'claude', 'session' => true], $run->events()->where('type', 'runner_lost')->sole()->data);
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertStringContainsString('Half.php', (string) $featureRequest->refresh()->patch, 'What the lost session made is kept.');
+    }
+
+    public function test_a_lost_session_that_cannot_be_continued_starts_over_from_the_snapshot()
+    {
+        $tries = 0;
+        $halfLeft = null;
+        $this->agent('claude', 'anthropic', function (Workspace $workspace, AgentTask $task) use (&$tries, &$halfLeft) {
+            $tries++;
+
+            if ($tries === 1) {
+                File::put($this->path($workspace, 'Half.php'), "<?php\n");
+
+                return new AgentOutcome('claude', 'anthropic', null, AgentOutcomeStatus::Failed, errorKind: AgentOutcome::RUNNER_LOST, error: 'Lost.', session: 'session-1');
+            }
+
+            // The runner refuses a fresh start on the half-done edits.
+            if ($tries === 2) {
+                return new AgentOutcome('claude', 'anthropic', null, AgentOutcomeStatus::Failed, errorKind: AgentOutcome::SESSION_GONE, error: 'Gone.');
+            }
+
+            $halfLeft = File::exists($this->path($workspace, 'Half.php'));
+
+            return ($this->writes('claude', 'anthropic', 'app/Claude.php', "<?php\n"))($workspace, $task);
+        });
+
+        $run = app(StartRun::class)->handle($featureRequest = $this->request())->refresh();
+
+        $this->assertSame([3, false], [$tries, $halfLeft]);
+        $this->assertNull($this->agents['claude']->tasks[2]->resume, 'The fresh start gets the whole task.');
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertStringNotContainsString('Half.php', (string) $featureRequest->refresh()->patch);
+    }
+
+    public function test_a_worker_stopped_mid_build_continues_the_agents_session_when_the_run_is_tried_again()
+    {
+        $run = $this->stoppedMidBuild(session: 'session-1');
+
+        $continued = $this->agents['claude']->tasks[1]->resume;
+        $this->assertSame(['claude', 'session-1', true], [$continued['adapter'] ?? null, $continued['session'] ?? null, $continued['continue'] ?? null]);
+        $this->assertTrue($this->halfLeft);
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertStringContainsString('Half.php', (string) $run->featureRequest->patch);
+    }
+
+    public function test_a_worker_stopped_mid_build_with_no_session_named_starts_over_from_the_snapshot()
+    {
+        $run = $this->stoppedMidBuild(session: null);
+
+        $this->assertNull($this->agents['claude']->tasks[1]->resume);
+        $this->assertFalse($this->halfLeft, 'A fresh agent never starts on half-done edits.');
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertStringNotContainsString('Half.php', (string) $run->featureRequest->patch);
+    }
+
     public function test_only_a_lost_runner_reads_as_one_and_a_real_timeout_still_says_timeout()
     {
         $timedOut = AgentOutcome::fromRunnerOutput('claude', 'anthropic', null, '', timedOut: true, lost: false);
@@ -261,6 +344,7 @@ class SdkDriverTest extends TestCase
 
         $this->assertSame(['timeout', 'The agent did not finish in time.'], [$timedOut->errorKind, $timedOut->error]);
         $this->assertSame(AgentOutcome::RUNNER_LOST, $lost->errorKind);
+        $this->assertSame('session-1', AgentOutcome::fromRunnerOutput('claude', 'anthropic', null, '', timedOut: true, lost: true, lostSession: 'session-1')->session);
 
         // A timed-out agent is not started over, and the owner hears it stopped.
         $tries = 0;
@@ -994,6 +1078,41 @@ class SdkDriverTest extends TestCase
 
             return $this->outcome($adapter, $provider, AgentOutcomeStatus::Completed, summary: 'Done.');
         };
+    }
+
+    /**
+     * Stop the worker while the agent is part way through the first build,
+     * as a worker restart would, then try the run again. The agent names its
+     * session in its progress only when the session was given a name.
+     */
+    protected function stoppedMidBuild(?string $session): Run
+    {
+        Queue::fake([VerifyFeatureRequest::class, ExecuteRun::class]);
+        $this->agent('claude', 'anthropic', function (Workspace $workspace, AgentTask $task) use ($session) {
+            if (count($this->agents['claude']->tasks) === 1) {
+                File::put($this->path($workspace, 'Half.php'), "<?php\n");
+                File::ensureDirectoryExists($this->path($workspace, RunnerAgent::TASK_DIRECTORY));
+                File::put($this->path($workspace, RunnerAgent::TASK_DIRECTORY.'/progress.json'), (string) json_encode(['adapter' => 'claude', 'session' => $session, 'doing' => 'changing']));
+
+                throw new RuntimeException('The worker stopped.');
+            }
+
+            $this->halfLeft = File::exists($this->path($workspace, 'Half.php'));
+
+            return ($this->writes('claude', 'anthropic', 'app/Claude.php', "<?php\n"))($workspace, $task);
+        });
+
+        $run = app(StartRun::class)->handle($this->request());
+
+        foreach ([1, 2] as $try) {
+            try {
+                app()->call([new ExecuteRun($run->refresh()), 'handle']);
+            } catch (RuntimeException $exception) {
+                $this->assertSame([1, 'The worker stopped.'], [$try, $exception->getMessage()]);
+            }
+        }
+
+        return $run->refresh();
     }
 
     protected function commitIn(Workspace $workspace, string $message): void

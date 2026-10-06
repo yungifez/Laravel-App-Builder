@@ -15,12 +15,14 @@ use App\Models\Workspace;
 use App\Runs\Agents\AgentOutcome;
 use App\Runs\Agents\AgentTask;
 use App\Runs\Agents\CodingAgentManager;
+use App\Runs\Agents\RunnerAgent;
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\LeaseLost;
 use App\Runs\Exceptions\ProvidersUnavailable;
 use App\Runs\Exceptions\RunCancelled;
 use App\Runs\Exceptions\UsageLimitReached;
 use App\Runs\RunLease;
+use App\Workspaces\WorkspaceManager;
 use Closure;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +35,7 @@ class RunCodingAgent
         private RunWorkspaceCommand $runWorkspaceCommand,
         private SelectAreas $selectAreas,
         private MeasureUsage $measureUsage,
+        private WorkspaceManager $workspaces,
     ) {}
 
     /**
@@ -59,10 +62,27 @@ class RunCodingAgent
     {
         $this->ensureAgentsMayRunIn($workspace);
 
-        $snapshot = $this->snapshot($workspace);
+        // A worker that stopped part way through an attempt left the files
+        // as its agent had them. That session goes on where it can; never
+        // does a fresh agent start on its half-done edits.
+        $interrupted = $this->interrupted($run, $workspace);
+        $carry = $interrupted !== null ? RunnerAgent::leftBehind($this->workspaces, $workspace) : null;
+        $order = $this->order($carry['adapter'] ?? $task->prefer);
+
+        if ($carry !== null && ($order[0] ?? null) !== $carry['adapter']) {
+            $carry = null;
+        }
+
+        $snapshot = $interrupted ?? $this->snapshot($workspace);
+
+        if ($interrupted !== null && $carry === null) {
+            $this->restore($workspace, $snapshot);
+        }
+
+        $this->recordEvent($run, $lease, 'coder_started', ['snapshot' => $snapshot, 'workspace_id' => $workspace->id]);
         $previous = null;
 
-        foreach ($this->order($task->prefer) as $adapter) {
+        foreach ($order as $adapter) {
             if ($previous !== null) {
                 $this->restore($workspace, $snapshot);
                 $this->recordEvent($run, $lease, 'failover', [
@@ -72,15 +92,18 @@ class RunCodingAgent
                 ]);
             }
 
-            $outcome = $this->attempt($run, $lease, $workspace, $task, $adapter);
+            $outcome = $carry !== null
+                ? $this->carryOn($run, $lease, $workspace, $task, $adapter, $carry['session'], $snapshot)
+                : $this->attempt($run, $lease, $workspace, $task, $adapter);
+            $carry = null;
 
             // The computer working on it restarted or went away. Neither the
-            // agent nor the task was at fault, so it starts over once on its
-            // own. A second loss stops the change and says it is our fault.
+            // agent nor the task was at fault, so it goes on once on its own:
+            // in the same session when it had one. A second loss stops the
+            // change and says it is our fault.
             if ($outcome->errorKind === AgentOutcome::RUNNER_LOST) {
-                $this->restore($workspace, $snapshot);
-                $this->recordEvent($run, $lease, 'runner_lost', ['adapter' => $adapter]);
-                $outcome = $this->attempt($run, $lease, $workspace, $task, $adapter);
+                $this->recordEvent($run, $lease, 'runner_lost', ['adapter' => $adapter, 'session' => $outcome->session !== null]);
+                $outcome = $this->carryOn($run, $lease, $workspace, $task, $adapter, $outcome->session, $snapshot);
             }
 
             // The owner's plan, not the provider, stopped it: no other
@@ -118,6 +141,45 @@ class RunCodingAgent
         throw new ProvidersUnavailable(__('No AI provider could take the task right now (:reason). Try again later.', [
             'reason' => $previous->error ?? $previous->errorKind ?? 'unknown',
         ]), ProvidersUnavailable::saysOutOfCredit($previous->errorKind, $previous->error) ? StopReason::OutOfCredit : StopReason::ProvidersUnavailable);
+    }
+
+    /**
+     * Continue a session that was cut off part way, on the files as it left
+     * them, so what it did and paid for is kept. When there is no session,
+     * or it is gone, the files go back to the snapshot and the task starts
+     * fresh.
+     */
+    protected function carryOn(Run $run, RunLease $lease, Workspace $workspace, AgentTask $task, string $adapter, ?string $session, string $snapshot): AgentOutcome
+    {
+        if ($session !== null) {
+            $outcome = $this->attempt($run, $lease, $workspace, $task->continuing($adapter, $session), $adapter);
+
+            if ($outcome->errorKind !== AgentOutcome::SESSION_GONE) {
+                return $outcome;
+            }
+        }
+
+        $this->restore($workspace, $snapshot);
+
+        return $this->attempt($run, $lease, $workspace, $task, $adapter);
+    }
+
+    /**
+     * Get the snapshot of an attempt a stopped worker left unfinished in
+     * this pass and this workspace: one that started since the run last
+     * went to building and whose build never finished. Null when there is
+     * none.
+     */
+    protected function interrupted(Run $run, Workspace $workspace): ?string
+    {
+        $since = (int) $run->events()->where('type', 'status')->where('data->to', RunStatus::Implementing->value)->max('sequence');
+        $started = $run->events()->where('type', 'coder_started')->where('sequence', '>', $since)->reorder('sequence', 'desc')->first();
+
+        if ($started === null || ($started->data['workspace_id'] ?? null) !== $workspace->id || $run->events()->where('type', 'build_finished')->where('sequence', '>', $started->sequence)->exists()) {
+            return null;
+        }
+
+        return is_string($started->data['snapshot'] ?? null) ? $started->data['snapshot'] : null;
     }
 
     /**

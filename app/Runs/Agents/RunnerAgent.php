@@ -11,6 +11,7 @@ use App\Runs\ModelGateway;
 use App\Support\Secrets;
 use App\Workspaces\WorkspaceManager;
 use Closure;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 
@@ -124,6 +125,7 @@ class RunnerAgent implements CodingAgent
                 'follow_up' => isset($resume['prompt']) ? Secrets::redact($resume['prompt']) : null,
                 'max_turns' => $task->maxTurns,
                 'max_budget_usd' => $task->maxBudgetUsd,
+                'continue_only' => $resume['continue'] ?? false,
                 'sandbox' => $this->sandbox,
                 'protected_paths' => config('builder.construction.protected_paths', []),
             ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
@@ -158,11 +160,14 @@ class RunnerAgent implements CodingAgent
             }
         }
 
+        // A run lost with its runner left its progress behind, which names
+        // the session it worked in.
+        $lostSession = $result->lost ? self::leftBehind($this->workspaces, $workspace)['session'] ?? null : null;
         $this->removeTaskFiles($workspace);
 
         // The outcome names the model that took the task, so its work is
         // priced at that model's own rate.
-        $outcome = AgentOutcome::fromRunnerOutput($this->adapter, $this->provider, $this->modelFor($task->tier), $result->output, $result->timed_out, $result->lost);
+        $outcome = AgentOutcome::fromRunnerOutput($this->adapter, $this->provider, $this->modelFor($task->tier), $result->output, $result->timed_out, $result->lost, $lostSession);
 
         // However the agent took the refusal, the run stops for the plan.
         return $opened !== null && $this->gateway?->refused($opened['token']) ? $outcome->stoppedForUsage() : $outcome;
@@ -175,6 +180,21 @@ class RunnerAgent implements CodingAgent
     protected function runnerPath(Workspace $workspace): string
     {
         return (string) (config("workspaces.drivers.{$workspace->driver}.agent_runner") ?? config('builder.agents.runner.path'));
+    }
+
+    /**
+     * Get the agent and session of a task whose runner never finished it,
+     * from the progress it left in the workspace. Null when it left none.
+     *
+     * @return array{adapter: string, session: string}|null
+     */
+    public static function leftBehind(WorkspaceManager $workspaces, Workspace $workspace): ?array
+    {
+        $progress = json_decode((string) rescue(fn () => $workspaces->driver($workspace->driver)->readFile((string) $workspace->driver_id, self::TASK_DIRECTORY.'/progress.json'), null, report: false), true);
+
+        return is_array($progress) && is_string($progress['adapter'] ?? null) && is_string($progress['session'] ?? null) && $progress['session'] !== ''
+            ? ['adapter' => $progress['adapter'], 'session' => Str::limit($progress['session'], 200, '')]
+            : null;
     }
 
     /**

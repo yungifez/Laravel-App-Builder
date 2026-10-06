@@ -24,6 +24,12 @@ final readonly class AgentOutcome
     public const USAGE_LIMIT = 'usage_limit';
 
     /**
+     * The session a task cut off part way was to continue is gone, so the
+     * task did not start: its files still hold that session's edits.
+     */
+    public const SESSION_GONE = 'session_gone';
+
+    /**
      * @param  list<array{kind: string, text?: string, file?: string}>  $story  What the agent did and said, in order
      */
     public function __construct(
@@ -73,14 +79,16 @@ final readonly class AgentOutcome
     /**
      * Read the runner's result line: the last line of its output that is a
      * JSON object of type "result". A run that timed out, was lost with its
-     * runner, or printed no result failed.
+     * runner, or printed no result failed. A lost run keeps the session it
+     * was working in, when it had named one, so it can be continued.
      */
-    public static function fromRunnerOutput(string $adapter, string $provider, ?string $model, string $output, bool $timedOut, bool $lost): self
+    public static function fromRunnerOutput(string $adapter, string $provider, ?string $model, string $output, bool $timedOut, bool $lost, ?string $lostSession = null): self
     {
         if ($lost) {
             return new self($adapter, $provider, $model, AgentOutcomeStatus::Failed,
                 errorKind: self::RUNNER_LOST,
                 error: __('The runner restarted or went away while the agent worked.'),
+                session: $lostSession,
             );
         }
 

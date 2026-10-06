@@ -10,15 +10,18 @@
 //
 // Usage: node run.mjs <task.json>
 // The task file: {adapter, prompt, model?, effort?, max_turns?, max_budget_usd?,
-// session?, follow_up?, protected_paths?}. With "session", the agent continues that earlier
-// session and is sent "follow_up" instead of the whole prompt. The result
-// line names the session ("session"), and whether the earlier one was
-// continued ("resumed"). The Claude agent may not write or edit a file in
+// session?, follow_up?, continue_only?, protected_paths?}. With "session", the agent
+// continues that earlier session and is sent "follow_up" instead of the whole
+// prompt. The result line names the session ("session"), and whether the
+// earlier one was continued ("resumed"). With "continue_only", a session that
+// cannot be continued ends the task as "session_gone" instead of starting
+// fresh, because the files hold another session's half-done edits. The Claude agent may not write or edit a file in
 // "protected_paths"; the control plane puts them back afterwards anyway.
 //
 // While the agent works, progress.json next to the task file says what it
-// is doing, so the owner can follow along:
-// {"doing":"reading|changing|testing","last":"path","read":[...],"changed":[...],
+// is doing, so the owner can follow along, and which session it works in,
+// so a task cut off part way can be continued:
+// {"adapter":"claude|codex","session":"id|null","doing":"reading|changing|testing","last":"path","read":[...],"changed":[...],
 //  "story":[{"kind":"said|thinking","text":"..."}|{"kind":"read|changed","file":"path"}|{"kind":"testing"}]}
 // The story is what the agent did and said, in order; the result line
 // carries it too, so it outlives the task files.
@@ -49,6 +52,8 @@ const PROVIDER_ERROR =
 
 /** What the agent has done so far, written after each step. */
 const progress = {
+    adapter: null,
+    session: null,
     doing: 'reading',
     last: null,
     read: [],
@@ -128,6 +133,14 @@ function write() {
     }
 }
 
+/** Note the session as soon as the SDK names it. */
+function noteSession(session) {
+    if (session && progress.session !== session) {
+        progress.session = session;
+        write();
+    }
+}
+
 const TEST_COMMAND =
     /\b(phpunit|pest|artisan test|npm (run )?test|vitest|jest)\b/;
 
@@ -151,6 +164,21 @@ async function runTask(adapter, task) {
 
         if (!result.lost) {
             return { ...result, resumed: true };
+        }
+
+        if (task.continue_only) {
+            return {
+                status: 'failed',
+                error_kind: 'session_gone',
+                error: 'The earlier session could not be continued.',
+                turns: 0,
+                input_tokens: 0,
+                cached_input_tokens: 0,
+                output_tokens: 0,
+                cost_usd: null,
+                session: null,
+                resumed: false,
+            };
         }
     }
 
@@ -238,6 +266,7 @@ async function runClaude(task, session, prompt) {
             },
         })) {
             sessionId = message.session_id ?? sessionId;
+            noteSession(sessionId);
 
             if (message.type === 'assistant' && message.error) {
                 providerError = message.error;
@@ -376,6 +405,10 @@ async function runCodex(task, session, prompt) {
         for await (const event of events) {
             started ||= event.type.startsWith('item.');
 
+            if (event.type === 'thread.started') {
+                noteSession(event.thread_id);
+            }
+
             if (
                 event.type === 'item.completed' &&
                 event.item.type === 'file_change'
@@ -453,6 +486,8 @@ async function runCodex(task, session, prompt) {
 
 const task = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 progressFile = join(dirname(process.argv[2]), 'progress.json');
+progress.adapter = task.adapter;
+progress.session = task.session ?? null;
 track('reading');
 const adapters = { claude: runClaude, codex: runCodex };
 

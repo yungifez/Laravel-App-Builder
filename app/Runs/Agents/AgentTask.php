@@ -11,7 +11,7 @@ use App\Models\User;
 final readonly class AgentTask
 {
     /**
-     * @param  array{adapter: string, session: string, prompt: string}|null  $resume  For a repair pass: the session an agent built the change in, to continue with only this prompt
+     * @param  array{adapter: string, session: string, prompt: string, continue?: bool}|null  $resume  For a repair pass: the session an agent built the change in, to continue with only this prompt. With "continue", a session that is gone ends the task instead of starting fresh
      */
     public function __construct(
         public string $prompt,
@@ -30,4 +30,19 @@ final readonly class AgentTask
         // holds each of its calls to what is left.
         public ?User $owner = null,
     ) {}
+
+    /**
+     * Get this task as the continuation of a session that was cut off part
+     * way: the agent is only told to finish, and never starts fresh on the
+     * session's half-done edits.
+     */
+    public function continuing(string $adapter, string $session): self
+    {
+        return new self(...[...get_object_vars($this), 'resume' => [
+            'adapter' => $adapter,
+            'session' => $session,
+            'prompt' => __('You were stopped part way through this task. Your changes so far are in the files. Check where you got to, then finish the task as it was given.'),
+            'continue' => true,
+        ]]);
+    }
 }
