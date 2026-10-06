@@ -9,6 +9,7 @@ import {
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import CheckFixController from '@/actions/App/Http/Controllers/CheckFixController';
+import DeploymentCheckController from '@/actions/App/Http/Controllers/DeploymentCheckController';
 import DeploymentController from '@/actions/App/Http/Controllers/DeploymentController';
 import DeploymentRestorationController from '@/actions/App/Http/Controllers/DeploymentRestorationController';
 import LiveErrorFixController from '@/actions/App/Http/Controllers/LiveErrorFixController';
@@ -131,7 +132,18 @@ const checkFailed = computed(
 const unhealthy = computed(
     () =>
         latest.value?.status === 'needs_attention' &&
+        latest.value.error_cause !== 'ours' &&
         latest.value.health.some((check) => !check.passed),
+);
+
+// Sent before the owner gave the web address, or our own check broke: the
+// app may be fine, so checking again is the step, not sending it again.
+const recheck = computed(
+    () =>
+        (latest.value?.status === 'sent' &&
+            props.publishing.address !== null) ||
+        (latest.value?.status === 'needs_attention' &&
+            latest.value.error_cause === 'ours'),
 );
 
 // Publishing could not reach the repository the owner gave. Sending again
@@ -212,7 +224,9 @@ const status = computed(() => {
                 icon: CircleDot,
                 tone: 'text-muted-foreground',
                 title: 'Sent to your hosting',
-                detail: 'Add your app’s web address so I can check it’s online.',
+                detail: props.publishing.address
+                    ? 'Check that it’s online at your web address.'
+                    : 'Add your app’s web address so I can check it’s online.',
             };
         case live.value === null:
             return {
@@ -392,6 +406,22 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                 <InputError class="mt-2" :message="errors.fix" />
             </Form>
 
+            <Form
+                v-if="recheck && !active"
+                v-bind="DeploymentCheckController.store.form(projectId)"
+                :options="{ preserveScroll: true }"
+                v-slot="{ errors, processing }"
+            >
+                <Button
+                    :disabled="processing"
+                    class="h-11 w-full select-none sm:h-9"
+                    data-test="publish-check"
+                >
+                    Check it’s online
+                </Button>
+                <InputError class="mt-2" :message="errors.check" />
+            </Form>
+
             <Button
                 v-if="settingsFault && !active"
                 class="h-11 w-full select-none sm:h-9"
@@ -406,7 +436,10 @@ watch(active, (value) => (value ? start() : stop()), { immediate: true });
                     !active &&
                     !upToDate &&
                     !sentCurrent &&
-                    !(unhealthy && latest?.commit === publishing.head)
+                    !(
+                        (unhealthy || recheck) &&
+                        latest?.commit === publishing.head
+                    )
                 "
                 v-bind="DeploymentController.store.form(projectId)"
                 :options="{ preserveScroll: true }"

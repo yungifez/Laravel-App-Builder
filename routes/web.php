@@ -14,6 +14,7 @@ use App\Http\Controllers\CheckFixController;
 use App\Http\Controllers\ClearedProblemController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DeploymentCheckController;
 use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\DeploymentRestorationController;
 use App\Http\Controllers\DesignEditsController;
@@ -167,6 +168,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/deployments/{deployment}/restoration', [DeploymentRestorationController::class, 'store'])->scopeBindings()->name('deployments.restoration.store');
     Route::post('projects/{project}/live-error-fixes', [LiveErrorFixController::class, 'store'])->name('live-error-fixes.store');
     Route::post('projects/{project}/check-fixes', [CheckFixController::class, 'store'])->name('check-fixes.store');
+    Route::post('projects/{project}/deployment-checks', [DeploymentCheckController::class, 'store'])->name('deployment-checks.store');
     Route::post('projects/{project}/preview-problem-fixes', [PreviewProblemFixController::class, 'store'])->name('preview-problem-fixes.store');
     Route::post('projects/{project}/preview-sign-ins', [PreviewSignInController::class, 'store'])->name('preview-sign-ins.store');
     Route::post('projects/{project}/preview-people', [PreviewPersonController::class, 'store'])->name('preview-people.store');

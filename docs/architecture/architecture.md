@@ -4678,6 +4678,10 @@ these components prove that claim, so only these are **required**:
     fault" and offer "Try again". What Git or the host said is kept apart
     (`error_details`, without credentials or keys) and shows only under
     "Where it goes".
+    A version sent before the owner gave the app's web address is checked
+    as soon as they give it (`CheckDeployment`), without sending it again.
+    When our own check breaks, the owner reads "This is our fault" and gets
+    "Check it's online" instead of sending the same version again.
 11. Telemetry per change request (§25.3), including cost per accepted change.
 
 ### 27.2 Postponed to V1.1

@@ -64,3 +64,33 @@ it('keeps try again when the host is still starting the new version', function (
         ->assertMissing('@fix-failed-checks')
         ->assertNoJavaScriptErrors();
 });
+
+it('offers to check a version sent before the web address was given', function () {
+    $owner = User::factory()->create();
+    $project = app(CreateProject::class)->handle($owner, 'Acme', $this->makeProjectSource([]), draftNotes: false);
+    app(ProjectRepository::class)->import($project);
+    $project->update(['deploy_remote' => 'https://git.example.com/acme.git', 'deploy_branch' => 'main']);
+    Deployment::factory()->for($project)->create([
+        'user_id' => $owner->id,
+        'commit_sha' => app(ProjectRepository::class)->head($project, Experiment::mainBranch()),
+        'status' => DeploymentStatus::Sent,
+        'pushed_at' => now(),
+    ]);
+
+    $this->actingAs($owner);
+
+    // Without an address there is nowhere to check yet.
+    visit(route('projects.show', $project))
+        ->click('@publish-open')
+        ->assertSee('Add your app’s web address')
+        ->assertMissing('@publish-check');
+
+    $project->update(['live_url' => 'https://shop.example.com']);
+
+    visit(route('projects.show', $project))
+        ->click('@publish-open')
+        ->assertSee('Check that it’s online at your web address.')
+        ->assertVisible('@publish-check')
+        ->assertMissing('@publish-button')
+        ->assertNoJavaScriptErrors();
+});

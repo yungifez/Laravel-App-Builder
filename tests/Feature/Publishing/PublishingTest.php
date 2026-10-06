@@ -4,6 +4,7 @@ namespace Tests\Feature\Publishing;
 
 use App\Actions\Projects\CreateProject;
 use App\Enums\DeploymentStatus;
+use App\Jobs\ConfirmDeployment;
 use App\Jobs\PublishDeployment;
 use App\Models\Deployment;
 use App\Models\FeatureRequest;
@@ -395,6 +396,93 @@ class PublishingTest extends TestCase
         $this->assertSame('This is our fault: publishing stopped before it finished. Your app online may not have changed. Try again.', $deployment->error);
         $this->assertSame('ours', $deployment->error_cause);
         $this->assertSame('The worker was killed after 3600 seconds.', $deployment->error_details);
+    }
+
+    public function test_giving_the_web_address_after_a_send_checks_it_is_online_without_sending_again()
+    {
+        $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main']);
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+        $sent = Deployment::sole();
+        $this->assertSame(DeploymentStatus::Sent, $sent->status);
+        Http::fake(['shop.example.com/*' => Http::response('', 200)]);
+        $this->travel(2)->days();
+
+        $this->actingAs($this->owner)
+            ->put(route('projects.publishing.update', $this->project), ['deploy_remote' => $this->remote, 'deploy_branch' => 'main', 'live_url' => 'https://shop.example.com'])
+            ->assertSessionHasNoErrors()
+            ->assertInertiaFlash('toast.message', 'Saved. I am checking that your app is online.');
+
+        $deployment = Deployment::sole();
+        $this->assertSame(DeploymentStatus::Published, $deployment->status);
+        // Checked, not sent again: the push is the one from two days ago.
+        $this->assertTrue($sent->pushed_at?->equalTo($deployment->pushed_at));
+        $this->assertNotNull($deployment->confirmed_at);
+    }
+
+    public function test_a_check_asked_for_by_hand_can_find_the_app_not_working()
+    {
+        config(['builder.publishing.confirm.confirm_seconds' => 0]);
+        $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main']);
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+        // Newer work is waiting, so giving the address does not check the old version on its own.
+        $this->repository->commitFiles($this->project, $this->repository->head($this->project), ['app/Models/Plan.php' => "<?php\n"], 'Add plans', null);
+        Http::fake(['shop.example.com/*' => Http::response('Server Error', 500)]);
+
+        $this->actingAs($this->owner)
+            ->put(route('projects.publishing.update', $this->project), ['deploy_remote' => $this->remote, 'deploy_branch' => 'main', 'live_url' => 'https://shop.example.com'])
+            ->assertInertiaFlash('toast.message', 'Saved. You can publish now.');
+        $this->assertSame(DeploymentStatus::Sent, Deployment::sole()->status);
+
+        $this->actingAs($this->owner)->post(route('deployment-checks.store', $this->project))->assertSessionHasNoErrors();
+
+        $deployment = Deployment::sole();
+        $this->assertSame(DeploymentStatus::NeedsAttention, $deployment->status);
+        $this->assertNull($deployment->error_cause);
+        $this->assertContains(['path' => '/', 'status' => 500, 'passed' => false], $deployment->health);
+    }
+
+    public function test_there_is_nothing_to_check_without_an_address_or_once_the_app_is_online()
+    {
+        $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main']);
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project));
+
+        $this->actingAs($this->owner)
+            ->post(route('deployment-checks.store', $this->project))
+            ->assertSessionHasErrors(['check' => 'Add your app\'s web address first, so I know where to check.']);
+
+        $this->project->update(['live_url' => 'https://shop.example.com']);
+        Deployment::sole()->update(['status' => DeploymentStatus::Published]);
+
+        $this->actingAs($this->owner)
+            ->post(route('deployment-checks.store', $this->project))
+            ->assertSessionHasErrors(['check' => 'There is nothing to check right now.']);
+        $this->actingAs(User::factory()->create())
+            ->post(route('deployment-checks.store', $this->project))
+            ->assertForbidden();
+        $this->assertSame(DeploymentStatus::Published, Deployment::sole()->status);
+    }
+
+    public function test_a_check_that_broke_on_our_side_says_so_and_can_be_checked_again()
+    {
+        $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main', 'live_url' => 'https://shop.example.com']);
+        $deployment = Deployment::factory()->for($this->project)->create(['user_id' => $this->owner->id, 'status' => DeploymentStatus::Confirming, 'pushed_at' => now()]);
+
+        (new ConfirmDeployment($deployment))->failed(new RuntimeException('cURL error 6 with key sk-ant-'.str_repeat('b', 40)));
+
+        $deployment->refresh();
+        $this->assertSame(DeploymentStatus::NeedsAttention, $deployment->status);
+        $this->assertSame('This is our fault: your hosting has the new version, but I could not check that the app is online. Check again.', $deployment->error);
+        $this->assertSame('ours', $deployment->error_cause);
+        $this->assertStringContainsString('cURL error 6', (string) $deployment->error_details);
+        $this->assertStringNotContainsString('sk-ant-', (string) $deployment->error_details);
+
+        Http::fake(['shop.example.com/*' => Http::response('', 200)]);
+        $this->actingAs($this->owner)->post(route('deployment-checks.store', $this->project))->assertSessionHasNoErrors();
+
+        $deployment->refresh();
+        $this->assertSame(DeploymentStatus::Published, $deployment->status);
+        $this->assertNull($deployment->error);
+        $this->assertNull($deployment->error_cause);
     }
 
     public function test_publishing_needs_a_destination_and_runs_one_at_a_time()

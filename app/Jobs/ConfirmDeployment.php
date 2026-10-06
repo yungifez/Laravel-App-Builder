@@ -6,6 +6,8 @@ use App\Enums\DeploymentStatus;
 use App\Models\Deployment;
 use App\Publishing\PublishingHostManager;
 use App\Publishing\ReleaseProgress;
+use App\Support\Secrets;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Http\Client\ConnectionException;
@@ -24,8 +26,10 @@ class ConfirmDeployment implements ShouldQueue
 
     /**
      * Create a new job instance.
+     *
+     * @param  CarbonImmutable|null  $since  When the wait for the app to answer began, when not at the push
      */
-    public function __construct(public Deployment $deployment) {}
+    public function __construct(public Deployment $deployment, public ?CarbonImmutable $since = null) {}
 
     /**
      * Check that the host has the new version live and that the app answers
@@ -68,12 +72,12 @@ class ConfirmDeployment implements ShouldQueue
             return;
         }
 
-        if ($deployment->pushed_at?->addSeconds((int) config('builder.publishing.confirm.confirm_seconds'))->isFuture()) {
+        if (($this->since ?? $deployment->pushed_at)?->addSeconds((int) config('builder.publishing.confirm.confirm_seconds'))->isFuture()) {
             if ($health !== []) {
                 $deployment->update(['health' => $health]);
             }
 
-            self::dispatch($deployment)->delay((int) config('builder.publishing.confirm.interval_seconds'));
+            self::dispatch($deployment, $this->since)->delay((int) config('builder.publishing.confirm.interval_seconds'));
 
             return;
         }
@@ -91,13 +95,16 @@ class ConfirmDeployment implements ShouldQueue
     }
 
     /**
-     * Record an unexpected failure, without claiming the app is online.
+     * Record an unexpected failure, without claiming the app is online. The
+     * check broke, not the app, so the owner checks again (CheckDeployment).
      */
     public function failed(?Throwable $exception): void
     {
         $this->deployment->update([
             'status' => DeploymentStatus::NeedsAttention,
-            'error' => __('Your hosting has the new version, but I could not check that the app is online.'),
+            'error' => __('This is our fault: your hosting has the new version, but I could not check that the app is online. Check again.'),
+            'error_cause' => 'ours',
+            'error_details' => $exception === null ? null : Secrets::redact(Str::limit(trim($exception->getMessage()), 2000)),
             'finished_at' => now(),
         ]);
     }
