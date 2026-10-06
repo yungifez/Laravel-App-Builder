@@ -55,6 +55,18 @@ class KeepWorkerNotes
             return;
         }
 
+        // The workspace goes back to its baseline before each patch, so a
+        // patch handed back again as it was gets the notes already written
+        // for it, without asking the model again.
+        $key = hash('sha256', (string) json_encode([$patch, $summary, $notes]));
+        $kept = $run->events()->where('type', 'notes_kept')->where('data->key', $key)->latest('sequence')->first();
+
+        if ($kept !== null) {
+            $this->write($workspace, $kept->data['files']);
+
+            return;
+        }
+
         try {
             $response = NotesKeeper::make()->prompt($this->prompt($summary, $patch, $notes), provider: ModelRole::Reviewer->providers());
             $this->recordModelUsage->handle($run, ModelRole::Reviewer, $response);
@@ -69,13 +81,30 @@ class KeepWorkerNotes
             return;
         }
 
-        $driver = $this->workspaces->driver($workspace->driver);
+        $files = [];
 
         foreach ($response['files'] ?? [] as $file) {
             // Only the notes it was shown, so it cannot write anywhere else.
             if (is_array($file) && is_string($file['path'] ?? null) && is_string($file['contents'] ?? null) && array_key_exists($file['path'], $notes)) {
-                $driver->writeFile((string) $workspace->driver_id, ProjectNotes::directory().'/'.$file['path'], $file['contents']);
+                $files[$file['path']] = $file['contents'];
             }
+        }
+
+        $run->recordEvent('notes_kept', ['key' => $key, 'files' => $files]);
+        $this->write($workspace, $files);
+    }
+
+    /**
+     * Write the kept notes into the workspace, by their path in the notes.
+     *
+     * @param  array<string, string>  $files
+     */
+    protected function write(Workspace $workspace, array $files): void
+    {
+        $driver = $this->workspaces->driver($workspace->driver);
+
+        foreach ($files as $path => $contents) {
+            $driver->writeFile((string) $workspace->driver_id, ProjectNotes::directory().'/'.$path, $contents);
         }
     }
 

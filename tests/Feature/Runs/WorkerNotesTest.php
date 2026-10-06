@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Runs;
 
+use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Runs\GrantWorkerAccess;
 use App\Actions\Runs\StartRun;
 use App\Ai\Agents\ChangeReviewer;
@@ -9,6 +10,7 @@ use App\Ai\Agents\FeaturePlanner;
 use App\Ai\Agents\NotesKeeper;
 use App\Context\ProjectNotes;
 use App\Enums\RunStatus;
+use App\Enums\VerificationStatus;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
@@ -119,6 +121,67 @@ class WorkerNotesTest extends TestCase
         $this->assertSame('The provider is down.', $run->events()->where('type', 'notes_not_updated')->sole()->data['reason']);
     }
 
+    public function test_the_same_change_handed_back_again_gets_the_notes_already_written_for_it()
+    {
+        $updated = "---\ncapability: teams\npaths: [app/Models/Team.php]\n---\n# Teams\n\nA team has a name and may have a description.\n";
+        NotesKeeper::fake([['files' => [['path' => 'capabilities/teams.md', 'contents' => $updated]]]]);
+
+        $run = $this->submit($this->startRun());
+        $this->failChecks($run);
+        // The worker could not fix it and hands the same change back.
+        $run = $this->submit($run);
+
+        NotesKeeper::assertPromptedTimes(1);
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(['capabilities/teams.md' => ['before' => self::TEAMS, 'after' => $updated]], $run->featureRequest->note_changes);
+    }
+
+    public function test_a_different_change_handed_back_gets_its_own_notes()
+    {
+        NotesKeeper::fake(fn () => ['files' => [['path' => 'capabilities/teams.md', 'contents' => self::TEAMS."\nUpdated.\n"]]]);
+
+        $run = $this->submit($this->startRun());
+        $this->failChecks($run);
+        $run = $this->submit($run, '    public ?string $description = \'\';');
+
+        NotesKeeper::assertPromptedTimes(2);
+        $this->assertSame(RunStatus::Verifying, $run->status);
+    }
+
+    public function test_notes_that_failed_to_update_are_asked_for_again()
+    {
+        $tries = 0;
+        NotesKeeper::fake(function () use (&$tries) {
+            if ($tries++ === 0) {
+                throw new RuntimeException('The provider is down.');
+            }
+
+            return ['files' => [['path' => 'capabilities/teams.md', 'contents' => self::TEAMS."\nUpdated.\n"]]];
+        });
+
+        $run = $this->submit($this->startRun());
+        $this->failChecks($run);
+        $run = $this->submit($run);
+
+        NotesKeeper::assertPromptedTimes(2);
+        $this->assertSame(1, $run->events()->where('type', 'notes_kept')->count());
+        $this->assertSame(self::TEAMS."\nUpdated.\n", $run->featureRequest->note_changes['capabilities/teams.md']['after']);
+    }
+
+    /**
+     * Fail the checks of the worker's change, which sends it back to them.
+     */
+    private function failChecks(Run $run): void
+    {
+        $verification = $run->verifications()->latest('id')->firstOrFail();
+        $verification->update(['status' => VerificationStatus::Failed, 'results' => [
+            ['name' => 'Tests', 'stage' => 'checks', 'outcome' => 'failed', 'exit_code' => 1, 'timed_out' => false, 'duration_ms' => 10, 'output' => 'Failed asserting that null is a string.'],
+        ], 'finished_at' => now()]);
+
+        app(CompleteRunVerification::class)->handle($verification);
+        $run->refresh();
+    }
+
     /**
      * Start a worker's run on an app whose notes describe teams and billing.
      *
@@ -134,19 +197,20 @@ class WorkerNotesTest extends TestCase
     }
 
     /**
-     * Hand back the worker's change: a description on the team.
+     * Hand back the worker's change: a description on the team, by default
+     * one that may be empty.
      */
-    private function submit(Run $run): Run
+    private function submit(Run $run, string $line = '    public ?string $description = null;'): Run
     {
-        $patch = <<<'PATCH'
+        $patch = <<<PATCH
             diff --git a/app/Models/Team.php b/app/Models/Team.php
             --- a/app/Models/Team.php
             +++ b/app/Models/Team.php
             @@ -3,4 +3,5 @@
              class Team
              {
-                 public string $name = 'Team';
-            +    public ?string $description = null;
+                 public string \$name = 'Team';
+            +{$line}
              }
 
             PATCH;
