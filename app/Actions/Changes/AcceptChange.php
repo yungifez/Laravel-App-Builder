@@ -4,9 +4,12 @@ namespace App\Actions\Changes;
 
 use App\Actions\Features\AcceptFindings;
 use App\Actions\Features\RetryFeatureRequest;
+use App\Actions\Runs\TransitionRun;
 use App\Context\ProjectNotes;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
+use App\Enums\VerificationStatus;
 use App\Features\AppDrift;
 use App\Features\CodeShortcuts;
 use App\Features\NewMessages;
@@ -26,7 +29,26 @@ class AcceptChange
         private ProjectNotes $notes,
         private RetryFeatureRequest $retryFeatureRequest,
         private AcceptFindings $acceptFindings,
+        private TransitionRun $transitionRun,
     ) {}
+
+    /**
+     * Whether the owner may keep a change our review would not pass, as
+     * their own decision. Only the review doubted it: the checks did not
+     * fail, so it applies and runs. A change whose checks failed, or that
+     * must be made again, is never kept this way.
+     */
+    public static function keepableDespiteReview(FeatureRequest $featureRequest): bool
+    {
+        $run = $featureRequest->latestRun;
+
+        return $featureRequest->status === FeatureRequestStatus::Generated
+            && $featureRequest->commit_sha === null
+            && $run?->status === RunStatus::NeedsUserDecision
+            && $run->stop_reason === StopReason::ReviewFindings
+            && in_array($featureRequest->verifications()->latest('id')->first()?->status, [VerificationStatus::Passed, VerificationStatus::Unverified], true)
+            && ! RetryFeatureRequest::mustBeMadeAgain($featureRequest);
+    }
 
     /**
      * Commit a built, verified and reviewed change to the project's
@@ -41,11 +63,12 @@ class AcceptChange
      *
      * @throws ValidationException when the change cannot be accepted.
      */
-    public function handle(FeatureRequest $featureRequest, User $owner): FeatureRequest
+    public function handle(FeatureRequest $featureRequest, User $owner, bool $despiteReview = false): FeatureRequest
     {
         $run = $featureRequest->latestRun;
+        $anyway = $despiteReview && self::keepableDespiteReview($featureRequest);
 
-        if ($featureRequest->status !== FeatureRequestStatus::Generated || $run?->status !== RunStatus::Completed) {
+        if ($featureRequest->status !== FeatureRequestStatus::Generated || ($run?->status !== RunStatus::Completed && ! $anyway)) {
             throw ValidationException::withMessages(['change' => __('Only a change whose run completed can be accepted.')]);
         }
 
@@ -104,7 +127,7 @@ class AcceptChange
             throw ValidationException::withMessages(['change' => $exception->getMessage().' '.__('Ask for it again to build it on the current app.')]);
         }
 
-        DB::transaction(function () use ($project, $branch, $pending, $sha, $run, $featureRequest) {
+        DB::transaction(function () use ($project, $branch, $pending, $sha, $run, $featureRequest, $anyway) {
             foreach ($pending as $request) {
                 $request->update(['commit_sha' => $sha, 'accepted_at' => now()]);
                 $this->notes->apply($project, $branch, $request->note_changes ?? []);
@@ -114,7 +137,15 @@ class AcceptChange
                 'commit' => $sha,
                 'requests' => array_map(fn (FeatureRequest $request) => $request->id, $pending),
                 'feature_request_id' => $featureRequest->id,
+                // The owner's own decision, with what our review doubted.
+                'despite_review' => $anyway ? ($run->feedback['details'] ?? []) : null,
             ]);
+
+            // The owner stood in for the review, and passed the change.
+            if ($anyway) {
+                $this->transitionRun->handle($run, RunStatus::Reviewing, details: ['reason' => 'kept_despite_review']);
+                $this->transitionRun->handle($run, RunStatus::Completed, details: ['reason' => 'kept_despite_review']);
+            }
         });
 
         $this->ratchetDrift($featureRequest);

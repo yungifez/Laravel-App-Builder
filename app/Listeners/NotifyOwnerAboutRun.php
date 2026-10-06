@@ -26,8 +26,9 @@ class NotifyOwnerAboutRun
         $featureRequest = $event->run->featureRequest;
         $owner = $featureRequest?->user;
 
-        // A background tidy-up is kept or put aside on its own.
-        if ($featureRequest === null || $owner === null || $featureRequest->tidy !== null) {
+        // A background tidy-up is kept or put aside on its own, and a change
+        // the owner kept already needs nothing more from them.
+        if ($featureRequest === null || $owner === null || $featureRequest->tidy !== null || $featureRequest->commit_sha !== null) {
             return;
         }
 

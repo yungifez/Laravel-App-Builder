@@ -575,6 +575,10 @@ const failed = computed(
         (run.value === null && request.value.status === 'failed'),
 );
 
+// Keeping a change our review doubted is the owner's own decision, so it
+// asks once more before it keeps it.
+const confirmingKeep = ref(false);
+
 // Bring the answer the stop waits for into view.
 function showAnswer(): void {
     document
@@ -1313,6 +1317,99 @@ const checks = computed(() => {
                             >
                                 Keep the version before this
                             </Link>
+                            <!-- Only my review doubted it: the owner may
+                                 decide to keep it, knowing why. -->
+                            <div
+                                v-if="request.keep_anyway"
+                                class="space-y-2 border-t pt-2"
+                                data-test="keep-anyway"
+                            >
+                                <p class="text-xs text-muted-foreground">
+                                    {{
+                                        request.keep_anyway.checks === 'passed'
+                                            ? "Your app's checks passed. Only my last look over it found problems."
+                                            : "Your app's checks could not run. My last look over it found problems."
+                                    }}
+                                </p>
+                                <details
+                                    v-if="request.keep_anyway.doubts.length"
+                                    class="text-xs text-muted-foreground"
+                                >
+                                    <summary
+                                        class="min-h-11 cursor-pointer select-none sm:min-h-0"
+                                    >
+                                        What I found
+                                    </summary>
+                                    <ul
+                                        class="mt-1 list-disc space-y-1 pl-4"
+                                        data-test="keep-anyway-doubts"
+                                    >
+                                        <li
+                                            v-for="doubt in request.keep_anyway
+                                                .doubts"
+                                            :key="doubt"
+                                        >
+                                            {{ doubt }}
+                                        </li>
+                                    </ul>
+                                </details>
+                                <Button
+                                    v-if="!confirmingKeep"
+                                    size="sm"
+                                    variant="outline"
+                                    class="h-11 select-none sm:h-8"
+                                    data-test="keep-anyway-button"
+                                    @click="confirmingKeep = true"
+                                >
+                                    Keep it anyway
+                                </Button>
+                                <Form
+                                    v-else
+                                    v-bind="
+                                        FeatureRequestAcceptanceController.store.form(
+                                            request.id,
+                                        )
+                                    "
+                                    :options="{ preserveScroll: true }"
+                                    class="space-y-2"
+                                    v-slot="{ processing, errors }"
+                                >
+                                    <input
+                                        type="hidden"
+                                        name="despite_review"
+                                        value="1"
+                                    />
+                                    <p class="text-xs">
+                                        Keep it in your app with these problems?
+                                    </p>
+                                    <div class="flex flex-wrap gap-2">
+                                        <Button
+                                            size="sm"
+                                            :disabled="processing"
+                                            class="h-11 select-none sm:h-8"
+                                            data-test="keep-anyway-confirm"
+                                        >
+                                            <Spinner v-if="processing" />
+                                            {{
+                                                processing
+                                                    ? 'Keeping it'
+                                                    : 'Yes, keep it'
+                                            }}
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            :disabled="processing"
+                                            class="h-11 select-none sm:h-8"
+                                            @click="confirmingKeep = false"
+                                        >
+                                            Not now
+                                        </Button>
+                                    </div>
+                                    <InputError :message="errors.change" />
+                                </Form>
+                            </div>
                             <Form
                                 v-if="request.can_work_yourself"
                                 v-bind="

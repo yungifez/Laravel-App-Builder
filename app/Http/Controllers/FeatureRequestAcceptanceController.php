@@ -21,7 +21,8 @@ class FeatureRequestAcceptanceController extends Controller
     {
         Gate::authorize('update', $featureRequest->project);
 
-        $accepted = $acceptChange->handle($featureRequest, $request->user());
+        // Only our review doubted it, and the owner keeps it anyway.
+        $accepted = $acceptChange->handle($featureRequest, $request->user(), $request->boolean('despite_review'));
 
         if ($accepted->is($featureRequest)) {
             // The change is kept either way; only the app could not open.

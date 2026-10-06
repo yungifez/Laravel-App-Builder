@@ -3,6 +3,7 @@
 namespace App\Actions\Features;
 
 use App\Actions\Billing\MeasureUsage;
+use App\Actions\Changes\AcceptChange;
 use App\Actions\Context\RequestNotesUpdate;
 use App\Actions\Projects\ConnectOwnTool;
 use App\Actions\Publishing\DescribeUnpublished;
@@ -131,6 +132,12 @@ class DescribeFeatureRequest
                 // It was stopped, failed or let down by the AI service, not
                 // out of tries: going on picks up the plan and the code so far.
                 'can_go_on' => KeepTryingRun::goesOn($featureRequest),
+                // Only our review doubted it and the app's checks did not
+                // fail: the owner may keep it anyway, knowing the doubts.
+                'keep_anyway' => AcceptChange::keepableDespiteReview($featureRequest) ? [
+                    'checks' => $featureRequest->verifications()->latest('id')->value('status'),
+                    'doubts' => $featureRequest->latestRun?->feedback['details'] ?? [],
+                ] : null,
                 'can_continue' => RequestFollowUp::continuable($featureRequest),
                 // An earlier change in this chat that passed and can still
                 // be kept, when this one stopped.

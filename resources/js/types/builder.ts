@@ -210,6 +210,8 @@ export type FeatureRequestDetail = {
     can_keep_trying: boolean;
     /** It was stopped or failed after it was planned, and can go on from the plan and the code so far. */
     can_go_on: boolean;
+    /** Only our review doubted it, and its checks did not fail: the owner may keep it anyway. */
+    keep_anyway: { checks: 'passed' | 'unverified'; doubts: string[] } | null;
     can_continue: boolean;
     /** Whether the owner can write it with their own Claude Code or Codex. */
     can_work_yourself: boolean;
