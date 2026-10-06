@@ -10,6 +10,8 @@ use App\Models\ProjectNote;
 use App\Models\TestObservation;
 use App\Projects\Frontend;
 use App\Projects\ProjectRepository;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
 
@@ -34,6 +36,7 @@ class CheckProjectNotes
         $context = $this->readProjectContext->current($project);
         $findings = [];
         $secrets = UnsafeCode::secretFiles($files);
+        $untested = [];
 
         // The one safety fact a file list proves on its own, so it is said first.
         if ($secrets !== []) {
@@ -63,15 +66,24 @@ class CheckProjectNotes
 
             if ($capability->testFiles === []) {
                 $findings[] = ['title' => __('Nothing checks ":name" automatically.', ['name' => $capability->name]), 'details' => [__('No test for it runs with the checks.')]];
+                $untested[$capability->key] = true;
             }
         }
 
-        $unlisted = $this->unlistedBehaviors($context, TestObservation::latestFor($project)?->map());
+        $observation = TestObservation::latestFor($project);
+        $unlisted = $this->unlistedBehaviors($context, $observation?->map());
 
         // Putting it right adds to the notes rather than taking out, so no
         // fix button: the title says where the owner writes it instead.
         if ($unlisted !== []) {
             $findings[] = ['title' => __('Your app\'s tests check things the notes do not describe. Copy each one into the rules of the part it belongs to, below.'), 'details' => $unlisted];
+        }
+
+        // A part already said to have no tests is not listed again.
+        foreach ($this->unprovenBehaviors($project, $context, $observation) as $key => [$name, $behaviors]) {
+            if (! isset($untested[$key])) {
+                $findings[] = ['title' => __('":name" says it does things no test checks any more.', ['name' => $name]), 'details' => array_column($behaviors, 'name'), 'fix' => ['part' => "behaviors:{$key}", 'remove' => array_column($behaviors, 'key')]];
+            }
         }
 
         // The app's own screens are described too, wherever its frontend keeps them.
@@ -153,6 +165,53 @@ class CheckProjectNotes
     }
 
     /**
+     * Get, by part key, the part's name and the behaviours its notes list
+     * that no test proves in the latest look at the app's tests. A test
+     * proves a behaviour with a `behavior:<key>` group; when it is deleted
+     * or loses the group, the notes still say the app does it. Only tests
+     * seen after the part's notes were last saved count: a behaviour the
+     * owner just added may wait for the change that tests it.
+     *
+     * @return array<string, array{0: string, 1: list<array{key: string, name: string}>}>
+     */
+    protected function unprovenBehaviors(Project $project, ProjectContext $context, ?TestObservation $observation): array
+    {
+        if ($observation?->created_at === null) {
+            return [];
+        }
+
+        $written = $this->savedAt($project, $context);
+        $proven = $observation->map()->provenBehaviors();
+        $unproven = [];
+
+        foreach ($context->capabilities as $capability) {
+            $at = $written->get((string) $capability->file);
+            $behaviors = array_values(array_filter($capability->behaviors, fn (array $behavior) => ! in_array($behavior['key'], $proven, true)));
+
+            if ($at !== null && $observation->created_at->greaterThan($at) && $behaviors !== []) {
+                $unproven[$capability->key] = [$capability->name, $behaviors];
+            }
+        }
+
+        return $unproven;
+    }
+
+    /**
+     * Get when each part's notes were last saved, by notes file.
+     *
+     * @return Collection<string, Carbon>
+     */
+    protected function savedAt(Project $project, ProjectContext $context): Collection
+    {
+        return ProjectNote::query()
+            ->where('project_id', $project->id)
+            ->where('branch', $project->branch())
+            ->whereIn('path', array_values(array_filter(array_map(fn ($capability) => $capability->file, $context->capabilities))))
+            ->pluck('updated_at', 'path')
+            ->filter();
+    }
+
+    /**
      * Compare sentences as people copy them: any case, spacing or full stop.
      */
     protected static function plain(string $text): string
@@ -175,12 +234,7 @@ class CheckProjectNotes
      */
     protected function staleNotes(Project $project, ProjectContext $context, string $head, array $files): array
     {
-        $written = ProjectNote::query()
-            ->where('project_id', $project->id)
-            ->where('branch', $project->branch())
-            ->whereIn('path', array_values(array_filter(array_map(fn ($capability) => $capability->file, $context->capabilities))))
-            ->pluck('updated_at', 'path')
-            ->filter();
+        $written = $this->savedAt($project, $context);
 
         if ($written->isEmpty()) {
             return [];

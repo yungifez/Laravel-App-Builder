@@ -27,7 +27,7 @@ class ProjectNotesFixRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'part' => ['required', 'string', 'regex:/^(paths|effects):[a-z0-9][a-z0-9_-]{0,59}$/'],
+            'part' => ['required', 'string', 'regex:/^(paths|effects|behaviors):[a-z0-9][a-z0-9_-]{0,59}$/'],
             'remove' => ['required', 'array', 'list', 'max:50'],
             'remove.*' => ['required', 'string', 'max:300'],
             'revision' => ['required', 'string', 'regex:/^[0-9a-f]{40,64}$/'],

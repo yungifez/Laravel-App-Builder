@@ -2,10 +2,12 @@
 
 namespace Tests\Feature\Context;
 
+use App\Actions\Context\CheckProjectNotes;
 use App\Actions\Projects\CreateProject;
 use App\Context\Capability;
 use App\Context\ProjectNotes;
 use App\Models\Project;
+use App\Models\TestObservation;
 use App\Models\User;
 use App\Projects\ProjectRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -48,7 +50,12 @@ class NotesDriftFixTest extends TestCase
     protected const TEAMS_NOTES = <<<'MARKDOWN'
     ---
     capability: teams
-    paths: [app/Models/Team.php]
+    paths: [app/Models/Team.php, tests/Feature/TeamTest.php]
+    behaviors:
+        - key: rename-team
+          name: Owners rename their team
+        - key: invite-members
+          name: Owners invite members
     ---
     # Teams
 
@@ -74,6 +81,7 @@ class NotesDriftFixTest extends TestCase
             '.builder/capabilities/teams.md' => self::TEAMS_NOTES,
             'app/Models/Plan.php' => "<?php\n",
             'app/Models/Team.php' => "<?php\n",
+            'tests/Feature/TeamTest.php' => "<?php\n",
         ]), draftNotes: false);
         $this->repository->import($this->project);
     }
@@ -117,6 +125,71 @@ class NotesDriftFixTest extends TestCase
             ->assertSessionHasErrors(['fix' => 'This is already fixed. Check your app again.']);
 
         $this->assertSame($before, $this->plans());
+    }
+
+    public function test_the_owner_removes_a_behaviour_no_test_checks_any_more(): void
+    {
+        $this->travel(1)->minute();
+        $this->observeTests(['behavior:rename-team']);
+
+        $this->assertContains([
+            'title' => '"Teams" says it does things no test checks any more.',
+            'details' => ['Owners invite members'],
+            'fix' => ['part' => 'behaviors:teams', 'remove' => ['invite-members']],
+        ], app(CheckProjectNotes::class)->handle($this->project));
+
+        $this->fix('behaviors:teams', ['invite-members'])->assertSessionHasNoErrors();
+
+        $this->assertSame([['key' => 'rename-team', 'name' => 'Owners rename their team']], Capability::fromMarkdown('capabilities/teams.md', $this->teams())->behaviors);
+        $this->assertNotContains('behaviors:teams', $this->fixesFound());
+    }
+
+    public function test_a_behaviour_a_test_proves_is_not_listed(): void
+    {
+        $this->travel(1)->minute();
+        $this->observeTests(['behavior:rename-team', 'behavior:invite-members']);
+
+        $this->assertNotContains('behaviors:teams', $this->fixesFound());
+    }
+
+    public function test_a_behaviour_added_after_the_tests_were_last_seen_is_not_listed(): void
+    {
+        // The owner wrote the behaviour for a change that has not run its tests yet.
+        $this->observeTests(['behavior:rename-team']);
+        $this->travel(1)->minute();
+        $this->notes->put($this->project, $this->project->branch(), ['capabilities/teams.md' => $this->teams()."\nOwners can also leave.\n"]);
+
+        $this->assertNotContains('behaviors:teams', $this->fixesFound());
+    }
+
+    public function test_no_look_at_the_tests_lists_nothing_and_a_fix_on_changed_notes_is_refused(): void
+    {
+        $this->travel(1)->minute();
+        $this->assertNotContains('behaviors:teams', $this->fixesFound());
+
+        $this->observeTests([]);
+        $before = $this->teams();
+
+        $this->fix('behaviors:teams', ['invite-members'], revision: str_repeat('a', 40))
+            ->assertSessionHasErrors(['fix' => 'The notes changed since you checked. Check your app again.']);
+        $this->assertSame($before, $this->teams());
+    }
+
+    /**
+     * Record a look at the app's tests: one teams test in the given groups.
+     *
+     * @param  list<string>  $groups
+     */
+    protected function observeTests(array $groups): void
+    {
+        TestObservation::create(['project_id' => $this->project->id, 'tests' => [
+            ['id' => 'Tests\\Feature\\TeamTest::test_owners_rename_teams', 'file' => 'tests/Feature/TeamTest.php', 'groups' => $groups],
+        ], 'files' => ['app/Models/Team.php' => [0]]]);
+    }
+
+    protected function teams(): string
+    {
+        return (string) ($this->notes->files($this->project)['capabilities/teams.md'] ?? '');
     }
 
     /**

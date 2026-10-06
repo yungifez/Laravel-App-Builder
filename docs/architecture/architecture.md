@@ -3832,7 +3832,10 @@ the code, so drift is found without a model and the owner fixes it in place:
   do not describe. "Remove from the notes" removes only what the check still
   finds (`FixNotesDrift`), and is refused when the notes changed since. It also
   lists behaviours the app's tests check that no part's rules describe, for
-  the owner to copy in.
+  the owner to copy in. The other way round, it lists behaviours a part's
+  notes name that no test proves any more, with the same "Remove from the
+  notes". It uses only tests seen after the part's notes were last saved, so
+  a behaviour just added for a change still in progress is not listed.
 - **Notes written before later code.** Each notes file's save time is set
   against `git log` of its part's paths since then. A part with at least
   `BUILDER_STALE_NOTES_MIN_FILES` (3) later-changed files, not counting its

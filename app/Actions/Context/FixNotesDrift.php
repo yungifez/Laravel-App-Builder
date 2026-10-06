@@ -55,7 +55,11 @@ class FixNotesDrift
         $notes = NotesDocument::parse($before);
         $items = $notes->frontmatter === '' ? [] : (array) (Yaml::parse(substr($notes->frontmatter, 4, -4))[$field] ?? []);
 
-        $kept = array_values(Arr::reject($items, fn (mixed $item) => in_array($field === 'effects' ? ($item['to'] ?? null) : $item, $remove, true)));
+        $kept = array_values(Arr::reject($items, fn (mixed $item) => in_array(match ($field) {
+            'effects' => $item['to'] ?? null,
+            'behaviors' => $item['key'] ?? null,
+            default => $item,
+        }, $remove, true)));
         $after = $this->withList($notes, $field, $kept)->toMarkdown();
 
         if ($kept === $items) {
