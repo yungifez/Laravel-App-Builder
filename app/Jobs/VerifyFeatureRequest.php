@@ -26,6 +26,7 @@ use App\Features\AppRoutes;
 use App\Features\AppTraces;
 use App\Features\BoundaryCode;
 use App\Features\CodeShortcuts;
+use App\Features\InputProbes;
 use App\Features\MigrationChecks;
 use App\Features\Mutants;
 use App\Features\NewCode;
@@ -253,6 +254,7 @@ class VerifyFeatureRequest implements ShouldQueue
                 $checksPassed = $this->probeAccess($driver, $runWorkspaceCommand, $workspace, $featureRequest);
                 $checksPassed = $this->shiftTime($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
                 $checksPassed = $this->replayForms($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
+                $checksPassed = $this->probeInputs($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
                 $this->observeScreens($driver, $runWorkspaceCommand, $workspace, $featureRequest);
                 $this->observeFaults($driver, $runWorkspaceCommand, $workspace, $featureRequest);
                 $this->observeMutants($driver, $runWorkspaceCommand, $workspace, $featureRequest);
@@ -1468,6 +1470,77 @@ class VerifyFeatureRequest implements ShouldQueue
 
             $passed = $measured['findings'] === [];
             $this->addResult(__('Sending a form twice'), 'checks', $passed ? self::OUTCOME_PASSED : self::OUTCOME_FAILED, durationMs: $command->duration_ms, output: ReplayProbes::describe($measured));
+
+            return $passed;
+        } catch (CommandLost $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return true;
+        }
+    }
+
+    /**
+     * Send wrong values to each form on a controller the change touched,
+     * and add the result as a check. Return false only for a finding on a
+     * field or rule the change added; a form that could not be filled in
+     * or was turned down whole proves nothing either way.
+     */
+    protected function probeInputs(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): bool
+    {
+        /** @var array{enabled: bool, probes: int, rules_test: string, test: string, command: list<string>, timeout: int, rules_report: string, report: string} $config */
+        $config = config('builder.verification.inputs');
+        /** @var array{command: list<string>, report: string} $routes */
+        $routes = config('builder.verification.access.routes');
+        $controllers = $this->touchedControllers();
+
+        if (! $config['enabled'] || $controllers === []) {
+            return true;
+        }
+
+        try {
+            $read = fn (string $path) => (string) rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), '', report: false);
+            $run = function (string $path, string $test, string $report) use ($driver, $runWorkspaceCommand, $workspace, $config): WorkspaceCommand {
+                $driver->writeFile((string) $workspace->driver_id, $path, $test);
+                $command = $runWorkspaceCommand->handle($workspace, [...$config['command'], $path, $report], $config['timeout']);
+                $runWorkspaceCommand->handle($workspace, ['rm', '-f', $path], 30);
+
+                if ($command->lost) {
+                    throw new CommandLost($command->error_output);
+                }
+
+                return $command;
+            };
+
+            if ($this->outcome($runWorkspaceCommand->handle($workspace, $routes['command'], 60)) !== self::OUTCOME_PASSED) {
+                return true;
+            }
+
+            $found = InputProbes::routes($read($routes['report']), $controllers);
+
+            if ($found === []) {
+                return true;
+            }
+
+            $first = $run($config['rules_test'], InputProbes::rulesTest($found, $config['rules_report']), $config['rules_report']);
+            $rules = InputProbes::rules($read($config['rules_report']));
+            $planned = InputProbes::plan($found, $rules, $config['probes']);
+
+            if ($planned['baselines'] === []) {
+                return true;
+            }
+
+            $second = $run($config['test'], InputProbes::test($found, $planned, $config['report']), $config['report']);
+            $patches = array_map(fn (FeatureRequest $request) => $request->patch, $featureRequest->lineage());
+            $measured = InputProbes::measure($found, $rules, $planned, InputProbes::parse($read($config['report'])), InputProbes::changed($patches));
+
+            if ($measured['tried'] === 0) {
+                return true;
+            }
+
+            $passed = $measured['findings'] === [];
+            $this->addResult(__('Forms turn down wrong values'), 'checks', $passed ? self::OUTCOME_PASSED : self::OUTCOME_FAILED, durationMs: $first->duration_ms + $second->duration_ms, output: InputProbes::describe($found, $measured));
 
             return $passed;
         } catch (CommandLost $exception) {

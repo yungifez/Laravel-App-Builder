@@ -1136,6 +1136,27 @@ return [
             'report' => 'storage/logs/access/replay.jsonl',
         ],
 
+        // The form-input probes (§26.11): for each form on a controller the
+        // change touched, a first test at "rules_test" sends it empty as a
+        // signed-in person and notes the rules the validator was given.
+        // A second test at "test" sends one whole form each route should
+        // accept, then that form with one field changed: left out, past a
+        // rule's edge, of the wrong kind, or outside its choices. A wrong
+        // value the app took, a right one it turned down, or a page that
+        // broke sends the change back when the change added the field or
+        // its rules. "command" gets a test's path and its report's path.
+        // At most "probes" changed forms are tried.
+        'inputs' => [
+            'enabled' => (bool) env('BUILDER_INPUT_PROBES', true),
+            'probes' => (int) env('BUILDER_INPUT_PROBE_LIMIT', 40),
+            'rules_test' => 'tests/Feature/InputRulesProbeTest.php',
+            'test' => 'tests/Feature/InputProbeTest.php',
+            'command' => ['sh', '-c', 'mkdir -p storage/logs/access && rm -f "$2" && { php artisan test "$1" > storage/logs/access/inputs.log 2>&1 || true; }', 'sh'],
+            'timeout' => 300,
+            'rules_report' => 'storage/logs/access/input-rules.jsonl',
+            'report' => 'storage/logs/access/inputs.jsonl',
+        ],
+
         // The time engine (direction 32): when the change's code works with
         // dates, its own tests run with the clock stopped on an ordinary
         // day, then at moments where date code often breaks (the last

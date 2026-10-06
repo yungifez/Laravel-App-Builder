@@ -4449,6 +4449,31 @@ A first send that was turned down proves nothing, and a second record is not
 judged, since the app may want two. Jobs that run twice are the fault
 engine's (§12).
 
+**Wrong values in forms (the input probes).** For each POST, PUT or PATCH
+route on a controller the change touched, a first generated test sends an
+empty form as a signed-in `User::factory()` person. It notes the rules the
+app's validator received, so form requests and inline `validate()` count
+alike. Enum rules become their cases. Closures, custom rule objects and
+conditional rules arrive only as what they are. `InputValues` keeps the one
+valid value per field and the one wrong-kind value; Formats (§9) add their
+examples there. A second test sends one whole form that should pass, with dates
+in the order their rules ask for, and rows from factories for `exists`. Then
+it sends that form again, one field changed per probe: left out, one value
+of the wrong kind, outside its `in` choices or `exists` rows, and on both
+sides of each `max`, `min`, `size`, `between`, `digits` and date-order rule.
+Fields are combined only for `required_if`, `required_with` and
+`required_without`. Rules written as code are tried only by leaving the field
+out. A budget (`BUILDER_INPUT_PROBE_LIMIT`, 40) keeps the most telling classes:
+left out, wrong kind, out of domain, outside the edges, then inside them.
+Only what came back counts. A wrong value the app took, a valid edge it
+turned down, or a 500 is a finding. A finding fails the check "Forms turn down
+wrong values" only when the change added the field or its rules: the file
+holding them is new, or an added line names the field. Other findings are
+listed as already so and not sent back. If the whole form is not accepted,
+or a form cannot be reached or filled in (no user factory, a route record
+without a factory, a pattern rule), its probes are listed as not fully tried,
+never as findings. Fields inside lists and files are not tried yet.
+
 **Out of V0:** the rest, including the introspection this relies on, beyond
 what V0's own verification already uses.
 
