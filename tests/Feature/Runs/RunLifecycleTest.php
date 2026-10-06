@@ -253,7 +253,7 @@ class RunLifecycleTest extends TestCase
 
         $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
         $this->assertSame('The run used all 1 of its tool operations.', $run->error);
-        $this->assertSame(['revise_request', 'use_stronger_model', 'involve_a_person'], $run->events()->get()->last()->data['choices']);
+        $this->assertSame(['from' => 'implementing', 'to' => 'needs_user_decision', 'reason' => 'budget_exhausted'], $run->events()->get()->last()->data);
         // Nothing is being made while it waits, so the request says it stopped.
         $this->assertSame(FeatureRequestStatus::Failed, $featureRequest->refresh()->status);
     }

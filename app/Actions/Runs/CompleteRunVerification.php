@@ -78,7 +78,7 @@ class CompleteRunVerification
                         'tests' => implode(', ', array_map(fn (array $test) => "\"{$test['name']}\"", $again)),
                     ]),
                     'feedback' => ['reason' => 'verification_failed', 'details' => $failures],
-                ], details: [...$details, 'reason' => StopReason::WrittenTestStillFails, 'tests' => array_map(fn (array $test) => ['file' => $test['file'], 'name' => $test['name']], $again), 'choices' => ConstructRun::DECISION_CHOICES]);
+                ], details: [...$details, 'reason' => StopReason::WrittenTestStillFails, 'tests' => array_map(fn (array $test) => ['file' => $test['file'], 'name' => $test['name']], $again)]);
 
                 return;
             }
@@ -99,7 +99,7 @@ class CompleteRunVerification
                 'error' => __('Verification did not pass, and this run cannot repair the change.'),
                 // Kept so the owner can ask it to keep trying from here.
                 'feedback' => ['reason' => 'verification_failed', 'details' => $failures],
-            ], details: [...$details, 'reason' => StopReason::VerificationFailed, 'choices' => ConstructRun::DECISION_CHOICES]);
+            ], details: [...$details, 'reason' => StopReason::VerificationFailed]);
         });
     }
 
@@ -131,7 +131,7 @@ class CompleteRunVerification
 
         $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, attributes: [
             'error' => __('The checks could not run because of a problem on our side. This is our fault.'),
-        ], details: [...$details, 'reason' => StopReason::VerificationInterrupted, 'choices' => ConstructRun::DECISION_CHOICES]);
+        ], details: [...$details, 'reason' => StopReason::VerificationInterrupted]);
     }
 
     /**

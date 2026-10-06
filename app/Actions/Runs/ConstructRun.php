@@ -76,13 +76,6 @@ use Illuminate\Support\Str;
 
 class ConstructRun
 {
-    /**
-     * What the owner can do when a run stops for a decision.
-     *
-     * @var list<string>
-     */
-    public const DECISION_CHOICES = ['revise_request', 'use_stronger_model', 'involve_a_person'];
-
     public function __construct(
         private TransitionRun $transitionRun,
         private PrepareRunWorkspace $prepareRunWorkspace,
@@ -967,10 +960,7 @@ class ConstructRun
      */
     protected function stopForDecision(Run $run, RunLease $lease, string $reason, StopReason $cause, array $attributes = []): void
     {
-        $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['error' => $reason, ...$attributes], [
-            'reason' => $cause,
-            'choices' => self::DECISION_CHOICES,
-        ]);
+        $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['error' => $reason, ...$attributes], ['reason' => $cause]);
     }
 
     /**
