@@ -334,7 +334,10 @@ app is **Online** only when every path answers without an error. If it does
 not answer within `BUILDER_PUBLISH_CONFIRM_SECONDS` (600), the publish **needs
 attention**. Without an address, a publish is only **Sent**. Only public
 HTTPS addresses are accepted, unless `BUILDER_PUBLISH_ALLOW_LOCAL_REMOTES` is
-on for development.
+on for development. A publish that has not changed for
+`BUILDER_PUBLISH_STALLED_MINUTES` (70) while it checks, sends or confirms lost
+its job. `php artisan publishing:reconcile` (scheduled every five minutes) ends
+it with a next step for the owner.
 
 ### AI SDK
 

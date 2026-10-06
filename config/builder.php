@@ -232,6 +232,11 @@ return [
         'allow_local_remotes' => (bool) env('BUILDER_PUBLISH_ALLOW_LOCAL_REMOTES', false),
         'push_timeout' => (int) env('BUILDER_PUBLISH_PUSH_TIMEOUT', 300),
 
+        // A publish checking, sending or confirming with no change for
+        // "stalled_minutes" lost its job, and publishing:reconcile ends it.
+        // Keep it longer than a publish job may run (an hour).
+        'stalled_minutes' => (int) env('BUILDER_PUBLISH_STALLED_MINUTES', 70),
+
         // After the push, the app's address is checked: first after
         // "settle_seconds", then every "interval_seconds" until every path
         // answers without an error and sign-in works, or "confirm_seconds"
