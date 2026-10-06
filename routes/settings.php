@@ -6,6 +6,7 @@ use App\Http\Controllers\Settings\BillingController;
 use App\Http\Controllers\Settings\DetailLevelController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
+use App\Http\Controllers\Settings\ToolController;
 use App\Http\Middleware\BlockWhileSignedInAsSomeone;
 use Illuminate\Auth\Middleware\RequirePassword;
 use Illuminate\Support\Facades\Route;
@@ -34,6 +35,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('settings/billing', [BillingController::class, 'edit'])->name('billing.edit');
     Route::post('settings/billing/plan', [BillingPlanController::class, 'store'])->middleware([BlockWhileSignedInAsSomeone::class, 'throttle:6,1'])->name('billing.plan.store');
     Route::get('settings/billing/portal', BillingPortalController::class)->middleware(BlockWhileSignedInAsSomeone::class)->name('billing.portal');
+
+    Route::get('settings/tools', [ToolController::class, 'edit'])->name('tools.edit');
+    Route::delete('settings/tools/{client}', [ToolController::class, 'destroy'])->middleware(BlockWhileSignedInAsSomeone::class)->name('tools.destroy');
 });
 
 Route::get('.well-known/passkey-endpoints', function () {

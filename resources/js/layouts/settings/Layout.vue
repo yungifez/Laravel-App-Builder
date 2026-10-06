@@ -9,6 +9,7 @@ import { edit as editAppearance } from '@/routes/appearance';
 import { edit as editBilling } from '@/routes/billing';
 import { edit as editProfile } from '@/routes/profile';
 import { edit as editSecurity } from '@/routes/security';
+import { edit as editTools } from '@/routes/tools';
 import type { NavItem } from '@/types';
 
 const sidebarNavItems: NavItem[] = [
@@ -27,6 +28,10 @@ const sidebarNavItems: NavItem[] = [
     {
         title: 'Plan and use',
         href: editBilling(),
+    },
+    {
+        title: 'Tools',
+        href: editTools(),
     },
 ];
 
