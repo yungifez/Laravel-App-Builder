@@ -33,11 +33,13 @@ use App\Models\Run;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Illuminate\Testing\TestResponse;
 use Illuminate\Validation\ValidationException;
+use Laravel\Ai\Events\PromptingAgent;
 use Mockery;
 use Mockery\MockInterface;
 use Tests\Concerns\PreparesRuns;
@@ -103,6 +105,28 @@ class WorkerDriverTest extends TestCase
 
         $this->tool('get_task', $token)->assertSee('Teams get an optional description.')->assertSee('submit_change');
         $this->tool('check_status', $token)->assertSee('Waiting for your change.');
+    }
+
+    public function test_a_change_handed_over_while_we_plan_it_is_written_by_the_owners_tool()
+    {
+        config(['builder.construction.driver' => 'sdk']);
+
+        // The owner takes the change over while our planner is working on it.
+        Event::listen(PromptingAgent::class, function (PromptingAgent $event) {
+            $featureRequest = FeatureRequest::query()->latest('id')->firstOrFail();
+
+            if ($event->prompt->agent instanceof FeaturePlanner && $featureRequest->latestRun?->driver === 'sdk') {
+                app(HandChangeToOwner::class)->handle($featureRequest, $featureRequest->project->owner);
+            }
+        });
+
+        $run = $this->startRun();
+
+        $this->assertSame('worker', $run->driver);
+        $this->assertSame(RunStatus::Implementing, $run->status, json_encode($run->events()->pluck('data', 'type')));
+        $this->assertSame(1, FeatureRequest::query()->count());
+        $this->assertTrue($run->events()->where('type', 'handed_to_owner')->exists());
+        $this->assertSame(0, $run->events()->where('type', 'model_call')->where('data->role', 'coder')->count());
     }
 
     public function test_a_handed_back_change_is_applied_and_checked_and_a_repair_is_the_whole_change_again()

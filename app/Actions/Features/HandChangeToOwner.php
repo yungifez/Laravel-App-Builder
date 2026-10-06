@@ -49,8 +49,10 @@ class HandChangeToOwner
 
     /**
      * Give the change to the owner's worker, and make a new connection for
-     * it. A change we are making stops and starts again for their worker.
-     * A new connection closes the earlier one, so only one worker writes.
+     * it. A change still being planned keeps its plan and the owner's
+     * answers, and their worker writes it; a change we are writing stops
+     * and starts again for their worker. A new connection closes the
+     * earlier one, so only one worker writes.
      *
      * @return array{change: FeatureRequest, run: Run, token: string}
      *
@@ -65,6 +67,14 @@ class HandChangeToOwner
         }
 
         $run = $featureRequest->latestRun;
+
+        // Planning reads the driver again before the writing starts, so
+        // the switch is only safe until then: checked in the update itself.
+        if ($run !== null && ! self::theirs($run) && Run::query()->whereKey($run->id)
+            ->whereIn('status', [RunStatus::Queued, RunStatus::Planning])
+            ->update(['driver' => 'worker']) === 1) {
+            $run->refresh()->recordEvent('handed_to_owner', ['driver' => 'worker']);
+        }
 
         if (! self::theirs($run)) {
             if ($run !== null && ! $run->status->finished()) {

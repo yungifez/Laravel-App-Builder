@@ -33,9 +33,11 @@ class WorkYourselfTest extends TestCase
         $this->project = Project::factory()->for($this->owner, 'owner')->create(['name' => 'Bright Cleaning']);
     }
 
-    public function test_the_owner_takes_over_a_change_we_are_making_and_gets_a_connection_once()
+    public function test_the_owner_takes_over_a_change_we_are_planning_and_keeps_its_answers()
     {
-        $ours = $this->change(RunStatus::Planning, FeatureRequestStatus::Generating);
+        $answers = [['question' => 'Who can see it?', 'answer' => 'Members']];
+        $ours = $this->change(RunStatus::Planning, FeatureRequestStatus::Generating, attributes: ['answers' => $answers]);
+        $run = $ours->latestRun()->firstOrFail();
 
         $this->actingAs($this->owner)
             ->get(route('projects.show', ['project' => $this->project, 'change' => $ours->uuid]))
@@ -45,14 +47,15 @@ class WorkYourselfTest extends TestCase
 
         $response = $this->post(route('feature-requests.worker.store', $ours));
 
-        $theirs = $this->project->featureRequests()->latest('id')->firstOrFail();
-        $run = $theirs->latestRun()->firstOrFail();
-
-        $response->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $theirs->uuid]));
-        $this->assertSame($ours->id, $theirs->retry_of_id);
+        // The same change goes on, so the owner is not asked again.
+        $response->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $ours->uuid]));
+        $this->assertSame(1, $this->project->featureRequests()->count());
+        $run->refresh();
         $this->assertSame('worker', $run->driver);
-        $this->assertSame(RunStatus::Cancelled, $ours->latestRun()->firstOrFail()->status);
-        Queue::assertPushed(ExecuteRun::class, fn (ExecuteRun $job) => $job->run->is($run));
+        $this->assertSame(RunStatus::Planning, $run->status);
+        $this->assertSame($answers, $run->answers);
+        $this->assertTrue($run->events()->where('type', 'handed_to_owner')->exists());
+        Queue::assertNothingPushed();
 
         $token = session('inertia.flash_data.worker.token');
         $response->assertInertiaFlash('worker.run', $run->uuid);
@@ -63,8 +66,25 @@ class WorkYourselfTest extends TestCase
         // The connection shows from the hand-over, while the change is
         // still planned, so it is never lost to a reload.
         $this->flushHeaders()->actingAs($this->owner)
-            ->get(route('projects.show', ['project' => $this->project, 'change' => $theirs->uuid]))
+            ->get(route('projects.show', ['project' => $this->project, 'change' => $ours->uuid]))
             ->assertInertia(fn (Assert $page) => $page->where('change.run.yours.waiting', true));
+    }
+
+    public function test_a_change_we_are_writing_starts_again_for_the_owners_tool()
+    {
+        $ours = $this->change(RunStatus::Implementing, FeatureRequestStatus::Generating);
+
+        $response = $this->actingAs($this->owner)->post(route('feature-requests.worker.store', $ours));
+
+        $theirs = $this->project->featureRequests()->latest('id')->firstOrFail();
+        $run = $theirs->latestRun()->firstOrFail();
+
+        $response->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $theirs->uuid]));
+        $this->assertSame($ours->id, $theirs->retry_of_id);
+        $this->assertSame('worker', $run->driver);
+        $this->assertSame(RunStatus::Cancelled, $ours->latestRun()->firstOrFail()->status);
+        Queue::assertPushed(ExecuteRun::class, fn (ExecuteRun $job) => $job->run->is($run));
+        $response->assertInertiaFlash('worker.run', $run->uuid);
     }
 
     public function test_the_thread_says_how_to_connect_while_it_waits_for_their_change()

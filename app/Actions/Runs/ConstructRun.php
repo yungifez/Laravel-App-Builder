@@ -151,10 +151,12 @@ class ConstructRun
      */
     protected function advance(Run $run, RunLease $lease): void
     {
-        $driver = $this->drivers->driver($run->driver);
-
         while (true) {
             $run->refresh();
+
+            // Read for each step: an owner may take a change over to their
+            // own tool while it is still being planned.
+            $driver = $this->drivers->driver($run->driver);
 
             // A change already built and checked is still reviewed: that
             // is one small call, and throwing the work away costs more. A
