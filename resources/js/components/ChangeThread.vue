@@ -240,7 +240,7 @@ function writtenFor(criterion: number) {
 }
 
 // With nothing to decide, the chat stays quiet: what matters most shows
-// a line each, and the rest of the plan waits behind "Details". The
+// a line each, and the rest of the plan waits behind "The plan". The
 // server puts the decisions in reading order.
 const GLANCE_SHOWN = 3;
 const detailsOpen = ref(false);
@@ -1360,7 +1360,7 @@ const checks = computed(() => {
                                 <ChevronRight
                                     class="size-3.5 transition-transform group-data-[state=open]:rotate-90"
                                 />
-                                Details
+                                The plan
                             </CollapsibleTrigger>
                             <CollapsibleContent>
                                 <ul
@@ -1566,7 +1566,7 @@ const checks = computed(() => {
                                     @click="detailsOpen = true"
                                 >
                                     <ChevronRight class="size-3.5" />
-                                    Details
+                                    The plan
                                 </button>
                                 <template v-if="planOpen">
                                     <section

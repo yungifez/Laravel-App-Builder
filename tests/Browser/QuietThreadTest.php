@@ -51,7 +51,7 @@ function quietChat(FeatureRequest $change): mixed
     return visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))->resize(390, 844);
 }
 
-it('shows one line for a decision worth a glance and keeps the rest behind Details', function () {
+it('shows one line for a decision worth a glance and keeps the rest behind the plan', function () {
     $change = decidedChange(['Bookings are kept after a class is deleted.'], ['Times show in the gym’s time zone.', 'A member books one place at a time.', 'Classes list soonest first.']);
 
     quietChat($change)
@@ -62,7 +62,7 @@ it('shows one line for a decision worth a glance and keeps the rest behind Detai
         ->assertMissing('[data-test="decisions-more"]')
         ->assertDontSee('Times show in the gym’s time zone.')
         ->assertDontSee('A member books a place in a class with places left.')
-        ->assertSeeIn('[data-test="plan-details-toggle"]', 'Details')
+        ->assertSeeIn('[data-test="plan-details-toggle"]', 'The plan')
         ->click('[data-test="plan-details-toggle"]')
         ->assertSee('Times show in the gym’s time zone.')
         ->assertSee('Classes list soonest first.')

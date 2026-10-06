@@ -247,7 +247,7 @@ it('keeps what may also have changed apart from what was asked, and counts files
     $files = collect(PatchSummary::files($run->featureRequest->refresh()->patch))
         ->pluck('path')->reject(fn (string $path) => str_starts_with($path, ProjectNotes::directory().'/') || str_starts_with($path, ProjectContext::LEGACY_DIRECTORY.'/'))->values()->all();
     $review = $run->review;
-    $review['changes'][] = ['behavior' => 'Seats are counted when someone joins.', 'before' => 'Seats were counted monthly.', 'now' => 'Seats are counted at once.', 'area' => 'billing', 'section' => 'may_also_affect'];
+    $review['changes'][] = ['behavior' => 'Seats are counted when someone joins.', 'before' => 'Seats were counted monthly.', 'now' => 'Seats are counted at once.', 'area' => 'billing', 'section' => 'may_also_affect', 'evidence' => 'in_change'];
     // Billing claims the first file; no part claims the others. No test
     // tried billing another way.
     $review['classification'] = [...$review['classification'], 'requested' => [], 'may_also_affect' => ['billing' => [$files[0]]], 'unexpected' => [], 'unclaimed' => array_slice($files, 1)];
