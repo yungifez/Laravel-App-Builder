@@ -96,6 +96,7 @@ class Scaffold
         $files = [];
         $notes = [];
         $resources = [];
+        $tests = [];
 
         foreach ($this->inOrder($records) as $record) {
             if (! $this->isNew($record, $existing)) {
@@ -122,6 +123,12 @@ class Scaffold
             $files[$controller] = $this->controller($record, in_array('app/Http/Controllers/Controller.php', $existing, true));
             $files[$request] = $this->request($record, 'update');
             $access = $record['access'] ?? null;
+
+            // Posted through the record's own route, so only once a policy
+            // lets people add it and the route is written.
+            if ($access !== null && ($test = $this->formatTest($record, $uri)) !== null) {
+                $tests["tests/Feature/{$name}FormatTest.php"] = $test;
+            }
             $resources[] = [
                 'name' => $name,
                 'uri' => $uri,
@@ -136,6 +143,7 @@ class Scaffold
 
             if ($web !== null) {
                 $files['routes/web.php'] = $web;
+                $files = [...$files, ...$tests];
             } else {
                 $names = implode(', ', array_column($resources, 'name'));
                 $notes[] = isset($routes['routes/web.php'])
@@ -765,6 +773,112 @@ class Scaffold
             }
 
             PHP;
+    }
+
+    /**
+     * Write the test that posts each format's examples through the
+     * record's own route (§9 Formats): what people may type is taken and
+     * stored in one form, and what they may not is turned away. Null when
+     * the record has no formatted field.
+     *
+     * @param  Record  $record
+     */
+    protected function formatTest(array $record, string $uri): ?string
+    {
+        $name = $record['name'];
+        $fields = FieldType::expand($record['fields']);
+        $route = var_export("{$uri}.store", true);
+        $tests = [];
+        $usd = [];
+
+        foreach ($fields as $field) {
+            if ($field['type'] === FieldType::Money->value && FieldType::settings($field)['currency'] === 'per_record') {
+                // The examples of an amount with its own currency are in USD.
+                $usd[] = var_export(FieldType::currencyColumn($field), true)." => 'USD'";
+            }
+        }
+
+        foreach ($fields as $field) {
+            $examples = FieldType::from($field['type'])->examples($field);
+
+            if ($examples['valid'] === [] && $examples['stored'] === []) {
+                continue;
+            }
+
+            $attribute = var_export(FieldType::attribute($field), true);
+            $snake = Str::snake($field['name']);
+            $typed = array_values(array_unique([...$examples['valid'], ...array_column($examples['stored'], 0)]));
+            // A cast of our own stores the one form, so the column is read;
+            // Laravel's own casts are read through, as databases store a
+            // decimal differently.
+            $read = is_string(FieldType::from($field['type'])->cast($field)) ? "->{$field['name']}" : "->getRawOriginal({$attribute})";
+            $tests[] = $this->test("test_{$snake}_takes_what_people_type_and_stores_it_in_one_form", [
+                '$this->actingAs(User::factory()->create());',
+                "foreach ({$this->exportList($typed)} as \$typed) {",
+                "    \$this->post(route({$route}), [...\$this->valid(), {$attribute} => \$typed])->assertSessionHasNoErrors();",
+                '}',
+                "foreach ({$this->exportList($examples['stored'])} as [\$typed, \$stored]) {",
+                "    \$this->post(route({$route}), [...\$this->valid(), {$attribute} => \$typed]);",
+                "    \$this->assertSame(\$stored, (string) {$name}::query()->latest('id')->firstOrFail(){$read});",
+                '}',
+            ]);
+
+            if ($examples['invalid'] !== []) {
+                $tests[] = $this->test("test_{$snake}_turns_away_what_is_not_one", [
+                    '$this->actingAs(User::factory()->create());',
+                    "foreach ({$this->exportList($examples['invalid'])} as \$typed) {",
+                    "    \$this->post(route({$route}), [...\$this->valid(), {$attribute} => \$typed])->assertSessionHasErrors({$attribute});",
+                    '}',
+                ]);
+            }
+        }
+
+        if ($tests === []) {
+            return null;
+        }
+
+        $body = implode("\n\n", $tests);
+        $words = $this->words($name);
+        $valid = $usd === [] ? "{$name}::factory()->raw()" : "[...{$name}::factory()->raw(), ".implode(', ', $usd).']';
+
+        return <<<PHP
+            <?php
+
+            namespace Tests\Feature;
+
+            use App\Models\\{$name};
+            use App\Models\User;
+            use Illuminate\Foundation\Testing\RefreshDatabase;
+            use Tests\TestCase;
+
+            class {$name}FormatTest extends TestCase
+            {
+                use RefreshDatabase;
+
+            {$body}
+
+                /**
+                 * Get a {$words} that may be added as it is.
+                 *
+                 * @return array<array-key, mixed>
+                 */
+                protected function valid(): array
+                {
+                    return {$valid};
+                }
+            }
+
+            PHP;
+    }
+
+    /**
+     * Write a list, or a list of pairs, as short PHP on one line.
+     *
+     * @param  array<int, string|array<int, string>>  $values
+     */
+    protected function exportList(array $values): string
+    {
+        return '['.implode(', ', array_map(fn (string|array $value) => is_array($value) ? $this->exportList($value) : var_export($value, true), $values)).']';
     }
 
     /**

@@ -12,6 +12,8 @@ use Tests\TestCase;
 
 class ScaffoldTest extends TestCase
 {
+    protected const WEB = "<?php\n\nuse Illuminate\\Support\\Facades\\Route;\n\nRoute::middleware('auth')->group(function () {\n    Route::view('home', 'home');\n});\n";
+
     /**
      * @return array<string, array{array{name: string, type: string, required: bool, choices: list<string>, of: string|null}, string, list<string>, string|null, string}>
      */
@@ -184,6 +186,57 @@ class ScaffoldTest extends TestCase
         $this->assertStringNotContainsString("'user_id'", $update);
 
         $this->assertStringContainsString("    Route::resource('booking-slots', BookingSlotController::class)->only(['store', 'update', 'destroy']);\n});", $reached['files']['routes/web.php']);
+    }
+
+    public function test_a_formatted_field_gets_a_test_that_posts_its_examples_through_the_records_route()
+    {
+        $access = ['view' => 'everyone', 'create' => 'signed_in', 'update' => 'signed_in', 'delete' => 'signed_in'];
+        $record = ['name' => 'Branch', 'access' => $access, 'fields' => [
+            self::field('title', 'string'),
+            self::field('postcode', 'postal_code', format: ['regions' => ['CA']]),
+            self::field('code', 'pattern', format: ['pattern' => '^BR-\d{3}$', 'examples' => ['BR-001', 'BR-120']]),
+        ]];
+
+        $test = (new Scaffold)->routes([$record], [], ['routes/web.php' => self::WEB])['files']['tests/Feature/BranchFormatTest.php'];
+
+        token_get_all($test, TOKEN_PARSE);
+        $this->assertStringContainsString("foreach (['V6B 1A1', 'v6b1a1'] as \$typed) {\n            \$this->post(route('branches.store'), [...\$this->valid(), 'postcode' => \$typed])->assertSessionHasNoErrors();", $test);
+        $this->assertStringContainsString("foreach ([['v6b1a1', 'V6B 1A1']] as [\$typed, \$stored]) {", $test);
+        $this->assertStringContainsString("Branch::query()->latest('id')->firstOrFail()->getRawOriginal('postcode'));", $test);
+        $this->assertStringContainsString("foreach (['V6B 1A', '!!'] as \$typed) {\n            \$this->post(route('branches.store'), [...\$this->valid(), 'postcode' => \$typed])->assertSessionHasErrors('postcode');", $test);
+        // A pattern has no wrong examples to turn away, and a plain string
+        // has no format to test.
+        $this->assertStringContainsString('public function test_code_takes_what_people_type_and_stores_it_in_one_form(): void', $test);
+        $this->assertStringNotContainsString('test_code_turns_away', $test);
+        $this->assertStringNotContainsString('title', $test);
+        $this->assertStringContainsString('return Branch::factory()->raw();', $test);
+    }
+
+    public function test_an_amount_in_each_records_currency_is_posted_in_dollars_and_a_laravel_cast_is_read_through()
+    {
+        $access = ['view' => 'everyone', 'create' => 'everyone', 'update' => 'everyone', 'delete' => 'everyone'];
+        $record = ['name' => 'Fee', 'access' => $access, 'fields' => [self::field('amount', 'money', format: ['currency' => 'per_record']), self::field('rate', 'percentage')]];
+
+        $test = (new Scaffold)->routes([$record], [], ['routes/web.php' => self::WEB])['files']['tests/Feature/FeeFormatTest.php'];
+
+        $this->assertStringContainsString("return [...Fee::factory()->raw(), 'amount_currency' => 'USD'];", $test);
+        $this->assertStringContainsString("Fee::query()->latest('id')->firstOrFail()->rate);", $test);
+        $this->assertStringContainsString("Fee::query()->latest('id')->firstOrFail()->getRawOriginal('amount'));", $test);
+        $this->assertStringContainsString("foreach (['USD', 'NGN', 'CAD', 'GBP'] as \$typed) {", $test, 'the currency beside the amount is tested too');
+    }
+
+    public function test_no_format_test_is_written_without_a_policy_a_route_or_a_format()
+    {
+        $postcode = self::field('postcode', 'postal_code', format: ['regions' => ['CA']]);
+        $access = ['view' => 'everyone', 'create' => 'signed_in', 'update' => 'signed_in', 'delete' => 'signed_in'];
+        $scaffold = new Scaffold;
+
+        // No policy says who may add one, so a post would be refused.
+        $this->assertArrayNotHasKey('tests/Feature/BranchFormatTest.php', $scaffold->routes([['name' => 'Branch', 'access' => null, 'fields' => [$postcode]]], [], ['routes/web.php' => self::WEB])['files']);
+        // No route was written for it to post to.
+        $this->assertArrayNotHasKey('tests/Feature/BranchFormatTest.php', $scaffold->routes([['name' => 'Branch', 'access' => $access, 'fields' => [$postcode]]], [], ['routes/web.php' => "<?php\n\nRoute::view('/', 'welcome');\n"])['files']);
+        // Nothing formatted, nothing to test.
+        $this->assertArrayNotHasKey('tests/Feature/BranchFormatTest.php', $scaffold->routes([['name' => 'Branch', 'access' => $access, 'fields' => [self::field('title', 'string')]]], [], ['routes/web.php' => self::WEB])['files']);
     }
 
     public function test_an_app_without_a_group_for_signed_in_people_gets_the_controller_and_a_note()
