@@ -40,6 +40,55 @@ class ShapeWording
     }
 
     /**
+     * Say the few things about a shape that are hard to undo, most costly
+     * first: who may see or change records, then what must be filled in,
+     * then what must be picked from a list. The rest stays in describe().
+     *
+     * @param  list<Record>  $records
+     * @return list<string>
+     */
+    public function glance(array $records, int $limit = 3): array
+    {
+        $access = $required = $choices = [];
+
+        foreach ($records as $record) {
+            $noun = $record['label'] ?? $this->words($record['name']);
+
+            if (($record['access'] ?? null) !== null) {
+                $access[] = $this->access($record['access'], $noun);
+            }
+
+            // A yes or no starts as no and who added it is always known, so
+            // neither can be missing.
+            $must = array_filter($record['fields'], fn (array $field) => $field['required']
+                && $field['type'] !== FieldType::Boolean->value
+                && ! ($field['type'] === FieldType::BelongsTo->value && $field['of'] === 'User'));
+
+            if ($must !== []) {
+                $required[] = "Each {$noun} must have ".$this->list(array_values(array_map(fn (array $field) => $field['label'] ?? $this->fallback($field), $must)), 'and').'.';
+            }
+
+            foreach ($record['fields'] as $field) {
+                if ($field['type'] === FieldType::Choice->value) {
+                    $choices[] = Str::ucfirst($field['label'] ?? $this->fallback($field)).' is one of '.$this->list(array_map($this->words(...), $field['choices']), 'or').'.';
+                }
+            }
+        }
+
+        return array_slice([...$access, ...$required, ...$choices], 0, $limit);
+    }
+
+    /**
+     * Name what the shape keeps, for a short question about it.
+     *
+     * @param  list<Record>  $records
+     */
+    public function nouns(array $records): string
+    {
+        return $this->list(array_map(fn (array $record) => Str::plural($record['label'] ?? $this->words($record['name'])), $records), 'and');
+    }
+
+    /**
      * @param  Field  $field
      */
     protected function field(array $field): string

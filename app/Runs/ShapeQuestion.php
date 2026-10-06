@@ -36,7 +36,10 @@ class ShapeQuestion
      * Get the question to ask about the plan's shape, or null when the shape
      * is easy to change later.
      *
-     * @return array{text: string, why: string, options: list<string>, recommended: string, touches: list<string>, reversible: bool, easier_after_seeing: bool}|null
+     * The question is one line; the few details that are hard to undo show
+     * under it, and the whole shape waits behind "The plan".
+     *
+     * @return array{text: string, asked: string, glance: list<string>, details: list<string>, why: string, options: list<string>, recommended: string, touches: list<string>, reversible: bool, easier_after_seeing: bool}|null
      */
     public function for(Plan $plan): ?array
     {
@@ -55,7 +58,10 @@ class ShapeQuestion
         }
 
         return [
-            'text' => $this->text($plan),
+            'text' => __('Shall I set up :things like this?', ['things' => $this->wording->nouns($plan->dataShape)]),
+            'asked' => $this->asked($plan),
+            'glance' => $this->wording->glance($plan->dataShape),
+            'details' => $this->wording->describe($plan->dataShape),
             'why' => __('Once people have saved these, changing what must be filled in or picked means moving what they saved.'),
             'options' => $options,
             'recommended' => self::YES,
@@ -68,14 +74,14 @@ class ShapeQuestion
     /**
      * Find the owner's answer for this shape among the run's answers.
      *
-     * @param  list<array{question: string, answer: string, decided_by?: string}>  $answers
+     * @param  list<array{question: string, asked?: string, answer: string, decided_by?: string}>  $answers
      */
     public function answered(Plan $plan, array $answers): ?string
     {
-        $text = $this->text($plan);
+        $asked = $this->asked($plan);
 
         foreach (array_reverse($answers) as $answer) {
-            if ($answer['question'] === $text) {
+            if (($answer['asked'] ?? null) === $asked) {
                 return $answer['answer'];
             }
         }
@@ -101,12 +107,12 @@ class ShapeQuestion
     }
 
     /**
-     * The question is the shape in the owner's words, so one worded the
-     * same is the same question.
+     * The question asked is the whole shape in the owner's words, so one
+     * worded the same is the same question.
      */
-    protected function text(Plan $plan): string
+    protected function asked(Plan $plan): string
     {
-        return implode(' ', [...$this->wording->describe($plan->dataShape), __('Shall I set it up this way?')]);
+        return implode(' ', $this->wording->describe($plan->dataShape));
     }
 
     /**

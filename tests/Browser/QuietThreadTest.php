@@ -93,3 +93,54 @@ it('shows no decisions at all when nothing was decided for the owner', function 
         ->assertMissing('[data-test="decision"]')
         ->assertNoJavaScriptErrors();
 });
+
+/**
+ * A change waiting on the owner's answer to the given question.
+ *
+ * @param  array<string, mixed>  $question
+ */
+function askingChange(array $question): FeatureRequest
+{
+    $change = FeatureRequest::factory()->create(['prompt' => 'Let members book a class.']);
+    Run::factory()->for($change)->create([
+        'status' => RunStatus::NeedsUserDecision,
+        'question' => [
+            'why' => 'Once people have saved these, changing it means moving what they saved.',
+            'options' => ['Yes, set it up this way', 'Make every detail optional'],
+            'recommended' => 'Yes, set it up this way',
+            'reversible' => false,
+            ...$question,
+        ],
+    ]);
+
+    return $change;
+}
+
+it('asks about a shape in one line with what lasts under it and the whole shape behind the plan', function () {
+    $change = askingChange([
+        'text' => 'Shall I set up bookings like this?',
+        'glance' => ['Each booking must have the class.', 'How it went is one of pending or done.'],
+        'details' => ['For each booking I keep: the class, how it went (pending or done) and a note if there is one.'],
+    ]);
+
+    quietChat($change)
+        ->assertSeeIn('[data-test="question"]', 'Shall I set up bookings like this?')
+        ->assertSeeIn('[data-test="question-glance"]', 'Each booking must have the class.')
+        ->assertSeeIn('[data-test="question-glance"]', 'How it went is one of pending or done.')
+        ->assertDontSee('a note if there is one')
+        ->click('[data-test="question-plan-open"]')
+        ->assertSeeIn('[data-test="question-details"]', 'a note if there is one')
+        ->assertMissing('[data-test="question-plan-open"]')
+        ->assertSee('Make every detail optional')
+        ->assertNoJavaScriptErrors();
+});
+
+it('asks the planner’s own question with no glance lines and no plan link', function () {
+    $change = askingChange(['text' => 'Can members book more than one place?']);
+
+    quietChat($change)
+        ->assertSeeIn('[data-test="question"]', 'Can members book more than one place?')
+        ->assertMissing('[data-test="question-glance"]')
+        ->assertMissing('[data-test="question-plan-open"]')
+        ->assertNoJavaScriptErrors();
+});

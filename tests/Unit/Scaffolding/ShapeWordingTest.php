@@ -53,4 +53,60 @@ class ShapeWordingTest extends TestCase
             'access' => null,
         ]]));
     }
+
+    public function test_the_glance_puts_who_may_see_or_change_first_then_what_must_be_filled_in_then_choices()
+    {
+        $glance = (new ShapeWording)->glance([$this->booking(), [
+            'name' => 'Room',
+            'label' => 'room',
+            'fields' => [['name' => 'name', 'type' => 'string', 'required' => true, 'choices' => [], 'of' => null, 'label' => 'the name']],
+            'access' => null,
+        ]]);
+
+        $this->assertSame([
+            'Anyone signed in can add bookings. Only the person who added a booking can see, change or remove it.',
+            'Each booking must have when it starts and whether it is confirmed.',
+            'Each room must have the name.',
+        ], $glance);
+    }
+
+    public function test_without_access_the_glance_says_what_must_be_filled_in_and_picked()
+    {
+        $this->assertSame([
+            'Each booking must have when it starts and whether it is confirmed.',
+            'Whether it is confirmed is one of pending, confirmed or not coming.',
+        ], (new ShapeWording)->glance([[...$this->booking(), 'access' => null]]));
+    }
+
+    public function test_a_shape_with_nothing_lasting_has_no_glance_lines()
+    {
+        // Who added it is always known and a yes or no starts as no.
+        $this->assertSame([], (new ShapeWording)->glance([[
+            'name' => 'Note',
+            'fields' => [
+                ['name' => 'user', 'type' => 'belongs_to', 'required' => true, 'choices' => [], 'of' => 'User'],
+                ['name' => 'is_public', 'type' => 'boolean', 'required' => true, 'choices' => [], 'of' => null],
+                ['name' => 'body', 'type' => 'text', 'required' => false, 'choices' => [], 'of' => null],
+            ],
+            'access' => null,
+        ]]));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function booking(): array
+    {
+        return [
+            'name' => 'Booking',
+            'label' => 'booking',
+            'fields' => [
+                ['name' => 'user', 'type' => 'belongs_to', 'required' => true, 'choices' => [], 'of' => 'User', 'label' => 'who booked'],
+                ['name' => 'starts_at', 'type' => 'datetime', 'required' => true, 'choices' => [], 'of' => null, 'label' => 'when it starts'],
+                ['name' => 'status', 'type' => 'choice', 'required' => true, 'choices' => ['pending', 'confirmed', 'not_coming'], 'of' => null, 'label' => 'whether it is confirmed'],
+                ['name' => 'notes', 'type' => 'text', 'required' => false, 'choices' => [], 'of' => null, 'label' => 'a note'],
+            ],
+            'access' => ['view' => 'creator', 'create' => 'signed_in', 'update' => 'creator', 'delete' => 'creator'],
+        ];
+    }
 }

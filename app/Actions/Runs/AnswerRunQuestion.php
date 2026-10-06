@@ -43,13 +43,13 @@ class AnswerRunQuestion
             // The decision belongs in the notes, but failing to write it must
             // not lose the answer: the run still carries it.
             if (($branch = $featureRequest->branch()) !== null) {
-                rescue(fn () => $this->recordDecision->handle($featureRequest->project, $question['text'], $answer, $branch));
+                rescue(fn () => $this->recordDecision->handle($featureRequest->project, $question['asked'] ?? $question['text'], $answer, $branch));
             }
         }
 
         $this->transitionRun->handle($run, RunStatus::Planning, attributes: [
             'question' => null,
-            'answers' => [...($run->answers ?? []), ['question' => $question['text'], 'answer' => $answer, 'decided_by' => $decidedBy]],
+            'answers' => [...($run->answers ?? []), ['question' => $question['text'], ...(isset($question['asked']) ? ['asked' => $question['asked']] : []), 'answer' => $answer, 'decided_by' => $decidedBy]],
             'question_limit' => $moreQuestions
                 ? max($run->question_limit, (int) config('builder.construction.questions.when_asked_for_more'))
                 : $run->question_limit,

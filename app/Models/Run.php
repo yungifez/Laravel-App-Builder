@@ -43,8 +43,8 @@ use Laravel\Sanctum\HasApiTokens;
  * @property array{image: string|null, image_digest: string|null, tools: array{php: string|null, composer: string|null, node: string|null, npm: string|null, postgres: string|null}, lockfiles: array<string, string>}|null $environment What the run's workspace built with: its box image, tool versions and lockfile hashes
  * @property string|null $error
  * @property StopReason|null $stop_reason Why the run failed, waits on its owner or was cancelled
- * @property array{text: string, why: string, options: list<string>, recommended: string|null}|null $question What the run waits for the owner to answer before it plans again
- * @property list<array{question: string, answer: string, decided_by: string}>|null $answers What the owner answered before building, oldest first
+ * @property array{text: string, asked?: string, glance?: list<string>, details?: list<string>, why: string, options: list<string>, recommended: string|null}|null $question What the run waits for the owner to answer before it plans again
+ * @property list<array{question: string, asked?: string, answer: string, decided_by: string}>|null $answers What the owner answered before building, oldest first
  * @property list<string>|null $kept_assumptions What I decided for the owner that they said to keep
  * @property int $question_limit How many questions the run may ask before building
  * @property CarbonImmutable|null $started_at

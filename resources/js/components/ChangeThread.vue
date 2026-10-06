@@ -261,6 +261,9 @@ const glanceShown = computed(() =>
 // The whole plan shows when the owner opens it, or reads at the "Why"
 // level; once made, what it is done when shows as results.
 const planOpen = computed(() => detailsOpen.value || depth.value === 2);
+// A question shows its few lasting details; everything it covers waits
+// behind its own "The plan", since no plan is made while it waits.
+const questionPlanOpen = ref(false);
 const built = computed(() => !!run.value?.review);
 const resultsShown = computed(() => built.value && doneWhen.value.length > 0);
 
@@ -269,6 +272,7 @@ watch(
     () => {
         detailsOpen.value = false;
         allGlance.value = false;
+        questionPlanOpen.value = false;
     },
 );
 
@@ -886,6 +890,43 @@ const checks = computed(() => {
                                     This is hard to change later, so I am asking
                                     you.
                                 </p>
+                                <ul
+                                    v-if="run.question.glance?.length"
+                                    class="mt-2 space-y-0.5 text-sm"
+                                    data-test="question-glance"
+                                >
+                                    <li
+                                        v-for="line in run.question.glance"
+                                        :key="line"
+                                    >
+                                        {{ line }}
+                                    </li>
+                                </ul>
+                                <button
+                                    v-if="
+                                        run.question.details?.length &&
+                                        !(questionPlanOpen || depth === 2)
+                                    "
+                                    type="button"
+                                    class="mt-1 flex min-h-11 items-center gap-1 text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-6"
+                                    data-test="question-plan-open"
+                                    @click="questionPlanOpen = true"
+                                >
+                                    <ChevronRight class="size-3.5" />
+                                    The plan
+                                </button>
+                                <div
+                                    v-else-if="run.question.details?.length"
+                                    class="mt-2 space-y-1 text-sm text-muted-foreground"
+                                    data-test="question-details"
+                                >
+                                    <p
+                                        v-for="line in run.question.details"
+                                        :key="line"
+                                    >
+                                        {{ line }}
+                                    </p>
+                                </div>
                             </div>
                             <div class="grid gap-1.5">
                                 <Form

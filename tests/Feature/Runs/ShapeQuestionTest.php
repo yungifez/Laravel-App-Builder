@@ -4,6 +4,7 @@ namespace Tests\Feature\Runs;
 
 use App\Actions\Runs\StartRun;
 use App\Ai\Agents\FeaturePlanner;
+use App\Ai\Agents\ShapePlanner;
 use App\Enums\AgentOutcomeStatus;
 use App\Enums\RunStatus;
 use App\Jobs\VerifyFeatureRequest;
@@ -29,7 +30,7 @@ class ShapeQuestionTest extends TestCase
 {
     use PreparesRuns, RefreshDatabase;
 
-    protected const ASKED = 'For each booking I keep: the room, when it starts, a note if there is one, how it went (pending or done) and who booked. Shall I set it up this way?';
+    protected const ASKED = 'For each booking I keep: the room, when it starts, a note if there is one, how it went (pending or done) and who booked.';
 
     protected function setUp(): void
     {
@@ -56,13 +57,20 @@ class ShapeQuestionTest extends TestCase
 
     public function test_a_shape_that_is_hard_to_change_later_waits_for_the_owner_and_is_built_as_they_answer()
     {
-        FeaturePlanner::fake([$this->plan(), $this->plan()]);
+        $this->plans($this->fields(), $this->fields());
 
         $featureRequest = $this->request();
         $run = app(StartRun::class)->handle($featureRequest)->refresh();
 
         $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
-        $this->assertSame(self::ASKED, $run->question['text']);
+        // One line to answer, the few details that are hard to undo, and the
+        // whole shape behind "The plan".
+        $this->assertSame('Shall I set up bookings like this?', $run->question['text']);
+        $this->assertSame([
+            'Each booking must have the room, when it starts and how it went.',
+            'How it went is one of pending or done.',
+        ], $run->question['glance']);
+        $this->assertSame([self::ASKED], $run->question['details']);
         $this->assertSame([ShapeQuestion::YES, ShapeQuestion::OPTIONAL, ShapeQuestion::TYPED], $run->question['options']);
         $this->assertSame(ShapeQuestion::YES, $run->question['recommended']);
         $this->assertFalse($run->question['reversible']);
@@ -79,7 +87,7 @@ class ShapeQuestionTest extends TestCase
 
     public function test_choices_can_be_typed_instead_and_you_decide_builds_the_shape_as_planned()
     {
-        FeaturePlanner::fake([$this->plan(), $this->plan()]);
+        $this->plans($this->fields(), $this->fields());
 
         $featureRequest = $this->request();
         $run = app(StartRun::class)->handle($featureRequest);
@@ -90,7 +98,7 @@ class ShapeQuestionTest extends TestCase
         $outcome = collect($run->refresh()->plan['data_shape'][0]['fields'])->firstWhere('name', 'outcome');
         $this->assertSame(['string', []], [$outcome['type'], $outcome['choices']]);
 
-        FeaturePlanner::fake([$this->plan(), $this->plan()]);
+        $this->plans($this->fields(), $this->fields());
 
         $featureRequest = $this->request();
         $run = app(StartRun::class)->handle($featureRequest);
@@ -99,18 +107,18 @@ class ShapeQuestionTest extends TestCase
             ->post(route('feature-requests.answers.store', $featureRequest), []);
 
         $run->refresh();
-        $this->assertSame([['question' => self::ASKED, 'answer' => ShapeQuestion::YES, 'decided_by' => 'builder']], $run->answers);
+        $this->assertSame([['question' => 'Shall I set up bookings like this?', 'asked' => self::ASKED, 'answer' => ShapeQuestion::YES, 'decided_by' => 'builder']], $run->answers);
         $this->assertSame(['room' => true, 'starts_at' => true, 'note' => false, 'outcome' => true, 'user' => true], $this->required($run));
     }
 
     public function test_a_shape_that_is_easy_to_change_later_builds_without_asking()
     {
         // Details that may be left out, a yes or no, and who added it.
-        FeaturePlanner::fake([$this->plan([
+        $this->plans([
             ['name' => 'note', 'type' => 'text', 'required' => false, 'choices' => [], 'of' => '', 'label' => 'a note'],
             ['name' => 'paid', 'type' => 'boolean', 'required' => true, 'choices' => [], 'of' => '', 'label' => 'whether it is paid'],
             ['name' => 'user', 'type' => 'belongs_to', 'required' => true, 'choices' => [], 'of' => 'User', 'label' => 'who booked'],
-        ])]);
+        ]);
 
         $run = app(StartRun::class)->handle($this->request())->refresh();
 
@@ -122,7 +130,7 @@ class ShapeQuestionTest extends TestCase
     public function test_a_shape_is_built_as_planned_when_no_more_questions_may_be_asked_or_shapes_are_not_worth_asking_about()
     {
         config(['builder.construction.questions.before_building' => 0]);
-        FeaturePlanner::fake([$this->plan()]);
+        $this->plans($this->fields());
 
         $run = app(StartRun::class)->handle($this->request())->refresh();
 
@@ -133,7 +141,7 @@ class ShapeQuestionTest extends TestCase
             'builder.construction.questions.before_building' => 1,
             'builder.construction.questions.ask_about' => ['money', 'access'],
         ]);
-        FeaturePlanner::fake([$this->plan()]);
+        $this->plans($this->fields());
 
         $this->assertSame(RunStatus::Verifying, app(StartRun::class)->handle($this->request())->refresh()->status);
     }
@@ -142,7 +150,7 @@ class ShapeQuestionTest extends TestCase
     {
         $changed = $this->fields();
         $changed[1]['label'] = 'when it begins';
-        FeaturePlanner::fake([$this->plan(), $this->plan($changed)]);
+        $this->plans($this->fields(), $changed);
 
         $featureRequest = $this->request();
         $run = app(StartRun::class)->handle($featureRequest);
@@ -180,10 +188,26 @@ class ShapeQuestionTest extends TestCase
     }
 
     /**
-     * @param  list<array<string, mixed>>|null  $fields
+     * Fake one plan for each time the run plans, each with the given
+     * fields for its new booking record.
+     *
+     * @param  list<array<string, mixed>>  ...$shapes
+     */
+    protected function plans(array ...$shapes): void
+    {
+        FeaturePlanner::fake(array_map(fn () => $this->plan(), $shapes));
+        ShapePlanner::fake(array_map(fn (array $fields) => ['data_shape' => [[
+            'name' => 'Booking',
+            'label' => 'booking',
+            'fields' => $fields,
+            'access' => null,
+        ]]], $shapes));
+    }
+
+    /**
      * @return array<string, mixed>
      */
-    protected function plan(?array $fields = null): array
+    protected function plan(): array
     {
         return [
             'summary' => 'Members book rooms.',
@@ -199,12 +223,7 @@ class ShapeQuestionTest extends TestCase
                 'symbol' => 'Booking',
                 'detail' => 'Holds a booking.',
             ]],
-            'data_shape' => [[
-                'name' => 'Booking',
-                'label' => 'booking',
-                'fields' => $fields ?? $this->fields(),
-                'access' => null,
-            ]],
+            'new_records' => true,
         ];
     }
 
