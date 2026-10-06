@@ -242,7 +242,7 @@ final readonly class Plan
             'records.*.name' => ['required', 'string', $name, 'distinct'],
             'records.*.fields' => ['required', 'array', 'min:1', 'max:40'],
             'records.*.fields.*.name' => ['required', 'string', 'regex:/^[a-z][a-z0-9_]{0,59}$/', 'not_in:id,created_at,updated_at'],
-            'records.*.fields.*.type' => ['required', Rule::enum(FieldType::class)],
+            'records.*.fields.*.type' => ['required', Rule::enum(FieldType::class)->only(FieldType::planned())],
             'records.*.fields.*.required' => ['required', 'boolean'],
             'records.*.fields.*.choices' => ['present', 'array', 'max:20'],
             'records.*.fields.*.choices.*' => ['string', 'regex:/^[a-z0-9_]{1,60}$/'],

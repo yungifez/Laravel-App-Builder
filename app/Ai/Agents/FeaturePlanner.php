@@ -115,7 +115,7 @@ class FeaturePlanner implements Agent, HasMiddleware, HasStructuredOutput
                 'label' => $schema->string()->required(),
                 'fields' => $schema->array()->items($schema->object([
                     'name' => $schema->string()->required(),
-                    'type' => $schema->string()->enum(array_column(FieldType::cases(), 'value'))->required(),
+                    'type' => $schema->string()->enum(array_column(FieldType::planned(), 'value'))->required(),
                     'required' => $schema->boolean()->required(),
                     'choices' => $schema->array()->items($schema->string())->required(),
                     'of' => $schema->string()->required(),

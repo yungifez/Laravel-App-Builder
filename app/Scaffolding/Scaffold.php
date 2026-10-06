@@ -20,7 +20,7 @@ use Illuminate\Support\Str;
  * Only new records are written. A record whose model the app already has is
  * left to the coding agent, since changing it means reading what is there.
  *
- * @phpstan-type Field array{name: string, type: string, required: bool, choices: list<string>, of: string|null, label?: string}
+ * @phpstan-type Field array{name: string, type: string, required: bool, choices: list<string>, of: string|null, label?: string, format?: array<string, mixed>}
  * @phpstan-type Access array{view: string, create: string, update: string, delete: string}
  * @phpstan-type Record array{name: string, fields: list<Field>, access?: Access|null, label?: string}
  */
@@ -56,6 +56,8 @@ class Scaffold
             if (! $this->isNew($record, $existing)) {
                 continue;
             }
+
+            $record = [...$record, 'fields' => FieldType::expand($record['fields'])];
 
             $stamp = gmdate('Y_m_d_His', $at->getTimestamp() + $second++);
 
@@ -279,8 +281,8 @@ class Scaffold
         $casts = [];
 
         foreach ($record['fields'] as $field) {
-            if (($cast = FieldType::from($field['type'])->cast()) !== null) {
-                $casts[] = var_export($field['name'], true).' => '.var_export($cast, true).',';
+            if (($cast = FieldType::from($field['type'])->cast($field)) !== null) {
+                $casts[] = var_export($field['name'], true).' => '.$this->export($cast, $imports).',';
             }
         }
 
@@ -403,11 +405,25 @@ class Scaffold
         // The person who added a record is the signed-in user, never a
         // value the form sends: anyone could name someone else.
         $creator = in_array('creator', $record['access'] ?? [], true) ? self::creator($record['fields']) : null;
-        $rules = array_map(
-            fn (array $field) => var_export(FieldType::attribute($field), true).' => ['.implode(', ', array_map(fn (string $rule) => var_export($rule, true), FieldType::from($field['type'])->rules($field))).'],',
-            array_values(array_filter($record['fields'], fn (array $field) => FieldType::attribute($field) !== $creator)),
-        );
+        $imports = [];
+        $rules = [];
+
+        foreach ($record['fields'] as $field) {
+            if (FieldType::attribute($field) === $creator) {
+                continue;
+            }
+
+            $written = [];
+
+            foreach (FieldType::from($field['type'])->rules($field) as $rule) {
+                $written[] = $this->export($rule, $imports);
+            }
+
+            $rules[] = var_export(FieldType::attribute($field), true).' => ['.implode(', ', $written).'],';
+        }
+
         $use = $this->imports([
+            ...$imports,
             ...($action === 'create' ? ["App\\Models\\{$name}"] : []),
             'Illuminate\\Contracts\\Validation\\ValidationRule',
             'Illuminate\\Foundation\\Http\\FormRequest',
@@ -705,6 +721,23 @@ class Scaffold
     protected function lines(array $lines, int $spaces): string
     {
         return implode("\n", array_map(fn (string $line) => str_repeat(' ', $spaces).$line, $lines));
+    }
+
+    /**
+     * Write a value as PHP: a string as itself, code as written, with the
+     * classes it names added to the imports.
+     *
+     * @param  list<string>  $imports
+     */
+    protected function export(string|Code $value, array &$imports): string
+    {
+        if ($value instanceof Code) {
+            array_push($imports, ...$value->imports);
+
+            return $value->expression;
+        }
+
+        return var_export($value, true);
     }
 
     /**

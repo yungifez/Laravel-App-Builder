@@ -3,6 +3,7 @@
 namespace Tests\Unit\Scaffolding;
 
 use App\Runs\Plan;
+use App\Scaffolding\Code;
 use App\Scaffolding\FieldType;
 use App\Scaffolding\Scaffold;
 use DateTimeImmutable;
@@ -28,6 +29,17 @@ class ScaffoldTest extends TestCase
             'choice' => [self::field('status', 'choice', choices: ['pending', 'confirmed']), "\$table->string('status');", ['required', 'in:pending,confirmed'], null, "fake()->randomElement(['pending', 'confirmed'])"],
             'required link' => [self::field('customer', 'belongs_to', of: 'Customer'), "\$table->foreignId('customer_id')->constrained('customers')->cascadeOnDelete();", ['required', 'exists:customers,id'], null, 'Customer::factory()'],
             'optional link' => [self::field('room', 'belongs_to', false, of: 'MeetingRoom'), "\$table->foreignId('room_id')->nullable()->constrained('meeting_rooms')->nullOnDelete();", ['nullable', 'exists:meeting_rooms,id'], null, 'MeetingRoom::factory()'],
+            'phone in one region' => [self::field('phone', 'phone', format: ['regions' => ['NG']]), "\$table->string('phone', 32);", ['required', 'string', 'phone:NG'], "E164PhoneNumberCast::class.':NG'", "fake()->randomElement(['+2348031234567'])"],
+            'phone anywhere' => [self::field('phone', 'phone', false), "\$table->string('phone', 32)->nullable();", ['nullable', 'string', 'phone:INTERNATIONAL'], 'E164PhoneNumberCast::class', "fake()->randomElement(['+12505550123'])"],
+            'postal code' => [self::field('postcode', 'postal_code', format: ['regions' => ['CA', 'US']]), "\$table->string('postcode', 16);", ['required', 'string', "new ValidPostalCode(['CA', 'US'])"], 'PostalCode::class', "fake()->randomElement(['V6B 1A1', '94103'])"],
+            'web address' => [self::field('site', 'url'), "\$table->string('site', 2048);", ['required', 'string', 'max:2048', 'url:https'], null, "'https://'.fake()->domainName().'/'.fake()->slug(2)"],
+            'isbn' => [self::field('isbn', 'isbn', format: ['variants' => [13]]), "\$table->string('isbn', 13);", ['required', 'string', 'new ValidIsbn([13])'], 'Isbn::class', "fake()->randomElement(['9780306406157', '9781861972712'])"],
+            'country' => [self::field('country', 'country'), "\$table->char('country', 2);", ['required', 'string', 'Rule::in(Countries::CODES)'], null, "fake()->randomElement(['CA', 'US', 'GB', 'NG'])"],
+            'money in dollars' => [self::field('price', 'money', format: ['currency' => 'USD']), "\$table->unsignedBigInteger('price');", ['required', 'numeric', 'min:0', 'decimal:0,2'], "Money::class.':USD'", 'fake()->randomFloat(2, 1, 1000)'],
+            'money in yen has no cents' => [self::field('price', 'money', format: ['currency' => 'JPY']), "\$table->unsignedBigInteger('price');", ['required', 'numeric', 'min:0', 'decimal:0,0'], "Money::class.':JPY'", 'fake()->numberBetween(1, 1000)'],
+            'money in each record\'s currency' => [self::field('price', 'money'), "\$table->unsignedBigInteger('price');", ['required', 'numeric', 'min:0', 'decimal:0,3'], "Money::class.':per_record,price_currency'", 'fake()->randomFloat(2, 1, 1000)'],
+            'percentage' => [self::field('share', 'percentage'), "\$table->decimal('share', 5, 2);", ['required', 'numeric', 'between:0,100'], 'decimal:2', 'fake()->randomFloat(2, 0, 100)'],
+            'pattern' => [self::field('code', 'pattern', format: ['pattern' => '^[A-Z]{3}-\\d{3}$', 'examples' => ['ABC-123', 'XYZ-999']]), "\$table->string('code');", ['required', 'string', 'max:255', 'regex:/^[A-Z]{3}-\\d{3}$/u'], null, "fake()->randomElement(['ABC-123', 'XYZ-999'])"],
         ];
     }
 
@@ -41,8 +53,11 @@ class ScaffoldTest extends TestCase
         $type = FieldType::from($field['type']);
 
         $this->assertSame($column, $type->column($field));
-        $this->assertSame($rules, $type->rules($field));
-        $this->assertSame($cast, $type->cast());
+        // Rule objects and cast classes are written as code.
+        $code = fn (string|Code|null $value) => $value instanceof Code ? $value->expression : $value;
+
+        $this->assertSame($rules, array_map($code, $type->rules($field)));
+        $this->assertSame($cast, $code($type->cast($field)));
         $this->assertSame($fake, $type->fake($field));
     }
 
@@ -213,9 +228,9 @@ class ScaffoldTest extends TestCase
      * @param  list<string>  $choices
      * @return array{name: string, type: string, required: bool, choices: list<string>, of: string|null}
      */
-    protected static function field(string $name, string $type, bool $required = true, array $choices = [], ?string $of = null): array
+    protected static function field(string $name, string $type, bool $required = true, array $choices = [], ?string $of = null, array $format = []): array
     {
-        return ['name' => $name, 'type' => $type, 'required' => $required, 'choices' => $choices, 'of' => $of];
+        return ['name' => $name, 'type' => $type, 'required' => $required, 'choices' => $choices, 'of' => $of, ...($format === [] ? [] : ['format' => $format])];
     }
 
     /**
@@ -236,5 +251,41 @@ class ScaffoldTest extends TestCase
     protected static function customer(): array
     {
         return ['name' => 'Customer', 'fields' => [self::field('name', 'string'), self::field('email', 'email')], 'access' => null];
+    }
+
+    public function test_an_amount_in_each_records_currency_keeps_its_currency_and_the_files_import_what_they_use()
+    {
+        $files = (new Scaffold)->files([['name' => 'Book', 'fields' => [
+            self::field('isbn', 'isbn'),
+            self::field('price', 'money'),
+        ], 'access' => null]], [], new DateTimeImmutable('2026-10-05 12:00:00'));
+
+        $migration = $files['database/migrations/2026_10_05_120000_create_books_table.php'];
+        $this->assertStringContainsString("\$table->char('price_currency', 3);\n", $migration);
+        $this->assertLessThan(strpos($migration, "'price')"), strpos($migration, "'price_currency'"));
+
+        $model = $files['app/Models/Book.php'];
+        $this->assertStringContainsString("'price' => Money::class.':per_record,price_currency',", $model);
+        $this->assertStringContainsString('use App\\Casts\\Money;', $model);
+        $this->assertStringContainsString('use App\\Casts\\Isbn;', $model);
+
+        $request = $files['app/Http/Requests/StoreBookRequest.php'];
+        $this->assertStringContainsString("'isbn' => ['required', 'string', new ValidIsbn([10, 13])],", $request);
+        $this->assertStringContainsString("'price_currency' => ['required', 'string', 'regex:/^[A-Z]{3}$/'],", $request);
+        $this->assertStringContainsString('use App\\Rules\\ValidIsbn;', $request);
+    }
+
+    public function test_formats_wait_until_the_planner_can_give_their_settings()
+    {
+        // Today's ten kinds only: a format is not planned yet.
+        $this->assertSame([], Plan::dataShape([['name' => 'Book', 'fields' => [self::field('price', 'money')]]]));
+        $this->assertCount(10, FieldType::planned());
+
+        // A pattern that refuses its own examples is broken, and so is one
+        // with fewer than two examples or one that is not a pattern.
+        $this->assertTrue(FieldType::patternHolds(self::field('code', 'pattern', format: ['pattern' => '^[A-Z]{3}$', 'examples' => ['ABC', 'XYZ']])));
+        $this->assertFalse(FieldType::patternHolds(self::field('code', 'pattern', format: ['pattern' => '^[A-Z]{3}$', 'examples' => ['ABC', 'abc']])));
+        $this->assertFalse(FieldType::patternHolds(self::field('code', 'pattern', format: ['pattern' => '^[A-Z]{3}$', 'examples' => ['ABC']])));
+        $this->assertFalse(FieldType::patternHolds(self::field('code', 'pattern', format: ['pattern' => '([', 'examples' => ['ABC', 'XYZ']])));
     }
 }
