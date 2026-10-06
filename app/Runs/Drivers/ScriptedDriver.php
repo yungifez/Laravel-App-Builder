@@ -45,6 +45,14 @@ class ScriptedDriver implements ConstructionDriver
         );
     }
 
+    /**
+     * A replayed solution carries its own files; there is nothing to shape.
+     */
+    public function shape(Run $run, Plan $plan, PlanningContext $context): Plan
+    {
+        return $plan;
+    }
+
     public function build(Run $run, Plan $plan, ToolSession $tools): string
     {
         $change = $this->generators->driver($run->featureRequest->generator)->generate($run->featureRequest);

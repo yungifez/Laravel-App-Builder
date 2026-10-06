@@ -1164,7 +1164,14 @@ follow from it, and are never traded against it.
    is safe there and a wrong answer costs one retry
    ([§11](#execution-router)).
 
-**What is built.** The planner returns `data_shape`: each new record with
+**What is built.** The planner says whether the change stores a new kind of
+record (`new_records`). Only then, after its own question and when the
+message is more than a question, a second agent (`ShapePlanner`, same
+tier) is asked for `data_shape`, from the plan's summary, criteria and
+tasks and the app's models. It is separate because one format holding both
+was too large for the AI service. Its time is kept as a `shape_planned`
+event, and a dropped shape as `shape_dropped`. The shape holds
+each new record with
 typed fields (`string`, `text`, `integer`, `decimal`, `boolean`, `date`,
 `datetime`, `email`, `choice` with its values, `belongs_to` with the model
 it links to). `Plan::dataShape` keeps a shape only when it holds together; a
@@ -3160,6 +3167,11 @@ path.
   ("An AI answer format failed its check") until a later check passes. It
   runs daily when `BUILDER_CHECK_ANSWER_FORMATS` is on (by default in
   production), and the deploy guides run it after each deploy.
+  A test also holds each format under a measured size before any call:
+  `AnswerFormatSize` counts each object and each field in it, at any depth.
+  On 2026-10-05 Anthropic accepted the planner at 58 and refused every
+  variant at 60 or more, so the ceiling is 58. Sizes now: FeaturePlanner
+  41, ShapePlanner 19, ChangeReviewer 19.
 
 ## 17. Safety and approvals
 

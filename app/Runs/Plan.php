@@ -39,6 +39,7 @@ final readonly class Plan
      * @param  list<array{criterion: int, kind: string, says: string|null, none: string|null}>  $cases  How each criterion is tried: the main way, another way and a refusal, or why one cannot apply. Criteria are numbered from 1.
      * @param  list<array{item: int, file: string, name: string}>  $writtenTests  The test written before the change for each item of verifyItems(), numbered from 1
      * @param  array<string, string>  $writtenFiles  The files those tests are in, by path: written into the workspace before the coder starts and put back after it
+     * @param  bool  $newRecords  Whether the planner said the change stores a new kind of record, so the shape is asked for; not saved, the shape is
      */
     public function __construct(
         public string $summary,
@@ -61,6 +62,7 @@ final readonly class Plan
         public array $cases = [],
         public array $writtenTests = [],
         public array $writtenFiles = [],
+        public bool $newRecords = false,
     ) {}
 
     /**
@@ -177,8 +179,8 @@ final readonly class Plan
             answer: filled($valid['answer'] ?? null) ? trim($valid['answer']) : null,
             next: self::next($valid['next'] ?? []),
             goal: filled($valid['goal'] ?? null) ? trim($valid['goal']) : null,
-            dataShape: self::dataShape($data['data_shape'] ?? []),
             cases: self::cases($data['cases'] ?? null, count($valid['acceptance_criteria'])),
+            newRecords: ($data['new_records'] ?? false) === true,
         );
     }
 

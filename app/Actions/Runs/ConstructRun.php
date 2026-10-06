@@ -264,7 +264,10 @@ class ConstructRun
             return;
         }
 
-        $plan = $this->shaped($run, $lease, $plan, $planningContext->mayAsk);
+        // After the questions, so a run that stops for the owner or only
+        // answers asks for no shape; before the shape question, which
+        // asks about it.
+        $plan = $this->shaped($run, $lease, $driver->shape($run, $plan, $planningContext), $planningContext->mayAsk);
 
         if ($plan === null) {
             return;

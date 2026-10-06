@@ -463,6 +463,11 @@ class RunLifecycleTest extends TestCase
                 return new Plan('A test change.');
             }
 
+            public function shape(Run $run, Plan $plan, PlanningContext $context): Plan
+            {
+                return $plan;
+            }
+
             public function build(Run $run, Plan $plan, ToolSession $tools): string
             {
                 return ($this->build)($run, $tools);

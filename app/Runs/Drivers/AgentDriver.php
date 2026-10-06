@@ -8,6 +8,7 @@ use App\Actions\Runs\RecordModelUsage;
 use App\Actions\Runs\WriteBrief;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
+use App\Ai\Agents\ShapePlanner;
 use App\Enums\ModelRole;
 use App\Features\AcceptanceSelector;
 use App\Features\AppBoundaries;
@@ -82,6 +83,36 @@ abstract class AgentDriver implements ConstructionDriver
         }
     }
 
+    /**
+     * Ask for the new kinds of record apart from the plan: in one format the
+     * two were too large for the AI service. A shape that does not hold
+     * together is dropped, and the coder writes those files itself.
+     */
+    public function shape(Run $run, Plan $plan, PlanningContext $context): Plan
+    {
+        if (! $plan->newRecords) {
+            return $plan;
+        }
+
+        $started = hrtime(true);
+        $response = $this->ask($run, fn () => ShapePlanner::make()->prompt($this->shapePrompt($plan, $context), provider: ModelRole::Planner->providers()));
+
+        $this->recordModelUsage->handle($run, ModelRole::Planner, $response);
+
+        $answered = $this->structured($response, 'shape planner')['data_shape'] ?? [];
+        $shape = Plan::dataShape($answered);
+        $run->recordEvent('shape_planned', [
+            'records' => array_column($shape, 'name'),
+            'duration_ms' => intdiv(hrtime(true) - $started, 1_000_000),
+        ]);
+
+        if ($shape === [] && $answered !== []) {
+            $run->recordEvent('shape_dropped', ['records' => is_array($answered) ? count($answered) : 0]);
+        }
+
+        return $plan->withDataShape($shape);
+    }
+
     public function review(Run $run, ReviewEvidence $evidence): Review
     {
         return $this->reviewWith($run, $evidence, ModelRole::Reviewer->providers());
@@ -152,6 +183,26 @@ abstract class AgentDriver implements ConstructionDriver
         }
 
         return $response->structured;
+    }
+
+    /**
+     * Describe the planned change and the app's models for the shape
+     * planner.
+     */
+    protected function shapePrompt(Plan $plan, PlanningContext $context): string
+    {
+        $models = array_values(array_filter(array_map(
+            fn (string $file) => preg_match('#^app/Models/(\w+)\.php$#', $file, $model) === 1 ? $model[1] : null,
+            $context->files,
+        )));
+
+        return implode("\n\n", [
+            "## Owner's request\n\n{$context->request}",
+            "## The plan\n\n{$plan->summary}",
+            "## What must hold when it is done\n\n".implode("\n", array_map(fn (string $criterion) => "- {$criterion}", $plan->acceptanceCriteria)),
+            "## The developer's tasks\n\n".implode("\n", array_map(fn (string $task) => "- {$task}", $plan->tasks)),
+            "## Models the app has\n\n".($models === [] ? 'None found.' : implode(', ', $models)),
+        ]);
     }
 
     /**
