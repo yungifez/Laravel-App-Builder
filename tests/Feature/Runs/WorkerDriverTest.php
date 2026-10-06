@@ -125,6 +125,17 @@ class WorkerDriverTest extends TestCase
         $this->assertStringContainsString('Start from commit a1b2c3d', $text);
     }
 
+    public function test_a_change_handed_in_points_the_tool_to_its_result_not_a_new_brief()
+    {
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $run->update(['status' => RunStatus::Verifying]);
+
+        $this->tool('get_task', $token)
+            ->assertSee('Your change was handed in and is being checked. Call check_status for the result.')
+            ->assertDontSee('Teams get an optional description.');
+    }
+
     public function test_a_fix_started_in_an_empty_folder_makes_the_whole_change_again()
     {
         $run = $this->startRun();

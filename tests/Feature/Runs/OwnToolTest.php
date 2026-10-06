@@ -95,6 +95,28 @@ class OwnToolTest extends TestCase
         $this->assertStringNotContainsString('&& git commit', $brief);
     }
 
+    public function test_a_change_being_checked_is_not_handed_out_again()
+    {
+        $project = Project::factory()->create();
+        $token = app(ConnectOwnTool::class)->handle($project);
+        $run = $this->waitingRun($project);
+        preg_match('/Your task code is (\w+)\./', (string) $this->getTask($token)->json('result.content.0.text'), $code);
+        $run->update(['status' => RunStatus::Verifying]);
+
+        // Another session, or the loop's next one, asks while it is checked.
+        $this->getTask($token)->assertOk()->assertSee('the last one handed in is being checked');
+
+        $this->assertSame(1, $run->events()->where('type', 'worker_claimed')->count());
+        $this->withHeaders(['Authorization' => "Bearer {$token}"])
+            ->postJson(route('mcp.task'), ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => ['name' => 'check_status', 'arguments' => ['task' => $code[1]]]])
+            ->assertSee('is being checked')
+            ->assertDontSee('Another session');
+
+        // Sent back by the checks, it is handed out with the fixes again.
+        $run->update(['status' => RunStatus::Implementing, 'feedback' => ['details' => ['The booking test failed.']]]);
+        $this->getTask($token)->assertSee('The booking test failed.')->assertSee('Your task code is');
+    }
+
     public function test_a_fix_keeps_working_in_the_folder_with_the_first_try()
     {
         $project = Project::factory()->create();

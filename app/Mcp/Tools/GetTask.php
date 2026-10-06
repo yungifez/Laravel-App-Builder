@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools;
 
 use App\Actions\Runs\WriteBrief;
+use App\Enums\RunStatus;
 use App\Models\Run;
 use App\Runs\Plan;
 use App\Runs\WorkerClaims;
@@ -41,6 +42,15 @@ class GetTask extends Tool
 
         if ($run->plan === null) {
             return Response::text(__('The task is still being planned. Ask again in a minute.'));
+        }
+
+        // A change already handed in is being checked. Building it again
+        // would be refused, and a new claim would cut off the session that
+        // waits for the result.
+        if (in_array($run->status, [RunStatus::Verifying, RunStatus::Reviewing], true)) {
+            return Response::text($this->task->wholeApp
+                ? __('No change waits for you now: the last one handed in is being checked. Ask again in a minute.')
+                : __('Your change was handed in and is being checked. Call check_status for the result.'));
         }
 
         return Response::text(implode("\n\n", array_filter([
