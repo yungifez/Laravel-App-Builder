@@ -365,7 +365,9 @@ abstract class AgentDriver implements ConstructionDriver
         $routes = $measured['routes'] ?? [];
 
         if (($routes['added'] ?? []) !== []) {
-            $parts[] = "Routes it added, with their middleware:\n".$this->list(array_map(fn (array $route) => $route['route'].' ['.implode(', ', $route['middleware']).']', $routes['added']));
+            // A route the plan lets everyone use is the request, not a
+            // missing check.
+            $parts[] = "Routes it added, with their middleware:\n".$this->list(array_map(fn (array $route) => $route['route'].' ['.implode(', ', $route['middleware']).']'.(($route['planned'] ?? false) ? ' (the plan lets everyone do this)' : ''), $routes['added']));
         }
 
         if (($routes['changed'] ?? []) !== []) {

@@ -4,6 +4,7 @@ namespace Tests\Feature\Features;
 
 use App\Actions\Context\ReadProjectContext;
 use App\Actions\Features\RequestVerification;
+use App\Actions\Runs\CompleteRunVerification;
 use App\Context\Capability;
 use App\Context\ProjectContext;
 use App\Enums\ChecksStoppedBecause;
@@ -135,6 +136,63 @@ class VerificationTest extends TestCase
             ->get(route('feature-requests.show', $phpOnly))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('proof', fn ($proof) => collect($proof)->contains('text', 'No known security problems in the packages your app uses.')));
+    }
+
+    public function test_known_security_problems_the_app_already_had_are_not_put_down_to_the_change()
+    {
+        // Base: the starter app's packages already have a problem and the
+        // change leaves its lock file alone, so nothing is new.
+        $npm = ['npm', 'audit', '--json'];
+        config(['builder.verification.security' => ['enabled' => true, 'steps' => [
+            ['name' => 'JavaScript packages', 'report' => 'npm', 'command' => $npm, 'timeout' => 120],
+        ]]]);
+        $report = fn (array $packages) => json_encode([
+            'vulnerabilities' => collect($packages)->mapWithKeys(fn (string $severity, string $name) => [$name => ['severity' => $severity]])->all(),
+            'metadata' => ['vulnerabilities' => ['high' => count(array_filter($packages, fn (string $severity) => $severity === 'high')), 'critical' => count(array_filter($packages, fn (string $severity) => $severity === 'critical')), 'moderate' => 0]],
+        ]);
+        $atStart = false;
+        $this->driver->onExec = function (string $workspace, array $command) use ($npm, $report, &$atStart) {
+            if ($command[0] === 'git') {
+                $atStart = in_array('--reverse', $command, true);
+            }
+
+            return $command === $npm
+                ? new CommandResult(exitCode: 1, output: $report($atStart ? ['tinypool' => 'critical'] : ['tinypool' => 'critical', 'left-pad' => 'high', 'chalk' => 'moderate']), errorOutput: '', durationMs: 5)
+                : new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+
+        $request = FeatureRequest::factory()->generated()->create(['acceptance' => ['Invitations/ContractTest.php']]);
+        app(RequestVerification::class)->handle($request);
+
+        $result = collect($request->verifications()->sole()->results)->firstWhere('stage', 'security');
+        $this->assertSame(['failed', 'failed', []], [$result['outcome'], $result['at_start'], $result['new_problems']]);
+        // The coder is not sent to update packages the change never touched.
+        $this->assertFalse(array_any(app(CompleteRunVerification::class)->failures($request->verifications()->sole()), fn (string $failure) => str_contains($failure, 'JavaScript packages')));
+
+        // Alternate: the change adds a package with a problem to the lock
+        // file, so the lookup runs again on the starting lock file and only
+        // the package the change brought is new.
+        $lockChange = "diff --git a/package-lock.json b/package-lock.json\n--- a/package-lock.json\n+++ b/package-lock.json\n@@ -1 +1,2 @@\n {\n+\"left-pad\": {}\n";
+        $added = FeatureRequest::factory()->generated()->create(['acceptance' => ['Invitations/ContractTest.php'], 'patch' => $lockChange]);
+        app(RequestVerification::class)->handle($added);
+
+        $result = collect($added->verifications()->sole()->results)->firstWhere('stage', 'security');
+        $this->assertSame(['failed', 'failed', ['left-pad']], [$result['outcome'], $result['at_start'], $result['new_problems']]);
+        $applies = array_values(array_filter(array_column($this->driver->executed, 'command'), fn (array $command) => $command[0] === 'git'));
+        $this->assertContains('--include=package-lock.json', $applies[count($applies) - 2]);
+        $this->assertContains('--reverse', $applies[count($applies) - 2]);
+        $this->assertNotContains('--reverse', end($applies));
+
+        // Exception: the change adds the lock file itself. Without one at
+        // the start the lookup would read what was installed for the
+        // change, so the result is judged on its own.
+        $newLock = "diff --git a/package-lock.json b/package-lock.json\nnew file mode 100644\n--- /dev/null\n+++ b/package-lock.json\n@@ -0,0 +1 @@\n+{\n";
+        $created = FeatureRequest::factory()->generated()->create(['acceptance' => ['Invitations/ContractTest.php'], 'patch' => $newLock]);
+        app(RequestVerification::class)->handle($created);
+
+        $result = collect($created->verifications()->sole()->results)->firstWhere('stage', 'security');
+        $this->assertSame('failed', $result['outcome']);
+        $this->assertArrayNotHasKey('at_start', $result);
     }
 
     public function test_a_follow_up_is_verified_with_its_lineage_applied_and_the_protected_suite_run_last()

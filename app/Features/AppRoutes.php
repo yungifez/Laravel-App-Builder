@@ -2,6 +2,8 @@
 
 namespace App\Features;
 
+use App\Scaffolding\RouteFile;
+use App\Scaffolding\Scaffold;
 use Illuminate\Support\Str;
 
 /**
@@ -13,6 +15,8 @@ use Illuminate\Support\Str;
  * It says what a change did to the app's surface, never whether that was
  * wanted: an address that lost its sign-in check may be the request or a
  * mistake. The reviewer holds it against the plan.
+ *
+ * @phpstan-import-type Record from Scaffold
  */
 class AppRoutes
 {
@@ -87,16 +91,17 @@ class AppRoutes
      *
      * @param  array<string, list<string>>  $before
      * @param  array<string, list<string>>  $after
-     * @return array{added: list<array{route: string, middleware: list<string>}>, removed: list<string>, changed: list<array{route: string, lost: list<string>, gained: list<string>}>}|null
+     * @param  list<string>  $planned  The addresses the plan lets everyone use, from planned()
+     * @return array{added: list<array{route: string, middleware: list<string>, planned?: bool}>, removed: list<string>, changed: list<array{route: string, lost: list<string>, gained: list<string>}>}|null
      */
-    public static function changes(array $before, array $after): ?array
+    public static function changes(array $before, array $after, array $planned = []): ?array
     {
         $added = [];
         $changed = [];
 
         foreach ($after as $route => $middleware) {
             if (! isset($before[$route])) {
-                $added[] = ['route' => $route, 'middleware' => $middleware];
+                $added[] = ['route' => $route, 'middleware' => $middleware, ...(in_array(self::pattern($route), $planned, true) ? ['planned' => true] : [])];
 
                 continue;
             }
@@ -148,15 +153,56 @@ class AppRoutes
      * Get the added routes that change something (any method but GET) and
      * have no check on who may use them.
      *
-     * @param  array{added?: list<array{route: string, middleware: list<string>}>}|null  $changes
+     * @param  array{added?: list<array{route: string, middleware: list<string>, planned?: bool}>}|null  $changes
      * @return list<string>
      */
     public static function unguarded(?array $changes): array
     {
         return array_column(array_filter(
             $changes['added'] ?? [],
-            fn (array $route) => ! str_starts_with($route['route'], 'GET ') && self::guards($route['middleware']) === [],
+            fn (array $route) => ! str_starts_with($route['route'], 'GET ') && ! ($route['planned'] ?? false) && self::guards($route['middleware']) === [],
         ), 'route');
+    }
+
+    /**
+     * Get the addresses the plan lets everyone use: for each new record
+     * whose access says anyone may add, change or remove it, the resource
+     * route the scaffold lays out for that action. A public booking form
+     * is then the request, not a route nobody checks.
+     *
+     * @param  list<Record>  $records
+     * @return list<string>
+     */
+    public static function planned(array $records): array
+    {
+        $open = [];
+
+        foreach ($records as $record) {
+            $access = $record['access'] ?? null;
+
+            if ($access === null) {
+                continue;
+            }
+
+            $uri = '/'.RouteFile::uri($record['name']);
+            $open = [
+                ...$open,
+                ...($access['create'] === 'everyone' ? ["POST {$uri}"] : []),
+                ...($access['update'] === 'everyone' ? ["PUT {$uri}/{}", "PATCH {$uri}/{}"] : []),
+                ...($access['delete'] === 'everyone' ? ["DELETE {$uri}/{}"] : []),
+            ];
+        }
+
+        return $open;
+    }
+
+    /**
+     * Get a route with its parameters' names left out, so "PUT
+     * /bookings/{booking}" matches the planned "PUT /bookings/{}".
+     */
+    protected static function pattern(string $route): string
+    {
+        return (string) preg_replace('/\{[^}]*\}/', '{}', $route);
     }
 
     /**
@@ -165,7 +211,7 @@ class AppRoutes
      * check. Only Laravel's own checks are read, so an app that guards
      * with its own middleware is asked too, and the owner's yes keeps it.
      *
-     * @param  array{added?: list<array{route: string, middleware: list<string>}>, changed?: list<array{route: string, lost: list<string>, gained: list<string>}>}|null  $changes
+     * @param  array{added?: list<array{route: string, middleware: list<string>, planned?: bool}>, changed?: list<array{route: string, lost: list<string>, gained: list<string>}>}|null  $changes
      * @param  list<string>  $accepted  Identities the owner said they want
      * @return list<array{kind: string, route: string}>
      */

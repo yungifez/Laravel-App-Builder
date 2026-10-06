@@ -161,6 +161,11 @@ class VerifyFeatureRequest implements ShouldQueue
     protected const PACKAGE_FILES = ['composer.json', 'composer.lock', 'package.json', 'package-lock.json'];
 
     /**
+     * The manifest and lock file each security lookup reads, by report.
+     */
+    protected const AUDIT_FILES = ['composer' => ['composer.json', 'composer.lock'], 'npm' => ['package.json', 'package-lock.json']];
+
+    /**
      * Create a new job instance.
      */
     public function __construct(public Verification $verification)
@@ -238,7 +243,7 @@ class VerifyFeatureRequest implements ShouldQueue
             if (! $checksPassed) {
                 $this->compareWithStart($driver, $runWorkspaceCommand, $workspace, $featureRequest);
             }
-            $this->auditPackages($runWorkspaceCommand, $workspace);
+            $this->auditPackages($driver, $runWorkspaceCommand, $workspace, $featureRequest);
             $this->observeShortcuts($driver, $runWorkspaceCommand, $workspace, $featureRequest);
 
             // Before the protected acceptance tests are copied in, so the map
@@ -597,9 +602,11 @@ class VerifyFeatureRequest implements ShouldQueue
     /**
      * Look up known security problems in the packages the app uses. Kept
      * with the results under a stage of its own, which never decides the
-     * verification's outcome.
+     * verification's outcome. A lookup that finds problems is compared
+     * with the starting commit, so problems the app already had are not
+     * put down to the change.
      */
-    protected function auditPackages(RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace): void
+    protected function auditPackages(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): void
     {
         /** @var array{enabled: bool, steps: list<array{name: string, report: string, command: list<string>, timeout: int, needs?: string}>} $config */
         $config = config('builder.verification.security');
@@ -635,7 +642,102 @@ class VerifyFeatureRequest implements ShouldQueue
                 durationMs: $command->duration_ms,
                 output: $this->withoutTerminalCodes($command->output."\n".$command->error_output),
             );
+
+            if ($problems > 0) {
+                $this->compareAuditWithStart($driver, $runWorkspaceCommand, $workspace, $featureRequest, $step, count($this->results) - 1, (string) $command->output);
+            }
         }
+    }
+
+    /**
+     * Keep with a failed lookup how it went on the starting commit, and
+     * which packages' problems are new. A lookup reads only the lock file,
+     * so a change that leaves it alone has the starting commit's problems.
+     * A changed lock file is taken out for the lookup and put back after.
+     * A changed manifest with its lock file untouched is judged on its own
+     * result: the lookup may read what was installed for the change.
+     *
+     * @param  array{name: string, report: string, command: list<string>, timeout: int, needs?: string}  $step
+     * @param  int  $index  The lookup's place in the results
+     */
+    protected function compareAuditWithStart(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest, array $step, int $index, string $output): void
+    {
+        [$manifest, $lock] = self::AUDIT_FILES[$step['report']] ?? [null, null];
+
+        if ($lock === null) {
+            return;
+        }
+
+        $result = $this->results[$index];
+
+        if (! isset($this->touched[$lock])) {
+            if (! isset($this->touched[$manifest])) {
+                $result['at_start'] = self::OUTCOME_FAILED;
+                $result['new_problems'] = [];
+                $this->results[$index] = $result;
+            }
+
+            return;
+        }
+
+        $lineage = $featureRequest->lineage();
+        $files = array_map(fn (FeatureRequest $request) => array_filter(PatchSummary::files($request->patch), fn (array $file) => in_array($file['path'], [$manifest, $lock], true)), $lineage);
+
+        // Without a lock file at the start, the lookup would read what was
+        // installed for the change, so nothing could be compared.
+        if (array_any($files, fn (array $changed) => array_any($changed, fn (array $file) => $file['path'] === $lock && preg_match('/^new file mode /m', $file['diff']) === 1))) {
+            return;
+        }
+
+        $positions = array_keys(array_filter($files));
+        $only = ["--include={$manifest}", "--include={$lock}"];
+        $undone = [];
+
+        foreach (array_reverse($positions) as $position) {
+            if (! $this->applyPatch($driver, $runWorkspaceCommand, $workspace, $lineage, $position, reverse: true, flags: $only)) {
+                break;
+            }
+
+            $undone[] = $position;
+        }
+
+        if (count($undone) === count($positions)) {
+            $command = $runWorkspaceCommand->handle($workspace, $step['command'], $step['timeout']);
+            $before = $command->timed_out ? null : self::problemPackages($step['report'], (string) $command->output);
+
+            if ($before !== null) {
+                $result['at_start'] = $before === [] ? self::OUTCOME_PASSED : self::OUTCOME_FAILED;
+                $result['new_problems'] = array_values(array_diff(self::problemPackages($step['report'], $output) ?? [], $before));
+                $this->results[$index] = $result;
+            }
+        }
+
+        foreach (array_reverse($undone) as $position) {
+            if (! $this->applyPatch($driver, $runWorkspaceCommand, $workspace, $lineage, $position, flags: $only)) {
+                throw new RuntimeException('The change could not be put back after its packages were looked up on the starting commit.');
+            }
+        }
+
+        $runWorkspaceCommand->handle($workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], 30);
+        $this->verification->update(['results' => $this->results]);
+    }
+
+    /**
+     * Name the packages with high or critical problems in an audit's JSON
+     * report, or null when the report cannot be read.
+     *
+     * @return list<string>|null
+     */
+    public static function problemPackages(string $report, string $output): ?array
+    {
+        $data = json_decode($output, true);
+
+        return match (true) {
+            ! is_array($data) => null,
+            $report === 'composer' && is_array($data['advisories'] ?? null) => array_keys(array_filter($data['advisories'], fn ($advisories) => is_array($advisories) && $advisories !== [])),
+            $report === 'npm' && is_array($data['vulnerabilities'] ?? null) => array_keys(array_filter($data['vulnerabilities'], fn ($vulnerability) => in_array($vulnerability['severity'] ?? null, ['high', 'critical'], true))),
+            default => null,
+        };
     }
 
     /**
@@ -871,7 +973,7 @@ class VerifyFeatureRequest implements ShouldQueue
             $before = $after !== null ? $routes() : null;
 
             if ($after !== null && $before !== null) {
-                $this->keepEvidence('routes', AppRoutes::changes($before, $after) ?? []);
+                $this->keepEvidence('routes', AppRoutes::changes($before, $after, AppRoutes::planned($this->plannedRecords($featureRequest))) ?? []);
             }
 
             if ($tests === []) {

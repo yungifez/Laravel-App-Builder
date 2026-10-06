@@ -127,4 +127,35 @@ class AppRoutesTest extends TestCase
         $this->assertStringContainsString('Put the check back', AppRoutes::finding($findings[1]));
         $this->assertSame([], AppRoutes::findings(null));
     }
+
+    public function test_a_route_the_plan_lets_everyone_use_is_the_request_not_a_finding()
+    {
+        $field = ['name' => 'dog_name', 'type' => 'string', 'required' => true, 'choices' => [], 'of' => null];
+        $records = [
+            ['name' => 'Booking', 'fields' => [$field], 'access' => ['view' => 'signed_in', 'create' => 'everyone', 'update' => 'signed_in', 'delete' => 'signed_in']],
+            ['name' => 'GuestNote', 'fields' => [$field], 'access' => ['view' => 'everyone', 'create' => 'everyone', 'update' => 'everyone', 'delete' => 'everyone']],
+            // No access yet: nothing is known, so nothing is let through.
+            ['name' => 'Kennel', 'fields' => [$field], 'access' => null],
+        ];
+
+        $this->assertSame(
+            ['POST /bookings', 'POST /guest-notes', 'PUT /guest-notes/{}', 'PATCH /guest-notes/{}', 'DELETE /guest-notes/{}'],
+            AppRoutes::planned($records),
+        );
+
+        $changes = AppRoutes::changes([], [
+            // Base: anyone may book, as the plan says.
+            'POST /bookings' => ['web', 'throttle:20,1'],
+            // Alternate: changing a record anyone may change, by its own key.
+            'PATCH /guest-notes/{guest_note}' => ['web'],
+            // Exception: the plan keeps changing a booking to signed-in
+            // people, and a route nobody planned stays a finding.
+            'PUT /bookings/{booking}' => ['web'],
+            'POST /kennels' => ['web'],
+            'POST /contact' => ['web'],
+        ], AppRoutes::planned($records));
+
+        $this->assertSame(['PUT /bookings/{booking}', 'POST /kennels', 'POST /contact'], AppRoutes::unguarded($changes));
+        $this->assertSame(['PUT /bookings/{booking}', 'POST /kennels', 'POST /contact'], array_column(AppRoutes::findings($changes), 'route'));
+    }
 }
