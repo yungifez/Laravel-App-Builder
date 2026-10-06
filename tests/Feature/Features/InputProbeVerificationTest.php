@@ -84,21 +84,23 @@ class InputProbeVerificationTest extends TestCase
      *
      * @param  array<string, array<string, mixed>>  $answers  By what the probe says
      * @param  array<string, mixed>  $form
+     * @param  string  $broken  A line for a second form, on the same controller, when its rules could not be read
      */
-    protected function answer(array $answers, array $form = ['status' => 302, 'errors' => []]): void
+    protected function answer(array $answers, array $form = ['status' => 302, 'errors' => []], string $broken = ''): void
     {
         $routes = [['method' => 'POST', 'uri' => 'bookings', 'action' => 'App\Http\Controllers\BookingController@store']];
         $planned = InputProbes::plan($routes, InputProbes::rules(self::RULES), 40);
 
-        $this->driver->onExec = function (string $workspace, array $command) use ($answers, $form, $planned) {
+        $this->driver->onExec = function (string $workspace, array $command) use ($answers, $form, $planned, $broken) {
             if ($command === self::ROUTES) {
                 $this->driver->files["{$workspace}:routes.json"] = (string) json_encode([
                     ['domain' => null, 'method' => 'POST', 'uri' => 'bookings', 'name' => 'bookings.store', 'action' => 'App\Http\Controllers\BookingController@store', 'middleware' => ['web']],
+                    ...($broken === '' ? [] : [['domain' => null, 'method' => 'POST', 'uri' => 'bookings/import', 'name' => null, 'action' => 'App\Http\Controllers\BookingController@import', 'middleware' => ['web']]]),
                 ]);
             }
 
             if ($command === [...self::INPUTS, 'tests/Feature/InputRulesProbeTest.php', 'input-rules.jsonl']) {
-                $this->driver->files["{$workspace}:input-rules.jsonl"] = self::RULES;
+                $this->driver->files["{$workspace}:input-rules.jsonl"] = trim(self::RULES."\n".$broken);
             }
 
             if ($command === [...self::INPUTS, 'tests/Feature/InputProbeTest.php', 'inputs.jsonl']) {
@@ -144,6 +146,18 @@ class InputProbeVerificationTest extends TestCase
         $result = collect($change->verifications()->sole()->results)->firstWhere('name', 'Forms turn down wrong values');
         $this->assertSame('passed', $result['outcome']);
         $this->assertStringStartsWith("Already so before this change, so not sent back:\n- POST /bookings accepted title 21 characters long (max:20).", $result['output']);
+    }
+
+    public function test_a_form_request_the_app_cannot_build_is_listed_and_the_other_form_still_judged(): void
+    {
+        $this->answer([], broken: '{"id":1,"status":500,"source":"app/Http/Requests/ImportBookingsRequest.php","fields":[],"reason":"request_broke:BindingResolutionException"}');
+        $change = $this->change(newRules: true);
+
+        app(RequestVerification::class)->handle($change);
+
+        $result = collect($change->verifications()->sole()->results)->firstWhere('name', 'Forms turn down wrong values');
+        $this->assertSame('passed', $result['outcome']);
+        $this->assertStringEndsWith("Not fully tried:\n- POST /bookings/import it broke before its rules could be read (BindingResolutionException)", $result['output']);
     }
 
     public function test_a_whole_form_the_app_turned_down_adds_no_check(): void

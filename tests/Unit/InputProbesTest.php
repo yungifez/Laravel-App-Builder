@@ -238,6 +238,44 @@ class InputProbesTest extends TestCase
         $this->assertSame([['route' => 0, 'field' => '', 'reason' => 'cannot_fill:photo']], $sized['coverage']);
     }
 
+    public function test_a_form_request_the_app_cannot_build_is_named_as_not_tried(): void
+    {
+        $routes = [...$this->routes(), ['method' => 'POST', 'uri' => 'rooms', 'action' => 'App\Http\Controllers\RoomController@store']];
+        $rules = InputProbes::rules(implode("\n", [
+            (string) json_encode($this->rules()[0]),
+            '{"id":1,"status":500,"source":"app/Http/Requests/StoreRoomRequest.php","fields":[],"reason":"request_broke:BindingResolutionException"}',
+        ]));
+        $planned = InputProbes::plan($routes, $rules, 40);
+
+        $this->assertSame([0], array_keys($planned['baselines']), 'the other form is still tried');
+        $this->assertContains(['route' => 1, 'field' => '', 'reason' => 'request_broke:BindingResolutionException'], $planned['coverage']);
+        $this->assertSame([], array_filter($planned['probes'], fn (array $probe) => $probe['route'] === 1));
+        $this->assertStringEndsWith(implode("\n", [
+            'Not fully tried:',
+            '- POST /rooms it broke before its rules could be read (BindingResolutionException)',
+        ]), InputProbes::describe($routes, ['findings' => [], 'existing' => [], 'coverage' => $planned['coverage'], 'tried' => 0, 'forms' => 0]));
+    }
+
+    public function test_a_form_that_turns_a_signed_in_person_away_or_has_no_method_says_so(): void
+    {
+        $coverage = fn (string $reason) => InputProbes::describe($this->routes(), ['findings' => [], 'existing' => [], 'coverage' => [['route' => 0, 'field' => '', 'reason' => $reason]], 'tried' => 0, 'forms' => 0]);
+
+        $this->assertStringEndsWith('- POST /bookings a signed-in person was turned away (403)', $coverage('turned_away:403'));
+        $this->assertStringEndsWith('- POST /bookings its controller method could not be found', $coverage('no_action'));
+        $this->assertStringEndsWith('- POST /bookings it asked for no rules', $coverage('no_rules'));
+    }
+
+    public function test_the_rules_test_turns_a_broken_request_into_a_reason_not_a_failure(): void
+    {
+        $test = InputProbes::rulesTest($this->routes(), 'input-rules.jsonl');
+
+        $this->assertNotFalse(token_get_all($test, TOKEN_PARSE));
+        $this->assertStringContainsString("\$line['status'] >= 500 => 'request_broke:'", $test);
+        $this->assertStringContainsString("\$exception instanceof ReflectionException => 'no_action'", $test);
+        $this->assertStringContainsString('} catch (Throwable $exception) {', $test);
+        $this->assertSame([], InputProbes::plan($this->routes(), InputProbes::rules('{"id":0,"status":0,"source":"","fields":[],"reason":"no_action"}'), 40)['baselines']);
+    }
+
     public function test_a_form_that_cannot_be_filled_in_or_reached_is_coverage_only(): void
     {
         $unfilled = InputProbes::plan($this->routes(), $this->rules(['code' => ['required', 'regex:/^[A-Z]{3}$/']]), 40);

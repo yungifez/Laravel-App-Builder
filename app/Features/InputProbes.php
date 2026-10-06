@@ -129,7 +129,14 @@ class InputProbes
             $response = $this->send($method, $uri, []);
             $line['status'] = $response->getStatusCode();
             $line['fields'] = $seen;
-            $line['reason'] = $seen !== [] ? null : (in_array($line['status'], [401, 403, 404, 405, 419], true) ? 'turned_away' : 'no_rules');
+            // A form request the app could not build, or whose rules broke,
+            // answers 500 before the validator sees anything.
+            $line['reason'] = match (true) {
+                $seen !== [] => null,
+                $line['status'] >= 500 => 'request_broke:'.($response->exception === null ? $line['status'] : class_basename($response->exception)),
+                $line['status'] >= 400 => 'turned_away:'.$line['status'],
+                default => 'no_rules',
+            };
         } catch (Throwable $exception) {
             $line['reason'] = $this->reason($exception);
         }
@@ -905,6 +912,8 @@ PHP);
             'needs_record' => "it needs a {$detail} that could not be added",
             'no_exists' => "it needs a row in {$detail} that could not be added",
             'no_rules' => 'it asked for no rules',
+            'request_broke' => "it broke before its rules could be read ({$detail})",
+            'no_action' => 'its controller method could not be found',
             'turned_away' => 'a signed-in person was turned away'.($detail === '' ? '' : " ({$detail})"),
             'form_refused' => "a filled-in form was turned down ({$detail})",
             'form_broke' => "a filled-in form broke ({$detail})",
@@ -950,6 +959,7 @@ use Illuminate\Validation\Rules\RequiredIf;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Validator;
 use ReflectionClass;
+use ReflectionException;
 use ReflectionMethod;
 use ReflectionNamedType;
 use RuntimeException;
@@ -996,9 +1006,11 @@ class {$class} extends TestCase
      */
     private function reason(Throwable \$exception): string
     {
-        return \$exception instanceof RuntimeException && preg_match('/^(no_user_factory|needs_record:\w+|no_exists:\w+)$/', \$exception->getMessage()) === 1
-            ? \$exception->getMessage()
-            : 'not_run';
+        return match (true) {
+            \$exception instanceof RuntimeException && preg_match('/^(no_user_factory|needs_record:\w+|no_exists:\w+)$/', \$exception->getMessage()) === 1 => \$exception->getMessage(),
+            \$exception instanceof ReflectionException => 'no_action',
+            default => 'not_run',
+        };
     }
 
     /**

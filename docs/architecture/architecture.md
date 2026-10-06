@@ -4471,7 +4471,8 @@ wrong values" only when the change added the field or its rules: the file
 holding them is new, or an added line names the field. Other findings are
 listed as already so and not sent back. If the whole form is not accepted,
 or a form cannot be reached or filled in (no user factory, a route record
-without a factory, a pattern rule), its probes are listed as not fully tried,
+without a factory, a pattern rule, a form request the app cannot build or
+whose rules break), its probes are listed as not fully tried,
 never as findings. A field inside a list is tried on the list's first item
 (`rooms.*.name` as `rooms.0.name`), and a list with rules of its own is also
 sent empty, as text, and left out. An empty list is expected to pass unless it
