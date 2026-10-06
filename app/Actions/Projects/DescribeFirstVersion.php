@@ -24,7 +24,7 @@ class DescribeFirstVersion
     ) {}
 
     /**
-     * @return array{change: string, state: 'making'|'asking'|'ready'|'stopped', error: string|null, can_retry: bool, checking: bool}|null
+     * @return array{change: string, state: 'making'|'asking'|'ready'|'stopped', error: string|null, can_retry: bool, plan_ran_out: bool, checking: bool}|null
      */
     public function handle(Project $project): ?array
     {
@@ -54,8 +54,13 @@ class DescribeFirstVersion
         return [
             'change' => $change->uuid,
             'state' => $state,
-            'error' => $state === 'stopped' ? ($described['featureRequest']['error'] ?? $described['run']['error'] ?? null) : null,
+            // Said as the chat says the stop: the run's own reason and
+            // whose fault it is, not what was done to the run inside.
+            'error' => $state === 'stopped' ? ($described['run']['error'] ?? $change->latestRun?->stop_reason?->said() ?? $described['featureRequest']['error'] ?? null) : null,
             'can_retry' => $state === 'stopped' && $described['featureRequest']['can_retry'],
+            // Stopped because the month's AI use ran out: the next step is
+            // the owner's plan, as in the chat.
+            'plan_ran_out' => $state === 'stopped' && ($described['run']['plan_ran_out'] ?? false),
             'checking' => $state === 'ready' && ! $described['featureRequest']['can_accept'],
         ];
     }

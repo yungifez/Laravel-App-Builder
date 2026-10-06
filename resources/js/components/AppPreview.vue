@@ -9,6 +9,7 @@ import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import type { AppPreviewState } from '@/composables/useAppPreview';
+import { edit as billing } from '@/routes/billing';
 import { show as showProject } from '@/routes/projects';
 import type { EditorPreview, FirstVersion } from '@/types';
 
@@ -228,8 +229,15 @@ watch(scale, (value) => (props.state.zoom = value), { immediate: true });
                 >
                     {{ firstVersion.error }}
                 </p>
+                <Link
+                    v-if="firstVersion.plan_ran_out"
+                    :href="billing()"
+                    class="text-sm font-medium underline underline-offset-4"
+                    data-test="first-version-see-plan"
+                    >See your plan</Link
+                >
                 <Form
-                    v-if="firstVersion.can_retry"
+                    v-else-if="firstVersion.can_retry"
                     v-bind="
                         FeatureRequestRetryController.store.form(
                             firstVersion.change,

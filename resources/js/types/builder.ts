@@ -563,6 +563,8 @@ export type FirstVersion = {
     state: 'making' | 'asking' | 'ready' | 'stopped';
     error: string | null;
     can_retry: boolean;
+    /** Stopped because the month's AI use ran out. */
+    plan_ran_out: boolean;
     /** Made, but the checks still run. */
     checking: boolean;
 };
