@@ -37,6 +37,10 @@ class RunnerController extends Controller
             'runner' => $runner,
             'poll_seconds' => (int) config('workspaces.drivers.runner.poll_seconds'),
             'output_limit' => (int) config('workspaces.commands.output_limit'),
+            'dependency_cache' => [
+                'directory' => (string) config('workspaces.drivers.runner.dependency_cache.directory'),
+                'limit_mb' => (int) config('workspaces.drivers.runner.dependency_cache.limit_mb'),
+            ],
             'socket' => filled($socketUrl) ? [
                 'url' => $socketUrl,
                 'key' => config('broadcasting.connections.reverb.key'),

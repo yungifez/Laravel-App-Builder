@@ -47,7 +47,7 @@ RUN mkdir -p /opt/sloppy \
     && echo "${SLOPPY_SHA256}  /opt/sloppy/sloppy.phar" | sha256sum -c -
 
 COPY agent-runner/run.mjs /opt/agent-runner/run.mjs
-COPY box-runner/runner.mjs /opt/box-runner/runner.mjs
+COPY box-runner/runner.mjs box-runner/dependency-cache.mjs /opt/box-runner/
 COPY preview-tools/ /opt/preview-tools/
 COPY screen-check/check.mjs /opt/screen-check/check.mjs
 

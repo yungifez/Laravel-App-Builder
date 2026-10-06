@@ -788,12 +788,14 @@ return [
 
         'setup' => [
             ['name' => 'Create .env', 'command' => ['cp', '.env.example', '.env'], 'timeout' => 30],
-            ['name' => 'Install PHP dependencies', 'command' => ['composer', 'install', '--no-interaction', '--prefer-dist', '--no-progress'], 'timeout' => 900],
+            // "cache": the runner warms this install from the app's own
+            // dependency cache (workspaces.drivers.runner.dependency_cache).
+            ['name' => 'Install PHP dependencies', 'command' => ['composer', 'install', '--no-interaction', '--prefer-dist', '--no-progress'], 'timeout' => 900, 'cache' => 'composer'],
             ['name' => 'Generate app key', 'command' => ['php', 'artisan', 'key:generate', '--no-interaction'], 'timeout' => 60],
             // The database server the app asks for in .env, private to the
             // workspace (MySQL, MariaDB or PostgreSQL; SQLite needs none).
             ['name' => 'Start the database', 'command' => ['sh', '-c', (string) file_get_contents(resource_path('preview-tools/start-database.sh'))], 'timeout' => 120],
-            ['name' => 'Install Node dependencies', 'command' => $installNodeDependencies, 'timeout' => 600, 'needs' => 'package.json'],
+            ['name' => 'Install Node dependencies', 'command' => $installNodeDependencies, 'timeout' => 600, 'needs' => 'package.json', 'cache' => 'npm'],
             ['name' => 'Generate route helpers', 'command' => ['php', 'artisan', 'wayfinder:generate', '--with-form'], 'timeout' => 120, 'needs' => 'vendor/laravel/wayfinder'],
             // Tests that open a page need the built screens, as in the
             // starter kits' own CI; without them every such test fails on
@@ -1396,14 +1398,16 @@ return [
         // A step that "needs" a file runs only in an app that has it.
         'setup' => [
             ['name' => 'Create .env', 'command' => ['cp', '.env.example', '.env'], 'timeout' => 30],
-            ['name' => 'Install PHP dependencies', 'command' => ['composer', 'install', '--no-interaction', '--prefer-dist', '--no-progress'], 'timeout' => 900],
+            // "cache": the runner warms this install from the app's own
+            // dependency cache (workspaces.drivers.runner.dependency_cache).
+            ['name' => 'Install PHP dependencies', 'command' => ['composer', 'install', '--no-interaction', '--prefer-dist', '--no-progress'], 'timeout' => 900, 'cache' => 'composer'],
             ['name' => 'Generate app key', 'command' => ['php', 'artisan', 'key:generate', '--no-interaction'], 'timeout' => 60],
             // The database server the app asks for in .env, private to the
             // workspace (MySQL, MariaDB or PostgreSQL; SQLite needs none).
             ['name' => 'Start the database', 'command' => ['sh', '-c', (string) file_get_contents(resource_path('preview-tools/start-database.sh'))], 'timeout' => 120],
             // A large app builds hundreds of tables the first time.
             ['name' => 'Create the database', 'command' => ['php', 'artisan', 'migrate', '--force', '--no-interaction'], 'timeout' => 600],
-            ['name' => 'Install Node dependencies', 'command' => $installNodeDependencies, 'timeout' => 600, 'needs' => 'package.json'],
+            ['name' => 'Install Node dependencies', 'command' => $installNodeDependencies, 'timeout' => 600, 'needs' => 'package.json', 'cache' => 'npm'],
         ],
 
         // Point-and-edit. An editable preview runs the locator after setup,

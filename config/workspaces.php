@@ -124,6 +124,14 @@ return [
             'file_seconds' => 60,
             // The longest wait between two looks at whether a command ended.
             'poll_ms' => 200,
+            // Each app's installed packages and downloads, kept on the
+            // runner's machine between workspaces so an install is quick
+            // (resources/box-runner/dependency-cache.mjs). "directory" is a
+            // hidden folder of the runner's root; 0 MB turns it off.
+            'dependency_cache' => [
+                'directory' => env('WORKSPACE_DEPENDENCY_CACHE_DIRECTORY', '.dependencies'),
+                'limit_mb' => (int) env('WORKSPACE_DEPENDENCY_CACHE_MB', 10240),
+            ],
         ],
 
     ],

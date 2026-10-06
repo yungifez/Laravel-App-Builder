@@ -76,6 +76,7 @@ import { connect as connectTcp } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
+import { dependencyCache } from './dependency-cache.mjs';
 
 const url = (process.env.RUNNER_URL ?? '').replace(/\/$/, '');
 const token = process.env.RUNNER_TOKEN ?? '';
@@ -145,6 +146,12 @@ const switching = process.getuid?.() === 0;
 const FIRST_ID = 20000;
 const LAST_ID = 59999;
 
+/**
+ * The user the dependency cache is filled as: inside the fenced range, and
+ * never given to a workspace.
+ */
+const FILL_ID = LAST_ID;
+
 let settings = { poll_seconds: 5, output_limit: 65536, socket: null };
 
 /** Commands in progress, by id, each with a way to stop it. */
@@ -157,6 +164,14 @@ const services = new Map();
 const servicePorts = new Map();
 
 let wake = null;
+
+const dependencies = dependencyCache({
+    settings: () => settings.dependency_cache,
+    root,
+    switching,
+    fillId: FILL_ID,
+    run,
+});
 
 function ring() {
     wake?.();
@@ -246,7 +261,7 @@ function freeId() {
         workspaces().map((name) => statSync(join(root, name)).uid),
     );
 
-    for (let id = FIRST_ID; id <= LAST_ID; id++) {
+    for (let id = FIRST_ID; id < FILL_ID; id++) {
         if (!taken.has(id)) {
             return id;
         }
@@ -1067,24 +1082,46 @@ const handlers = {
             recursive: true,
             force: true,
         });
+        dependencies.close(command.box);
 
         return ok();
     },
 
     async exec(command) {
-        const { command: argv, env } = command.payload;
+        const { command: argv, env, cache } = command.payload;
+        const as = identity(command.box);
+        let warm = null;
 
-        return run(
+        // An install the control plane marked: warmed from the app's
+        // dependency cache when it can be, and run as usual either way.
+        if (cache) {
+            try {
+                warm = dependencies.prepare(
+                    command.box,
+                    box(command.box),
+                    as,
+                    cache,
+                );
+            } catch (error) {
+                console.error(`Dependency cache skipped: ${error.message}`);
+            }
+        }
+
+        const result = await run(
             argv,
             {
-                as: identity(command.box),
+                as,
                 cwd: box(command.box),
-                env,
+                env: { ...warm?.env, ...env },
                 workspace: command.box,
                 timeoutSeconds: command.timeout_seconds,
             },
             command.id,
         );
+
+        warm?.after(result);
+
+        return result;
     },
 
     async write(command) {
@@ -1390,6 +1427,7 @@ async function main() {
         }
     }
 
+    dependencies.start();
     console.log(`Runner ${settings.runner} is ready.`);
 
     if (settings.socket) {

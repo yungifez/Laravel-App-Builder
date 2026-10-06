@@ -3,12 +3,18 @@
 namespace App\Workspaces\Drivers;
 
 use App\Enums\BoxCommandStatus;
+use App\Models\FeatureRequest;
+use App\Models\Preview;
+use App\Models\Run;
+use App\Models\Verification;
+use App\Models\Workspace;
 use App\Workspaces\Boxes\BoxChannel;
 use App\Workspaces\Boxes\Contracts\BoxProvider;
 use App\Workspaces\CommandResult;
 use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\WorkspaceSpec;
 use Closure;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
@@ -59,7 +65,13 @@ class RunnerDriver implements WorkspaceDriver
 
     public function exec(string $workspaceId, array $command, int $timeoutSeconds, array $environment = [], ?Closure $whileRunning = null): CommandResult
     {
-        $sent = $this->channel->send($workspaceId, 'exec', ['command' => $command, 'env' => $environment], $timeoutSeconds);
+        $payload = ['command' => $command, 'env' => $environment];
+
+        if (($cache = $this->dependencyCache($workspaceId, $command)) !== null) {
+            $payload['cache'] = $cache;
+        }
+
+        $sent = $this->channel->send($workspaceId, 'exec', $payload, $timeoutSeconds);
         $finished = $this->channel->await($sent, $whileRunning);
         $result = $finished->result ?? [];
 
@@ -163,5 +175,43 @@ class RunnerDriver implements WorkspaceDriver
         }
 
         return $path;
+    }
+
+    /**
+     * Name the app and the package manager when the command is an install
+     * a setup step marks for the dependency cache, so the runner can warm
+     * it from that app's cache and keeps each app's cache apart. Any other
+     * command, or a workspace that serves no app, goes without.
+     *
+     * @param  list<string>  $command
+     * @return array{scope: string, kind: string}|null
+     */
+    protected function dependencyCache(string $workspaceId, array $command): ?array
+    {
+        $kind = null;
+
+        foreach ([...Config::array('builder.verification.setup'), ...Config::array('builder.preview.setup')] as $step) {
+            if (is_array($step) && is_string($step['cache'] ?? null) && ($step['command'] ?? null) === $command) {
+                $kind = $step['cache'];
+
+                break;
+            }
+        }
+
+        if ($kind === null) {
+            return null;
+        }
+
+        $workspace = Workspace::query()->where('driver_id', $workspaceId)->value('id');
+
+        if ($workspace === null) {
+            return null;
+        }
+
+        $project = Preview::query()->where('workspace_id', $workspace)->value('project_id')
+            ?? FeatureRequest::query()->whereIn('id', Verification::query()->where('workspace_id', $workspace)->select('feature_request_id'))->value('project_id')
+            ?? FeatureRequest::query()->whereIn('id', Run::query()->where('workspace_id', $workspace)->select('feature_request_id'))->value('project_id');
+
+        return $project === null ? null : ['scope' => "project-{$project}", 'kind' => $kind];
     }
 }
