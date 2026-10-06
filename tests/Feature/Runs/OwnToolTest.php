@@ -5,8 +5,10 @@ namespace Tests\Feature\Runs;
 use App\Actions\Features\DescribeFeatureRequest;
 use App\Actions\Projects\ConnectOwnTool;
 use App\Actions\Projects\CreateProject;
+use App\Actions\Projects\DisconnectOwnTool;
 use App\Actions\Runs\StartRun;
 use App\Enums\RunStatus;
+use App\Jobs\ExecuteRun;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
@@ -139,6 +141,63 @@ class OwnToolTest extends TestCase
 
         $this->getTask($token)->assertUnauthorized();
         $this->assertNotSame('worker', app(StartRun::class)->handle(FeatureRequest::factory()->for($project)->create())->driver);
+    }
+
+    public function test_after_disconnecting_the_changes_waiting_for_the_tool_are_ours_with_their_plan()
+    {
+        Queue::fake();
+        $project = Project::factory()->create();
+        app(ConnectOwnTool::class)->handle($project);
+        $waiting = $this->waitingRun($project);
+        $queued = Run::factory()->for(FeatureRequest::factory()->for($project))->create(['driver' => 'worker', 'status' => RunStatus::Queued]);
+        $stopped = $this->waitingRun($project, 'Members can cancel a booking.');
+        $stopped->recordEvent('worker_submitted', ['patch' => 'diff', 'summary' => 'Done.']);
+        $stopped->update(['status' => RunStatus::NeedsUserDecision]);
+        $other = $this->waitingRun(Project::factory()->create());
+
+        $this->actingAs($project->owner)->delete(route('projects.own-tool.destroy', $project))->assertRedirect();
+
+        foreach ([$waiting, $queued, $stopped] as $run) {
+            $run->refresh();
+            $this->assertNotSame('worker', $run->driver);
+            $this->assertTrue($run->events()->where('type', 'handed_back')->exists());
+        }
+
+        $this->assertSame('Members can book a class.', $waiting->plan['summary']);
+        $this->assertSame(RunStatus::NeedsUserDecision, $stopped->status, 'Keep trying and Start over then use our coder');
+        // Only the change waiting for a patch needs our coder started.
+        Queue::assertPushed(ExecuteRun::class, 1);
+        Queue::assertPushed(ExecuteRun::class, fn (ExecuteRun $job) => $job->run->is($waiting));
+        $this->assertSame('worker', $other->refresh()->driver, 'another app keeps its tool');
+    }
+
+    public function test_a_change_the_tool_already_handed_back_is_left_to_finish()
+    {
+        Queue::fake();
+        $project = Project::factory()->create();
+        app(ConnectOwnTool::class)->handle($project);
+        $applying = $this->waitingRun($project);
+        $applying->recordEvent('worker_submitted', ['patch' => 'diff', 'summary' => 'Done.']);
+        $verifying = $this->waitingRun($project, 'Members can cancel a booking.');
+        $verifying->update(['status' => RunStatus::Verifying]);
+
+        $this->assertSame(0, app(DisconnectOwnTool::class)->handle($project));
+
+        $this->assertSame(['worker', 'worker'], [$applying->refresh()->driver, $verifying->refresh()->driver]);
+        $this->assertFalse(ConnectOwnTool::connected($project));
+        Queue::assertNothingPushed();
+    }
+
+    public function test_only_people_who_can_change_the_app_disconnect_its_tool()
+    {
+        $project = Project::factory()->create();
+        app(ConnectOwnTool::class)->handle($project);
+        $waiting = $this->waitingRun($project);
+
+        $this->actingAs(User::factory()->create())->delete(route('projects.own-tool.destroy', $project))->assertForbidden();
+
+        $this->assertTrue(ConnectOwnTool::connected($project));
+        $this->assertSame('worker', $waiting->refresh()->driver);
     }
 
     public function test_only_people_who_can_change_the_app_connect_a_tool()

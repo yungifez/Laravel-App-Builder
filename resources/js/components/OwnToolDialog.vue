@@ -214,15 +214,23 @@ async function copy(what: 'connect' | 'ask' | 'keep'): Promise<void> {
                         v-slot="{ processing }"
                     >
                         <Button
-                            variant="ghost"
+                            variant="outline"
                             :disabled="processing"
-                            class="h-11 text-muted-foreground select-none sm:h-9"
+                            class="h-11 select-none sm:h-9"
                             data-test="own-tool-stop"
                         >
-                            Stop, so I write changes again
+                            Stop using my tool
                         </Button>
                     </Form>
                 </div>
+                <p
+                    v-if="connected"
+                    class="text-xs text-muted-foreground"
+                    data-test="own-tool-stop-effect"
+                >
+                    If you stop, I write new changes again, and the ones waiting
+                    for your tool too.
+                </p>
             </div>
         </DialogContent>
     </Dialog>
