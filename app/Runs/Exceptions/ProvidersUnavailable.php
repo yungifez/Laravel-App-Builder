@@ -4,6 +4,7 @@ namespace App\Runs\Exceptions;
 
 use App\Enums\StopReason;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
 use Laravel\Ai\Exceptions\FailoverableException;
 use Laravel\Ai\Exceptions\InsufficientCreditsException;
 use Laravel\Ai\Exceptions\ProviderOverloadedException;
@@ -78,15 +79,21 @@ class ProvidersUnavailable extends RuntimeException
     {
         $previous = $exception->getPrevious();
 
-        if (! $previous instanceof RequestException) {
-            return false;
-        }
+        return $previous instanceof RequestException && self::bodySaysOutOfCredit($previous->response);
+    }
 
-        $type = $previous->response->json('error.type');
-        $code = $previous->response->json('error.code');
-        $message = $previous->response->json('error.message');
+    /**
+     * Determine if an error answer says the account has no credit left. A
+     * body that is empty or not JSON says nothing, so it never does.
+     */
+    protected static function bodySaysOutOfCredit(Response $response): bool
+    {
+        $type = $response->json('error.type');
+        $code = $response->json('error.code');
+        $message = $response->json('error.message');
 
-        return ($code === 'insufficient_quota' || $type === 'insufficient_quota')
+        return in_array('insufficient_quota', [$code, $type], true)
+            || $code === 'billing_hard_limit_reached'
             || self::saysOutOfCredit(is_string($type) ? $type : null, is_string($message) ? $message : null);
     }
 
@@ -100,6 +107,12 @@ class ProvidersUnavailable extends RuntimeException
     public static function fromResponse(RequestException $exception): self
     {
         $status = $exception->response->status();
+
+        // An empty account is the owner's next step to know, whatever
+        // status the service sent it with.
+        if ($status >= 400 && $status < 500 && self::bodySaysOutOfCredit($exception->response)) {
+            return new self(StopReason::OutOfCredit->said(), StopReason::OutOfCredit, $exception);
+        }
 
         if ($status >= 400 && $status < 500 && ! in_array($status, [408, 429], true)) {
             return new self(__('This is our fault: the AI service we use could not accept how we asked it. We have been told. Nothing in your app changed. Try again later.'), StopReason::RequestRefused, $exception);

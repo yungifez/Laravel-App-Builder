@@ -112,6 +112,38 @@ class RequestRefusedTest extends TestCase
                 ->etc());
     }
 
+    public function test_an_empty_account_said_with_a_plain_refusal_stops_for_credit(): void
+    {
+        $this->refusePlansWith(400, (string) json_encode(['error' => ['message' => 'Billing hard limit has been reached', 'type' => 'invalid_request_error', 'code' => 'billing_hard_limit_reached']]));
+        $run = app(StartRun::class)->handle($this->change())->refresh();
+
+        $this->assertSame(1, $this->asked);
+        $this->assertSame(StopReason::OutOfCredit, $run->stop_reason);
+        $this->assertSame(StopReason::OutOfCredit->said(), $run->error);
+        $this->assertNull($this->attention('ai_request_refused'));
+    }
+
+    public function test_a_plain_refusal_that_says_nothing_of_credit_stays_refused(): void
+    {
+        $this->refusePlansWith(400, (string) json_encode(['error' => ['message' => "Invalid value for 'max_tokens'.", 'type' => 'invalid_request_error', 'code' => 'invalid_value']]));
+        $run = app(StartRun::class)->handle($this->change())->refresh();
+
+        $this->assertSame(StopReason::RequestRefused, $run->stop_reason);
+        $this->assertSame(self::REFUSED, $run->error);
+    }
+
+    public function test_a_refusal_with_an_empty_or_html_body_stays_refused(): void
+    {
+        foreach (['', '<html><body><h1>400 Bad Request</h1></body></html>'] as $body) {
+            $this->refusePlansWith(400, $body, 'text/html');
+            $run = app(StartRun::class)->handle($this->change())->refresh();
+
+            $this->assertSame(1, $this->asked);
+            $this->assertSame(StopReason::RequestRefused, $run->stop_reason);
+            $this->assertSame(self::REFUSED, $run->error);
+        }
+    }
+
     public function test_the_model_writing_tests_first_is_refused_the_same_way(): void
     {
         config(['builder.verification.written_first.enabled' => true]);
@@ -168,6 +200,17 @@ class RequestRefusedTest extends TestCase
             $this->asked++;
 
             throw new RequestException(new Response(new Psr7Response($status, ['Content-Type' => 'application/json'], (string) $body)));
+        });
+    }
+
+    protected function refusePlansWith(int $status, string $body, string $contentType = 'application/json'): void
+    {
+        $this->asked = 0;
+
+        FeaturePlanner::fake(function () use ($status, $body, $contentType) {
+            $this->asked++;
+
+            throw new RequestException(new Response(new Psr7Response($status, ['Content-Type' => $contentType], $body)));
         });
     }
 
