@@ -22,7 +22,6 @@ import { useScreen } from '@/composables/useScreen';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import FeatureRequestAcceptanceController from '@/actions/App/Http/Controllers/FeatureRequestAcceptanceController';
 import FeatureRequestAnswerController from '@/actions/App/Http/Controllers/FeatureRequestAnswerController';
-import FeatureRequestAssumptionController from '@/actions/App/Http/Controllers/FeatureRequestAssumptionController';
 import FeatureRequestCaseCorrectionController from '@/actions/App/Http/Controllers/FeatureRequestCaseCorrectionController';
 import FeatureRequestFollowUpController from '@/actions/App/Http/Controllers/FeatureRequestFollowUpController';
 import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
@@ -36,6 +35,7 @@ import RunCancellationController from '@/actions/App/Http/Controllers/RunCancell
 import DetailLevelController from '@/actions/App/Http/Controllers/Settings/DetailLevelController';
 import ChangeCode from '@/components/ChangeCode.vue';
 import ChangeProof from '@/components/ChangeProof.vue';
+import DecisionLinks from '@/components/DecisionLinks.vue';
 import ElapsedTime from '@/components/ElapsedTime.vue';
 import MessageImages from '@/components/MessageImages.vue';
 import InputError from '@/components/InputError.vue';
@@ -238,6 +238,39 @@ function writtenFor(criterion: number) {
           )
         : [];
 }
+
+// With nothing to decide, the chat stays quiet: what matters most shows
+// a line each, and the rest of the plan waits behind "Details". The
+// server puts the decisions in reading order.
+const GLANCE_SHOWN = 3;
+const detailsOpen = ref(false);
+const allGlance = ref(false);
+const glance = computed(() =>
+    (run.value?.plan?.assumptions ?? []).filter(
+        (assumption) => assumption.level === 'glance',
+    ),
+);
+const quiet = computed(() =>
+    (run.value?.plan?.assumptions ?? []).filter(
+        (assumption) => assumption.level === 'quiet',
+    ),
+);
+const glanceShown = computed(() =>
+    allGlance.value ? glance.value : glance.value.slice(0, GLANCE_SHOWN),
+);
+// The whole plan shows when the owner opens it, or reads at the "Why"
+// level; once made, what it is done when shows as results.
+const planOpen = computed(() => detailsOpen.value || depth.value === 2);
+const built = computed(() => !!run.value?.review);
+const resultsShown = computed(() => built.value && doneWhen.value.length > 0);
+
+watch(
+    () => request.value.id,
+    () => {
+        detailsOpen.value = false;
+        allGlance.value = false;
+    },
+);
 
 const doneWhen = computed(() => {
     const review = run.value?.review;
@@ -1272,98 +1305,84 @@ const checks = computed(() => {
                             </ul>
                         </div>
 
-                        <Collapsible
-                            v-if="run?.plan && run.plan.assumptions.length > 0"
+                        <!-- What matters most of what I decided, a line
+                             each. Each is the owner's to agree with, so
+                             later changes follow it, or to change in this
+                             chat. Not "Keep": that is the button for the
+                             whole change below. -->
+                        <ul
+                            v-if="glance.length > 0"
+                            class="space-y-1 text-xs text-muted-foreground"
                             data-test="decisions"
+                        >
+                            <li
+                                v-for="assumption in glanceShown"
+                                :key="assumption.text"
+                                data-test="decision"
+                            >
+                                {{ assumption.text }}
+                                <DecisionLinks
+                                    :project-id="change.project.id"
+                                    :change-id="request.id"
+                                    :text="assumption.text"
+                                    :kept="
+                                        run!.kept_assumptions.includes(
+                                            assumption.text,
+                                        )
+                                    "
+                                />
+                            </li>
+                            <li v-if="glance.length > glanceShown.length">
+                                <button
+                                    type="button"
+                                    class="min-h-11 underline-offset-4 select-none hover:text-foreground hover:underline sm:min-h-6"
+                                    data-test="decisions-more"
+                                    @click="allGlance = true"
+                                >
+                                    {{ glance.length - glanceShown.length }}
+                                    more
+                                </button>
+                            </li>
+                        </ul>
+
+                        <!-- The rest of the plan, closed: smaller
+                             decisions here, and the plan beside the chat
+                             or below it. -->
+                        <Collapsible
+                            v-if="run?.plan && !run.plan.answer"
+                            v-model:open="detailsOpen"
+                            data-test="plan-details"
                         >
                             <CollapsibleTrigger
                                 class="group flex min-h-11 items-center gap-1 text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-6"
+                                data-test="plan-details-toggle"
                             >
                                 <ChevronRight
                                     class="size-3.5 transition-transform group-data-[state=open]:rotate-90"
                                 />
-                                I decided {{ run.plan.assumptions.length }}
-                                {{
-                                    run.plan.assumptions.length === 1
-                                        ? 'thing'
-                                        : 'things'
-                                }}
-                                for you
+                                Details
                             </CollapsibleTrigger>
                             <CollapsibleContent>
-                                <!-- Each one is the owner's to agree with,
-                                     so later changes follow it, or to change
-                                     in this chat. Not "Keep": that is the
-                                     button for the whole change below. -->
                                 <ul
-                                    class="mt-1 list-disc space-y-2 pl-9 text-xs text-muted-foreground"
+                                    v-if="quiet.length > 0"
+                                    class="mt-1 list-disc space-y-1 pl-9 text-xs text-muted-foreground"
                                 >
                                     <li
-                                        v-for="(assumption, index) in run.plan
-                                            .assumptions"
-                                        :key="index"
+                                        v-for="assumption in quiet"
+                                        :key="assumption.text"
                                         data-test="decision"
                                     >
                                         {{ assumption.text }}
-                                        <span
-                                            class="flex min-h-6 items-center gap-3"
-                                        >
-                                            <span
-                                                v-if="
-                                                    run.kept_assumptions.includes(
-                                                        assumption.text,
-                                                    )
-                                                "
-                                                class="inline-flex items-center gap-1 text-foreground"
-                                                data-test="decision-kept"
-                                            >
-                                                <Check class="size-3" /> You
-                                                chose this
-                                            </span>
-                                            <Form
-                                                v-else
-                                                v-bind="
-                                                    FeatureRequestAssumptionController.store.form(
-                                                        request.id,
-                                                    )
-                                                "
-                                                :options="{
-                                                    preserveScroll: true,
-                                                    preserveState: true,
-                                                }"
-                                                v-slot="{ processing }"
-                                            >
-                                                <input
-                                                    type="hidden"
-                                                    name="assumption"
-                                                    :value="assumption.text"
-                                                />
-                                                <button
-                                                    :disabled="processing"
-                                                    class="inline-flex min-h-11 items-center underline-offset-4 select-none hover:text-foreground hover:underline sm:min-h-6"
-                                                    data-test="decision-keep"
-                                                >
-                                                    Agree
-                                                </button>
-                                            </Form>
-                                            <Link
-                                                :href="
-                                                    showProject(
-                                                        change.project.id,
-                                                        {
-                                                            query: {
-                                                                change: request.id,
-                                                                ask: `Change this: “${assumption.text}”\n\nInstead, `,
-                                                            },
-                                                        },
-                                                    )
-                                                "
-                                                class="inline-flex min-h-11 items-center underline-offset-4 select-none hover:text-foreground hover:underline sm:min-h-6"
-                                                data-test="decision-change"
-                                            >
-                                                Change
-                                            </Link>
-                                        </span>
+                                        <DecisionLinks
+                                            :project-id="change.project.id"
+                                            :change-id="request.id"
+                                            :text="assumption.text"
+                                            :kept="
+                                                run.kept_assumptions.includes(
+                                                    assumption.text,
+                                                )
+                                            "
+                                        />
                                     </li>
                                 </ul>
                             </CollapsibleContent>
@@ -1532,99 +1551,113 @@ const checks = computed(() => {
                         <Teleport defer :to="'#beside-plan'" :disabled="!sides">
                             <div
                                 v-if="
-                                    (sides || depth === 2) &&
+                                    (sides || planOpen || resultsShown) &&
                                     run?.plan &&
                                     !run.plan.answer
                                 "
                                 class="space-y-6 leading-relaxed"
                                 data-test="detail-why"
                             >
-                                <section
-                                    v-if="
-                                        run.plan.current_behavior &&
-                                        run.plan.current_behavior !== 'New'
-                                    "
-                                    class="space-y-2"
+                                <button
+                                    v-if="sides && !planOpen"
+                                    type="button"
+                                    class="flex min-h-11 items-center gap-1 text-sm text-muted-foreground select-none hover:text-foreground sm:min-h-6"
+                                    data-test="plan-details-open"
+                                    @click="detailsOpen = true"
                                 >
-                                    <h3
-                                        class="text-sm font-medium text-muted-foreground"
+                                    <ChevronRight class="size-3.5" />
+                                    Details
+                                </button>
+                                <template v-if="planOpen">
+                                    <section
+                                        v-if="
+                                            run.plan.current_behavior &&
+                                            run.plan.current_behavior !== 'New'
+                                        "
+                                        class="space-y-2"
                                     >
-                                        How it works now
-                                    </h3>
-                                    <p>{{ run.plan.current_behavior }}</p>
-                                </section>
-                                <section
-                                    v-if="sides && request.steps.length > 0"
-                                    class="space-y-2"
-                                >
-                                    <h3
-                                        class="text-sm font-medium text-muted-foreground"
-                                    >
-                                        What I'm changing
-                                    </h3>
-                                    <p
-                                        v-for="step in request.steps"
-                                        :key="step.key"
-                                    >
-                                        <span class="font-medium">{{
-                                            step.label
-                                        }}</span>
-                                        <span
-                                            v-if="step.detail"
-                                            class="block text-muted-foreground"
-                                            >{{ step.detail }}</span
+                                        <h3
+                                            class="text-sm font-medium text-muted-foreground"
                                         >
-                                    </p>
-                                </section>
+                                            How it works now
+                                        </h3>
+                                        <p>{{ run.plan.current_behavior }}</p>
+                                    </section>
+                                    <section
+                                        v-if="sides && request.steps.length > 0"
+                                        class="space-y-2"
+                                    >
+                                        <h3
+                                            class="text-sm font-medium text-muted-foreground"
+                                        >
+                                            What I'm changing
+                                        </h3>
+                                        <p
+                                            v-for="step in request.steps"
+                                            :key="step.key"
+                                        >
+                                            <span class="font-medium">{{
+                                                step.label
+                                            }}</span>
+                                            <span
+                                                v-if="step.detail"
+                                                class="block text-muted-foreground"
+                                                >{{ step.detail }}</span
+                                            >
+                                        </p>
+                                    </section>
+                                    <section
+                                        v-if="keptSame.length > 0"
+                                        class="space-y-2"
+                                    >
+                                        <h3
+                                            class="text-sm font-medium text-muted-foreground"
+                                        >
+                                            I'll keep these the same
+                                        </h3>
+                                        <p
+                                            v-for="(item, index) in keptSame"
+                                            :key="index"
+                                            class="flex items-start gap-2"
+                                            :title="item.label"
+                                        >
+                                            <component
+                                                :is="item.icon"
+                                                :class="[
+                                                    'mt-0.5 size-4 shrink-0',
+                                                    item.tone,
+                                                ]"
+                                                :aria-label="item.label"
+                                            />
+                                            <span class="min-w-0">{{
+                                                item.text
+                                            }}</span>
+                                        </p>
+                                    </section>
+                                    <section
+                                        v-if="alsoTouches.length > 0"
+                                        class="space-y-2"
+                                    >
+                                        <h3
+                                            class="text-sm font-medium text-muted-foreground"
+                                        >
+                                            This may also touch
+                                        </h3>
+                                        <p class="flex flex-wrap gap-1.5">
+                                            <span
+                                                v-for="name in alsoTouches"
+                                                :key="name"
+                                                class="rounded-full bg-muted px-2 py-0.5 text-xs"
+                                                >{{ name }}</span
+                                            >
+                                        </p>
+                                    </section>
+                                </template>
                                 <section
                                     v-if="
-                                        sides && run.plan.assumptions.length > 0
+                                        resultsShown ||
+                                        (planOpen && doneWhen.length > 0)
                                     "
-                                    class="space-y-2"
-                                >
-                                    <h3
-                                        class="text-sm font-medium text-muted-foreground"
-                                    >
-                                        What I decided for you
-                                    </h3>
-                                    <p
-                                        v-for="(assumption, index) in run.plan
-                                            .assumptions"
-                                        :key="index"
-                                    >
-                                        {{ assumption.text }}
-                                    </p>
-                                </section>
-                                <section
-                                    v-if="keptSame.length > 0"
-                                    class="space-y-2"
-                                >
-                                    <h3
-                                        class="text-sm font-medium text-muted-foreground"
-                                    >
-                                        I'll keep these the same
-                                    </h3>
-                                    <p
-                                        v-for="(item, index) in keptSame"
-                                        :key="index"
-                                        class="flex items-start gap-2"
-                                        :title="item.label"
-                                    >
-                                        <component
-                                            :is="item.icon"
-                                            :class="[
-                                                'mt-0.5 size-4 shrink-0',
-                                                item.tone,
-                                            ]"
-                                            :aria-label="item.label"
-                                        />
-                                        <span class="min-w-0">{{
-                                            item.text
-                                        }}</span>
-                                    </p>
-                                </section>
-                                <section
-                                    v-if="doneWhen.length > 0"
                                     class="space-y-2"
                                 >
                                     <h3
@@ -1810,24 +1843,6 @@ const checks = computed(() => {
                                             </ul>
                                         </span>
                                     </div>
-                                </section>
-                                <section
-                                    v-if="alsoTouches.length > 0"
-                                    class="space-y-2"
-                                >
-                                    <h3
-                                        class="text-sm font-medium text-muted-foreground"
-                                    >
-                                        This may also touch
-                                    </h3>
-                                    <p class="flex flex-wrap gap-1.5">
-                                        <span
-                                            v-for="name in alsoTouches"
-                                            :key="name"
-                                            class="rounded-full bg-muted px-2 py-0.5 text-xs"
-                                            >{{ name }}</span
-                                        >
-                                    </p>
                                 </section>
                             </div>
                         </Teleport>
