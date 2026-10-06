@@ -1525,7 +1525,7 @@ class VerifyFeatureRequest implements ShouldQueue
 
             $first = $run($config['rules_test'], InputProbes::rulesTest($found, $config['rules_report']), $config['rules_report']);
             $rules = InputProbes::rules($read($config['rules_report']));
-            $planned = InputProbes::plan($found, $rules, $config['probes']);
+            $planned = InputProbes::plan($found, $rules, $config['probes'], InputProbes::examples($this->plannedRecords($featureRequest)));
 
             if ($planned['baselines'] === []) {
                 return true;

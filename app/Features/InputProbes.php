@@ -2,7 +2,10 @@
 
 namespace App\Features;
 
+use App\Scaffolding\FieldType;
+use App\Scaffolding\Scaffold;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 
 /**
  * Send wrong values to the app's forms (§26.11, "rules are generators").
@@ -27,6 +30,9 @@ use Illuminate\Support\Arr;
  * @phpstan-type Planned array{baselines: array<int, array<string, mixed>>, probes: list<Probe>, coverage: list<Coverage>}
  * @phpstan-type Observed array{status: int, errors: list<string>, exception: string|null, reason: string|null}
  * @phpstan-type Finding array{route: string, field: string, says: string, outcome: string, exception: string|null}
+ * @phpstan-type Example array{valid: string, invalid: string|null}
+ *
+ * @phpstan-import-type Record from Scaffold
  */
 class InputProbes
 {
@@ -67,6 +73,40 @@ class InputProbes
         }
 
         return array_values($found);
+    }
+
+    /**
+     * Get each planned field's format examples, by field name: the first
+     * value it accepts and the first it refuses. A name two records give
+     * different examples is left to the rules.
+     *
+     * @param  list<Record>  $records
+     * @return array<string, Example>
+     */
+    public static function examples(array $records): array
+    {
+        $examples = [];
+        $clashes = [];
+
+        foreach ($records as $record) {
+            foreach ($record['fields'] as $field) {
+                $found = FieldType::tryFrom($field['type'])?->examples($field) ?? ['valid' => []];
+
+                if (! is_string($found['valid'][0] ?? null)) {
+                    continue;
+                }
+
+                $example = ['valid' => $found['valid'][0], 'invalid' => is_string($found['invalid'][0] ?? null) ? $found['invalid'][0] : null];
+
+                if (isset($examples[$field['name']]) && $examples[$field['name']] !== $example) {
+                    $clashes[$field['name']] = true;
+                }
+
+                $examples[$field['name']] = $example;
+            }
+        }
+
+        return array_diff_key($examples, $clashes);
     }
 
     /**
@@ -223,9 +263,10 @@ PHP);
      *
      * @param  list<Route>  $routes
      * @param  array<int, Rules>  $rules
+     * @param  array<string, Example>  $examples  Formats' own values, by field name
      * @return Planned
      */
-    public static function plan(array $routes, array $rules, int $limit): array
+    public static function plan(array $routes, array $rules, int $limit, array $examples = []): array
     {
         $baselines = [];
         $candidates = [];
@@ -240,7 +281,7 @@ PHP);
                 continue;
             }
 
-            $form = self::form($found['fields']);
+            $form = self::form($found['fields'], $examples);
 
             if (is_string($form)) {
                 $coverage[] = ['route' => $id, 'field' => '', 'reason' => $form];
@@ -505,9 +546,10 @@ PHP);
      * itself is tried empty, as the wrong type, and left out.
      *
      * @param  array<string, list<string>>  $fields
+     * @param  array<string, Example>  $examples
      * @return array{payload: array<string, mixed>, probes: list<array{field: string, key: string, expect: string, payload: array<string, mixed>, says: string, rank: int}>, coverage: list<array{field: string, reason: string}>}|string
      */
-    protected static function form(array $fields): array|string
+    protected static function form(array $fields, array $examples = []): array|string
     {
         $payload = [];
         $coverage = [];
@@ -526,7 +568,10 @@ PHP);
                 continue;
             }
 
-            $value = InputValues::valid($rules, $field);
+            // A format's own example fits its rule better than text made up
+            // from the rule's name; choices and rows still come from the app.
+            $example = InputValues::rule($rules, 'in') === null && InputValues::rule($rules, 'exists') === null ? $examples[Str::afterLast($field, '.')] ?? null : null;
+            $value = $example['valid'] ?? InputValues::valid($rules, $field);
 
             if ($value === null) {
                 if (self::required($rules)) {
@@ -633,6 +678,12 @@ PHP);
                 continue;
             }
 
+            $example = InputValues::rule($rules, 'in') === null && InputValues::rule($rules, 'exists') === null ? $examples[Str::afterLast($field, '.')] ?? null : null;
+
+            if (($example['invalid'] ?? null) !== null) {
+                $probes[] = $change($example['invalid'], 'refuse', 'in the wrong format ('.json_encode($example['invalid']).')', 1);
+            }
+
             if (($wrong = InputValues::wrongKind($rules)) !== null && InputValues::rule($rules, 'in') === null) {
                 $probes[] = $change($wrong, 'refuse', 'as the wrong kind of value ('.json_encode($wrong).')', 1);
             }
@@ -654,6 +705,12 @@ PHP);
             }
 
             foreach (self::edges($path, $rules, $payload) as [$value, $expect, $says]) {
+                // Text padded to a length breaks a format, so only edges
+                // the app must refuse anyway are tried on one.
+                if ($example !== null && $expect === 'accept') {
+                    continue;
+                }
+
                 $probes[] = $change($value, $expect, $says, $expect === 'refuse' ? 2 : 3);
             }
         }

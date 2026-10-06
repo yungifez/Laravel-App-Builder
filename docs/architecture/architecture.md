@@ -4459,8 +4459,10 @@ empty form as a signed-in `User::factory()` person. It notes the rules the
 app's validator received, so form requests and inline `validate()` count
 alike. Enum rules become their cases. Closures, custom rule objects and
 conditional rules arrive only as what they are. `InputValues` keeps the one
-valid value per field and the one wrong-kind value; Formats (§9) add their
-examples there. A second test sends one whole form that should pass, with dates
+valid value per field and the one wrong-kind value. A planned field with a
+format (§9) uses the first value `FieldType::examples()` accepts and is also
+sent the first it refuses. Its length is not tried just inside a limit, since
+padded text would break the format. A second test sends one whole form that should pass, with dates
 in the order their rules ask for, and rows from factories for `exists`. Then
 it sends that form again, one field changed per probe: left out, one value
 of the wrong kind, outside its `in` choices or `exists` rows, and on both

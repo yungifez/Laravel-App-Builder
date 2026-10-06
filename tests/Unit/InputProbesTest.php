@@ -238,6 +238,68 @@ class InputProbesTest extends TestCase
         $this->assertSame([['route' => 0, 'field' => '', 'reason' => 'cannot_fill:photo']], $sized['coverage']);
     }
 
+    /**
+     * A planned record with the given fields, as the plan's data shape
+     * holds it.
+     *
+     * @param  list<array{name: string, type: string, format?: array<string, mixed>}>  $fields
+     * @return array{name: string, fields: list<array{name: string, type: string, required: bool, choices: list<string>, of: string|null, format?: array<string, mixed>}>}
+     */
+    protected function record(string $name, array $fields): array
+    {
+        return ['name' => $name, 'fields' => array_map(fn (array $field) => ['required' => true, 'choices' => [], 'of' => null, ...$field], $fields)];
+    }
+
+    public function test_a_field_with_a_format_is_sent_its_own_example_and_one_it_refuses(): void
+    {
+        $examples = InputProbes::examples([$this->record('Booking', [
+            ['name' => 'phone', 'type' => 'phone', 'format' => ['regions' => ['US']]],
+            ['name' => 'title', 'type' => 'string'],
+        ])]);
+        $planned = InputProbes::plan($this->routes(), $this->rules([
+            'phone' => ['required', 'string', 'max:20', 'phone:US'],
+            'rooms.*.phone' => ['required', 'string', 'max:20'],
+        ]), 80, $examples);
+        $probes = $this->bySays($planned);
+
+        $this->assertSame(['phone' => ['valid' => '(212) 555-0123', 'invalid' => '12345']], $examples, 'a field with no format has no examples');
+        $this->assertSame('(212) 555-0123', $planned['baselines'][0]['phone']);
+        $this->assertSame('(212) 555-0123', $planned['baselines'][0]['rooms'][0]['phone'], 'a field inside a list is matched by its name');
+        $this->assertSame(['12345', 'refuse'], [$probes['phone in the wrong format ("12345")']['payload']['phone'], $probes['phone in the wrong format ("12345")']['expect']]);
+        $this->assertArrayHasKey('phone 21 characters long (max:20)', $probes);
+        $this->assertArrayNotHasKey('phone 20 characters long (max:20)', $probes, 'padded text would break the format, so it is not expected to pass');
+        $this->assertArrayHasKey('title 20 characters long (max:20)', $probes);
+    }
+
+    public function test_choices_rows_and_examples_without_a_wrong_value_keep_to_the_rules(): void
+    {
+        $examples = InputProbes::examples([$this->record('Booking', [
+            ['name' => 'code', 'type' => 'pattern', 'format' => ['pattern' => '^[A-Z]{3}-\d{2}$', 'examples' => ['ABC-12', 'XYZ-99']]],
+            ['name' => 'kind', 'type' => 'country'],
+        ])]);
+        $planned = InputProbes::plan($this->routes(), $this->rules(['code' => ['required', 'string']]), 80, $examples);
+        $probes = $this->bySays($planned);
+
+        $this->assertSame(['valid' => 'ABC-12', 'invalid' => null], $examples['code']);
+        $this->assertSame('ABC-12', $planned['baselines'][0]['code']);
+        $this->assertSame([], array_filter(array_keys($probes), fn (string $says) => str_starts_with($says, 'code in the wrong format')), 'a pattern gives no wrong value');
+        $this->assertSame('single', $planned['baselines'][0]['kind'], 'the app\'s own choices win over an example');
+        $this->assertArrayNotHasKey('kind in the wrong format ("XX")', $probes);
+    }
+
+    public function test_a_name_two_records_format_differently_is_left_to_the_rules(): void
+    {
+        $examples = InputProbes::examples([
+            $this->record('Booking', [['name' => 'phone', 'type' => 'phone', 'format' => ['regions' => ['US']]]]),
+            $this->record('Venue', [['name' => 'phone', 'type' => 'phone', 'format' => ['regions' => ['GB']]], ['name' => 'site', 'type' => 'url']]),
+            $this->record('Room', [['name' => 'site', 'type' => 'url']]),
+        ]);
+
+        $this->assertSame(['site'], array_keys($examples), 'the same example twice is no clash');
+        $this->assertSame([], InputProbes::examples([$this->record('Note', [['name' => 'body', 'type' => 'text'], ['name' => 'owner', 'type' => 'belongs_to']])]));
+        $this->assertSame([], InputProbes::examples([]));
+    }
+
     public function test_a_form_request_the_app_cannot_build_is_named_as_not_tried(): void
     {
         $routes = [...$this->routes(), ['method' => 'POST', 'uri' => 'rooms', 'action' => 'App\Http\Controllers\RoomController@store']];
