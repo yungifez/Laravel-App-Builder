@@ -119,6 +119,7 @@ class WorkerDriverTest extends TestCase
         $this->assertStringContainsString('If the folder you were started in is empty, get the code at', $text);
         $this->assertStringContainsString('/worker-code/'.$run->uuid.'?', $text);
         $this->assertStringContainsString('diff against HEAD', $text);
+        $this->assertStringContainsString('git -c user.name=start -c user.email=start@localhost -c commit.gpgsign=false commit -qm start', $text);
         // In the owner's copy it starts from the change's commit, as before.
         $this->assertStringContainsString('Otherwise you are in a copy of the app', $text);
         $this->assertStringContainsString('Start from commit a1b2c3d', $text);

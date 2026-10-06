@@ -82,6 +82,19 @@ class OwnToolTest extends TestCase
         $this->getTask($token)->assertOk()->assertSee('Members can book a class.');
     }
 
+    public function test_the_start_commit_works_without_a_git_identity_or_signing()
+    {
+        $project = Project::factory()->create();
+        $token = app(ConnectOwnTool::class)->handle($project);
+        $this->waitingRun($project);
+
+        $brief = (string) $this->getTask($token)->json('result.content.0.text');
+
+        // Without a commit there is no HEAD to diff the change against.
+        $this->assertStringContainsString('git -c user.name=start -c user.email=start@localhost -c commit.gpgsign=false commit -qm start', $brief);
+        $this->assertStringNotContainsString('&& git commit', $brief);
+    }
+
     public function test_a_fix_keeps_working_in_the_folder_with_the_first_try()
     {
         $project = Project::factory()->create();
