@@ -79,14 +79,36 @@ enum FieldType: string
     public const MINOR_UNITS = ['JPY' => 0, 'KRW' => 0, 'BHD' => 3, 'KWD' => 3, 'OMR' => 3];
 
     /**
-     * The kinds a plan may choose today. The formats join when the planner
-     * can give their settings.
+     * The kinds a plan may choose: all but a currency, which is written
+     * beside its amount.
      *
      * @return list<self>
      */
     public static function planned(): array
     {
-        return [self::String, self::Text, self::Integer, self::Decimal, self::Boolean, self::Date, self::DateTime, self::Email, self::Choice, self::BelongsTo];
+        return array_filter(self::cases(), fn (self $type) => $type !== self::Currency);
+    }
+
+    /**
+     * Keep only the format settings the kind of field uses, as given. A
+     * setting left out stays out, so what the notes say can fill it in
+     * before the defaults do.
+     *
+     * @param  array<string, mixed>  $format
+     * @return array<string, mixed>
+     */
+    public function format(array $format): array
+    {
+        $kept = match ($this) {
+            self::Phone, self::PostalCode => ['regions' => self::strings($format['regions'] ?? []) === [] ? [] : self::regions($format['regions'])],
+            self::Url => ['schemes' => array_values(array_intersect(['http', 'https'], self::strings($format['schemes'] ?? [])))],
+            self::Isbn => ['variants' => array_values(array_intersect([10, 13], array_map(intval(...), self::strings($format['variants'] ?? []))))],
+            self::Money => ['currency' => is_string($format['currency'] ?? null) && preg_match('/^([A-Z]{3}|per_record)$/', $format['currency']) === 1 ? $format['currency'] : ''],
+            self::Pattern => ['pattern' => is_string($format['pattern'] ?? null) ? $format['pattern'] : '', 'examples' => self::strings($format['examples'] ?? [])],
+            default => [],
+        };
+
+        return array_filter($kept, fn (mixed $value) => $value !== [] && $value !== '');
     }
 
     /**

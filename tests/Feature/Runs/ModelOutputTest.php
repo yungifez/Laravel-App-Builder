@@ -250,4 +250,71 @@ class ModelOutputTest extends TestCase
         $shape[0]['fields'][1]['of'] = '';
         $this->assertSame([], Plan::dataShape($shape));
     }
+
+    public function test_a_field_keeps_only_the_format_settings_its_kind_uses()
+    {
+        $empty = ['regions' => [], 'schemes' => [], 'variants' => [], 'currency' => '', 'pattern' => '', 'examples' => []];
+        $field = fn (string $name, string $type, array $format) => ['name' => $name, 'type' => $type, 'required' => true, 'choices' => [], 'of' => '', 'label' => '', 'format' => [...$empty, ...$format]];
+        $shape = [['name' => 'Branch', 'label' => 'branch', 'access' => null, 'fields' => [
+            $field('phone', 'phone', ['regions' => ['ca', 'US'], 'currency' => 'USD']),
+            $field('site', 'url', ['schemes' => ['http', 'https']]),
+            $field('book', 'isbn', ['variants' => ['13']]),
+            $field('fee', 'money', ['currency' => 'GBP']),
+            $field('code', 'pattern', ['pattern' => '^BR-\d{3}$', 'examples' => ['BR-001', 'BR-120']]),
+            $field('name', 'string', ['regions' => ['CA']]),
+        ]]];
+
+        $fields = collect(Plan::dataShape($shape)[0]['fields'])->pluck('format', 'name')->all();
+
+        $this->assertSame([
+            'phone' => ['regions' => ['CA', 'US']],
+            'site' => ['schemes' => ['http', 'https']],
+            'book' => ['variants' => [13]],
+            'fee' => ['currency' => 'GBP'],
+            'code' => ['pattern' => '^BR-\d{3}$', 'examples' => ['BR-001', 'BR-120']],
+            'name' => null,
+        ], $fields);
+    }
+
+    public function test_a_format_left_empty_stays_out_so_the_notes_can_fill_it()
+    {
+        $shape = [['name' => 'Order', 'label' => 'order', 'access' => null, 'fields' => [
+            ['name' => 'total', 'type' => 'money', 'required' => true, 'choices' => [], 'of' => '', 'label' => '', 'format' => ['regions' => [], 'schemes' => [], 'variants' => [], 'currency' => '', 'pattern' => '', 'examples' => []]],
+            ['name' => 'postcode', 'type' => 'postal_code', 'required' => false, 'choices' => [], 'of' => '', 'label' => ''],
+            ['name' => 'rate', 'type' => 'percentage', 'required' => true, 'choices' => [], 'of' => '', 'label' => '', 'format' => ['currency' => 'per_record']],
+        ]]];
+
+        $fields = Plan::dataShape($shape)[0]['fields'];
+
+        $this->assertSame(['money', 'postal_code', 'percentage'], array_column($fields, 'type'));
+        $this->assertSame([], array_filter(array_column($fields, 'format')));
+        $this->assertSame(['currency' => 'per_record'], Plan::dataShape([[...$shape[0], 'fields' => [[...$shape[0]['fields'][0], 'format' => ['currency' => 'per_record']]]]])[0]['fields'][0]['format']);
+    }
+
+    public function test_a_pattern_that_refuses_its_own_examples_or_does_not_compile_is_kept_as_plain_text()
+    {
+        $field = fn (array $format) => [['name' => 'Ticket', 'label' => 'ticket', 'access' => null, 'fields' => [
+            ['name' => 'code', 'type' => 'pattern', 'required' => true, 'choices' => [], 'of' => '', 'label' => '', 'format' => $format],
+        ]]];
+
+        foreach ([
+            'refuses an example' => ['pattern' => '^[A-Z]{3}$', 'examples' => ['ABC', 'abc']],
+            'does not compile' => ['pattern' => '^[A-Z', 'examples' => ['ABC', 'XYZ']],
+            'one example' => ['pattern' => '^[A-Z]{3}$', 'examples' => ['ABC']],
+            'no pattern' => ['pattern' => '', 'examples' => []],
+        ] as $case => $format) {
+            $kept = Plan::dataShape($field($format))[0]['fields'][0];
+
+            $this->assertSame('string', $kept['type'], $case);
+            $this->assertArrayNotHasKey('format', $kept, $case);
+        }
+
+        // An unknown currency or region is not passed on as if it were one.
+        $money = Plan::dataShape([['name' => 'Fee', 'label' => 'fee', 'access' => null, 'fields' => [
+            ['name' => 'amount', 'type' => 'money', 'required' => true, 'choices' => [], 'of' => '', 'label' => '', 'format' => ['currency' => 'dollars']],
+            ['name' => 'phone', 'type' => 'phone', 'required' => true, 'choices' => [], 'of' => '', 'label' => '', 'format' => ['regions' => ['Narnia']]],
+        ]]])[0]['fields'];
+        $this->assertArrayNotHasKey('format', $money[0]);
+        $this->assertSame(['regions' => ['any']], $money[1]['format']);
+    }
 }

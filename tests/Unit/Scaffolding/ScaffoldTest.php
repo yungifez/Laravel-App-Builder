@@ -275,11 +275,12 @@ class ScaffoldTest extends TestCase
         $this->assertStringContainsString('use App\\Rules\\ValidIsbn;', $request);
     }
 
-    public function test_formats_wait_until_the_planner_can_give_their_settings()
+    public function test_every_format_is_planned_but_a_currency_is_written_beside_its_amount()
     {
-        // Today's ten kinds only: a format is not planned yet.
-        $this->assertSame([], Plan::dataShape([['name' => 'Book', 'fields' => [self::field('price', 'money')]]]));
-        $this->assertCount(10, FieldType::planned());
+        $this->assertSame('money', Plan::dataShape([['name' => 'Book', 'fields' => [self::field('price', 'money')]]])[0]['fields'][0]['type']);
+        $this->assertSame([], Plan::dataShape([['name' => 'Book', 'fields' => [self::field('price_currency', 'currency')]]]));
+        $this->assertNotContains(FieldType::Currency, FieldType::planned());
+        $this->assertCount(count(FieldType::cases()) - 1, FieldType::planned());
 
         // A pattern that refuses its own examples is broken, and so is one
         // with fewer than two examples or one that is not a pattern.

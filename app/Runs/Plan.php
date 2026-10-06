@@ -251,6 +251,7 @@ final readonly class Plan
             'records.*.fields.*.of' => ['present', 'nullable', 'string', $name],
             'records.*.label' => ['sometimes', 'nullable', 'string', 'max:80'],
             'records.*.fields.*.label' => ['sometimes', 'nullable', 'string', 'max:80'],
+            'records.*.fields.*.format' => ['sometimes', 'nullable', 'array'],
             'records.*.access' => ['sometimes', 'nullable', 'array:'.implode(',', Scaffold::ACTIONS)],
             ...collect(Scaffold::ACTIONS)->mapWithKeys(fn (string $action) => [
                 "records.*.access.{$action}" => ['required_with:records.*.access', Rule::in(Scaffold::WHO)],
@@ -277,6 +278,14 @@ final readonly class Plan
                     return [];
                 }
 
+                $format = $type->format(is_array($field['format'] ?? null) ? $field['format'] : []);
+
+                // A pattern that refuses its own examples never reaches the
+                // app: the field is kept as plain text.
+                if ($type === FieldType::Pattern && ! FieldType::patternHolds([...$field, 'format' => $format])) {
+                    [$type, $format] = [FieldType::String, []];
+                }
+
                 $fields[FieldType::attribute($field)] = [
                     'name' => $field['name'],
                     'type' => $type->value,
@@ -284,6 +293,7 @@ final readonly class Plan
                     'choices' => $type === FieldType::Choice ? $choices : [],
                     'of' => $type === FieldType::BelongsTo ? $field['of'] : null,
                     ...self::label($field['label'] ?? null),
+                    ...($format === [] ? [] : ['format' => $format]),
                 ];
             }
 

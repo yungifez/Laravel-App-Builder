@@ -44,7 +44,7 @@ class ShapePlanner implements Agent, HasMiddleware, HasStructuredOutput
         return <<<'INSTRUCTIONS'
         A change to a Laravel application has been planned. You describe each new kind of record it stores, so the files that hold it are written for the developer.
 
-        - data_shape: give the model name in StudlyCase singular (Booking) and its fields: a snake_case name, a type (string, text, integer, decimal, boolean, date, datetime, email, choice for one of a few fixed values, belongs_to for a link to another record), whether it is required, the choices for a choice field as snake_case values (else empty), and for belongs_to the model it links to in of (else ""), with the field named after the link (customer, not customer_id). Also give each record and field a label in the owner's words: the record as a singular noun ("booking"), each field as the owner would say it ("who booked it", "when it starts", "the price"). Leave out id and timestamps. Say who may view, create, update and delete each record in access: everyone (guests too), signed_in, or creator (only the person who added it, which needs a belongs_to field of User saying who added it); null when the request does not say and the conventions do not settle it. List only records the app does not have yet (its models are listed): changes to existing records stay in the plan's tasks. Empty when nothing new is stored.
+        - data_shape: give the model name in StudlyCase singular (Booking) and its fields: a snake_case name, a type (string, text, integer, decimal, boolean, date, datetime, email, choice for one of a few fixed values, belongs_to for a link to another record, phone, postal_code, url, isbn, country, money for an amount of money, percentage, pattern for the app's own codes that no other type covers), whether it is required, the choices for a choice field as snake_case values (else empty), and for belongs_to the model it links to in of (else ""), with the field named after the link (customer, not customer_id). Also give each record and field a label in the owner's words: the record as a singular noun ("booking"), each field as the owner would say it ("who booked it", "when it starts", "the price"). Give each field a format with only what its type needs, and the rest empty: for phone and postal_code the regions as ISO country codes only when the request or notes name them (else empty, which accepts any country); for url the schemes (https, or http and https); for isbn the variants (10, 13 or both); for money the currency as an ISO 4217 code only when it is known, or per_record when each record has its own (else ""); for pattern a regular expression without delimiters and two examples it accepts. Never use pattern for a kind of value another type covers. Leave out id and timestamps. Say who may view, create, update and delete each record in access: everyone (guests too), signed_in, or creator (only the person who added it, which needs a belongs_to field of User saying who added it); null when the request does not say and the conventions do not settle it. List only records the app does not have yet (its models are listed): changes to existing records stay in the plan's tasks. Empty when nothing new is stored.
         INSTRUCTIONS;
     }
 
@@ -64,6 +64,14 @@ class ShapePlanner implements Agent, HasMiddleware, HasStructuredOutput
                     'choices' => $schema->array()->items($schema->string())->required(),
                     'of' => $schema->string()->required(),
                     'label' => $schema->string()->required(),
+                    'format' => $schema->object([
+                        'regions' => $schema->array()->items($schema->string())->required(),
+                        'schemes' => $schema->array()->items($schema->string()->enum(['http', 'https']))->required(),
+                        'variants' => $schema->array()->items($schema->string()->enum(['10', '13']))->required(),
+                        'currency' => $schema->string()->required(),
+                        'pattern' => $schema->string()->required(),
+                        'examples' => $schema->array()->items($schema->string())->required(),
+                    ])->withoutAdditionalProperties()->required(),
                 ])->withoutAdditionalProperties())->required(),
                 'access' => $schema->object(collect(Scaffold::ACTIONS)->mapWithKeys(fn (string $action) => [
                     $action => $schema->string()->enum(Scaffold::WHO)->required(),
