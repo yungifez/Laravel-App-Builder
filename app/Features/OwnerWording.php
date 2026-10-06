@@ -72,6 +72,7 @@ class OwnerWording
 
         return self::text(match ($event->type) {
             'created' => __('You asked for this'),
+            'resumed' => ($data['made_so_far'] ?? false) ? __('You asked me to go on, so I started from the work so far') : __('You asked me to go on, so I started from the plan'),
             'status' => self::status($data),
             'review' => ($data['approved'] ?? false) ? __('The change looks right') : __('I found something to fix'),
             'change_accepted' => __('You kept this change'),
@@ -90,6 +91,10 @@ class OwnerWording
     {
         $from = RunStatus::tryFrom((string) ($data['from'] ?? ''));
         $to = RunStatus::tryFrom((string) ($data['to'] ?? ''));
+
+        if (($data['reason'] ?? null) === 'went_on') {
+            return __('You asked me to go on, so I picked up where I stopped');
+        }
 
         if ($to === RunStatus::Implementing && ($data['reason'] ?? null) === 'kept_trying') {
             return __('You asked me to keep trying, so I went back to fix it');

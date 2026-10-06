@@ -161,12 +161,14 @@ class Run extends Model
 
     /**
      * Get when the run's time and tool operations started to count: when it
-     * started, or when the owner last asked it to keep trying, which gives
-     * it as much again.
+     * started, or when the owner last asked it to keep trying or go on,
+     * which gives it as much again.
      */
     public function budgetSince(): ?CarbonImmutable
     {
-        $keptTrying = $this->events()->where('type', 'status')->where('data->reason', 'kept_trying')->reorder('sequence', 'desc')->value('created_at');
+        // Going on after the AI service let it down counts from then too:
+        // the time it waited was not the change's.
+        $keptTrying = $this->events()->where('type', 'status')->whereIn('data->reason', ['kept_trying', 'went_on'])->reorder('sequence', 'desc')->value('created_at');
 
         return $keptTrying === null ? $this->started_at : CarbonImmutable::parse($keptTrying);
     }

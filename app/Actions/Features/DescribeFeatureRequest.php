@@ -128,9 +128,9 @@ class DescribeFeatureRequest
                 // is no longer the first thing offered.
                 'failed_same_way' => $sameWay,
                 'can_keep_trying' => KeepTryingRun::possible($featureRequest),
-                // It was stopped or failed, not out of tries: going on picks
-                // up the plan and the code so far.
-                'can_go_on' => KeepTryingRun::resumable($featureRequest),
+                // It was stopped, failed or let down by the AI service, not
+                // out of tries: going on picks up the plan and the code so far.
+                'can_go_on' => KeepTryingRun::goesOn($featureRequest),
                 'can_continue' => RequestFollowUp::continuable($featureRequest),
                 // An earlier change in this chat that passed and can still
                 // be kept, when this one stopped.

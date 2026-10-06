@@ -25,6 +25,12 @@ class KeepTryingRun
      */
     public const STOPS = [StopReason::VerificationFailed, StopReason::ReviewFindings, StopReason::BudgetExhausted];
 
+    /**
+     * Stops where the AI service, not the change, was the trouble: the run
+     * picks up the step it stopped in, with nothing done again.
+     */
+    public const SERVICE_STOPS = [StopReason::ProvidersUnavailable, StopReason::OutOfCredit, StopReason::RequestRefused];
+
     public function __construct(
         private TransitionRun $transitionRun,
         private ConstructionDriverManager $drivers,
@@ -37,7 +43,52 @@ class KeepTryingRun
      */
     public static function possible(FeatureRequest $featureRequest): bool
     {
-        return self::outOfTries($featureRequest) || self::resumable($featureRequest);
+        return self::outOfTries($featureRequest) || self::goesOn($featureRequest);
+    }
+
+    /**
+     * Determine if the change goes on from what it has rather than trying
+     * again past a failure: it was stopped, or the AI service let it down.
+     */
+    public static function goesOn(FeatureRequest $featureRequest): bool
+    {
+        return self::resumable($featureRequest) || self::serviceStopped($featureRequest);
+    }
+
+    /**
+     * Determine if the AI service stopped the change while it was planned,
+     * built or reviewed, with what it had so far still there.
+     */
+    protected static function serviceStopped(FeatureRequest $featureRequest): bool
+    {
+        $run = $featureRequest->latestRun;
+
+        if ($run === null
+            || $run->status !== RunStatus::NeedsUserDecision
+            || $run->question !== null
+            || ! in_array($run->stop_reason, self::SERVICE_STOPS, true)
+            || ! RetryFeatureRequest::retryable($featureRequest)) {
+            return false;
+        }
+
+        return match (self::stoppedIn($run)) {
+            RunStatus::Planning, RunStatus::Reviewing => true,
+            // Its code so far lives in the workspace.
+            RunStatus::Implementing => $run->workspace !== null && $run->workspace->status !== WorkspaceStatus::Destroyed,
+            default => false,
+        };
+    }
+
+    /**
+     * Get the step the run was in when it stopped to wait on its owner.
+     */
+    protected static function stoppedIn(Run $run): ?RunStatus
+    {
+        $stop = $run->events()->where('type', 'status')->reorder('sequence', 'desc')->first();
+
+        return ($stop?->data['to'] ?? null) === RunStatus::NeedsUserDecision->value
+            ? RunStatus::tryFrom((string) ($stop->data['from'] ?? ''))
+            : null;
     }
 
     /**
@@ -130,6 +181,14 @@ class KeepTryingRun
         }
 
         $run = $featureRequest->latestRun;
+
+        if (self::serviceStopped($featureRequest)) {
+            $this->transitionRun->handle($run, self::stoppedIn($run), attributes: ['error' => null], details: ['reason' => 'went_on', 'stopped' => $run->stop_reason?->value]);
+
+            ExecuteRun::dispatch($run);
+
+            return $run;
+        }
 
         $this->transitionRun->handle($run, RunStatus::Implementing, attributes: [
             'repairs' => $run->repairs + 1,

@@ -7,6 +7,7 @@ use App\Actions\Runs\KeepTryingRun;
 use App\Context\ChangeClassification;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Enums\VerificationStatus;
 use App\Enums\WorkspaceStatus;
 use App\Jobs\ExecuteRun;
@@ -189,6 +190,79 @@ class KeepTryingTest extends TestCase
             ->post(route('feature-requests.keep-trying.store', $answered->featureRequest))
             ->assertSessionHasErrors('keep_trying');
         $this->assertSame(1, $answered->featureRequest->runs()->count());
+    }
+
+    public function test_a_change_the_ai_service_stopped_in_its_review_picks_up_the_review_on_the_same_run()
+    {
+        $run = $this->serviceStopped(RunStatus::Reviewing);
+        $request = $run->featureRequest;
+
+        $this->actingAs($request->user)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page->where('featureRequest.can_go_on', true));
+
+        $this->actingAs($request->user)
+            ->post(route('feature-requests.keep-trying.store', $request))
+            ->assertRedirect();
+
+        $this->assertSame(RunStatus::Reviewing, $run->refresh()->status);
+        $this->assertNull($run->error);
+        $this->assertNull($run->stop_reason);
+        $this->assertSame(1, $request->runs()->count());
+        Queue::assertPushed(ExecuteRun::class, fn (ExecuteRun $job) => $job->run->is($run));
+
+        $this->actingAs($request->user)
+            ->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('featureRequest.can_go_on', false)
+                ->where('run.work', fn ($work) => collect($work)->contains('text', 'You asked me to go on, so I picked up where I stopped')));
+    }
+
+    public function test_a_change_the_ai_service_stopped_while_it_was_planned_or_built_picks_up_that_step()
+    {
+        $planning = $this->serviceStopped(RunStatus::Planning, StopReason::OutOfCredit);
+        app(KeepTryingRun::class)->handle($planning->featureRequest);
+        $this->assertSame(RunStatus::Planning, $planning->refresh()->status);
+
+        $building = $this->serviceStopped(RunStatus::Implementing);
+        $building->update(['workspace_id' => Workspace::factory()->create()->id, 'started_at' => now()->subHours(3)]);
+        app(KeepTryingRun::class)->handle($building->featureRequest);
+        $this->assertSame(RunStatus::Implementing, $building->refresh()->status);
+        // The time it waited on the service does not count against it.
+        $this->assertTrue($building->budgetSince()?->isAfter(now()->subMinute()));
+    }
+
+    public function test_a_change_stopped_by_the_ai_service_mid_build_without_its_workspace_can_only_start_over()
+    {
+        $run = $this->serviceStopped(RunStatus::Implementing);
+        $run->update(['workspace_id' => Workspace::factory()->create(['status' => WorkspaceStatus::Destroyed])->id]);
+        $this->assertFalse(KeepTryingRun::possible($run->featureRequest->refresh()));
+
+        // Nor one that stops to ask: the owner answers instead.
+        $asking = $this->serviceStopped(RunStatus::Planning);
+        $asking->update(['stop_reason' => StopReason::Question, 'question' => ['text' => 'Who pays?', 'why' => '', 'options' => ['Members', 'Guests'], 'recommended' => null]]);
+        $this->assertFalse(KeepTryingRun::possible($asking->featureRequest->refresh()));
+
+        $this->actingAs($run->featureRequest->user)
+            ->post(route('feature-requests.keep-trying.store', $run->featureRequest))
+            ->assertSessionHasErrors('keep_trying');
+        $this->assertSame(RunStatus::NeedsUserDecision, $run->refresh()->status);
+    }
+
+    /**
+     * A change the AI service stopped in the given step.
+     */
+    protected function serviceStopped(RunStatus $in, StopReason $reason = StopReason::ProvidersUnavailable): Run
+    {
+        $run = Run::factory()->for(FeatureRequest::factory()->create(['status' => FeatureRequestStatus::Generating]))->create([
+            'status' => RunStatus::NeedsUserDecision,
+            'stop_reason' => $reason,
+            'error' => $reason->said(),
+            'plan' => ['summary' => 'Each class shows how many places are left.', 'acceptance_criteria' => [], 'cases' => [], 'written_tests' => [], 'written_files' => [], 'assumptions' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null],
+        ]);
+        $run->recordEvent('status', ['from' => $in->value, 'to' => RunStatus::NeedsUserDecision->value, 'reason' => $reason->value]);
+
+        return $run;
     }
 
     /**
