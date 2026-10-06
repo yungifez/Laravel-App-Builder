@@ -139,7 +139,7 @@ it('withholds trying again where it would only stop the same way', function () {
 
     // Tried again already: that try stands for it now.
     $retried = stoppedFor($this->project, StopReason::ConstructionFailed);
-    FeatureRequest::factory()->for($this->project)->for($this->owner, 'user')->create(['retry_of_id' => $retried->id]);
+    FeatureRequest::factory()->for($this->project)->for($this->owner, 'user')->create(['retry_of_id' => $retried->id, 'prompt' => 'The newer try']);
 
     visit(chatUrl($spent))
         ->assertSee(stopSays(StopReason::SpendLimit))
@@ -147,5 +147,9 @@ it('withholds trying again where it would only stop the same way', function () {
         ->navigate(chatUrl($retried))
         ->assertSee(stopSays(StopReason::ConstructionFailed))
         ->assertMissing('[data-test="retry-button"]')
+        // It points on to that try instead.
+        ->click('[data-test="tried-again"]')
+        ->assertSee('The newer try')
+        ->assertMissing('[data-test="tried-again"]')
         ->assertNoJavaScriptErrors();
 });

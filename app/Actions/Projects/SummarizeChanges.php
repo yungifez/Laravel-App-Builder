@@ -5,6 +5,7 @@ namespace App\Actions\Projects;
 use App\Actions\Features\RetryFeatureRequest;
 use App\Enums\ChangeState;
 use App\Enums\FeatureRequestStatus;
+use App\Enums\NextStep;
 use App\Enums\RunStatus;
 use App\Enums\VerificationStatus;
 use App\Features\NewTests;
@@ -69,7 +70,7 @@ class SummarizeChanges
                     // The owner stopped it themselves: nothing went wrong.
                     'stopped_by_owner' => $state === ChangeState::Stopped && ($shown->status === FeatureRequestStatus::Cancelled || $shown->latestRun?->status === RunStatus::Cancelled),
                     // Waiting on an answer rather than on a look at the result.
-                    'asks' => $asks = $state === ChangeState::Waiting && $shown->status === FeatureRequestStatus::Generating,
+                    'asks' => $asks = $state === ChangeState::Waiting && ($shown->status === FeatureRequestStatus::Generating || $shown->latestRun?->stop_reason?->nextStep() === NextStep::Answer),
                     // What the owner is asked, so the list says what to do.
                     'question' => $asks ? ($shown->latestRun?->question['text'] ?? null) : null,
                     // A change to try says how many of its tests fail
@@ -161,7 +162,8 @@ class SummarizeChanges
         if ($newest->status === FeatureRequestStatus::Generating) {
             $run = $newest->latestRun;
 
-            if ($run?->question !== null) {
+            // A proposal from the checks waits on the owner just as a question does.
+            if ($run?->question !== null || $run?->stop_reason?->nextStep() === NextStep::Answer) {
                 return [ChangeState::Waiting, $newest];
             }
 

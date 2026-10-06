@@ -86,10 +86,13 @@ class RetryFeatureRequest
      */
     public static function stoppedWhileChecking(FeatureRequest $featureRequest): bool
     {
+        // A proposal from the checks waits for the owner's answer, just as a
+        // question does: nothing stopped.
         if ($featureRequest->status !== FeatureRequestStatus::Generated
             || $featureRequest->commit_sha !== null
             || $featureRequest->reverted_at !== null
-            || $featureRequest->latestRun?->question !== null) {
+            || $featureRequest->latestRun?->question !== null
+            || $featureRequest->latestRun?->stop_reason?->nextStep() === NextStep::Answer) {
             return false;
         }
 

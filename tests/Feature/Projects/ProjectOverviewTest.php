@@ -5,6 +5,7 @@ namespace Tests\Feature\Projects;
 use App\Enums\DeploymentStatus;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Enums\VerificationStatus;
 use App\Models\Deployment;
 use App\Models\FeatureRequest;
@@ -149,6 +150,45 @@ class ProjectOverviewTest extends TestCase
             'status' => RunStatus::NeedsUserDecision,
             'error' => 'The run finished without changing the project.',
         ]);
+
+        $this->actingAs($project->owner)
+            ->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('changes.0.state', 'stopped')
+                ->where('changes.0.asks', false));
+    }
+
+    public function test_a_change_waiting_on_a_proposal_from_the_checks_asks_for_an_answer()
+    {
+        $project = Project::factory()->create();
+        $proposing = FeatureRequest::factory()->for($project)->create(['status' => FeatureRequestStatus::Generated]);
+        Run::factory()->for($proposing)->create(['status' => RunStatus::NeedsUserDecision, 'stop_reason' => StopReason::FindingProposed]);
+
+        $this->actingAs($project->owner)
+            ->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('changes.0.state', 'waiting')
+                ->where('changes.0.asks', true));
+    }
+
+    public function test_a_proposal_while_the_change_is_still_being_made_asks_for_an_answer()
+    {
+        $project = Project::factory()->create();
+        $proposing = FeatureRequest::factory()->for($project)->create();
+        Run::factory()->for($proposing)->create(['status' => RunStatus::NeedsUserDecision, 'stop_reason' => StopReason::FindingProposed]);
+
+        $this->actingAs($project->owner)
+            ->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('changes.0.state', 'waiting')
+                ->where('changes.0.asks', true));
+    }
+
+    public function test_a_made_change_whose_checks_stopped_is_stopped_not_asking()
+    {
+        $project = Project::factory()->create();
+        $stopped = FeatureRequest::factory()->for($project)->create(['status' => FeatureRequestStatus::Generated]);
+        Run::factory()->for($stopped)->create(['status' => RunStatus::NeedsUserDecision, 'stop_reason' => StopReason::VerificationInterrupted]);
 
         $this->actingAs($project->owner)
             ->get(route('projects.show', $project))

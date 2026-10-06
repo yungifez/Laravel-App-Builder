@@ -1111,6 +1111,28 @@ const checks = computed(() => {
                                  When it stopped just as last time, a
                                  developer comes before trying again. -->
                             <div class="flex flex-wrap items-start gap-2">
+                                <!-- Tried again already: the newer try is where it goes on -->
+                                <Button
+                                    v-if="request.tried_again"
+                                    as-child
+                                    size="sm"
+                                    class="h-11 select-none sm:h-8"
+                                >
+                                    <Link
+                                        :href="
+                                            showProject(change.project.id, {
+                                                query: {
+                                                    change: request.tried_again,
+                                                },
+                                            })
+                                        "
+                                        :only="['change']"
+                                        preserve-state
+                                        data-test="tried-again"
+                                    >
+                                        See the newer try
+                                    </Link>
+                                </Button>
                                 <Form
                                     v-if="request.can_keep_trying"
                                     v-bind="
