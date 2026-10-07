@@ -50,7 +50,9 @@ class AuthenticateWorker
         abort_unless($token !== null && ($token->expires_at === null || $token->expires_at->isFuture()), 401);
 
         $task = match (true) {
-            $owner instanceof Run && $token->can('task') && ! $owner->status->finished() => new WorkerTask($owner),
+            // A change that ended still answers how it ended, while its
+            // token lasts (TransitionRun shortens it).
+            $owner instanceof Run && $token->can('task') => new WorkerTask($owner),
             $owner instanceof Project && $token->can('project') => new WorkerTask(self::waiting($owner), wholeApp: true, project: $owner),
             default => abort(401),
         };

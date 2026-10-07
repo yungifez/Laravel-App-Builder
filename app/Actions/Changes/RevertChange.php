@@ -5,6 +5,7 @@ namespace App\Actions\Changes;
 use App\Context\ProjectNotes;
 use App\Models\FeatureRequest;
 use App\Models\Project;
+use App\Models\Run;
 use App\Models\User;
 use App\Projects\Exceptions\RepositoryConflict;
 use App\Projects\ProjectRepository;
@@ -72,6 +73,9 @@ class RevertChange
             foreach ($requests as $request) {
                 $request->update(['revert_sha' => $sha, 'reverted_at' => now()]);
                 $this->notes->undo($project, $branch, $request->note_changes ?? []);
+
+                // The owner's tool hears nothing more about a change undone.
+                $request->runs()->each(fn (Run $run) => $run->tokens()->delete());
             }
 
             $featureRequest->latestRun?->recordEvent('change_reverted', ['commit' => $commit, 'revert' => $sha]);

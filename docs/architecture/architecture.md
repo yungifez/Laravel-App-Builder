@@ -1612,9 +1612,13 @@ tokenable model (`HasApiTokens` on `Run`). This adds one table:
 `personal_access_tokens`.
 
 - **Abilities:** one, `task`. It opens only this change's tools.
-- **Expiry:** the token lapses after `agents.workers.minutes`. It is revoked
-  when the run ends or is cancelled, or when the owner makes a new
-  connection. It stays valid while the change is checked and reviewed: the
+- **Expiry:** the token lapses after `agents.workers.minutes`. When the run
+  ends or is cancelled, it is cut to `agents.workers.ended_minutes` (never
+  lengthened), so the worker can still learn how the change ended. It then
+  reads only `check_status` and `get_task`'s ended answer; every tool that
+  writes, tries or previews refuses a change not waiting for it. An undo, a
+  disconnect or a hand-back revokes it at once, as does a new connection.
+  It stays valid while the change is checked and reviewed: the
   worker calls `check_status` then, and hands back a fix when the change
   goes back to it.
 - **Notes:** the worker's copy of the app has no `.product-notes`. Its brief
@@ -1713,8 +1717,8 @@ Each comes back only when the experiment shows the need.
       tests it.
     - A Sanctum token on `Run` (`GrantWorkerAccess`) opens the `laravel/mcp`
       server at `/mcp/task` (`routes/ai.php`). The server has `get_task`,
-      `submit_change` and `check_status`. The token is revoked when the run
-      ends.
+      `submit_change` and `check_status`. When the run ends the token is cut
+      to a short read-only window, so the worker can learn how it ended.
     - The `worker` construction driver (`WorkerDriver`) plans and reviews like
       `sdk`. It waits in `implementing` until a worker hands back a patch.
     - Each patch is the whole change against the owner's commit. It is applied

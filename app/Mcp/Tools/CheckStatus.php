@@ -100,7 +100,7 @@ class CheckStatus extends Tool
         return Run::query()
             ->where('driver', 'worker')
             ->whereIn('status', [RunStatus::Completed, RunStatus::Cancelled, RunStatus::Failed])
-            ->where('finished_at', '>=', now()->subMinutes(30))
+            ->where('finished_at', '>=', now()->subMinutes((int) config('builder.agents.workers.ended_minutes')))
             // Only a change the tool picked up: a question answered from the
             // plan never reached it.
             ->whereHas('events', fn ($query) => $query->where('type', 'worker_query'))

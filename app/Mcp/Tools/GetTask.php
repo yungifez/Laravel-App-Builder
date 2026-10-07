@@ -38,6 +38,10 @@ class GetTask extends Tool
             return Response::text(__('No change waits for you now. Ask again in a minute.'));
         }
 
+        if ($run->status->finished()) {
+            return Response::text(__('This change has ended, so there is nothing more to do on it. Call check_status to see how it ended.'));
+        }
+
         $run->recordEvent('worker_query', ['tool' => 'get_task']);
 
         if ($run->plan === null) {

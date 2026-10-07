@@ -5,9 +5,11 @@ namespace Tests\Feature\Changes;
 use App\Actions\Changes\RevertChange;
 use App\Actions\Projects\CreateProject;
 use App\Enums\DeploymentStatus;
+use App\Enums\RunStatus;
 use App\Models\Deployment;
 use App\Models\FeatureRequest;
 use App\Models\Project;
+use App\Models\Run;
 use App\Models\User;
 use App\Projects\ProjectRepository;
 use App\Workspaces\CommandResult;
@@ -96,6 +98,17 @@ class UndoPathTest extends TestCase
         $this->undo($team)->assertSessionHasNoErrors();
 
         $this->assertNotNull($team->refresh()->reverted_at);
+    }
+
+    public function test_undoing_a_change_shuts_out_the_owners_tool_at_once(): void
+    {
+        $change = $this->keep('Add a plans page', ['app/Plan.php' => "<?php\n"]);
+        $run = Run::factory()->for($change)->create(['driver' => 'worker', 'status' => RunStatus::Completed]);
+        $run->createToken('worker', ['task'], now()->addMinutes(10));
+
+        $this->undo($change)->assertSessionHasNoErrors();
+
+        $this->assertSame(0, $run->tokens()->count());
     }
 
     public function test_a_change_is_undone_once(): void

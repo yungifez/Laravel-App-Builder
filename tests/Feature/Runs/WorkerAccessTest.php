@@ -2,10 +2,13 @@
 
 namespace Tests\Feature\Runs;
 
+use App\Actions\Projects\ConnectOwnTool;
+use App\Actions\Projects\DisconnectOwnTool;
 use App\Actions\Runs\GrantWorkerAccess;
 use App\Actions\Runs\TransitionRun;
 use App\Enums\RunStatus;
 use App\Enums\StopReason;
+use App\Models\Project;
 use App\Models\Run;
 use App\Runs\Plan;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -58,8 +61,59 @@ class WorkerAccessTest extends TestCase
         $this->getTask($token)->assertOk();
         app(TransitionRun::class)->handle($run, RunStatus::Failed, details: ['reason' => StopReason::WorkerStopped]);
 
-        $this->assertSame(0, $run->tokens()->count(), 'A change that ended revokes its tokens.');
+        // A change that ended still says so, for a short while only.
+        $this->getTask($token)->assertOk()->assertSee('This change has ended')->assertDontSee('Members can book a class.');
+        $this->travel((int) config('builder.agents.workers.ended_minutes') + 1)->minutes();
         $this->getTask($token)->assertUnauthorized();
+    }
+
+    public function test_a_tool_hears_that_its_change_passed_after_the_change_ended()
+    {
+        $run = $this->plannedRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $run->update(['status' => RunStatus::Reviewing]);
+
+        app(TransitionRun::class)->handle($run, RunStatus::Completed);
+
+        $this->useTool('check_status', $token)->assertOk()->assertSee('passed its checks and review');
+        $this->getTask($token)->assertOk()->assertSee('This change has ended')->assertDontSee('Members can book a class.');
+        $this->assertTrue($run->tokens()->sole()->expires_at->lte(now()->addMinutes((int) config('builder.agents.workers.ended_minutes'))));
+    }
+
+    public function test_a_tool_on_a_stopped_change_may_only_ask_how_it_ended()
+    {
+        $run = $this->plannedRun();
+        $run->update(['driver' => 'worker']);
+        $token = app(GrantWorkerAccess::class)->handle($run);
+
+        app(TransitionRun::class)->handle($run, RunStatus::Cancelling);
+        app(TransitionRun::class)->handle($run, RunStatus::Cancelled);
+
+        $this->useTool('check_status', $token)->assertOk()->assertSee('The owner stopped this change.');
+        $patch = "diff --git a/a.txt b/a.txt\nnew file mode 100644\n--- /dev/null\n+++ b/a.txt\n@@ -0,0 +1 @@\n+a\n";
+        $this->useTool('submit_change', $token, ['patch' => $patch, 'summary' => 'Added a.'])->assertSee('not waiting for a patch now')->assertDontSee('Received.');
+        $this->useTool('try_change', $token, ['command' => ['php', 'artisan', 'test']])->assertSee('Commands run only while the change waits for you.');
+        $this->useTool('write_file', $token, ['path' => 'a.txt', 'content' => "a\n"])->assertSee('The files open only while the change waits for you.');
+        $this->useTool('open_preview', $token)->assertSee('not running');
+        $this->assertSame(0, $run->events()->where('type', 'worker_submitted')->count());
+    }
+
+    public function test_a_token_that_ends_sooner_is_never_lengthened_and_a_disconnect_shuts_out_at_once()
+    {
+        $run = $this->plannedRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $soon = now()->addMinutes(5)->startOfSecond();
+        $run->tokens()->update(['expires_at' => $soon]);
+
+        app(TransitionRun::class)->handle($run, RunStatus::Failed, details: ['reason' => StopReason::WorkerStopped]);
+
+        $this->assertTrue($run->tokens()->sole()->expires_at->equalTo($soon));
+
+        $project = Project::factory()->create();
+        $connected = app(ConnectOwnTool::class)->handle($project);
+        $this->getTask($connected)->assertOk();
+        app(DisconnectOwnTool::class)->handle($project);
+        $this->getTask($connected)->assertUnauthorized();
     }
 
     public function test_a_token_opens_only_its_own_change()
@@ -87,6 +141,17 @@ class WorkerAccessTest extends TestCase
     /**
      * Call the get_task tool as a worker's MCP client would.
      */
+    /**
+     * Call one of the change's tools as a worker's MCP client would.
+     *
+     * @param  array<string, mixed>  $arguments
+     */
+    protected function useTool(string $tool, string $token, array $arguments = []): TestResponse
+    {
+        return $this->withHeaders(['Authorization' => "Bearer {$token}"])
+            ->postJson(route('mcp.task'), ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => ['name' => $tool, 'arguments' => $arguments]]);
+    }
+
     protected function getTask(?string $token): TestResponse
     {
         return $this->withHeaders($token === null ? [] : ['Authorization' => "Bearer {$token}"])

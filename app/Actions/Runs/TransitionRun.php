@@ -71,8 +71,14 @@ class TransitionRun
             if ($to->finished()) {
                 $locked->finished_at = now();
 
-                // A worker has nothing left to do on a change that ended.
-                $locked->tokens()->delete();
+                // A worker has nothing left to do on a change that ended,
+                // but may still ask how it ended, for a short while. Every
+                // tool but check_status refuses a change that is not
+                // waiting for it.
+                $until = now()->addMinutes((int) config('builder.agents.workers.ended_minutes'));
+                $locked->tokens()
+                    ->where(fn ($query) => $query->whereNull('expires_at')->orWhere('expires_at', '>', $until))
+                    ->update(['expires_at' => $until]);
 
                 $locked->lease_owner = null;
                 $locked->lease_expires_at = null;

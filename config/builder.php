@@ -602,6 +602,9 @@ return [
         // change it hands back is at most "max_patch_kb" long.
         'workers' => [
             'minutes' => (int) env('BUILDER_WORKER_MINUTES', 240),
+            // Once the change ends, its token may still ask how it ended
+            // (check_status) for this long, and do nothing else.
+            'ended_minutes' => (int) env('BUILDER_WORKER_ENDED_MINUTES', 30),
             // How long the owner's tool stays connected to a whole app.
             'project_days' => (int) env('BUILDER_WORKER_PROJECT_DAYS', 30),
             // A tool signed in through OAuth (a connector in the Claude app,
