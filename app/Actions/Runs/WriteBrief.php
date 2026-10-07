@@ -134,12 +134,14 @@ class WriteBrief
      * Say what to fix from the earlier attempt, and what the agent may do
      * about what the gate found.
      *
-     * @param  array{details: list<string>, gate?: list<array{key: string|null}>}  $feedback
+     * @param  array{details: list<string>, gate?: list<array{key: string|null}>, asked?: list<string>}  $feedback
      */
     protected function problems(array $feedback): string
     {
         return "## Fix these problems with your earlier attempt\n\nThe files already contain your earlier changes.\n\n".$this->list($feedback['details'])
-            .(array_filter(array_column($feedback['gate'] ?? [], 'key')) === [] ? '' : "\n\n".self::KEEP);
+            .(array_filter(array_column($feedback['gate'] ?? [], 'key')) === [] ? '' : "\n\n".self::KEEP)
+            // Asked about already, so nothing for the agent to do yet.
+            .(($feedback['asked'] ?? []) === [] ? '' : "\n\n## Waiting for the owner\n\nYou asked the owner to keep these. Leave them as they are until the owner answers, and do not ask again.\n\n".$this->list($feedback['asked']));
     }
 
     /**

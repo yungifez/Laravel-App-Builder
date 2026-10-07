@@ -127,10 +127,25 @@ class AcceptChange
             throw ValidationException::withMessages(['change' => $exception->getMessage().' '.__('Ask for it again to build it on the current app.')]);
         }
 
-        DB::transaction(function () use ($project, $branch, $pending, $sha, $run, $featureRequest, $anyway) {
+        DB::transaction(function () use ($project, $branch, $pending, $sha, $run, $featureRequest, $anyway, $owner) {
             foreach ($pending as $request) {
                 $request->update(['commit_sha' => $sha, 'accepted_at' => now()]);
                 $this->notes->apply($project, $branch, $request->note_changes ?? []);
+            }
+
+            // Keeping it anyway is the owner's yes to everything they were
+            // shown, so no question about the change is left open.
+            $agreed = [];
+
+            if ($anyway) {
+                $open = $featureRequest->findingProposals()->whereNull('agreed')->get();
+
+                foreach ($open as $proposal) {
+                    $featureRequest->acceptedFindings()->firstOrCreate(['identity' => $proposal->identity], ['kind' => $proposal->kind, 'user_id' => $owner->id]);
+                    $proposal->update(['agreed' => true, 'answered_by' => $owner->id, 'answered_at' => now()]);
+                }
+
+                $agreed = $open->pluck('identity')->all();
             }
 
             $run->recordEvent('change_accepted', [
@@ -139,6 +154,7 @@ class AcceptChange
                 'feature_request_id' => $featureRequest->id,
                 // The owner's own decision, with what our review doubted.
                 'despite_review' => $anyway ? ($run->feedback['details'] ?? []) : null,
+                'agreed_findings' => $agreed,
             ]);
 
             // The owner stood in for the review, and passed the change.

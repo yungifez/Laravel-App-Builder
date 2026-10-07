@@ -737,13 +737,14 @@ class ConstructRun
         // itself. No model decides it, and the reviewer can add to it but
         // never take from it. What the owner said the change does on purpose
         // is left out. The agent may ask to keep a finding, but only the
-        // owner's yes lets it stay: until they answer, it holds the change.
+        // owner's yes lets it stay: until they answer, it holds the change,
+        // but it is never sent back to the agent, who can do nothing more
+        // about it. Repairs are only for what the agent can fix.
         $gate = $driver->canRepair() ? $this->gate($featureRequest, $verification) : [];
         $pending = $this->proposeFindings->pending($featureRequest);
         $asked = array_values(array_filter($gate, fn (array $finding) => in_array($finding['identity'], $pending, true)));
         $gate = $this->proposeFindings->keyed($featureRequest, array_values(array_filter($gate, fn (array $finding) => ! in_array($finding['identity'], $pending, true))));
         $review = $review->withBlockingFindings(array_column($gate, 'text'));
-        $review = $review->withBlockingFindings(array_map(fn (array $finding) => __(':text You asked the owner to keep this, so leave it as it is until they answer.', ['text' => $finding['text']]), $asked));
 
         if ($driver->canRepair() && config('builder.verification.screens.enabled')) {
             $review = $review->withBlockingFindings(array_map(ScreenCheck::finding(...), ScreenCheck::found($verification->screens, $featureRequest->patch)));
@@ -770,6 +771,17 @@ class ConstructRun
             'coverage' => $this->assessCoverage->handle($plan, $classification, $projectContext, $verified, $verification->results ?? []),
         ]];
 
+        // Only what the agent asked the owner to keep holds the change: the
+        // owner answers, not the agent. Their answer runs this review again.
+        if ($review->approved && $asked !== []) {
+            $this->stopForDecision($run, $lease, __('I asked you about something the checks found. Read it in how we know the change works, and answer.'), StopReason::FindingProposed, [
+                ...$stored,
+                'feedback' => ['reason' => 'review_findings', 'details' => array_column($asked, 'text'), 'gate' => $gate],
+            ]);
+
+            return;
+        }
+
         if ($review->approved) {
             $this->transitionRun->handle($run, RunStatus::Completed, $lease, $stored);
 
@@ -781,18 +793,7 @@ class ConstructRun
         }
 
         $details = array_map(fn (array $finding) => trim(($finding['file'] !== null ? "{$finding['file']}: " : '').$finding['summary']), $review->blockingFindings() ?: $review->findings);
-        $feedback = ['reason' => 'review_findings', 'details' => $details ?: [$review->summary], 'gate' => $gate];
-
-        // Only what the agent asked the owner to keep holds the change: the
-        // owner answers, not the agent. Their answer runs this review again.
-        if ($asked !== [] && count($review->blockingFindings()) === count($asked)) {
-            $this->stopForDecision($run, $lease, __('I asked you about something the checks found. Read it in how we know the change works, and answer.'), StopReason::FindingProposed, [
-                ...$stored,
-                'feedback' => $feedback,
-            ]);
-
-            return;
-        }
+        $feedback = ['reason' => 'review_findings', 'details' => $details ?: [$review->summary], 'gate' => $gate, 'asked' => array_column($asked, 'text')];
 
         if ($driver->canRepair() && $run->repairs < $run->repairLimit()) {
             $this->transitionRun->handle($run, RunStatus::Implementing, $lease, [
