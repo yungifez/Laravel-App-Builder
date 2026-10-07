@@ -665,6 +665,11 @@ class ConstructRun
             changeEvidence: $verification->evidence ?? [],
         )));
 
+        // A new test that only guards what the app already did is never a
+        // gap while another new test fails without the change, whatever
+        // the reviewer called it.
+        $review = $review->withGuardingTestsMinor($verification->evidence['new_tests'] ?? []);
+
         $verified = $this->assessVerifyItems->handle($plan, $review, (string) $featureRequest->patch, $verification->results ?? [], $verification->evidence ?? []);
 
         if ($driver->canRepair() && config('builder.verification.require_verify_tests')) {

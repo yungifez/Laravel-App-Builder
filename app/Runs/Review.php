@@ -135,6 +135,35 @@ final readonly class Review
     }
 
     /**
+     * Get a copy of the review where a blocking finding about a new test
+     * that passes without the change is minor, when other new tests fail
+     * without it. Such a test guards what the app already did, such as the
+     * starter app's sign-in, which is never a gap by itself. Only a finding
+     * that names the test and points at no file but the test's own is
+     * changed, so a finding about the app's code stays blocking.
+     *
+     * @param  list<array{file: string, name: string, without_change: string}>  $newTests  What the verification measured
+     */
+    public function withGuardingTestsMinor(array $newTests): self
+    {
+        $guarding = array_filter($newTests, fn (array $test) => $test['without_change'] === 'passed');
+
+        if ($guarding === [] || ! in_array('failed', array_column($newTests, 'without_change'), true)) {
+            return $this;
+        }
+
+        $findings = array_map(fn (array $finding) => $finding['severity'] === 'blocking' && array_any($guarding, fn (array $test) => $test['name'] !== ''
+            && str_contains($finding['summary'], $test['name'])
+            && in_array($finding['file'], [null, $test['file']], true))
+            ? [...$finding, 'severity' => 'minor']
+            : $finding, $this->findings);
+
+        $blocking = array_filter($findings, fn (array $finding) => $finding['severity'] === 'blocking');
+
+        return new self($blocking === [] && ($this->approved || $this->blockingFindings() !== []), $this->summary, $findings, $this->changes, $this->verify);
+    }
+
+    /**
      * Get the findings that must be fixed before the change can be accepted.
      *
      * @return list<array{severity: string, summary: string, file: string|null}>
