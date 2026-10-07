@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 33.** This document consolidates the direction in [direction/](direction/)
+**Version 35.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -101,6 +101,11 @@ Version 34 decides formats once
 [§9](#formats-decided-once-then-generated)): a phone number, a postal code
 or an amount of money is a field type with a few settings, kept in the
 notes, and the scaffold generates its rule, stored form and tests.
+Version 35 keeps the Product Behavior Graph as hidden machinery, not a screen
+([§6](#6-product-behavior-graph)): owners do not browse a map of their app.
+They see a plain sentence under each change, a question when a change breaks
+one of their rules, and answers to their own questions. The graph stays
+deferred ([§26.8](#268-deferred-and-what-would-bring-each-back)).
 When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
@@ -226,8 +231,8 @@ silently following either.
 One system, one application model, two very different users. No modes.
 
 - **Target A, the non-technical owner.** Builds, inspects, understands, approves
-  and maintains an application without learning any software concept. Audits
-  behaviour by browsing, not by asking an AI.
+  and maintains an application without learning any software concept. Checks
+  behaviour by reading what each change does, not by browsing a map of the app.
 - **Target B, the power vibe coder.** Wants visibility and control, but still
   wants AI to do most of the implementation. Drills from behaviour to rules,
   data, permissions, where it happens, implementation, tests and source without
@@ -246,9 +251,12 @@ Depth preference is remembered per user from what they expand. Provenance
 badges appear at every level: "✓ checked by a test", "from your app's code",
 "our description (may be out of date)", "unknown".
 
-Top-level navigation is framework-free and is a set of queries over the Product
-Behavior Graph: **What people can do · What happens automatically · Your data ·
-People & permissions · Connections · History**.
+Top-level navigation is framework-free. It is not a browsable inventory of the
+app (What people can do · Your data · People & permissions · …): owners think
+in outcomes, and a map of the app is reading they do not want. When the graph
+exists, its facts reach the owner only as answers to their own questions, such
+as "Who can see invoices?" ([§6](#6-product-behavior-graph)). Level 2 and
+deeper stay available for Target B.
 
 ## 4. Two ontologies
 
@@ -303,7 +311,7 @@ USER
 PRODUCT LAYER        views over the Product Behavior Graph, behaviour diffs,
   │                  visual editor, previews, approvals, history
 CONTROL PLANE        (Laravel; this repository)
-  ├── Product Behavior Graph        persistent, derived, small
+  ├── Product Behavior Graph        deferred; hidden machinery when built (§6)
   ├── Project Context               intent, decisions, design, invariants; exported to the app repo
   ├── Change pipeline               classify → operations → execute → verify → explain
   ├── Execution router              per stage, by evidence
@@ -325,6 +333,26 @@ PROJECT RUNTIME      reproducible workspace: repo, PHP, Composer, Node, Postgres
 
 The persistent representation of what the application does. Small, derived from
 code, rebuilt incrementally, never edited by hand.
+
+**Status (version 35): deferred, and not built.** No graph tables exist.
+Project notes in Markdown and the verification engines do this work today
+([§26.8](#268-deferred-and-what-would-bring-each-back) says what brings it
+back). Hand-written behaviour diffs are the cheap test. Owners must read them
+and catch problems with them. If owners skip them, the graph does not help
+either. When it is built, it is machinery that the owner never browses. It
+reaches the owner in three places only:
+
+1. **Under each change**: one or two plain sentences that say what now
+   behaves differently ("Customers now get an email when a booking is
+   cancelled").
+2. **As a protection**: a question when a change breaks one of the owner's
+   rules ("This change lets customers cancel late. Keep it?").
+3. **As answers**: replies to the owner's own questions ("Who can see
+   invoices?").
+
+Provenance classes (below) decide what may become a hard protection. The owner
+does not see the class names. Facts the owner can act on are shown; AI
+interpretations and unknowns stay behind Details.
 
 ### Contents
 
