@@ -579,6 +579,10 @@ const failed = computed(
 // asks once more before it keeps it.
 const confirmingKeep = ref(false);
 
+// The app's checks passed and only my review objected: the change works as
+// far as the checks know, so the card says I have doubts, not that I failed.
+const doubted = computed(() => request.value.keep_anyway?.checks === 'passed');
+
 // Bring the answer the stop waits for into view.
 function showAnswer(): void {
     document
@@ -1128,7 +1132,9 @@ const checks = computed(() => {
                                 'order-last space-y-2 rounded-md border p-3',
                                 foundNothing
                                     ? 'bg-muted/40'
-                                    : 'border-red-500/30 bg-red-500/5',
+                                    : doubted
+                                      ? 'border-amber-500/40 bg-amber-500/5'
+                                      : 'border-red-500/30 bg-red-500/5',
                             ]"
                             data-test="thread-failed"
                         >
@@ -1138,6 +1144,14 @@ const checks = computed(() => {
                             >
                                 <SearchCheck class="size-4" />
                                 I found nothing to change
+                            </p>
+                            <p
+                                v-else-if="doubted"
+                                class="flex items-center gap-2 font-medium"
+                                data-test="thread-doubted"
+                            >
+                                <CircleAlert class="size-4 text-amber-500" />
+                                I have doubts about this change
                             </p>
                             <p
                                 v-else

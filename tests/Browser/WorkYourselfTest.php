@@ -28,8 +28,10 @@ it('shows the connection on the first click', function () {
 
     visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))
         ->click('[data-test="work-yourself-button"]')
-        ->assertSeeIn('[data-test="work-yourself-command"]', 'Authorization: Bearer ')
+        ->assertSeeIn('[data-test="work-yourself-headless-copy"]', 'Copy the command')
         ->assertMissing('[data-test="work-yourself-reconnect"]')
+        ->click('[data-test="work-yourself-other-ways"] summary')
+        ->assertSeeIn('[data-test="work-yourself-command"]', 'Authorization: Bearer ')
         ->assertNoJavaScriptErrors();
 });
 
@@ -38,7 +40,10 @@ it('connects again once the shown connection is gone', function () {
 
     visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))
         ->assertSeeIn('[data-test="work-yourself-reconnect"]', 'Connect again')
+        ->assertMissing('[data-test="work-yourself-headless-copy"]')
         ->click('[data-test="work-yourself-reconnect"]')
+        ->assertVisible('[data-test="work-yourself-headless-copy"]')
+        ->click('[data-test="work-yourself-other-ways"] summary')
         ->assertSeeIn('[data-test="work-yourself-command"]', 'Authorization: Bearer ')
         ->assertNoJavaScriptErrors();
 });
@@ -98,5 +103,36 @@ it('gives the app\'s address for the Claude app, even when the connection showed
         ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
         ->click('[data-test="work-yourself-claude"]')
         ->assertVisible('[data-test="work-yourself-reconnect"]')
+        ->assertNoJavaScriptErrors();
+});
+
+it('leads with one line and one button, the way that needs no copy of the app', function () {
+    $change = plannedChange();
+
+    visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))
+        ->resize(390, 844)
+        ->click('[data-test="work-yourself-button"]')
+        ->assertSee('Paste this in a terminal. It makes the change on its own, in a new temporary folder.')
+        ->assertVisible('[data-test="work-yourself-headless-copy"]')
+        // The long commands wait behind "Other ways".
+        ->assertMissing('[data-test="work-yourself-headless"]')
+        ->assertMissing('[data-test="work-yourself-command"]')
+        ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
+        ->assertNoJavaScriptErrors();
+});
+
+it('keeps the copy of the app as another way, with what Codex needs', function () {
+    $change = plannedChange();
+
+    visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))
+        ->resize(390, 844)
+        ->click('[data-test="work-yourself-button"]')
+        ->click('[data-test="work-yourself-codex"]')
+        ->assertVisible('[data-test="work-yourself-headless-copy"]')
+        ->click('[data-test="work-yourself-other-ways"] summary')
+        ->assertVisible('[data-test="work-yourself-headless"]')
+        ->assertSeeIn('[data-test="work-yourself-other-ways"]', 'Or, when you have a copy of the app, run this in it, and start Codex from the same terminal')
+        // The long commands break, so the phone page never scrolls sideways.
+        ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
         ->assertNoJavaScriptErrors();
 });

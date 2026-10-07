@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Form, usePage } from '@inertiajs/vue3';
-import { Check, Copy } from '@lucide/vue';
+import { Check, ChevronRight, Copy } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import FeatureRequestWorkerController from '@/actions/App/Http/Controllers/FeatureRequestWorkerController';
 import InputError from '@/components/InputError.vue';
@@ -200,81 +200,104 @@ async function copy(what: Copyable): Promise<void> {
         </template>
 
         <template v-else-if="token">
+            <!-- One line and one button first: a new app has no copy on
+                 the owner's computer, so the way that needs none leads. The
+                 label stays put when it is copied; only the icon turns. -->
             <div class="space-y-1.5">
                 <p class="text-xs text-muted-foreground">
-                    1. Run this in your copy of the app<template
-                        v-if="tool === 'codex'"
-                        >, and start Codex from the same terminal</template
-                    >
+                    Paste this in a terminal. It makes the change on its own, in
+                    a new temporary folder.
                 </p>
-                <div class="flex items-start gap-1 rounded-md border">
-                    <code
-                        class="min-w-0 flex-1 p-2 font-mono text-xs break-all"
-                        data-test="work-yourself-command"
-                        >{{ command }}</code
-                    >
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        class="size-9 shrink-0"
-                        :aria-label="
-                            copied === 'command' ? 'Copied' : 'Copy the command'
-                        "
-                        @click="copy('command')"
-                    >
-                        <Check v-if="copied === 'command'" class="size-4" />
-                        <Copy v-else class="size-4" />
-                    </Button>
-                </div>
+                <Button
+                    size="sm"
+                    class="h-11 select-none sm:h-8"
+                    data-test="work-yourself-headless-copy"
+                    @click="copy('headless')"
+                >
+                    <Check v-if="copied === 'headless'" class="size-4" />
+                    <Copy v-else class="size-4" />
+                    Copy the command
+                </Button>
             </div>
 
-            <div class="space-y-1.5">
-                <p class="text-xs text-muted-foreground">2. Then ask it</p>
-                <div class="flex items-start gap-1 rounded-md border">
-                    <p class="min-w-0 flex-1 p-2 text-xs">{{ ask }}</p>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        class="size-9 shrink-0"
-                        :aria-label="
-                            copied === 'ask' ? 'Copied' : 'Copy what to ask'
-                        "
-                        @click="copy('ask')"
-                    >
-                        <Check v-if="copied === 'ask'" class="size-4" />
-                        <Copy v-else class="size-4" />
-                    </Button>
-                </div>
-            </div>
+            <details class="group" data-test="work-yourself-other-ways">
+                <summary
+                    class="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1 text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-7"
+                >
+                    <ChevronRight
+                        class="size-3.5 shrink-0 transition-transform group-open:rotate-90"
+                    />
+                    Other ways
+                </summary>
 
-            <div class="space-y-1.5">
-                <p class="text-xs text-muted-foreground">
-                    Or, in place of both, run this. It makes the change on its
-                    own, in a new temporary folder.
-                </p>
-                <div class="flex items-start gap-1 rounded-md border">
-                    <code
-                        class="min-w-0 flex-1 p-2 font-mono text-xs break-all"
-                        data-test="work-yourself-headless"
-                        >{{ headless }}</code
-                    >
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        class="size-9 shrink-0"
-                        :aria-label="
-                            copied === 'headless'
-                                ? 'Copied'
-                                : 'Copy the command that runs it on its own'
-                        "
-                        data-test="work-yourself-headless-copy"
-                        @click="copy('headless')"
-                    >
-                        <Check v-if="copied === 'headless'" class="size-4" />
-                        <Copy v-else class="size-4" />
-                    </Button>
+                <div class="mt-2 space-y-3">
+                    <div class="space-y-1.5">
+                        <p class="text-xs text-muted-foreground">
+                            The command itself
+                        </p>
+                        <code
+                            class="block rounded-md border p-2 font-mono text-xs break-all"
+                            data-test="work-yourself-headless"
+                            >{{ headless }}</code
+                        >
+                    </div>
+
+                    <div class="space-y-1.5">
+                        <p class="text-xs text-muted-foreground">
+                            Or, when you have a copy of the app, run this in
+                            it<template v-if="tool === 'codex'"
+                                >, and start Codex from the same
+                                terminal</template
+                            >
+                        </p>
+                        <div class="flex items-start gap-1 rounded-md border">
+                            <code
+                                class="min-w-0 flex-1 p-2 font-mono text-xs break-all"
+                                data-test="work-yourself-command"
+                                >{{ command }}</code
+                            >
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                class="size-9 shrink-0"
+                                :aria-label="
+                                    copied === 'command'
+                                        ? 'Copied'
+                                        : 'Copy the command'
+                                "
+                                @click="copy('command')"
+                            >
+                                <Check
+                                    v-if="copied === 'command'"
+                                    class="size-4"
+                                />
+                                <Copy v-else class="size-4" />
+                            </Button>
+                        </div>
+                    </div>
+
+                    <div class="space-y-1.5">
+                        <p class="text-xs text-muted-foreground">Then ask it</p>
+                        <div class="flex items-start gap-1 rounded-md border">
+                            <p class="min-w-0 flex-1 p-2 text-xs">{{ ask }}</p>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                class="size-9 shrink-0"
+                                :aria-label="
+                                    copied === 'ask'
+                                        ? 'Copied'
+                                        : 'Copy what to ask'
+                                "
+                                @click="copy('ask')"
+                            >
+                                <Check v-if="copied === 'ask'" class="size-4" />
+                                <Copy v-else class="size-4" />
+                            </Button>
+                        </div>
+                    </div>
                 </div>
-            </div>
+            </details>
 
             <p class="text-xs text-muted-foreground">
                 The connection opens only this change, and shows only now.

@@ -47,6 +47,9 @@ it('keeps a change only the review doubted once the owner says yes', function ()
     $change = doubtedChange(VerificationStatus::Passed);
 
     visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))
+        // The checks passed, so the card has doubts rather than a failure.
+        ->assertSeeIn('[data-test="thread-doubted"]', 'I have doubts about this change')
+        ->assertDontSee("I couldn't finish this")
         ->assertSeeIn('[data-test="keep-anyway"]', "Your app's checks passed, but I found problems when I looked it over.")
         ->click('[data-test="keep-anyway"] summary')
         ->assertSeeIn('[data-test="keep-anyway-doubts"]', 'The comment says nothing.')
@@ -64,6 +67,9 @@ it('keeps nothing until the owner says yes', function () {
 
     visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))
         ->resize(390, 844)
+        // Checks that could not run prove nothing, so it did not finish.
+        ->assertSee("I couldn't finish this")
+        ->assertMissing('[data-test="thread-doubted"]')
         ->assertSeeIn('[data-test="keep-anyway"]', "Your app's checks could not run, and I found problems when I looked it over.")
         ->click('[data-test="keep-anyway-button"]')
         ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
@@ -78,7 +84,8 @@ it('never offers to keep a change whose checks failed', function () {
     $change = doubtedChange(VerificationStatus::Failed);
 
     visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))
-        ->assertVisible('[data-test="thread-failed"]')
+        ->assertSeeIn('[data-test="thread-failed"]', "I couldn't finish this")
+        ->assertMissing('[data-test="thread-doubted"]')
         ->assertMissing('[data-test="keep-anyway"]')
         ->assertNoJavaScriptErrors();
 });
