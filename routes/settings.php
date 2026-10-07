@@ -6,6 +6,7 @@ use App\Http\Controllers\Settings\BillingController;
 use App\Http\Controllers\Settings\DetailLevelController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
+use App\Http\Controllers\Settings\TechnicalDetailsController;
 use App\Http\Controllers\Settings\ToolController;
 use App\Http\Middleware\BlockWhileSignedInAsSomeone;
 use Illuminate\Auth\Middleware\RequirePassword;
@@ -17,6 +18,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('settings/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('settings/profile', [ProfileController::class, 'update'])->middleware(BlockWhileSignedInAsSomeone::class)->name('profile.update');
     Route::patch('settings/detail-level', DetailLevelController::class)->name('detail-level.update');
+    Route::patch('settings/technical-details', TechnicalDetailsController::class)->name('technical-details.update');
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {

@@ -14,6 +14,9 @@ import {
     CircleCheck,
     CircleDot,
     CircleX,
+    Download,
+    FileText,
+    LayoutGrid,
     Lightbulb,
     LoaderCircle,
     Maximize2,
@@ -25,17 +28,23 @@ import {
     ImagePlus,
     ListChecks,
     Lock,
+    Mail,
     MessageSquare,
     Monitor,
     MousePointerClick,
+    Pencil,
     RotateCw,
     Share2,
     ShieldCheck,
     Smartphone,
+    Store,
     Tablet,
+    Terminal,
+    UserRound,
 } from '@lucide/vue';
 import { useResizeObserver } from '@vueuse/core';
 import { useScreen } from '@/composables/useScreen';
+import { useTechnical } from '@/composables/useTechnical';
 import {
     computed,
     nextTick,
@@ -78,6 +87,7 @@ import OwnToolDialog from '@/components/OwnToolDialog.vue';
 import RenameAppDialog from '@/components/RenameAppDialog.vue';
 import ShareAppDialog from '@/components/ShareAppDialog.vue';
 import ServicesDialog from '@/components/ServicesDialog.vue';
+import TechnicalDetailsItem from '@/components/TechnicalDetailsItem.vue';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -213,11 +223,18 @@ const chatCentred = computed(() => panelFull.value && !codeOnScreen.value);
 const SIDE = 'clamp(18rem, 24vw, 26rem)';
 const SIDES = { left: SIDE, right: SIDE };
 const desktop = useScreen('(min-width: 1024px)');
+// The plan and code beside the chat are technical details: an owner who
+// has not asked for them keeps the chat alone, in the middle.
+const { technical } = useTechnical();
 const wide = useScreen('(min-width: 1280px)');
 const threadSides = ref(false);
 const threadStopped = ref(false);
 const panelOn = computed(
-    () => chatCentred.value && desktop.value && props.change !== null,
+    () =>
+        chatCentred.value &&
+        desktop.value &&
+        technical.value &&
+        props.change !== null,
 );
 const listOn = computed(() => panelOn.value && wide.value);
 const besideChat = computed(() =>
@@ -1350,19 +1367,23 @@ function sendOnEnter(event: KeyboardEvent): void {
                     <Link
                         :href="showUnderstanding(project.id)"
                         data-test="understanding-link"
-                        >Your business</Link
                     >
+                        <Store class="size-4" />
+                        Your business
+                    </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                     data-test="services-open"
                     @select="connecting = true"
                 >
+                    <Mail class="size-4" />
                     Payments and email…
                 </DropdownMenuItem>
                 <DropdownMenuItem
                     data-test="app-rename"
                     @select="renaming = true"
                 >
+                    <Pencil class="size-4" />
                     Rename…
                 </DropdownMenuItem>
                 <DropdownMenuItem as-child>
@@ -1370,19 +1391,24 @@ function sendOnEnter(event: KeyboardEvent): void {
                         :href="developers(project.id).url"
                         data-test="ask-developer-open"
                     >
+                        <UserRound class="size-4" />
                         Ask a developer
                     </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem
+                    v-if="technical"
                     data-test="details-open"
                     @select="detailsOpen = true"
                 >
+                    <FileText class="size-4" />
                     Details for your developer
                 </DropdownMenuItem>
                 <DropdownMenuItem
+                    v-if="technical"
                     data-test="own-tool-open"
                     @select="usingOwnTool = true"
                 >
+                    <Terminal class="size-4" />
                     Use my own Claude or Codex…
                 </DropdownMenuItem>
                 <!-- The code is the owner's to take to any developer. -->
@@ -1392,12 +1418,19 @@ function sendOnEnter(event: KeyboardEvent): void {
                         download
                         title="All its code, for you or any developer"
                         data-test="app-download"
-                        >Download your app</a
                     >
+                        <Download class="size-4" />
+                        Download your app
+                    </a>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
+                <TechnicalDetailsItem />
+                <DropdownMenuSeparator />
                 <DropdownMenuItem as-child>
-                    <Link :href="index()">All your apps</Link>
+                    <Link :href="index()">
+                        <LayoutGrid class="size-4" />
+                        All your apps
+                    </Link>
                 </DropdownMenuItem>
             </DropdownMenuContent>
         </DropdownMenu>
@@ -1407,7 +1440,7 @@ function sendOnEnter(event: KeyboardEvent): void {
              phone has no room for it beside the app's name; the app menu
              leads there. -->
         <Link
-            v-if="project.tests"
+            v-if="technical && project.tests"
             :href="showUnderstanding(project.id)"
             :title="`${project.tests} ${project.tests === 1 ? 'test runs' : 'tests run'} on every change, so what works keeps working. See what they check.`"
             class="hidden h-9 shrink-0 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground tabular-nums select-none hover:bg-muted hover:text-foreground sm:flex"
@@ -1963,7 +1996,10 @@ function sendOnEnter(event: KeyboardEvent): void {
                                                  before it is opened: tests
                                                  that fail without it. -->
                                                 <span
-                                                    v-else-if="item.proved > 0"
+                                                    v-else-if="
+                                                        technical &&
+                                                        item.proved > 0
+                                                    "
                                                     class="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground"
                                                     data-test="change-proved"
                                                     ><ShieldCheck
@@ -1975,7 +2011,10 @@ function sendOnEnter(event: KeyboardEvent): void {
                                                     }}</span
                                                 >
                                                 <span
-                                                    v-else-if="item.passing > 0"
+                                                    v-else-if="
+                                                        technical &&
+                                                        item.passing > 0
+                                                    "
                                                     class="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground"
                                                     data-test="change-passing"
                                                     ><ShieldCheck

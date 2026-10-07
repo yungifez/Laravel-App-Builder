@@ -25,6 +25,7 @@ use Laravel\Passport\HasApiTokens;
  * @property string $name
  * @property string $email
  * @property Carbon|null $email_verified_at
+ * @property bool $technical_details Whether the person sees how changes are made
  * @property string $password
  * @property string|null $two_factor_secret
  * @property string|null $two_factor_recovery_codes
@@ -36,7 +37,7 @@ use Laravel\Passport\HasApiTokens;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'email', 'password', 'detail_level'])]
+#[Fillable(['name', 'email', 'password', 'detail_level', 'technical_details'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements MustVerifyEmail, OAuthenticatable, PasskeyUser
 {
@@ -55,6 +56,7 @@ class User extends Authenticatable implements MustVerifyEmail, OAuthenticatable,
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
             'detail_level' => 'integer',
+            'technical_details' => 'boolean',
             'granted_plan_until' => 'datetime',
             'suspended_at' => 'datetime',
         ];

@@ -4998,6 +4998,14 @@ levels; this is the same ladder, named by the question each answers):
 
 A lower level is never required to operate a higher one.
 
+**Technical details are off by default (version 35).** One switch, "Technical
+details", sits in the app menu and the account menu. Off, the owner sees only
+level 1: no depth switch, no plan and code beside the chat, no test counts, no
+"How I did it", no per-case marks and no developer tools (their own Claude or
+Codex, details for a developer, bringing in an app from a folder). On, every
+level and tool shows, and the depth the person last picked comes back. The
+setting is per person (`users.technical_details`).
+
 ### 28.4 What directions 17 and 18 change in V1
 
 Only what the V1 loop already produces the data for:

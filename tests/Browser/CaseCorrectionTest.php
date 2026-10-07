@@ -50,7 +50,7 @@ function placesLeftChange(bool $written = true): FeatureRequest
 function chatAbout(FeatureRequest $change): mixed
 {
     $owner = $change->project->owner;
-    $owner->update(['detail_level' => 2]);
+    $owner->update(['detail_level' => 2, 'technical_details' => true]);
     test()->actingAs($owner);
 
     return visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]));

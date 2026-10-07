@@ -7,6 +7,7 @@ import BringInApp from '@/components/BringInApp.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { useAttachedImages } from '@/composables/useAttachedImages';
+import { useTechnical } from '@/composables/useTechnical';
 import { takeIdea } from '@/lib/startIdea';
 import { when } from '@/lib/when';
 import { contact } from '@/routes';
@@ -25,6 +26,10 @@ defineOptions({
         breadcrumbs: [{ title: 'Your apps', href: index() }],
     },
 });
+
+// Bringing in an app from a folder and counting tests are for people who
+// asked for technical details.
+const { technical } = useTechnical();
 
 // A filter helps only once the list no longer fits at a glance.
 const searchable = computed(() => props.projects.length > 6);
@@ -365,7 +370,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
                 </div>
             </Form>
 
-            <p class="mt-5 text-sm text-muted-foreground">
+            <p v-if="technical" class="mt-5 text-sm text-muted-foreground">
                 Or
                 <BringInApp>
                     <button
@@ -384,7 +389,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
             class="mx-auto flex w-full max-w-5xl flex-wrap items-end justify-between gap-3 px-4 pt-10 pb-6"
         >
             <h1 class="font-display text-4xl tracking-tight">Your apps</h1>
-            <BringInApp>
+            <BringInApp v-if="technical">
                 <Button
                     variant="outline"
                     class="h-11 select-none sm:h-9"
@@ -520,7 +525,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
                                         {{ when(project.edited_at) }}</span
                                     >
                                     <span
-                                        v-if="project.tests"
+                                        v-if="technical && project.tests"
                                         class="flex items-center gap-1.5"
                                         data-test="app-tests"
                                     >

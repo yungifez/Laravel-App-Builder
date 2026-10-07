@@ -18,6 +18,8 @@ function plannedChange(string $driver = 'scripted'): FeatureRequest
     Queue::fake([ExecuteRun::class, DecideFeatureRequest::class]);
     $change = FeatureRequest::factory()->create(['status' => FeatureRequestStatus::Generating, 'prompt' => 'Give teams a description.']);
     Run::factory()->for($change)->create(['status' => RunStatus::Planning, 'driver' => $driver]);
+    // Handing a change to their own tool is a technical detail.
+    $change->project->owner->update(['technical_details' => true]);
     test()->actingAs($change->project->owner);
 
     return $change;

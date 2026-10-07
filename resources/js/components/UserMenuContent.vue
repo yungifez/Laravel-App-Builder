@@ -7,6 +7,7 @@ import {
     DropdownMenuLabel,
     DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import TechnicalDetailsItem from '@/components/TechnicalDetailsItem.vue';
 import UserInfo from '@/components/UserInfo.vue';
 import { logout } from '@/routes';
 import { attention } from '@/routes/operations';
@@ -35,32 +36,34 @@ const page = usePage();
     <DropdownMenuSeparator />
     <DropdownMenuGroup>
         <DropdownMenuItem :as-child="true">
-            <Link class="block w-full cursor-pointer" :href="edit()" prefetch>
-                <Settings class="mr-2 h-4 w-4" />
+            <Link class="w-full cursor-pointer" :href="edit()" prefetch>
+                <Settings class="size-4" />
                 Settings
             </Link>
         </DropdownMenuItem>
         <DropdownMenuItem v-if="page.props.auth.operator" :as-child="true">
             <Link
-                class="block w-full cursor-pointer"
+                class="w-full cursor-pointer"
                 :href="attention()"
                 data-test="operations-link"
             >
-                <Activity class="mr-2 h-4 w-4" />
+                <Activity class="size-4" />
                 Operations
             </Link>
         </DropdownMenuItem>
     </DropdownMenuGroup>
     <DropdownMenuSeparator />
+    <TechnicalDetailsItem />
+    <DropdownMenuSeparator />
     <DropdownMenuItem :as-child="true">
         <Link
-            class="block w-full cursor-pointer"
+            class="w-full cursor-pointer"
             :href="logout()"
             @click="handleLogout"
             as="button"
             data-test="logout-button"
         >
-            <LogOut class="mr-2 h-4 w-4" />
+            <LogOut class="size-4" />
             Log out
         </Link>
     </DropdownMenuItem>

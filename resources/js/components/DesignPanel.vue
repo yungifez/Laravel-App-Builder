@@ -72,6 +72,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { AppPreviewState, Way } from '@/composables/useAppPreview';
+import { useTechnical } from '@/composables/useTechnical';
 import {
     kindOfTag,
     newParts,
@@ -272,7 +273,7 @@ function listed(names: string[]): string {
 // Where the part lives in the code, and its Tailwind classes, only for
 // someone who chose to see how changes are built (§28.4).
 const page = usePage();
-const showCode = computed(() => (page.props.auth.user?.detail_level ?? 1) >= 3);
+const { technical: showCode } = useTechnical();
 
 // The choices a property offers, with an icon where one says it better.
 const icons: Partial<Record<string, Component>> = {

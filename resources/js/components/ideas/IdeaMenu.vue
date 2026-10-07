@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Form, router, usePage } from '@inertiajs/vue3';
+import { Form, router } from '@inertiajs/vue3';
 import { ChevronDown, GitBranch, Lightbulb, Trash2 } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import ExperimentController from '@/actions/App/Http/Controllers/ExperimentController';
@@ -19,6 +19,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useTechnical } from '@/composables/useTechnical';
 import type { Idea, Ideas } from '@/types';
 
 const props = defineProps<{
@@ -26,9 +27,8 @@ const props = defineProps<{
     ideas: Ideas & { current: Idea };
 }>();
 
-const page = usePage();
 // Power users see the branches behind ideas.
-const technical = computed(() => page.props.auth.user.detail_level >= 3);
+const { technical } = useTechnical();
 const others = computed(() =>
     props.ideas.open.filter((idea) => idea.id !== props.ideas.current.id),
 );

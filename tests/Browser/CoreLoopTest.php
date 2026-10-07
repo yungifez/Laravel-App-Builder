@@ -35,7 +35,8 @@ beforeEach(function () {
         'builder.verification.checks' => [],
     ]);
 
-    $this->owner = User::factory()->create();
+    // The loop's depths, plan and code show to an owner who reads code.
+    $this->owner = User::factory()->create(['technical_details' => true]);
     $this->project = app(CreateProject::class)->handle(
         $this->owner, 'Acme', $this->useReferenceSolutions().'/source', draftNotes: false,
     );

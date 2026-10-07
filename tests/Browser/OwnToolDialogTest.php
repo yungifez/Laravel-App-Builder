@@ -12,6 +12,7 @@ use App\Models\Project;
 it('gives the app address for the Claude app at any time', function () {
     $project = Project::factory()->create();
     app(ConnectOwnTool::class)->handle($project);
+    $project->owner->update(['technical_details' => true]);
     $this->actingAs($project->owner);
 
     visit(route('projects.show', $project))
@@ -27,6 +28,7 @@ it('gives the app address for the Claude app at any time', function () {
 
 it('shows no address before the owner connects their tool', function () {
     $project = Project::factory()->create();
+    $project->owner->update(['technical_details' => true]);
     $this->actingAs($project->owner);
 
     visit(route('projects.show', $project))

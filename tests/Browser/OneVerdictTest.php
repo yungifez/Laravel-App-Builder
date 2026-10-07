@@ -61,7 +61,7 @@ it('folds the proof to its verdict until the owner opens it', function () {
 
 it('opens the proof for an owner who reads a level deeper', function () {
     $change = changeWithAGap();
-    $change->user->forceFill(['detail_level' => 2])->save();
+    $change->user->forceFill(['detail_level' => 2, 'technical_details' => true])->save();
     $this->actingAs($change->user);
 
     visit(route('projects.show', ['project' => $change->project, 'change' => $change->uuid]))

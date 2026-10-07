@@ -25,6 +25,7 @@ import {
     Undo2,
 } from '@lucide/vue';
 import { useScreen } from '@/composables/useScreen';
+import { useTechnical } from '@/composables/useTechnical';
 import {
     computed,
     nextTick,
@@ -153,7 +154,14 @@ const depths = [
     { level: 3, label: 'How' },
     { level: 4, label: 'Code' },
 ] as const;
-const depth = ref<number>(page.props.auth.user.detail_level ?? 1);
+// Without technical details there is one depth, the plain answer, and
+// no switch: the owner sees what changed, not how.
+const { technical } = useTechnical();
+const remembered = () =>
+    technical.value ? (page.props.auth.user.detail_level ?? 1) : 1;
+const depth = ref<number>(remembered());
+
+watch(technical, () => (depth.value = remembered()));
 
 // Reading code wants room: the owner can give the Code view the whole
 // screen, and it opens that way next time. Remembered in this browser only.
@@ -186,7 +194,11 @@ function toggleFull(): void {
 const wide = useScreen('(min-width: 1024px)');
 const spread = computed(() => !!props.roomy && wide.value);
 const sides = computed(
-    () => spread.value && !!run.value?.plan && !run.value.plan.answer,
+    () =>
+        technical.value &&
+        spread.value &&
+        !!run.value?.plan &&
+        !run.value.plan.answer,
 );
 
 // The chat is named after what the owner first asked, as in the chat list.
@@ -712,6 +724,7 @@ const checks = computed(() => {
                 {{ chatTitle }}
             </h2>
             <Button
+                v-if="technical"
                 variant="ghost"
                 size="sm"
                 class="ml-auto h-11 gap-1 px-2 text-muted-foreground select-none sm:h-8"
@@ -931,7 +944,7 @@ const checks = computed(() => {
                         <!-- Depth for those who code: their own agent writes
                              it, and we still check what it hands back. -->
                         <Form
-                            v-if="takeOver"
+                            v-if="technical && takeOver"
                             class="order-last"
                             v-bind="
                                 FeatureRequestWorkerController.store.form(
@@ -1434,7 +1447,7 @@ const checks = computed(() => {
                                 </Form>
                             </div>
                             <Form
-                                v-if="request.can_work_yourself"
+                                v-if="technical && request.can_work_yourself"
                                 v-bind="
                                     FeatureRequestWorkerController.store.form(
                                         request.id,
@@ -1536,6 +1549,7 @@ const checks = computed(() => {
                              deep level would show with no way back. -->
                         <div
                             v-if="
+                                technical &&
                                 run?.plan &&
                                 !run.plan.answer &&
                                 !sides &&
@@ -1981,7 +1995,10 @@ const checks = computed(() => {
                                         <span class="min-w-0">
                                             {{ item.text }}
                                             <span
-                                                v-if="item.cases.length > 0"
+                                                v-if="
+                                                    technical &&
+                                                    item.cases.length > 0
+                                                "
                                                 class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground"
                                                 data-test="done-when-cases"
                                             >
@@ -2148,7 +2165,9 @@ const checks = computed(() => {
 
                         <!-- How it was made, once it is made: kept
                              after what it made, for those who ask. -->
-                        <Collapsible v-if="!working && work.length > 0">
+                        <Collapsible
+                            v-if="technical && !working && work.length > 0"
+                        >
                             <CollapsibleTrigger
                                 class="group flex min-h-11 items-center gap-1 text-xs text-muted-foreground select-none hover:text-foreground sm:min-h-6"
                                 data-test="thread-work-toggle"

@@ -173,6 +173,7 @@ it('asks the planner’s own question with no glance lines and no plan link', fu
 
 it('keeps the detail switch in place whichever level the owner picks', function () {
     $change = decidedChange(['Bookings are kept after a class is deleted.'], ['Times show in the gym’s time zone.']);
+    $change->project->owner->update(['technical_details' => true]);
     $page = quietChat($change);
     // Where it sits in the chat, wherever the chat is scrolled to: a click
     // scrolls its button into view first.
