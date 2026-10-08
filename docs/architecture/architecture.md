@@ -4999,6 +4999,11 @@ Not met:
   for V1 (§18).
 - **3–5 real owners** have not used the loop yet, so what they value is
   unknown.
+- **Our own sign-in starter** (owner's decision, 2026-10-08, before
+  production). The starter kit's sign-in emails (verify the address, reset
+  the password) go to the Laravel log, which owners never read. Owners' apps
+  need our own starter for sign-in that works without them reading the log.
+  Until then, apps keep the vue-starter-kit.
 
 Two corrections to direction 16, from §26.12: 15px padding is `p-3.75` in
 Tailwind v4 (a theme-relative utility), not `p-[15px]`; and any fraction is a
