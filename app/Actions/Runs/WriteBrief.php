@@ -27,6 +27,13 @@ class WriteBrief
     public const KEEP = 'A problem that starts with a key, such as B1, was seen when the app ran its tests. It holds the change back until it is fixed. If one is wrong, or the owner\'s request asks for exactly that, you may leave its code as it is and ask the owner instead: end your reply with one line for it, such as "KEEP B1: why it should stay, in words the owner understands". The owner reads your reason and decides, and the change waits for their answer. Ask only when you are sure; never to save work.';
 
     /**
+     * What the agent may do about a written test that expects what the app
+     * does not have. Renaming working schema to fit a guess breaks the app
+     * for everything else that uses it; the test is corrected instead.
+     */
+    public const TEST_WRONG = 'A test written before you started can be wrong: it may expect a table, a column, a name or an address the app does not have and the plan does not ask for. Never rename, remove or add tables, columns, models or routes only to fit such a test, and do not change the test. Build the rest of the change, and end your reply with one line for each such test, such as "TEST WRONG tests/Feature/TeamTest.php :: a member can leave a team: it expects a team_members table, but members are in team_user". The test is then checked against the app and corrected. Say so only when you are sure.';
+
+    /**
      * Write the whole brief: the change, what to keep, and how to work.
      * A worker outside our boxes reads it all, so the rules it gets are
      * written to be read.
@@ -173,8 +180,8 @@ class WriteBrief
         if ($plan->writtenTests !== []) {
             // A worker builds in its own copy, which does not have them yet.
             $sections[] = $run->driver === 'worker'
-                ? "## Tests already written\n\nThese tests were written from the plan before you started, one for each item above. Before you start, add each file below to your copy exactly as written. Build the change so they pass, and hand them back in your patch unchanged: a change that alters them is sent back, and the change is only accepted when they pass. You need not write other tests for these items.\n\n".$this->list(array_map(fn (array $test) => "{$test['item']}. {$test['file']}: {$test['name']}", $plan->writtenTests))."\n\n".$this->writtenFiles($plan)
-                : "## Tests already written\n\nThese tests were written from the plan before you started, one for each item above, and they are already in the app. Build the change so they pass. Do not change them: they are put back as written when you finish, and the change is only accepted when they pass. You need not write other tests for these items.\n\n".$this->list(array_map(fn (array $test) => "{$test['item']}. {$test['file']}: {$test['name']}", $plan->writtenTests));
+                ? "## Tests already written\n\nThese tests were written from the plan before you started, one for each item above. Before you start, add each file below to your copy exactly as written. Build the change so they pass, and hand them back in your patch unchanged: a change that alters them is sent back, and the change is only accepted when they pass. You need not write other tests for these items.\n\n".self::TEST_WRONG."\n\n".$this->list(array_map(fn (array $test) => "{$test['item']}. {$test['file']}: {$test['name']}", $plan->writtenTests))."\n\n".$this->writtenFiles($plan)
+                : "## Tests already written\n\nThese tests were written from the plan before you started, one for each item above, and they are already in the app. Build the change so they pass. Do not change them: they are put back as written when you finish, and the change is only accepted when they pass. You need not write other tests for these items.\n\n".self::TEST_WRONG."\n\n".$this->list(array_map(fn (array $test) => "{$test['item']}. {$test['file']}: {$test['name']}", $plan->writtenTests));
 
             $written = array_column($plan->writtenTests, 'item');
             $unwritten = array_values(array_filter(array_keys($plan->verifyItems()), fn (int $index) => ! in_array($index + 1, $written, true)));

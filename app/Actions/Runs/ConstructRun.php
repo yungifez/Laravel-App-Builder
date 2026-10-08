@@ -67,12 +67,14 @@ use App\Runs\Exceptions\WaitingForWorker;
 use App\Runs\FieldFormats;
 use App\Runs\Plan;
 use App\Runs\PlanningContext;
+use App\Runs\ReshapedSchema;
 use App\Runs\Review;
 use App\Runs\ReviewEvidence;
 use App\Runs\RunLease;
 use App\Runs\ShapeQuestion;
 use App\Runs\ToolExecutor;
 use App\Runs\ToolSession;
+use App\Runs\WrongWrittenTests;
 use Closure;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -110,6 +112,8 @@ class ConstructRun
         private WriteTestsFirst $writeTestsFirst,
         private ShapeQuestion $shapeQuestion,
         private FieldFormats $fieldFormats,
+        private WrongWrittenTests $wrongWrittenTests,
+        private ReshapedSchema $reshapedSchema,
     ) {}
 
     /**
@@ -496,6 +500,52 @@ class ConstructRun
     }
 
     /**
+     * Have each written test the coder says is wrong (WriteBrief::TEST_WRONG)
+     * corrected at once against the app's real tables and names, once per
+     * test in a run. A test that cannot be corrected stays as written, and
+     * the checks decide as before. The owner sees each correction.
+     *
+     * @param  list<array{item: int, file: string, name: string, message: string, by: string}>  $reported
+     * @return array{0: Plan, 1: list<string>}
+     */
+    protected function correctReportedTests(Run $run, RunLease $lease, Workspace $workspace, Plan $plan, array $reported): array
+    {
+        $rewritten = [];
+
+        foreach ($reported as $test) {
+            if ($run->events()->whereIn('type', ['written_test_rewritten', 'written_test_not_rewritten'])->where('data->file', $test['file'])->where('data->test', $test['name'])->exists()) {
+                continue;
+            }
+
+            $event = ['file' => $test['file'], 'test' => $test['name'], 'reason' => $test['message'], 'by' => 'coder'];
+            $corrected = $this->writeTestsFirst->rewrite($run, $plan, $workspace, $test);
+
+            if ($corrected === null) {
+                $this->recordEvent($run, $lease, 'written_test_not_rewritten', $event);
+
+                continue;
+            }
+
+            $plan = $corrected;
+            $rewritten[] = "{$test['file']}|{$test['name']}";
+
+            DB::transaction(function () use ($run, $lease, $plan, $event) {
+                $locked = Run::query()->lockForUpdate()->findOrFail($run->id);
+
+                $lease->assertHeldOn($locked);
+
+                $locked->plan = $plan->toArray();
+                $locked->save();
+                $locked->recordEvent('written_test_rewritten', $event);
+
+                $run->setRawAttributes($locked->getAttributes(), sync: true);
+            });
+        }
+
+        return [$plan, $rewritten];
+    }
+
+    /**
      * Have the driver build (or repair) the change, read it back from the
      * workspace, and hand it to verification.
      */
@@ -530,9 +580,15 @@ class ConstructRun
             $plan = $this->takeTestsBeside($run, $lease, $workspace, $plan, $asked);
         }
 
+        // A written test the coder says guessed a name the app does not
+        // have is corrected now, and the change is checked against that.
+        [$plan, $rewritten] = $this->correctReportedTests($run, $lease, $workspace, $plan, $this->wrongWrittenTests->reported($account, $plan));
+
         // A worker made its code pass the tests in its own copy, so a written
         // test it changed cannot just be put back: the change goes back.
-        $changed = $run->driver === 'worker' ? $this->writeTestsFirst->changed($workspace, $plan) : [];
+        $changed = $run->driver === 'worker'
+            ? array_values(array_filter($this->writeTestsFirst->changed($workspace, $plan), fn (array $test) => ! in_array("{$test['file']}|{$test['name']}", $rewritten, true)))
+            : [];
 
         if (($restored = $this->writeTestsFirst->place($workspace, $plan)) !== []) {
             $this->recordEvent($run, $lease, 'written_tests_restored', ['paths' => $restored]);
@@ -601,6 +657,25 @@ class ConstructRun
                     $skipped,
                 )],
             ], ['reason' => 'tests_not_run', 'files' => $skipped]);
+
+            return;
+        }
+
+        // Renaming working tables or columns to fit a written test that
+        // guessed a name breaks the rest of the app. The change goes back
+        // once to keep them; a second try is the coder's call.
+        $reshaped = $this->reshapedSchema->in($patch, $plan);
+
+        if ($reshaped !== [] && $driver->canRepair() && $run->repairs < $run->repairLimit()
+            && ! $run->events()->where('type', 'status')->where('data->reason', 'schema_reshaped')->exists()) {
+            $this->transitionRun->handle($run, RunStatus::Implementing, $lease, [
+                'repairs' => $run->repairs + 1,
+                'feedback' => ['reason' => 'schema_reshaped', 'details' => [
+                    ...$reshaped,
+                    (string) __('Keep the app\'s tables, columns and migrations that already ran as they are, unless the plan asks to change them.'),
+                    ...($plan->writtenTests === [] ? [] : [(string) __('If a test written before you started expects a name the app does not have, do not change the app to fit it: say so in a TEST WRONG line.')]),
+                ]],
+            ], ['reason' => 'schema_reshaped', 'found' => $reshaped]);
 
             return;
         }

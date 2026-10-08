@@ -252,13 +252,14 @@ class WriteTestsFirst
 
     /**
      * Have the writer correct one written test that held the change back
-     * the same way twice while all else passed (StuckWrittenTests). It sees
-     * the plan's item, what the test said when it failed and what the app
-     * now offers, and the same rules apply. Only that test may change: its
-     * name and the file's other tests stay. Null when no answer kept the
-     * rules; the test then stays as written.
+     * the same way twice while all else passed (StuckWrittenTests), or that
+     * the coder said is wrong ("by" coder). It sees the plan's item, what
+     * the test said or the coder said, and what the app now offers: its
+     * addresses, tables and columns. The same rules apply. Only that test
+     * may change: its name and the file's other tests stay. Null when no
+     * answer kept the rules; the test then stays as written.
      *
-     * @param  array{item: int, file: string, name: string, message: string}  $test
+     * @param  array{item: int, file: string, name: string, message: string, by?: string}  $test
      *
      * @throws ProvidersUnavailable
      * @throws RunCancelled
@@ -275,14 +276,19 @@ class WriteTestsFirst
         $key = WrittenTests::name($test['name']);
         $others = array_values(array_filter($plan->writtenTests, fn (array $written) => $written['file'] === $test['file'] && WrittenTests::name($written['name']) !== $key));
         $routes = $this->gatherPlanningContext->routes($workspace);
+        $tables = $this->tables($workspace);
         $files = array_column(PatchSummary::files($run->featureRequest->patch), 'path');
+        $byCoder = ($test['by'] ?? null) === 'coder';
 
         $prompt = implode("\n\n", array_filter([
             "## The change\n\n{$plan->summary}",
-            "## The test to correct\n\nThe test \"{$test['name']}\" in {$test['file']} was written before the change was built, to check this item: {$item['text']}\n\nThe change was built and tried again. Each time, every other test and check passed, but this test failed the same way. It may expect what the plan never asked for, such as an address or a name the app does not have. Rewrite only this test, so it checks the same item through what the app now offers. Keep its name, and keep every other test in the file exactly as it is. Return the whole file, with this test for item 1.",
-            "## What it said when it failed\n\n```\n".Secrets::redact(Str::limit($test['message'], 2000))."\n```",
+            $byCoder
+                ? "## The test to correct\n\nThe test \"{$test['name']}\" in {$test['file']} was written before the change was built, to check this item: {$item['text']}\n\nThe coder who built the change says it is wrong: it expects what the app does not have and the plan never asked for, such as a table, a column, a name or an address. Check what it says against the app below. Rewrite only this test, so it checks the same item through the app's real tables, columns, names and addresses. Keep its name, and keep every other test in the file exactly as it is. Return the whole file, with this test for item 1."
+                : "## The test to correct\n\nThe test \"{$test['name']}\" in {$test['file']} was written before the change was built, to check this item: {$item['text']}\n\nThe change was built and tried again. Each time, every other test and check passed, but this test failed the same way. It may expect what the plan never asked for, such as an address or a name the app does not have. Rewrite only this test, so it checks the same item through what the app now offers. Keep its name, and keep every other test in the file exactly as it is. Return the whole file, with this test for item 1.",
+            ($byCoder ? "## What the coder said\n\n```\n" : "## What it said when it failed\n\n```\n").Secrets::redact(Str::limit($test['message'], 2000))."\n```",
             "## {$test['file']} as written\n\n```php\n{$contents}\n```",
             $routes === [] ? null : "## Addresses in the app now\n\n- ".implode("\n- ", $routes),
+            $tables === [] ? null : "## Tables in the app now, with their columns\n\n- ".implode("\n- ", $tables),
             $files === [] ? null : "## Files the change added or changed\n\n- ".implode("\n- ", $files),
         ]));
         $attempts = max(1, (int) config('builder.verification.written_first.attempts'));
@@ -332,6 +338,70 @@ class WriteTestsFirst
     }
 
     /**
+     * List the app's tables and their columns as its migrations make them,
+     * in order, so a rewrite uses real names. Read from the migrations, with
+     * no database: a table later changed gains its new columns.
+     *
+     * @return list<string>
+     */
+    public function tables(Workspace $workspace): array
+    {
+        // Each migration in order, as Laravel runs them.
+        $found = rescue(fn () => $this->runWorkspaceCommand->handle($workspace, [
+            'sh', '-c', 'for f in $(ls database/migrations/*.php 2>/dev/null | sort); do grep -hoE "$0" "$f"; done; true',
+            'Schema::(create|table)\([\'"][A-Za-z0-9_]+|\$table->[A-Za-z]+\([\'"][A-Za-z0-9_]+',
+        ], 60), null, report: false);
+
+        if ($found?->exit_code !== 0) {
+            return [];
+        }
+
+        /** @var array<string, list<string>> $tables */
+        $tables = [];
+        $current = null;
+
+        foreach (preg_split('/\R/', trim($found->output)) ?: [] as $line) {
+            if (preg_match('/^Schema::(?:create|table)\([\'"]([A-Za-z0-9_]+)/', $line, $match) === 1) {
+                $current = $match[1];
+                $tables[$current] ??= [];
+            } elseif ($current !== null && preg_match('/^\$table->([A-Za-z]+)\([\'"]([A-Za-z0-9_]+)/', $line, $match) === 1) {
+                // A drop or a rename takes the name away; an index names
+                // one already there; the rest add it.
+                if (in_array($match[1], ['dropColumn', 'renameColumn'], true)) {
+                    $tables[$current] = array_values(array_diff($tables[$current], [$match[2]]));
+                } elseif (! in_array($match[1], ['index', 'unique', 'foreign', 'primary', 'dropForeign', 'dropIndex', 'dropUnique'], true)) {
+                    $tables[$current][] = $match[2];
+                }
+            }
+        }
+
+        $lines = [];
+
+        foreach ($tables as $table => $columns) {
+            $lines[] = $table.': '.implode(', ', array_values(array_unique($columns)));
+        }
+
+        return array_slice($lines, 0, (int) config('builder.construction.planning.max_routes'));
+    }
+
+    /**
+     * Get the app's model files, in a fixed order.
+     *
+     * @return list<string>
+     */
+    protected function models(Workspace $workspace): array
+    {
+        $paths = array_filter(explode("\0", $this->runWorkspaceCommand->handle(
+            $workspace,
+            ['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', 'app/Models'],
+            120,
+        )->output), fn (string $path) => str_ends_with($path, '.php'));
+        sort($paths);
+
+        return $paths;
+    }
+
+    /**
      * Describe the plan and how the app's tests are written.
      *
      * @param  list<array{criterion: string, kind: string, text: string}>  $items
@@ -346,6 +416,8 @@ class WriteTestsFirst
 
         $sections = [
             "## The change\n\n{$plan->summary}",
+            // The plan may leave out what the owner said, such as a route's name.
+            "## The owner's request\n\n{$context->request}",
             "## Acceptance criteria\n\n- ".implode("\n- ", $plan->acceptanceCriteria),
             "## What the tests must check\n\n".implode("\n", $numbered),
             "## Steps\n\n".($steps === [] ? '(none)' : implode("\n", $steps)),
@@ -368,9 +440,18 @@ class WriteTestsFirst
 
         $bytes = (int) config('builder.verification.written_first.sample_bytes');
 
-        // The code the steps change, as it is now: without it the writer
-        // guesses table, column and route names that do not exist.
-        foreach (array_slice(array_values(array_unique(array_column($plan->steps, 'file'))), 0, 4) as $path) {
+        $areas = array_unique([...$plan->capabilities, ...array_merge([], ...array_map(fn (array $step) => $context->projectContext->claiming($step['file']), $plan->steps))]);
+
+        // The code the steps change, as it is now, then up to two models of
+        // the change's areas: without them the writer guesses table, column,
+        // relation and route names that do not exist.
+        $stepFiles = array_slice(array_values(array_unique(array_column($plan->steps, 'file'))), 0, 4);
+        $models = array_slice(array_values(array_filter(
+            array_diff($this->models($workspace), $stepFiles),
+            fn (string $path) => array_intersect($context->projectContext->claiming($path), $areas) !== [],
+        )), 0, 2);
+
+        foreach ([...$stepFiles, ...$models] as $path) {
             $contents = $read($path);
 
             if ($contents !== '') {
@@ -381,7 +462,6 @@ class WriteTestsFirst
         // Two of the app's own feature tests to copy: those of the areas the
         // change is about first, as they show how their records are made,
         // then the others in a fixed order.
-        $areas = array_unique([...$plan->capabilities, ...array_merge([], ...array_map(fn (array $step) => $context->projectContext->claiming($step['file']), $plan->steps))]);
         $areaTests = array_merge([], ...array_map(fn (string $key) => $context->projectContext->capabilities[$key]->testFiles ?? [], $areas));
         $feature = array_values(array_filter($existing, fn (string $path) => str_starts_with($path, 'tests/Feature/') && Capability::runBySuite($path)));
         $samples = array_slice(array_values(array_unique([...array_intersect($areaTests, $feature), ...$feature])), 0, 2);

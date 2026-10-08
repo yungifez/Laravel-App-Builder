@@ -1712,6 +1712,106 @@ class AgentDriverTest extends TestCase
         $this->assertSame(3, $run->repairs);
     }
 
+    public function test_a_written_test_the_coder_says_is_wrong_is_corrected_at_once_and_the_owner_hears_why()
+    {
+        // Before the coder, as every change after a project's first, so it can say so.
+        config(['builder.verification.written_first.beside' => false]);
+        $prompts = $this->writtenTestCalling('/teams/1/description', "test('a team keeps its description', fn () => \$this->get('/teams/1')->assertSee('About'));\n");
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION], "Added a description.\n\nTEST WRONG tests/Feature/TeamDescriptionTest.php :: a team keeps its description: it asks for /teams/1/description, but a team shows at /teams/1."));
+        ChangeReviewer::fake([['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => []]]);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        // No try is spent on it: the change goes to the checks with the corrected test.
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(0, $run->repairs);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, WriteBrief::TEST_WRONG));
+        $this->assertSame(['file' => 'tests/Feature/TeamDescriptionTest.php', 'test' => 'a team keeps its description', 'reason' => 'it asks for /teams/1/description, but a team shows at /teams/1.', 'by' => 'coder'], $run->events()->where('type', 'written_test_rewritten')->sole()->data);
+        $this->assertCount(2, $prompts);
+        $this->assertStringContainsString("## What the coder said\n\n```\nit asks for /teams/1/description, but a team shows at /teams/1.\n```", $prompts[1]);
+        $this->assertStringContainsString("\$this->get('/teams/1')", $run->plan['written_files']['tests/Feature/TeamDescriptionTest.php']);
+        $this->assertStringContainsString("+test('a team keeps its description', fn () => \$this->get('/teams/1')->assertSee('About'));", (string) $run->featureRequest->patch);
+
+        $this->passVerification($run, [['file' => '/workspace/tests/Feature/TeamDescriptionTest.php', 'name' => 'a team keeps its description', 'outcome' => 'passed']]);
+
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
+        $this->assertContains(
+            ['kind' => 'gap', 'text' => 'A test written before the work began was corrected: "a team keeps its description". The coder said it expected names the app does not have. Try this part yourself to be sure.'],
+            app(DescribeProof::class)->handle($run->featureRequest),
+        );
+    }
+
+    public function test_a_wrong_written_test_that_cannot_be_corrected_stays_as_written_and_is_tried_once()
+    {
+        config(['builder.construction.budgets.repairs' => 10, 'builder.verification.written_first.enabled' => true]);
+        FeaturePlanner::fake([$this->plan()]);
+        $file = 'tests/Feature/TeamDescriptionTest.php';
+        $written = "<?php\n\ntest('a team keeps its description', fn () => \$this->get('/teams/1/description')->assertOk());\n";
+        $asked = 0;
+        TestWriter::fake(function (string $prompt) use (&$asked, $file, $written) {
+            $asked++;
+
+            // Each correction comes back without the test.
+            return str_contains($prompt, '## The test to correct')
+                ? ['files' => [['path' => $file, 'contents' => "<?php\n"]], 'tests' => [['item' => 1, 'file' => $file, 'name' => 'a team keeps its description']]]
+                : ['files' => [['path' => $file, 'contents' => $written]], 'tests' => [['item' => 1, 'file' => $file, 'name' => 'a team keeps its description']]];
+        });
+        $wrong = "Done.\n\nTEST WRONG {$file} :: a team keeps its description: there is no description page.\nTEST WRONG {$file} :: a team has members: no such test.";
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION], $wrong), $this->writes([], $wrong));
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(['file' => $file, 'test' => 'a team keeps its description', 'reason' => 'there is no description page.', 'by' => 'coder'], $run->events()->where('type', 'written_test_not_rewritten')->sole()->data);
+        $this->assertSame($written, $run->plan['written_files'][$file]);
+        $this->assertStringContainsString("+test('a team keeps its description', fn () => \$this->get('/teams/1/description')->assertOk());", (string) $run->featureRequest->patch);
+        $tries = $asked;
+
+        // Said again after the checks, it is not tried again.
+        $this->failWrittenTest($run, 'Expected response status code [200] but received 404.');
+
+        $run->refresh();
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame($tries, $asked);
+        $this->assertSame(1, $run->events()->whereIn('type', ['written_test_rewritten', 'written_test_not_rewritten'])->count());
+    }
+
+    public function test_a_change_that_renames_working_schema_goes_back_once_to_keep_it()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $migration = "<?php\n\nreturn new class extends Migration\n{\n    public function up(): void\n    {\n        Schema::table('teams', function (Blueprint \$table) {\n            \$table->renameColumn('name', 'title');\n        });\n    }\n};\n";
+        $this->coder(
+            $this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION, 'database/migrations/2026_10_08_000000_rename_team_name.php' => $migration]),
+            $this->writes([], 'The rename is needed.'),
+        );
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        // Sent back once; the coder kept it, so it goes to the checks.
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(1, $run->repairs);
+        $this->assertSame(['It renames the name column.'], $run->events()->where('type', 'status')->where('data->reason', 'schema_reshaped')->sole()->data['found']);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, 'It renames the name column.')
+            && str_contains($prompt, 'Keep the app\'s tables, columns and migrations that already ran as they are')
+            && ! str_contains($prompt, 'TEST WRONG line'));
+        $this->assertSame(1, $run->verifications()->count());
+    }
+
+    public function test_a_change_that_adds_schema_goes_straight_to_the_checks()
+    {
+        FeaturePlanner::fake([$this->plan()]);
+        $this->coder($this->writes([
+            'app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION,
+            'database/migrations/2026_10_08_000000_add_description_to_teams.php' => "<?php\n\nreturn new class extends Migration\n{\n    public function up(): void\n    {\n        Schema::table('teams', fn (Blueprint \$table) => \$table->text('description')->nullable());\n    }\n\n    public function down(): void\n    {\n        Schema::table('teams', fn (Blueprint \$table) => \$table->dropColumn('description'));\n    }\n};\n",
+        ]));
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(0, $run->repairs);
+        $this->assertFalse($run->events()->where('type', 'status')->where('data->reason', 'schema_reshaped')->exists());
+    }
+
     /**
      * Have the tests written first hold one test that asks for an address
      * the plan never makes, and its correction. Returns the writer's

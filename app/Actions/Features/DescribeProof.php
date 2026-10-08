@@ -1123,7 +1123,9 @@ class DescribeProof
         }
 
         return array_values($run->events()->where('type', 'written_test_rewritten')->get()
-            ->map(fn (RunEvent $event) => ['kind' => 'gap', 'text' => (string) __('A test written before the work began was corrected: ":test". It kept failing the same way while everything else passed. Try this part yourself to be sure.', ['test' => $event->data['test']])])
+            ->map(fn (RunEvent $event) => ['kind' => 'gap', 'text' => ($event->data['by'] ?? null) === 'coder'
+                ? (string) __('A test written before the work began was corrected: ":test". The coder said it expected names the app does not have. Try this part yourself to be sure.', ['test' => $event->data['test']])
+                : (string) __('A test written before the work began was corrected: ":test". It kept failing the same way while everything else passed. Try this part yourself to be sure.', ['test' => $event->data['test']])])
             ->all());
     }
 

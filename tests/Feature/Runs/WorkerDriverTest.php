@@ -815,6 +815,29 @@ class WorkerDriverTest extends TestCase
         $this->assertStringContainsString('changed the tests written to check it, so the change proves nothing: a team keeps its description.', (string) $run->error);
     }
 
+    public function test_a_written_test_the_worker_says_is_wrong_is_corrected_instead_of_sent_back()
+    {
+        $file = 'tests/Feature/TeamDescriptionTest.php';
+        $corrected = "<?php\n\ntest('a team keeps its description', fn () => expect('About')->toBeString());\n";
+        config(['builder.verification.written_first.enabled' => true]);
+        TestWriter::fake([
+            ['files' => [['path' => $file, 'contents' => self::WRITTEN]], 'tests' => [['item' => 1, 'file' => $file, 'name' => 'a team keeps its description']]],
+            ['files' => [['path' => $file, 'contents' => $corrected]], 'tests' => [['item' => 1, 'file' => $file, 'name' => 'a team keeps its description']]],
+        ]);
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+
+        $this->tool('submit_change', $token, ['patch' => $this->workersChange().$this->addingTest(self::BENT), 'summary' => "Added a description.\n\nTEST WRONG {$file} :: a team keeps its description: the app has no about text."])->assertSee('Received.');
+
+        // Its own version is not kept: the corrected one is checked.
+        $run->refresh();
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(0, $run->repairs);
+        $this->assertSame(0, $run->events()->where('type', 'status')->where('data->reason', 'written_tests_changed')->count());
+        $this->assertSame('coder', $run->events()->where('type', 'written_test_rewritten')->sole()->data['by']);
+        $this->assertStringContainsString("+test('a team keeps its description', fn () => expect('About')->toBeString());", (string) $run->featureRequest->patch);
+    }
+
     /**
      * Have tests written from the plan before the change, one for its item.
      */

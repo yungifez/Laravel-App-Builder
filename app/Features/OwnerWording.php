@@ -105,6 +105,7 @@ class OwnerWording
                 'verification_failed' => __('Some checks failed, so I went back to fix them'),
                 'tests_not_run' => __('My test would not have been run, so I went back to put it where it will be'),
                 'written_tests_changed' => __('The tests written to check the change were changed, so it went back to leave them as they are'),
+                'schema_reshaped' => __('The change renamed or removed parts of the app\'s data it was not asked to, so I went back to keep them'),
                 'written_test_wrong' => __('A test written before the work began kept failing the same way, so I am correcting it once'),
                 'written_test_rewritten' => __('I corrected a test written before the work began, and went back to the change'),
                 'review_findings' => __('Went back to fix what I found'),
