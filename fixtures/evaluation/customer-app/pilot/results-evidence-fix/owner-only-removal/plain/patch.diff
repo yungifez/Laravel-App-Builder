@@ -1,0 +1,115 @@
+diff --git a/config/teams.php b/config/teams.php
+index 4e27794..8ec0f90 100644
+--- a/config/teams.php
++++ b/config/teams.php
+@@ -25,7 +25,6 @@
+             'permissions' => [
+                 'team:update',
+                 'members:update-role',
+-                'members:remove',
+             ],
+         ],
+ 
+diff --git a/tests/Feature/Teams/RemoveTeamMemberTest.php b/tests/Feature/Teams/RemoveTeamMemberTest.php
+index 224404c..2c16084 100644
+--- a/tests/Feature/Teams/RemoveTeamMemberTest.php
++++ b/tests/Feature/Teams/RemoveTeamMemberTest.php
+@@ -43,15 +43,40 @@ public function test_the_owner_cannot_be_removed()
+     {
+         $owner = User::factory()->create();
+         $team = $this->createTeamOwnedBy($owner);
+-        $admin = $this->addTeamMember($team, TeamRole::Admin);
+ 
+-        $this->actingAs($admin)
++        $this->actingAs($owner)
+             ->delete(route('team-members.destroy', [$team, $owner]))
+             ->assertSessionHasErrors('member');
+ 
+         $this->assertTrue($owner->belongsToTeam($team));
+     }
+ 
++    public function test_admins_cannot_remove_members()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $admin = $this->addTeamMember($team, TeamRole::Admin);
++        $member = $this->addTeamMember($team, TeamRole::Member);
++
++        $this->actingAs($admin)
++            ->delete(route('team-members.destroy', [$team, $member]))
++            ->assertForbidden();
++
++        $this->assertTrue($member->belongsToTeam($team));
++    }
++
++    public function test_admins_cannot_remove_other_admins()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $admin = $this->addTeamMember($team, TeamRole::Admin);
++        $otherAdmin = $this->addTeamMember($team, TeamRole::Admin);
++
++        $this->actingAs($admin)
++            ->delete(route('team-members.destroy', [$team, $otherAdmin]))
++            ->assertForbidden();
++
++        $this->assertTrue($otherAdmin->belongsToTeam($team));
++    }
++
+     public function test_members_cannot_remove_other_members()
+     {
+         $team = $this->createTeamOwnedBy(User::factory()->create());
+diff --git a/tests/Feature/Teams/TeamSettingsTest.php b/tests/Feature/Teams/TeamSettingsTest.php
+index acab3c0..cdc206d 100644
+--- a/tests/Feature/Teams/TeamSettingsTest.php
++++ b/tests/Feature/Teams/TeamSettingsTest.php
+@@ -58,6 +58,21 @@ public function test_owners_can_manage_the_team()
+             );
+     }
+ 
++    public function test_admins_can_manage_the_team_but_not_remove_members()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $admin = $this->addTeamMember($team, TeamRole::Admin);
++        $admin->forceFill(['current_team_id' => $team->id])->save();
++
++        $this->actingAs($admin)
++            ->get(route('teams.edit'))
++            ->assertInertia(fn (Assert $page) => $page
++                ->where('can.updateTeam', true)
++                ->where('can.updateMemberRoles', true)
++                ->where('can.removeMembers', false)
++            );
++    }
++
+     public function test_users_without_a_team_get_not_found()
+     {
+         $this->actingAs(User::factory()->create())
+diff --git a/tests/Unit/TeamRoleTest.php b/tests/Unit/TeamRoleTest.php
+index 3813508..6dfc6b1 100644
+--- a/tests/Unit/TeamRoleTest.php
++++ b/tests/Unit/TeamRoleTest.php
+@@ -15,14 +15,21 @@ public function test_owner_holds_every_permission_through_the_wildcard()
+ 
+     public function test_permissions_come_from_configuration()
+     {
+-        $this->assertTrue(TeamRole::Admin->hasPermission('members:remove'));
+-        $this->assertFalse(TeamRole::Member->hasPermission('members:remove'));
++        $this->assertTrue(TeamRole::Admin->hasPermission('members:update-role'));
++        $this->assertFalse(TeamRole::Member->hasPermission('members:update-role'));
+ 
+         config(['teams.roles.admin.permissions' => []]);
+-        config(['teams.roles.member.permissions' => ['members:remove']]);
++        config(['teams.roles.member.permissions' => ['members:update-role']]);
++
++        $this->assertFalse(TeamRole::Admin->hasPermission('members:update-role'));
++        $this->assertTrue(TeamRole::Member->hasPermission('members:update-role'));
++    }
+ 
++    public function test_only_the_owner_may_remove_members_by_default()
++    {
++        $this->assertTrue(TeamRole::Owner->hasPermission('members:remove'));
+         $this->assertFalse(TeamRole::Admin->hasPermission('members:remove'));
+-        $this->assertTrue(TeamRole::Member->hasPermission('members:remove'));
++        $this->assertFalse(TeamRole::Member->hasPermission('members:remove'));
+     }
+ 
+     public function test_owner_is_not_an_assignable_role()

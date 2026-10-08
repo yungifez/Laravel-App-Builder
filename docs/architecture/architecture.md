@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 17.** This document consolidates the direction in [direction/](direction/)
+**Version 18.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -32,7 +32,10 @@ human-readable properties, written as clean Tailwind with the app's own
 merge, no model call. **Version 16 sets the V1 plan ([§27](#27-v1-plan-version-16)), which wins
 over §21 and §26 for V1.** Version 17 adds the Codex SDK as the OpenAI
 failover agent (§27.4), and positioning with a standard for judging
-competitors by effect, not label (§27.10). When they disagree, the direction documents state intent
+competitors by effect, not label (§27.10). Version 18 hosts the control plane
+on Laravel Cloud and the runtimes and previews on runner servers managed with
+Forge ([§28](#28-hosting-control-plane-on-laravel-cloud-runtimes-on-forge-version-18)),
+which answers the sandbox provider decision for V1. When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -63,6 +66,7 @@ silently following either.
 - [Outcomes, measurement and falsification](#25-outcomes-measurement-and-falsification)
 - [V0: what we build now](#26-v0-what-we-build-now-version-10)
 - [V1 plan](#27-v1-plan-version-16)
+- [Hosting: control plane on Laravel Cloud, runtimes on Forge](#28-hosting-control-plane-on-laravel-cloud-runtimes-on-forge-version-18)
 
 ## 1. Principles
 
@@ -1312,7 +1316,8 @@ for; none is started without that evidence.
 - Curated presets only, or also an open model picker.
 - Approval from Anthropic (and a position from OpenAI) for subscription tokens
   in a hosted product.
-- The sandbox provider for managed runtimes.
+- The sandbox provider for managed runtimes. For V1, runner servers on Forge
+  (§28); the isolation trade-off still needs the owner's confirmation (§28.11).
 - The product's public name and category (not "Laravel builder").
 - Whether to charge for accepted changes rather than raw usage (§25.6).
 - Recruiting 3–5 owners for the behaviour-diff study (§26.7).
@@ -2475,3 +2480,269 @@ response is to make the engine real first, not to feel safe.
 The hypothesis is that our advantage **grows** with the application. If it
 does not, behaviour notes, context and Effects have not earned their
 complexity.
+
+## 28. Hosting: control plane on Laravel Cloud, runtimes on Forge (version 18)
+
+Direction 19 sets the hosting: the control plane (this application) runs on
+Laravel Cloud, and the previews run on servers managed by Laravel Forge. This
+section answers it. It also answers the open decision on the sandbox provider
+(§23, §27.6 step 1) for V1: **runner servers we manage with Forge**, behind
+the existing workspace driver boundary.
+
+**Disagreement raised.** The sandbox research
+([research/workspace-sandboxes.md](../research/workspace-sandboxes.md))
+recommends microVMs from a bought provider, because customer code and
+generated code are untrusted. A Forge server runs containers on a shared
+kernel, which is a weaker boundary. This design accepts that for V1, with the
+mitigations in §28.3 and §28.10, and keeps the driver boundary so a microVM
+provider can replace the runner later without touching runs, verification or
+previews. The owner should confirm this trade-off (§28.11).
+
+### 28.1 What breaks today, and why
+
+Every runtime path assumes the web process, the queue workers and the
+customer code share one machine. On Cloud they do not: web and workers run in
+separate, short-lived containers with no shared disk and no shared loopback
+network.
+
+| Today                                                                                                             | On Cloud                                                       | Replacement                                                                  |
+| ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| A project is a directory on the control plane's disk (`source_path`)                                              | There is no such directory, and no disk shared between workers | A project is a git repository, checked out by the runner (§28.6)             |
+| Workspaces are directories (`local`) or containers on a Docker daemon next to the worker (`docker`)               | Customer code must not run in the control plane's containers   | Workspaces live on runner servers, reached through a `remote` driver (§28.4) |
+| A worker starts the preview with `php -S` on a local port; the web process's gateway relays to `127.0.0.1:{port}` | The web container cannot reach a worker's loopback             | Previews are served by the runner server that hosts the workspace (§28.5)    |
+
+The local driver is already refused in production unless explicitly allowed,
+so a misconfigured Cloud deploy fails loudly instead of running customer code
+in the control plane.
+
+### 28.2 Shape
+
+```
+Owner's browser                                 Owner's browser
+        │                                               │
+        ▼                                               ▼
+app.example.com                          {host}.r1.preview.example.com
+LARAVEL CLOUD                            (wildcard DNS → runner r1)
+  web · queue workers                                   │
+  scheduler · Postgres                                  │
+  Redis/Valkey                                          │
+  runs, verification policy,                            │
+  grants, model keys                                    │
+        │                                               │
+        │ HTTPS runner API (bearer token)               │
+        ▼                                               ▼
+FORGE SERVER "r1"  ─  nginx: runner-1.example.com and *.r1.preview.example.com
+  runner (this repository, BUILDER_ROLE=runner)
+    · runner API        · preview gateway (grants, sessions, relay)
+    · command queue (own Redis) · reaper
+    · WorkspaceManager with the existing docker driver
+        │
+  Docker with the gVisor runtime (runsc), workspaces network
+    ├── workspace: project checkout, PHP, Node, agent runner (run.mjs)
+    │     └── preview server (php -S), reached only through the gateway
+    └── workspace: …
+```
+
+The control plane keeps everything it owns today: runs and their state
+machine, leases, budgets, the operation journal, verification policy and
+results, reviews, grants and the model keys. The runner owns only sandboxes,
+commands, files and preview traffic.
+
+### 28.3 The runner
+
+**One repository, two roles.** The runner is this application deployed to a
+Forge server with `BUILDER_ROLE=runner`. In that role it registers only the
+runner API routes and the preview gateway, and none of the control plane's
+routes, authentication or database. It reuses what already exists: the
+`docker` workspace driver, `CopyExclusions`, the preview gateway and the
+command result types. The alternative is a separate runner repository: cleaner
+separation, at the cost of copying the drivers and a second CI (§28.11).
+
+This is the _host_ side. The TypeScript runner the architecture describes
+(§11, `resources/agent-runner/run.mjs`) stays as it is: it runs _inside_ each
+workspace container and hosts the agent SDKs.
+
+**Isolation on the server:**
+
+- Workspace containers use gVisor (`--runtime=runsc`): a user-space kernel
+  between customer code and the host kernel. The driver gains a `runtime`
+  setting.
+- The existing hardening stays: `--cap-drop ALL`, `no-new-privileges`, CPU,
+  memory and process limits. Add a disk quota per workspace (overlay2 on XFS
+  with project quotas).
+- Workspace containers sit on their own bridge network. Outbound traffic is
+  limited to ports 80 and 443; private address ranges and the cloud metadata
+  address are blocked with firewall rules. An egress proxy with an allowlist
+  (Packagist, GitHub, npm) follows when a measurement asks for it.
+- Runner servers run nothing else and hold no control-plane secrets: only
+  their own API token and the key that signs preview grants.
+- A server-wide concurrency limit (workspaces and running commands) sits on
+  top of the existing per-owner limit, so one server is never overcommitted.
+
+**Image.** One toolchain image (PHP 8.4, Composer, Node 22, git, the agent
+runner's dependencies), built from a Dockerfile in this repository and pulled
+by the runner. Template snapshots with dependencies pre-installed (research §5)
+come later. They are the main lever on time per change.
+
+### 28.4 Runner API (the runtime protocol, V1)
+
+The control plane gets a `remote` workspace driver. It implements the existing
+`WorkspaceDriver` contract over HTTPS, so runs, verification and previews do
+not change. Requests carry the runner's bearer token over TLS; the runner
+stores only its hash.
+
+| Contract                      | Runner API                                                                                                      |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `create(spec)`                | `POST /workspaces` `{name, image, cpus, memory_mb, pids}` → `{id}`                                              |
+| `copyDirectory` (replaced)    | `POST /workspaces/{id}/checkout` `{repository, commit, token}` → `{commit}` (§28.6)                             |
+| `writeFile` / `readFile`      | `PUT` / `GET /workspaces/{id}/files?path=`                                                                      |
+| `exec`                        | `POST /workspaces/{id}/commands` → `202 {command}`; `GET /commands/{command}?wait=25` long-polls for the result |
+| `startService` / `serviceUrl` | `POST /workspaces/{id}/previews` `{host, port, command, expires_at}`; the upstream URL never leaves the runner  |
+| `destroy`                     | `DELETE /workspaces/{id}` (stops its previews too)                                                              |
+
+**Commands are asynchronous.** A command can run for 20 minutes (an agent
+attempt) and an install for 15. One HTTP request that long is cut by proxies,
+and a dropped connection would lose the result. The runner runs each command
+from its own queue and keeps the result for a few hours. `RemoteDriver::exec()`
+starts the command and long-polls until it finishes, so its callers keep the
+synchronous contract they have today. A later step can replace polling with a
+callback that resumes the run, so no Cloud worker waits on a runner.
+
+**Idempotency.** Every `create` and command carries a key (for tool calls, the
+operation key). A request retried after a timeout returns the first result
+instead of running twice, which extends the operation journal across the
+network.
+
+**Fencing at the runner.** Commands for a run carry its fencing token. The
+runner remembers the highest token per workspace and refuses lower ones. Today
+fencing protects only the database: a worker that lost its lease can still
+change the workspace while its command runs. This closes that gap.
+
+### 28.5 Previews on the runner
+
+- **Hosts.** Each runner has its own preview domain: `*.r1.preview.example.com`
+  points at runner r1. A preview's host is `{random}.r1.preview.example.com`.
+  DNS then routes each preview straight to its runner, with no central proxy.
+- **TLS.** One wildcard certificate per runner domain. Let's Encrypt issues
+  wildcard certificates only through a DNS challenge, so the DNS provider must
+  be one that Forge can drive. Confirm before choosing the domain.
+- **Gateway.** The Forge site for the preview domain serves the runner, whose
+  preview gateway relays to the workspace container's address on the
+  workspaces network. The relay logic is today's `PreviewGateway`, unchanged:
+  own origin per preview, the gateway's cookie stripped, and form and file
+  bodies rebuilt.
+- **Grants without a shared database.** The control plane signs the grant (the
+  preview host, an expiry 60 seconds out, a random nonce) with the key it
+  shares with that runner. The gateway checks the signature and expiry, then
+  spends the nonce atomically in its own store (single use). It sets the
+  host-only HttpOnly session cookie as today. The owner's access check stays
+  in the control plane: no grant is issued without it.
+- **Lifetime.** The runner tracks activity and stops previews that are idle or
+  past their maximum age. The control plane's `previews:reap` asks the runner
+  for state and destroys what the runner no longer has.
+- On Cloud, `ServePreviewHosts` and the gateway are not registered (the role
+  decides). They exist in exactly one place at a time.
+
+### 28.6 Project sources
+
+- A project is a git repository: `repository_url` and a default branch.
+  Checkouts are pinned to a commit SHA recorded on the run, verification or
+  preview.
+- **The pinned SHA is the baseline.** Today the change is measured against
+  `HEAD` of the workspace, so an agent's own commit hides its work. The diff is
+  taken against the recorded SHA instead.
+- **Credentials stay out of the sandbox.** The control plane mints a
+  short-lived token per checkout (a GitHub App installation token, §16). The
+  runner clones on the host, outside the container, and copies the files in.
+  The token never enters the workspace.
+- **V1 supports GitHub only.** That is the same repository Laravel Cloud
+  deploys from (§27.6 step 6), so "deploy" stays "push to the branch".
+- **`source_path` stays a development source.** It is allowed on a runner only
+  inside `BUILDER_PROJECT_ROOTS`. To exercise Forge with the fixture, push
+  `fixtures/customer-app` to its own template repository. That repository is
+  also the starting point for "create from the template" (§27.6 step 5).
+
+### 28.7 The control plane on Laravel Cloud
+
+- Web, a queue cluster, the scheduler (`runs:reconcile`, `workspaces:reap`,
+  `previews:reap`), Postgres and Redis/Valkey are used as today. No customer
+  code, workspace or preview runs on Cloud.
+- **Long jobs.** Runs and verifications wait on runner commands for up to an
+  hour. Check Cloud's maximum job time and `retry_after` for the queue cluster.
+  If they are lower, take the callback step from §28.4 first.
+- **Behind Cloud's edge.** Confirm that client IPs and the HTTPS scheme come
+  through Cloud's proxy (trusted proxies). Otherwise generated URLs and
+  rate limits see the proxy instead of the client.
+- **Model keys.** They stay in Cloud's environment. Agent attempts run inside
+  the workspace, so V1 passes the key to that one command's environment and
+  never stores it. Two gaps remain until the model gateway (§16) exists:
+    - the key is in reach of code running in the sandbox during the attempt;
+    - project settings files (`.claude/settings.json` hooks and environment) can
+      run commands that see it.
+      The runner must start the Agent SDK with project setting sources disabled.
+
+### 28.8 Configuration
+
+- **Control plane.** `config/builder.php` gains `runners`: per runner, a name,
+  its API URL, its token, its preview domain and its grant-signing key, all
+  from the environment. The construction, verification and preview workspace
+  drivers are set to `remote`. Placement is "the only runner" in V1. With
+  several runners: least-loaded, and a run's follow-ups stay on the same
+  runner.
+- **Runner.** `BUILDER_ROLE=runner`, its token hash, the signing key, the
+  Docker runtime (`runsc`), the workspaces network, its own Redis for commands
+  and grant nonces, and `BUILDER_PROJECT_ROOTS` if local sources are used.
+
+### 28.9 Build order
+
+Each step ships on its own and keeps today's tests passing.
+
+1. **Remote verification.** The runner role and API for workspaces, commands
+   (asynchronous) and files; the `RemoteDriver`. Verification runs on the
+   runner with the fixture's template repository. Tests:
+    - `RemoteDriver` against `Http::fake()`;
+    - the runner API as feature tests over the fake workspace driver;
+    - one opt-in integration test against a real runner, like the Docker
+      integration test.
+2. **Git sources.** Repository fields on projects, the checkout endpoint,
+   pinned SHAs as the baseline.
+3. **Previews on the runner.** The gateway in the runner role, signed grants,
+   per-runner wildcard DNS and TLS, runner-side reaping.
+4. **Runs on the runner.** The construction workspace driver set to `remote`,
+   fencing tokens at the runner, idempotent commands.
+5. **Hardening.** gVisor as the default, egress rules, disk quotas, the
+   server-wide limit, and placement across several runners.
+
+Steps 3 and 4 can swap. Nothing here starts the later-stage subsystems in
+§20.
+
+### 28.10 Risks
+
+- **Isolation.** Containers with gVisor on a shared server are weaker than
+  microVMs. An escape reaches other tenants' workspaces on that server, never
+  the control plane or its secrets.
+    - Mitigations: gVisor, dedicated runner servers, no secrets on them,
+      per-workspace limits.
+    - For customers who need more: a runner per customer, or a microVM provider
+      behind the same driver.
+- **Capacity.** One server is a fixed number of concurrent workspaces. The
+  per-owner and server-wide limits queue work instead of overloading it.
+  Adding a runner means adding a Forge server and a `runners` entry.
+- **Time per change.** Every workspace installs Composer and npm dependencies.
+  Template images with dependencies pre-installed are the fix (research §5).
+- **Workers waiting on runners.** Polling holds a Cloud worker per running
+  command until the callback step.
+- **The runner is a new deployable,** with its own deploy, monitoring and OS
+  upkeep (Forge handles most of it).
+
+### 28.11 Decisions for the owner
+
+1. **Isolation for V1:** containers with gVisor on Forge servers (this design),
+   or a bought microVM provider behind the same driver (the research's
+   recommendation). Recommendation: Forge for V1, and revisit before customers
+   other than us run code.
+2. **Runner code:** a role of this repository (recommended) or a separate
+   repository.
+3. **Git host:** GitHub only for V1 (recommended), through a GitHub App.
+4. **Preview domain:** a domain whose DNS provider supports Let's Encrypt
+   wildcard certificates through Forge, with one subdomain per runner.

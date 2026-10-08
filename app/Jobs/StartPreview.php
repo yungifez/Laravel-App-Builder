@@ -4,12 +4,14 @@ namespace App\Jobs;
 
 use App\Actions\Previews\AllocatePreviewPort;
 use App\Actions\Previews\StopPreview;
+use App\Actions\Workspaces\LoadProjectIntoWorkspace;
 use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\PreviewStatus;
 use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\Workspace;
+use App\Models\WorkspaceCommand;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -48,6 +50,7 @@ class StartPreview implements ShouldQueue
         RunWorkspaceCommand $runWorkspaceCommand,
         AllocatePreviewPort $allocatePreviewPort,
         StopPreview $stopPreview,
+        LoadProjectIntoWorkspace $loadProjectIntoWorkspace,
     ): void {
         if ($this->preview->fresh()?->status !== PreviewStatus::Starting) {
             return;
@@ -61,16 +64,20 @@ class StartPreview implements ShouldQueue
             $this->preview->update(['workspace_id' => $workspace->id]);
 
             $driver = $workspaces->driver($workspace->driver);
-            $driver->copyDirectory((string) $workspace->driver_id, $project->source_path);
 
-            foreach ($featureRequest->lineage() as $position => $request) {
-                $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);
-                $driver->writeFile((string) $workspace->driver_id, $patch, (string) $request->patch);
+            $output = '';
+            $failed = $loadProjectIntoWorkspace->handle(
+                $workspace,
+                $project,
+                $featureRequest->lineage(),
+                function (FeatureRequest $change, WorkspaceCommand $command) use (&$output) {
+                    $output = $command->error_output ?: $command->output;
+                },
+            );
 
-                $this->run($runWorkspaceCommand, $workspace, ['git', 'apply', '--whitespace=nowarn', $patch], 120, __('Change #:id does not apply to the project.', ['id' => $request->id]));
+            if ($failed !== null) {
+                throw new RuntimeException($this->failure(__('Change #:id does not apply to the project.', ['id' => $failed->id]), (string) $output));
             }
-
-            $this->run($runWorkspaceCommand, $workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], 30, __('The workspace could not be prepared.'));
 
             /** @var list<array{name: string, command: list<string>, timeout: int}> $setup */
             $setup = config('builder.preview.setup', []);
@@ -79,8 +86,7 @@ class StartPreview implements ShouldQueue
                 $this->run($runWorkspaceCommand, $workspace, $step['command'], $step['timeout'], __('The setup step ":name" failed.', ['name' => $step['name']]));
             }
 
-            $port = $allocatePreviewPort->handle();
-            $this->preview->update(['port' => $port]);
+            $port = $allocatePreviewPort->handle($this->preview);
 
             $driver->startService((string) $workspace->driver_id, $this->serverCommand($port), $port);
             $upstream = $driver->serviceUrl((string) $workspace->driver_id, $port);
@@ -169,9 +175,18 @@ class StartPreview implements ShouldQueue
         $result = $runWorkspaceCommand->handle($workspace, $command, $timeoutSeconds);
 
         if ($result->exit_code !== 0 || $result->timed_out) {
-            $output = (string) preg_replace('/\e\[[0-9;?]*[ -\/]*[@-~]/', '', $result->error_output ?: $result->output);
-
-            throw new RuntimeException(trim($reason."\n".trim(mb_substr($output, -2000))));
+            throw new RuntimeException($this->failure($reason, $result->error_output ?: $result->output));
         }
+    }
+
+    /**
+     * Describe a failed preparation command: the reason, then the end of its
+     * output as plain text.
+     */
+    protected function failure(string $reason, string $output): string
+    {
+        $output = (string) preg_replace('/\e\[[0-9;?]*[ -\/]*[@-~]/', '', $output);
+
+        return trim($reason."\n".trim(mb_substr($output, -2000)));
     }
 }

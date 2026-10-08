@@ -92,12 +92,22 @@ class PreviewGateway
         $secret = Str::random(64);
         $minutes = (int) config('builder.preview.session_minutes');
 
-        $preview->update([
-            'grant_hash' => null,
-            'grant_expires_at' => null,
-            'session_hash' => hash('sha256', $secret),
-            'session_expires_at' => now()->addMinutes($minutes),
-        ]);
+        // Spend the grant atomically, so two requests racing with the same
+        // grant cannot both get a session.
+        $spent = Preview::query()
+            ->whereKey($preview->id)
+            ->where('grant_hash', $preview->grant_hash)
+            ->update([
+                'grant_hash' => null,
+                'grant_expires_at' => null,
+                'session_hash' => hash('sha256', $secret),
+                'session_expires_at' => now()->addMinutes($minutes),
+                'updated_at' => now(),
+            ]);
+
+        if ($spent !== 1) {
+            return $this->page(403, __('This preview link has expired. Open the preview from the builder again.'));
+        }
 
         $response = new RedirectResponse('/');
         $response->headers->setCookie(Cookie::create(

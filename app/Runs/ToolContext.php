@@ -18,6 +18,11 @@ use Illuminate\Support\Str;
 class ToolContext
 {
     /**
+     * Extra lease time kept beyond a command's timeout, for recording its result.
+     */
+    public const LEASE_MARGIN_SECONDS = 60;
+
+    /**
      * @param  list<string>  $protectedPaths
      */
     public function __construct(
@@ -26,6 +31,7 @@ class ToolContext
         protected WorkspaceDriver $driver,
         protected RunWorkspaceCommand $runWorkspaceCommand,
         protected array $protectedPaths,
+        protected ?RunLease $lease = null,
     ) {}
 
     /**
@@ -144,6 +150,10 @@ class ToolContext
      */
     public function run(array $command, int $timeoutSeconds): WorkspaceCommand
     {
+        if ($this->lease !== null) {
+            Run::holdLease($this->lease, $timeoutSeconds + self::LEASE_MARGIN_SECONDS);
+        }
+
         return $this->runWorkspaceCommand->handle($this->workspace, $command, $timeoutSeconds);
     }
 

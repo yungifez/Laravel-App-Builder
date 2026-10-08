@@ -73,8 +73,13 @@ class ApplyPatch implements MutatingTool
             ]));
         }
 
-        if (str_contains($summary->output, '120000')) {
-            throw new ToolRejected(__('Patches may not create symbolic links.'));
+        // Every touched path must be checked, so a listing cut short is refused.
+        if ($numstat->outputTruncated() || $summary->outputTruncated()) {
+            throw new ToolRejected(__('The patch changes too many files at once; split it into smaller patches.'));
+        }
+
+        if ($this->writesSymbolicLink($patch)) {
+            throw new ToolRejected(__('Patches may not create or change symbolic links.'));
         }
 
         $files = $this->paths($numstat->output);
@@ -117,5 +122,15 @@ class ApplyPatch implements MutatingTool
         }
 
         return array_values(array_unique(array_filter($paths, fn (string $path) => $path !== '')));
+    }
+
+    /**
+     * Determine if the patch creates a symbolic link, turns a file into one,
+     * or changes an existing link's target. Read from the patch's own
+     * headers: git's summary does not mention a changed link target.
+     */
+    protected function writesSymbolicLink(string $patch): bool
+    {
+        return preg_match('/^(?:new file mode|new mode|index [0-9a-f]+\.\.[0-9a-f]+) 120000\r?$/m', $patch) === 1;
     }
 }

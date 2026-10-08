@@ -13,6 +13,7 @@ use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\LeaseLost;
 use App\Runs\Exceptions\ProvidersUnavailable;
 use App\Runs\RunLease;
+use App\Runs\ToolContext;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -50,6 +51,9 @@ class RunCodingAgent
                     'reason' => $previous->errorKind,
                 ]);
             }
+
+            // The agent blocks this worker for up to its timeout.
+            Run::holdLease($lease, $task->timeoutSeconds + ToolContext::LEASE_MARGIN_SECONDS);
 
             $outcome = $this->agents->driver($adapter)->run($workspace, $task);
 

@@ -6,6 +6,7 @@ use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\Drivers\DockerDriver;
 use App\Workspaces\Drivers\LocalDriver;
 use Illuminate\Support\Manager;
+use RuntimeException;
 
 /**
  * @method WorkspaceDriver driver(string|null $driver = null)
@@ -22,11 +23,17 @@ class WorkspaceManager extends Manager
 
     /**
      * Create the local directory workspace driver.
+     *
+     * @throws RuntimeException in production unless the driver is explicitly allowed there.
      */
     public function createLocalDriver(): WorkspaceDriver
     {
-        /** @var array{root: string, env_passthrough: list<string>} $config */
+        /** @var array{root: string, env_passthrough: list<string>, allow_in_production?: bool} $config */
         $config = $this->config->get('workspaces.drivers.local');
+
+        if ($this->container->environment('production') && ! ($config['allow_in_production'] ?? false)) {
+            throw new RuntimeException('The local workspace driver runs customer code unisolated and is disabled in production. Use another workspace driver, or set WORKSPACE_LOCAL_IN_PRODUCTION=true on a host dedicated to trusted code.');
+        }
 
         return new LocalDriver(root: $config['root'], envPassthrough: $config['env_passthrough']);
     }

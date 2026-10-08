@@ -1,8 +1,8 @@
 # Builder control plane
 
-Internal builder prototype. This repository currently contains only the
-development foundation (work order G0.1): a Laravel + Inertia + Vue control-plane
-app with starter authentication, an internal landing screen, local PostgreSQL and
+Internal builder prototype. This repository is the control plane: a Laravel +
+Inertia + Vue app with starter authentication, projects and feature requests,
+construction runs, verification and previews, backed by local PostgreSQL and
 Redis, a guarded test database, standard check commands and a CI workflow.
 
 The repository root is the Laravel application (Laravel 13, Inertia 3, Vue 3,
@@ -78,6 +78,11 @@ Projects → request a feature → preview the generated change → select a ste
 → request a change to that step (for example "Only the team owner may invite
 people").
 
+A project's source must be a directory inside one of the roots listed in
+`BUILDER_PROJECT_ROOTS` (comma-separated; relative entries resolve from the
+app). It is stored as an absolute path, and a directory that contains the
+builder itself is refused. With no roots set, no project can be added.
+
 Each request starts a **build run** (`config/builder.php`, `construction`). The
 run moves through queued → planning → implementing → verifying → reviewing →
 completed, or stops at "needs your decision", cancelled or failed; the page
@@ -106,7 +111,7 @@ from the workspace as a diff against the baseline.
 - **Budgets.** 30 tool operations and 20 minutes by default; a run out of
   budget stops for the owner's decision.
 
-Two construction drivers are available (`BUILDER_CONSTRUCTION_DRIVER`):
+Three construction drivers are available (`BUILDER_CONSTRUCTION_DRIVER`):
 
 - `scripted` (default) makes the change that the `reference` generator finds
   among the known-good solutions in `BUILDER_REFERENCE_SOLUTIONS` (see
@@ -121,6 +126,12 @@ Two construction drivers are available (`BUILDER_CONSTRUCTION_DRIVER`):
   coder with the failures, up to `BUILDER_RUN_MAX_REPAIRS` times. Which
   protected acceptance suites apply is decided by the platform, not by a
   model. Every model call is logged on the run with its tokens.
+- `sdk` builds with a coding agent SDK working in the workspace, through the
+  Node runner in `resources/agent-runner` (run `npm ci` there first). Agents
+  are tried in the order of `config/builder.php`, `agents.order`; the next is
+  used only when a provider cannot serve the task, never because a change
+  failed, and the reviewer uses the other provider. It needs
+  `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY`.
 
 When the change is built, the run hands it to verification. **Run
 verification** also re-runs it on demand. Verification copies the project into
@@ -137,7 +148,8 @@ Runs and verification run on the queue, so keep a worker running
 `REDIS_QUEUE_RETRY_AFTER` above the jobs' one-hour timeout (see
 `.env.example`). The default `local` workspace driver runs in a temporary
 directory on this machine with a scrubbed environment. It is for trusted
-fixtures only (see `config/workspaces.php`).
+fixtures only (see `config/workspaces.php`), and it is refused when
+`APP_ENV=production` unless `WORKSPACE_LOCAL_IN_PRODUCTION=true`.
 
 ### Previews
 
@@ -168,6 +180,14 @@ The gateway relays plain HTTP only: previews serve built assets, not the Vite
 dev server, so there is no hot reload yet. The Docker workspace driver can run
 previews only on a network the control plane can reach
 (`WORKSPACE_DOCKER_NETWORK`, with `BUILDER_PREVIEW_LISTEN_HOST=0.0.0.0`).
+
+### Evaluation
+
+`fixtures/evaluation/` holds experiments that compare the pipeline with a
+plain coding agent; the harness is in `app/Evaluation` and the `eval:*`
+commands. Each suite's `README.md` says what it measures and how to run it.
+The harness can hand model calls to an outside responder
+(`BUILDER_EVAL_HANDOFF`); that setting is refused in production.
 
 ### AI SDK
 

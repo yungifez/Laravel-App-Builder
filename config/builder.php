@@ -17,11 +17,28 @@ return [
     | The generator turns an owner's feature request into a change (a patch)
     | for the project, plus the steps in that change the owner can select and
     | ask to change. The "reference" generator replays known-good solutions
-    | listed in a manifest; it stands in for the AI agent until that exists.
+    | listed in a manifest, without a model.
     |
     */
 
     'generator' => env('BUILDER_GENERATOR', 'reference'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Projects
+    |--------------------------------------------------------------------------
+    |
+    | Directories that projects may be registered from. A project's source
+    | must be inside one of them and is stored as an absolute path. Set
+    | BUILDER_PROJECT_ROOTS to a comma-separated list; relative entries are
+    | resolved from the application's base path. With none, no project can
+    | be added.
+    |
+    */
+
+    'projects' => [
+        'roots' => array_values(array_filter(array_map('trim', explode(',', (string) env('BUILDER_PROJECT_ROOTS', ''))))),
+    ],
 
     /*
     |--------------------------------------------------------------------------

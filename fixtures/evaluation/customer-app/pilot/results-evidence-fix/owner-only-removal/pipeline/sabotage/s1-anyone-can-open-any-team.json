@@ -1,0 +1,256 @@
+{
+    "applicable": true,
+    "verification": {
+        "status": "failed",
+        "results": [
+            {
+                "name": "Apply change #14",
+                "stage": "apply",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 5,
+                "output": ""
+            },
+            {
+                "name": "Link PHP dependencies",
+                "stage": "setup",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 1196,
+                "output": ""
+            },
+            {
+                "name": "Link Node dependencies",
+                "stage": "setup",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 446,
+                "output": ""
+            },
+            {
+                "name": "Create .env",
+                "stage": "setup",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 5,
+                "output": ""
+            },
+            {
+                "name": "Generate app key",
+                "stage": "setup",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 187,
+                "output": "INFO  Application key set successfully."
+            },
+            {
+                "name": "Generate route helpers",
+                "stage": "setup",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 368,
+                "output": "[Wayfinder] Generated actions in /tmp/builder-workspaces/workspace-01m4d4hcb6kvpd2z1ct9pd9m5v/resources/js/actions\n\n [Wayfinder] Generated routes in /tmp/builder-workspaces/workspace-01m4d4hcb6kvpd2z1ct9pd9m5v/resources/js/routes"
+            },
+            {
+                "name": "Tests",
+                "stage": "checks",
+                "outcome": "failed",
+                "exit_code": 1,
+                "timed_out": false,
+                "duration_ms": 3773,
+                "output": "…  0.02s  \n  ✓ profile information can be updated                                   0.02s  \n  ✓ email verification status is unchanged when the email address is un… 0.02s  \n  ✓ user can delete their account                                        0.02s  \n  ✓ correct password must be provided to delete account                  0.02s  \n\n   PASS  Tests\\Feature\\Settings\\SecurityTest\n  ✓ security page is displayed                                           0.03s  \n  ✓ security page requires password confirmation when enabled            0.01s  \n  ✓ security page renders without two factor when feature is disabled    0.02s  \n  ✓ password can be updated                                              0.02s  \n  ✓ correct password must be provided to update password                 0.02s  \n\n   PASS  Tests\\Feature\\Teams\\PersonalTeamTest\n  ✓ registration creates a personal team owned by the new user           0.04s  \n\n   PASS  Tests\\Feature\\Teams\\RemoveTeamMemberTest\n  ✓ owners can remove members                                            0.02s  \n  ✓ owners can remove admins                                             0.03s  \n  ✓ admins cannot remove members                                         0.02s  \n  ✓ admins cannot remove other admins                                    0.02s  \n  ✓ a removed member working in the team moves to their personal team    0.02s  \n  ✓ the owner cannot be removed                                          0.02s  \n  ✓ admins cannot remove the owner                                       0.02s  \n  ✓ members cannot remove other members                                  0.02s  \n\n   FAIL  Tests\\Feature\\Teams\\SwitchCurrentTeamTest\n  ✓ members can switch to a team they belong to                          0.03s  \n  ⨯ users cannot switch to a team they do not belong to                  0.02s  \n\n   PASS  Tests\\Feature\\Teams\\TeamMemberRoleTest\n  ✓ admins can change a members role                                     0.03s  \n  ✓ the owners role cannot be changed                                    0.02s  \n  ✓ the owner role cannot be assigned                                    0.02s  \n  ✓ members cannot change roles                                          0.02s  \n  ✓ users outside the team cannot be targeted                            0.02s  \n\n   PASS  Tests\\Feature\\Teams\\TeamSettingsTest\n  ✓ guests are redirected to the login page                              0.02s  \n  ✓ members see their current team and its members                       0.03s  \n  ✓ owners can manage the team                                           0.02s  \n  ✓ admins can manage the team but not remove members                    0.03s  \n  ✓ users without a team get not found                                   0.02s  \n\n   PASS  Tests\\Feature\\Teams\\UpdateTeamTest\n  ✓ owners can rename the team                                           0.02s  \n  ✓ admins can rename the team                                           0.02s  \n  ✓ members cannot rename the team                                       0.02s  \n  ✓ outsiders cannot rename the team                                     0.02s  \n  ✓ permission to rename follows configuration                           0.02s  \n  ✓ team name is required                                                0.02s  \n  ────────────────────────────────────────────────────────────────────────────  \n   FAILED  Tests\\Feature\\Teams\\SwitchCurrentTeamTest > users cannot switch t…   \n  Expected response status code [403] but received 302.\nFailed asserting that 302 is identical to 403.\n\n  at tests/Feature/Teams/SwitchCurrentTeamTest.php:35\n     31▕         $originalTeamId = $outsider->current_team_id;\n     32▕ \n     33▕         $this->actingAs($outsider)\n     34▕             ->put(route('current-team.update', $team))\n  ➜  35▕             ->assertForbidden();\n     36▕ \n     37▕         $this->assertSame($originalTeamId, $outsider->fresh()->current_team_id);\n     38▕     }\n     39▕ }\n\n\n  Tests:    1 failed, 70 passed (259 assertions)\n  Duration: 3.47s"
+            },
+            {
+                "name": "Static analysis",
+                "stage": "checks",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 1914,
+                "output": "[OK] No errors                                                                 \n\n\nNote: Using configuration file /tmp/builder-workspaces/workspace-01m4d4hcb6kvpd2z1ct9pd9m5v/phpstan.neon."
+            },
+            {
+                "name": "PHP formatting",
+                "stage": "checks",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 1237,
+                "output": "............................................................................\n  ........\n\n  ──────────────────────────────────────────────────────────────────── Laravel  \n    PASS   .......................................................... 84 files"
+            },
+            {
+                "name": "Frontend format and lint",
+                "stage": "checks",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 3999,
+                "output": "pass: All 75 files are correctly formatted (1902ms, 4 threads)\npass: Found no warnings or lint errors in 64 files (1.1s, 4 threads)"
+            },
+            {
+                "name": "TypeScript",
+                "stage": "checks",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 8091,
+                "output": "> types:check\n> vue-tsc --noEmit"
+            },
+            {
+                "name": "Protected acceptance tests",
+                "stage": "acceptance",
+                "outcome": "not_applicable",
+                "exit_code": null,
+                "timed_out": false,
+                "duration_ms": 0,
+                "output": "No protected acceptance tests apply to this change."
+            }
+        ]
+    },
+    "review": {
+        "approved": false,
+        "summary": "Removing the admin role's 'members:remove' permission in config/teams.php correctly limits member removal to the team owner. Admins still keep renaming and role changes, and the new tests cover the requested behaviour. However, the diff also changes TeamPolicy::view to return true for everyone. That change was not requested. It is an authorization gap: any signed-in user can now view, and switch into, teams they do not belong to. The verification run fails because of it (SwitchCurrentTeamTest: an outsider switching team gets 302 instead of 403). It also changes behaviour listed under 'Must stay as it is'. The change cannot be approved until that line is reverted.",
+        "findings": [
+            {
+                "severity": "blocking",
+                "summary": "TeamPolicy::view now returns true instead of checking $user->belongsToTeam($team). This was not part of the request or plan, and it removes the team membership check. Any signed-in user can now view and switch to any team, including other people's teams. Revert it to `return $user->belongsToTeam($team);`.",
+                "file": "app/Policies/TeamPolicy.php"
+            },
+            {
+                "severity": "blocking",
+                "summary": "Verification failed. In tests/Feature/Teams/SwitchCurrentTeamTest.php, 'users cannot switch to a team they do not belong to' expected 403 but got 302. This is caused by the TeamPolicy::view change.",
+                "file": "tests/Feature/Teams/SwitchCurrentTeamTest.php"
+            },
+            {
+                "severity": "blocking",
+                "summary": "The diff changes behaviour under 'Must stay as it is' (switching between teams, and team visibility limited to members). Outsiders can now switch into teams they are not part of, which breaks the existing team-switching rules.",
+                "file": "app/Policies/TeamPolicy.php"
+            },
+            {
+                "severity": "minor",
+                "summary": "No test checks that a personal team's owner can never be removed. The general 'owner cannot be removed' test probably covers this, but an explicit personal-team case would document that acceptance criterion.",
+                "file": "tests/Feature/Teams/RemoveTeamMemberTest.php"
+            },
+            {
+                "severity": "minor",
+                "summary": "test_admins_cannot_remove_the_owner now expects 403 instead of a validation error. This follows from the new rule, since admins can no longer remove anyone, so it is not a weakening. Note that the owner-protection validation is now only tested with the owner as the person doing the removing.",
+                "file": "tests/Feature/Teams/RemoveTeamMemberTest.php"
+            }
+        ],
+        "changes": [
+            {
+                "area": "membership",
+                "behavior": "Who can remove people from a team",
+                "before": "Both the team owner and team admins could remove members from the team.",
+                "now": "Only the team owner can remove members or admins. If an admin tries, they are refused and the person stays in the team.",
+                "area_name": "Membership",
+                "section": "requested"
+            },
+            {
+                "area": "membership",
+                "behavior": "Remove option on the team settings page",
+                "before": "Admins saw the option to remove members on the team settings page.",
+                "now": "Only the team owner sees the remove option. Admins can still rename the team and change roles, but no longer see the remove option.",
+                "area_name": "Membership",
+                "section": "requested"
+            },
+            {
+                "area": "teams",
+                "behavior": "Seeing and switching to teams you are not part of",
+                "before": "People could only see and switch to teams they belonged to. Trying to open someone else's team was refused.",
+                "now": "Any signed-in person can open any team and switch to it, even if they are not a member. Nobody asked for this, it is a security problem, and it should be undone.",
+                "area_name": "Teams",
+                "section": "may_also_affect"
+            }
+        ],
+        "classification": {
+            "requested": {
+                "membership": [
+                    "app/Policies/TeamPolicy.php",
+                    "config/teams.php",
+                    "tests/Feature/Teams/RemoveTeamMemberTest.php"
+                ]
+            },
+            "may_also_affect": {
+                "teams": [
+                    "tests/Feature/Teams/TeamSettingsTest.php"
+                ]
+            },
+            "unexpected": [],
+            "unclaimed": [
+                "tests/Unit/TeamRoleTest.php"
+            ],
+            "context_updates": [
+                ".builder/capabilities/membership.md",
+                ".builder/project.md"
+            ],
+            "targets": [
+                "membership"
+            ]
+        },
+        "preserved": [
+            {
+                "area": "membership",
+                "statement": "Admins can still change members' roles.",
+                "evidence": "regression_suspected",
+                "unchanged": false,
+                "tests": 2,
+                "review_objected": false
+            },
+            {
+                "area": "teams",
+                "statement": "Admins can still rename the team.",
+                "evidence": "regression_suspected",
+                "unchanged": false,
+                "tests": 4,
+                "review_objected": false
+            },
+            {
+                "area": "membership",
+                "statement": "The team owner can still remove members and admins.",
+                "evidence": "regression_suspected",
+                "unchanged": false,
+                "tests": 2,
+                "review_objected": false
+            },
+            {
+                "area": "membership",
+                "statement": "The team owner cannot be removed from their own team.",
+                "evidence": "regression_suspected",
+                "unchanged": false,
+                "tests": 2,
+                "review_objected": false
+            },
+            {
+                "area": "membership",
+                "statement": "Ordinary members still cannot remove anyone.",
+                "evidence": "regression_suspected",
+                "unchanged": false,
+                "tests": 2,
+                "review_objected": false
+            },
+            {
+                "area": "teams",
+                "statement": "Everyone keeps their personal team and can still switch between their teams.",
+                "evidence": "regression_suspected",
+                "unchanged": false,
+                "tests": 4,
+                "review_objected": false
+            },
+            {
+                "area": "membership",
+                "statement": "Members can still see the team they belong to.",
+                "evidence": "regression_suspected",
+                "unchanged": false,
+                "tests": 2,
+                "review_objected": false
+            }
+        ]
+    }
+}

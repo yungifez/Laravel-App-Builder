@@ -13,6 +13,11 @@ use InvalidArgumentException;
 
 class RunWorkspaceCommand
 {
+    /**
+     * Marks stored output whose beginning was cut off.
+     */
+    public const TRUNCATION_MARKER = '…';
+
     public function __construct(private WorkspaceManager $workspaces) {}
 
     /**
@@ -52,7 +57,7 @@ class RunWorkspaceCommand
      */
     protected function tail(string $output, int $limit): string
     {
-        return mb_strlen($output) > $limit ? '…'.Str::substr($output, -$limit) : $output;
+        return mb_strlen($output) > $limit ? self::TRUNCATION_MARKER.Str::substr($output, -$limit) : $output;
     }
 
     /**
