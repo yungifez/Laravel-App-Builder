@@ -23,6 +23,7 @@
     16. [A coherent V1](direction/16-v1-direction.md)
     17. [OpenAI agent SDK as failover](direction/17-openai-agent-failover.md)
     18. [Competitive analysis by effect, and positioning](direction/18-competitive-analysis-and-positioning.md)
+    19. [Control plane on Laravel Cloud, runtimes on Forge](direction/19-cloud-control-plane-and-forge-runtimes.md)
 - **[source/](source/)**: the original planning documents.
     - [Implementation plan v1](source/implementation-plan-v1.md): gates G0–G6,
       the invitation contract and the pilot plan.
