@@ -2,8 +2,8 @@
 // control plane, and starts one preview service in a workspace. Once the
 // service answers through the door, it prints one JSON line with what the
 // runner sent in its hello and the ports, then keeps both running until
-// its input closes, so the test can reach the door as the control plane
-// does:
+// it is told to stop (SIGTERM), so the test can reach the door as the
+// control plane does:
 //   node box-runner-door.mjs runner.mjs
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -76,33 +76,19 @@ const server = createServer(async (incoming, response) => {
 
 /** Ask the door the way the control plane does, and get the answer. */
 function knock(path, key) {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
+        let pin = null;
         const asking = request(
             {
                 host: '127.0.0.1',
                 port: doorPort,
                 path,
+                // A new connection each time, so its certificate is read.
+                agent: false,
                 rejectUnauthorized: false,
                 headers: key === null ? {} : { 'X-Builder-Door-Key': key },
             },
             (answer) => {
-                let pin;
-
-                try {
-                    // Read while the connection is still open.
-                    pin = createHash('sha256')
-                        .update(
-                            new X509Certificate(
-                                answer.socket.getPeerCertificate().raw,
-                            ).publicKey.export({ type: 'spki', format: 'der' }),
-                        )
-                        .digest('base64');
-                } catch (error) {
-                    reject(error);
-
-                    return;
-                }
-
                 const chunks = [];
                 answer.on('error', () => resolve(null));
                 answer.on('data', (chunk) => chunks.push(chunk));
@@ -114,6 +100,20 @@ function knock(path, key) {
                     }),
                 );
             },
+        );
+        // Read the certificate as soon as the connection is made: on a
+        // busy machine the door may have closed it by the time an answer
+        // is read, and its certificate is gone with it.
+        asking.on('socket', (socket) =>
+            socket.once('secureConnect', () => {
+                pin = createHash('sha256')
+                    .update(
+                        new X509Certificate(
+                            socket.getPeerCertificate().raw,
+                        ).publicKey.export({ type: 'spki', format: 'der' }),
+                    )
+                    .digest('base64');
+            }),
         );
         // A knock that stalls, as one can on a busy machine, is tried
         // again rather than waited on for ever.
@@ -169,8 +169,7 @@ try {
         }) + '\n',
     );
 
-    process.stdin.resume();
-    await once(process.stdin, 'end');
+    await once(process, 'SIGTERM');
 } finally {
     if (runner && runner.exitCode === null) {
         runner.kill('SIGTERM');

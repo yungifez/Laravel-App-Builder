@@ -9,7 +9,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
-use Symfony\Component\Process\InputStream;
 use Tests\TestCase;
 
 /**
@@ -23,8 +22,6 @@ class RunnerDoorTest extends TestCase
     use RefreshDatabase;
 
     protected InvokedProcess $fixture;
-
-    protected InputStream $input;
 
     /**
      * What the runner said in its hello, and its ports.
@@ -40,10 +37,14 @@ class RunnerDoorTest extends TestCase
         parent::setUp();
 
         Http::allowStrayRequests();
-        $this->input = new InputStream;
-        $this->fixture = Process::timeout(60)->input($this->input)->start(['node', base_path('tests/Fixtures/box-runner-door.mjs'), base_path('resources/box-runner/runner.mjs')]);
+        // No input: a fixture that stops early closes its pipes at once, so
+        // the wait below ends with its error instead of the timeout.
+        $this->fixture = Process::timeout(60)->start(['node', base_path('tests/Fixtures/box-runner-door.mjs'), base_path('resources/box-runner/runner.mjs')]);
         $this->beforeApplicationDestroyed(function () {
-            $this->input->close();
+            if ($this->fixture->running()) {
+                $this->fixture->signal(SIGTERM);
+            }
+
             $this->fixture->wait();
         });
 
