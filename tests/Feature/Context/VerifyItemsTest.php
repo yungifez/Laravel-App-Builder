@@ -91,6 +91,25 @@ class VerifyItemsTest extends TestCase
         ]])[0]['evidence']);
     }
 
+    public function test_a_skipped_dataset_prevents_a_named_test_from_counting_as_evidence()
+    {
+        $plan = new Plan('Describe teams.', ['Teams have a description.'], cases: $this->usualWayOnly(1));
+        $review = new Review(true, 'Fine.', verify: [
+            ['criterion' => 1, 'test_file' => 'tests/Feature/TeamTest.php', 'test_name' => 'teams have a description'],
+        ]);
+        $tests = [
+            ['file' => 'tests/Feature/TeamTest.php', 'name' => 'test_teams_have_a_description with data set "owner"', 'outcome' => 'passed'],
+            ['file' => 'tests/Feature/TeamTest.php', 'name' => 'test_teams_have_a_description with data set "member"', 'outcome' => 'skipped'],
+        ];
+
+        $this->assertSame(TestReport::SKIPPED, TestReport::outcome($tests, 'tests/Feature/TeamTest.php', 'teams have a description'));
+        $verified = app(AssessVerifyItems::class)->handle($plan, $review, self::PATCH, [$this->suite('passed', $tests)]);
+        $this->assertSame('not_run_by_checks', $verified[0]['evidence']);
+
+        $tests[] = ['file' => 'tests/Feature/TeamTest.php', 'name' => 'test_teams_have_a_description with data set "guest"', 'outcome' => 'failed'];
+        $this->assertSame(TestReport::FAILED, TestReport::outcome($tests, 'tests/Feature/TeamTest.php', 'teams have a description'));
+    }
+
     public function test_tests_written_before_the_change_name_each_items_test_and_the_reviewer_does_not()
     {
         $plan = (new Plan('Describe teams.', ['Teams have a description.'], cases: $this->usualWayOnly(1)))

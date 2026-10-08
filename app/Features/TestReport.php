@@ -81,6 +81,7 @@ class TestReport
         return match (true) {
             $outcomes === [] => null,
             in_array(self::FAILED, $outcomes, true) => self::FAILED,
+            in_array(self::SKIPPED, $outcomes, true) => self::SKIPPED,
             in_array(self::PASSED, $outcomes, true) => self::PASSED,
             default => self::SKIPPED,
         };
