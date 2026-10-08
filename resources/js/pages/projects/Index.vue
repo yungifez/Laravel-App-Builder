@@ -8,7 +8,7 @@ import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { useAttachedImages } from '@/composables/useAttachedImages';
 import { useTechnical } from '@/composables/useTechnical';
-import { takeIdea } from '@/lib/startIdea';
+import { forgetIdea, keepIdea, takeIdea } from '@/lib/startIdea';
 import { when } from '@/lib/when';
 import { contact } from '@/routes';
 import { index, show } from '@/routes/projects';
@@ -70,6 +70,7 @@ function useStarter(picked: Starter): void {
         look.checked = true;
     }
 
+    keepTyped();
     purposeField.value.focus();
 }
 
@@ -89,15 +90,21 @@ function clearStarter(): void {
     }
 
     starter.value = null;
+    keepTyped();
     purposeField.value?.focus();
 }
 
-// An idea typed on the home page before signing in arrives here, so the
-// owner only has to name the app. A ready-made idea picked there, and not
-// reworded, starts as that idea with its name and look.
+// An idea typed on the home page before signing in arrives here, as does
+// one typed here before a reload. A ready-made idea picked there, and not
+// reworded, starts as that idea with its name and look. It stays kept
+// until the app starts, so a second reload finds it too.
 onMounted(() => {
     const { idea, starter: key } = takeIdea();
     const picked = props.starters.find((s) => s.key === key);
+
+    if (idea !== '') {
+        keepIdea(idea, key);
+    }
 
     if (picked !== undefined && picked.purpose === idea) {
         useStarter(picked);
@@ -107,9 +114,14 @@ onMounted(() => {
 
     if (idea !== '' && purposeField.value !== null) {
         purposeField.value.value = idea;
-        nameField.value?.focus();
+        purposeField.value.focus();
     }
 });
+
+// Keep each word as it is typed, so a reload does not lose it.
+function keepTyped(): void {
+    keepIdea(purposeField.value?.value ?? '', starter.value?.key ?? null);
+}
 
 const query = ref('');
 const shown = computed(() => {
@@ -171,6 +183,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
                 class="mx-auto mt-8 max-w-2xl text-left"
                 data-test="start-new"
                 v-slot="{ errors, processing }"
+                @success="forgetIdea"
             >
                 <div
                     :class="[
@@ -193,6 +206,7 @@ function submitOnShortcut(event: KeyboardEvent): void {
                         placeholder="My cleaners see their jobs for the day, and customers book a clean online."
                         class="block w-full resize-none bg-transparent px-5 pt-4 pb-2 text-base outline-none placeholder:text-muted-foreground"
                         @keydown="submitOnShortcut"
+                        @input="keepTyped"
                         @paste="pictures.paste"
                     />
                     <ul

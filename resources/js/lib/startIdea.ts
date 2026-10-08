@@ -9,6 +9,10 @@
 // none of this one's storage, so the idea is lost there; keeping it with
 // the account on the server would fix that too. Storage can be blocked,
 // so a lost idea only means an empty box.
+//
+// The new-app form keeps what the owner types here too, so a reload
+// (a new version of the builder, or a slip of the finger) never empties
+// the box. Starting the app forgets it.
 const key = 'builder.start-idea';
 const lifetime = 24 * 60 * 60 * 1000;
 
@@ -67,5 +71,13 @@ export function takeIdea(): StartIdea {
         };
     } catch {
         return { idea: '', starter: null };
+    }
+}
+
+export function forgetIdea(): void {
+    try {
+        localStorage.removeItem(key);
+    } catch {
+        // Nothing was kept.
     }
 }
