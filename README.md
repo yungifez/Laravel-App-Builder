@@ -1,8 +1,8 @@
 # Builder control plane
 
-Internal builder prototype. This repository currently contains only the
-development foundation (work order G0.1): a Laravel + Inertia + Vue control-plane
-app with starter authentication, an internal landing screen, local PostgreSQL and
+Internal builder prototype. This repository is the control plane: a Laravel +
+Inertia + Vue app with starter authentication, projects and feature requests,
+construction runs, verification and previews, backed by local PostgreSQL and
 Redis, a guarded test database, standard check commands and a CI workflow.
 
 The repository root is the Laravel application (Laravel 13, Inertia 3, Vue 3,
@@ -106,7 +106,7 @@ from the workspace as a diff against the baseline.
 - **Budgets.** 30 tool operations and 20 minutes by default; a run out of
   budget stops for the owner's decision.
 
-Two construction drivers are available (`BUILDER_CONSTRUCTION_DRIVER`):
+Three construction drivers are available (`BUILDER_CONSTRUCTION_DRIVER`):
 
 - `scripted` (default) makes the change that the `reference` generator finds
   among the known-good solutions in `BUILDER_REFERENCE_SOLUTIONS` (see
@@ -121,6 +121,12 @@ Two construction drivers are available (`BUILDER_CONSTRUCTION_DRIVER`):
   coder with the failures, up to `BUILDER_RUN_MAX_REPAIRS` times. Which
   protected acceptance suites apply is decided by the platform, not by a
   model. Every model call is logged on the run with its tokens.
+- `sdk` builds with a coding agent SDK working in the workspace, through the
+  Node runner in `resources/agent-runner` (run `npm ci` there first). Agents
+  are tried in the order of `config/builder.php`, `agents.order`; the next is
+  used only when a provider cannot serve the task, never because a change
+  failed, and the reviewer uses the other provider. It needs
+  `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY`.
 
 When the change is built, the run hands it to verification. **Run
 verification** also re-runs it on demand. Verification copies the project into
