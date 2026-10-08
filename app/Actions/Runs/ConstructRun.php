@@ -223,7 +223,7 @@ class ConstructRun
 
         $stored = ['review' => [
             ...$this->storedReview($review, $classification),
-            'preserved' => $this->assessPreservation->handle($plan, $classification, $projectContext, $verification->results ?? []),
+            'preserved' => $this->assessPreservation->handle($plan, $classification, $projectContext, $verification->results ?? [], $review),
         ]];
 
         if ($review->approved) {

@@ -53,14 +53,21 @@ class ReportWriter
             $preserved = is_array($review['preserved'] ?? null) ? $review['preserved'] : [];
 
             if ($preserved !== []) {
-                array_push($lines, '## Should stay the same', '');
+                array_push($lines, '## Meant to stay the same', '');
 
                 foreach ($preserved as $item) {
-                    $lines[] = '- '.$item['statement'].' — '.match ($item['evidence']) {
+                    $label = match ($item['evidence']) {
+                        'regression_suspected' => 'possible regression: the review or the change points here',
+                        'tests_failed' => 'tests for this part failed',
+                        'related_tests_passed' => 'related tests passed; not checked by a test of its own',
+                        'not_edited' => 'this part was not edited, but other code can still change it; no tests check it',
+                        // Labels stored before the evidence was made stricter.
                         'verified' => 'checked: tests for this area ran and passed',
                         'untouched' => 'not changed: nothing in this area was edited',
                         default => 'not checked',
                     };
+
+                    $lines[] = "- {$item['statement']} — {$label}".(($item['review_objected'] ?? false) ? '; the review found problems with this change' : '');
                 }
 
                 $lines[] = '';

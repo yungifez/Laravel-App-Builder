@@ -140,7 +140,7 @@ class PipelineHarness
                 'section' => $classification->sectionFor($change['area']),
             ], $review->changes),
             'classification' => $classification->toArray(),
-            'preserved' => $this->assessPreservation->handle($plan, $classification, $projectContext, $verification->results ?? []),
+            'preserved' => $this->assessPreservation->handle($plan, $classification, $projectContext, $verification->results ?? [], $review),
         ];
     }
 

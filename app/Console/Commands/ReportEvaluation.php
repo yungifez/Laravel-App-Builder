@@ -171,13 +171,16 @@ class ReportEvaluation extends Command
         $review = $result['review'];
 
         $blocking = array_filter($review['findings'], fn (array $finding) => $finding['severity'] === 'blocking');
+        $labels = array_values(array_unique(array_column(array_filter($review['preserved'], fn (array $item) => $item['area'] === $area), 'evidence')));
+
         $reasons = array_values(array_filter([
             ! $review['approved'] || $blocking !== [] ? 'review objected (check it names this defect)' : null,
             array_key_exists($area, $review['classification']['unexpected'] ?? []) ? 'area flagged as unexpected' : null,
+            array_intersect($labels, ['regression_suspected', 'tests_failed']) !== [] ? 'evidence flagged the area' : null,
         ]));
 
-        $labels = array_values(array_unique(array_column(array_filter($review['preserved'], fn (array $item) => $item['area'] === $area), 'evidence')));
-
+        // Only the label used before the evidence was made stricter claims
+        // that a behaviour held; the current labels never do.
         $label = match (true) {
             $labels === [] => 'no preserve claim for this area',
             in_array('verified', $labels, true) && $checksCaughtNothing && $reasons === [] => 'claimed verified (overclaim)',

@@ -2,6 +2,7 @@
 
 namespace App\Evaluation;
 
+use App\Features\TestResults;
 use App\Workspaces\CommandResult;
 use Illuminate\Support\Str;
 
@@ -81,9 +82,7 @@ class Evidence
      */
     public static function failedTests(string $output): array
     {
-        preg_match_all('/^\s*FAILED\s+(.+?)\s*$/m', $output, $matches);
-
-        return array_values(array_unique($matches[1]));
+        return TestResults::failing($output);
     }
 
     /**

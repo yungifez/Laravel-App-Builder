@@ -190,14 +190,27 @@ const contextModeLabels: Record<NonNullable<Run['context']>['mode'], string> = {
 };
 
 function evidenceLabel(item: RunReview['preserved'][number]): string {
-    switch (item.evidence) {
-        case 'verified':
-            return `checked by ${item.tests} test file${item.tests === 1 ? '' : 's'} that passed${item.unchanged ? '; not touched by this change' : ''}`;
-        case 'untouched':
-            return 'not touched by this change; no tests check it';
-        default:
-            return 'not checked';
-    }
+    const label = ((): string => {
+        switch (item.evidence) {
+            case 'regression_suspected':
+                return 'possible regression: the review or the change points here';
+            case 'tests_failed':
+                return 'tests for this part failed';
+            case 'related_tests_passed':
+            // Runs stored before the evidence was made stricter.
+            case 'verified':
+                return `related tests passed (${item.tests} test file${item.tests === 1 ? '' : 's'}); not checked by a test of its own${item.unchanged ? '; this part was not edited' : ''}`;
+            case 'not_edited':
+            case 'untouched':
+                return 'this part was not edited, but other code can still change it; no tests check it';
+            default:
+                return 'not checked';
+        }
+    })();
+
+    return item.review_objected
+        ? `${label}; the review found problems with this change`
+        : label;
 }
 
 function changesIn(section: ChangeSection) {
@@ -517,7 +530,7 @@ function lineClass(line: string): string {
                     class="space-y-2"
                     data-test="review-preserved"
                 >
-                    <p class="font-medium">Kept as it was</p>
+                    <p class="font-medium">Meant to stay the same</p>
                     <ul class="space-y-1">
                         <li
                             v-for="(item, index) in run.review.preserved"
