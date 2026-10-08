@@ -19,7 +19,7 @@ class Evidence
     /**
      * Run the project's checks (the verification checks in config/builder.php).
      *
-     * @return list<array{name: string, outcome: string, exit_code: int, output: string}>
+     * @return list<array{name: string, outcome: string, exit_code: int, output: string, failed_tests: list<string>}>
      */
     public static function checks(Workbench $workbench): array
     {
@@ -36,7 +36,7 @@ class Evidence
      * Copy in the task's hidden tests with their own runner configuration,
      * run them, and remove them again.
      *
-     * @return array{name: string, outcome: string, exit_code: int, output: string, tests: int|null, failures: int|null}
+     * @return array{name: string, outcome: string, exit_code: int, output: string, failed_tests: list<string>, tests: int|null, failures: int|null}
      */
     public static function hidden(Workbench $workbench, Suite $suite, string $task): array
     {
@@ -63,17 +63,34 @@ class Evidence
             return ['tests' => (int) $ok[1], 'failures' => 0];
         }
 
-        if (preg_match('/Tests: (\d+).*?(?:Errors: (\d+))?.*?(?:Failures: (\d+))?\./s', $output, $failed) === 1) {
-            return ['tests' => (int) $failed[1], 'failures' => (int) ($failed[2] ?? 0) + (int) ($failed[3] ?? 0)];
+        if (preg_match('/^Tests: (\d+),.*$/m', $output, $summary) === 1) {
+            preg_match('/Errors: (\d+)/', $summary[0], $errors);
+            preg_match('/Failures: (\d+)/', $summary[0], $failures);
+
+            return ['tests' => (int) $summary[1], 'failures' => (int) ($errors[1] ?? 0) + (int) ($failures[1] ?? 0)];
         }
 
         return ['tests' => null, 'failures' => null];
     }
 
     /**
-     * Summarise a command as a result.
+     * Get the names of the failing tests in a test run's output, as the
+     * test runner prints them.
      *
-     * @return array{name: string, outcome: string, exit_code: int, output: string}
+     * @return list<string>
+     */
+    public static function failedTests(string $output): array
+    {
+        preg_match_all('/^\s*FAILED\s+(.+?)\s*$/m', $output, $matches);
+
+        return array_values(array_unique($matches[1]));
+    }
+
+    /**
+     * Summarise a command as a result. Failing test names are read from the
+     * whole output, before it is cut.
+     *
+     * @return array{name: string, outcome: string, exit_code: int, output: string, failed_tests: list<string>}
      */
     protected static function result(string $name, CommandResult $result): array
     {
@@ -88,6 +105,7 @@ class Evidence
             },
             'exit_code' => $result->exitCode,
             'output' => mb_strlen($output) > self::OUTPUT_TAIL ? '…'.Str::substr($output, -self::OUTPUT_TAIL) : $output,
+            'failed_tests' => self::failedTests($output),
         ];
     }
 }

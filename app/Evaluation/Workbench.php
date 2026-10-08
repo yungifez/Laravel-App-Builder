@@ -63,8 +63,13 @@ class Workbench
 
     /**
      * Get the commands that make a copied project runnable without
-     * downloading anything: copy the installed dependencies, create the
+     * downloading anything: link the installed dependencies, create the
      * environment file and key, and generate the route helpers.
+     *
+     * Dependencies are hard-linked, not copied, so each workspace costs no
+     * extra disk. The dependency directory must be on the same filesystem as
+     * the workspaces, and nothing may edit dependency files in place; check
+     * it with a fingerprint before and after a run.
      *
      * @return list<array{0: string, 1: list<string>}>
      */
@@ -73,8 +78,8 @@ class Workbench
         $dependencies = Suite::resolve((string) config('evaluation.dependencies'));
 
         return [
-            ['Copy PHP dependencies', ['cp', '-a', "{$dependencies}/vendor", 'vendor']],
-            ['Copy Node dependencies', ['cp', '-a', "{$dependencies}/node_modules", 'node_modules']],
+            ['Link PHP dependencies', ['cp', '-al', "{$dependencies}/vendor", 'vendor']],
+            ['Link Node dependencies', ['cp', '-al', "{$dependencies}/node_modules", 'node_modules']],
             ['Create .env', ['cp', '.env.example', '.env']],
             ['Generate app key', ['php', 'artisan', 'key:generate', '--no-interaction']],
             ['Generate route helpers', ['php', 'artisan', 'wayfinder:generate', '--with-form']],

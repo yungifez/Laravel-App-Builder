@@ -44,10 +44,17 @@ class ReportEvaluationTest extends TestCase
         $this->writeResult('delete-team/pipeline/natural.json', ['applied' => true, 'empty' => false, 'hidden' => ['outcome' => 'passed', 'tests' => 4, 'failures' => 0], 'checks' => [['name' => 'Tests', 'outcome' => 'passed']]]);
         $this->writeResult('delete-team/plain/natural.json', ['applied' => true, 'empty' => false, 'hidden' => ['outcome' => 'failed', 'tests' => 4, 'failures' => 1], 'checks' => [['name' => 'Tests', 'outcome' => 'passed'], ['name' => 'Static analysis', 'outcome' => 'failed']]]);
 
-        // The pipeline caught s1 in verification, and called the untested s2 area verified.
-        $this->writeResult('delete-team/pipeline/sabotage/s1.json', $this->pipelineSabotage('failed', approved: false, preserved: []));
-        $this->writeResult('delete-team/pipeline/sabotage/s2.json', $this->pipelineSabotage('unverified', approved: true, preserved: [['area' => 'teams', 'evidence' => 'verified']]));
-        $this->writeResult('delete-team/plain/sabotage/s1.json', ['applicable' => true, 'checks' => [['name' => 'Tests', 'outcome' => 'failed']]]);
+        // The pipeline's verification caught s1 with a newly failing test; it
+        // called the untested s2 area verified.
+        $this->writeResult('delete-team/pipeline/sabotage/s1.json', $this->pipelineSabotage('failed', [['stage' => 'checks', 'name' => 'Tests', 'outcome' => 'failed', 'output' => "   FAILED  Tests\\Feature\\SwitchTest > outsiders cannot switch\n"]], approved: false, preserved: []));
+        $this->writeResult('delete-team/pipeline/sabotage/s2.json', $this->pipelineSabotage('unverified', [['stage' => 'checks', 'name' => 'Tests', 'outcome' => 'passed', 'output' => '']], approved: true, preserved: [['area' => 'teams', 'evidence' => 'verified']]));
+
+        // The plain change already failed static analysis, so only the newly
+        // failing test counts for s1.
+        $this->writeResult('delete-team/plain/sabotage/s1.json', ['applicable' => true, 'checks' => [
+            ['name' => 'Tests', 'outcome' => 'failed', 'output' => "   FAILED  Tests\\Feature\\SwitchTest > outsiders cannot switch\n"],
+            ['name' => 'Static analysis', 'outcome' => 'failed', 'output' => ''],
+        ]]);
         $this->writeResult('delete-team/plain/sabotage/s2.json', ['applicable' => false]);
 
         foreach (['pipeline', 'plain', 'structured'] as $arm) {
@@ -64,10 +71,11 @@ class ReportEvaluationTest extends TestCase
 
         $this->assertStringContainsString('| pipeline | applied | passed (4 tests, 0 failing) | all passed |', $summary);
         $this->assertStringContainsString('| plain | applied | failed (4 tests, 1 failing) | failing: Static analysis |', $summary);
-        $this->assertStringContainsString('| s1 | yes | pipeline | yes: verification failed, review not approved |', $summary);
+        $this->assertStringContainsString('| s1 | yes | pipeline | yes: newly failing: Tests; 1 test(s) newly failing; review objected (check it names this defect) | no preserve claim for this area |', $summary);
         $this->assertStringContainsString('| s2 | no | pipeline | no | claimed verified (overclaim) |', $summary);
-        $this->assertStringContainsString('| s1 | yes | plain and structured (same evidence) | yes: failing Tests | checks failed |', $summary);
-        $this->assertStringContainsString('| s2 | no | plain | did not apply |', $summary);
+        $this->assertStringContainsString('| s1 | yes | plain and structured (same evidence) | yes: newly failing: Tests; 1 test(s) newly failing (the change already failed: Static analysis) | checks failed |', $summary);
+        $this->assertStringContainsString('| s2 | no | plain and structured (same evidence) | did not apply |', $summary);
+        $this->assertStringContainsString('newly failing tests: Tests\\Feature\\SwitchTest > outsiders cannot switch', $summary);
         $this->assertStringContainsString('Personal teams cannot be deleted.', $summary);
     }
 
@@ -93,15 +101,16 @@ class ReportEvaluationTest extends TestCase
     }
 
     /**
+     * @param  list<array<string, string>>  $results
      * @param  list<array{area: string, evidence: string}>  $preserved
      * @return array<string, mixed>
      */
-    protected function pipelineSabotage(string $status, bool $approved, array $preserved): array
+    protected function pipelineSabotage(string $status, array $results, bool $approved, array $preserved): array
     {
         return [
             'applicable' => true,
-            'verification' => ['status' => $status, 'results' => []],
-            'review' => ['approved' => $approved, 'findings' => [], 'classification' => ['unexpected' => []], 'preserved' => $preserved],
+            'verification' => ['status' => $status, 'results' => $results],
+            'review' => ['approved' => $approved, 'summary' => 'Reviewed.', 'findings' => [], 'classification' => ['unexpected' => []], 'preserved' => $preserved],
         ];
     }
 
