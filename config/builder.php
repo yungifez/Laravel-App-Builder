@@ -835,6 +835,8 @@ return [
         // rules is asked for "attempts" times in all, then the coder writes
         // the tests itself. "sample_bytes" is how much of each of two of the
         // app's own tests the writer sees, to follow their style.
+        // "max_area_routes" is how many named routes of the change's part of
+        // the app the writer sees, so it uses their real names.
         'written_first' => [
             'enabled' => (bool) env('BUILDER_TESTS_WRITTEN_FIRST', true),
             'attempts' => 2,
@@ -848,6 +850,7 @@ return [
             'max_files' => 3,
             'max_bytes' => 60000,
             'sample_bytes' => 6000,
+            'max_area_routes' => 40,
         ],
 
         // Whether the lines a change adds are scanned for common safety

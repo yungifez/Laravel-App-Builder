@@ -30,6 +30,7 @@ class WriteTestsFirst
         protected WorkspaceManager $workspaces,
         protected RecordModelUsage $recordModelUsage,
         protected GatherPlanningContext $gatherPlanningContext,
+        protected ListAreaRoutes $listAreaRoutes,
     ) {}
 
     /**
@@ -385,6 +386,22 @@ class WriteTestsFirst
     }
 
     /**
+     * Get the relation methods a model declares, such as "Team: members()
+     * is belongsToMany(User)", read from its code.
+     *
+     * @return list<string>
+     */
+    protected function relations(string $path, string $contents): array
+    {
+        preg_match_all('/function\s+(\w+)\s*\([^)]*\)[^{]*\{\s*return\s+\$this->(hasOne|hasMany|belongsTo|belongsToMany|hasOneThrough|hasManyThrough|morphTo|morphOne|morphMany|morphToMany|morphedByMany)\(\s*(?:\\\\?(?:[\w\\\\]+\\\\)?(\w+)::class)?/', $contents, $matches, PREG_SET_ORDER);
+
+        return array_map(
+            fn (array $match) => basename($path, '.php').": {$match[1]}() is {$match[2]}(".($match[3] ?? '').')',
+            $matches,
+        );
+    }
+
+    /**
      * Get the app's model files, in a fixed order.
      *
      * @return list<string>
@@ -446,10 +463,21 @@ class WriteTestsFirst
         // the change's areas: without them the writer guesses table, column,
         // relation and route names that do not exist.
         $stepFiles = array_slice(array_values(array_unique(array_column($plan->steps, 'file'))), 0, 4);
-        $models = array_slice(array_values(array_filter(
-            array_diff($this->models($workspace), $stepFiles),
-            fn (string $path) => array_intersect($context->projectContext->claiming($path), $areas) !== [],
-        )), 0, 2);
+        $inArea = fn (string $path) => in_array($path, $stepFiles, true) || array_intersect($context->projectContext->claiming($path), $areas) !== [];
+        $areaModels = array_values(array_filter($this->models($workspace), $inArea));
+        $models = array_slice(array_values(array_diff($areaModels, $stepFiles)), 0, 2);
+
+        $routes = $this->listAreaRoutes->handle($workspace, fn (array $files) => array_filter($files, $inArea) !== []);
+
+        if ($routes !== []) {
+            $sections[] = "## Named routes of this part of the app\n\nUse these names and addresses; do not make up others.\n\n- ".Str::limit(implode("\n- ", $routes), $bytes, "\n- …");
+        }
+
+        $relations = array_merge([], ...array_map(fn (string $path) => $this->relations($path, $read($path)), array_slice($areaModels, 0, 8)));
+
+        if ($relations !== []) {
+            $sections[] = "## Relations on this part's models\n\n- ".implode("\n- ", $relations);
+        }
 
         foreach ([...$stepFiles, ...$models] as $path) {
             $contents = $read($path);
