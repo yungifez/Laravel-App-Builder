@@ -163,6 +163,57 @@ class AccessProbeVerificationTest extends TestCase
         $this->assertNull(collect($broken->verifications()->sole()->results)->firstWhere('name', 'Who may see and change records'));
     }
 
+    public function test_a_test_that_already_failed_before_the_change_does_not_stop_the_probes(): void
+    {
+        $this->failTests(atStart: true);
+        $change = $this->change();
+
+        app(RequestVerification::class)->handle($change);
+
+        $verification = $change->verifications()->sole();
+        $tests = collect($verification->results)->firstWhere('name', 'Tests');
+        $this->assertSame(['failed', []], [$tests['at_start'], $tests['new_problems']]);
+        $this->assertStringContainsString('could remove a booking', collect($verification->results)->firstWhere('name', 'Who may see and change records')['output']);
+        $this->assertSame(VerificationStatus::Failed, $verification->status);
+    }
+
+    public function test_a_test_the_change_broke_stops_the_probes(): void
+    {
+        $this->failTests(atStart: false);
+        $change = $this->change();
+
+        app(RequestVerification::class)->handle($change);
+
+        $verification = $change->verifications()->sole();
+        $this->assertNull(collect($verification->results)->firstWhere('name', 'Who may see and change records'));
+        $this->assertSame(VerificationStatus::Failed, $verification->status);
+    }
+
+    /**
+     * Fail the app's tests with the change in, and, when asked, on the
+     * starting commit too. The probes find someone who got through.
+     */
+    protected function failTests(bool $atStart): void
+    {
+        $this->answer(['{"id":0,"status":302,"changed":false,"invalid":false}', '{"id":1,"status":302,"changed":true,"invalid":false}']);
+        $answer = $this->driver->onExec;
+        $started = false;
+
+        $this->driver->onExec = function (string $workspace, array $command) use ($answer, $atStart, &$started) {
+            if (($command[0] ?? null) === 'git' && ($command[1] ?? null) === 'apply') {
+                $started = in_array('--reverse', $command, true);
+            }
+
+            if ($command === ['php', 'artisan', 'test']) {
+                return $started && ! $atStart
+                    ? new CommandResult(exitCode: 0, output: 'All tests passed.', errorOutput: '', durationMs: 5)
+                    : new CommandResult(exitCode: 1, output: 'FAILED Tests\\Feature\\OldTest > it works', errorOutput: '', durationMs: 5);
+            }
+
+            return $answer($workspace, $command);
+        };
+    }
+
     public function test_a_plan_without_rules_sends_no_probes(): void
     {
         $this->answer([]);

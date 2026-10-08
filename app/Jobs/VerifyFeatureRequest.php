@@ -262,11 +262,22 @@ class VerifyFeatureRequest implements ShouldQueue
             $this->readPackages($driver, $workspace, $featureRequest);
             $this->readMessages($driver, $workspace, $featureRequest);
 
-            if ($checksPassed && in_array($acceptance, [self::OUTCOME_PASSED, self::OUTCOME_NOT_APPLICABLE], true)) {
-                $checksPassed = $this->probeAccess($driver, $runWorkspaceCommand, $workspace, $featureRequest);
+            $accepted = in_array($acceptance, [self::OUTCOME_PASSED, self::OUTCOME_NOT_APPLICABLE], true);
+            $clean = $checksPassed && $accepted;
+
+            // A check that failed the same way before the change is the app's
+            // old problem, not the change's, so it does not stop the probes:
+            // each writes and judges its own tests.
+            if (($checksPassed || $this->onlyOldFailures()) && $accepted) {
+                $checksPassed = $this->probeAccess($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
                 $checksPassed = $this->shiftTime($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
                 $checksPassed = $this->replayForms($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
                 $checksPassed = $this->probeInputs($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
+            }
+
+            // What follows reads the app's own tests, which an old failure
+            // would blur, so it waits for every check to pass.
+            if ($clean) {
                 $this->observeScreens($driver, $runWorkspaceCommand, $workspace, $featureRequest);
                 $this->observeFaults($driver, $runWorkspaceCommand, $workspace, $featureRequest);
                 $this->observeMutants($driver, $runWorkspaceCommand, $workspace, $featureRequest);
@@ -481,6 +492,17 @@ class VerifyFeatureRequest implements ShouldQueue
         }
 
         $runWorkspaceCommand->handle($workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], 30);
+    }
+
+    /**
+     * Determine if every check that failed also failed on the starting
+     * commit, with no problem the change brought.
+     */
+    protected function onlyOldFailures(): bool
+    {
+        return ! collect($this->results)->contains(fn (array $result) => $result['stage'] === 'checks'
+            && $result['outcome'] === self::OUTCOME_FAILED
+            && ! (($result['at_start'] ?? null) === self::OUTCOME_FAILED && ($result['new_problems'] ?? []) === []));
     }
 
     /**
