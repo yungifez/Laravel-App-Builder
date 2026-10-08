@@ -58,6 +58,7 @@ class ExploreAppTest extends TestCase
     public function test_an_imported_app_is_explored_only_when_the_owner_chooses_it_after_reading_the_cost()
     {
         Queue::fake();
+        config(['operations.operators' => [$this->owner->email]]);
 
         $this->actingAs($this->owner)->post(route('projects.store'), [
             'name' => 'Acme',

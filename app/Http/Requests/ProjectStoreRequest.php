@@ -9,6 +9,14 @@ use Illuminate\Foundation\Http\FormRequest;
 class ProjectStoreRequest extends FormRequest
 {
     /**
+     * Server paths are trusted operator input, never an owner's upload.
+     */
+    public function authorize(): bool
+    {
+        return $this->user()->can('viewOperations');
+    }
+
+    /**
      * Get the validation rules that apply to the request.
      *
      * @return array<string, ValidationRule|array<mixed>|string>

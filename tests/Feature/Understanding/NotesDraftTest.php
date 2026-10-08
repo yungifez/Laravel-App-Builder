@@ -44,6 +44,7 @@ class NotesDraftTest extends TestCase
     public function test_importing_an_app_that_has_notes_does_not_draft()
     {
         Queue::fake();
+        config(['operations.operators' => [$this->owner->email]]);
 
         $this->actingAs($this->owner)->post(route('projects.store'), [
             'name' => 'Acme',
@@ -57,6 +58,7 @@ class NotesDraftTest extends TestCase
     public function test_any_laravel_app_is_imported_whatever_its_screens_are_made_with()
     {
         Queue::fake();
+        config(['operations.operators' => [$this->owner->email]]);
         $noArtisan = $this->makeProjectSource(array_diff_key($this->laravelApp(), ['artisan' => true]));
         $noLaravel = $this->makeProjectSource(['composer.json' => json_encode(['require' => ['symfony/console' => '^7']])] + $this->laravelApp());
         $livewire = $this->makeProjectSource(['composer.json' => json_encode(['require' => ['laravel/framework' => '^13', 'livewire/livewire' => '^4']])] + array_diff_key($this->laravelApp(), ['package.json' => true]));

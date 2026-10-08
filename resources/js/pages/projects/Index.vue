@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Form, Head, Link } from '@inertiajs/vue3';
+import { Form, Head, Link, usePage } from '@inertiajs/vue3';
 import { ArrowUp, ImagePlus, Search, ShieldCheck, X } from '@lucide/vue';
 import { computed, onMounted, ref } from 'vue';
 import NewProjectController from '@/actions/App/Http/Controllers/NewProjectController';
@@ -30,6 +30,7 @@ defineOptions({
 // Bringing in an app from a folder and counting tests are for people who
 // asked for technical details.
 const { technical } = useTechnical();
+const page = usePage();
 
 // A filter helps only once the list no longer fits at a glance.
 const searchable = computed(() => props.projects.length > 6);
@@ -384,7 +385,12 @@ function submitOnShortcut(event: KeyboardEvent): void {
                 </div>
             </Form>
 
-            <p v-if="technical" class="mt-5 text-sm text-muted-foreground">
+            <!-- A folder on our server is trusted operator input, never an
+                 owner's upload, so only operators may bring one in. -->
+            <p
+                v-if="technical && page.props.auth.operator"
+                class="mt-5 text-sm text-muted-foreground"
+            >
                 Or
                 <BringInApp>
                     <button

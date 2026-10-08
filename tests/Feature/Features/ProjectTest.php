@@ -4,6 +4,7 @@ namespace Tests\Feature\Features;
 
 use App\Actions\Previews\DescribeProjectPreview;
 use App\Actions\Previews\ReadPreviewEmails;
+use App\Actions\Projects\CreateProject;
 use App\Actions\Projects\SummarizeChanges;
 use App\Actions\Projects\SummarizeProjectTelemetry;
 use App\Actions\Publishing\DescribeUnpublished;
@@ -75,10 +76,11 @@ class ProjectTest extends TestCase
                 ->where('projects.0.name', 'Mine'));
     }
 
-    public function test_users_can_add_a_project_which_is_imported_into_its_repository()
+    public function test_operators_can_add_a_project_which_is_imported_into_its_repository()
     {
         $user = User::factory()->create();
         $source = $this->makeProjectSource(['.env' => "APP_KEY=secret\n", 'vendor/autoload.php' => "<?php\n", '.builder/project.md' => "# Project\n"] + $this->laravelApp());
+        config(['operations.operators' => [$user->email]]);
 
         $response = $this->actingAs($user)->post(route('projects.store'), [
             'name' => 'Acme',
@@ -100,6 +102,7 @@ class ProjectTest extends TestCase
     public function test_a_source_that_is_not_a_directory_is_refused()
     {
         $user = User::factory()->create();
+        config(['operations.operators' => [$user->email]]);
 
         $this->actingAs($user)
             ->post(route('projects.store'), ['name' => 'Acme', 'source_path' => '/srv/does-not-exist'])
@@ -111,9 +114,28 @@ class ProjectTest extends TestCase
 
     public function test_a_project_needs_a_name_and_source_path()
     {
-        $this->actingAs(User::factory()->create())
+        $operator = User::factory()->create();
+        config(['operations.operators' => [$operator->email]]);
+
+        $this->actingAs($operator)
             ->post(route('projects.store'), [])
             ->assertSessionHasErrors(['name', 'source_path']);
+    }
+
+    public function test_an_owner_cannot_import_control_plane_files_or_another_owners_repository()
+    {
+        config(['operations.operators' => []]);
+        $other = app(CreateProject::class)->handle(User::factory()->create(), 'Private', $this->makeProjectSource($this->laravelApp()));
+        $repository = app(ProjectRepository::class);
+        $owner = User::factory()->create();
+
+        foreach ([base_path(), $repository->path($other)] as $source) {
+            $this->actingAs($owner)->post(route('projects.store'), ['name' => 'Copy', 'source_path' => $source])->assertForbidden();
+        }
+
+        $this->assertSame(0, $owner->projects()->count());
+        $this->assertSame(1, Project::query()->count());
+        $this->assertSame('Import Private', $repository->log($other)[0]['subject']);
     }
 
     public function test_users_cannot_view_someone_elses_project()
