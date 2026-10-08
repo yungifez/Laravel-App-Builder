@@ -50,7 +50,7 @@ class PublishProject
         return DB::transaction(function () use ($project, $owner, $seen, $loseData) {
             Project::query()->whereKey($project->id)->lockForUpdate()->first();
 
-            $active = $project->deployments()->whereIn('status', [DeploymentStatus::Checking, DeploymentStatus::Pushing])->exists();
+            $active = $project->deployments()->whereIn('status', array_filter(DeploymentStatus::cases(), fn (DeploymentStatus $status) => $status->active()))->exists();
 
             if ($active) {
                 throw ValidationException::withMessages(['publish' => __('Your app is already being published.')]);

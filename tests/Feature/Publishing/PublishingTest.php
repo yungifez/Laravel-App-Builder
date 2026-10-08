@@ -12,6 +12,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Projects\ProjectRepository;
 use App\Publishing\Hosts\GitBranchHost;
+use App\Publishing\PublicAddress;
 use App\Publishing\PublishingHostManager;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -298,6 +299,7 @@ class PublishingTest extends TestCase
     public function test_the_app_address_must_be_a_public_https_address()
     {
         config(['builder.publishing.allow_local_remotes' => false]);
+        $this->partialMock(PublicAddress::class)->shouldReceive('resolve')->with('shop.example.com')->andReturn(['1.1.1.1']);
 
         foreach (['http://shop.example.com', 'https://10.0.0.5', 'https://localhost', 'https://db.internal', 'not a url'] as $address) {
             $this->actingAs($this->owner)
@@ -530,6 +532,19 @@ class PublishingTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $this->assertSame($this->repository->head($this->project), Deployment::sole()->commit_sha);
+    }
+
+    public function test_a_publish_cannot_start_while_another_version_is_being_confirmed()
+    {
+        Queue::fake();
+        $this->project->update(['deploy_remote' => $this->remote, 'deploy_branch' => 'main']);
+        $deployment = Deployment::factory()->for($this->project)->create(['user_id' => $this->owner->id, 'status' => DeploymentStatus::Confirming]);
+
+        $this->actingAs($this->owner)->post(route('deployments.store', $this->project))
+            ->assertSessionHasErrors(['publish' => 'Your app is already being published.']);
+
+        $this->assertSame($deployment->id, $this->project->deployments()->sole()->id);
+        Queue::assertNotPushed(PublishDeployment::class);
     }
 
     public function test_other_people_cannot_publish_or_change_where_to()

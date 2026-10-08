@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Project;
+use App\Publishing\PublicAddress;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
@@ -86,10 +87,6 @@ class ProjectPublishingUpdateRequest extends FormRequest
             return $host !== '';
         }
 
-        return str_starts_with($address, 'https://')
-            && str_contains($host, '.')
-            && filter_var($host, FILTER_VALIDATE_IP) === false
-            && ! str_ends_with($host, '.localhost')
-            && ! str_ends_with($host, '.internal');
+        return app(PublicAddress::class)->addresses($address) !== [];
     }
 }

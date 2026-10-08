@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Enums\DeploymentStatus;
 use App\Models\Deployment;
+use App\Publishing\LiveAppClient;
 use App\Publishing\PublishingHostManager;
 use App\Publishing\ReleaseProgress;
 use App\Support\Secrets;
@@ -11,7 +12,6 @@ use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -137,7 +137,7 @@ class ConfirmDeployment implements ShouldQueue
         }
 
         $url = $address.'/'.ltrim($path, '/');
-        $request = fn () => Http::timeout((int) config('builder.publishing.confirm.timeout'))->withoutRedirecting();
+        $request = fn () => app(LiveAppClient::class)->request($url);
 
         try {
             $page = $request()->get($url);
@@ -176,9 +176,9 @@ class ConfirmDeployment implements ShouldQueue
     protected function check(string $address, string $path): array
     {
         try {
-            $status = Http::timeout((int) config('builder.publishing.confirm.timeout'))
-                ->withoutRedirecting()
-                ->get($address.'/'.ltrim($path, '/'))
+            $url = $address.'/'.ltrim($path, '/');
+            $status = app(LiveAppClient::class)->request($url)
+                ->get($url)
                 ->status();
         } catch (ConnectionException) {
             $status = null;
