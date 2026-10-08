@@ -21,8 +21,11 @@ use App\Models\Verification;
 use App\Models\Workspace;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\FakesWorkspaces;
@@ -1779,5 +1782,74 @@ class VerificationTest extends TestCase
         $off = FeatureRequest::factory()->generated()->create(['patch' => $patch]);
         app(RequestVerification::class)->handle($off);
         $this->assertArrayNotHasKey('packages', $off->verifications()->sole()->evidence ?? []);
+    }
+
+    public function test_the_copy_gets_its_own_repository_before_the_change_is_put_on_it()
+    {
+        $request = FeatureRequest::factory()->generated()->create();
+
+        app(RequestVerification::class)->handle($request);
+
+        $git = array_values(array_filter(array_column($this->driver->executed, 'command'), fn (array $command) => $command[0] === 'git'));
+        $this->assertSame(['git', 'init', '--quiet'], $git[0]);
+        $this->assertSame('apply', $git[1][1]);
+        $this->assertSame('passed', $request->verifications()->sole()->results[0]['outcome']);
+    }
+
+    public function test_a_copy_inside_another_repository_still_gets_the_change()
+    {
+        $request = $this->verifyInsideARepository(FeatureRequest::factory()->generated()->create(['acceptance' => []]));
+
+        $results = collect($request->verifications()->sole()->results);
+        $this->assertSame('passed', $results->firstWhere('stage', 'apply')['outcome']);
+        $this->assertSame('passed', $results->firstWhere('name', 'Has the change')['outcome']);
+    }
+
+    public function test_a_change_that_does_not_fit_a_copy_inside_another_repository_is_reported()
+    {
+        $request = $this->verifyInsideARepository(FeatureRequest::factory()->generated()->create([
+            'acceptance' => [],
+            'patch' => "diff --git a/app/A.php b/app/A.php\n--- a/app/A.php\n+++ b/app/A.php\n@@ -1 +1,2 @@\n <?php // not this\n+// added\n",
+        ]));
+
+        $verification = $request->verifications()->sole();
+        $this->assertSame(VerificationStatus::Errored, $verification->status);
+        $this->assertSame(ChecksStoppedBecause::DoesNotApply, $verification->stopped_because);
+        $this->assertStringContainsString('app/A.php', $verification->results[0]['output']);
+    }
+
+    /**
+     * Verify the request in a real copy nested inside another repository,
+     * where git once skipped the whole change and said it applied.
+     */
+    protected function verifyInsideARepository(FeatureRequest $request): FeatureRequest
+    {
+        $parent = sys_get_temp_dir().DIRECTORY_SEPARATOR.'builder-test-nested-'.Str::lower(Str::random(8));
+        $copy = "{$parent}/workspaces/copy";
+        $this->beforeApplicationDestroyed(fn () => File::deleteDirectory($parent));
+        File::ensureDirectoryExists("{$copy}/app");
+        File::put("{$copy}/app/A.php", "<?php\n");
+        Process::path($parent)->run(['git', 'init', '--quiet'])->throw();
+
+        config([
+            'builder.verification.setup' => [],
+            'builder.verification.checks' => [['name' => 'Has the change', 'command' => ['grep', '-q', '// added', 'app/A.php'], 'timeout' => 30]],
+        ]);
+        $driver = $this->driver;
+        $driver->onExec = function (string $id, array $command) use ($driver, $copy) {
+            foreach ($driver->files as $key => $contents) {
+                $path = "{$copy}/".explode(':', $key, 2)[1];
+                File::ensureDirectoryExists(dirname($path));
+                File::put($path, $contents);
+            }
+
+            $result = Process::path($copy)->run($command);
+
+            return new CommandResult(exitCode: (int) $result->exitCode(), output: $result->output(), errorOutput: $result->errorOutput(), durationMs: 5);
+        };
+
+        app(RequestVerification::class)->handle($request);
+
+        return $request;
     }
 }

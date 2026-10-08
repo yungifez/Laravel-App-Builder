@@ -206,6 +206,10 @@ class VerifyFeatureRequest implements ShouldQueue
             $repository->withCheckout($project, $featureRequest->base_revision, fn (string $source) => $driver->copyDirectory((string) $workspace->driver_id, $source));
             $manifests = $this->readManifests($driver, $workspace);
 
+            // A copy with no repository of its own inside another one makes
+            // git skip every path outside it and still say it applied.
+            $runWorkspaceCommand->handle($workspace, ['git', 'init', '--quiet'], 60);
+
             foreach ($featureRequest->lineage() as $position => $request) {
                 $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);
                 $driver->writeFile((string) $workspace->driver_id, $patch, (string) $request->patch);
